@@ -74,7 +74,10 @@ class MemoryProjectionLifecycleTests(unittest.TestCase):
         service.start_background_services()
         self.assertTrue(
             _wait_until(
-                lambda: _projection_applied(core, "phrase:lifecycle"),
+                # Document creation can precede the vector/checkpoint work.
+                # Wait for the complete public readiness state asserted below.
+                lambda: _projection_applied(core, "phrase:lifecycle")
+                and service.memory_projection_status()["freshness"]["fresh"],
                 timeout_s=3.0,
             )
         )

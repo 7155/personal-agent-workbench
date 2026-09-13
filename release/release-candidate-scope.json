@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-13T02:37:50.446472+00:00",
+  "generatedAt": "2026-09-13T03:00:11.541115+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -91,7 +91,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 87
+      "pathCount": 88
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -131,10 +131,10 @@
     }
   },
   "summary": {
-    "pathCount": 881,
+    "pathCount": 882,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 682
+      "keep_release": 683
     },
     "groupCounts": {
       "local_docs": 122,
@@ -145,7 +145,7 @@
       "public_showcase": 30,
       "references_history": 8,
       "memory_lifecycle": 15,
-      "verification": 87,
+      "verification": 88,
       "voice_desktop": 17,
       "composition_refactor": 31,
       "portable_agent_ui": 8,
@@ -6266,6 +6266,13 @@
       "group": "verification",
       "disposition": "keep_release",
       "reason": "Keep Trace contracts synchronized and public source checks independent of local documents.",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_retrieval_docs.py",
+      "group": "verification",
+      "disposition": "keep_release",
+      "reason": "Align integration fixtures and frontend ownership checks with the current application and installer contracts.",
       "status": "modified"
     },
     {

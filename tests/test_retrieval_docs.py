@@ -732,11 +732,12 @@ class RetrievalDocsTests(unittest.TestCase):
     def _record_seed_event(self) -> int:
         text = "我偏好检索系统同时使用 BM25、向量、标签和时间四路召回。"
         timestamp = now_ms()
-        capture_id = f"capture:retrieval-docs:{timestamp}"
+        # Tag numeric identifiers so they cannot resemble a payment-card value.
+        capture_id = f"capture:retrieval-docs:t{timestamp}"
         metadata = {
             "schemaVersion": "rag-ime.input-capture.v2",
             "captureId": capture_id,
-            "transactionId": f"transaction:retrieval-docs:{timestamp}",
+            "transactionId": f"transaction:retrieval-docs:t{timestamp}",
             "sequence": 1,
             "channel": "input_method",
             "boundaryKind": "host_return",

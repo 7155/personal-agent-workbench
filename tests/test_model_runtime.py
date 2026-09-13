@@ -577,6 +577,12 @@ class ModelRuntimePlanTests(unittest.TestCase):
                     ROOT / "examples" / "vertical_agents",
                     runtime_root / "examples" / "vertical_agents",
                 )
+                # Portable controls are a prebuilt installer input; this probe
+                # exercises predictor switching without a frontend toolchain.
+                portable_ui = runtime_root / "control-center-web" / ".generated" / "portable-agent-ui"
+                portable_ui.mkdir(parents=True)
+                (portable_ui / "agent-ui.js").write_text("export {};\n", encoding="utf-8")
+                (portable_ui / "agent-ui.css").write_text(":root {}\n", encoding="utf-8")
                 eval_metrics = runtime_root / "eval" / "interview-metrics"
                 eval_metrics.mkdir(parents=True)
                 shutil.copy2(

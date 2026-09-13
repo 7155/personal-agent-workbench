@@ -23,7 +23,7 @@ REGISTRY = Path("control-center-web/src/features/paw-os/model/app-registry.ts")
 CLOUD_ENTRY = Path("control-center-web/CLOUD_MODEL.md")
 EXPECTED_KIND = "paw.real-frontend-source-map"
 EXPECTED_VERSION = 1
-EXPECTED_APP_COUNT = 14
+EXPECTED_APP_COUNT = 15
 OWNER_KEYS = {"renderOwners", "styleOwners", "supportingOwners"}
 FORBIDDEN_OWNER_FRAGMENTS = (
     "/docs/",
