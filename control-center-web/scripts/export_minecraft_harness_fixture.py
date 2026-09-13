@@ -58,7 +58,7 @@ class Sanitizer:
                 urllib.parse.quote(alias, safe=""),
             )
         for kind, pattern in ID_PATTERNS:
-            value = pattern.sub(lambda match: self.alias(kind, match.group(0)), value)
+            value = pattern.sub(lambda match, kind=kind: self.alias(kind, match.group(0)), value)
         value = re.sub(
             r"workdoc_[0-9a-f]{32}",
             lambda match: "workdoc_" + hashlib.sha256(match.group(0).encode()).hexdigest()[:32],

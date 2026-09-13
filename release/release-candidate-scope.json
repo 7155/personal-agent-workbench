@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-13T02:00:22.473226+00:00",
+  "generatedAt": "2026-09-13T02:37:50.446472+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -91,7 +91,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 86
+      "pathCount": 87
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -131,10 +131,10 @@
     }
   },
   "summary": {
-    "pathCount": 880,
+    "pathCount": 881,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 681
+      "keep_release": 682
     },
     "groupCounts": {
       "local_docs": 122,
@@ -145,7 +145,7 @@
       "public_showcase": 30,
       "references_history": 8,
       "memory_lifecycle": 15,
-      "verification": 86,
+      "verification": 87,
       "voice_desktop": 17,
       "composition_refactor": 31,
       "portable_agent_ui": 8,
@@ -1297,6 +1297,13 @@
       "disposition": "keep_release",
       "group": "portable_agent_ui",
       "reason": "Shared Agent controls and their standalone bundle entry."
+    },
+    {
+      "path": "control-center-web/scripts/export_minecraft_harness_fixture.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Bind each resource kind in the fixture export callback and satisfy the repository-wide CI lint check."
     },
     {
       "path": "control-center-web/src/app/App.tsx",
