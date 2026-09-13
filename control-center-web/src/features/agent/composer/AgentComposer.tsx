@@ -15,7 +15,6 @@ import {
   PanelRight,
   PencilLine,
   Plug,
-  Plus,
   Send,
   Settings2,
   ShieldCheck,
@@ -39,6 +38,9 @@ import {
 import { IconButton } from '@/components/primitives';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import { ComposerShell } from '@/features/composer/ComposerShell';
+import { ComposerAddMenu } from '@/features/composer/ComposerAddMenu';
+import { ComposerExpandButton, useComposerEditor } from '@/features/composer/ComposerEditor';
+import { usePastedTextAttachments, type ComposerFileImporter } from '@/features/composer/pasted-text';
 import type {
   CapabilityCatalog,
   CapabilityPreference,
@@ -173,7 +175,7 @@ export function AgentComposer({
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
   onPickAttachments: () => void;
   onPasteFromClipboard?: () => void;
-  onPasteImages: (files: File[]) => void;
+  onPasteImages: ComposerFileImporter;
   onToolSelect: (tool: ToolManifest) => void;
   onCapabilityPreferenceChange?: (canonicalId: string, preference: CapabilityPreference) => void;
   onProductCommand: (command: AgentProductCommandName) => void;
@@ -214,6 +216,12 @@ export function AgentComposer({
   const lastEscapeAtRef = useRef(0);
   const escapeResetRef = useRef(0);
   const [composerDraft, setComposerDraft] = useState(draft);
+  const [expanded, setExpanded] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const canAttach = Boolean(session && !sending && !busy && attachments.length < 8);
+  const pastedText = usePastedTextAttachments({ ownerId: session?.id ?? '', canImport: canAttach, onImport: onPasteImages });
+  useComposerEditor(textareaRef, composerDraft, expanded);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -290,7 +298,7 @@ export function AgentComposer({
     draftHasText: Boolean(composerDraft.trim()),
     draftHasAttachments: attachments.length > 0,
     busy,
-    sending,
+    sending: sending || pastedText.blocked,
     stopping: stopping || stopRequested,
     modelChanging,
     // Running turns use the human model: Enter adds a reversible follow-up
@@ -366,7 +374,7 @@ export function AgentComposer({
     publishDraft(nextDraft);
   }
   function submit(delivery: ComposerSubmitMode | null): void {
-    if (!delivery) return;
+    if (!delivery || pastedText.blocked) return;
     const value = composerDraft;
     /* A refused queue never reaches Runtime, so the draft has to stay exactly
        where the writer left it rather than vanish into a full queue. */
@@ -411,6 +419,7 @@ export function AgentComposer({
     }
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (expanded) { setExpanded(false); return; }
       if (editState) {
         lastEscapeAtRef.current = 0;
         onCancelEdit?.();
@@ -439,19 +448,28 @@ export function AgentComposer({
     const { files, hasFileItem } = clipboardFilesFromEvent(event);
     if (!files.length && !hasFileItem) {
       const pastedText = event.clipboardData.getData?.('text/plain') ?? '';
+      if (handlePastedText(pastedText)) { event.preventDefault(); return; }
       if (pastedText || !onPasteFromClipboard) return;
       event.preventDefault();
-      onPasteFromClipboard();
+      if (canAttach) onPasteFromClipboard();
       return;
     }
     event.preventDefault();
+    if (!canAttach) return;
     // WebKit sometimes reports file items whose bytes it refuses to expose;
     // the owner then reads the trusted system pasteboard instead.
     if (files.length) onPasteImages(files);
     else onPasteFromClipboard?.();
   }
+  const handlePastedText = pastedText.pasteText;
   return (
-    <div className="agent-composer-wrap" data-minimal={minimal || undefined}>
+    <div className="agent-composer-wrap" data-minimal={minimal || undefined}
+      onDragEnter={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current += 1; if (canAttach) setDragging(true); }}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = canAttach ? 'copy' : 'none'; } }}
+      onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false); }}
+      onDrop={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); if (canAttach) onPasteImages([...event.dataTransfer.files]); }}
+    >
+      {dragging ? <div className="composer-drop-hint" role="status">松开以添加附件</div> : null}
       {commandPanelVisible ? (
         <div ref={commandPanelRef} id="agent-command-palette" className="agent-command-palette" role="listbox" aria-label="命令面板">
           <header>
@@ -503,17 +521,19 @@ export function AgentComposer({
       ) : null}
       <ComposerShell
         surface="session"
+        expanded={expanded}
+        editorAction={<ComposerExpandButton expanded={expanded} onToggle={() => { setExpanded(!expanded); textareaRef.current?.focus(); }} />}
         busy={busy}
         jumpLatest={showJumpLatest}
         onSurfacePress={() => textareaRef.current?.focus()}
-        banner={editState ? (
+        banner={<>{pastedText.pendingNotice}{editState ? (
           <div className="agent-composer__edit" role="status">
             <PencilLine size={15} aria-hidden="true" />
             <span><strong>正在修改这条消息</strong><small>{editState.resolving ? '正在定位历史锚点；内容现在就可以编辑' : '发送后将从这里重新生成后续对话'}</small></span>
             <IconButton label="取消修改" icon={<X size={15} />} size="small" onClick={onCancelEdit} tooltip />
           </div>
-        ) : undefined}
-        attachments={attachments}
+        ) : null}</>}
+        attachments={attachments.map((attachment) => ({ ...attachment, description: pastedText.previews[attachment.name] }))}
         onRemoveAttachment={(id) => onAttachmentsChange(attachments.filter((item) => item.id !== id))}
         textarea={(
           <textarea
@@ -550,14 +570,7 @@ export function AgentComposer({
         )}
         controls={(
           <>
-            <IconButton
-              className="agent-composer__attachment"
-              label={imageSupport === 'unsupported' ? '添加附件（当前模型不识别图片）' : '添加附件'}
-              icon={<Plus size={16} />}
-              onClick={onPickAttachments}
-              disabled={!session || sending}
-              tooltip
-            />
+            <ComposerAddMenu canAttach={canAttach} disabled={!session} onPickAttachments={onPickAttachments} />
             {minimal ? null : (
               <>
                 <PermissionPicker session={session} metadataKnown={sessionMetadataKnown} persona={persona} tools={tools} disabled={busy || sending} requestOpen={permissionPickerRequest} onChange={onPermissionChange} onWorkspaceRootsChange={onWorkspaceRootsChange} />

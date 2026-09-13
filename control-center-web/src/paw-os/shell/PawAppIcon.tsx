@@ -24,6 +24,7 @@ export type PawAppIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
  * checks and future asset handoffs.
  */
 const APPROVED_SYMBOL_IDS: Record<PawBuiltinIdentityIconId, string> = {
+  schedules: 'app-schedules',
   agent: 'app-agent',
   'agent-capsule': 'app-agent-capsule',
   room: 'app-room',
@@ -42,6 +43,7 @@ const APPROVED_SYMBOL_IDS: Record<PawBuiltinIdentityIconId, string> = {
 };
 
 const APP_COLORS: Record<PawBuiltinIdentityIconId, string> = {
+  schedules: '#3276CB',
   agent: '#0A84FF',
   'agent-capsule': '#7A5AF8',
   room: '#7A5AF8',
@@ -63,6 +65,7 @@ const PAW_ICON_PAPER = 'var(--paw-icon-paper)';
 
 /** The deterministic SVG drawings for the approved App identities. */
 const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
+  schedules: <><rect x="11" y="13" width="26" height="25" rx="5" fill={PAW_ICON_PAPER} /><path d="M17 10v7m14-7v7M11 22h26" fill="none" stroke="#3276CB" strokeWidth="3" strokeLinecap="round" /><path d="M24 26v5l4 2" fill="none" stroke="#3276CB" strokeWidth="2.8" strokeLinecap="round" /></>,
   agent: <>
     <path d="M10 15 a10 10 0 0 1 10-10 h8 a10 10 0 0 1 10 10 v7 a10 10 0 0 1-10 10 h-9 l-6.5 6 v-6.2 A10 10 0 0 1 10 25 z" fill={PAW_ICON_PAPER} transform="translate(0,4)" />
     <circle cx="24" cy="22" fill="#0A84FF" r="5.2" />

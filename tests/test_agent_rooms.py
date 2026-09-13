@@ -1530,6 +1530,29 @@ class AgentRoomServiceTests(unittest.TestCase):
         self.assertIn("另有 22 条较早消息未注入", rendered)
         self.assertIn("按需读取公开摘要、产物或状态", rendered)
 
+    def test_room_text_file_routes_without_image_support_and_is_readable_only_by_members(self) -> None:
+        room = self.service.create_room({
+            "title": "长文本 Room", "routingPolicy": "manual_mentions", "workspaceRoots": [str(self.root)],
+            "participants": [{"roleId": "companion-present-v1", "roleVersion": "1"}, {"roleId": "companion-firstlight-v1", "roleVersion": "1"}],
+        })["room"]
+        target = room["participants"][0]
+        body = "需要按段阅读的中文资料\n" * 600
+        media = self.service.import_media(room_id=str(room["id"]), data=body.encode(), mime_type="text/plain", file_name="资料.txt")["media"]
+        with (
+            patch.object(self.service.runtime, "model_catalog", return_value={"selected": {"supportsImages": False}}),
+            patch.object(self.service, "prompt", return_value={"turnId": "turn:room-text"}) as prompt,
+        ):
+            self.service.post_room_message(str(room["id"]), {"message": "核对资料", "participantIds": [str(target["id"])], "attachmentIds": [str(media["mediaId"])], "clientMessageId": "room-text-file"})
+        self.assertEqual(prompt.call_args.args[1]["attachments"], [media["mediaId"]])
+        self.assertEqual(self.service.read_media_resource(str(media["mediaId"]), session_id=str(target["sessionId"]))[1].decode(), body)
+        preview = self.service.file_preview(str(media["mediaId"]), session_id=str(target["sessionId"]))
+        self.assertEqual(preview["content"], body)
+        self.assertIn("sessionId=", preview["descriptor"]["contentUrl"])
+        self.assertEqual(self.service.media_content(str(media["mediaId"]), session_id=str(target["sessionId"]))[1].decode(), body)
+        other = self.service.create_session({"title": "Room 外"})["session"]
+        with self.assertRaises(KeyError):
+            self.service.read_media_resource(str(media["mediaId"]), session_id=str(other["id"]))
+
     def test_room_image_is_delivered_to_the_authorized_participant_prompt(self) -> None:
         room = self.service.create_room(
             {

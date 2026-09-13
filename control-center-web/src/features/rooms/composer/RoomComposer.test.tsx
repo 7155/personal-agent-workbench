@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/primitives';
@@ -37,17 +38,13 @@ describe('RoomComposer macOS input methods', () => {
       </TooltipProvider>,
     );
 
-    const mentionTrigger = screen.getByRole('button', { name: '点名一位伙伴' });
-    expect(mentionTrigger).toHaveAttribute('aria-haspopup', 'listbox');
-    expect(mentionTrigger).toHaveAttribute('aria-expanded', 'false');
-    expect(mentionTrigger).not.toHaveAttribute('aria-pressed');
-    fireEvent.click(mentionTrigger);
-    expect(mentionTrigger).toHaveAttribute('aria-expanded', 'true');
-    expect(mentionTrigger).toHaveAttribute('aria-controls', 'room-mention-menu');
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    fireEvent.change(editor, { target: { value: '@' } });
+    expect(editor.getAttribute('aria-controls')).toBe(screen.getByRole('listbox').id);
     const earth = screen.getByRole('option', { name: /Earth/ });
     expect(earth).toHaveTextContent('实现与验证');
     expect(earth).not.toHaveTextContent('Agent 1');
-    fireEvent.mouseDown(earth);
+    fireEvent.click(earth);
     expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveValue('@Earth ');
     expect(roomMentionedParticipants([participant], '@Earth 请复核', { 'participant-earth': 'Earth' }))
       .toEqual([participant]);
@@ -284,7 +281,7 @@ describe('RoomComposer macOS input methods', () => {
 
     const answer = screen.getByRole('button', { name: '发送问题回答' });
     expect(answer).toBeEnabled();
-    expect(screen.getByRole('button', { name: '添加附件' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '添加内容' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '点名一位伙伴' })).not.toBeInTheDocument();
     fireEvent.click(answer);
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -317,4 +314,57 @@ describe('RoomComposer macOS input methods', () => {
     fireEvent.click(button);
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
+});
+
+it('retains an asynchronously rejected message without overwriting the next draft', async () => {
+  let reject!: (reason: Error) => void;
+  const pending = new Promise<boolean>((_resolve, fail) => { reject = fail; });
+  const onSend = vi.fn(() => pending);
+  function Harness() {
+    const [draft, setDraft] = useState('第一条');
+    return <TooltipProvider><RoomComposer room={{ id: 'room-recovery', status: 'active', participants: [] }} personas={[]} draft={draft} attachments={[]} sending={false} onDraftChange={setDraft} onAttachmentsChange={vi.fn()} onPasteImages={vi.fn()} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={onSend} /></TooltipProvider>;
+  }
+  render(<Harness />);
+  const editor = screen.getByRole('textbox', { name: '协作消息' });
+  fireEvent.keyDown(editor, { key: 'Enter' });
+  fireEvent.change(editor, { target: { value: '接下来要补充的内容' } });
+  reject(new Error('offline'));
+  expect(await screen.findByText('上一条没有发出，内容已保留。')).toBeInTheDocument();
+  expect(editor).toHaveValue('接下来要补充的内容');
+  fireEvent.click(screen.getByRole('button', { name: '找回未发送内容' }));
+  expect(editor).toHaveValue('第一条\n\n接下来要补充的内容');
+  expect(onSend).toHaveBeenCalledTimes(1);
+});
+
+it('keeps one add menu, stop and expanded editing and blocks file drops during execution', async () => {
+  const onStop = vi.fn(); const onInvite = vi.fn(); const onFiles = vi.fn();
+  render(<TooltipProvider><RoomComposer room={{ id: 'room-controls', status: 'active', participants: [] }} personas={[]} draft="长文本" attachments={[]} sending={false} taskBusyState="running" onStop={onStop} onInvitePartners={onInvite} onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()} onPasteImages={onFiles} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={vi.fn()} /></TooltipProvider>);
+  fireEvent.click(screen.getByRole('button', { name: '停止当前协作' }));
+  expect(screen.queryByRole('button', { name: '邀请新伙伴' })).not.toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: '添加内容' }));
+  expect(screen.getByRole('menuitem', { name: /选择附件/ })).toHaveAttribute('aria-disabled', 'true');
+  await user.click(screen.getByRole('menuitem', { name: '邀请新伙伴' }));
+  expect(onStop).toHaveBeenCalledTimes(1); expect(onInvite).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: '展开长文本编辑' }));
+  expect(screen.getByRole('button', { name: '收起长文本编辑' })).toHaveAttribute('aria-expanded', 'true');
+  const editor = screen.getByRole('textbox', { name: '协作消息' });
+  fireEvent.keyDown(editor, { key: 'Escape' });
+  expect(screen.getByRole('button', { name: '展开长文本编辑' })).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.drop(editor, { dataTransfer: { types: ['Files'], files: [new File(['a'], 'test.txt')] } });
+  expect(onFiles).not.toHaveBeenCalled();
+  expect(editor).toHaveValue('长文本');
+});
+
+it('keeps the mention menu open across the controlled host draft echo', () => {
+  function Harness() {
+    const [draft, setDraft] = useState('请核对');
+    return <TooltipProvider><RoomComposer room={{ id: 'room-mentioned', status: 'active', participants: [{ id: 'earth', sessionId: 'earth-session', roleId: 'worker', roleVersion: '1', displayName: 'Earth', ordinal: 0, status: 'active' }] }} personas={[]} draft={draft} attachments={[]} sending={false} onDraftChange={setDraft} onAttachmentsChange={vi.fn()} onPasteImages={vi.fn()} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={vi.fn()} /></TooltipProvider>;
+  }
+  render(<Harness />);
+  fireEvent.change(screen.getByRole('textbox', { name: '协作消息' }), { target: { value: '请核对 @' } });
+  expect(screen.getByRole('listbox', { name: '选择要点名的伙伴' })).toBeVisible();
+  fireEvent.click(screen.getByRole('option', { name: /Earth/ }));
+  expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveValue('请核对 @Earth ');
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
 });

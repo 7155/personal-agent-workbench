@@ -144,6 +144,40 @@ class AgentWakeScheduleStore:
             )
         return self.get(schedule_id)
 
+    def update(
+        self,
+        schedule_id: str,
+        payload: Mapping[str, object],
+        *,
+        now_ms: int | None = None,
+    ) -> dict[str, object]:
+        """Edit a future plan atomically without replacing its run ledger."""
+        identifier = _required_id(schedule_id)
+        timestamp = _now_ms(now_ms)
+        value = self.validate_create(payload, now_ms=timestamp)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(
+                "SELECT * FROM agent_wake_schedules WHERE schedule_id = ?", (identifier,)
+            ).fetchone()
+            if current is None:
+                raise KeyError(identifier)
+            if current["status"] not in {"scheduled", "paused"}:
+                raise ValueError("only a scheduled or paused wake can be edited")
+            if int(value["maxRuns"]) <= int(current["run_count"]):
+                raise ValueError("maxRuns must exceed the number of completed attempts")
+            conn.execute(
+                """UPDATE agent_wake_schedules SET title = ?, instruction = ?,
+                   target_type = ?, target_session_id = ?, target_role_id = ?, target_role_version = ?,
+                   planning_task_id = ?, timezone = ?, recurrence_kind = ?, recurrence_interval = ?,
+                   max_runs = ?, next_wake_at_ms = ?, updated_at_ms = ? WHERE schedule_id = ?""",
+                (value["title"], value["instruction"], value["targetType"], value["targetSessionId"],
+                 value["targetRoleId"], value["targetRoleVersion"], value["planningTaskId"], value["timezone"],
+                 value["recurrenceKind"], value["recurrenceInterval"], value["maxRuns"], value["wakeAtMs"],
+                 timestamp, identifier),
+            )
+        return self.get(identifier)
+
     def create_room_wake(
         self,
         *,

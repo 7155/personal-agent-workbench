@@ -14432,7 +14432,9 @@ export const contractSchemas = {
               "scheduled",
               "running",
               "completed",
-              "failed"
+              "failed",
+              "paused",
+              "cancelled"
             ]
           },
           "initialDueAtMs": {
@@ -14618,7 +14620,9 @@ export const contractSchemas = {
               "scheduled",
               "running",
               "completed",
-              "failed"
+              "failed",
+              "paused",
+              "cancelled"
             ]
           },
           "initialDueAtMs": {
@@ -14777,7 +14781,9 @@ export const contractSchemas = {
               "scheduled",
               "running",
               "completed",
-              "failed"
+              "failed",
+              "paused",
+              "cancelled"
             ]
           },
           "initialDueAtMs": {
@@ -14976,7 +14982,9 @@ export const contractSchemas = {
           "scheduled",
           "running",
           "completed",
-          "failed"
+          "failed",
+          "paused",
+          "cancelled"
         ]
       },
       "initialDueAtMs": {

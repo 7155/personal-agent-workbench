@@ -1,5 +1,5 @@
-import { ChevronDown, ChevronRight, ExternalLink, FileText, Orbit } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ArrowDown, Check, ChevronDown, ChevronRight, CircleAlert, ExternalLink, FileText, MessageCircle, Orbit, Pause, Users } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import {
   openEvidenceEchoEntity,
@@ -8,11 +8,13 @@ import {
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
 import { usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { RoomSummary } from '@/features/rooms/room-types';
+import { usePageVisibility } from '@/platform/use-page-visibility';
 import {
   progressFallback,
   selectRoomRoundTaskSheets,
   type RoomRoundTaskRow,
   type RoomRoundRowState,
+  type RoomRoundTaskSheet,
 } from './room-round-task-sheet';
 import './paw-room-round-sheet.css';
 
@@ -64,14 +66,55 @@ export function PawRoomRoundSheet({
   const roundsRef = useRef<HTMLElement>(null);
   const previousLatestSheetId = useRef('');
   const latestSheetId = sheets.at(-1)?.id ?? '';
+  const followingLatest = useRef(true);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
+  const [unseenRound, setUnseenRound] = useState(false);
+  const pageVisible = usePageVisibility();
+  const previousPartnerStates = useRef<Map<string, RoomRoundRowState> | null>(null);
+  const [arrivingKeys, setArrivingKeys] = useState<readonly string[]>([]);
+
+  useEffect(() => {
+    const latest = sheets.at(-1);
+    if (!latest) return;
+    const current = new Map(latest.rows.filter((row) => row.assigned).map((row) => [row.key, row.state]));
+    const previous = previousPartnerStates.current;
+    previousPartnerStates.current = current;
+    if (!previous || !pageVisible) return;
+    const arrivals = [...current].filter(([key, state]) => state === 'running' && previous.get(key) !== 'running').map(([key]) => key);
+    if (arrivals.length) setArrivingKeys(arrivals);
+  }, [pageVisible, sheets]);
+
+  useEffect(() => {
+    if (!arrivingKeys.length) return;
+    const timer = window.setTimeout(() => setArrivingKeys([]), 4200);
+    return () => window.clearTimeout(timer);
+  }, [arrivingKeys]);
+
+  const jumpToRound = (sheetId: string, toEnd = false) => {
+    setHistoricalDisclosure((current) => ({ ...current, [sheetId]: true }));
+    requestAnimationFrame(() => {
+      const node = roundsRef.current;
+      const target = [...(node?.querySelectorAll<HTMLElement>('[data-round-id]') ?? [])]
+        .find((round) => round.dataset.roundId === sheetId);
+      if (!node || !target) return;
+      const top = toEnd ? node.scrollHeight : node.scrollTop + target.getBoundingClientRect().top - node.getBoundingClientRect().top - 12;
+      if (typeof node.scrollTo === 'function') node.scrollTo({ top, behavior: roundScrollBehavior() });
+      else node.scrollTop = top;
+      if (sheetId === latestSheetId) setUnseenRound(false);
+      target.focus({ preventScroll: true });
+    });
+  };
 
   useEffect(() => {
     if (!latestSheetId) return;
     const node = roundsRef.current;
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-      || document.documentElement.dataset.reduceMotion === 'true';
-    const behavior = previousLatestSheetId.current && !reducedMotion ? 'smooth' : 'auto';
+    const firstArrival = !previousLatestSheetId.current;
+    const behavior = firstArrival ? 'auto' : roundScrollBehavior();
     previousLatestSheetId.current = latestSheetId;
+    if (!firstArrival && !followingLatest.current) {
+      setUnseenRound(true);
+      return;
+    }
     if (!node) return;
     const frame = requestAnimationFrame(() => {
       if (typeof node.scrollTo === 'function') {
@@ -82,6 +125,16 @@ export function PawRoomRoundSheet({
     });
     return () => cancelAnimationFrame(frame);
   }, [latestSheetId]);
+
+  useEffect(() => {
+    const node = roundsRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) entry.target.toggleAttribute('data-motion-paused', !entry.isIntersecting);
+    }, { root: node });
+    node.querySelectorAll('[data-round-id]').forEach((round) => observer.observe(round));
+    return () => observer.disconnect();
+  }, [latestSheetId, sheets.length]);
 
   if (!sheets.length) {
     return (
@@ -94,16 +147,29 @@ export function PawRoomRoundSheet({
   }
 
   return (
-    <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef}>
+    <div className="paw-room-rounds-workspace" data-motion-paused={!pageVisible || undefined}>
+      {sheets.length > 1 ? <nav aria-label="对话轮次" className="paw-room-rounds__navigation">
+        <span>{sheets.length} 轮对话</span>
+        <div>{sheets.map((sheet, index) => <button
+          aria-label={`查看第 ${index + 1} 轮：${sheet.objective}`}
+          data-state={sheet.status}
+          key={sheet.id}
+          onClick={() => jumpToRound(sheet.id)}
+          title={sheet.objective}
+          type="button"
+        ><i aria-hidden="true" />第 {index + 1} 轮{sheet.id === latestSheetId ? <small>最新</small> : null}</button>)}</div>
+      </nav> : null}
+    <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef} onScroll={(event) => {
+      const node = event.currentTarget;
+      const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
+      followingLatest.current = nearBottom;
+      setAwayFromLatest(!nearBottom);
+      if (nearBottom) setUnseenRound(false);
+      else setHistoricalDisclosure((current) => current[latestSheetId] ? current : { ...current, [latestSheetId]: true });
+    }}>
       {sheets.map((sheet, index) => {
         const latest = index === sheets.length - 1;
         const settled = ['completed', 'failed', 'aborted'].includes(sheet.status);
-        const allRowsSettled = sheet.rows.filter((row) => row.assigned).every((row) => (
-          ['completed', 'failed', 'aborted'].includes(row.state)
-        ));
-        const hasLiveActivity = projection.turnsById[sheet.turnId]?.activityIds.some((id) => (
-          ['running', 'waiting'].includes(projection.activitiesById[id]?.status ?? '')
-        ));
         const resultRows = sheet.rows.filter((row) => isStandaloneResult(row, room));
         const finalRows = resultRows.filter((row) => isCoordinatorRow(row, room));
         const partnerResults = resultRows.filter((row) => !isCoordinatorRow(row, room));
@@ -125,10 +191,7 @@ export function PawRoomRoundSheet({
         /* Disclosure is a reading preference, never a completion signal. An
            aborted round can contain a useful host report; show that report
            in full while keeping its authoritative stopped state visible. */
-        const hasReadableReport = coordinatorRows.length > 0 || resultRows.length > 0;
-        const open = sheetDisclosure[sheet.id] ?? (
-          !(settled && hasReadableReport && allRowsSettled && !hasLiveActivity)
-        );
+        const open = sheetDisclosure[sheet.id] ?? !settled;
         const taskRows = sheet.rows.filter((row) => (
           row.assigned
           && !resultRows.includes(row)
@@ -157,6 +220,14 @@ export function PawRoomRoundSheet({
           ...current,
           [sheet.id]: !open,
         }));
+        const toggleRow = (key: string) => {
+          // Opening evidence is an explicit reading choice. A later terminal
+          // event must not collapse the content under the user's focus.
+          setSheetDisclosure((current) => ({ ...current, [sheet.id]: true }));
+          setExpandedRows((current) => toggled(current, key));
+        };
+        const arriving = sheet.rows.filter((row) => row.state === 'running' && arrivingKeys.includes(row.key));
+        const preserveReading = () => setHistoricalDisclosure((current) => current[sheet.id] ? current : { ...current, [sheet.id]: true });
         const prompt = <span>
           <strong>{sheet.objective}</strong>
           <small>{planetCount} 颗行星 · {sheetStateLabels[sheet.status] ?? sheet.status}</small>
@@ -167,22 +238,49 @@ export function PawRoomRoundSheet({
             className="paw-room-session-round paw-room-session-round--collaboration"
             data-round-id={sheet.id}
             data-state={sheet.status}
+            data-expanded={roundOpen || undefined}
             key={sheet.id}
+            tabIndex={-1}
+            onPointerDownCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(); }}
+            onFocusCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(); }}
           >
             <header className="paw-room-session-round__prompt">
+              <span className="paw-room-session-round__number">第 {index + 1} 轮</span>
               {latest ? <div className="paw-room-session-round__objective">{prompt}</div> : <button
                 aria-controls={replyId}
                 aria-expanded={roundOpen}
                 aria-label={roundOpen ? '折叠本轮任务' : '展开本轮任务'}
-                onClick={() => setHistoricalDisclosure((current) => ({ ...current, [sheet.id]: !roundOpen }))}
+                onClick={() => {
+                  setHistoricalDisclosure((current) => ({ ...current, [sheet.id]: !roundOpen }));
+                  if (!roundOpen && sheet.status === 'completed' && !resultRows.length && !coordinatorRows.length) {
+                    setSheetDisclosure((current) => ({ ...current, [sheet.id]: true }));
+                  }
+                }}
                 type="button"
               >
                 {prompt}
                 <ChevronDown aria-hidden="true" className="paw-room-session-round__chevron" data-open={roundOpen || undefined} size={15} />
               </button>}
             </header>
-            <div className="paw-room-session-round__reply" hidden={!roundOpen} id={replyId}>
-              {roundOpen && hasProcess ? (
+            <RoundDisclosure className="paw-room-session-round__reply" open={roundOpen} id={replyId}>
+              <RoundProgress sheet={sheet} hasFinal={finalRows.length > 0} />
+              {arriving.length ? <div className="paw-room-round__arrival" role="status" key={arriving.map((row) => row.key).join(':')}>
+                <Orbit aria-hidden="true" size={19} />
+                <span><strong>{arriving.map((row) => row.celestialName).join('、')} 正在接手</strong><small>{arriving.map((row) => row.role).join(' · ')}</small></span>
+                {hasProcess ? <button onClick={() => setSheetDisclosure((current) => ({ ...current, [sheet.id]: true }))} type="button">查看进展<ChevronRight aria-hidden="true" size={14} /></button> : null}
+              </div> : null}
+              {sheet.status === 'failed' || sheet.status === 'aborted' ? <div className="paw-room-round__notice" data-state={sheet.status}>
+                {sheet.status === 'failed' ? <CircleAlert aria-hidden="true" size={18} /> : <Pause aria-hidden="true" size={18} />}
+                <div><strong>{sheet.status === 'failed' ? '本轮需要处理' : '本轮已停止'}</strong>
+                  <p>{sheet.rows.find((row) => row.state === 'failed' || row.state === 'aborted')?.latestProgress || progressFallback(sheet.status)}</p>
+                </div>
+                {hasProcess ? <button onClick={() => {
+                  setSheetDisclosure((current) => ({ ...current, [sheet.id]: true }));
+                  const row = taskRows.find((candidate) => ['failed', 'aborted', 'blocked'].includes(candidate.state));
+                  if (row) setExpandedRows((current) => new Set([...current, row.key]));
+                }} type="button">查看原因<ChevronRight aria-hidden="true" size={14} /></button> : null}
+              </div> : null}
+              {hasProcess ? (
                 <section className={multiParticipantRows.length ? 'paw-room-round' : 'paw-room-round-process'} data-state={sheet.status}>
                   <header className="paw-room-round__header">
                     <button
@@ -196,14 +294,14 @@ export function PawRoomRoundSheet({
                       <span aria-hidden="true" className="paw-room-round__toggle-icon" data-open={open || undefined}>
                         <ChevronRight size={17} />
                       </span>
-                      <span><strong>协作过程</strong><small>{[...taskRows, ...starterRows].map((row) => row.celestialName).join(' · ')}</small></span>
+                      <span><strong>协作过程</strong><small>{[...taskRows, ...starterRows].map((row) => row.celestialName).join(' · ')}{!open ? ' · 点击展开任务与进展' : ''}</small></span>
                     </button>
                     <span className="paw-room-round__state" data-state={sheet.status}>
                       <i aria-hidden="true" />{sheetStateLabels[sheet.status] ?? sheet.status}
                     </span>
                   </header>
-                  <div hidden={!open} id={processId}>
-                    {open && multiParticipantRows.length ? (
+                  <RoundDisclosure open={open} id={processId}>
+                    {multiParticipantRows.length ? (
                       <div className="paw-room-round__table-scroll">
                         <table aria-label={`${sheet.objective} · 行星进展`}>
                           <thead><tr>
@@ -219,7 +317,7 @@ export function PawRoomRoundSheet({
                               key={row.key}
                               onOpenParticipant={onOpenParticipant}
                               onResumeBlocked={onResumeBlocked}
-                              onToggle={() => setExpandedRows((current) => toggled(current, row.key))}
+                              onToggle={() => toggleRow(row.key)}
                               resumingWorkItemId={resumingWorkItemId}
                               resumeError={resumeErrorByRow?.[row.key]}
                               room={room}
@@ -230,7 +328,7 @@ export function PawRoomRoundSheet({
                         </table>
                       </div>
                     ) : null}
-                    {open ? <>
+                    <>
                       {starterRows.map((row) => (
                         <StandaloneStarterPlanet key={row.key} onOpenParticipant={onOpenParticipant} row={row} selected={selectedParticipantId === row.participantId} />
                       ))}
@@ -241,7 +339,7 @@ export function PawRoomRoundSheet({
                           expanded={expandedRows.has(standaloneTaskRow.key)}
                           onOpenParticipant={onOpenParticipant}
                           onResumeBlocked={onResumeBlocked}
-                          onToggle={() => setExpandedRows((current) => toggled(current, standaloneTaskRow.key))}
+                          onToggle={() => toggleRow(standaloneTaskRow.key)}
                           resumingWorkItemId={resumingWorkItemId}
                           resumeError={resumeErrorByRow?.[standaloneTaskRow.key]}
                           room={room}
@@ -249,11 +347,11 @@ export function PawRoomRoundSheet({
                           selected={selectedParticipantId === standaloneTaskRow.participantId}
                         />
                       ) : null}
-                    </> : null}
-                  </div>
+                    </>
+                  </RoundDisclosure>
                 </section>
               ) : null}
-              {roundOpen ? <>
+              <>
                 {coordinatorRows.map((row) => (
                   <StandaloneCoordinatorSummary desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                 ))}
@@ -268,13 +366,60 @@ export function PawRoomRoundSheet({
                     ))}
                   </section>
                 ) : null}
-              </> : null}
-            </div>
+              </>
+            </RoundDisclosure>
           </article>
         );
       })}
     </section>
+      {awayFromLatest || unseenRound ? <button className="paw-room-rounds__latest" onClick={() => jumpToRound(latestSheetId, true)} type="button">
+        <ArrowDown aria-hidden="true" size={16} />{unseenRound ? '有新一轮对话' : '回到最新'}
+      </button> : null}
+    </div>
   );
+}
+
+function roundScrollBehavior(): ScrollBehavior {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    || document.documentElement.dataset.reduceMotion === 'true' ? 'auto' : 'smooth';
+}
+
+/** Keep an opened body mounted while it folds, preserving selection and row
+ * identity. Closed content leaves both keyboard and accessibility navigation. */
+function RoundDisclosure({ children, className = '', id, open }: {
+  children: ReactNode;
+  className?: string;
+  id?: string;
+  open: boolean;
+}) {
+  const [visited, setVisited] = useState(open);
+  useEffect(() => { if (open) setVisited(true); }, [open]);
+  return <div className={`paw-room-round__disclosure ${className}`} id={id} hidden={!open} aria-hidden={!open || undefined} inert={!open}>
+    <div className="paw-room-round__disclosure-clip"><div className="paw-room-round__disclosure-body">{open || visited ? children : null}</div></div>
+  </div>;
+}
+
+function RoundProgress({ sheet, hasFinal }: { sheet: RoomRoundTaskSheet; hasFinal: boolean }) {
+  const assigned = sheet.rows.filter((row) => row.assigned);
+  const completed = assigned.filter((row) => row.state === 'completed').length;
+  const running = assigned.filter((row) => row.state === 'running').length;
+  const waiting = assigned.filter((row) => row.state === 'waiting' || row.state === 'queued').length;
+  const blocked = assigned.filter((row) => row.state === 'blocked' || row.state === 'failed').length;
+  const terminal = ['completed', 'failed', 'aborted'].includes(sheet.status);
+  const resultLabel = hasFinal ? '结果已返回' : sheet.status === 'completed' ? '本轮已结束'
+    : sheet.status === 'failed' ? '需要处理' : sheet.status === 'aborted' ? '已停止' : '等待结果';
+  return <div className="paw-room-round__overview" data-state={sheet.status}>
+    <ol aria-label="本轮进展" className="paw-room-round__stages">
+      <li data-state="completed"><MessageCircle aria-hidden="true" size={14} /><span>任务请求</span></li>
+      <li data-state={sheet.status === 'running' ? 'running' : terminal ? 'settled' : 'queued'}><Users aria-hidden="true" size={14} /><span>伙伴协作</span></li>
+      <li data-state={hasFinal ? 'completed' : terminal ? sheet.status : 'waiting'}>
+        {sheet.status === 'failed' ? <CircleAlert aria-hidden="true" size={14} /> : sheet.status === 'aborted' ? <Pause aria-hidden="true" size={14} /> : hasFinal ? <Check aria-hidden="true" size={14} /> : <FileText aria-hidden="true" size={14} />}<span>{resultLabel}</span>
+      </li>
+    </ol>
+    <span className="paw-room-round__counts" aria-live="polite" aria-atomic="true">
+      {[completed ? `${completed} 已完成` : '', terminal && running + waiting ? `${running + waiting} 未交付` : '', !terminal && running ? `${running} 进行中` : '', !terminal && waiting ? `${waiting} 等待` : '', blocked ? `${blocked} 需关注` : ''].filter(Boolean).join(' · ')}
+    </span>
+  </div>;
 }
 
 function TaskPlanetRows({
@@ -313,14 +458,16 @@ function TaskPlanetRows({
         onClick={(event) => {
           const target = event.target;
           if (target instanceof Element && target.closest('button, a, input, select, textarea, summary')) return;
-          onOpenParticipant(row.participantId);
+          onToggle();
         }}
       >
         <th scope="row">
           <button
-            aria-label={`打开 ${row.celestialName} Session`}
+            aria-label={`查看 ${row.celestialName} 的任务与进展`}
+            aria-controls={detailId}
+            aria-expanded={expanded}
             className="paw-room-round__planet"
-            onClick={() => onOpenParticipant(row.participantId)}
+            onClick={onToggle}
             type="button"
           >
             <span aria-hidden="true"><Orbit size={15} /></span>
@@ -344,7 +491,6 @@ function TaskPlanetRows({
             className="paw-room-round__progress-text"
             data-live={row.state === 'running' || undefined}
             data-state={row.state}
-            key={`${row.key}:${row.updatedAtMs}`}
           >
             <MarkdownBody
               documentKey={`${row.key}:progress:${row.updatedAtMs}`}
@@ -390,9 +536,9 @@ function TaskPlanetRows({
           </div>
         </td>
       </tr>
-      {expanded ? (
-        <tr className="paw-room-round__detail-row">
+        <tr className="paw-room-round__detail-row" data-expanded={expanded || undefined} aria-hidden={!expanded || undefined}>
           <td colSpan={5}>
+            <RoundDisclosure open={expanded}>
             <div
               aria-label={`${row.celestialName} 公开进展与证据`}
               className="paw-room-round__detail"
@@ -403,20 +549,7 @@ function TaskPlanetRows({
             >
               <section>
                 <strong>公开进展</strong>
-                {row.history.length ? (
-                  <ol>
-                    {row.history.map((event) => (
-                      <li data-state={event.status} key={event.id}>
-                        <i aria-hidden="true" />
-                        <MarkdownBody
-                          documentKey={`${row.key}:history:${event.id}`}
-                          sessionId={row.sessionId}
-                          text={event.summary}
-                        />
-                      </li>
-                    ))}
-                  </ol>
-                ) : <p>尚无可公开的运行事件。</p>}
+                <RowProgressHistory row={row} />
               </section>
               <section>
                 <strong>结果与证据</strong>
@@ -467,9 +600,9 @@ function TaskPlanetRows({
                 </button>
               </section>
             </div>
+            </RoundDisclosure>
           </td>
         </tr>
-      ) : null}
     </tbody>
   );
 }
@@ -526,6 +659,7 @@ function StandaloneCoordinatorSummary({
   selected: boolean;
 }) {
   const [processOpen, setProcessOpen] = useState(false);
+  const processId = useId();
   const title = row.report ? '主控回复' : '主控进展';
   const summary = row.report || (row.state === 'running'
     ? '主控正在执行当前任务，尚未发布面向你的回复。'
@@ -546,14 +680,10 @@ function StandaloneCoordinatorSummary({
       <div className="paw-room-round__prose">
         <MarkdownBody documentKey={`${row.key}:summary:${row.updatedAtMs}`} sessionId={row.sessionId} text={summary} />
       </div>
-      {row.history.length ? <details onToggle={(event) => setProcessOpen(event.currentTarget.open)}>
-        <summary>查看工作过程</summary>
-        {processOpen ? <ol>{row.history.filter((event) => event.kind === 'activity').map((event) => (
-          <li data-state={event.status} key={event.id}>
-            <MarkdownBody documentKey={`${row.key}:process:${event.id}`} sessionId={row.sessionId} text={event.summary} />
-          </li>
-        ))}</ol> : null}
-      </details> : null}
+      {row.history.some((event) => event.kind === 'activity') ? <div>
+        <button className="paw-room-round__history-toggle" aria-controls={processId} aria-expanded={processOpen} onClick={() => setProcessOpen((open) => !open)} type="button"><ChevronRight aria-hidden="true" size={14} data-open={processOpen || undefined} />{processOpen ? '收起工作过程' : '查看工作过程'}</button>
+        <RoundDisclosure open={processOpen} id={processId}><RowProgressHistory row={row} activityOnly /></RoundDisclosure>
+      </div> : null}
       <ResultReferences desktop={desktop} room={room} row={row} />
     </section>
   );
@@ -592,14 +722,14 @@ function StandaloneTaskPlanet({
       data-row-key={row.key}
       data-selected={selected || undefined}
       data-state={row.state}
+      data-long-task={(row.taskBody || row.task).length > 240 || undefined}
       role="region"
     >
       <header>
-        <span aria-hidden="true" className="paw-room-round__standalone-orbit"><Orbit size={18} /></span>
-        <span>
-          <strong>{row.celestialName}</strong>
-          <small>{row.role}</small>
-        </span>
+        <button aria-label={`查看 ${row.celestialName} 的任务与进展`} aria-controls={detailId} aria-expanded={expanded} className="paw-room-round__identity" onClick={onToggle} type="button">
+          <span aria-hidden="true" className="paw-room-round__standalone-orbit"><Orbit size={18} /></span>
+          <span><strong>{row.celestialName}</strong><small>{row.role}</small></span>
+        </button>
         <span className="paw-room-round__row-state" data-state={row.state}>
           <i aria-hidden="true" />{rowStateLabels[row.state]}
         </span>
@@ -644,7 +774,7 @@ function StandaloneTaskPlanet({
         </button>
         {resumeError ? <span className="paw-room-round__resume-error" role="alert">{resumeError}</span> : null}
       </div>
-      {expanded ? (
+      <RoundDisclosure open={expanded}>
         <div
           aria-label={`${row.celestialName} 公开进展与证据`}
           className="paw-room-round__standalone-detail"
@@ -654,16 +784,7 @@ function StandaloneTaskPlanet({
         >
           <section>
             <strong>公开进展</strong>
-            {row.history.length ? (
-              <ol>
-                {row.history.map((event) => (
-                  <li data-state={event.status} key={event.id}>
-                    <i aria-hidden="true" />
-                    <MarkdownBody documentKey={`${row.key}:history:${event.id}`} sessionId={row.sessionId} text={event.summary} />
-                  </li>
-                ))}
-              </ol>
-            ) : <p>尚无可公开的运行事件。</p>}
+            <RowProgressHistory row={row} />
           </section>
           <section>
             <strong>结果与证据</strong>
@@ -690,7 +811,7 @@ function StandaloneTaskPlanet({
             ) : null}
           </section>
         </div>
-      ) : null}
+      </RoundDisclosure>
     </section>
   );
 }
@@ -707,6 +828,24 @@ function CurrentTaskBody({ row }: { row: RoomRoundTaskRow }) {
       {expanded ? <MarkdownBody documentKey={`${row.key}:task:full`} sessionId={row.sessionId} text={fullText} /> : null}
     </details> : null}
   </>;
+}
+
+function RowProgressHistory({ row, activityOnly = false }: { row: RoomRoundTaskRow; activityOnly?: boolean }) {
+  const [all, setAll] = useState(false);
+  const history = activityOnly ? row.history.filter((event) => event.kind === 'activity') : row.history;
+  const events = [...(all ? history : history.slice(-6))].reverse();
+  if (!events.length) return <p>尚无可公开的运行事件。</p>;
+  return <div className="paw-room-round__history">
+    <ol aria-label={`${row.celestialName} 最近进展，最新在前`}>
+      {events.map((event) => <li data-state={event.status} key={event.id}>
+        <i aria-hidden="true" />
+        <div><time dateTime={new Date(event.updatedAtMs).toISOString()}>{new Date(event.updatedAtMs).toLocaleTimeString('zh-CN', { hour12: false })}</time>
+          <MarkdownBody documentKey={`${row.key}:history:${event.id}`} sessionId={row.sessionId} text={event.summary} />
+        </div>
+      </li>)}
+    </ol>
+    {history.length > 6 ? <button className="paw-room-round__history-toggle" aria-expanded={all} onClick={() => setAll((value) => !value)} type="button">{all ? '只看最近 6 条进展' : `查看更早的 ${history.length - 6} 条进展`}</button> : null}
+  </div>;
 }
 
 function StandaloneStarterPlanet({
@@ -828,6 +967,8 @@ function PartnerResult({
   row: RoomRoundTaskRow;
   selected: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const resultId = useId();
   return (
     <section
       aria-label={`${row.celestialName} 伙伴结果`}
@@ -837,13 +978,13 @@ function PartnerResult({
       data-selected={selected || undefined}
       role="region"
     >
-      <details>
-        <summary>
-          <ChevronRight aria-hidden="true" className="paw-room-round__partner-chevron" size={16} />
+        <button className="paw-room-round__partner-summary" aria-controls={resultId} aria-expanded={open} onClick={() => setOpen((value) => !value)} type="button">
+          <ChevronRight aria-hidden="true" className="paw-room-round__partner-chevron" data-open={open || undefined} size={16} />
           <Orbit aria-hidden="true" size={17} />
           <span><strong>{row.celestialName}</strong><small>{row.role}</small></span>
-          <span className="paw-room-round__partner-toggle">查看结果</span>
-        </summary>
+          <span className="paw-room-round__partner-toggle">{open ? '收起结果' : '查看结果'}</span>
+        </button>
+        <RoundDisclosure open={open} id={resultId}>
         <div className="paw-room-round__partner-body">
           {row.result ? (
             <div className="paw-room-round__prose">
@@ -859,7 +1000,7 @@ function PartnerResult({
             查看 {row.celestialName} 的完整过程 <ExternalLink aria-hidden="true" size={13} />
           </button>
         </div>
-      </details>
+        </RoundDisclosure>
       <ResultReferences desktop={desktop} room={room} row={row} />
     </section>
   );

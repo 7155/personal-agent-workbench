@@ -587,20 +587,13 @@ class AgentPromptApplicationService:
             client_message_id=client_message_id,
             delivery=delivery,
         )
-        self._validate_images(session_id, attachment_ids)
-        images = self.media.pi_images(
+        attachments, images, attachment_context = self.media.prompt_attachments(
             "" if media_owner_room_id else session_id,
             attachment_ids,
             room_id=media_owner_room_id,
         )
-        attachments = [
-            self.media.receipt(
-                media_id,
-                session_id="" if media_owner_room_id else session_id,
-                room_id=media_owner_room_id,
-            )
-            for media_id in dict.fromkeys(attachment_ids)
-        ]
+        if images:
+            self._validate_images(session_id, attachment_ids)
         accepted, trace_id, delivered = (
             self.prompt_delivery_service.deliver(
                 session_id,
@@ -609,7 +602,7 @@ class AgentPromptApplicationService:
                 client_message_id=client_message_id,
                 source_kind=context_source,
                 delivery=delivery,
-                transient_context=transient_context,
+                transient_context="\n\n".join(part for part in (attachment_context, transient_context) if part),
                 memory_bootstrap=bootstrap,
                 on_accepted=on_accepted,
                 before_runtime=lambda: (

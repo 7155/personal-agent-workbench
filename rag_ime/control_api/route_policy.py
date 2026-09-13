@@ -52,6 +52,7 @@ class ControlPathId(str, Enum):
     OBSERVABILITY_TRACE_VERIFICATION_GET = "observability.traceReplay.verification.get"
     OBSERVABILITY_EVAL_SCHEDULES_LIST = "observability.evalSchedules.list"
     OBSERVABILITY_EVAL_SCHEDULES_CREATE = "observability.evalSchedules.create"
+    OBSERVABILITY_EVAL_SCHEDULE_ACTION = "observability.evalSchedule.action"
     OBSERVABILITY_EVAL_SCHEDULE_RUNS = "observability.evalSchedule.runs"
     EXTENSION_SANDBOX_EXPERIMENT_RUN = "extension.sandbox.experiment.run"
 
@@ -820,6 +821,7 @@ def default_route_policy() -> ControlRoutePolicy:
         # remain runtime-owned, so neither schedule route is gateway-safe.
         _route(ControlPathId.OBSERVABILITY_EVAL_SCHEDULES_LIST, ControlMethod.GET, "/api/observability/eval-schedules", None, query={"limit"}),
         _route(ControlPathId.OBSERVABILITY_EVAL_SCHEDULES_CREATE, ControlMethod.POST, "/api/observability/eval-schedules", None, body={"scheduleId", "suiteId", "suiteRevision", "recurrenceKind", "recurrenceInterval", "maxRuns", "nextDueAtMs"}, required_body={"suiteId", "suiteRevision", "recurrenceKind", "nextDueAtMs"}),
+        _route(ControlPathId.OBSERVABILITY_EVAL_SCHEDULE_ACTION, ControlMethod.POST, "/api/observability/eval-schedules/{scheduleId}/action", None, params=_WAKE_SCHEDULE, body={"action"}, required_body={"action"}),
         _route(ControlPathId.OBSERVABILITY_EVAL_SCHEDULE_RUNS, ControlMethod.GET, "/api/observability/eval-schedules/{scheduleId}/runs", None, params=_EVAL_SCHEDULE, query={"limit"}),
         _route(ControlPathId.EXTENSION_SANDBOX_EXPERIMENT_RUN, ControlMethod.POST, "/api/extensions/sandbox/experiments", None, body={"sessionId", "ownerAppId", "experimentId", "candidateBindingSha256", "requestedDecision"}, required_body={"sessionId", "ownerAppId", "experimentId", "candidateBindingSha256", "requestedDecision"}),
 
@@ -977,7 +979,7 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_WAKE_SCHEDULES_LIST, ControlMethod.GET, "/api/agent/wake-schedules", "/control/v1/agent/wake-schedules", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"status", "targetType", "targetId", "createdBySessionId", "limit"}),
         _route(ControlPathId.AGENT_WAKE_SCHEDULES_CREATE, ControlMethod.POST, "/api/agent/wake-schedules", "/control/v1/agent/wake-schedules", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, body={"title", "instruction", "targetType", "targetSessionId", "targetRoleId", "targetRoleVersion", "wakeAtMs", "timezone", "recurrenceKind", "recurrenceInterval", "maxRuns", "planningTaskId", "confirmText"}, required_body={"instruction", "targetType", "wakeAtMs", "confirmText"}, remote_body={"title", "instruction", "targetType", "targetSessionId", "targetRoleId", "targetRoleVersion", "wakeAtMs", "timezone", "recurrenceKind", "recurrenceInterval", "maxRuns", "planningTaskId", "confirmText"}, remote_body_values={"targetType": {"session", "role"}, "recurrenceKind": {"once", "daily", "weekly"}, "confirmText": {"schedule"}}),
         _route(ControlPathId.AGENT_WAKE_SCHEDULE_RUNS, ControlMethod.GET, "/api/agent/wake-schedules/{scheduleId}/runs", "/control/v1/agent/wake-schedules/{scheduleId}/runs", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_WAKE_SCHEDULE, query={"limit"}),
-        _route(ControlPathId.AGENT_WAKE_SCHEDULE_ACTION, ControlMethod.POST, "/api/agent/wake-schedules/{scheduleId}/action", "/control/v1/agent/wake-schedules/{scheduleId}/action", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_WAKE_SCHEDULE, body={"action", "confirmText"}, required_body={"action", "confirmText"}, remote_body={"action", "confirmText"}, remote_body_values={"action": {"pause", "resume", "cancel", "retry"}, "confirmText": {"apply"}}),
+        _route(ControlPathId.AGENT_WAKE_SCHEDULE_ACTION, ControlMethod.POST, "/api/agent/wake-schedules/{scheduleId}/action", "/control/v1/agent/wake-schedules/{scheduleId}/action", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_WAKE_SCHEDULE, body={"action", "confirmText", "schedule"}, required_body={"action", "confirmText"}, remote_body={"action", "confirmText", "schedule"}, remote_body_values={"action": {"pause", "resume", "cancel", "retry", "edit"}, "confirmText": {"apply"}}),
 
         _route(ControlPathId.BROWSER_STATUS, ControlMethod.GET, "/api/browser/status", "/control/v1/browser/status"),
         _route(ControlPathId.BROWSER_TABS, ControlMethod.GET, "/api/browser/tabs", "/control/v1/browser/tabs"),

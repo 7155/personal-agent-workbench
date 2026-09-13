@@ -1841,3 +1841,4 @@
   .observation-debug-actions small
 ) { font-size: 13px; }
 /* UR-102 monitor-observability semantic typography end */
+.schedule-eval-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }

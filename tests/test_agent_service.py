@@ -29,6 +29,7 @@ from rag_ime.agent_workspace import WorkspaceHarness
 from rag_ime.pi.config import PiRuntimeConfig
 from rag_ime.pi.factory import PiRuntimeDriverFactory
 from rag_ime.pi.values import PiRuntimeError
+from rag_ime.pi.public import visible_message_text
 from rag_ime.pi.values import (
     PiRuntimeCommandAcceptanceUnknown,
     PiRuntimeCommandRejected,
@@ -7604,6 +7605,30 @@ class AgentServiceTests(unittest.TestCase):
         deleted = self.service.delete_session(str(outside["id"]))
         self.assertFalse(deleted["sessionFileDeleted"])
         self.assertTrue(outside_file.exists())
+
+    def test_text_attachment_works_with_a_text_only_model_and_preserves_file_history(self) -> None:
+        session = self.service.create_session({"title": "长文本"})["session"]
+        session_id = str(session["id"])
+        body = "全文不会自动塞入上下文\r\n" * 800
+        receipt = self.service.import_media(session_id=session_id, data=body.encode(), mime_type="text/plain", file_name="需求.txt")["media"]
+        with (
+            patch.object(self.service.runtime, "model_catalog", return_value={"selected": {"supportsImages": False}}),
+            patch.object(self.service.runtime, "prompt", return_value={"accepted": True, "turnId": "turn:text", "piEntryId": "entry:text", "response": {"success": True}}) as prompt,
+        ):
+            accepted = self.service.prompt(session_id, {"message": "按需核对需求", "attachments": [receipt["mediaId"]], "clientMessageId": "text-file-prompt"})
+        self.assertEqual(prompt.call_args.kwargs["images"], [])
+        self.assertIn(f"media://{receipt['mediaId']}", prompt.call_args.args[1])
+        self.assertNotIn(body, prompt.call_args.args[1])
+        self.assertEqual(visible_message_text("user", prompt.call_args.args[1]), "按需核对需求")
+        self.assertEqual(accepted["attachments"][0]["mediaId"], receipt["mediaId"])
+        self.assertEqual(self.service.read_media_resource(str(receipt["mediaId"]), session_id=session_id)[1].decode(), body)
+        events, _ = self.service.events.replay(session_id)
+        user = next(event for event in events if event.event_type == "message_completed")
+        self.assertEqual(user.payload["message"]["blocks"][1]["type"], "file")
+        self.assertEqual(user.payload["message"]["blocks"][1]["data"]["fileName"], "需求.txt")
+        other = self.service.create_session({"title": "另一个 Session"})["session"]
+        with self.assertRaises(KeyError):
+            self.service.read_media_resource(str(receipt["mediaId"]), session_id=str(other["id"]))
 
     def test_managed_image_is_bound_to_prompt_and_deleted_with_session(self) -> None:
         session = self.service.create_session({"title": "图片对话"})["session"]

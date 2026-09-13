@@ -216,7 +216,7 @@ describe('AgentComposer macOS input methods', () => {
     const controls = container.querySelector('.agent-composer__controls');
     const view = within(container);
     const send = view.getByRole('button', { name: '发送' });
-    expect(controls).toContainElement(view.getByRole('button', { name: '添加附件' }));
+    expect(controls).toContainElement(view.getByRole('button', { name: '添加内容' }));
     expect(controls).toContainElement(view.getByRole('button', { name: /对话权限/ }));
     expect(controls).toContainElement(view.getByRole('button', { name: /这段对话可执行工具/ }));
     expect(controls).not.toContainElement(send);
@@ -261,7 +261,7 @@ describe('AgentComposer macOS input methods', () => {
     const view = within(container);
     expect(container.querySelector('.agent-composer-wrap')).toHaveAttribute('data-minimal', 'true');
     expect(view.getByRole('textbox', { name: '消息' })).toHaveAttribute('placeholder', '继续追问经营数据…');
-    expect(view.getByRole('button', { name: '添加附件' })).toBeInTheDocument();
+    expect(view.getByRole('button', { name: '添加内容' })).toBeInTheDocument();
     expect(view.queryByRole('button', { name: /对话权限/ })).not.toBeInTheDocument();
     expect(view.queryByRole('button', { name: /这段对话可执行工具/ })).not.toBeInTheDocument();
     expect(view.getByRole('button', { name: /发送/ })).toBeInTheDocument();
@@ -387,7 +387,7 @@ describe('AgentComposer macOS input methods', () => {
     expect(view.queryByRole('radiogroup', { name: '消息投递方式' })).not.toBeInTheDocument();
     fireEvent.click(view.getByRole('button', { name: '停止本轮' }));
     expect(onStop).toHaveBeenCalledTimes(1);
-    expect(view.getByRole('button', { name: '添加附件' })).toBeEnabled();
+    expect(view.getByRole('button', { name: '添加内容' })).toBeEnabled();
   });
 
   it('sends an attachment follow-up directly when the local text hold cannot carry it', () => {

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-12T10:40:14.925752+00:00",
+  "generatedAt": "2026-09-13T02:00:22.473226+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Current PAW source checkpoint, including the single Pi Host executor, explicit application dependencies, Pi/Room capability packages, public extension example and verification. Unrelated local experiments and private development records remain outside the commit; binary and foreground acceptance are recorded separately."
+    "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -15,7 +15,7 @@
   "groups": {
     "brand_stellar": {
       "description": "User-selected branding and bounded stellar visual behavior.",
-      "pathCount": 55
+      "pathCount": 60
     },
     "composition_refactor": {
       "description": "Typed application dependencies and construction using existing Runtime and store owners.",
@@ -47,11 +47,11 @@
     },
     "product_integration": {
       "description": "Integrate current product source and public contribution guidance.",
-      "pathCount": 30
+      "pathCount": 45
     },
     "public_showcase": {
       "description": "Public synthetic-data screenshots and usage documentation.",
-      "pathCount": 21
+      "pathCount": 30
     },
     "react_os_docs": {
       "description": "Current React OS naming, architecture and development entrypoints.",
@@ -79,7 +79,7 @@
     },
     "room_frontend": {
       "description": "Room partner windows, readable replies, sidebars and responsive layout.",
-      "pathCount": 18
+      "pathCount": 20
     },
     "room_service_refactor": {
       "description": "Explicit Room work, dispatch, cancellation and approval dependencies with stable stores and events.",
@@ -91,7 +91,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 83
+      "pathCount": 86
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -107,7 +107,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 46
+      "pathCount": 58
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -123,44 +123,49 @@
     },
     "lab_frontend": {
       "description": "Lab workflow presentation backed by project and experiment receipts.",
-      "pathCount": 11
+      "pathCount": 28
+    },
+    "scheduled_tasks": {
+      "description": "Unified schedule management for Agent, Eval and Memory using their existing schedulers.",
+      "pathCount": 25
     }
   },
   "summary": {
-    "pathCount": 792,
+    "pathCount": 880,
     "dispositionCounts": {
-      "delete_old_implementation": 185,
-      "keep_release": 607
+      "delete_old_implementation": 199,
+      "keep_release": 681
     },
     "groupCounts": {
-      "agent_capsule": 3,
-      "brand_stellar": 55,
-      "browser_recovery": 1,
-      "composition_refactor": 31,
-      "conversation_controls": 46,
-      "lab_backend": 62,
-      "lab_frontend": 11,
-      "lab_tools": 8,
       "local_docs": 122,
-      "memory_lifecycle": 15,
-      "offline_installer": 12,
-      "owner_boundaries": 7,
-      "pi_runtime_refactor": 23,
-      "portable_agent_ui": 8,
-      "product_integration": 30,
-      "public_showcase": 21,
+      "product_integration": 45,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "refactor_integration": 19,
-      "refactor_verification": 66,
+      "brand_stellar": 60,
+      "public_showcase": 30,
       "references_history": 8,
-      "release_scope": 1,
-      "room_frontend": 18,
-      "room_service_refactor": 43,
-      "session_full_access": 9,
+      "memory_lifecycle": 15,
+      "verification": 86,
+      "voice_desktop": 17,
+      "composition_refactor": 31,
+      "portable_agent_ui": 8,
+      "owner_boundaries": 7,
+      "conversation_controls": 58,
       "trace_optimization": 61,
-      "verification": 83,
-      "voice_desktop": 17
+      "scheduled_tasks": 25,
+      "session_full_access": 9,
+      "lab_frontend": 28,
+      "room_frontend": 20,
+      "agent_capsule": 3,
+      "offline_installer": 12,
+      "refactor_integration": 19,
+      "room_service_refactor": 43,
+      "lab_backend": 62,
+      "pi_runtime_refactor": 23,
+      "browser_recovery": 1,
+      "release_scope": 1,
+      "lab_tools": 8,
+      "refactor_verification": 66
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -438,6 +443,34 @@
       "disposition": "keep_release",
       "group": "public_showcase",
       "reason": "Public synthetic-data screenshots and usage documentation."
+    },
+    {
+      "path": "assets/showcase/readme/README.md",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "assets/showcase/readme/lab-metrics.webp",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "assets/showcase/readme/lab-workspace.webp",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "assets/showcase/readme/manifest.json",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/CLOUD_MODEL.md",
@@ -1077,11 +1110,53 @@
       "reason": "Own the source previously located at paw-agent-chat-ui-kit-source.zip; preserve runtime behavior and attribution."
     },
     {
+      "path": "control-center-web/e2e/fixtures/readme-lab/index.html",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/readme-lab/main.tsx",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/readme-lab/preview.css",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/readme-lab/scene.json",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/e2e/management-visual-contracts.e2e.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "memory_lifecycle",
       "reason": "Keep shared metric labels readable without icons, including Memory lifecycle at desktop and narrow widths."
+    },
+    {
+      "path": "control-center-web/electron/host-config.test.mjs",
+      "status": "modified",
+      "group": "verification",
+      "reason": "Verify the integrated product behavior and ownership contracts.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/electron/local-server.mjs",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/electron/main.mjs",
@@ -1133,6 +1208,20 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/package.json",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/pnpm-lock.yaml",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/public/app-icon-192.png",
       "status": "modified",
       "disposition": "keep_release",
@@ -1168,6 +1257,41 @@
       "reason": "User-selected branding and bounded stellar visual behavior."
     },
     {
+      "path": "control-center-web/public/paw-media/project-galaxy/ATTRIBUTION.md",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/public/paw-media/project-galaxy/earth-clouds-2k.jpg",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/public/paw-media/project-galaxy/mars-viking.jpg",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/public/paw-media/project-galaxy/moon-color-2k.jpg",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/public/paw-media/project-galaxy/moon-height-1k.jpg",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/scripts/build-portable-agent-ui.mjs",
       "status": "modified",
       "disposition": "keep_release",
@@ -1201,6 +1325,13 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/app/preview-input-data.ts",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/app/register-extension-hosts.ts",
@@ -1271,6 +1402,34 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/eval-schedule-create.v1.ts",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/eval-schedule-list.v1.ts",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/eval-schedule-run-list.v1.ts",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/eval-schedule.v1.ts",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/contracts/generated/observability-trace-get.v1.ts",
@@ -1355,6 +1514,13 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/features/agent/composer/AgentComposer.tsx",
+      "status": "modified",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/agent/composer/PermissionPicker.tsx",
@@ -1483,6 +1649,48 @@
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
     },
     {
+      "path": "control-center-web/src/features/composer/ComposerAddMenu.tsx",
+      "status": "added",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/ComposerEditor.tsx",
+      "status": "added",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/ComposerInteraction.test.tsx",
+      "status": "added",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/ComposerShell.tsx",
+      "status": "modified",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/composer-enhancements.css",
+      "status": "added",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/pasted-text.tsx",
+      "status": "added",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/ATTRIBUTION.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -1539,11 +1747,74 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/golden/types.ts",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/index.tsx",
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ArtifactSurface.tsx",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ExperimentArtifactVisual.test.tsx",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ExperimentArtifactVisual.tsx",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ExperimentReport.test.tsx",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ExperimentReport.tsx",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabAppDelivery.test.tsx",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabAppDelivery.tsx",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabAppPreview.tsx",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/LabExperimentLifecycle.test.tsx",
@@ -1574,6 +1845,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabProjectHome.tsx",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/LabProjectWorkbench.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -1588,6 +1866,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/ProjectGuide.tsx",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/api.ts",
       "disposition": "keep_release",
       "group": "lab_frontend",
@@ -1595,11 +1880,32 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/experiment-artifact-visual.css",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/experiment-report.css",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/lab-knowledge.css",
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/lab-project-home.css",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/lab-project-workbench.css",
@@ -1637,6 +1943,27 @@
       "reason": "Shared Agent controls and their standalone bundle entry."
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/portable-app-template.test.ts",
+      "status": "modified",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/project-guidance.ts",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/project-home-model.ts",
+      "status": "added",
+      "group": "lab_frontend",
+      "reason": "Integrate the Lab workflow and result visualization updates.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/types.ts",
       "disposition": "keep_release",
       "group": "lab_frontend",
@@ -1670,6 +1997,13 @@
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/files/workspace-text-editor.test.tsx",
+      "status": "modified",
+      "group": "verification",
+      "reason": "Verify the integrated product behavior and ownership contracts.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/knowledge/index.tsx",
@@ -1721,6 +2055,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/memory/index.tsx",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/memory/memory-feature.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -1733,6 +2074,27 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/observability/api.ts",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/observability/index.tsx",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/observability/observability.css",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/overview/management-ui.tsx",
@@ -1764,8 +2126,8 @@
     },
     {
       "path": "control-center-web/src/features/paw-os/app-icons.ts",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "brand_stellar",
       "reason": "User-selected branding and bounded stellar visual behavior."
     },
@@ -1791,11 +2153,32 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/paw-os/package-apps.ts",
+      "status": "deleted",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/paw-os/paw-os-satellite.css",
       "status": "modified",
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/features/planning/AgentWakeSchedules.tsx",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/planning/planning.css",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/plugins/plugins-feature.test.tsx",
@@ -1833,6 +2216,20 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/rooms/composer/room-composer.css",
+      "status": "added",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/index.tsx",
+      "status": "modified",
+      "group": "room_frontend",
+      "reason": "Improve Room reading, participant feedback and conversation controls.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/rooms/room-presentation.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -1859,6 +2256,41 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/features/schedules/MemorySchedules.tsx",
+      "status": "added",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/schedules/SchedulesApp.test.tsx",
+      "status": "added",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/schedules/SchedulesApp.tsx",
+      "status": "added",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/schedules/schedule-model.ts",
+      "status": "added",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/schedules/schedules.css",
+      "status": "added",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/screen-assistant/ScreenAssistant.tsx",
@@ -2176,6 +2608,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbenchPlanningTools.tsx",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/app-sidebar.css",
       "status": "added",
       "disposition": "keep_release",
@@ -2407,20 +2846,6 @@
       "reason": "User-selected branding and bounded stellar visual behavior."
     },
     {
-      "path": "control-center-web/src/paw-os/assets/stellar/planet-cinematic.png",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
-    },
-    {
-      "path": "control-center-web/src/paw-os/assets/stellar/planet-cinematic.provenance.json",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
-    },
-    {
       "path": "control-center-web/src/paw-os/assets/stellar/ringed-frames/00.png",
       "status": "added",
       "disposition": "keep_release",
@@ -2547,6 +2972,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/paw-os/runtime/composition-pulse.ts",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/paw-os/runtime/desktop-context.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -2596,6 +3028,20 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawCompositionField.test.tsx",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawCompositionField.tsx",
+      "status": "deleted",
+      "group": "brand_stellar",
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/PawDesktop.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -2610,15 +3056,15 @@
       "status": "modified"
     },
     {
-      "path": "control-center-web/src/paw-os/shell/PawStellarBackdrop.tsx",
+      "path": "control-center-web/src/paw-os/shell/PawRoomProjectionKeeper.tsx",
       "status": "modified",
-      "disposition": "keep_release",
-      "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
+      "group": "room_frontend",
+      "reason": "Improve Room reading, participant feedback and conversation controls.",
+      "disposition": "keep_release"
     },
     {
-      "path": "control-center-web/src/paw-os/shell/PawStellarPlanet.tsx",
-      "status": "added",
+      "path": "control-center-web/src/paw-os/shell/PawStellarBackdrop.tsx",
+      "status": "modified",
       "disposition": "keep_release",
       "group": "brand_stellar",
       "reason": "User-selected branding and bounded stellar visual behavior."
@@ -2659,25 +3105,25 @@
       "reason": "User-selected branding and bounded stellar visual behavior."
     },
     {
-      "path": "control-center-web/src/paw-os/shell/stellar-planet-material.ts",
-      "status": "added",
-      "disposition": "keep_release",
+      "path": "control-center-web/src/paw-os/shell/project-galaxy-surfaces.test.ts",
+      "status": "deleted",
       "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
     },
     {
-      "path": "control-center-web/src/paw-os/shell/stellar-planet-renderer.test.ts",
-      "status": "added",
-      "disposition": "keep_release",
+      "path": "control-center-web/src/paw-os/shell/project-galaxy-surfaces.ts",
+      "status": "deleted",
       "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
     },
     {
-      "path": "control-center-web/src/paw-os/shell/stellar-planet-renderer.ts",
-      "status": "added",
-      "disposition": "keep_release",
+      "path": "control-center-web/src/paw-os/shell/project-galaxy-volume.ts",
+      "status": "deleted",
       "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
+      "reason": "Integrate current bounded stellar projection and remove replaced assets.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/paw-os/shell/stellar-stop-motion.test.ts",
@@ -2720,6 +3166,13 @@
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-shell-migrated-v1.css",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-stellar.css",
@@ -2776,6 +3229,13 @@
       "group": "voice_desktop",
       "disposition": "keep_release",
       "reason": "Installed app naming and Electron voice control integration."
+    },
+    {
+      "path": "control-center-web/vite.config.ts",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "conversation_ui_standalone.zip",
@@ -2988,6 +3448,34 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "integrations/pi/skills/agent-lab-project/SKILL.md",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "integrations/pi/skills/agent-lab-project/assets/portable-app.html",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "integrations/pi/skills/agent-lab-project/references/apps.md",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "integrations/pi/skills/agent-lab-project/references/artifacts.md",
+      "status": "modified",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "integrations/pi/skills/pawos-system/SKILL.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -3118,6 +3606,13 @@
       "status": "modified",
       "group": "room_service_refactor",
       "reason": "Explicit Room work, dispatch, cancellation and approval dependencies with stable stores and events.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_file_preview.py",
+      "status": "modified",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
       "disposition": "keep_release"
     },
     {
@@ -3569,6 +4064,13 @@
       "reason": "Relocate to rag_ime/agent_lab/trials.py without retaining a duplicate implementation."
     },
     {
+      "path": "rag_ime/agent_media.py",
+      "status": "modified",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/agent_memory_sources.py",
       "disposition": "keep_release",
       "group": "composition_refactor",
@@ -3587,6 +4089,13 @@
       "status": "modified",
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_prompt_support.py",
+      "status": "modified",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
       "disposition": "keep_release"
     },
     {
@@ -3793,6 +4302,20 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "rag_ime/agent_wake_application.py",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_wake_scheduler.py",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/agent_workspace.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -3805,6 +4328,34 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "rag_ime/contracts/json/eval-schedule-create.v1.json",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/contracts/json/eval-schedule-list.v1.json",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/contracts/json/eval-schedule-run-list.v1.json",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/contracts/json/eval-schedule.v1.json",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
     },
     {
       "path": "rag_ime/contracts/json/observability-trace-get.v1.json",
@@ -3905,6 +4456,13 @@
       "status": "added"
     },
     {
+      "path": "rag_ime/db/migrations/0202_eval_schedule_controls.sql",
+      "status": "added",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/debug_server.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -3912,11 +4470,32 @@
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
     },
     {
+      "path": "rag_ime/desktop_files.py",
+      "status": "added",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/eval_lab.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, resource resolution and service consumers."
+    },
+    {
+      "path": "rag_ime/eval_schedule_store.py",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/hybrid_rag_explain.py",
+      "status": "deleted",
+      "group": "product_integration",
+      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "rag_ime/local_sqlite_core.py",
@@ -4542,6 +5121,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "scripts/capture_readme_lab.mjs",
+      "status": "added",
+      "group": "public_showcase",
+      "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "scripts/check_agent_execution_fault_matrix.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -5081,6 +5667,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_media.py",
+      "status": "modified",
+      "group": "conversation_controls",
+      "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_agent_prompt_settings.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -5256,6 +5849,13 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "tests/test_agent_wake_scheduler.py",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_binary_installer.py",
       "status": "added",
       "disposition": "keep_release",
@@ -5340,6 +5940,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_desktop_files.py",
+      "status": "added",
+      "group": "verification",
+      "reason": "Verify the integrated product behavior and ownership contracts.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_enterprise_rag_luna_prompt_v5.py",
       "disposition": "keep_release",
       "group": "verification",
@@ -5354,10 +5961,24 @@
       "reason": "Existing executable regressions updated for the owning package."
     },
     {
+      "path": "tests/test_eval_schedule_api.py",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_eval_schedule_runtime.py",
       "status": "modified",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_eval_schedule_store.py",
+      "status": "modified",
+      "group": "scheduled_tasks",
+      "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
       "disposition": "keep_release"
     },
     {

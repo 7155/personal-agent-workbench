@@ -4235,10 +4235,11 @@ describe('Agent experience', () => {
     renderAgent(transport);
 
     await screen.findByRole('button', { name: /模型与推理：GPT-5\.4/ }, { timeout: 15_000 });
-    const attachmentButton = await screen.findByRole('button', { name: '添加附件' });
+    const attachmentButton = await screen.findByRole('button', { name: '添加内容' });
     expect(attachmentButton).toBeVisible();
     expect(attachmentButton).toBeEnabled();
     await user.click(attachmentButton);
+    await user.click(screen.getByRole('menuitem', { name: /选择附件/ }));
 
     // No accepts filter: the picker takes any file, not only the image set.
     expect(transport.filePickCalls).toEqual([{
@@ -4277,7 +4278,7 @@ describe('Agent experience', () => {
     renderAgent(transport);
     const composer = await screen.findByRole('textbox', { name: '消息' });
     await screen.findByRole('button', { name: /模型与推理：GPT-5\.4/ }, { timeout: 15_000 });
-    expect(screen.getByRole('button', { name: '添加附件' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '添加内容' })).toBeEnabled();
 
     expect(fireEvent.paste(composer, {
       clipboardData: {
@@ -4319,7 +4320,7 @@ describe('Agent experience', () => {
     expect(modelPicker).toHaveTextContent('DeepSeek V4');
     expect(modelPicker).toHaveAccessibleName('模型与推理：DeepSeek V4 · DeepSeek · 不启用推理');
     // Documents still attach on a text-only model; only images are the problem.
-    expect(screen.getByRole('button', { name: '添加附件（当前模型不识别图片）' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '添加内容' })).toBeEnabled();
 
     const image = new File(['png'], 'clipboard.png', { type: 'image/png' });
     expect(fireEvent.paste(composer, { clipboardData: { files: [image] } })).toBe(false);

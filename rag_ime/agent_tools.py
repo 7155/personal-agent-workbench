@@ -3813,17 +3813,15 @@ class ControlToolGateway:
                 indent=2,
             )
         elif parsed.scheme == "media":
-            receipt = getattr(self.collaboration, "media_receipt", None)
-            if not callable(receipt):
+            reader = getattr(self.collaboration, "read_media_resource", None)
+            if not callable(reader):
                 raise ValueError("managed media reader is unavailable")
-            payload = receipt(resource_id, session_id=session_id)
-            metadata = {"owner": "AgentMediaStore"}
-            content = json.dumps(
-                payload,
-                ensure_ascii=False,
-                sort_keys=True,
-                indent=2,
-            )
+            receipt, raw = reader(resource_id, session_id=session_id)
+            metadata = {"owner": "AgentMediaStore", "media": receipt}
+            if str(receipt.get("mimeType") or "").startswith("text/"):
+                content = raw.decode("utf-8")
+            else:
+                content = json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2)
         elif parsed.scheme == "skill":
             load_exact = getattr(self.governed_skills, "load_exact", None)
             if not callable(load_exact):

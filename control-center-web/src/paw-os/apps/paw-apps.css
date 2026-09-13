@@ -392,7 +392,7 @@
 .paw-room-governance > section > header small { font-size: 12px; }
 .paw-room-governance__members, .paw-room-governance__topics, .paw-room-governance__work { display: grid; gap: 5px; }
 .paw-room-governance__members article, .paw-room-governance__topics article, .paw-room-governance__work article { min-width: 0; display: grid; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid var(--paw-line-soft); border-radius: 9px; background: var(--paw-panel-strong); }
-.paw-room-governance__members article { grid-template-columns: 25px minmax(0, 1fr) auto 27px; }
+.paw-room-governance__members article { grid-template-columns: 28px minmax(58px, 1fr) minmax(0, 1.5fr) 27px; min-height: 52px; border-color: transparent; border-radius: 10px; background: var(--paw-panel-soft); }
 .paw-room-governance__member-mark { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid var(--paw-line-soft); border-radius: 7px; color: var(--paw-accent); background: var(--paw-panel-soft); }
 .paw-room-governance__topics article { grid-template-columns: minmax(0, 1fr) auto auto; }
 .paw-room-governance__work article { grid-template-columns: minmax(0, 1fr) minmax(88px, 32%); }
@@ -407,7 +407,11 @@
 .paw-room-governance .ui-select__icon { color: var(--paw-muted); }
 /* The member row gives its picker an auto column, so the trigger sizes to the
    longest role name instead of stretching against an intrinsic track. */
-.paw-room-governance__members .ui-select__trigger { width: auto; min-width: 112px; }
+.paw-room-governance__members .ui-select__trigger { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 0; border-color: transparent; background: transparent; font-size: 12px; text-align: left; }
+.paw-room-governance__members .ui-select__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.paw-room-governance__member-mark[data-planet='1'] { color: var(--paw-warning); }
+.paw-room-governance__member-mark[data-planet='2'] { color: var(--paw-success); }
+.paw-room-governance__member-mark[data-planet='3'] { color: var(--paw-accent); }
 .paw-room-governance article > button { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 7px; color: var(--paw-muted); cursor: pointer; }
 .paw-room-governance article > button:hover { color: var(--paw-ink); background: var(--paw-panel-soft); }
 .paw-room-governance__invite { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; color: var(--paw-muted); font-size: 13px; }

@@ -41,6 +41,7 @@ const PawOsSatelliteHost = lazy(loadPawOsSatelliteHost);
 const PawResultWindow = lazy(loadPawResultWindow);
 const FilesApp = lazy(loadFilesApp);
 const TerminalApp = lazy(loadTerminalApp);
+const SchedulesApp = lazy(async () => ({ default: (await import('@/features/schedules/SchedulesApp')).SchedulesApp }));
 
 export function warmPawAppBody(appId: PawAppId): void {
   const load = appId === 'agent'
@@ -100,6 +101,8 @@ function renderApp(appId: PawAppId, entityId?: string, initialRoute?: string, ta
     || target?.kind === 'package'
   ) return <PawOsSatelliteHost target={target} />;
   switch (appId) {
+    case 'schedules':
+      return <SchedulesApp initialRoute={initialRoute} />;
     case 'agent':
       return <PawAgentApp initialRoute={initialRoute} target={target ?? (entityId ? { kind: 'session', id: entityId, title: entityId } : undefined)} />;
     case 'agent-capsule':

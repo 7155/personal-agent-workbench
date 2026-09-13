@@ -27,7 +27,7 @@ describe('PAWOS approved App identity icons', () => {
     const { container } = render(<>{approvedAssets.map(({ appId }) => <PawAppIcon appId={appId} key={appId} />)}</>);
     const icons = [...container.querySelectorAll<SVGElement>('[data-paw-app-icon]')];
 
-    expect(pawApps).toHaveLength(15);
+    expect(pawApps).toHaveLength(16);
     expect(pawApps.map((app) => app.id)).not.toContain('room');
     expect(icons).toHaveLength(14);
     for (const asset of approvedAssets) {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -18,6 +18,135 @@ import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 afterEach(cleanup);
 
 describe('PawRoomRoundSheet (UR-170/172)', () => {
+  it('surfaces a stopped reason immediately and opens its evidence in place', async () => {
+    const user = userEvent.setup();
+    const projection = projectionWithProgress('工具连续失败，已停止本轮以避免继续空转');
+    projection.turnsById['turn-1']!.status = 'failed';
+    projection.activitiesById['activity-earth']!.status = 'failed';
+    projection.activitiesById['activity-earth']!.payload = { ...projection.activitiesById['activity-earth']!.payload, task: '', reason: 'repeated_failure_signature' };
+    const onOpenParticipant = vi.fn();
+    render(<PawRoomRoundSheet onOpenParticipant={onOpenParticipant} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    expect(screen.getByText('工具连续失败，已停止本轮以避免继续空转')).toBeVisible();
+    expect(screen.queryByText('repeated_failure_signature')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看协作过程' })).toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('button', { name: '查看原因' }));
+    expect(screen.getByRole('region', { name: 'Earth 公开进展与证据' })).toBeVisible();
+    expect(onOpenParticipant).not.toHaveBeenCalled();
+  });
+
+  it('opens a partner locally and removes folded controls from keyboard navigation', async () => {
+    const user = userEvent.setup();
+    const onOpenParticipant = vi.fn();
+    const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
+    const projection = projectionWithProgress('正在核对');
+    const { rerender } = render(<PawRoomRoundSheet onOpenParticipant={onOpenParticipant} projection={projection} room={room} />);
+    await user.click(screen.getByRole('button', { name: '查看 Earth 的任务与进展' }));
+    const detail = screen.getByRole('region', { name: 'Earth 公开进展与证据' });
+    expect(detail).toBeVisible();
+    expect(onOpenParticipant).not.toHaveBeenCalled();
+    const completed = { ...projection, turnsById: { 'turn-1': { ...projection.turnsById['turn-1']!, status: 'completed' as const } } };
+    rerender(<PawRoomRoundSheet onOpenParticipant={onOpenParticipant} projection={completed} room={room} />);
+    expect(screen.getByRole('region', { name: 'Earth 公开进展与证据' })).toBe(detail);
+    expect(detail).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '收起 Earth 详情' }));
+    expect(screen.queryByRole('region', { name: 'Earth 公开进展与证据' })).not.toBeInTheDocument();
+    expect(detail.closest('[inert]')).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: '打开 Earth Session' }));
+    expect(onOpenParticipant).toHaveBeenCalledWith('participant-earth');
+  });
+
+  it('keeps reading position when another user round arrives and offers an explicit jump', async () => {
+    const user = userEvent.setup();
+    const room = roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)]);
+    const { rerender } = render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithProgress('第一轮')} room={room} />);
+    const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+    const scrollTo = vi.fn();
+    Object.defineProperties(scroller, { scrollTo: { value: scrollTo }, scrollHeight: { value: 1600 }, clientHeight: { value: 500 } });
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: '查看 Earth 的任务与进展' }));
+    const reading = screen.getByRole('region', { name: 'Earth 公开进展与证据' });
+    fireEvent.scroll(scroller, { target: { scrollTop: 180 } });
+    scrollTo.mockClear();
+    rerender(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithTwoRounds()} room={room} />);
+    expect(screen.getByRole('button', { name: '有新一轮对话' })).toBeVisible();
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(reading).toBeVisible();
+    expect(scroller.scrollTop).toBe(180);
+    await user.click(screen.getByRole('button', { name: '有新一轮对话' }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(1));
+    expect(document.activeElement).toHaveAttribute('data-round-id', 'turn-2');
+    await user.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('data-round-id', 'turn-1'));
+    expect(screen.getByRole('button', { name: '折叠本轮任务' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('announces an observed partner wake without replaying a restored running snapshot', async () => {
+    const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
+    const initial = projectionWithProgress('已经在执行');
+    const { rerender } = render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={initial} room={room} />);
+    expect(screen.queryByText('Earth 正在接手')).not.toBeInTheDocument();
+    const waiting = projectionWithProgress('等待继续');
+    waiting.activitiesById['activity-earth']!.status = 'waiting';
+    waiting.turnsById['turn-1']!.status = 'queued';
+    rerender(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={waiting} room={room} />);
+    rerender(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithProgress('收到新任务，开始执行')} room={room} />);
+    expect(await screen.findByText('Earth 正在接手')).toBeVisible();
+    const notice = screen.getByText('Earth 正在接手').closest('[role="status"]');
+    rerender(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithProgress('进展原地更新')} room={room} />);
+    expect(screen.getByText('Earth 正在接手').closest('[role="status"]')).toBe(notice);
+    const completed = projectionWithProgress('已完成');
+    completed.turnsById['turn-1']!.status = 'completed';
+    rerender(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={completed} room={room} />);
+    expect(screen.queryByText('Earth 正在接手')).not.toBeInTheDocument();
+  });
+
+  it('shows recent progress first and retains earlier events behind an explicit control', async () => {
+    const user = userEvent.setup();
+    const projection = projectionWithProgress('已有公开进展');
+    const base = projection.activitiesById['activity-earth']!;
+    projection.turnsById['turn-1']!.activityIds = [];
+    projection.activitiesById = {};
+    projection.activityOrder = [];
+    for (let index = 1; index <= 10; index += 1) {
+      const id = `progress-${index}`;
+      projection.activitiesById[id] = { ...base, id, summary: `进展步骤 ${index}`, createdAtMs: 1000 * index, updatedAtMs: 1000 * index };
+      projection.turnsById['turn-1']!.activityIds.push(id);
+      projection.activityOrder.push(id);
+    }
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    await user.click(screen.getByRole('button', { name: '展开 Earth 详情' }));
+    const history = screen.getByRole('list', { name: 'Earth 最近进展，最新在前' });
+    expect(within(history).getAllByRole('listitem')).toHaveLength(6);
+    expect(within(history).getAllByRole('listitem')[0]).toHaveTextContent('进展步骤 10');
+    expect(within(history).queryByText('进展步骤 1')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /查看更早的 \d+ 条进展/u }));
+    expect(within(history).getByText('进展步骤 1')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '只看最近 6 条进展' }));
+    expect(within(history).getAllByRole('listitem')).toHaveLength(6);
+  });
+
+  it('folds a table partner in place without discarding the detail or opening a Session', async () => {
+    const user = userEvent.setup();
+    const room = roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1), participant('participant-venus', 'session-venus', 2)]);
+    room.workItems = [activeWorkItem('work-mars', 'participant-mars'), activeWorkItem('work-venus', 'participant-venus')];
+    const projection = projectionWithProgress('协调进度');
+    for (const name of ['mars', 'venus']) {
+      projection.activitiesById[`activity-${name}`] = activityForParticipant(projection.activitiesById['activity-earth']!, `activity-${name}`, `participant-${name}`, `session-${name}`, `${name} 正在执行`);
+      projection.activityOrder.push(`activity-${name}`);
+      projection.turnsById['turn-1']!.activityIds.push(`activity-${name}`);
+      projection.turnsById['turn-1']!.participantIds.push(`participant-${name}`);
+    }
+    const onOpenParticipant = vi.fn();
+    render(<PawRoomRoundSheet onOpenParticipant={onOpenParticipant} projection={projection} room={room} />);
+    expect(screen.getByRole('table')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '查看 Mars 的任务与进展' }));
+    const detail = screen.getByRole('region', { name: 'Mars 公开进展与证据' });
+    await user.click(screen.getByRole('button', { name: '收起 Mars 详情' }));
+    expect(detail).toBeInTheDocument();
+    expect(detail.closest('[inert]')).not.toBeNull();
+    expect(onOpenParticipant).not.toHaveBeenCalled();
+  });
+
   it('keeps a real reasoning event in expandable progress instead of a coordinator report', async () => {
     const user = userEvent.setup();
     const room = roomWith([
@@ -321,10 +450,11 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     );
     expect(screen.getAllByRole('region', { name: /伙伴结果$/u })).toHaveLength(2);
     const mars = screen.getByRole('region', { name: 'Mars 伙伴结果' });
-    const disclosure = mars.querySelector('details')!;
-    expect(disclosure).not.toHaveAttribute('open');
+    const disclosure = within(mars).getByRole('button', { name: /Mars.*查看结果/u });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     await user.click(within(mars).getByText('查看结果'));
-    expect(disclosure).toHaveAttribute('open');
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(within(mars).getByText('收起结果')).toBeVisible();
     expect(within(mars).getByText('Mars 已提交结果。')).toBeVisible();
     expect(within(mars).getByRole('button', { name: '打开 Mars Session' })).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
@@ -676,7 +806,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(screen.queryByRole('button', { name: '收起 Earth 详情' })).not.toBeInTheDocument();
   });
 
-  it('keeps one unfinished collaborator standalone while presenting a submitted planet result separately', () => {
+  it('keeps one unfinished collaborator standalone while presenting a submitted planet result separately', async () => {
+    const user = userEvent.setup();
     const room = roomWith([
       participant('participant-earth', 'session-earth', 0),
       participant('participant-mars', 'session-mars', 1),
@@ -719,6 +850,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(result.closest('table')).toBeNull();
     expect(container.querySelector('[data-row-key="turn-1:participant-earth"]')).toBe(result);
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '查看协作过程' }));
     expect(screen.getByRole('region', { name: 'Mars 当前任务' })).toBeInTheDocument();
   });
 
@@ -1083,7 +1215,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(task).not.toHaveTextContent('`Trace`');
   });
 
-  it('does not turn a completed planet red because its turn history contains a recoverable tool failure', () => {
+  it('does not turn a completed planet red because its turn history contains a recoverable tool failure', async () => {
+    const user = userEvent.setup();
     const projection = projectionWithProgress('工具失败后已恢复并完成');
     projection.turnsById['turn-1'] = {
       ...projection.turnsById['turn-1']!,
@@ -1103,6 +1236,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       />,
     );
 
+    await user.click(screen.getByRole('button', { name: '查看协作过程' }));
     const task = screen.getByRole('region', { name: 'Earth 当前任务' });
     expect(task).toHaveTextContent('已完成');
     expect(task).not.toHaveTextContent('需要关注');

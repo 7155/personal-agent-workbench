@@ -17,6 +17,7 @@ describe('pawOsAppRegistry', () => {
 
   it('groups legacy routes into the accepted PAWOS Apps', () => {
     expect(pawOsAppRegistry.map((app) => app.id)).toEqual([
+      'schedules',
       'project-workbench',
       'agent',
       'agent-capsule',

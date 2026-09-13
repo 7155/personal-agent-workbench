@@ -348,6 +348,8 @@ describe('PAWOS Room collaboration tools', () => {
     expect(within(rounds).queryByRole('table')).not.toBeInTheDocument();
     expect(within(rounds).getByRole('region', { name: 'Earth 最终结果' })).toBeInTheDocument();
     expect(within(rounds).getByRole('region', { name: 'Mars 伙伴结果' })).toBeInTheDocument();
+    expect(within(rounds).queryByRole('region', { name: 'Venus 当前任务' })).not.toBeInTheDocument();
+    await user.click(within(rounds).getByRole('button', { name: '查看协作过程' }));
     expect(within(rounds).getByRole('region', { name: 'Venus 当前任务' })).toBeInTheDocument();
     expect(screen.queryByRole('log', { name: 'Room 公开对话' })).not.toBeInTheDocument();
     expect(openWindow).not.toHaveBeenCalled();
@@ -949,7 +951,8 @@ describe('PAWOS Room collaboration tools', () => {
     // still exposes the longer responsibility description beside its picker.
     const roleRow = governance.querySelector('.paw-room-governance__members article') as HTMLElement;
     const memberName = within(roleRow).getByRole('combobox').getAttribute('aria-label')?.replace(' 的分工', '') ?? '';
-    expect(within(roleRow).getByRole('combobox')).toHaveTextContent(roleRow.querySelector('small')?.textContent ?? '');
+    expect(within(roleRow).getByRole('combobox')).toHaveTextContent('最终汇合与回复');
+    expect(roleRow.querySelector('small')).toBeNull();
     expect(memberName).not.toBe('');
 
     await user.click(within(roleRow).getByRole('combobox'));

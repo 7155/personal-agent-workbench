@@ -2112,6 +2112,7 @@ describe('Rooms experience', () => {
       transport.requests.filter(({ request }) => request.pathId === 'agent.room.message'),
     ).toHaveLength(1));
 
+    fireEvent.change(composer, { target: { value: '下一条补充说明' } });
     fireEvent.paste(composer, {
       clipboardData: {
         files: [new File(['png'], 'newer.png', { type: 'image/png' })],
@@ -2122,6 +2123,7 @@ describe('Rooms experience', () => {
     expect(await screen.findByLabelText('移除 new-7.png')).toBeInTheDocument();
     pendingSend.reject(new Error('send failed'));
     await screen.findByRole('alert');
+    expect(composer).toHaveValue('下一条补充说明');
 
     const restored = within(screen.getByLabelText('待发送附件'))
       .getAllByRole('button')
@@ -2567,7 +2569,8 @@ describe('Rooms experience', () => {
     const composer = await screen.findByRole('textbox', { name: '协作消息' });
     await user.type(composer, '说说你的看法');
     expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: '点名一位伙伴' }));
+    await user.click(screen.getByRole('button', { name: '添加内容' }));
+    await user.click(screen.getByRole('menuitem', { name: /点名一位伙伴/ }));
     await user.click(screen.getByRole('option', { name: /Mars/ }));
     expect(composer).toHaveValue('说说你的看法 @Mars ');
     await user.click(screen.getByRole('button', { name: '发送消息' }));
@@ -3130,7 +3133,8 @@ describe('Rooms experience', () => {
     const composer = await screen.findByRole('textbox', { name: '协作消息' });
     await user.type(composer, '核对角色创建契约');
     expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: '点名一位伙伴' }));
+    await user.click(screen.getByRole('button', { name: '添加内容' }));
+    await user.click(screen.getByRole('menuitem', { name: /点名一位伙伴/ }));
     await user.click(screen.getByRole('option', { name: /Mars/ }));
     expect(composer).toHaveValue('核对角色创建契约 @Mars ');
     await user.click(screen.getByRole('button', { name: '发送消息' }));

@@ -184,14 +184,16 @@ def prompt_user_message_payload(
             else f"sessionId={quote(session_id, safe='')}"
         )
         media_ids.append(media_id)
+        is_image = str(receipt.get("mimeType") or "").startswith("image/")
         blocks.append(
             {
-                "id": f"{message_id}:image:{index}",
-                "type": "image",
+                "id": f"{message_id}:{'image' if is_image else 'file'}:{index}",
+                "type": "image" if is_image else "file",
                 "status": "completed",
-                "presentationKind": "image",
+                "presentationKind": "image" if is_image else "file",
                 "data": {
                     "mediaId": media_id,
+                    **({"fileName": receipt.get("fileName"), "byteSize": receipt.get("byteSize"), "sha256": receipt.get("sha256")} if not is_image else {}),
                     "receiptUrl": (
                         "/api/agent/media/"
                         f"{quote(media_id, safe='')}/content"

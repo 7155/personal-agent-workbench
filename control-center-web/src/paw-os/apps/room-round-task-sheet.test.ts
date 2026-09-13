@@ -10,6 +10,25 @@ import { parseRoomEvent } from '@/contracts/validators';
 import { selectRoomRoundTaskSheets } from './room-round-task-sheet';
 
 describe('selectRoomRoundTaskSheets (UR-170/172)', () => {
+  it.each(['facilitator', 'repeated_failure_signature'])('keeps %s in execution metadata instead of the current assignment', (reason) => {
+    const projection = runningProjection('工具连续失败，已停止本轮');
+    projection.activitiesById['activity-earth']!.payload = { ...projection.activitiesById['activity-earth']!.payload, task: '', reason };
+    const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
+    const row = selectRoomRoundTaskSheets(room, projection)[0]!.rows[0]!;
+    expect(row.task).toBe('完成 Room 任务表');
+    expect(row.latestProgress).toBe('工具连续失败，已停止本轮');
+    expect(projection.activitiesById['activity-earth']!.payload.reason).toBe(reason);
+  });
+
+  it('retains the assigned task when a newer failure event only carries a reason', () => {
+    const projection = runningProjection('正在工作');
+    projection.activitiesById['failure'] = { ...projection.activitiesById['activity-earth']!, id: 'failure', updatedAtMs: 4, payload: { ...projection.activitiesById['activity-earth']!.payload, task: '', reason: 'repeated_failure_signature' } };
+    projection.turnsById['turn-1']!.activityIds.push('failure');
+    projection.activityOrder.push('failure');
+    const row = selectRoomRoundTaskSheets(roomWith([participant('participant-earth', 'session-earth', 0)]), projection)[0]!.rows[0]!;
+    expect(row.task).toBe('检查 Room 事件投影');
+  });
+
   it('keeps one round and planet row identity when the local turn is accepted authoritatively', () => {
     const room = roomWith([
       participant('participant-earth', 'session-earth', 0),

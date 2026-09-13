@@ -92,6 +92,25 @@ class EvalScheduleStoreListTests(unittest.TestCase):
 
 
 class EvalScheduleServiceFacadeTests(unittest.TestCase):
+    def test_http_action_controls_the_existing_store_and_returns_real_errors(self) -> None:
+        from urllib.parse import quote
+        with tempfile.TemporaryDirectory(prefix="eval-schedule-controls-") as tmp:
+            store = EvalScheduleStore(Path(tmp) / "eval.sqlite")
+            store.initialize()
+            agent = AgentService.__new__(AgentService)
+            agent.eval_schedules = store
+            service = SimpleNamespace(agent=agent)
+            identifier = "eval-schedule:managed"
+            store.create(_definition(identifier, due_at_ms=int(time.time() * 1000) + 60_000))
+            path = f"/api/observability/eval-schedules/{quote(identifier, safe='')}/action"
+            for action, expected in (("pause", "paused"), ("resume", "scheduled"), ("cancel", "cancelled")):
+                code, result = _invoke_post(service, path, {"action": action})
+                self.assertEqual(code, 200)
+                self.assertEqual(result["schedule"]["status"], expected)
+                validate_contract(result["schedule"], "eval-schedule.v1.json")
+            self.assertEqual(_invoke_post(service, path, {"action": "resume"})[0], 400)
+            self.assertEqual(_invoke_post(service, path.replace("managed", "missing"), {"action": "pause"})[0], 404)
+
     def test_list_create_and_runs_facades_have_checked_json_contracts(self) -> None:
         with tempfile.TemporaryDirectory(prefix="eval-schedule-api-") as tmp:
             store = EvalScheduleStore(Path(tmp) / "eval.sqlite")

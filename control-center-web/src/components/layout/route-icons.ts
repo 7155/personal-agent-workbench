@@ -1,5 +1,6 @@
 import {
   Activity,
+  CalendarClock,
   BookOpen,
   Bot,
   Braces,
@@ -38,6 +39,7 @@ export const routeIcons: Record<RouteId, LucideIcon> = {
   browser: MonitorDot,
   voice: Mic2,
   planning: ListTodo,
+  schedules: CalendarClock,
   'work-documents': Files,
   memory: Brain,
   knowledge: BookOpen,

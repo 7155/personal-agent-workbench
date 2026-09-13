@@ -19,6 +19,23 @@ class AgentWakeScheduleStoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def test_edit_preserves_identity_and_paused_state_and_rejects_running(self) -> None:
+        schedule = self._create()
+        identifier = str(schedule["id"])
+        self.store.action(identifier, "pause", now_ms=self.now)
+        definition = {**schedule, "title": "Updated PR check", "wakeAtMs": self.now + 60_000}
+        edited = self.store.update(identifier, definition, now_ms=self.now)
+        self.assertEqual(edited["id"], identifier)
+        self.assertEqual(edited["status"], "paused")
+        self.assertEqual(edited["title"], "Updated PR check")
+        self.assertEqual(self.store.claim_due(now_ms=self.now + 70_000), [])
+        self.store.action(identifier, "resume", now_ms=self.now)
+        claim = self.store.claim_due(now_ms=self.now + 60_000)[0]
+        with self.assertRaisesRegex(ValueError, "can be edited"):
+            self.store.update(identifier, {**definition, "wakeAtMs": self.now + 90_000}, now_ms=self.now + 60_000)
+        self.assertEqual(self.store.runs(identifier)[0]["id"], claim["runId"])
+        self.assertEqual(self.store.get(identifier)["status"], "running")
+
     def test_one_shot_run_completes_only_after_terminal_agent_event(self) -> None:
         schedule = self._create()
         claim = self.store.claim_due(now_ms=self.now + 1_000)[0]

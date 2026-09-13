@@ -9805,6 +9805,15 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                         },
                     )
                 return
+            eval_schedule_id, eval_schedule_action = observability_eval_schedule_route(path)
+            if eval_schedule_id and eval_schedule_action == "action":
+                try:
+                    self._write_json(HTTPStatus.OK, self.service.agent.eval_schedule_action(eval_schedule_id, payload))
+                except KeyError:
+                    self._write_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Eval schedule not found"})
+                except (TypeError, ValueError):
+                    self._write_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Eval schedule action is unavailable in its current state"})
+                return
             if path == "/api/observability/evals/evidence-ground-truth":
                 try:
                     self._write_json(

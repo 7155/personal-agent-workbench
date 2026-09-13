@@ -988,6 +988,16 @@ export function createPreviewTransport(): MockControlTransport {
       session,
     };
   };
+  routes['observability.evalSchedule.action'] = (request: ControlRequest) => {
+    const schedule = previewEvalSchedules.find((item) => item.id === record(request.params).scheduleId);
+    if (!schedule) throw new Error('评测计划不存在');
+    const action = stringValue(record(request.body).action);
+    const allowed: Record<string, string[]> = { pause: ['scheduled'], resume: ['paused'], cancel: ['scheduled', 'paused', 'failed'], retry: ['completed', 'failed'] };
+    if (!allowed[action]?.includes(stringValue(schedule.status))) throw new Error('当前状态无法执行此操作');
+    schedule.status = ({ pause: 'paused', resume: 'scheduled', cancel: 'cancelled', retry: 'scheduled' } as Record<string, string>)[action];
+    if (action === 'retry' || action === 'resume') schedule.nextDueAtMs = Math.max(Number(schedule.nextDueAtMs) || 0, Date.now() + 1000);
+    return { ok: true, schedule: { ...schedule } };
+  };
   routes['agent.wakeSchedules.list'] = () => ({ ok: true, schedulerActive: true, items: [...wakeSchedules] });
   routes['agent.wakeSchedules.create'] = (request: ControlRequest) => {
     const body = record(request.body);
@@ -1022,6 +1032,11 @@ export function createPreviewTransport(): MockControlTransport {
     const schedule = wakeSchedules.find((item) => item.id === scheduleId);
     if (!schedule) throw new Error('预约不存在');
     const action = stringValue(record(request.body).action);
+    if (action === 'edit') {
+      if (!['scheduled', 'paused'].includes(stringValue(schedule.status))) throw new Error('只能编辑等待中或已暂停的安排');
+      const definition = record(record(request.body).schedule);
+      Object.assign(schedule, definition, { nextWakeAtMs: Number(definition.wakeAtMs) });
+    }
     schedule.status = ({ pause: 'paused', resume: 'scheduled', cancel: 'cancelled', retry: 'scheduled' } as Record<string, string>)[action] ?? schedule.status;
     schedule.updatedAtMs = Date.now();
     if (action === 'retry') schedule.nextWakeAtMs = Date.now() + 1_000;
@@ -1271,6 +1286,25 @@ export function createPreviewTransport(): MockControlTransport {
     const snapshot = previewRoomSnapshots.get(roomId);
     if (!snapshot) throw new Error('这个协作空间已经不存在，请刷新列表。');
     return snapshot;
+  };
+  routes['agent.room.participant.add'] = (request: ControlRequest) => {
+    const roomId = stringValue(record(request.params).roomId);
+    const snapshot = previewRoomSnapshots.get(roomId);
+    if (!snapshot) throw new Error('这个协作空间已经不存在，请刷新列表。');
+    const room = record(snapshot.room);
+    const members = Array.isArray(room.participants) ? room.participants.map(record) : [];
+    if (members.filter((member) => member.status === 'active').length >= 8) throw new Error('Room 已达到 8 位伙伴。');
+    const body = record(request.body);
+    const persona = personas.find((item) => item.roleId === body.roleId && item.version === body.roleVersion);
+    if (!persona) throw new Error('这位伙伴暂时不可用。');
+    if (members.some((member) => member.roleId === persona.roleId && member.roleVersion === persona.version && member.status === 'active')) throw new Error('这位伙伴已在 Room 中。');
+    const ordinal = Math.max(-1, ...members.map((member) => Number(member.ordinal))) + 1;
+    const sessionId = `${roomId}:session-${ordinal + 1}`;
+    const participant = { schemaVersion: 'rag-ime.agent-participant.v1', id: `${roomId}:participant-${ordinal + 1}`, roomId, sessionId, roleId: persona.roleId, roleVersion: persona.version, displayName: persona.displayName, collaborationRole: stringValue(body.collaborationRole) || 'implementer', status: 'active', ordinal, createdAtMs: Date.now(), lastSpokeAtMs: null };
+    const updated = { ...room, participants: [...members, participant], updatedAtMs: Date.now() };
+    previewRoomSnapshots.set(roomId, { ...snapshot, room: updated });
+    sessions.unshift({ ...sessions[0]!, id: sessionId, title: persona.displayName, roleId: persona.roleId, roleVersion: persona.version, status: 'idle' });
+    return { ok: true, room: updated, participant };
   };
   routes['agent.room.conversationSnapshot'] = (request: ControlRequest) => {
     const roomId = stringValue(record(request.params).roomId);

@@ -21,7 +21,7 @@ export interface Schedule {
   recurrenceInterval: number;
   maxRuns: number;
   runCount: number;
-  status: 'scheduled' | 'running' | 'completed' | 'failed';
+  status: 'scheduled' | 'running' | 'completed' | 'failed' | 'paused' | 'cancelled';
   initialDueAtMs: number;
   nextDueAtMs: number;
   lastErrorCode: string;

@@ -168,10 +168,18 @@ class AgentWakeApplicationService:
             raise ValueError(
                 "wake schedule changes require confirmText=apply"
             )
-        schedule = self.schedules.action(
-            schedule_id,
-            str(payload.get("action") or ""),
-        )
+        if str(payload.get("action") or "") == "edit":
+            if self.schedules.get(schedule_id).get("metadata", {}).get("kind") == "room_partner_completion":
+                raise ValueError("Room partner wakes are managed by the Room workflow")
+            definition = payload.get("schedule")
+            if not isinstance(definition, Mapping):
+                raise ValueError("editing a wake requires its schedule definition")
+            schedule = self.schedules.update(schedule_id, self.validate(definition))
+        else:
+            schedule = self.schedules.action(
+                schedule_id,
+                str(payload.get("action") or ""),
+            )
         self._wake_scheduler()
         return {
             "schemaVersion": (

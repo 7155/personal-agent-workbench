@@ -2,6 +2,7 @@ import { routeRegistry, type RouteId } from '@/app/route-registry';
 
 export type PawOsAppId =
   | 'project-workbench'
+  | 'schedules'
   | 'agent'
   | 'agent-capsule'
   | 'memory'
@@ -43,6 +44,11 @@ export type PawOsAppDefinition = {
 export const wayfinderRouteId: RouteId = 'project-field';
 
 export const pawOsAppRegistry: readonly PawOsAppDefinition[] = [
+  {
+    id: 'schedules', label: '定时任务', shortLabel: '定时',
+    routeIds: ['schedules'], defaultRouteId: 'schedules', presentation: 'utility', accent: 'blue',
+    tagline: '自动执行、PR 跟进、周期评测与后台维护',
+  },
   {
     id: 'project-workbench',
     label: '项目工作台',

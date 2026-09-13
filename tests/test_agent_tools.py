@@ -3092,9 +3092,9 @@ class ControlToolGatewayTests(unittest.TestCase):
         )
         collaboration = SimpleNamespace(
             rooms=rooms,
-            media_receipt=lambda media_id, session_id: (
+            read_media_resource=lambda media_id, session_id: (
                 calls.append(("media", session_id, media_id))
-                or {"media": {"mediaId": media_id, "mimeType": "image/png"}}
+                or ({"mediaId": media_id, "mimeType": "text/plain"}, "第一段\nsecond\n".encode())
             ),
             room_snapshot=lambda room_id: (
                 calls.append(("room", room_id))
@@ -3125,19 +3125,23 @@ class ControlToolGatewayTests(unittest.TestCase):
             )["result"]
 
         artifact = read("artifact://artifact:one")
-        media = read("media://media_abcdefghijkl")
+        media = read("media://media_abcdefghijkl", limit=10)
         skill = read("skill://orchestrate-session", limit=6)
         room = read("room://room:managed")
 
         self.assertEqual(artifact["resourceKind"], "artifact")
         self.assertIn("artifact:one", artifact["content"])
         self.assertEqual(media["metadata"]["owner"], "AgentMediaStore")
+        self.assertEqual(media["content"], "第一段\n")
+        self.assertEqual(media["nextOffset"], 10)
+        continuation = read("media://media_abcdefghijkl", offset=10, limit=6)
+        self.assertEqual(continuation["content"], "second")
         self.assertEqual(skill["content"], "first\n")
         self.assertEqual(skill["nextOffset"], 6)
         self.assertEqual(room["resourceRevision"], room["resourceRevision"].lower())
         self.assertEqual(
             [call[0] for call in calls],
-            ["artifact", "media", "skill", "room"],
+            ["artifact", "media", "skill", "room", "media"],
         )
         with self.assertRaisesRegex(ValueError, "does not belong"):
             read("room://room:other")

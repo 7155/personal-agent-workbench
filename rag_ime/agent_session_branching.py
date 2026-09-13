@@ -250,17 +250,11 @@ class AgentSessionBranchingService:
             )
         self.sessions.require_goal_execution(session_id)
         if attachment_ids:
-            selected = self.runtime.model_catalog(
-                session_id
-            ).get("selected")
-            if (
-                not isinstance(selected, Mapping)
-                or selected.get("supportsImages") is not True
-            ):
-                raise ValueError(
-                    "当前模型不支持图片，请切换到支持图片的模型后重试"
-                )
-            self.media.pi_images(session_id, attachment_ids)
+            _, images, _ = self.media.prompt_attachments(session_id, attachment_ids)
+            if images:
+                selected = self.runtime.model_catalog(session_id).get("selected")
+                if not isinstance(selected, Mapping) or selected.get("supportsImages") is not True:
+                    raise ValueError("当前模型不支持图片，请切换到支持图片的模型后重试")
         rewound = dict(rewind(session_id, entry_id=entry_id))
         try:
             accepted = self.prompt_with_checkpoint(

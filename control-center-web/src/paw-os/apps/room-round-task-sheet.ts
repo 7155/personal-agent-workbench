@@ -193,9 +193,6 @@ function roundRow({
   const blockedWorkItemId = [...currentWorkItems]
     .reverse()
     .find((work) => work.state === 'blocked')?.id;
-  const task = latestTask(currentActivities)
-    || currentWorkItems.find((work) => Boolean(work.objective.trim()))?.objective.trim()
-    || `${roomCollaborationRoleLabel(participant.collaborationRole)} · 等待本轮分工`;
   const eventAssigned = turn.participantIds.includes(participant.id)
     || lanes.length > 0
     || currentActivities.length > 0
@@ -216,6 +213,10 @@ function roundRow({
      exist; suppress only the explicit facilitator-accountability bookkeeping
      case above. */
   const assigned = workItems.length > 0 || (eventAssigned && !delegatedAccountabilityOnly);
+  const task = latestTask(currentActivities)
+    || currentWorkItems.find((work) => Boolean(work.objective.trim()))?.objective.trim()
+    || (assigned ? latestUserMessage(turn.messageIds, projection)?.text.trim() : '')
+    || `${roomCollaborationRoleLabel(participant.collaborationRole)} · 等待本轮分工`;
   const participantState = rowState(turn, participant.id, lanes, currentActivities, currentMessages, currentWorkItems);
   // A completed facilitator step does not complete the Room's current answer.
   // Keep explicit blockers/failures actionable while the Room is live; once the
@@ -503,8 +504,10 @@ function finiteTimestamp(value: unknown): number | null {
 function latestTask(activities: RoomActivityProjection[]): string {
   for (const activity of [...activities].reverse()) {
     const task = text(activity.payload.task)
-      || text(activity.payload.objective)
-      || text(activity.payload.reason);
+      || text(activity.payload.objective);
+    // Routing roles and failure reasons describe execution, not the user's
+    // assignment. The original payload remains available in the full trace.
+    if (['facilitator', 'moderator', 'worker', 'reviewer'].includes(task.trim())) continue;
     if (task) return task;
   }
   return '';

@@ -64,15 +64,16 @@ class AgentFilePreviewReader:
         *,
         session_id: str,
         expected_sha256: str = "",
+        room_id: str = "",
     ) -> dict[str, object]:
-        receipt, raw = self.media.read(media_id, session_id=session_id)
+        receipt, raw = self.media.read(media_id, session_id="" if room_id else session_id, room_id=room_id)
         expected = str(expected_sha256 or "").strip().lower()
         if expected and not _SHA256_RE.fullmatch(expected):
             raise ValueError("agent file preview expected sha256 is invalid")
         if expected and expected != str(receipt["sha256"]):
             raise ValueError("agent file preview digest does not match its block receipt")
 
-        descriptor = file_descriptor(receipt)
+        descriptor = file_descriptor(receipt, session_id=session_id)
         kind = str(descriptor["previewKind"])
         content: str | None = None
         preview_byte_size = 0
@@ -97,9 +98,9 @@ class AgentFilePreviewReader:
         return payload
 
 
-def file_descriptor(receipt: Mapping[str, object]) -> dict[str, object]:
+def file_descriptor(receipt: Mapping[str, object], *, session_id: str = "") -> dict[str, object]:
     media_id = str(receipt.get("mediaId") or "")
-    session_id = str(receipt.get("sessionId") or "")
+    session_id = str(receipt.get("sessionId") or session_id)
     file_name = str(receipt.get("fileName") or "attachment")
     mime_type = str(receipt.get("mimeType") or "application/octet-stream")
     preview_kind = preview_kind_for(file_name=file_name, mime_type=mime_type)

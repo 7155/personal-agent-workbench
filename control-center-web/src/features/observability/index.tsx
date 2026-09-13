@@ -45,6 +45,7 @@ import {
 } from '@/features/overview/management-ui';
 import {
   useCreateEvalSchedule,
+  useEvalScheduleAction,
   useEvalScheduleRuns,
   useEvalSchedules,
   useEvalSuites,
@@ -408,11 +409,12 @@ export function ObservabilityFeature() {
   );
 }
 
-function EvalSchedulesPanel() {
+export function EvalSchedulesPanel({ initialScheduleId = '' }: { initialScheduleId?: string } = {}) {
   const schedules = useEvalSchedules();
   const suites = useEvalSuites();
   const createSchedule = useCreateEvalSchedule();
-  const [selectedScheduleId, setSelectedScheduleId] = useState('');
+  const scheduleAction = useEvalScheduleAction();
+  const [selectedScheduleId, setSelectedScheduleId] = useState(initialScheduleId);
   const [suiteId, setSuiteId] = useState('');
   const [recurrenceKind, setRecurrenceKind] = useState<'daily' | 'weekly'>('daily');
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
@@ -517,8 +519,15 @@ function EvalSchedulesPanel() {
             <>
               <header>
                 <span><strong>{selectedSchedule.suiteId}</strong><small>{selectedSchedule.id}</small></span>
-                <span>下次 {formatDateTime(selectedSchedule.nextDueAtMs)}</span>
+                <span>{selectedSchedule.status === 'scheduled' ? `下次 ${formatDateTime(selectedSchedule.nextDueAtMs)}` : evalScheduleStatusLabel(selectedSchedule.status)}</span>
               </header>
+              <div className="schedule-eval-actions">
+                {selectedSchedule.status === 'scheduled' ? <Button size="small" disabled={scheduleAction.isPending} onClick={() => scheduleAction.mutate({ scheduleId: selectedSchedule.id, action: 'pause' })}>暂停评测计划</Button> : null}
+                {selectedSchedule.status === 'paused' ? <Button size="small" disabled={scheduleAction.isPending} onClick={() => scheduleAction.mutate({ scheduleId: selectedSchedule.id, action: 'resume' })}>恢复评测计划</Button> : null}
+                {['scheduled', 'paused', 'failed'].includes(selectedSchedule.status) ? <Button size="small" disabled={scheduleAction.isPending} onClick={() => scheduleAction.mutate({ scheduleId: selectedSchedule.id, action: 'cancel' })}>取消评测计划</Button> : null}
+                {['completed', 'failed'].includes(selectedSchedule.status) && selectedSchedule.runCount < 100 ? <Button size="small" disabled={scheduleAction.isPending} onClick={() => scheduleAction.mutate({ scheduleId: selectedSchedule.id, action: 'retry' })}>再评测一次</Button> : null}
+              </div>
+              {scheduleAction.error && scheduleAction.variables?.scheduleId === selectedSchedule.id ? <InlineNotice title="计划没有更新" tone="danger">请刷新计划，确认当前状态后重试。</InlineNotice> : null}
               {runs.error ? <InlineNotice title="执行记录暂时不可用" tone="warning">计划本身仍然保留。</InlineNotice> : null}
               {runs.isPending ? <div className="observation-eval__loading" role="status">正在读取执行记录…</div> : null}
               {!runs.isPending && !runs.error && !runs.data?.items.length ? (
@@ -793,7 +802,7 @@ function recurrenceLabel(schedule: EvalScheduleListV1['items'][number]): string 
 }
 
 function evalScheduleStatusLabel(status: EvalScheduleListV1['items'][number]['status']): string {
-  return ({ scheduled: '已计划', running: '执行中', completed: '已完成', failed: '失败' })[status];
+  return ({ scheduled: '已计划', running: '执行中', completed: '已完成', failed: '失败', paused: '已暂停', cancelled: '已取消' })[status];
 }
 
 function evalScheduleStatusTone(status: EvalScheduleListV1['items'][number]['status']): 'success' | 'danger' | 'info' | 'neutral' {

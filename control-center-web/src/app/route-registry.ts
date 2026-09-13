@@ -10,6 +10,7 @@ export type RouteId =
   | 'browser'
   | 'voice'
   | 'planning'
+  | 'schedules'
   | 'work-documents'
   | 'memory'
   | 'knowledge'
@@ -45,6 +46,7 @@ export const routeRegistry: readonly RouteDefinition[] = [
   { id: 'agent-capsule', path: '/agent-capsule', label: 'Agent Capsule', shortLabel: '胶囊', group: 'work' },
   { id: 'rooms', path: '/rooms', label: '多人协作', shortLabel: '协作', group: 'work' },
   { id: 'planning', path: '/planning', label: '任务', shortLabel: '任务', group: 'work' },
+  { id: 'schedules', path: '/schedules', label: '定时任务', shortLabel: '定时', group: 'work' },
   { id: 'work-documents', path: '/work-documents', label: '工作文档', shortLabel: '文档', group: 'work' },
   { id: 'memory', path: '/memory', label: '我的记忆', shortLabel: '记忆', group: 'capability' },
   { id: 'knowledge', path: '/knowledge', label: '知识库', shortLabel: '知识', group: 'capability' },

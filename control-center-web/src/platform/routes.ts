@@ -333,6 +333,10 @@ export const CONTROL_ROUTES = {
     query: ['limit'],
     responseContract: 'eval-schedule-run-list.v1',
   },
+  'observability.evalSchedule.action': {
+    method: 'POST', path: '/api/observability/eval-schedules/:scheduleId/action',
+    params: { scheduleId: null }, body: ['action'], requiredBody: ['action'],
+  },
   'observability.events': {
     method: 'GET',
     path: '/api/observability/events',
@@ -1267,7 +1271,7 @@ export const CONTROL_ROUTES = {
     method: 'POST',
     path: '/api/agent/wake-schedules/:scheduleId/action',
     params: { scheduleId: null },
-    body: ['action', 'confirmText'],
+    body: ['action', 'confirmText', 'schedule'],
     requiredBody: ['action', 'confirmText'],
   },
 

@@ -20,6 +20,43 @@ class EvalScheduleStoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def test_pause_resume_cancel_survive_restart_and_control_actual_claims(self) -> None:
+        schedule = self.store.create({"suiteId": "sgg", "suiteRevision": "fixture-v2", "recurrenceKind": "daily", "nextDueAtMs": self.now + 1000}, now_ms=self.now)
+        identifier = str(schedule["id"])
+        self.assertEqual(self.store.action(identifier, "pause", now_ms=self.now)["status"], "paused")
+        reopened = EvalScheduleStore(self.db_path)
+        self.assertEqual(reopened.claim_due(now_ms=self.now + 10_000), [])
+        resumed = reopened.action(identifier, "resume", now_ms=self.now + 10_000)
+        self.assertEqual(resumed["nextDueAtMs"], self.now + 11_000)
+        reopened.action(identifier, "cancel", now_ms=self.now + 10_000)
+        self.assertEqual(reopened.claim_due(now_ms=self.now + 20_000), [])
+        self.assertEqual(reopened.get(identifier)["status"], "cancelled")
+        self.assertEqual(reopened.runs(identifier), [])
+
+    def test_retry_preserves_pinned_definition_and_old_run_receipts(self) -> None:
+        definition = {"scheduleId": "eval-schedule:retry", "suiteId": "sgg", "suiteRevision": "fixture-v2", "recurrenceKind": "daily", "nextDueAtMs": self.now + 1000, "maxRuns": 1}
+        self.store.create(definition, now_ms=self.now)
+        claim = self.store.claim_due(now_ms=self.now + 1000)[0]
+        self.store.fail(str(claim["runId"]), lease_token=str(claim["leaseToken"]), error_code="test_failure", now_ms=self.now + 1100)
+        retried = self.store.action("eval-schedule:retry", "retry", now_ms=self.now + 1200)
+        self.assertEqual(retried["maxRuns"], 1)
+        self.assertEqual(retried["runCount"], 1)
+        self.assertEqual(self.store.runs("eval-schedule:retry")[0]["state"], "failed")
+        replayed = self.store.create(definition, now_ms=self.now + 1500)
+        self.assertEqual(replayed["id"], "eval-schedule:retry")
+        self.assertEqual(replayed["status"], "scheduled")
+        self.assertEqual(self.store.claim_due(now_ms=self.now + 2200)[0]["attempt"], 2)
+
+    def test_running_eval_cannot_be_marked_cancelled_before_its_receipt(self) -> None:
+        schedule = self.store.create({"suiteId": "sgg", "suiteRevision": "fixture-v2", "recurrenceKind": "daily", "nextDueAtMs": self.now + 1000}, now_ms=self.now)
+        identifier = str(schedule["id"])
+        self.store.claim_due(now_ms=self.now + 1000)
+        for action in ("pause", "cancel", "retry", "resume"):
+            with self.assertRaises(ValueError):
+                self.store.action(identifier, action, now_ms=self.now + 2000)
+        self.assertEqual(self.store.get(identifier)["status"], "running")
+        self.assertEqual(len(self.store.runs(identifier)), 1)
+
     def test_create_requires_an_explicit_suite_revision(self) -> None:
         with self.assertRaisesRegex(ValueError, "suiteRevision is required"):
             self.store.create(

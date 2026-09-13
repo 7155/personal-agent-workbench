@@ -1765,14 +1765,14 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
     }
   }
 
-  async function pasteImages(files?: File[]): Promise<void> {
-    if (!sessionControlsAvailable || !session) { setError('请先选择一个对话。'); return; }
-    if (!transport.pasteImages) { setError('当前平台暂不支持从剪贴板导入附件。'); return; }
+  async function pasteImages(files?: File[]): Promise<boolean> {
+    if (!sessionControlsAvailable || !session) { setError('请先选择一个对话。'); return false; }
+    if (!transport.pasteImages) { setError('当前平台暂不支持从剪贴板导入附件。'); return false; }
     const remaining = 8 - attachments.length;
-    if (remaining <= 0) { setError('单次消息最多支持 8 个附件。'); return; }
-    if (files && files.length > remaining) { setError(`当前消息还可以粘贴 ${remaining} 个附件。`); return; }
+    if (remaining <= 0) { setError('单次消息最多支持 8 个附件。'); return false; }
+    if (files && files.length > remaining) { setError(`当前消息还可以粘贴 ${remaining} 个附件。`); return false; }
     const oversized = files?.find((file) => file.size <= 0 || file.size > MAX_AGENT_IMAGE_BYTES);
-    if (oversized) { setError(`${oversized.name || '附件'} 必须小于 20 MiB 且不能为空。`); return; }
+    if (oversized) { setError(`${oversized.name || '附件'} 必须小于 20 MiB 且不能为空。`); return false; }
     try {
       const maxFiles = files?.length || remaining;
       const imported = await transport.pasteImages({
@@ -1782,7 +1782,7 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
       });
       if (!imported.length) {
         setSessionError(session.id, '剪贴板里没有可导入的文件。');
-        return;
+        return false;
       }
       const attachmentsWithPreviews = files && transport.kind !== 'native'
         ? imported.map((attachment, index) => {
@@ -1797,7 +1797,8 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
         : imported;
       mergeSessionAttachments(session.id, attachmentsWithPreviews, 'clipboard');
       setSessionError(session.id, '');
-    } catch (pasteError) { setSessionError(session.id, errorText(pasteError)); }
+      return true;
+    } catch (pasteError) { setSessionError(session.id, errorText(pasteError)); return false; }
   }
 
   async function pickAttachments(): Promise<void> {
@@ -2142,7 +2143,7 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
     if (!sessionControlsAvailable || !session || !catalog) return;
     const targetModel = catalog.providers.find((item) => item.id === provider)?.models.find((item) => item.id === modelId);
     if (!targetModel) { setError('Pi 模型目录中没有这个模型。'); return; }
-    if (attachments.length && !targetModel.supportsImages) {
+    if (attachments.some((item) => isComposerImageMimeType(item.mimeType)) && !targetModel.supportsImages) {
       setError('当前消息含有图片，请先移除图片再切换到不支持图片的模型。');
       return;
     }
@@ -2284,7 +2285,7 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
             onJumpLatest={() => setScrollToLatestRequest((current) => current + 1)}
             onModelChange={changeModel}
             onPasteFromClipboard={() => void pasteImages()}
-            onPasteImages={(files) => void pasteImages(files)}
+            onPasteImages={pasteImages}
             onPermissionChange={(selection) => void changePermission(selection)}
             onPickAttachments={() => void pickAttachments()}
             onProductCommand={runProductCommand}

@@ -131,6 +131,22 @@ class AgentMediaStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid managed mediaId"):
             self.store.read("../../private.png", session_id=self.first)
 
+    def test_text_prompt_contains_a_reference_and_leaves_the_full_body_for_selective_read(self) -> None:
+        body = "完整文本\r\n" * 1000
+        for owner in ({"session_id": self.first}, {"room_id": "room-a"}):
+            with self.subTest(owner=owner):
+                receipt = self.store.import_bytes(**owner, data=body.encode(), mime_type="text/plain", file_name="需求.txt")
+                receipts, images, context = self.store.prompt_attachments(
+                    owner.get("session_id", ""), [receipt["mediaId"]], room_id=owner.get("room_id", ""),
+                )
+                self.assertEqual(receipts, [receipt])
+                self.assertEqual(images, [])
+                self.assertIn(f"media://{receipt['mediaId']}", context)
+                self.assertIn("read(resourceRef, byteOffset, byteLimit)", context)
+                self.assertNotIn(body, context)
+                self.assertLess(len(context), 1000)
+                self.assertEqual(self.store.read(str(receipt["mediaId"]), **owner)[1].decode(), body)
+
     def test_tampered_blob_is_isolated_and_entry_link_is_idempotent(self) -> None:
         receipt = self.store.import_bytes(
             session_id=self.first,

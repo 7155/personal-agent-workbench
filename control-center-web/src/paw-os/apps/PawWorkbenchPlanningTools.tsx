@@ -7,15 +7,7 @@ import {
   ListTodo,
   Sparkles,
 } from 'lucide-react';
-import { useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/primitives';
-import { AgentWakeSchedules } from '@/features/planning/AgentWakeSchedules';
+import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { PawWorkbenchRecord } from './PawWorkbenchMigrated';
 
 type AgentHandoffIntent = 'organize' | 'breakdown' | 'review';
@@ -37,7 +29,7 @@ export function PawWorkbenchPlanningTools({
   projectPath: string;
   selectedTask?: PawWorkbenchRecord | null;
 }) {
-  const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const desktop = usePawOsDesktop();
   const plan = record(planning.plan);
   const summary = record(planning.summary);
   const tasks = rows(planning, ['tasks', 'items']);
@@ -93,19 +85,11 @@ export function PawWorkbenchPlanningTools({
           <button onClick={() => handoff('organize')} type="button"><Sparkles aria-hidden size={14} />交给 Agent 安排</button>
           <button disabled={!taskForBreakdown} onClick={() => handoff('breakdown')} type="button"><ListTodo aria-hidden size={14} />拆解当前任务</button>
           <button onClick={() => handoff('review')} type="button"><CheckCircle2 aria-hidden size={14} />一起复盘</button>
-          <button onClick={() => setSchedulesOpen(true)} type="button"><CalendarClock aria-hidden size={14} />定时安排</button>
+          <button onClick={() => desktop?.openApp ? desktop.openApp('schedules', '/schedules?view=agent') : openPawOsRoute(desktop, '/schedules?view=agent')} type="button"><CalendarClock aria-hidden size={14} />定时安排</button>
         </div>
       </section>
 
-      <Dialog onOpenChange={setSchedulesOpen} open={schedulesOpen}>
-        <DialogContent className="paw-wb-schedules-dialog">
-          <DialogHeader>
-            <DialogTitle>自动执行安排</DialogTitle>
-            <DialogDescription>管理由真实 Agent Session 或伙伴在指定时间继续执行的工作。</DialogDescription>
-          </DialogHeader>
-          {schedulesOpen ? <AgentWakeSchedules embedded tasks={tasks} /> : null}
-        </DialogContent>
-      </Dialog>
+
     </>
   );
 }

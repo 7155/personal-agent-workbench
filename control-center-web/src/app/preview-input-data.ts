@@ -47,14 +47,19 @@ export function previewConfigurationValues(): Record<string, unknown> {
       enabled: true,
       retentionDays: 30,
       automaticOrganization: {
+        enabled: true,
+        runsPerDay: 2,
         model: 'gpt/gpt-5.6-luna',
         thinkingLevel: 'max',
       },
       dreaming: {
+        enabled: true,
+        runsPerDay: 2,
         model: 'gpt/gpt-5.6-luna',
         thinkingLevel: 'max',
       },
       recall: { detailLevel: 'compact', timelineEnabled: true },
+      catalogConsolidation: { enabled: true, cadenceDays: 7 },
     },
     context: {
       recentInputBaseline: 20,

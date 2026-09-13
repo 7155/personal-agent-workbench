@@ -479,16 +479,16 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
     });
   }
 
-  async function pasteRoomImages(roomId: string, files?: File[]): Promise<void> {
+  async function pasteRoomImages(roomId: string, files?: File[]): Promise<boolean> {
     const current = roomAttachmentsRef.current.get(roomId) ?? [];
     const remaining = ROOM_ATTACHMENT_LIMIT - current.length;
     if (remaining < 1) {
       setRoomError(roomId, `每条消息最多添加 ${ROOM_ATTACHMENT_LIMIT} 个附件。`);
-      return;
+      return false;
     }
     if (!transport.pasteImages) {
       setRoomError(roomId, '当前平台暂不支持从剪贴板导入附件。');
-      return;
+      return false;
     }
     try {
       validateRoomAttachmentFiles(files ?? [], remaining);
@@ -499,8 +499,10 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
       });
       mergeRoomAttachments(roomId, imported);
       setRoomError(roomId, '');
+      return imported.length > 0;
     } catch (requestError) {
       setRoomError(roomId, publicErrorText(requestError, '附件没有导入，请重试。'));
+      return false;
     }
   }
 
@@ -892,7 +894,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
         useRoomLiveStore.getState().discardOptimistic(room.id, clientMessageId);
       }
       if (includeComposerState) {
-        updateRoomDraft(room.id, composerDraft);
+        updateRoomDraft(room.id, roomDraftsRef.current.get(room.id) || composerDraft);
         if (!pendingQuestionAnswer) {
           updateRoomAttachments(room.id, (current) => {
             const restored = new Map(current.map((item) => [item.mediaId, item]));
@@ -1508,7 +1510,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
             ) setRoomError(room.id, '');
           }}
           onAttachmentsChange={(value) => updateRoomAttachments(room.id, value)}
-          onPasteImages={(files) => void pasteRoomImages(room.id, files)}
+          onPasteImages={(files) => pasteRoomImages(room.id, files)}
           onPasteFromClipboard={() => void pasteRoomImages(room.id)}
           onPickAttachments={() => void pickRoomImages(room.id)}
           onSend={(value) => {

@@ -996,8 +996,8 @@ export function PawSessionWorkspace({
     } catch (reason) { setError(errorText(reason)); }
   }
 
-  async function pasteFiles(files?: File[]): Promise<void> {
-    if (!transport.pasteImages) { setError('当前环境不能导入剪贴板文件。'); return; }
+  async function pasteFiles(files?: File[]): Promise<boolean> {
+    if (!transport.pasteImages) { setError('当前环境不能导入剪贴板文件。'); return false; }
     try {
       const imported = await transport.pasteImages({ sessionId: recordId, ...(files?.length ? { files } : {}), maxFiles: Math.max(1, 8 - attachments.length) });
       // Browser transports echo the pasted bytes back as receipts; reusing the
@@ -1012,7 +1012,8 @@ export function PawSessionWorkspace({
           : {};
         return { ...item, source: 'clipboard' as const, ...previewFile };
       })));
-    } catch (reason) { setError(errorText(reason)); }
+      return imported.length > 0;
+    } catch (reason) { setError(errorText(reason)); return false; }
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
@@ -1510,7 +1511,7 @@ export function PawSessionWorkspace({
                 onEditPrevious={() => void beginEditMessage()}
                 onModelChange={(provider, modelId, level) => void changeModel(provider, modelId, level)}
                 onPasteFromClipboard={() => void pasteFiles()}
-                onPasteImages={(files) => void pasteFiles(files)}
+                onPasteImages={pasteFiles}
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
                 onSend={(delivery, value) => void send(delivery, value)}

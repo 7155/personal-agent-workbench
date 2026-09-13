@@ -6,6 +6,7 @@ import {
   composerAttachmentKind,
 } from '@/contracts/attachment-policy';
 import { managedAgentMediaContentPath } from '@/platform/transport';
+import './composer-enhancements.css';
 
 /**
  * UR-042: the one Composer skeleton Session and Room both render.
@@ -30,6 +31,7 @@ export interface ComposerShellAttachment {
   /** Managed owner binding; enables server thumbnails for image receipts. */
   sessionId?: string;
   roomId?: string;
+  description?: string;
 }
 
 export function ComposerShell({
@@ -42,6 +44,8 @@ export function ComposerShell({
   attachmentsLabel = '待发送附件',
   onRemoveAttachment,
   textarea,
+  editorAction,
+  expanded,
   controls,
   actions,
   onSurfacePress,
@@ -55,6 +59,8 @@ export function ComposerShell({
   attachmentsLabel?: string;
   onRemoveAttachment: (id: string) => void;
   textarea: ReactNode;
+  editorAction?: ReactNode;
+  expanded?: boolean;
   controls: ReactNode;
   actions: ReactNode;
   onSurfacePress?: () => void;
@@ -65,6 +71,7 @@ export function ComposerShell({
       data-surface={surface}
       data-busy={busy || undefined}
       data-jump-latest={jumpLatest || undefined}
+      data-expanded={expanded || undefined}
       onMouseDown={(event) => {
         // The dock is taller than its text line; clicks landing on chrome
         // rather than a real control put the caret back into the message.
@@ -87,7 +94,7 @@ export function ComposerShell({
               role="listitem"
             >
               <ComposerAttachmentPreview attachment={attachment} />
-              <b title={attachment.name}>{attachment.name}</b>
+              {attachment.description ? <span className="composer-attachment__copy"><b title={attachment.name}>{attachment.name}</b><small title={attachment.description}>{attachment.description}</small></span> : <b title={attachment.name}>{attachment.name}</b>}
               <button
                 type="button"
                 aria-label={`移除 ${attachment.name}`}
@@ -97,7 +104,7 @@ export function ComposerShell({
           ))}
         </div>
       ) : null}
-      {textarea}
+      <div className="agent-composer__editor">{textarea}{editorAction}</div>
       <div className="agent-composer__toolbar">
         <div className="agent-composer__controls">{controls}</div>
         <div className="agent-composer__actions">{actions}</div>

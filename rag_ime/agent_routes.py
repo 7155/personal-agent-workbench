@@ -410,7 +410,7 @@ def observability_eval_schedule_route(path: str) -> tuple[str, str]:
     if not remainder:
         return "", ""
     parts = remainder.split("/")
-    if len(parts) != 2 or parts[1] != "runs":
+    if len(parts) != 2 or parts[1] not in {"runs", "action"}:
         return "", ""
     schedule_id = unquote(parts[0]).strip()
-    return (schedule_id, "runs") if schedule_id else ("", "")
+    return (schedule_id, parts[1]) if schedule_id else ("", "")

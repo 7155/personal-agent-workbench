@@ -16,7 +16,7 @@
     "recurrenceInterval": {"type": "integer", "minimum": 1, "maximum": 30},
     "maxRuns": {"type": "integer", "minimum": 1, "maximum": 100},
     "runCount": {"type": "integer", "minimum": 0},
-    "status": {"enum": ["scheduled", "running", "completed", "failed"]},
+    "status": {"enum": ["scheduled", "running", "completed", "failed", "paused", "cancelled"]},
     "initialDueAtMs": {"type": "integer", "minimum": 0},
     "nextDueAtMs": {"type": "integer", "minimum": 0},
     "lastErrorCode": {"type": "string"},

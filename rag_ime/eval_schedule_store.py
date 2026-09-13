@@ -201,6 +201,38 @@ class EvalScheduleStore:
             ).fetchall()
         return [_run_payload(row) for row in rows]
 
+    def action(self, schedule_id: str, action: str, *, now_ms: int | None = None) -> dict[str, object]:
+        """Change future execution without altering pinned suite or past runs."""
+        timestamp = _now_ms(now_ms)
+        identifier = _required_id(schedule_id)
+        if action not in {"pause", "resume", "cancel", "retry"}:
+            raise ValueError("unknown Eval schedule action")
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM eval_schedules WHERE schedule_id = ?", (identifier,)).fetchone()
+            if row is None:
+                raise KeyError(identifier)
+            status = _schedule_payload(row)["status"]
+            control = "active"
+            next_due = int(row["next_due_at_ms"])
+            run_status = str(row["status"])
+            if action == "pause" and status == "scheduled":
+                control = "paused"
+            elif action == "resume" and status == "paused":
+                next_due = max(next_due, timestamp + 1_000)
+            elif action == "cancel" and status in {"scheduled", "paused", "failed"}:
+                control = "cancelled"
+            elif action == "retry" and status in {"failed", "completed"} and int(row["run_count"]) < 100:
+                run_status = "scheduled"
+                next_due = timestamp + 1_000
+            else:
+                raise ValueError("Eval schedule cannot perform this action in its current state")
+            conn.execute(
+                "UPDATE eval_schedules SET control_state = ?, status = ?, next_due_at_ms = ?, updated_at_ms = ? WHERE schedule_id = ?",
+                (control, run_status, next_due, timestamp, identifier),
+            )
+        return self.get(identifier)
+
     def claim_due(
         self,
         *,
@@ -230,7 +262,7 @@ class EvalScheduleStore:
             if capacity == 0:
                 return []
             rows = conn.execute(
-                "SELECT * FROM eval_schedules WHERE status = 'scheduled' "
+                "SELECT * FROM eval_schedules WHERE status = 'scheduled' AND control_state = 'active' "
                 "AND next_due_at_ms <= ? ORDER BY next_due_at_ms, created_at_ms LIMIT ?",
                 (timestamp, capacity),
             ).fetchall()
@@ -514,7 +546,7 @@ def _schedule_payload(row: sqlite3.Row, latest: dict[str, object] | None = None)
         "recurrenceInterval": int(row["recurrence_interval"]),
         "maxRuns": int(row["max_runs"]),
         "runCount": int(row["run_count"]),
-        "status": str(row["status"]),
+        "status": str(row["control_state"]) if row["control_state"] != "active" else str(row["status"]),
         "initialDueAtMs": int(row["initial_due_at_ms"]),
         "nextDueAtMs": int(row["next_due_at_ms"]),
         "lastErrorCode": str(row["last_error_code"] or ""),

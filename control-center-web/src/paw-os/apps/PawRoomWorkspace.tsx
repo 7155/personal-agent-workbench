@@ -470,8 +470,12 @@ export function PawRoomWorkspace({
     } catch (reason) {
       if (!steering) useRoomLiveStore.getState().discardOptimistic(recordId, clientMessageId);
       if (steering) clearOptimisticSteer(clientMessageId);
-      if (!options.preserveDraft) setDraft(rawValue);
-      if (!answersQuestion) setAttachments(selectedAttachments);
+      if (!options.preserveDraft) setDraft((current) => current || rawValue);
+      if (!answersQuestion) setAttachments((current) => {
+        const restored = new Map(current.map((attachment) => [attachment.mediaId, attachment]));
+        for (const attachment of selectedAttachments) if (!restored.has(attachment.mediaId)) restored.set(attachment.mediaId, attachment);
+        return [...restored.values()].slice(0, 8);
+      });
       setError(roomErrorText(reason, 'Room 消息没有发送，请重试。'));
       return false;
     } finally {
@@ -529,8 +533,8 @@ export function PawRoomWorkspace({
     } catch (reason) { setError(publicErrorText(reason, '附件没有导入，请重试。')); }
   }
 
-  async function pasteFiles(files?: File[]): Promise<void> {
-    if (!transport.pasteImages) { setError('当前环境不能导入剪贴板文件。'); return; }
+  async function pasteFiles(files?: File[]): Promise<boolean> {
+    if (!transport.pasteImages) { setError('当前环境不能导入剪贴板文件。'); return false; }
     try {
       const imported = await transport.pasteImages({
         roomId: recordId,
@@ -538,7 +542,8 @@ export function PawRoomWorkspace({
         maxFiles: files?.length || Math.max(1, 8 - attachments.length),
       });
       mergePickedAttachments(imported);
-    } catch (reason) { setError(publicErrorText(reason, '附件没有导入，请重试。')); }
+      return imported.length > 0;
+    } catch (reason) { setError(publicErrorText(reason, '附件没有导入，请重试。')); return false; }
   }
 
   function mergePickedAttachments(files: PickedFile[]): void {
@@ -1027,6 +1032,9 @@ export function PawRoomWorkspace({
                     attachments={attachments}
                     sending={sending}
                     taskBusyState={taskBusyState}
+                    onStop={() => void abortTurn(activeRootId)}
+                    stopping={abortingActiveTurn}
+                    onInvitePartners={() => setPanel('governance')}
                     pendingUserAnswer={pendingQuestion?.roomId === recordId}
                     queueDepth={queue.queue.length}
                     onDraftChange={setDraft}
@@ -1035,7 +1043,7 @@ export function PawRoomWorkspace({
                     continuationAvailable={continuationAvailable}
                     onContinue={() => void send('继续。请基于当前 Room 已保留的上下文、工具结果和伙伴进展接着完成，不要重复已经完成的操作。', { preserveDraft: true })}
                     onAttachmentsChange={setAttachments}
-                    onPasteImages={(files) => void pasteFiles(files)}
+                    onPasteImages={pasteFiles}
                     onPasteFromClipboard={() => void pasteFiles()}
                     onPickAttachments={() => void pickAttachments()}
                   />
@@ -1200,6 +1208,19 @@ function PawRoomGovernanceInner({
 }) {
   const transport = useControlTransport();
   const [busyKey, setBusyKey] = useState('');
+  const [joinedIds, setJoinedIds] = useState<string[]>([]);
+  const previousMemberIds = useRef(new Set(room.participants.filter((item) => item.status === 'active').map((item) => item.id)));
+  useEffect(() => {
+    const current = new Set(room.participants.filter((item) => item.status === 'active').map((item) => item.id));
+    const joined = [...current].filter((id) => !previousMemberIds.current.has(id));
+    previousMemberIds.current = current;
+    if (joined.length) setJoinedIds(joined);
+  }, [room.participants]);
+  useEffect(() => {
+    if (!joinedIds.length) return;
+    const timer = window.setTimeout(() => setJoinedIds([]), 4200);
+    return () => window.clearTimeout(timer);
+  }, [joinedIds]);
   const [topicTitle, setTopicTitle] = useState('');
   const [topicSummary, setTopicSummary] = useState('');
   const [workObjective, setWorkObjective] = useState('');
@@ -1274,9 +1295,10 @@ function PawRoomGovernanceInner({
     <header><span><strong>Room 治理</strong><small>伙伴、话题、工作项与边界</small></span><button onClick={() => void onRefresh()} type="button">刷新</button></header>
     <section>
       <header><span><Users size={15} /><strong>伙伴与分工</strong></span><small>{activeParticipants.length}/{ROOM_PARTICIPANT_LIMIT}</small></header>
-      <div className="paw-room-governance__members">{activeParticipants.map((participant) => <article key={participant.id}>
-        <span aria-hidden="true" className="paw-room-governance__member-mark"><Users size={14} /></span>
-        <span><strong>{roomPlanetName(participant.ordinal)}</strong><small>{roomCollaborationRoleLabel(participant.collaborationRole)}</small></span>
+      {busyKey.startsWith('add:') ? <p className="paw-room-governance__arrival" role="status"><LoaderCircle className="ui-spin" size={16} />正在邀请 {nextPlanetName} 加入…</p> : joinedIds.length ? <p className="paw-room-governance__arrival" role="status"><UserPlus size={16} />{activeParticipants.filter((item) => joinedIds.includes(item.id)).map((item) => roomPlanetName(item.ordinal)).join('、')} 已加入，可以在对话中 @ 点名接手</p> : null}
+      <div className="paw-room-governance__members">{activeParticipants.map((participant) => <article key={participant.id} data-arriving={joinedIds.includes(participant.id) || undefined}>
+        <span aria-hidden="true" className="paw-room-governance__member-mark" data-planet={participant.ordinal}><Orbit size={15} /></span>
+        <span><strong>{roomPlanetName(participant.ordinal)}</strong>{room.roomKind === 'roleplay' ? <small>{roomCollaborationRoleLabel(participant.collaborationRole)}</small> : null}</span>
         {room.roomKind !== 'roleplay' ? <Select aria-label={`${roomPlanetName(participant.ordinal)} 的分工`} disabled={Boolean(busyKey)} onValueChange={(collaborationRole) => void mutate(`role:${participant.id}`, { pathId: 'agent.room.participant.update', params: { roomId: room.id }, body: { participantId: participant.id, collaborationRole } })} options={roomCollaborationRoleOptions(participant.collaborationRole)} value={participant.collaborationRole ?? 'implementer'} /> : null}
         <button aria-label={`移出 ${roomPlanetName(participant.ordinal)}`} disabled={Boolean(busyKey) || activeParticipants.length <= 2 || participant.id === room.moderatorParticipantId} onClick={() => void mutate(`remove:${participant.id}`, { pathId: 'agent.room.participant.remove', params: { roomId: room.id }, body: { participantId: participant.id } })} type="button">{busyKey === `remove:${participant.id}` ? <LoaderCircle className="ui-spin" size={14} /> : <UserMinus size={14} />}</button>
       </article>)}</div>

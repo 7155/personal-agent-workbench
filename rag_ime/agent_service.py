@@ -58,7 +58,7 @@ from .agent_event_projection import AgentEventProjectionService
 from .agent_block_store import AgentBlockStore
 from .agent_delegation import AgentDelegationCoordinator
 from .agent_file_preview import AgentFilePreviewReader
-from .agent_media import AgentMediaStore, IMAGE_MIME_TYPES
+from .agent_media import AgentMediaStore, IMAGE_MIME_TYPES, TEXT_MEDIA_MIME_TYPES
 from .agent_memory_context import AgentMemoryContextService
 from .agent_memory_context_support import (
     compaction_summary as _compaction_summary,
@@ -3494,10 +3494,16 @@ class AgentService:
                 and participant.get("status") == "active"
             )
         }
+        receipts = [self.media.receipt(media_id, room_id=room_id) for media_id in dict.fromkeys(attachment_ids)]
+        if any(receipt.get("mimeType") not in IMAGE_MIME_TYPES | TEXT_MEDIA_MIME_TYPES for receipt in receipts):
+            raise ValueError("Agent 当前支持图片和文本附件，请将此文件转换为文本后发送。")
+        has_images = any(receipt.get("mimeType") in IMAGE_MIME_TYPES for receipt in receipts)
         for session_id in target_session_ids:
             participant = active_by_session.get(str(session_id))
             if participant is None:
                 raise ValueError("Room attachment target is no longer an active participant")
+            if not has_images:
+                continue
             selected = self.runtime.model_catalog(str(session_id)).get("selected")
             if (
                 not isinstance(selected, Mapping)
@@ -3507,13 +3513,6 @@ class AgentService:
                 raise ValueError(
                     f"{name} 的当前模型不支持图片，请切换模型或移除图片后重试"
                 )
-        receipts = [
-            self.media.receipt(media_id, room_id=room_id)
-            for media_id in dict.fromkeys(attachment_ids)
-        ]
-        for receipt in receipts:
-            if receipt.get("mimeType") not in IMAGE_MIME_TYPES:
-                raise ValueError("Room attachments currently support PNG, JPEG, GIF, and WebP only")
         return receipts
 
 
@@ -3927,6 +3926,22 @@ class AgentService:
             ),
         }
 
+    def read_media_resource(
+        self,
+        media_id: str,
+        *,
+        session_id: str,
+    ) -> tuple[dict[str, object], bytes]:
+        """Session Tools can read their own files and their active Room's files."""
+        self.sessions.get(session_id)
+        try:
+            return self.media.read(media_id, session_id=session_id)
+        except KeyError:
+            participant = self.rooms.participant_for_session(session_id)
+            if not participant or participant.get("status") != "active":
+                raise
+            return self.media.read(media_id, room_id=str(participant["roomId"]))
+
     def media_content(
         self,
         media_id: str,
@@ -3939,7 +3954,7 @@ class AgentService:
             room_id=room_id,
         )
         if owner_type == "session":
-            self.sessions.get(owner_id)
+            return self.read_media_resource(media_id, session_id=owner_id)
         else:
             self.rooms.get(owner_id)
         return self.media.read(
@@ -3956,10 +3971,12 @@ class AgentService:
         expected_sha256: str = "",
     ) -> dict[str, object]:
         self.sessions.get(session_id)
+        receipt, _ = self.read_media_resource(media_id, session_id=session_id)
         return self.file_previews.read(
             media_id,
             session_id=session_id,
             expected_sha256=expected_sha256,
+            room_id=str(receipt.get("roomId") or ""),
         )
 
     def prompt(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
@@ -5201,6 +5218,13 @@ class AgentService:
             # create or start a second thread for Eval schedules.
             scheduler.wake()
         return result
+
+    def eval_schedule_action(self, schedule_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        schedule = self.eval_schedules.action(schedule_id, str(payload.get("action") or ""))
+        scheduler = getattr(self, "wake_scheduler", None)
+        if scheduler is not None:
+            scheduler.wake()
+        return {"ok": True, "schedule": schedule}
 
     def eval_schedule_runs(
         self,

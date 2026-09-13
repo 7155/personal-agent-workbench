@@ -330,6 +330,15 @@ export function useCreateEvalSchedule() {
   });
 }
 
+export function useEvalScheduleAction() {
+  const transport = useControlTransport();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ scheduleId, action }: { scheduleId: string; action: 'pause' | 'resume' | 'cancel' | 'retry' }) => transport.request({ pathId: 'observability.evalSchedule.action', params: { scheduleId }, body: { action } }),
+    onSuccess: () => client.invalidateQueries({ queryKey: observabilityQueryKeys.evalSchedules() }),
+  });
+}
+
 export function useEvalScheduleRuns(scheduleId: string) {
   const transport = useControlTransport();
   return useQuery({

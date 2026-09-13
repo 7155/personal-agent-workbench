@@ -1,8 +1,9 @@
-import { AtSign, ListPlus, Play, Plus, Send } from 'lucide-react';
+import { AtSign, ListPlus, Play, Send, Square } from 'lucide-react';
 import {
   startTransition,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type CompositionEvent,
@@ -10,12 +11,16 @@ import {
   type ReactNode,
 } from 'react';
 
-import { IconButton } from '@/components/primitives';
+import { Button, IconButton } from '@/components/primitives';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import type { RoomAttachmentReceipt } from '@/contracts/room-reducer';
 import { ComposerShell } from '@/features/composer/ComposerShell';
+import { ComposerAddMenu } from '@/features/composer/ComposerAddMenu';
+import { ComposerExpandButton, useComposerEditor } from '@/features/composer/ComposerEditor';
+import { usePastedTextAttachments, type ComposerFileImporter } from '@/features/composer/pasted-text';
 import { roomCollaborationRoleLabel } from '../room-copy';
 import { roomParticipantPlanetName } from '../room-participant-identity';
+import './room-composer.css';
 
 interface ComposerParticipant {
   id: string;
@@ -62,6 +67,9 @@ export function RoomComposer({
   onPasteFromClipboard,
   onPickAttachments,
   capabilityControls,
+  onStop,
+  stopping = false,
+  onInvitePartners,
 }: {
   room?: ComposerRoom;
   participantAliases?: Readonly<Record<string, string>>;
@@ -79,7 +87,7 @@ export function RoomComposer({
   onQueue?: (value: string) => boolean;
   onDraftChange: (value: string) => void;
   onAttachmentsChange: (value: RoomAttachmentReceipt[]) => void;
-  onPasteImages: (files: File[]) => void;
+  onPasteImages: ComposerFileImporter;
   onPasteFromClipboard: () => void;
   onPickAttachments: () => void;
   onSend: (value: string) => void | boolean | Promise<boolean>;
@@ -87,9 +95,21 @@ export function RoomComposer({
   continuationAvailable?: boolean;
   onContinue?: () => void;
   capabilityControls?: ReactNode;
+  onStop?: () => void;
+  stopping?: boolean;
+  onInvitePartners?: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
+  const menuId = useId();
+  const draftRef = useRef(draft);
+  const pendingSubmit = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [failedDraft, setFailedDraft] = useState<string>();
+  const [sendError, setSendError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const setTextareaRef = useCallback((node: HTMLTextAreaElement | null) => {
     textareaRef.current = node;
     if (inputRef) inputRef.current = node;
@@ -100,16 +120,24 @@ export function RoomComposer({
   const roomCanCompose = room?.status === 'active';
   const pendingAnswerMode = Boolean(pendingUserAnswer);
   const roomCanSend = roomCanCompose;
+  // Once Send snapshots its attachments, a pending network request must not
+  // prevent preparing the next draft. Runtime execution still has its own gate.
+  const canAttach = Boolean(roomCanCompose && !pendingAnswerMode && (!taskBusyState || submitting) && attachments.length < 8);
+  const pastedText = usePastedTextAttachments({ ownerId: room?.id ?? '', canImport: canAttach, onImport: onPasteImages });
+  useComposerEditor(textareaRef, composerDraft, expanded);
   const participants = room?.participants.filter(
     (participant) => participant.status === 'active',
   ) ?? [];
   const mentionCandidates = mention
     ? participants.filter((participant) => roomMentionMatches(participant, mention.query, participantAliases))
     : [];
+  // Attachments staged while Send is pending belong to the next prompt;
+  // a running Room accepts only text steering.
   const canSend = Boolean(
     roomCanSend
     && (pendingAnswerMode ? composerDraft.trim() : composerDraft.trim() || attachments.length)
-    && !sending,
+    && (!taskBusyState || pendingAnswerMode || attachments.length === 0)
+    && !sending && !submitting && !pastedText.blocked,
   );
   const canContinue = Boolean(
     continuationAvailable
@@ -118,15 +146,19 @@ export function RoomComposer({
     && !pendingAnswerMode
     && !composerDraft.trim()
     && attachments.length === 0
-    && !sending,
+    && !sending && !submitting && !pastedText.blocked,
   );
   /* Queueing is offered only where it is the real alternative to steering: a
      running turn, plain text, and no question waiting on this answer. */
   const canQueue = Boolean(
-    onQueue && taskBusyState === 'running' && !pendingAnswerMode && composerDraft.trim() && !sending,
+    onQueue && taskBusyState === 'running' && !pendingAnswerMode && attachments.length === 0 && composerDraft.trim() && !sending && !submitting && !pastedText.blocked,
   );
 
   useEffect(() => {
+    // A controlled host echoes our own typing. Preserve the caret's mention
+    // menu for that echo; reset only when the host supplies a different draft.
+    if (draft === draftRef.current) return;
+    draftRef.current = draft;
     setComposerDraft(draft);
     setMention(undefined);
     setActiveIndex(0);
@@ -139,6 +171,7 @@ export function RoomComposer({
   }, [pendingAnswerMode]);
 
   function publishDraft(value: string): void {
+    draftRef.current = value;
     startTransition(() => onDraftChange(value));
   }
 
@@ -187,6 +220,13 @@ export function RoomComposer({
   }
 
   function openMentionMenu(): void {
+    const caret = textareaRef.current?.selectionStart ?? composerDraft.length;
+    const current = activeRoomMention(composerDraft, caret);
+    if (current) {
+      setMention(current); setActiveIndex(0);
+      queueMicrotask(() => textareaRef.current?.focus());
+      return;
+    }
     const spacer = composerDraft && !/\s$/u.test(composerDraft) ? ' ' : '';
     const next = `${composerDraft}${spacer}@`;
     const start = next.length - 1;
@@ -215,12 +255,14 @@ export function RoomComposer({
     }
     if (!files.length && !hasFileItem) {
       const text = event.clipboardData.getData?.('text/plain') ?? '';
+      if (pastedText.pasteText(text, 8000 - composerDraft.length + (event.currentTarget.selectionEnd - event.currentTarget.selectionStart))) { event.preventDefault(); return; }
       if (text) return;
       event.preventDefault();
-      onPasteFromClipboard();
+      if (canAttach) onPasteFromClipboard();
       return;
     }
     event.preventDefault();
+    if (!canAttach) return;
     if (files.length) onPasteImages(files);
     else onPasteFromClipboard();
   }
@@ -233,24 +275,35 @@ export function RoomComposer({
   }
 
   function submit(): void {
-    if (!canSend) return;
+    if (!canSend || pendingSubmit.current) return;
     const value = composerDraft;
-    const result = onSend(value);
-    const restoreDraft = () => {
-      setComposerDraft(value);
-      setMention(undefined);
-      setActiveIndex(0);
-      publishDraft(value);
+    setSendError(failedDraft !== undefined);
+    pendingSubmit.current = true;
+    setSubmitting(true);
+    const restoreDraft = (hostReported = false) => {
+      setSendError(!hostReported || failedDraft !== undefined);
+      if (!value) return;
+      if (draftRef.current && draftRef.current !== value) {
+        setFailedDraft((previous) => previous ? `${previous}\n\n${value}` : value);
+        setSendError(true);
+      } else {
+        setComposerDraft(value);
+        publishDraft(value);
+      }
     };
-    if (result === false) {
+    const settled = () => { pendingSubmit.current = false; setSubmitting(false); };
+    try {
+      const result = onSend(value);
+      if (result === false) { restoreDraft(true); settled(); return; }
+      clearDraft();
+      if (result && typeof result !== 'boolean') {
+        void result.then((accepted) => {
+          if (accepted === false) restoreDraft(true);
+        }, () => restoreDraft()).finally(settled);
+      } else settled();
+    } catch {
       restoreDraft();
-      return;
-    }
-    clearDraft();
-    if (result && typeof result !== 'boolean') {
-      void result.then((accepted) => {
-        if (accepted === false) restoreDraft();
-      });
+      settled();
     }
   }
 
@@ -261,10 +314,21 @@ export function RoomComposer({
     if (onQueue(composerDraft)) clearDraft();
   }
 
-  return <div className="room-composer-shell">
+  return <div className="room-composer-shell" data-expanded={expanded || undefined} data-dragging={dragging || undefined}
+    onDragEnter={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current += 1; if (canAttach) setDragging(true); }}
+    onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = canAttach ? 'copy' : 'none'; } }}
+    onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false); }}
+    onDrop={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); if (canAttach) onPasteImages([...event.dataTransfer.files]); }}
+  >
+    {sendError ? <div className="room-composer__recovery" role="alert"><span>{failedDraft ? '上一条没有发出，内容已保留。' : '消息没有发出，草稿已保留，可以重试。'}</span>{failedDraft !== undefined ? <Button size="small" variant="quiet" onClick={() => {
+      const next = `${failedDraft}${composerDraft ? `\n\n${composerDraft}` : ''}`;
+      if (next.length > 8000) { setExpanded(true); return; }
+      setComposerDraft(next); publishDraft(next); setFailedDraft(undefined); setSendError(false); textareaRef.current?.focus();
+    }} disabled={failedDraft.length + composerDraft.length + (composerDraft ? 2 : 0) > 8000}>找回未发送内容</Button> : null}{failedDraft !== undefined ? <details><summary>查看未发送内容</summary><textarea aria-label="未发送的消息" readOnly value={failedDraft} /></details> : null}</div> : null}
+    {dragging ? <div className="room-composer__drop-hint" role="status">松开以添加附件</div> : null}
     <div className="room-composer-wrap">
       {mention && mentionCandidates.length ? <div
-        id="room-mention-menu"
+        id={menuId}
         className="room-mention-menu"
         role="listbox"
         aria-label="选择要点名的伙伴"
@@ -275,14 +339,14 @@ export function RoomComposer({
           const secondary = roomCollaborationRoleLabel(participant.collaborationRole);
           return <button
           type="button"
-          id={`room-mention-${participant.id}`}
+          id={`${menuId}-${participant.id}`}
           role="option"
           aria-selected={index === activeIndex}
           key={participant.id}
           onMouseDown={(event) => {
             event.preventDefault();
-            chooseParticipant(participant);
           }}
+          onClick={() => chooseParticipant(participant)}
         >
           <span aria-hidden="true" className="room-mention-menu__marker"><AtSign size={14} /></span>
           <span><strong>{mentionName}</strong><small>{secondary}</small></span>
@@ -293,16 +357,20 @@ export function RoomComposer({
       <ComposerShell
         surface="room"
         className="room-composer"
+        expanded={expanded}
+        editorAction={<ComposerExpandButton expanded={expanded} onToggle={() => { setExpanded(!expanded); textareaRef.current?.focus(); }} />}
         onSurfacePress={() => textareaRef.current?.focus()}
-        banner={taskBusyState || pendingAnswerMode ? (
+        banner={<>{pastedText.pendingNotice}{taskBusyState || pendingAnswerMode ? (
           <p className="room-composer__task-lock" role="status">
             {pendingAnswerMode
               ? '当前任务正在等待你的回答。这里只发送文字回答；点名和附件不会随回答发送。'
+              : attachments.length
+                ? '附件已保留，当前协作结束后就能发送。'
               : taskBusyState === 'blocked'
                 ? '当前任务已暂停。发送文字可以告诉主持伙伴怎样继续，停止按钮会终止整条协作。'
                 : '当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。'}
           </p>
-        ) : undefined}
+        ) : null}</>}
         attachments={attachments.map((attachment) => ({
           id: attachment.mediaId,
           name: attachment.fileName,
@@ -310,6 +378,7 @@ export function RoomComposer({
           byteSize: attachment.byteSize,
           sha256: attachment.sha256,
           roomId: attachment.roomId,
+          description: pastedText.previews[attachment.fileName],
         }))}
         onRemoveAttachment={(id) => onAttachmentsChange(
           attachments.filter((item) => item.mediaId !== id),
@@ -372,6 +441,7 @@ export function RoomComposer({
                 event.preventDefault();
                 submit();
               }
+              if (event.key === 'Escape' && expanded) { event.preventDefault(); setExpanded(false); }
             }}
             placeholder={pendingAnswerMode
               ? '回答伙伴正在等待的问题…'
@@ -380,37 +450,21 @@ export function RoomComposer({
                 : composerPlaceholder(room)}
             aria-label="协作消息"
             aria-autocomplete="list"
-            aria-controls={mention && mentionCandidates.length ? 'room-mention-menu' : undefined}
+            aria-controls={mention && mentionCandidates.length ? menuId : undefined}
             aria-activedescendant={mention && mentionCandidates.length
-              ? `room-mention-${mentionCandidates[activeIndex]?.id}`
+              ? `${menuId}-${mentionCandidates[activeIndex]?.id}`
               : undefined}
           />
         )}
         controls={(
           <>
             {capabilityControls}
-            <IconButton
-              className="agent-composer__attachment room-composer__attachment"
-              label="添加附件"
-              icon={<Plus size={18} />}
-              disabled={!roomCanCompose || sending || pendingAnswerMode || Boolean(taskBusyState) || attachments.length >= 8}
-              onClick={onPickAttachments}
-              tooltip
-            />
-            {roomCanCompose && participants.length && !pendingAnswerMode ? <IconButton
-              className="room-composer__mention"
-              label="点名一位伙伴"
-              icon={<AtSign size={16} />}
-              aria-controls={mention && mentionCandidates.length ? 'room-mention-menu' : undefined}
-              aria-expanded={Boolean(mention && mentionCandidates.length)}
-              aria-haspopup="listbox"
-              onClick={openMentionMenu}
-              tooltip
-            /> : null}
+            <ComposerAddMenu canAttach={canAttach} disabled={!roomCanCompose} onPickAttachments={onPickAttachments} onMention={participants.length && !pendingAnswerMode ? openMentionMenu : undefined} onInvite={onInvitePartners} />
           </>
         )}
         actions={(
           <>
+            {onStop && taskBusyState ? <IconButton className="room-composer__stop" label={stopping ? '正在停止协作' : '停止当前协作'} icon={<Square size={15} fill="currentColor" />} disabled={stopping} onClick={onStop} tooltip /> : null}
             {onQueue && taskBusyState === 'running' && !pendingAnswerMode ? <IconButton
               className="room-composer__queue"
               label={queueDepth ? `排到当前回合之后（已排 ${queueDepth} 条）` : '排到当前回合之后'}
@@ -438,6 +492,7 @@ export function RoomComposer({
           </>
         )}
       />
+      <div className="room-composer__hint"><span>Enter 发送 · Shift + Enter 换行</span><span>{composerDraft.length > 6400 || expanded ? `${composerDraft.length.toLocaleString()} / 8,000` : '支持粘贴或拖入附件'}</span></div>
     </div>
   </div>;
 }

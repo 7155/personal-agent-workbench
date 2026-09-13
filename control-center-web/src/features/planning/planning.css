@@ -578,3 +578,8 @@
   :is(main, section)[data-route-id='planning'][data-paw-os-app] .planning-wake-form { grid-template-columns: minmax(0, 1fr); }
   :is(main, section)[data-route-id='planning'][data-paw-os-app] .planning-wake-form__wide { grid-column: auto; }
 }
+.planning-wake-create-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.planning-wake-row__copy p { white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.planning-wake-instruction { margin: 6px 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.65; }
+.planning-wake-instruction summary { cursor: pointer; overflow-wrap: anywhere; }
+.planning-wake-instruction[open] p { display: block; -webkit-line-clamp: unset; overflow: visible; }
