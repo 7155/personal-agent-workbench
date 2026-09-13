@@ -108,7 +108,7 @@
 }
 .paw-room-rounds__navigation button:hover { background: var(--color-surface-subtle); }
 .paw-room-rounds__navigation button:active { transform: scale(.97); }
-.paw-room-rounds__navigation small { color: var(--paw-text-secondary); font-size: 11px; }
+.paw-room-rounds__navigation small { color: var(--paw-text-secondary); font-size: 12px; }
 .paw-room-rounds__navigation i { width: 6px; height: 6px; border-radius: 50%; background: var(--paw-text-secondary); }
 .paw-room-rounds__navigation [data-state='running'] i { background: var(--paw-accent); }
 .paw-room-rounds__navigation [data-state='failed'] i { background: var(--paw-danger, #c64f55); }
@@ -1360,7 +1360,7 @@
 .paw-room-round__history > ol > li[data-state='failed'] > i { background: var(--paw-danger, #c64f55); }
 .paw-room-round__history > ol > li:not(:last-child)::after { position: absolute; inset: 16px auto -4px 2.5px; width: 1px; background: var(--paw-border); content: ''; }
 .paw-room-round__history > ol > li > div { min-width: 0; flex: 1; }
-.paw-room-round__history time { color: var(--paw-text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.paw-room-round__history time { color: var(--paw-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .paw-room-round__history .agent-markdown { font-size: 13px; line-height: 1.6; }
 .paw-room-round__history .agent-markdown p { margin: 2px 0 0; }
 .paw-room-rounds-workspace .paw-room-round__history-toggle { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 5px 0; border: 0; background: transparent; color: var(--paw-accent); font-size: 12px; cursor: pointer; }
@@ -1490,10 +1490,10 @@
   .paw-room-round__notice { flex-wrap: wrap; }
   .paw-room-round__notice > button { margin-left: 28px; }
   .paw-room-round__stages { gap: 16px; }
-  .paw-room-round__stages li { gap: 4px; font-size: 11px; }
+  .paw-room-round__stages li { gap: 4px; font-size: 12px; }
   .paw-room-round__stages li + li::before { left: -11px; }
   .paw-room-session-round__prompt { gap: 8px; }
-  .paw-room-session-round__number { font-size: 11px; }
+  .paw-room-session-round__number { font-size: 12px; }
   .paw-room-session-round--collaboration .paw-room-session-round__objective,
   .paw-room-session-round--collaboration .paw-room-session-round__prompt > button { min-width: 0; max-width: 84%; padding: 10px 12px; }
   .paw-room-round__table-scroll {
