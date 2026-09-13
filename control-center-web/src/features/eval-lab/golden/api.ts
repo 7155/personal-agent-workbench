@@ -5,7 +5,7 @@ import { labConnectionKey as goldenConnectionKey, requestLabControl as request }
 import { isActiveJob, isGoldenJob, isGoldenSuite, object, parseGoldenRead, type GoldenAction, type GoldenCommand, type GoldenRead, type GoldenReceipt, type GoldenSuite } from './types';
 
 type PendingCommand = { command: GoldenCommand; outcome: 'sending' | 'unknown' };
-const actions: GoldenAction[] = ['create', 'draft', 'review_case', 'label_sample', 'judge_config', 'calibrate', 'freeze', 'experiment', 'cancel', 'resume'];
+const actions: GoldenAction[] = ['create', 'draft', 'review', 'review_case', 'label_sample', 'judge_config', 'calibrate', 'freeze', 'experiment', 'cancel', 'resume'];
 export async function getGoldenSuites(transport: ControlTransport, suiteId = '', signal?: AbortSignal): Promise<GoldenRead> {
   const response = await request(transport, {
     pathId: 'agent.eval-lab.golden.get', ...(suiteId ? { query: { suiteId } } : {}), ...(signal ? { signal } : {}),

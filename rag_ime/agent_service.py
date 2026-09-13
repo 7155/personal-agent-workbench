@@ -279,6 +279,7 @@ class AgentService:
         self._eval_lab_project_application = None
         self._eval_lab_app_lock = RLock()
         self._eval_lab_app_application = None
+        self._eval_lab_app_research_application = None
         self._eval_lab_trial_lock = RLock()
         self._eval_lab_trial_store: AgentLabTrialStore | None = None
         self._eval_lab_trial_application: AgentLabTrialApplication | None = None
@@ -1680,6 +1681,7 @@ class AgentService:
                     cancel_knowledge=lambda job_id: self.eval_lab_trial_cancel({"jobId": job_id}),
                     read_experiments=self.eval_lab._experiments_with_source_ledger,
                     read_trials=self.eval_lab_trials,
+                    command_app=self.eval_lab_app_command,
                 )
             return self._eval_lab_project_application
 
@@ -1697,6 +1699,21 @@ class AgentService:
 
     def eval_lab_app_download(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self._lab_project_application().apps.download(payload)
+
+    def eval_lab_app_research_tool(self, session_id: str, operation: str, payload: Mapping[str, object]) -> dict[str, object]:
+        from .agent_lab.apps import AgentLabAppApplication
+        # Tool dispatch may arrive in a gateway process other than the model
+        # admission process. The same persisted App call/version owns scope.
+        with self._eval_lab_app_lock:
+            app = self._eval_lab_app_application
+            if app is None:
+                if self._eval_lab_app_research_application is None:
+                    self._eval_lab_app_research_application = AgentLabAppApplication(
+                        self._lab_project_application().apps,
+                        complete=lambda **_: (_ for _ in ()).throw(RuntimeError('Research tools do not admit models')),
+                        abort=lambda _: None, start_workers=False, recover=False)
+                app = self._eval_lab_app_research_application
+        return app.research_tool(self.sessions.get(session_id), operation, payload)
 
     def eval_lab_app_command(self, payload: Mapping[str, object]) -> dict[str, object]:
         from .agent_lab.apps import AgentLabAppApplication
@@ -1748,7 +1765,7 @@ class AgentService:
             return AgentLabGoldenStore(
                 self.sessions.db_path, default_model=self._golden_current_model(),
             ).command(payload)
-        if payload.get("action") not in {"draft", "calibrate", "experiment", "cancel", "resume"}:
+        if payload.get("action") not in {"draft", "review", "calibrate", "experiment", "cancel", "resume"}:
             return self._golden_store().command(payload)
         if not self._eval_lab_golden_execution_owner:
             raise AgentLabGoldenServiceUnavailable()
@@ -6463,6 +6480,8 @@ class AgentService:
             self._eval_lab_golden_application.close()
         if self._eval_lab_app_application is not None:
             self._eval_lab_app_application.close()
+        if self._eval_lab_app_research_application is not None:
+            self._eval_lab_app_research_application.close()
         self.delegation.close()
         self.runtime.stop()
         self.background_jobs.close()

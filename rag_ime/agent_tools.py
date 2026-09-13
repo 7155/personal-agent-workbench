@@ -608,8 +608,18 @@ _TOOL_SPECS: tuple[dict[str, object], ...] = (
         "input": "读取成果身份，或带 expectedRevision 和 clientRequestId 的项目命令",
         "output": "真实项目、成果版本、材料快照、应用版本与实际调用回执",
         "does": "与前端共用项目命令；执行操作只调用当前项目的真实绑定与原有执行所有者。",
-        "operations": ("read", "command", "execution_read", "execution_command"),
+        "operations": ("read", "command", "execution_read", "execution_command", "knowledge_read", "knowledge_command", "app_command"),
         "resultPresentation": "tool_result",
+    },
+    {
+        "id": "lab_research", "domain": "knowledge", "displayName": "研究原文",
+        "description": "在当前应用冻结的知识库中查找文档、文内定位和分页读取，保留引用及实际预算",
+        "when": ("当前 App 的研究任务需要检查原文、方法、结果或限制",),
+        "notFor": ("访问任意其他知识库、重新索引或修改外部数据",),
+        "input": "discover/find/open/search；只使用返回的文档和引用标识",
+        "output": "带来源和页码的原文窗口、后续游标与本次真实工具预算",
+        "does": "读取本次 App 版本冻结的来源，重复工具回执不重新消耗预算。",
+        "operations": ("discover", "find", "open", "search"), "resultPresentation": "tool_result",
     },
     {
         "id": "desktop_semantic",
@@ -883,6 +893,19 @@ _KNOWLEDGE_RETRIEVAL_PARAMETER_SCHEMA: dict[str, object] = {
 }
 
 _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
+    "lab_research": {
+        "type": "object", "additionalProperties": False, "required": ["op"],
+        "properties": {
+            "op": {"type": "string", "enum": ["discover", "find", "open", "search"]},
+            "query": {"type": "string", "maxLength": 2000, "description": "discover/search 必填。discover 使用单篇文献的短标题关键词；search 使用一个具体证据问题。"},
+            "sourceId": {"type": "string"}, "documentId": {"type": "string"}, "chunkId": {"type": "string"},
+            "patterns": {"type": "array", "minItems": 1, "maxItems": 10, "description": "仅 find：1–10 个原文中的字面短语，不是正则表达式。", "items": {"type": "string", "minLength": 1, "maxLength": 240}},
+            "page": {"type": "integer", "minimum": 1}, "offset": {"type": "integer", "minimum": 0},
+            "charOffset": {"type": "integer", "minimum": 0}, "before": {"type": "integer", "minimum": 0},
+            "after": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "description": "仅 discover/find/open；search 不接受此字段。discover/find 最大20，open 最大24。"},
+            "maxChars": {"type": "integer", "minimum": 1, "description": "仅 open；不得超过本次 App 返回的 maxReadChars。"},
+        },
+    },
     "trace_diagnostics": {
         "type": "object", "additionalProperties": False, "required": ["op"],
         "properties": {
@@ -909,6 +932,12 @@ _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
     "lab_project": {
         "type": "object",
         "oneOf": [
+            {"type": "object", "additionalProperties": False,
+             "required": ["op", "appId", "action", "expectedRevision", "clientRequestId", "input"],
+             "properties": {"op": {"const": "app_command"}, "appId": {"type": "string", "minLength": 1},
+                 "action": {"type": "string", "enum": ["invoke", "cancel", "resume"]},
+                 "expectedRevision": {"type": "integer", "minimum": 1},
+                 "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 240}, "input": {"type": "object"}}},
             {"type": "object", "additionalProperties": False, "required": ["op"],
              "properties": {"op": {"const": "read"}, "artifactId": {"type": "string"},
                             "artifactRevision": {"type": "integer", "minimum": 1}, "materialSetId": {"type": "string"},
@@ -922,11 +951,18 @@ _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
                             "expectedRevision": {"type": "integer", "minimum": 1},
                             "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 240},
                             "input": {"type": "object", "description": "update_brief: title/description; import_materials: path or materials; remove_materials: sourceIds; publish_artifact: title,kind,view,content, optional artifactId+expectedArtifactRevision,summary,actions; set_workspace: artifactOrder,primaryArtifactId,layout; bind_execution: adapterId,input, optional artifactId+artifactRevision; prepare_app: directory relative to executionWorkspace.path, optional appId to create a new immutable version. Read the current project's commandGuide before a new operation."}}},
+            {"type": "object", "additionalProperties": False, "required": ["op"],
+             "properties": {"op": {"const": "knowledge_read"}, "jobId": {"type": "string", "minLength": 1}}},
+            {"type": "object", "additionalProperties": False, "required": ["op", "expectedRevision", "clientRequestId", "input"],
+             "properties": {"op": {"const": "knowledge_command"},
+                            "expectedRevision": {"type": "integer", "minimum": 1},
+                            "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 240},
+                            "input": {"type": "object", "description": "Read commandGuide.knowledge; use existing project corpus/index/dataset IDs. File paths must be inside the Session workspace."}}},
             {"type": "object", "additionalProperties": False, "required": ["op", "bindingId"],
              "properties": {"op": {"const": "execution_read"}, "bindingId": {"type": "string", "minLength": 1}}},
             {"type": "object", "additionalProperties": False, "required": ["op", "bindingId", "action", "expectedRevision", "clientRequestId", "input"],
              "properties": {"op": {"const": "execution_command"}, "bindingId": {"type": "string", "minLength": 1},
-                            "action": {"type": "string", "enum": ["draft", "judge_config", "calibrate", "freeze", "experiment", "cancel", "resume"]},
+                            "action": {"type": "string", "enum": ["draft", "review", "review_case", "label_sample", "judge_config", "calibrate", "freeze", "experiment", "cancel", "resume"]},
                             "expectedRevision": {"type": "integer", "minimum": 1}, "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 240}, "input": {"type": "object"}}},
         ],
     },
@@ -3299,6 +3335,12 @@ class ControlToolGateway:
             raise ValueError("Lab project service is unavailable")
         return dict(execute(str(args.get("_sessionId") or ""), operation, args))
 
+    def _lab_research(self, operation: str, args: Mapping[str, object]) -> dict[str, object]:
+        execute = getattr(self.lab_projects, 'eval_lab_app_research_tool', None)
+        if not callable(execute):
+            raise ValueError('Lab research service is unavailable')
+        return dict(execute(str(args.get('_sessionId') or ''), operation, args))
+
     def _require_facilitator_root_work_document(
         self,
         session: Mapping[str, object],
@@ -3343,7 +3385,7 @@ class ControlToolGateway:
                     or self.sandbox_connector is not None
                 )
                 and (
-                    str(spec["id"]) != "lab_project"
+                    str(spec["id"]) not in {"lab_project", "lab_research"}
                     or self.lab_projects is not None
                 )
             )
@@ -3432,6 +3474,12 @@ class ControlToolGateway:
                     and session.get("ownerAppId") == "extension:agent-lab"
                     and str(session.get("surfaceKey") or "").startswith("project.")
                     and str(session.get("surfaceKey") or "").endswith(".guide")
+                ):
+                    effective_operations = []
+                if str(spec['id']) == 'lab_research' and not (
+                    session.get('surfaceKind') == 'extension_app'
+                    and str(session.get('ownerAppId') or '').startswith('extension:lab-')
+                    and str(session.get('surfaceKey') or '').startswith('application.')
                 ):
                     effective_operations = []
                 # A coordinator without a selected directory must not expose
@@ -3622,6 +3670,7 @@ class ControlToolGateway:
             "sandbox": self._sandbox,
             "work_documents": self._work_documents,
             "lab_project": self._lab_project,
+            "lab_research": self._lab_research,
         }
         risk_level = str(dict(spec.get("operationRisks") or {}).get(operation) or "R0")
         if read_only_validation_command:
@@ -3666,8 +3715,9 @@ class ControlToolGateway:
                 handler_args = dict(args)
                 handler_args["_sessionId"] = session_id
                 runtime_context = request.get("runtimeContext")
-                if tool == "agents":
+                if tool in {"agents", "lab_research"}:
                     handler_args["_toolCallId"] = str(request["toolCallId"])
+                if tool == "agents":
                     handler_args["_loadReceiptId"] = str(request.get("loadReceiptId") or "")
                 if tool == "agents" and operation == "delegate":
                     if isinstance(runtime_context, Mapping):
@@ -10568,7 +10618,8 @@ def _tool_profile_allows(
         "work_documents": frozenset({"list", "history.search", "get"}),
         # These commands maintain the current App's artifacts and bindings,
         # like conversational Todo state; no external task runs here.
-        "lab_project": frozenset({"read", "command", "execution_read"}),
+        "lab_project": frozenset({"read", "command", "execution_read", "knowledge_read"}),
+        "lab_research": frozenset({"discover", "find", "open", "search"}),
         "workspace_list": frozenset({"list"}),
         "workspace_read": frozenset({"read"}),
         "workspace_search": frozenset({"search"}),

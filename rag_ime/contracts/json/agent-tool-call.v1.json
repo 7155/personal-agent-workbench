@@ -8,7 +8,7 @@
     "sessionId": {"type": "string", "minLength": 1},
     "tool": {
       "type": "string",
-      "enum": ["overview", "input", "voice", "planning", "agent_schedule", "memory", "agent_role_book", "knowledge", "models", "runtime", "configuration", "agents", "session_search", "trace_diagnostics", "room_partner", "structured_output", "browser", "todo", "agent_goal", "plugins", "sandbox", "work_documents", "lab_project", "desktop_semantic", "ls", "read", "grep", "find", "edit", "write", "bash", "workspace_list", "workspace_lsp", "workspace_read", "workspace_search", "workspace_patch", "workspace_edit", "workspace_write", "workspace_shell", "workspace_job"]
+      "enum": ["overview", "input", "voice", "planning", "agent_schedule", "memory", "agent_role_book", "knowledge", "models", "runtime", "configuration", "agents", "session_search", "trace_diagnostics", "room_partner", "structured_output", "browser", "todo", "agent_goal", "plugins", "sandbox", "work_documents", "lab_project", "lab_research", "desktop_semantic", "ls", "read", "grep", "find", "edit", "write", "bash", "workspace_list", "workspace_lsp", "workspace_read", "workspace_search", "workspace_patch", "workspace_edit", "workspace_write", "workspace_shell", "workspace_job"]
     },
     "toolCallId": {"type": "string", "minLength": 1},
     "sourceLoopId": {"type": "string", "minLength": 1, "maxLength": 240},

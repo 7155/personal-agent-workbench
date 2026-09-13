@@ -50,6 +50,7 @@ const delegatedProductToolIds = [
   "plugins",
   "work_documents",
   "lab_project",
+  "lab_research",
   "desktop_semantic",
   "workspace_list",
   "workspace_lsp",
@@ -896,11 +897,38 @@ const roleBookParameterSchema: Record<string, unknown> = {
 
 const toolSpecs: ToolSpec[] = [
   {
+    name: "lab_research",
+    label: "研究原文",
+    description: "读取本次 App 版本冻结的论文来源，定位原文章节、分页阅读或执行检索；来源与工具预算由当前 App 调用绑定。",
+    operations: ["discover", "find", "open", "search"],
+    progress: { discover: "正在定位文献", find: "正在定位原文段落", open: "正在读取原文", search: "正在检索冻结资料" },
+    guidelines: [
+      "仅用于已绑定的研究 App Session。不能选择其他 App、知识库或索引。",
+      "先 discover 定位论文，再用返回的 sourceId/documentId 做 find 和 open；引用只使用真实返回的来源与页码。",
+      "discover 的 query 只用一篇文献的短标题、作者或年份；多个词须同时出现在标题中。比较多篇论文时分别 discover，空结果先缩短标题词。",
+      "各操作字段不同：discover={op,query,offset?,limit?}；search={op,query}，检索数量由冻结配置决定，不传 limit/patterns；find={op,sourceId,patterns,offset?,limit?}；open={op,sourceId,page?,offset?,limit?,maxChars?} 或用 chunkId 及 before/after 读取邻文。",
+      "按 nextCursor 继续读取，并根据真实 budget 停止或缩小查询；缺少证据时说明缺口。",
+    ],
+    parameterSchema: {
+      type: "object", additionalProperties: false, required: ["op"],
+      properties: {
+        op: { type: "string", enum: ["discover", "find", "open", "search"] },
+        query: { type: "string", maxLength: 2000, description: "discover/search 必填。discover 使用单篇文献的短标题关键词；search 使用一个具体证据问题。" },
+        sourceId: { type: "string" }, documentId: { type: "string" }, chunkId: { type: "string" },
+        patterns: { type: "array", minItems: 1, maxItems: 10, description: "仅 find：1–10 个原文中的字面短语，不是正则表达式。", items: { type: "string", minLength: 1, maxLength: 240 } },
+        page: { type: "integer", minimum: 1 }, offset: { type: "integer", minimum: 0 },
+        charOffset: { type: "integer", minimum: 0 }, before: { type: "integer", minimum: 0 },
+        after: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, description: "仅 discover/find/open；search 不接受此字段。discover/find 最大20，open 最大24。" },
+        maxChars: { type: "integer", minimum: 1, description: "仅 open；不得超过本次 App 返回的 maxReadChars。" },
+      },
+    },
+  },
+  {
     name: "lab_project",
     label: "Lab 项目成果",
     description: "在当前 Lab 项目中读取材料和成果，发布项目特有的文档、表格、表单、代码或交互页面；与前端共用版本和命令。",
-    operations: ["read", "command", "execution_read", "execution_command"],
-    progress: { read: "正在读取项目成果", command: "正在保存项目成果", execution_read: "正在读取实际运行", execution_command: "正在提交执行操作" },
+    operations: ["read", "command", "execution_read", "execution_command", "knowledge_read", "knowledge_command", "app_command"],
+    progress: { read: "正在读取项目成果", command: "正在保存项目成果", execution_read: "正在读取实际运行", execution_command: "正在提交执行操作", knowledge_read: "正在读取知识库实验", knowledge_command: "正在提交知识库任务", app_command: "正在提交应用调用" },
     guidelines: [
       "仅用于已绑定的 Lab 项目 Agent；项目身份由 Session 决定，不能传入其他项目标识。",
       "先 read 获取真实 revision、材料与成果。根据项目选择或调整 Skill 模板，不套用固定业务字段或流程。",
@@ -911,6 +939,12 @@ const toolSpecs: ToolSpec[] = [
     parameterSchema: {
       type: "object",
       oneOf: [
+        { type: "object", additionalProperties: false, required: ["op", "appId", "action", "expectedRevision", "clientRequestId", "input"], properties: {
+          op: { const: "app_command" }, appId: { type: "string", minLength: 1 },
+          action: { type: "string", enum: ["invoke", "cancel", "resume"] },
+          expectedRevision: { type: "integer", minimum: 1 },
+          clientRequestId: { type: "string", minLength: 1, maxLength: 240 }, input: { type: "object" },
+        } },
         { type: "object", additionalProperties: false, required: ["op"], properties: {
           op: { const: "read" }, artifactId: { type: "string" }, artifactRevision: { type: "integer", minimum: 1 }, materialSetId: { type: "string" },
           appId: { type: "string" }, appVersion: { type: "integer", minimum: 1 }, appCallId: { type: "string" },
@@ -919,12 +953,19 @@ const toolSpecs: ToolSpec[] = [
           op: { const: "command" }, action: { type: "string", enum: ["update_brief", "import_materials", "remove_materials", "publish_artifact", "set_workspace", "bind_execution", "prepare_app"] },
           expectedRevision: { type: "integer", minimum: 1 }, clientRequestId: { type: "string", minLength: 1, maxLength: 240 }, input: { type: "object", description: "各操作输入请读项目返回的 commandGuide；prepare_app 使用相对执行目录 directory，可附 appId 创建该应用的新版本。" },
         } },
+        { type: "object", additionalProperties: false, required: ["op"], properties: {
+          op: { const: "knowledge_read" }, jobId: { type: "string", minLength: 1 },
+        } },
+        { type: "object", additionalProperties: false, required: ["op", "expectedRevision", "clientRequestId", "input"], properties: {
+          op: { const: "knowledge_command" }, expectedRevision: { type: "integer", minimum: 1 },
+          clientRequestId: { type: "string", minLength: 1, maxLength: 240 }, input: { type: "object", description: "读取 commandGuide.knowledge，使用当前项目的 corpus/index/dataset 标识；本地文件须在当前 Session 工作目录内。" },
+        } },
         { type: "object", additionalProperties: false, required: ["op", "bindingId"], properties: {
           op: { const: "execution_read" }, bindingId: { type: "string", minLength: 1 },
         } },
         { type: "object", additionalProperties: false, required: ["op", "bindingId", "action", "expectedRevision", "clientRequestId", "input"], properties: {
           op: { const: "execution_command" }, bindingId: { type: "string", minLength: 1 },
-          action: { type: "string", enum: ["draft", "judge_config", "calibrate", "freeze", "experiment", "cancel", "resume"] },
+          action: { type: "string", enum: ["draft", "review", "review_case", "label_sample", "judge_config", "calibrate", "freeze", "experiment", "cancel", "resume"] },
           expectedRevision: { type: "integer", minimum: 1 }, clientRequestId: { type: "string", minLength: 1, maxLength: 240 }, input: { type: "object" },
         } },
       ],
@@ -2310,6 +2351,15 @@ function readStoredToolOutput(params: ToolParams): unknown {
 
 function parametersFor(spec: ToolSpec) {
   if (spec.parameterSchema) {
+    if (spec.name === "lab_project" && Array.isArray(spec.parameterSchema.oneOf)) {
+      return {
+        ...spec.parameterSchema,
+        oneOf: spec.parameterSchema.oneOf.filter((branch) => {
+          const operation = branch?.properties?.op?.const;
+          return typeof operation === "string" && spec.operations.includes(operation);
+        }),
+      };
+    }
     const properties = spec.parameterSchema.properties;
     const operation = properties
       && typeof properties === "object"
@@ -2637,7 +2687,8 @@ function specsForToolProfile(specs: ToolSpec[]) {
         agent_schedule: ["list", "runs"],
         todo: ["view"],
         agent_goal: ["list"],
-        lab_project: ["read", "command", "execution_read"],
+        lab_project: ["read", "command", "execution_read", "knowledge_read"],
+        lab_research: ["discover", "find", "open", "search"],
         workspace_job: ["list", "status", "logs"],
         workspace_lsp: [
           "status", "symbols", "hover", "definition", "references", "diagnostics",

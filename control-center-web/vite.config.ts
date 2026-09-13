@@ -67,8 +67,8 @@ function controlTransportBoundary(): Plugin {
       );
       return httpOnlyBuild
         ? isolated.replace(
-            "img-src 'self' data: blob: http://127.0.0.1:8766;",
-            "img-src 'self' data: blob:;",
+            /(img-src[^;]*) http:\/\/127\.0\.0\.1:8766(?=[ ;])/,
+            '$1',
           )
         : isolated;
     },

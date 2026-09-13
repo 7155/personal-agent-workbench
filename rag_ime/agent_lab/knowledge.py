@@ -25,6 +25,7 @@ from .knowledge_data import (
     file_hash, normalize_cases, normalize_documents, read_case_file,
     read_jsonl, write_json, write_jsonl,
 )
+from .knowledge_package import read_index_package, match_corpus
 from ..embeddings import embedding_provider_from_env, embedding_provider_info
 from ..knowledge_embedding_profile import embedding_environment_from_settings, normalize_knowledge_embedding_profile
 from ..knowledge_library import KnowledgeLibraryConfig, KnowledgeLibraryService
@@ -179,6 +180,33 @@ class AgentLabKnowledgeResource:
         return [job for job in self.read_trials("").get("jobs", [])
                 if job.get("sceneId") == SCENE_ID and job.get("publicSpec", {}).get("projectId") == project_id]
 
+    def project_resources(self) -> dict[str, dict]:
+        """Small navigation projection from completed owner receipts, once per catalog read.
+
+        Counts do not copy corpus content or trigger parsing/indexing. Document
+        and chunk counts describe the latest completed index (or corpus while
+        no index exists), not the sum of overlapping resource versions.
+        """
+        grouped: dict[str, list[dict]] = {}
+        for job in self.read_trials("").get("jobs", []):
+            result = job.get("result")
+            project_id = job.get("publicSpec", {}).get("projectId")
+            if (job.get("sceneId") == SCENE_ID and job.get("state") == "completed"
+                    and isinstance(project_id, str) and project_id and isinstance(result, dict)
+                    and result.get("schemaVersion") == _SCHEMA and result.get("kind") in {"corpus", "index", "dataset"}):
+                grouped.setdefault(project_id, []).append(job)
+        resources = {}
+        for project_id, jobs in grouped.items():
+            jobs.sort(key=lambda job: (int(job.get("updatedAtMs") or job.get("createdAtMs") or 0), str(job.get("jobId") or "")), reverse=True)
+            corpora = [job for job in jobs if job["result"]["kind"] == "corpus"]
+            indexes = [job for job in jobs if job["result"]["kind"] == "index"]
+            datasets = [job for job in jobs if job["result"]["kind"] == "dataset"]
+            latest = (indexes or corpora or [{}])[0].get("result", {})
+            resources[project_id] = {"corpusCount": len(corpora), "indexCount": len(indexes), "datasetCount": len(datasets),
+                "documentCount": max(0, int(latest.get("documentCount") or 0)),
+                "chunkCount": max(0, int(latest.get("chunkCount") or 0))}
+        return resources
+
     def read(self, project_id: str) -> dict:
         jobs = self._jobs(project_id)
         finished = [job for job in jobs if job.get("state") == "completed" and isinstance(job.get("result"), dict)
@@ -216,6 +244,7 @@ class AgentLabKnowledgeResource:
             "connect_base": {"kbId"},
             "import_dataset": {"corpusId", "path", "uploadId", "fields"},
             "index": {"corpusId", "chunking", "embedding"},
+            "restore_index": {"corpusId", "packagePath"},
             "search": {"indexId", "profile", "query"},
             "evaluate": {"indexId", "datasetId", "profile", "split"},
         }
@@ -240,10 +269,18 @@ class AgentLabKnowledgeResource:
         if operation == "connect_base":
             private["kbId"] = _string(spec.get("kbId"), "知识库标识", limit=240)
             public["kbId"] = private["kbId"]
-        if operation in {"import_dataset", "index"}:
+        if operation in {"import_dataset", "index", "restore_index"}:
             corpus = self._dependency(spec.get("corpusId"), project_id, "corpus")
             private["corpus"] = corpus
             public.update(corpusId=corpus["jobId"], corpusHash=corpus["corpusHash"])
+        if operation == "restore_index":
+            path = Path(_string(spec.get("packagePath"), "已导出 App 路径", limit=4000)).expanduser()
+            if not path.is_absolute() or not path.exists():
+                raise KnowledgeIntakeError("请选择本机存在的完整已导出 App 目录或 ZIP。")
+            package = read_index_package(path)
+            match_corpus(package, self._documents(corpus), corpus["corpusHash"])
+            private.update(packagePath=str(path.resolve()), packageHashes=package["hashes"])
+            public.update(sourceName=path.name, packageHashes=package["hashes"], embeddingModelCalls=0)
         if operation == "index":
             chunking = spec.get("chunking", {})
             if not isinstance(chunking, Mapping) or set(chunking) - {"strategy", "size", "overlap"}:
@@ -260,7 +297,7 @@ class AgentLabKnowledgeResource:
             normalized = normalize_knowledge_embedding_profile(self.settings() if choice == "configured" else {"knowledgeLibrary": {"embedding": {"provider": "none"}}})
             if choice == "configured" and normalized["provider"] in {"none", "local-hash"}:
                 raise KnowledgeIntakeError("尚未配置语义 Embedding。请先在知识库设置中配置真实模型，或使用关键词索引。")
-            frozen = {key: normalized[key] for key in _PROFILE_FIELDS}
+            frozen = {key: normalized[key] for key in _PROFILE_FIELDS | {"modelReference", "modelRevision"} if key in normalized}
             private["embeddingSettings"] = {"knowledgeLibrary": {"embedding": frozen}}
             private["embeddingProfile"] = normalize_knowledge_embedding_profile(private["embeddingSettings"])
             public.update(chunking=private["chunking"], embedding=private["embeddingProfile"])
@@ -342,6 +379,8 @@ class AgentLabKnowledgeResource:
                     "provenance": "user_import"}}
         if operation == "index":
             return self._index(value, root, observer, cancelled)
+        if operation == "restore_index":
+            return self._restore_index(value, root, observer, cancelled)
         if operation in {"search", "evaluate"}:
             index = value["index"]
             corpus = self._dependency(index["corpusId"], value["projectId"], "corpus")
@@ -436,6 +475,49 @@ class AgentLabKnowledgeResource:
                     "chunking": value["chunking"], "embeddingProfile": value["embeddingProfile"], "dense": dense,
                     "reranker": status["reranker"], "configHash": digest({"chunking": value["chunking"], "embedding": value["embeddingProfile"]})}
 
+    def _restore_index(self, value: dict, root: Path, observer: Any, cancelled: Callable[[], bool]) -> dict:
+        package = read_index_package(Path(value["packagePath"]))
+        if package["hashes"] != value["packageHashes"]:
+            raise KnowledgeIntakeError("索引包在准入后发生变化，请保留旧任务并重新选择。")
+        original_documents = self._documents(value["corpus"])
+        mapping = match_corpus(package, original_documents, value["corpus"]["corpusHash"])
+        documents, aliases = content_identities(original_documents)
+        dense = package["dense"]
+        # Only public encoding options become the new run's provider settings.
+        encoding = {key: dense["provider"][key] for key in
+                    ("provider", "model", "modelRevision", "modelReference", "queryPrefix", "documentPrefix", "dimensions")
+                    if key in dense["provider"]} if dense else {"provider": "none"}
+        encoding["denseBackend"] = "sqlite-exact"
+        settings = {"knowledgeLibrary": {"embedding": encoding}}
+        profile = normalize_knowledge_embedding_profile(settings)
+        chunking = {key: package["search"]["base"]["chunkingConfig"][key] for key in ("strategy", "size", "overlap")}
+        index = {"jobId": value["jobId"], "projectId": value["projectId"], "embeddingSettings": settings}
+        if cancelled():
+            raise InterruptedError("已停止恢复索引。")
+        observer.progress(f"正在核对并恢复 {len(documents):,} 篇全文的冻结索引，不重新计算文档向量")
+        with self._sandbox(index) as sandbox:
+            run = sandbox.create_run(value["projectId"], label=value["corpus"]["title"][:200])
+            index["runId"] = run["runId"]
+            sandbox.restore_search_snapshot(value["projectId"], run["runId"], base_alias="corpus",
+                snapshot=package["search"], external_document_ids=mapping, dense_snapshot=dense, cancelled=cancelled)
+            if cancelled():
+                raise InterruptedError("已停止恢复索引。")
+            status = sandbox.status(value["projectId"], run["runId"])
+            base = status["bases"][0]
+            if (base["readyDocumentCount"] != len(documents) or base["reindexRequired"]
+                    or (dense is not None and status["dense"]["vectorCount"] != base["chunkCount"])):
+                raise KnowledgeIntakeError("冻结索引未完整恢复，此次任务没有成为可用索引。")
+        return {**index, "kind": "index", "corpusId": value["corpus"]["jobId"], "corpusHash": value["corpus"]["corpusHash"],
+                "title": value["corpus"]["title"], "documentCount": len(documents), "chunkCount": base["chunkCount"],
+                "sourceCount": len(original_documents), "duplicateSourceCount": len(original_documents) - len(documents),
+                "sourceAliases": {s: c for s, c in aliases.items() if s != c},
+                "identityPolicy": "exact-body-sha256; first-source-in-corpus", "chunking": chunking,
+                "embeddingProfile": profile, "dense": status["dense"], "reranker": status["reranker"],
+                "configHash": digest({"chunking": chunking, "embedding": profile}),
+                "indexReuse": {"sourceIndexId": package["knowledge"]["sourceIndexId"], "packageHashes": package["hashes"],
+                    "documentCount": len(documents), "chunkCount": base["chunkCount"], "embeddingModelCalls": 0,
+                    "verification": "complete_corpus_hash_source_identity_and_chunk_content"}}
+
     @contextmanager
     def _sandbox(self, index: Mapping):
         root = self._path(index["jobId"]) / "sandbox"
@@ -458,6 +540,8 @@ class AgentLabKnowledgeResource:
         result = sandbox.search(index["projectId"], index["runId"], base_alias="corpus", query=query,
                                 top_k=profile["topK"], mode=profile["mode"], threshold=profile["threshold"],
                                 rerank=profile["rerank"], rerank_candidate_depth=profile["candidateDepth"])
+        if profile["mode"] in {"dense", "hybrid"} and not result.get("retrieval", {}).get("denseCandidates"):
+            raise KnowledgeIntakeError("语义查询未返回可用的冻结向量候选；本次检索不能回退到关键词结果。")
         hits = []
         for hit in result["hits"]:
             source = documents.get(hit["externalDocumentId"])
@@ -526,7 +610,7 @@ class AgentLabKnowledgeResource:
                 break
             content = hit["content"][:remaining]
             sources.append({"sourceId": hit["externalDocumentId"], "title": hit["title"], "uri": hit["uri"],
-                            "text": content, "chunkId": hit["chunkId"]})
+                            "text": content, "chunkId": hit["chunkId"], "citationNumber": len(sources) + 1})
             remaining -= len(content)
         return sources
 
@@ -536,8 +620,11 @@ class AgentLabKnowledgeResource:
             raise KnowledgeIntakeError("应用知识库配置字段无效。")
         index = self._dependency(value.get("indexId"), project_id, "index")
         profile = retrieval_profile(value.get("profile", {}))
-        if profile["mode"] != "lexical" or profile["rerank"]:
-            raise KnowledgeIntakeError("当前独立应用包支持关键词检索；语义或重排配置需要额外运行服务，不能直接替换成关键词导出。")
+        if profile["rerank"]:
+            raise KnowledgeIntakeError("当前独立应用包尚未冻结重排执行器，不能直接替换成非重排结果导出。")
+        semantic = profile["mode"] in {"dense", "hybrid"}
+        if semantic and index.get("dense", {}).get("provider", {}).get("semantic") is not True:
+            raise KnowledgeIntakeError("此索引没有完整语义向量，不能直接替换为 dense/hybrid 导出。")
         field = value.get("queryField", "question")
         if not isinstance(field, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", field):
             raise KnowledgeIntakeError("应用的检索问题字段无效。")
@@ -545,6 +632,11 @@ class AgentLabKnowledgeResource:
         documents = {row["externalId"]: row for row in self._documents(corpus)}
         with self._sandbox(index) as sandbox:
             snapshot = sandbox.export_search_snapshot(project_id, index["runId"], base_alias="corpus")
+            if snapshot["base"]["retrievalConfig"].get("graphEnabled"):
+                raise KnowledgeIntakeError("此应用未冻结图检索执行器，不能改变检索配置后导出。")
+            if snapshot["base"]["retrievalConfig"].get("rerankEnabled"):
+                raise KnowledgeIntakeError("此应用未冻结重排执行器，不能直接替换成非重排结果导出。")
+            dense_snapshot = sandbox.export_dense_snapshot(project_id, index["runId"], base_alias="corpus") if semantic else None
         external = snapshot.pop("externalDocumentIds")
         snapshot["sources"] = {}
         for document in snapshot["documents"]:
@@ -567,6 +659,22 @@ class AgentLabKnowledgeResource:
                     "snapshotFile": "knowledge/search-snapshot.json", "snapshotSha256": hashlib.sha256(encoded.encode()).hexdigest(),
                     "ownerSha256": hashlib.sha256(b''.join(files['knowledge_owner/' + name].encode() for name in names)).hexdigest(),
                     "sourceCount": index.get("sourceCount", index["documentCount"]), "documentCount": index["documentCount"], "chunkCount": index["chunkCount"]}
+        if dense_snapshot is not None:
+            dense_encoded = json.dumps(dense_snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+            if len(dense_encoded.encode()) > 80 * 1024 * 1024:
+                raise KnowledgeIntakeError("向量快照超过 80 MB，请拆分知识范围。")
+            files["knowledge/dense-snapshot.json"] = dense_encoded
+            files["knowledge_owner/dense.py"] = (owner / "dense.py").read_text()
+            for name in ("embeddings.py", "text_utils.py"):
+                files["knowledge_owner/" + name] = (owner.parent / name).read_text()
+            manifest["embedding"] = dense_snapshot["provider"]
+            manifest["dense"] = {"enabled": True, "backend": "sqlite-exact", "snapshotFile": "knowledge/dense-snapshot.json",
+                "snapshotSha256": hashlib.sha256(dense_encoded.encode()).hexdigest(),
+                "fingerprint": dense_snapshot["fingerprint"], "providerFingerprint": dense_snapshot["fingerprint"],
+                "modelRevision": dense_snapshot["modelRevision"], "dimension": dense_snapshot["dimension"],
+                "vectorCount": dense_snapshot["vectorCount"], "provider": dense_snapshot["provider"],
+                "denseOwnerSha256": hashlib.sha256(b''.join(files['knowledge_owner/' + name].encode()
+                    for name in ("dense.py", "embeddings.py", "text_utils.py"))).hexdigest()}
         return {"knowledge": manifest, "files": files}
 
     def golden_inputs(self, project: Mapping, value: Mapping) -> dict:

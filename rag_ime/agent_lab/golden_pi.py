@@ -18,6 +18,7 @@ from typing import Any
 from ..agent_sessions import AgentSessionStore
 from ..agent_tool_ids import READONLY_TOOL_PROFILE
 from ..db import sqlite_connection
+from ..pi.values import PiRuntimeSettlementLookupTimeout
 
 
 class GoldenPiCallError(RuntimeError):
@@ -32,7 +33,7 @@ class GoldenPiCallError(RuntimeError):
 class AgentLabGoldenPiExecutor:
     def __init__(self, db_path: str | Path, *, sessions: AgentSessionStore,
                  runtime: Callable[[], Any], timeout_seconds: float = 900,
-                 session_identity: Callable[[str], Mapping[str, str]] | None = None) -> None:
+                 session_identity: Callable[[str], Mapping[str, Any]] | None = None) -> None:
         self.db_path = Path(db_path)
         self.sessions = sessions
         self.runtime = runtime
@@ -149,9 +150,15 @@ class AgentLabGoldenPiExecutor:
                     )
                     progress.drain()
                     break
+                except PiRuntimeSettlementLookupTimeout:
+                    # The Host explicitly permits another lookup of this exact
+                    # identity. A transient read timeout must not stop an
+                    # otherwise healthy paid turn or create a new admission.
+                    # Keep the original deadline and cancellation checks.
+                    time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
                 except TimeoutError as exc:
                     # A normal wait expiry says the turn was not settled yet.
-                    # Transport/restore failures remain explicit interruptions.
+                    # Unclassified transport failures remain interruptions.
                     if str(exc) != "Pi Session turn settlement timed out":
                         raise
             text, usage, receipt_id = _settled_output(settlement, session_id, turn_id, request_id)
@@ -196,6 +203,9 @@ class AgentLabGoldenPiExecutor:
                     raise GoldenPiCallError("此任务身份已绑定其他输入；不能覆盖已有运行。", interrupted=False)
                 return row
             identity = dict(self.session_identity(request_id)) if self.session_identity else {}
+            allowed_tools = identity.get('allowed_tools', [])
+            if allowed_tools not in ([], ['lab_research']):
+                raise GoldenPiCallError('此应用请求了未绑定的工具能力。', interrupted=False)
             session = self.sessions.create(
                 title=identity.get('title', "Lab · Golden 评测"), model_profile=f"{provider}/{model_id}",
                 thinking_level=thinking, tool_profile_version=READONLY_TOOL_PROFILE,
@@ -206,7 +216,7 @@ class AgentLabGoldenPiExecutor:
             session_id = str(session["id"])
             self.sessions.set_runtime_policy(
                 session_id, mode="assistant", tool_profile_version=READONLY_TOOL_PROFILE,
-                allowed_tools=[], project_context_enabled=False, pi_skills_enabled=False,
+                allowed_tools=allowed_tools, project_context_enabled=False, pi_skills_enabled=False,
                 codex_skills_enabled=False, workspace_roots=[], connection=conn,
             )
             conn.execute(
@@ -303,6 +313,18 @@ class _PublicCallProgress:
                 payload = event.payload
                 if event.event_type == 'status_changed' and payload.get('phase') == 'reasoning':
                     self.emit({'stage':'thinking'})
+                elif event.event_type in {'tool_started', 'tool_finished'} and payload.get('toolName') == 'lab_research':
+                    args = payload.get('args')
+                    operation = args.get('op') if isinstance(args, Mapping) else None
+                    tool_call_id = payload.get('toolCallId')
+                    if operation in {'discover', 'find', 'open', 'search'} and isinstance(tool_call_id, str) and tool_call_id:
+                        # Only execution identity crosses this public projection.
+                        # The App research owner journals sources/budget itself;
+                        # copying tool results here would leak raw source text.
+                        self.emit({'stage': 'researching', 'runtime': {
+                            'sessionId': self.session_id, 'turnId': self.turn_id,
+                            'toolCallId': tool_call_id[:500], 'toolName': 'lab_research', 'operation': operation,
+                            'status': 'running' if event.event_type == 'tool_started' else 'failed' if payload.get('isError') else 'completed'}})
                 elif event.event_type == 'text_delta' and not self.partial:
                     if payload.get('replaceBlock'): self.blocks.clear()
                     key = (str(payload.get('blockId','')), int(payload.get('contentIndex',0)))

@@ -18,7 +18,9 @@ afterEach(() => {
 });
 
 describe('PAWOS Extension App installation projection', () => {
-  const extension = pawExtensionApps[0]!;
+  // This fixture exercises sandbox binding as well as general installation;
+  // registry order can also begin with an App that has no sandbox contract.
+  const extension = pawExtensionApps.find((app) => app.id === 'extension:zhanggui-wenshu')!;
   const bindingCapability = `pawos.extension.binding.${extension.bindingSha256.slice(0, 40)}`;
   const evidence = {
     id: extension.id,

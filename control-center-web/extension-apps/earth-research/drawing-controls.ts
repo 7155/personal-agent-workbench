@@ -1,0 +1,57 @@
+import L from 'leaflet';
+import 'leaflet-draw';
+import 'leaflet-draw/dist/leaflet.draw.css';
+import type { SelectionMode } from './map-selection';
+
+export type EditableGeometry = GeoJSON.Feature<GeoJSON.Point | GeoJSON.LineString | GeoJSON.Polygon>;
+const markerIcon=L.divIcon({className:'earth-drawn-point',html:'',iconSize:[14,14]});
+export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
+  select:(feature:EditableGeometry|null,mode?:SelectionMode|'select')=>void;
+  change:(features:EditableGeometry[])=>void;
+  active:(active:boolean)=>void;
+}) {
+  Object.assign(L.drawLocal.draw.toolbar.buttons,{polyline:'绘制折线',polygon:'绘制多边形',rectangle:'绘制矩形',marker:'绘制点'});
+  Object.assign(L.drawLocal.draw.toolbar.actions,{title:'取消绘制',text:'取消'});
+  Object.assign(L.drawLocal.draw.toolbar.finish,{title:'完成绘制',text:'完成'});
+  Object.assign(L.drawLocal.draw.toolbar.undo,{title:'删除最后一个顶点',text:'撤销顶点'});
+  Object.assign(L.drawLocal.edit.toolbar.buttons,{edit:'编辑几何',editDisabled:'先绘制几何再编辑',remove:'删除几何',removeDisabled:'没有可删除的几何'});
+  Object.assign(L.drawLocal.edit.toolbar.actions.save,{title:'保存修改',text:'保存'});
+  Object.assign(L.drawLocal.edit.toolbar.actions.cancel,{title:'放弃修改',text:'取消'});
+  Object.assign(L.drawLocal.edit.toolbar.actions.clearAll,{title:'删除全部绘制几何',text:'全部删除'});
+  L.drawLocal.draw.handlers.polyline.tooltip={start:'点击地图添加起点',cont:'点击添加顶点',end:'点击最后一个点或“完成”结束'};
+  L.drawLocal.draw.handlers.polygon.tooltip={start:'点击地图添加第一个顶点',cont:'点击继续添加顶点',end:'点击起点或“完成”闭合多边形'};
+  L.drawLocal.draw.handlers.rectangle.tooltip.start='按住并拖动绘制矩形';
+  L.drawLocal.draw.handlers.marker.tooltip.start='点击地图放置点';
+  L.drawLocal.edit.handlers.edit.tooltip={text:'拖动点或顶点调整几何',subtext:'保存后更新输入框；取消可撤销'};
+  L.drawLocal.edit.handlers.remove.tooltip.text='点击要删除的几何，然后保存';
+  const group=L.featureGroup().addTo(map);
+  let active=false;
+  function attach(layer:L.Layer,feature:EditableGeometry) {
+    L.Util.setOptions(layer,{bubblingMouseEvents:false});
+    Object.assign(layer,{feature});
+    layer.on('click',(event:L.LeafletMouseEvent)=>{if(active)return;if(event.originalEvent)L.DomEvent.stopPropagation(event.originalEvent);events.select((layer as L.Polyline).toGeoJSON() as EditableGeometry,'select');});
+    group.addLayer(layer);
+  }
+  for(const feature of initial) {
+    L.geoJSON(feature,{pointToLayer:(_feature,point)=>L.marker(point,{icon:markerIcon})}).eachLayer(layer=>attach(layer,feature));
+  }
+  const control=new L.Control.Draw({position:'topleft',draw:{polyline:{shapeOptions:{color:'#d08a19'}},polygon:{allowIntersection:false,showArea:true,shapeOptions:{color:'#d08a19'}},rectangle:{shapeOptions:{color:'#d08a19'}},marker:{icon:markerIcon},circle:false,circlemarker:false},edit:{featureGroup:group}});
+  map.addControl(control);
+  const all=()=> (group.toGeoJSON() as GeoJSON.FeatureCollection).features as EditableGeometry[];
+  const created=(event:L.LeafletEvent)=>{
+    const {layer,layerType}=event as L.DrawEvents.Created;
+    const feature=(layer as L.Polyline).toGeoJSON() as EditableGeometry;
+    feature.id=crypto.randomUUID();feature.properties={...feature.properties,name:`${({marker:'点',polyline:'线',polygon:'多边形',rectangle:'矩形'} as Record<string,string>)[layerType] ?? '几何'} ${group.getLayers().length+1}`,source:'user_drawing'};
+    attach(layer,feature);events.change(all());events.select(feature,'upsert');
+  };
+  const edited=(event:L.LeafletEvent)=>{events.change(all());(event as L.DrawEvents.Edited).layers.eachLayer(layer=>events.select((layer as L.Polyline).toGeoJSON() as EditableGeometry,'upsert'));};
+  const deleted=(event:L.LeafletEvent)=>{events.change(all());(event as L.DrawEvents.Deleted).layers.eachLayer(layer=>events.select((layer as L.Polyline).toGeoJSON() as EditableGeometry,'remove'));};
+  const start=()=>{active=true;events.active(true);};
+  const stop=()=>{active=false;events.active(false);};
+  map.on('draw:created',created).on('draw:edited',edited).on('draw:deleted',deleted)
+    .on('draw:drawstart draw:editstart draw:deletestart',start).on('draw:drawstop draw:editstop draw:deletestop',stop);
+  return {dispose(){map.off('draw:created',created).off('draw:edited',edited).off('draw:deleted',deleted)
+    .off('draw:drawstart draw:editstart draw:deletestart',start).off('draw:drawstop draw:editstop draw:deletestop',stop);control.remove();group.remove();},
+    focus(id:string){const feature=all().find(f=>f.id===id);if(feature){const bounds=L.geoJSON(feature).getBounds();if(bounds.isValid())map.fitBounds(bounds,{maxZoom:17,padding:[30,30]});events.select(feature,'select');}},
+  };
+}

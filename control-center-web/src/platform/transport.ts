@@ -23,6 +23,8 @@ export interface ControlRequest<Body extends JsonValue = JsonValue> {
   body?: Body;
   responseContract?: GeneratedContractName;
   signal?: AbortSignal;
+  /** Client observation deadline only; never forwarded in the native/backend payload. */
+  timeoutMs?: number;
 }
 
 export interface ControlSubscription {
@@ -315,6 +317,7 @@ const allowedRequestKeys = new Set([
   'body',
   'responseContract',
   'signal',
+  'timeoutMs',
 ]);
 
 export function assertControlRequest(request: ControlRequest): void {
@@ -322,6 +325,9 @@ export function assertControlRequest(request: ControlRequest): void {
     if (!allowedRequestKeys.has(key)) {
       throw new TypeError(`ControlRequest field is not allowed: ${key}`);
     }
+  }
+  if (request.timeoutMs !== undefined && (!Number.isSafeInteger(request.timeoutMs) || request.timeoutMs < 1 || request.timeoutMs > 300_000)) {
+    throw new TypeError('ControlRequest timeoutMs must be an integer between 1 and 300000');
   }
   const route = controlRoute(request.pathId);
   if (route.binary) {

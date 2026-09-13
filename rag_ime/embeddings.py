@@ -4,6 +4,8 @@ import hashlib
 import json
 import math
 import os
+import re
+import sys
 import urllib.error
 import urllib.request
 from collections import OrderedDict
@@ -11,8 +13,92 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
 from typing import Any, Protocol
+from types import ModuleType
 
 from .text_utils import compact_whitespace, token_terms
+
+
+_HF_REVISION = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _sentence_transformer_execution_lock():
+    # Frozen apps import this owner under distinct module names. They still share
+    # Transformers' process-global dtype changes during model loading, so a lock
+    # local to each imported copy is insufficient.
+    name = "_paw_sentence_transformer_execution"
+    holder = ModuleType(name)
+    holder.lock = RLock()
+    return sys.modules.setdefault(name, holder).lock
+
+
+_SENTENCE_TRANSFORMER_EXECUTION = _sentence_transformer_execution_lock()
+
+
+def resolve_huggingface_snapshot(model: str | Path) -> dict[str, str]:
+    """Resolve one local Hugging Face cache snapshot to public model identity.
+
+    The returned identity deliberately contains no local path.  It is safe to
+    put in an exported App manifest; loading the model later remains offline
+    and requires the same repo/revision to be present in the target cache.
+    """
+    requested = Path(str(model)).expanduser()
+    if not requested.is_absolute():
+        raise ValueError("Embedding model must be an absolute Hugging Face snapshot path")
+    try:
+        snapshot = requested.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("Embedding Hugging Face snapshot is missing") from exc
+    if not snapshot.is_dir() or snapshot.parent.name != "snapshots":
+        raise ValueError("Embedding model path is not a Hugging Face cache snapshot")
+    revision = snapshot.name
+    if not _HF_REVISION.fullmatch(revision):
+        raise ValueError("Embedding Hugging Face snapshot revision is not a fixed commit")
+    cache_name = snapshot.parent.parent.name
+    if not cache_name.startswith("models--"):
+        raise ValueError("Embedding Hugging Face cache identity is missing")
+    encoded_repo = cache_name.removeprefix("models--")
+    repo_id = encoded_repo.replace("--", "/")
+    if "/" not in repo_id or any(not part for part in repo_id.split("/")):
+        raise ValueError("Embedding Hugging Face repository identity is invalid")
+    config = snapshot / "config.json"
+    # Hugging Face snapshots normally materialize files as symlinks into the
+    # cache's ``blobs`` directory.  The path itself is never exported; only
+    # the bytes' identity is retained, so those ordinary cache symlinks are
+    # safe to read here.
+    if not config.is_file():
+        raise ValueError("Embedding Hugging Face snapshot has no local config.json")
+    try:
+        config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
+        model_card = snapshot / "README.md"
+        model_card_hash = hashlib.sha256(model_card.read_bytes()).hexdigest() if model_card.is_file() else ""
+    except OSError as exc:
+        raise ValueError("Embedding Hugging Face snapshot metadata cannot be read") from exc
+    return {
+        "repoId": repo_id,
+        "revision": revision,
+        "configSha256": config_hash,
+        "modelCardSha256": model_card_hash,
+    }
+
+
+def portable_embedding_configuration(provider: EmbeddingProvider) -> dict[str, Any]:
+    """Describe a pinned local encoder without credentials or machine paths."""
+    if not isinstance(provider, SentenceTransformerEmbeddingProvider):
+        raise ValueError("portable dense export requires a local sentence-transformers encoder")
+    metadata = {}
+    if Path(provider.model).expanduser().is_absolute():
+        resolved = resolve_huggingface_snapshot(provider.model)
+        model, revision = resolved["repoId"], resolved["revision"]
+        metadata = {"modelConfigSha256": resolved["configSha256"], "modelCardSha256": resolved["modelCardSha256"]}
+    else:
+        model, revision = provider.model, provider.model_revision
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", model) or not _HF_REVISION.fullmatch(revision):
+        raise ValueError("portable dense export requires a public model id and fixed local revision")
+    portable = SentenceTransformerEmbeddingProvider(model=model, model_reference=model, model_revision=revision,
+        query_prefix=provider.query_prefix, document_prefix=provider.document_prefix)
+    return {"provider": "sentence-transformers", "model": model, "modelReference": model, "modelRevision": revision,
+            "queryPrefix": provider.query_prefix, "documentPrefix": provider.document_prefix,
+            "providerFingerprint": portable.fingerprint, "denseBackend": "sqlite-exact", **metadata}
 
 
 class EmbeddingProvider(Protocol):
@@ -83,19 +169,29 @@ class SentenceTransformerEmbeddingProvider:
     cache_size: int = 32
     cache_dir: str = ""
     local_files_only: bool = True
+    model_revision: str = ""
+    model_reference: str = ""
+    device: str = ""
     fingerprint: str = field(init=False)
     _model: Any = field(default=None, init=False, repr=False)
     _cache: OrderedDict[tuple[str, str], list[float]] = field(default_factory=OrderedDict, init=False, repr=False)
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        material = json.dumps(
-            {"model": self.model, "queryPrefix": self.query_prefix, "documentPrefix": self.document_prefix},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+        model_identity = self.model_reference or self.model
+        material_payload = {
+            "model": model_identity,
+            "queryPrefix": self.query_prefix,
+            "documentPrefix": self.document_prefix,
+        }
+        if self.model_reference or self.model_revision:
+            material_payload.update(
+                {"modelReference": self.model_reference, "modelRevision": self.model_revision}
+            )
+        material = json.dumps(material_payload, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
-        self.fingerprint = f"sentence-transformers:{self.model}:cfg-{digest}"
+        revision = f"@{self.model_revision}" if self.model_revision else ""
+        self.fingerprint = f"sentence-transformers:{model_identity}{revision}:cfg-{digest}"
 
     def embed(self, text: str) -> list[float]:
         return self._encode(text, role="document", prefix=self.document_prefix)
@@ -113,12 +209,14 @@ class SentenceTransformerEmbeddingProvider:
         model = self._load_model()
         for offset in range(0, len(missing_indexes), step):
             indexes = missing_indexes[offset : offset + step]
-            encoded = model.encode(
-                [self.document_prefix + normalized[index] for index in indexes],
-                normalize_embeddings=True,
-                show_progress_bar=False,
-            )
-            for index, vector in zip(indexes, encoded.tolist()):
+            with _SENTENCE_TRANSFORMER_EXECUTION:
+                encoded = model.encode(
+                    [self.document_prefix + normalized[index] for index in indexes],
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                )
+                vectors = encoded.tolist()
+            for index, vector in zip(indexes, vectors):
                 results[index] = [float(value) for value in vector]
         return results
 
@@ -132,9 +230,10 @@ class SentenceTransformerEmbeddingProvider:
             if cached is not None:
                 self._cache.move_to_end(cache_key)
                 return list(cached)
-            model = self._load_model()
-            encoded = model.encode(prefix + normalized_text, normalize_embeddings=True, show_progress_bar=False)
-            vector = [float(value) for value in encoded.tolist()]
+            with _SENTENCE_TRANSFORMER_EXECUTION:
+                model = self._load_model()
+                encoded = model.encode(prefix + normalized_text, normalize_embeddings=True, show_progress_bar=False)
+                vector = [float(value) for value in encoded.tolist()]
             cache_limit = max(0, int(self.cache_size))
             if vector and cache_limit > 0:
                 self._cache[cache_key] = vector
@@ -144,6 +243,10 @@ class SentenceTransformerEmbeddingProvider:
             return list(vector)
 
     def _load_model(self):
+        with _SENTENCE_TRANSFORMER_EXECUTION:
+            return self._load_model_locked()
+
+    def _load_model_locked(self):
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -151,12 +254,22 @@ class SentenceTransformerEmbeddingProvider:
                 raise RuntimeError(
                     "local sentence-transformers embedding requires the 'embedding-local' optional dependencies"
                 ) from exc
-            self._model = SentenceTransformer(
-                self.model,
-                cache_folder=str(Path(self.cache_dir).expanduser()) if self.cache_dir else None,
-                local_files_only=self.local_files_only,
-                trust_remote_code=False,
-            )
+            options = {
+                "cache_folder": str(Path(self.cache_dir).expanduser()) if self.cache_dir else None,
+                "local_files_only": self.local_files_only,
+                "trust_remote_code": False,
+            }
+            # Multiple project/index instances can encode concurrently. Automatic
+            # MPS placement has aborted the entire macOS gateway inside Metal's
+            # command encoder, outside Python's recoverable exception boundary.
+            # Keep this local service reliable; explicit device selection remains
+            # available, and Linux/CUDA auto placement is unchanged.
+            device = self.device or ("cpu" if sys.platform == "darwin" else "")
+            if device:
+                options["device"] = device
+            if self.model_revision:
+                options["revision"] = self.model_revision
+            self._model = SentenceTransformer(self.model, **options)
         return self._model
 
 
@@ -432,6 +545,9 @@ def embedding_provider_from_env(env: dict[str, str] | None = None) -> EmbeddingP
         default_query_prefix = "为这个句子生成表示以用于检索相关文章：" if model == "BAAI/bge-base-zh-v1.5" else ""
         return SentenceTransformerEmbeddingProvider(
             model=model,
+            model_revision=source.get("RAG_IME_EMBEDDING_MODEL_REVISION", "").strip(),
+            model_reference=source.get("RAG_IME_EMBEDDING_MODEL_REFERENCE", "").strip(),
+            device=source.get("RAG_IME_EMBEDDING_DEVICE", "").strip(),
             query_prefix=source.get("RAG_IME_EMBEDDING_QUERY_PREFIX", default_query_prefix),
             document_prefix=source.get("RAG_IME_EMBEDDING_DOCUMENT_PREFIX", ""),
             cache_size=int(_float_env(source, "RAG_IME_EMBEDDING_CACHE_SIZE", 32)),
@@ -495,6 +611,8 @@ def embedding_provider_info(provider: EmbeddingProvider) -> dict[str, Any]:
     if isinstance(provider, SentenceTransformerEmbeddingProvider):
         return {
             "provider": "sentence-transformers",
+            "modelRevision": provider.model_revision,
+            "modelReference": provider.model_reference,
             "model": provider.model,
             "fingerprint": fingerprint,
             "semantic": True,

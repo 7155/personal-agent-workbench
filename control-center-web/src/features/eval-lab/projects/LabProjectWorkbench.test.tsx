@@ -41,6 +41,93 @@ function mount(transport: MockControlTransport, props: { initialProjectId?: stri
 }
 
 describe('Agent-led Lab project container', () => {
+  it('routes a completed App graph node to its exact version and call while retaining the Guide', async () => {
+    const appId = 'extension:lab-11111111111111111111111111111111';
+    const current = project({ guideSessionId: 'guide-one', workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
+      nodes: [{ id: 'app-original-call', kind: 'job', title: '原研究调用', status: 'completed', summary: '执行已完成', dependencies: [], ref: { kind: 'application_call', id: 'original-call', version: 1 }, evidenceRefs: [{ kind: 'application', id: appId, version: 1 }], source: 'runtime' }],
+      edges: [], counts: { running: 0, queued: 0, completed: 1, failed: 0 }, currentNodeId: 'app-original-call' } });
+    const application = { appId, projectId: current.projectId, title: '研究应用', description: '', revision: 2, latestVersion: 2, activeVersion: null, createdAtMs: 1, updatedAtMs: 2 };
+    const version = { appId, version: 1, html: '<h1>旧版本</h1>', contentHash: 'a'.repeat(64), fileCount: 1, byteSize: 10, sourceFiles: [], spec: { title: '研究应用', model: { model: '原模型' }, actions: [{ id: 'answer', title: '研究', prompt: '原方法' }] } };
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.eval-lab.apps.get': ({ query }: ControlRequest) => query?.callId ? { ok: true, items: [application], app: application, version, versions: [version], calls: [], call: { appId, callId: 'original-call', version: 1, actionId: 'answer', state: 'completed', sessionId: 'original-session', input: {}, result: { text: '原调用研究结果' }, error: '' } } : { ok: true, items: [application], app: null },
+    } });
+    mount(transport, { initialProjectId: current.projectId });
+    fireEvent.click(await screen.findByRole('button', { name: '项目总览' }));
+    const guide = screen.getByRole('region', { name: '项目 Agent' });
+    fireEvent.click(screen.getByRole('button', { name: '查看结果' }));
+    expect(await screen.findByText('原调用研究结果')).toBeVisible();
+    expect(screen.getByRole('region', { name: '项目 Agent' })).toBe(guide);
+    expect(screen.queryByTitle('研究应用 · 应用预览')).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.apps.get' && request.query?.appId === appId && request.query?.version === 1 && request.query?.callId === 'original-call')).toBe(true);
+    expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+  });
+  it('opens paired Session and Turn sources inside the project while preserving the Guide element', async () => {
+    const current = project({ guideSessionId: 'guide-one', workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
+      nodes: [{ id: 'experiment-one', kind: 'experiment', title: '原实验', status: 'completed', summary: '原结果', dependencies: [], ref: { kind: 'golden_job', id: 'experiment-one' }, source: 'runtime', evidenceRefs: [{ kind: 'runtime_session', id: 'source-session' }, { kind: 'runtime_turn', id: 'source-turn' }] }],
+      edges: [], counts: { running: 0, queued: 0, completed: 1, failed: 0 }, currentNodeId: 'experiment-one' } });
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.session.snapshot': { schemaVersion: 'rag-ime.agent-message-list.v1', ok: true, sessionId: 'source-session', items: [], liveEvents: [], status: 'idle' },
+    } });
+    mount(transport, { initialProjectId: current.projectId });
+    fireEvent.click(await screen.findByRole('button', { name: '项目总览' }));
+    const guide = screen.getByRole('region', { name: '项目 Agent' });
+    fireEvent.click(screen.getByRole('button', { name: '查看原回合' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('指定回合未出现在原 Session');
+    expect(screen.getByRole('region', { name: '项目 Agent' })).toBe(guide);
+    expect(screen.getByRole('heading', { name: '项目工作流' })).toBeVisible();
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.session.snapshot')?.request.params).toEqual({ sessionId: 'source-session' });
+    expect(transport.requests.every(({ request }) => ['agent.session.snapshot', 'agent.eval-lab.projects.get'].includes(request.pathId))).toBe(true);
+  });
+  it('opens an exact Knowledge graph receipt beside the current work without another run', async () => {
+    const current = project({ workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
+      nodes: [{ id: 'old-knowledge-job', kind: 'experiment', title: '原检索对照', status: 'completed', summary: '原结果', dependencies: [], ref: { kind: 'knowledge_job', id: 'old-knowledge-job' }, source: 'runtime' }],
+      edges: [], counts: { running: 0, queued: 0, completed: 1, failed: 0 }, currentNodeId: 'old-knowledge-job' } });
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.eval-lab.trials.get': { schemaVersion: 'rag-ime.agent-lab-trial.v1', job: { jobId: 'old-knowledge-job', sceneId: 'knowledge-resource', state: 'completed', publicSpec: { projectId: current.projectId, operation: 'search' }, result: { query: '原问题', hits: [{ title: '原来源', content: '原始检索证据', sourceId: 'source', chunkId: 'chunk' }] } } },
+    } });
+    mount(transport, { initialProjectId: current.projectId });
+    fireEvent.click(await screen.findByRole('button', { name: '项目总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看结果' }));
+    expect(await screen.findByText('原始检索证据')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '项目工作流' })).toBeVisible();
+    expect(screen.getByRole('region', { name: '项目 Agent' })).toBeVisible();
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.eval-lab.trials.get')?.request.query).toEqual({ jobId: 'old-knowledge-job' });
+    expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+  });
+  it('does not describe an ordinary pending Guide message as preparing an App', async () => {
+    const current = project({ guideSessionId: 'guide-1' }); let settle!: (value: unknown) => void;
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.eval-lab.apps.get': { ok: true, items: [], app: null },
+      'agent.session.prompt': () => new Promise((resolve) => { settle = resolve; }),
+    } });
+    mount(transport, { initialProjectId: current.projectId });
+    fireEvent.click(await screen.findByRole('button', { name: '继续下一步' }));
+    await waitFor(() => expect(settle).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: '应用交付' }));
+    expect(await screen.findByText('还没有准备好的应用版本')).toBeVisible();
+    expect(screen.queryByText(/正在冻结资料并准备应用版本/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '准备应用版本' })).toBeDisabled();
+    await act(async () => settle({ accepted: true }));
+  });
+  it('defaults to the result workspace and opens a completed graph result without another execution', async () => {
+    const item = artifact(); const current = withArtifact(item, { workflow: {
+      schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
+      nodes: [{ id: 'saved-result', kind: 'artifact', title: '已保存的实验结果', status: 'completed', summary: '保留原始结果', dependencies: [], ref: { kind: 'artifact', id: item.artifactId }, source: 'artifact' }],
+      edges: [], counts: { running: 0, queued: 0, completed: 0, failed: 0 }, currentNodeId: null,
+    } });
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': (request: ControlRequest) => read(request.query?.projectId ? current : null, [current], request.query?.artifactId ? item : undefined) } });
+    mount(transport, { initialProjectId: current.projectId });
+    expect(await screen.findByRole('region', { name: '项目成果工作面' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '项目总览' }));
+    expect(await screen.findByRole('heading', { name: '项目工作流' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '查看结果' }));
+    expect(await screen.findByText('这是一份当前项目的观察。')).toBeVisible();
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
+  });
   it('opens the exact latest artifact selected on the home page even when a different artifact is primary', async () => {
     const primary = artifact({ artifactId: 'primary', title: '原主成果' });
     const latest = artifact({ artifactId: 'latest', title: '最新实验', content: '这是首页所指的最新实验。' });
@@ -285,6 +372,7 @@ describe('Agent-led Lab project container', () => {
       'agent.eval-lab.projects.command': (request: ControlRequest) => { const command = request.body as ProjectCommand; commands.push(command); currentArtifact = { ...currentArtifact, content: command.input.content!, revision: 2, updatedAtMs: 2 }; current = withArtifact(currentArtifact, { revision: 2, updatedAtMs: 2 }); return { ok: true, project: current, artifact: currentArtifact, replayed: false, clientRequestId: command.clientRequestId }; },
     } });
     mount(transport, { initialProjectId: 'project-1' });
+    fireEvent.click(await screen.findByRole('button', { name: '成果 1' }));
     fireEvent.change(await screen.findByRole('spinbutton', { name: '退货期限' }), { target: { value: '14' } });
     fireEvent.click(screen.getByRole('button', { name: '材料 0' }));
     await screen.findByText('尚未读取材料。可以上传文件、粘贴正文或连接执行器路径。');
@@ -305,6 +393,7 @@ describe('Agent-led Lab project container', () => {
     } }); const current = withArtifact(item, { title: '支付故障排查' });
     const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': (request: ControlRequest) => read(request.query?.projectId ? current : null, [current], request.query?.artifactId ? item : undefined) } });
     mount(transport, { initialProjectId: 'project-1' });
+    fireEvent.click(await screen.findByRole('button', { name: '成果 1' }));
     expect(await screen.findByRole('columnheader', { name: '事件时间' })).toBeVisible();
     expect(screen.getByRole('cell', { name: '连接超时' })).toBeVisible();
     expect(screen.queryByRole('spinbutton', { name: '退货期限' })).not.toBeInTheDocument();
@@ -316,6 +405,7 @@ describe('Agent-led Lab project container', () => {
     const current = withArtifact(item);
     const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': (request: ControlRequest) => read(request.query?.projectId ? current : null, [current], request.query?.artifactId ? item : undefined) } });
     const first = mount(transport, { initialProjectId: 'project-1' });
+    fireEvent.click(await screen.findByRole('button', { name: '成果 1' }));
     fireEvent.change(await screen.findByRole('textbox', { name: '受影响服务' }), { target: { value: '支付服务，仍待确认' } });
     first.unmount();
     mount(transport, { initialProjectId: 'project-1' });
@@ -345,6 +435,7 @@ describe('Agent-led Lab project container', () => {
     const current = withArtifact(item, { guideSessionId: 'guide-1' });
     const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': (request: ControlRequest) => read(request.query?.projectId ? current : null, [current], request.query?.artifactId ? item : undefined) } });
     mount(transport, { initialProjectId: 'project-1' });
+    fireEvent.click(await screen.findByRole('button', { name: '成果 1' }));
     const frame = await waitFor(() => {
       const target = document.querySelector<HTMLIFrameElement>('iframe[title="服务拓扑"]');
       expect(target).not.toBeNull(); return target!;

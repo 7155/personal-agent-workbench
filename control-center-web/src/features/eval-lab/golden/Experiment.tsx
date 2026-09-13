@@ -3,13 +3,20 @@ import { Button, Disclosure } from '@/components/primitives';
 import { useOptionalControlTransport } from '@/app/control-transport';
 import { labConnectionKey } from '../control-request';
 import { EvidenceView, formatRate, formatTime, ModelFields } from './Shared';
+import { ApplicationMethodDiff, ApplicationMethodEditor } from './ApplicationMethod';
+import { isApplicationMethod } from './application-method';
+import { PromptComparison } from './PromptComparison';
+import { GoldenRunRecord } from './RunRecord';
+import type { LabEvaluationSelection } from '../projects/apps';
 import { isExperimentResult, isRunnableGoldenModel, jobStateLabel, object, verdictLabel, type CaseRun, type ExperimentResult, type ExperimentUsage, type GoldenCommand, type GoldenSource, type GoldenSuite, type PhaseReport } from './types';
 
-export function GoldenExperiment({ suite, disabled, onFreeze, onExperiment, onReview, onCalibrate, unsaved = false }: {
+export function GoldenExperiment({ suite, disabled, onFreeze, onExperiment, onReview, onCalibrate, unsaved = false, initialJobId = '', onSelectDelivery }: {
   suite: GoldenSuite; disabled: boolean; onFreeze: () => void;
   onExperiment: (input: GoldenCommand['input']) => Promise<boolean>;
   onReview?: () => void; onCalibrate?: () => void;
   unsaved?: boolean;
+  initialJobId?: string;
+  onSelectDelivery?: (selection: LabEvaluationSelection) => void;
 }) {
   const id = useId();
   const transport = useOptionalControlTransport();
@@ -35,7 +42,8 @@ export function GoldenExperiment({ suite, disabled, onFreeze, onExperiment, onRe
     try { sessionStorage.setItem(draftKey, JSON.stringify({baseline,candidate,optimizePrompt,maxCandidates})); setDraftError(''); }
     catch { setDraftError('当前浏览器未能保存实验配置，关闭前请保留回答规则。已经运行的实验仍使用其冻结配置。'); }
   }, [draftKey,baseline,candidate,optimizePrompt,maxCandidates]);
-  const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedJobId, setSelectedJobId] = useState(initialJobId);
+  useEffect(() => { if (initialJobId) setSelectedJobId(initialJobId); }, [initialJobId]);
   const snapshot = suite.snapshot;
   const compatibleSnapshot = !suite.currentJudgeProtocolVersion || snapshot?.judgeProtocolVersion === suite.currentJudgeProtocolVersion;
   const approved = suite.cases.filter((item) => item.review.status === 'approved');
@@ -44,7 +52,8 @@ export function GoldenExperiment({ suite, disabled, onFreeze, onExperiment, onRe
   const calibrationReady = suite.calibration?.ready && suite.calibration.suiteRevision === suite.revision;
   const currentSnapshot = snapshot?.sourceRevision === suite.revision && compatibleSnapshot;
   const experiments = suite.jobs.filter((job) => job.kind === 'experiment').sort((left, right) => right.createdAtMs - left.createdAtMs);
-  const selectedJob = experiments.find((job) => job.jobId === selectedJobId) ?? experiments[0];
+  const selectedJob = experiments.find((job) => job.jobId === selectedJobId) ?? (!selectedJobId ? experiments[0] : undefined);
+  const completedResult = selectedJob?.state === 'completed' && isExperimentResult(selectedJob.result) ? selectedJob.result : undefined;
   const modelsRunnable = isRunnableGoldenModel(baseline) && isRunnableGoldenModel(candidate);
   const start = async () => {
     if (!snapshot || !modelsRunnable || !compatibleSnapshot) return;
@@ -67,7 +76,7 @@ export function GoldenExperiment({ suite, disabled, onFreeze, onExperiment, onRe
         {!compatibleSnapshot ? <p className="golden-note">当前运行器使用新的评审协议，请重新校准并冻结后开始下一轮。旧结果仍保留。</p> : null}
       </div>
       <form className="golden-experiment-form" onSubmit={(event) => { event.preventDefault(); if (!disabled) void start(); }}>
-        <div className="golden-model-comparison"><section><p className="golden-note">当前使用的方案，作为比较起点</p><ModelFields label="基线" value={baseline} onChange={setBaseline} disabled={disabled} /></section><section><p className="golden-note">准备尝试的新方案</p><ModelFields label="候选" value={candidate} onChange={setCandidate} disabled={disabled} /></section></div>
+        <div className="golden-model-comparison"><section><p className="golden-note">当前使用的方案，作为比较起点</p><ModelFields label="基线" value={baseline} onChange={setBaseline} disabled={disabled} /><ApplicationMethodEditor label="基线" value={baseline} onChange={setBaseline} disabled={disabled} /></section><section><p className="golden-note">准备尝试的新方案</p><ModelFields label="候选" value={candidate} onChange={setCandidate} disabled={disabled} /><ApplicationMethodEditor label="候选" value={candidate} onChange={setCandidate} disabled={disabled} /></section></div>
         <div className="golden-experiment-options"><label className="golden-check"><input type="checkbox" checked={optimizePrompt} disabled={disabled} onChange={(event) => setOptimizePrompt(event.target.checked)} />基于开发题自动优化 Prompt</label>
           {optimizePrompt ? <label htmlFor={`${id}-budget`}>最多尝试<select id={`${id}-budget`} value={maxCandidates} disabled={disabled} onChange={(event) => setMaxCandidates(Number(event.target.value))}>{[1, 2, 3].map((number) => <option key={number} value={number}>{number} 个候选</option>)}</select></label> : null}
         </div>
@@ -80,17 +89,18 @@ export function GoldenExperiment({ suite, disabled, onFreeze, onExperiment, onRe
       <header className="golden-section__heading"><div><h3>实验结果</h3><p>{formatTime(selectedJob.createdAtMs)} · {jobStateLabel[selectedJob.state]}</p></div>
         {experiments.length > 1 ? <label>查看实验<select value={selectedJob.jobId} onChange={(event) => setSelectedJobId(event.target.value)}>{experiments.map((job) => <option key={job.jobId} value={job.jobId}>{formatTime(job.createdAtMs)} · {jobStateLabel[job.state]}</option>)}</select></label> : null}
       </header>
-      {selectedJob.state === 'completed' && isExperimentResult(selectedJob.result) ? <ExperimentReport result={selectedJob.result} sources={suite.sources} />
+      {completedResult ? <><ExperimentReport result={completedResult} sources={suite.sources} />{onSelectDelivery ? <section aria-label="选择应用交付方案"><h4>采用本轮配置准备应用</h4><p>选择只保存交付意向，不重新运行实验；应用准备时从这个完成回执冻结配置。</p>{(['baseline', 'candidate'] as const).map((variant) => <Button key={variant} disabled={!isApplicationMethod(completedResult[variant]?.applicationMethod)} onClick={() => onSelectDelivery({ suiteId: suite.suiteId, jobId: selectedJob.jobId, variant })}>选择{variant === 'baseline' ? '基线' : '候选'}用于交付</Button>)}<p className="golden-note">未冻结应用方法正文的方案暂不能直接交付。选择不代表评测结论通过。</p></section> : null}</>
         : selectedJob.state === 'completed' ? <p role="alert" className="golden-field-error">实验结果回执不完整，尚无法比较基线与候选。请重新读取状态。</p>
           : selectedJob.state === 'running' || selectedJob.state === 'queued' ? <p className="golden-note">{selectedJob.progress || '结果将在真实执行结束后显示。'}</p>
             : <div><p className="golden-field-error">{selectedJob.error || '本次实验未完成，尚无完整比较结论。'}</p>{object(selectedJob.result).usage ? <UsageSummary usage={object(object(selectedJob.result).usage)} /> : null}</div>}
     </section> : null;
   return <section className="golden-section golden-experiment" aria-label="冻结与实验">
+    {selectedJobId && !selectedJob ? <p role="alert">指定的实验记录尚未返回，未替换为其他运行。请重新读取项目或返回原成果。</p> : null}
     {selectedJob?.state === 'completed' ? <>{results}<Disclosure className="golden-next-experiment" summary="设置下一轮实验">{settings}</Disclosure></> : <>{settings}{results}</>}
   </section>;
 }
 
-function ExperimentReport({ result, sources }: { result: ExperimentResult; sources: GoldenSource[] }) {
+export function ExperimentReport({ result, sources }: { result: ExperimentResult; sources: GoldenSource[] }) {
   const conclusion = {
     improved: '候选在本次冻结题集上有改善',
     no_improvement: '本次未观察到候选改善',
@@ -99,6 +109,8 @@ function ExperimentReport({ result, sources }: { result: ExperimentResult; sourc
   return <div className="golden-report">
     {result.referenceAuthority === 'agent_assisted' ? <p className="golden-note">此实验使用 Agent 辅助标注的冻结标准，不代表独立人工金标验收。该来源记录属于本次实验，后续修改评审配置不会改变它。</p> : null}
     <div className="golden-report__conclusion"><h4>{conclusion}</h4><p>开发题通过率变化 {difference(result.comparison.developmentDelta)}；留出题变化 {difference(result.comparison.holdoutDelta)}。</p>{result.comparison.improvementBasis === 'answer_cost_estimate' ? <p>成本改善依据模型目录估算，实际费用尚未完整提供。</p> : null}{result.comparison.reasons.length ? <ul>{result.comparison.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul> : null}<p className="golden-note">本次使用同一冻结快照，Golden 标准没有改变。结论只覆盖这份题集。</p></div>
+    <PromptComparison baseline={result.baseline.prompt} candidate={result.candidate.prompt} />
+    {result.applicationMethodComparison ? <ApplicationMethodDiff comparison={result.applicationMethodComparison} /> : null}
     <PhaseResults title="开发题" phase={result.development} />
     {result.validationUse ? <p className="golden-note">{result.validationUse.reused ? `当前留出题中有 ${result.validationUse.overlappingQuestionCount ?? '部分'} 道题已用于此前 ${result.validationUse.priorStartedRuns} 次验证；若根据已有结果继续调整，应使用新的验证材料检查泛化。` : '当前 Lab 未记录这些留出题的先前验证运行；人工预览或外部使用需另行说明。'}</p>
       : <p className="golden-note">这份历史记录未提供留出题的使用次数，不能据此断言它们从未被查看或复用。</p>}
@@ -108,7 +120,7 @@ function ExperimentReport({ result, sources }: { result: ExperimentResult; sourc
     <CaseComparisons title="开发题" phase={result.development} sources={sources} />
     <CaseComparisons title="留出题" phase={result.holdout} sources={sources} />
     <Disclosure className="golden-disclosure" summary="本次实际模型与候选规则"><dl className="golden-definition"><div><dt>基线</dt><dd>{result.baseline.provider} / {result.baseline.model} · {result.baseline.thinkingLevel || '默认推理'}</dd></div><div><dt>最终候选</dt><dd>{result.candidate.provider} / {result.candidate.model} · {result.candidate.thinkingLevel || '默认推理'}</dd></div><div><dt>候选 Prompt</dt><dd className="golden-preserve-text">{result.candidate.prompt || '未提供独立 Prompt'}</dd></div><div><dt>固定评审</dt><dd>{result.judgeConfig.provider} / {result.judgeConfig.model}</dd></div><div><dt>快照</dt><dd>{result.snapshotId}</dd></div></dl></Disclosure>
-    <Disclosure className="golden-disclosure" summary={`运行来源（${result.receipts.length} 次调用）`}><ol className="golden-call-receipts">{result.receipts.map((receipt, index) => <li key={`${receipt.requestId}:${index}`}><strong>{receipt.stage}</strong><span>Session {receipt.sessionId || '未提供'}</span><span>回合 {receipt.turnId || '未提供'}</span></li>)}</ol></Disclosure>
+    <Disclosure className="golden-disclosure" summary={`运行来源（${result.receipts.length} 次调用）`}><ol className="golden-call-receipts">{result.receipts.map((receipt, index) => <li key={`${receipt.requestId}:${index}`}><strong>{receipt.stage}</strong><span>Session {receipt.sessionId || '未提供'}</span><span>回合 {receipt.turnId || '未提供'}</span>{receipt.sessionId ? <GoldenRunRecord sessionId={receipt.sessionId} turnId={receipt.turnId || undefined} /> : null}</li>)}</ol></Disclosure>
   </div>;
 }
 

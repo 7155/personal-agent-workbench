@@ -10,6 +10,7 @@ from pathlib import Path
 
 from rag_ime.agent_lab.golden_pi import AgentLabGoldenPiExecutor, GoldenPiCallError, normalize_golden_usage
 from rag_ime.agent_sessions import AgentSessionStore
+from rag_ime.pi.values import PiRuntimeSettlementLookupTimeout
 
 
 class Runtime:
@@ -83,10 +84,48 @@ class GoldenPiTests(unittest.TestCase):
         session = self.sessions.get(result["sessionId"])
         self.assertEqual(session["ownerAppId"], "extension:agent-lab")
         self.assertFalse(session["projectContextEnabled"])
+        self.assertEqual(session['allowedTools'], [])
         self.assertEqual(result["usage"], {"inputTokens": 100, "outputTokens": 20, "totalTokens": 120})
         self.assertNotIn("never expose this", json.dumps(result))
         self.assertEqual(self.complete(), result)
         self.assertEqual(len(self.runtime.calls), 1)
+
+    def test_research_app_session_grants_only_its_bound_tool(self):
+        self.executor.session_identity = lambda _: {'owner_app_id': 'extension:lab-test',
+            'surface_key': 'application.call-one', 'allowed_tools': ['lab_research']}
+        result = self.complete()
+        session = self.sessions.get(result['sessionId'])
+        self.assertEqual(session['allowedTools'], ['lab_research'])
+        self.assertEqual(session['toolAllowlistMode'], 'explicit')
+        self.assertEqual(session['workspaceRoots'], [])
+        self.assertFalse(session['piSkillsEnabled'])
+
+    def test_arbitrary_tool_grants_fail_before_pi_admission(self):
+        self.executor.session_identity = lambda _: {'allowed_tools': ['knowledge']}
+        with self.assertRaises(GoldenPiCallError):
+            self.complete()
+        self.assertEqual(self.runtime.calls, [])
+
+    def test_public_research_tool_identity_does_not_copy_source_text_or_budget_claims(self):
+        updates = []
+        def replay(session_id, *, after_event_id=''):
+            if after_event_id: return [], False
+            def event(identity, kind, payload, turn='turn-1'):
+                return SimpleNamespace(event_id=identity, session_id=session_id, turn_id=turn, event_type=kind, payload=payload)
+            payload = {'toolName': 'lab_research', 'toolCallId': 'read-one',
+                       'args': {'op': 'open', 'query': 'SECRET_QUERY'},
+                       'result': {'details': {'sources': ['SECRET_SOURCE'], 'budget': {'claims': 'SECRET_BUDGET'}}}}
+            return [event('1', 'tool_started', payload), event('2', 'tool_finished', payload),
+                    event('3', 'tool_finished', {**payload, 'toolCallId': 'read-failed', 'isError': True}),
+                    event('4', 'tool_started', {**payload, 'toolCallId': 'foreign'}, turn='foreign')], False
+        self.runtime.events = SimpleNamespace(replay=replay)
+        result = self.complete(on_progress=updates.append)
+        tools = [row for row in updates if row.get('stage') == 'researching']
+        self.assertEqual([row['runtime']['status'] for row in tools], ['running', 'completed', 'failed'])
+        self.assertEqual(tools[1]['runtime'], {'sessionId': result['sessionId'], 'turnId': 'turn-1',
+            'toolCallId': 'read-one', 'toolName': 'lab_research', 'operation': 'open', 'status': 'completed'})
+        self.assertNotIn('SECRET_', json.dumps(updates))
+        self.assertFalse(any('research' in row for row in updates))
 
     def test_public_app_progress_follows_exact_turn_without_private_reasoning_or_new_admission(self):
         updates = []
@@ -261,6 +300,42 @@ class GoldenPiTests(unittest.TestCase):
         self.assertTrue(all(0 < wait[3] <= 5 for wait in waits))
         self.assertEqual(result["turnId"], "turn-1")
         self.assertEqual(len(self.runtime.calls), 1)
+
+    def test_typed_lookup_timeout_continues_the_original_paid_turn_automatically(self):
+        original = self.runtime.await_turn_settled
+        identities = []
+
+        def delayed(session_id, turn_id, *, client_message_id, timeout_seconds):
+            identities.append((session_id, turn_id, client_message_id))
+            if len(identities) < 3:
+                raise PiRuntimeSettlementLookupTimeout('Pi Session settlement lookup timed out')
+            return original(session_id, turn_id, client_message_id=client_message_id, timeout_seconds=timeout_seconds)
+
+        self.runtime.await_turn_settled = delayed
+        result = self.complete()
+        self.assertEqual(result['turnId'], 'turn-1')
+        self.assertEqual(len(identities), 3)
+        self.assertEqual(len(set(identities)), 1)
+        self.assertEqual(len(self.runtime.calls), 1)
+        self.assertEqual(self.runtime.aborts, [])
+        self.assertEqual(self.complete(), result)
+
+    def test_lookup_read_recovery_still_honors_stop_without_replaying_the_prompt(self):
+        stopped = False
+
+        def delayed(*args, **kwargs):
+            nonlocal stopped
+            stopped = True
+            raise PiRuntimeSettlementLookupTimeout('Pi Session settlement lookup timed out')
+
+        self.runtime.await_turn_settled = delayed
+        with self.assertRaises(GoldenPiCallError) as raised:
+            self.executor.complete(request_id='stop-after-lookup', model=self.model,
+                prompt='original paid request', on_session=lambda _: None, cancelled=lambda: stopped)
+        self.assertFalse(raised.exception.interrupted)
+        self.assertEqual(len(self.runtime.calls), 1)
+        self.assertEqual(len(self.runtime.aborts), 1)
+        self.assertEqual(self.executor._row('stop-after-lookup')['state'], 'cancelled')
 
     def test_completed_result_is_read_only_and_does_not_bind_a_changed_template(self):
         self.assertIsNone(self.executor.completed_result("not-admitted", self.model))

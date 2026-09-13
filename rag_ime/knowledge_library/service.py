@@ -33,7 +33,7 @@ from .models import (
 from .parsers import ParserRouter
 from .permissions import harden_knowledge_tree, secure_directory, secure_file
 from .rerank import KnowledgeReranker
-from .store import KnowledgeStore, decode_metadata, now_ms
+from .store import KnowledgeStore, decode_metadata, now_ms, rank_retrieval_hits as _rank_retrieval_hits
 
 
 DEFAULT_CHUNKING_CONFIG: dict[str, Any] = {
@@ -1562,123 +1562,6 @@ class KnowledgeLibraryService:
         return status
 
 
-def _rank_retrieval_hits(
-    lexical_hits: Sequence[Any],
-    dense_hits: Sequence[Any],
-    graph_hits: Sequence[Any] = (),
-    *,
-    requested_mode: str,
-    config: dict[str, Any],
-) -> tuple[list[Any], str]:
-    if requested_mode == "lexical":
-        return [
-            replace(
-                hit,
-                diagnostics={
-                    "effectiveMode": "lexical",
-                    "lexicalRank": rank,
-                    "lexicalScore": hit.score,
-                },
-            )
-            for rank, hit in enumerate(lexical_hits, start=1)
-        ], "lexical"
-    if requested_mode == "dense":
-        return [
-            replace(
-                hit,
-                diagnostics={
-                    "effectiveMode": "dense",
-                    "denseRank": rank,
-                    "denseScore": hit.score,
-                },
-            )
-            for rank, hit in enumerate(dense_hits, start=1)
-        ], "dense"
-    if not dense_hits and not graph_hits:
-        return [
-            replace(
-                hit,
-                diagnostics={
-                    "effectiveMode": "lexical",
-                    "fallbackFrom": "hybrid",
-                    "lexicalRank": rank,
-                    "lexicalScore": hit.score,
-                },
-            )
-            for rank, hit in enumerate(lexical_hits, start=1)
-        ], "lexical"
-    if not lexical_hits and not graph_hits:
-        return [
-            replace(
-                hit,
-                diagnostics={
-                    "effectiveMode": "dense",
-                    "fallbackFrom": "hybrid",
-                    "denseRank": rank,
-                    "denseScore": hit.score,
-                },
-            )
-            for rank, hit in enumerate(dense_hits, start=1)
-        ], "dense"
-
-    lexical_weight = float(config["lexicalWeight"])
-    dense_weight = float(config["denseWeight"])
-    graph_weight = float(config["graphWeight"]) if graph_hits else 0.0
-    rrf_k = int(config["rrfK"])
-    lexical_ranks = {hit.chunk_id: rank for rank, hit in enumerate(lexical_hits, start=1)}
-    dense_ranks = {hit.chunk_id: rank for rank, hit in enumerate(dense_hits, start=1)}
-    graph_ranks = {hit.chunk_id: rank for rank, hit in enumerate(graph_hits, start=1)}
-    lexical_scores = {hit.chunk_id: hit.score for hit in lexical_hits}
-    dense_scores = {hit.chunk_id: hit.score for hit in dense_hits}
-    graph_scores = {hit.chunk_id: hit.score for hit in graph_hits}
-    graph_diagnostics = {hit.chunk_id: dict(hit.diagnostics) for hit in graph_hits}
-    hits_by_id = {hit.chunk_id: hit for hit in lexical_hits}
-    hits_by_id.update({hit.chunk_id: hit for hit in dense_hits})
-    hits_by_id.update({hit.chunk_id: hit for hit in graph_hits})
-    available_weight = (
-        (lexical_weight if lexical_hits else 0.0)
-        + (dense_weight if dense_hits else 0.0)
-        + graph_weight
-    )
-    maximum = available_weight / (rrf_k + 1)
-    ranked: list[Any] = []
-    for chunk_id, hit in hits_by_id.items():
-        lexical_rank = lexical_ranks.get(chunk_id)
-        dense_rank = dense_ranks.get(chunk_id)
-        graph_rank = graph_ranks.get(chunk_id)
-        raw_score = 0.0
-        if lexical_rank is not None:
-            raw_score += lexical_weight / (rrf_k + lexical_rank)
-        if dense_rank is not None:
-            raw_score += dense_weight / (rrf_k + dense_rank)
-        if graph_rank is not None:
-            raw_score += graph_weight / (rrf_k + graph_rank)
-        fused_score = raw_score / maximum if maximum > 0 else 0.0
-        ranked.append(
-            replace(
-                hit,
-                score=round(max(0.0, min(1.0, fused_score)), 6),
-                diagnostics={
-                    "effectiveMode": "hybrid",
-                    "fusion": "weighted-rrf-graph" if graph_hits else "weighted-rrf",
-                    "fusionScoreRaw": round(raw_score, 9),
-                    "lexicalRank": lexical_rank,
-                    "denseRank": dense_rank,
-                    "graphRank": graph_rank,
-                    "lexicalScore": lexical_scores.get(chunk_id),
-                    "denseScore": dense_scores.get(chunk_id),
-                    "graphScore": graph_scores.get(chunk_id),
-                    "lexicalWeight": lexical_weight,
-                    "denseWeight": dense_weight,
-                    "graphWeight": graph_weight,
-                    "graphMatches": graph_diagnostics.get(chunk_id, {}).get("graphMatches", []),
-                    "graphPaths": graph_diagnostics.get(chunk_id, {}).get("graphPaths", []),
-                    "rrfK": rrf_k,
-                },
-            )
-        )
-    ranked.sort(key=lambda hit: (-hit.score, hit.chunk_id))
-    return ranked, "hybrid"
 
 
 def _regex_document_rows(

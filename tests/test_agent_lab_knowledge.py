@@ -15,6 +15,24 @@ from rag_ime.agent_lab.trials import AgentLabTrialConflict, AgentLabTrialStore
 
 
 class KnowledgeDataTests(unittest.TestCase):
+    def test_import_keeps_explicit_development_and_holdout_assignments(self):
+        docs = normalize_documents([{'id': 'd1', 'text': 'First original paper'}, {'id': 'd2', 'text': 'Second original paper'}])
+        cases, summary = normalize_cases([
+            {'id': 'a', 'question': 'First?', 'article_ids': ['d1'], 'partition': 'development'},
+            {'id': 'b', 'question': 'Second?', 'article_ids': ['d2'], 'partition': 'holdout'},
+        ], docs, {'split': 'partition'})
+        self.assertEqual([row['split'] for row in cases], ['development', 'holdout'])
+        self.assertTrue(summary['providedSplit'])
+        self.assertFalse(summary['officialSplit'])
+
+    def test_import_rejects_leaked_supplied_splits_instead_of_silently_reassigning(self):
+        docs = normalize_documents([{'id': 'original', 'text': 'Shared paper'}, {'id': 'alias', 'text': 'Shared paper'}])
+        with self.assertRaisesRegex(KnowledgeIntakeError, '不会静默重分'):
+            normalize_cases([
+                {'question': 'First?', 'article_ids': ['original'], 'split': 'development'},
+                {'question': 'Second?', 'article_ids': ['alias'], 'split': 'holdout'},
+            ], docs)
+
     def test_original_question_answer_and_source_identity_survive_mapping(self):
         docs = normalize_documents([{"key": "原文/退款.md", "body": "Refunds take seven days.", "name": "Refunds"}],
                                    {"id": "key", "text": "body", "title": "name"})
@@ -215,6 +233,7 @@ class KnowledgeResourceTests(unittest.TestCase):
             portable = retrieve(root,package['knowledge'],{'question':query})
             self.assertEqual([(row['sourceId'],row['chunkId'],row['text']) for row in original],
                              [(row['sourceId'],row['chunkId'],row['text']) for row in portable['sources']])
+            self.assertEqual([row['citationNumber'] for row in original], [row['citationNumber'] for row in portable['sources']])
             self.assertEqual(portable['modelCalls'],0)
         self.assertEqual(len(self.resource._cases(dataset)),20)
         snapshot_path = root / package['knowledge']['snapshotFile']
@@ -262,10 +281,12 @@ class KnowledgeResourceTests(unittest.TestCase):
             saved = json.loads(conn.execute('SELECT payload_json FROM agent_lab_app_versions').fetchone()[0])
         self.assertNotIn('resourceFiles', saved)
         self.assertNotIn('base64', json.dumps(saved))
-        # The frozen runtime is fixed source, independent of corpus size. Bound
-        # the remaining row so growing documents cannot hide inside metadata.
+        # Frozen runtime and launchers are executable source, independent of
+        # corpus size. Bound metadata without mistaking a longer launcher for
+        # embedded corpus growth; arbitrary extra bootstrap files stay forbidden.
+        self.assertEqual(set(saved['bootstrapFiles']), {'launch.py', 'Start.command', 'requirements-app.txt'})
         self.assertLess(len(json.dumps({key: value for key, value in saved.items()
-                                       if key != 'runtimeSource'})), 12000)
+                                       if key not in {'runtimeSource', 'bootstrapFiles'}})), 12000)
         public = apps.read({'appId':app['appId']})
         self.assertEqual(public['version']['spec']['knowledge']['documentCount'],20)
         self.assertNotIn('refundcode7', json.dumps(public))

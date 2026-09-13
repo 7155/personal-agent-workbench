@@ -11,7 +11,7 @@ export type KnowledgeCorpus = {
 export type KnowledgeDataset = {
   datasetId: string; corpusId: string; corpusHash: string; title: string; sha256: string; caseCount: number;
   splits: { development: number; holdout: number }; referenceAnswerCount: number; retrievalEvaluableCount: number;
-  officialSplit: false; preview: { caseId: string; question: string }[];
+  officialSplit: false; providedSplit?: boolean; preview: { caseId: string; question: string }[];
 };
 export type KnowledgeIndex = {
   jobId: string; corpusId: string; corpusHash: string; title: string; documentCount: number; chunkCount: number; configHash: string;
@@ -45,7 +45,7 @@ export function parseKnowledgeState(raw: unknown): KnowledgeState {
       || !fields(object(value.embedding), ['provider', 'model'])
       || !(value.corpora as unknown[]).every((raw) => { const row = object(raw); return fields(row, ['jobId', 'title', 'corpusHash']) && finite(row.documentCount) && finite(row.byteSize) && !!row.intake && Array.isArray(row.preview) && row.preview.every((raw) => fields(object(raw), ['sourceId', 'title', 'excerpt'])); })
       || !(value.indexes as unknown[]).every((raw) => { const row = object(raw); return fields(row, ['jobId', 'corpusId', 'corpusHash']) && finite(row.chunkCount) && finite(row.documentCount) && typeof object(row.dense).available === 'boolean' && !!object(row.dense).provider && !!row.chunking && !!row.reranker; })
-      || !(value.datasets as unknown[]).every((raw) => { const row = object(raw); return fields(row, ['datasetId', 'corpusHash', 'title', 'sha256']) && finite(row.caseCount) && finite(row.retrievalEvaluableCount) && finite(object(row.splits).development) && finite(object(row.splits).holdout); })
+      || !(value.datasets as unknown[]).every((raw) => { const row = object(raw); return fields(row, ['datasetId', 'corpusHash', 'title', 'sha256']) && finite(row.caseCount) && finite(row.retrievalEvaluableCount) && finite(object(row.splits).development) && finite(object(row.splits).holdout) && (row.providedSplit === undefined || typeof row.providedSplit === 'boolean'); })
       || !(value.evaluations as unknown[]).every((raw) => { const row = object(raw); const report = object(row.report); const metrics = object(object(report.metrics).metrics); return fields(row, ['jobId', 'indexId', 'datasetHash', 'split']) && finite(row.plannedCount) && finite(row.evaluatedCount) && finite(object(row.profile).topK) && finite(metrics.mrr) && !!metrics.recallAtK && !!metrics.ndcgAtK && finite(object(report.costs).meanRetrievalLatencyMs); })
       || !(value.jobs as unknown[]).every((raw) => { const row = object(raw); return fields(row, ['jobId', 'state', 'progress', 'error']) && typeof object(row.publicSpec).operation === 'string'; })) {
     throw new Error('知识库实验数据未完整返回，请重新读取。');

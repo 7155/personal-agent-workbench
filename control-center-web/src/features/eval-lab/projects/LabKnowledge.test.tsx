@@ -28,6 +28,16 @@ function mount(read: () => unknown, onCommand = vi.fn(async (_input: Record<stri
 }
 
 describe('Knowledge resource frontend', () => {
+  it('preserves supplied split attribution and offers its optional import field mapping', async () => {
+    const source = ready(); source.datasets[0]!.providedSplit = true;
+    mount(() => source);
+    await waitFor(() => expect(screen.getByRole('button', { name: '连接已有知识库' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: '评测' }));
+    expect(await screen.findByText(/保留原分组：开发题与保留题沿用导入文件的划分/)).toBeVisible();
+    expect(screen.queryByText(/这是本项目派生分组/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('原分组（可选）')).toBeInTheDocument();
+    expect(parseKnowledgeState(source).datasets[0]?.providedSplit).toBe(true);
+  });
   it('imports an executor path through the resource operation without adding it to model context', async () => {
     const { onCommand } = mount(state);
     const path = await screen.findByRole('textbox', { name: '执行器上的文件夹或 JSONL 路径' });

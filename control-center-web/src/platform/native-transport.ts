@@ -142,7 +142,7 @@ export class NativeControlTransport implements ControlTransport {
       'request',
       controlRequestWirePayload(request),
       request.signal,
-      slowSessionRequestTimeoutMs,
+      request.timeoutMs ?? slowSessionRequestTimeoutMs,
     );
     const contract = request.responseContract ?? controlRoute(request.pathId).responseContract;
     if (!contract) return result as Response;

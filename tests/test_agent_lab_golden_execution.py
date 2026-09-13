@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import threading
 import tempfile
@@ -137,6 +138,57 @@ class PiDouble:
 
 
 class GoldenExecutionTests(unittest.TestCase):
+    def test_changed_method_body_cannot_recover_under_old_hash_or_report_title_as_skill_gain(self):
+        from rag_ime.agent_lab.golden import optimization_scope
+        body = '# Frozen method\nKeep unsupported claims unknown.\n'
+        method = {'kind': 'application_skill', 'title': 'Before', 'body': body,
+                  'sha256': hashlib.sha256(body.encode()).hexdigest(), 'source': {'kind': 'inline'}}
+        self.assertEqual(optimization_scope({**MODEL, 'applicationMethod': method},
+            {**MODEL, 'applicationMethod': {**method, 'title': 'After'}}, False), 'repeat')
+        store = FakeStore('experiment', {'snapshotId': 'snapshot-1', 'baseline': MODEL,
+            'candidate': {**MODEL, 'applicationMethod': {**method, 'body': 'MUTATED'}},
+            'optimizePrompt': False, 'maxCandidates': 1})
+        pi = PiDouble()
+        job = self.run_job(self.application(store, pi), store)
+        self.assertEqual(job['state'], 'failed')
+        self.assertEqual(pi.calls, [])
+
+    def test_application_skill_bodies_reach_answers_with_bound_receipts_and_blind_judge(self):
+        bodies = ['# Baseline method\nSummarize the supplied evidence.\n',
+                  '# Candidate method\nCompare authors separately; preserve evidence gaps.\n']
+        methods = [{'kind': 'application_skill', 'title': 'Method', 'body': body,
+                    'sha256': hashlib.sha256(body.encode()).hexdigest(), 'source': {'kind': 'inline'}} for body in bodies]
+        store = FakeStore('experiment', {'snapshotId': 'snapshot-1',
+            'baseline': {**MODEL, 'applicationMethod': methods[0]},
+            'candidate': {**MODEL, 'applicationMethod': methods[1]}, 'optimizePrompt': False, 'maxCandidates': 1})
+        pi = PiDouble()
+        job = self.run_job(self.application(store, pi), store)
+        self.assertEqual(job['state'], 'completed')
+        result = job['result']
+        self.assertEqual(result['optimizationScope'], 'skill')
+        comparison = result['applicationMethodComparison']
+        self.assertTrue(comparison['changed'])
+        self.assertIn('-Summarize the supplied evidence.', comparison['diff'])
+        self.assertEqual(comparison['candidate']['sha256'], methods[1]['sha256'])
+        for call in pi.calls:
+            if ':answer:' in call['request_id']:
+                index = int(':candidate:' in call['request_id'])
+                self.assertIn('<application_method>\n' + bodies[index] + '\n</application_method>', call['prompt'])
+                self.assertNotIn(bodies[1-index], call['prompt'])
+                for secret in ('REFERENCE-FACT-SECRET', 'RUBRIC-SECRET', 'HUMAN-LABEL-SECRET'):
+                    self.assertNotIn(secret, call['prompt'])
+            elif ':judge:' in call['request_id']:
+                self.assertNotIn('applicationMethod', call['prompt'])
+                self.assertNotIn('<application_method>', call['prompt'])
+        answers = [r for r in result['receipts'] if r['stage'] == 'answer']
+        self.assertEqual(len(answers), 4)
+        for receipt in answers:
+            index = int(receipt['variant'] == 'candidate')
+            self.assertEqual(receipt['applicationMethod']['sha256'], methods[index]['sha256'])
+            self.assertNotIn('body', receipt['applicationMethod'])
+            self.assertEqual(len(receipt['promptSha256']), 64)
+        self.assertEqual(result['development']['cases'][0]['candidate']['applicationMethod']['sha256'], methods[1]['sha256'])
+
     def test_knowledge_answers_use_real_retriever_callback_and_never_receive_reference_corpus(self):
         store = FakeStore("experiment", {"snapshotId": "snapshot-1", "baseline": MODEL,
             "candidate": {**MODEL, "model": "candidate"}, "optimizePrompt": False, "maxCandidates": 1})
@@ -344,6 +396,20 @@ class GoldenExecutionTests(unittest.TestCase):
                 self.assertEqual(job["state"], "interrupted")
                 self.assertEqual(complete_calls, [])
                 self.assertEqual(job["result"]["receipts"][0]["requestId"], "job-1:draft")
+
+    def test_experiment_reprocess_missing_cache_never_admits_a_replacement_call(self):
+        store = self.experiment_store(optimize=False)
+        store.job['reprocessOnly'] = True
+        paid = []
+        def complete(**request):
+            paid.append(request)
+            raise AssertionError('Reprocessing must remain read-only')
+        app = AgentLabGoldenApplication(store=store, complete=complete, completed_result=lambda **_: None,
+                                        abort=lambda _: None, start_workers=False)
+        self.addCleanup(app.close)
+        result = self.run_job(app, store)
+        self.assertEqual(result['state'], 'interrupted')
+        self.assertEqual(paid, [])
 
     def test_calibration_publishes_completed_sample_progress_while_calls_are_running(self) -> None:
         store, pi, observed = FakeStore("calibrate"), PiDouble(), []

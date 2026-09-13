@@ -23,6 +23,7 @@ REQUIREMENTS="$RUNTIME_ROOT/knowledge-worker-requirements.txt"
   --no-dev \
   --no-emit-project \
   --extra embedding-mlx \
+  --extra embedding-local \
   --extra knowledge-ann \
   --output-file "$REQUIREMENTS" \
   >/dev/null
@@ -41,6 +42,8 @@ import json
 import numpy
 import pypdf
 import usearch
+import torch
+import sentence_transformers
 
 from rag_ime.embeddings import embedding_provider_from_env
 
@@ -56,6 +59,8 @@ print(json.dumps({
     "numpy": numpy.__version__,
     "pypdf": pypdf.__version__,
     "usearch": usearch.__version__,
+    "torch": torch.__version__,
+    "sentenceTransformers": sentence_transformers.__version__,
 }, ensure_ascii=False))
 PY
 

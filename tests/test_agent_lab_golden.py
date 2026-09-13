@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -41,6 +43,185 @@ def case(case_id: str, split: str = "development") -> dict:
 
 
 class GoldenStoreTests(unittest.TestCase):
+    def test_unsorted_skill_cases_reprocess_complete_receipts_without_model_calls(self):
+        from unittest import mock
+        from rag_ime.agent_lab.golden import _can_reprocess_experiment
+        from rag_ime.agent_lab.golden_execution import AgentLabGoldenApplication
+        from tests.test_agent_lab_golden_execution import response
+        imported = [case('zdev'), case('dev'), case('hold', 'holdout')]
+        imported[0]['question'] = '普通任务允许的重试上限是什么？'
+        self.suite = self.store.command(self.payload('create', {
+            'title': 'Noncanonical imported order', 'scenario': 'context_qa',
+            'sources': [SOURCE], 'targetCount': 3, 'importedCases': imported,
+            'knowledge': {'projectId': 'fixture-project', 'indexId': 'fixture-index', 'corpusHash': 'corpus',
+                          'configHash': 'config', 'profile': {}, 'documentCount': 1, 'chunkCount': 1}}, revision=0))['suite']
+        for item in copy.deepcopy(self.suite['cases']):
+            self.command('review_case', {**item, 'verdict': 'approved', 'reviewAuthor': 'agent'})
+        item = next(item for item in self.suite['cases'] if item['caseId'] == 'dev')
+        for sample, verdict in zip(item['samples'], ['pass', 'fail', 'uncertain']):
+            self.command('label_sample', {'caseId': 'dev', **sample, 'humanVerdict': verdict,
+                                         'labelAuthor': 'agent'})
+        self.calibration()
+        snapshot = self.command('freeze')['suite']['snapshot']
+        cache, calls, reads = {}, [], []
+        def complete(**request):
+            calls.append(request['request_id'])
+            request['on_session']('fixture-session')
+            text = json.dumps({'verdict': 'pass', 'reason': 'supported', 'evidence': [
+                {'sourceId': SOURCE['sourceId'], 'quote': '普通任务可以重试一次。'}]}) if ':judge:' in request['request_id'] else '一次'
+            cache[request['request_id']] = response(text)
+            return cache[request['request_id']]
+        def read_completed(**request):
+            reads.append(request['request_id'])
+            return cache.get(request['request_id'])
+        app = AgentLabGoldenApplication(store=self.store, complete=complete, completed_result=read_completed,
+                                        retrieve_knowledge=lambda *_: [SOURCE], abort=lambda _: None, start_workers=False)
+        self.addCleanup(app.close)
+        job = self.command('experiment', {'snapshotId': snapshot['snapshotId'], 'baseline': {
+            'applicationMethod': {'body': 'Baseline method'}}, 'candidate': {
+            'applicationMethod': {'body': 'Candidate method'}}, 'optimizePrompt': False})['job']
+        frozen_before = self.store.job_input(job['jobId'])['snapshot']
+        # All paid work can finish before a report-ingestion defect is raised.
+        with mock.patch.object(self.store, 'finish_job', side_effect=ValueError('report ingestion defect')):
+            app.run_job(job['jobId'])
+        failed = self.store.job_input(job['jobId'])
+        self.assertEqual(failed['job']['state'], 'failed')
+        self.assertEqual(len(calls), 12)
+        self.assertTrue(self.store.read(self.suite['suiteId'])['suite']['jobs'][0]['canReprocess'])
+        for stage in ('answer', 'judge'):
+            missing = copy.deepcopy(failed['job'])
+            record = next(r for r in missing['result']['receipts'] if r['stage'] == stage)
+            missing['result']['receipts'].remove(record)
+            self.assertFalse(_can_reprocess_experiment(missing, failed))
+        duplicate = copy.deepcopy(failed['job'])
+        duplicate['result']['receipts'][-1] = duplicate['result']['receipts'][0]
+        self.assertFalse(_can_reprocess_experiment(duplicate, failed))
+        resumed = self.command('resume', {'jobId': job['jobId']})['job']
+        self.assertTrue(resumed['reprocessOnly'])
+        with mock.patch.object(app, 'complete', side_effect=AssertionError('No new model admission')), \
+                mock.patch.object(app, 'retrieve_knowledge', side_effect=AssertionError('No new retrieval')):
+            app.run_job(job['jobId'])
+        finished = self.store.job_input(job['jobId'])
+        self.assertEqual(finished['job']['state'], 'completed', finished['job']['error'])
+        self.assertEqual(finished['snapshot'], frozen_before)
+        self.assertEqual([r['caseId'] for r in finished['snapshot']['cases']], ['zdev', 'dev', 'hold'])
+        self.assertEqual([r['caseId'] for r in finished['job']['result']['development']['cases']], ['dev', 'zdev'])
+        self.assertEqual(len(calls), 12)
+        self.assertEqual(set(reads), set(calls))
+
+    def test_project_method_version_is_scoped_frozen_and_executed_after_artifact_edit(self):
+        from rag_ime.agent_lab.projects import AgentLabProjectStore
+        from rag_ime.agent_lab.golden_execution import AgentLabGoldenApplication
+        from tests.test_agent_lab_golden_execution import response, task_data
+        projects = AgentLabProjectStore(self.path)
+        project = projects.command({'action': 'create', 'projectId': '', 'expectedRevision': 0,
+            'clientRequestId': 'method-project-create', 'input': {'description': 'Compare paper methods'}})['project']
+        created = projects.command({'action': 'publish_artifact', 'projectId': project['projectId'],
+            'expectedRevision': project['revision'], 'clientRequestId': 'method-v1',
+            'input': {'title': 'Paper method', 'kind': 'application_skill', 'view': 'markdown',
+                      'content': '# Paper method\nRead each author separately.\n'}})
+        project, artifact = created['project'], created['artifact']
+        self.suite = self.store.command(self.payload('create', {'title': 'Method suite', 'scenario': 'knowledge_qa',
+            'sources': [SOURCE], 'targetCount': 2, 'knowledge': {'projectId': project['projectId'], 'indexId': 'index',
+                'corpusHash': 'corpus', 'configHash': 'config', 'profile': {}, 'documentCount': 1, 'chunkCount': 1}}, revision=0))['suite']
+        self.reviewed(); self.calibration()
+        frozen = self.command('freeze')['suite']['snapshot']
+        calls = []
+        def complete(**request):
+            calls.append(request)
+            request['on_session']('method-session')
+            data = task_data(request['prompt'])
+            output = json.dumps({'verdict': 'pass', 'reason': 'supported', 'evidence': [
+                {'sourceId': SOURCE['sourceId'], 'quote': '普通任务可以重试一次。'}]}) if ':judge:' in request['request_id'] else '一次'
+            return response(output)
+        app = AgentLabGoldenApplication(store=self.store, complete=complete, abort=lambda _: None,
+            retrieve_knowledge=lambda *_: [SOURCE], start_workers=False)
+        self.addCleanup(app.close)
+        ref = {'artifactId': artifact['artifactId'], 'artifactRevision': 1}
+        job = self.command('experiment', {'snapshotId': frozen['snapshotId'], 'baseline': {},
+            'candidate': {'applicationMethod': ref}, 'optimizePrompt': False})['job']
+        before = self.store.job_input(job['jobId'])['snapshot']
+        projects.command({'action': 'publish_artifact', 'projectId': project['projectId'],
+            'expectedRevision': project['revision'], 'clientRequestId': 'method-v2', 'input': {
+                'artifactId': artifact['artifactId'], 'expectedArtifactRevision': 1, 'content': 'MUTATED-LIVE-METHOD'}})
+        app.run_job(job['jobId'])
+        finished = self.store.job_input(job['jobId'])
+        self.assertEqual(finished['job']['state'], 'completed', finished['job'].get('error'))
+        self.assertEqual(finished['snapshot'], before)
+        result = finished['job']['result']
+        exported = self.store.application_configuration(self.suite['suiteId'], job['jobId'], 'candidate')
+        with self.store._connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            fresh_reader = AgentLabGoldenStore(self.path)
+            self.assertEqual(fresh_reader.application_configuration(self.suite['suiteId'], job['jobId'], 'candidate',
+                connection=connection), exported)
+        self.assertEqual(exported['configuration']['applicationMethod']['body'], artifact['content'])
+        self.assertEqual(exported['projectId'], project['projectId'])
+        self.assertEqual(exported['summary']['metrics']['development']['total'], 1)
+        self.assertNotIn('sources', exported)
+        self.assertNotIn('cases', json.dumps(exported))
+        self.assertNotIn('requiredFacts', json.dumps(exported))
+        self.assertNotIn(SOURCE['text'], json.dumps(exported, ensure_ascii=False))
+        with self.assertRaises(AgentLabGoldenValidationError):
+            self.store.application_configuration('other-suite', job['jobId'], 'candidate')
+        self.assertEqual(result['candidate']['applicationMethod']['body'], artifact['content'])
+        self.assertEqual(result['candidate']['applicationMethod']['source']['artifactRevision'], 1)
+        candidate_calls = [r for r in calls if ':answer:' in r['request_id'] and ':candidate:' in r['request_id']]
+        self.assertEqual(len(candidate_calls), 2)
+        for call in candidate_calls:
+            self.assertIn(artifact['content'], call['prompt'])
+            self.assertNotIn('MUTATED-LIVE-METHOD', call['prompt'])
+            self.assertNotIn('requiredFacts', call['prompt'])
+        # A different suite project cannot claim this artifact's identity.
+        with self.store._connection() as conn:
+            from rag_ime.agent_lab.golden import _freeze_application_method
+            with self.assertRaises(AgentLabGoldenValidationError):
+                _freeze_application_method(conn, ref, 'another-project')
+
+    def test_application_method_result_cannot_replace_frozen_body_or_claim_metadata_only(self):
+        from rag_ime.agent_lab.golden import application_method_comparison
+        self.reviewed(); self.calibration()
+        snapshot = self.command('freeze')['suite']['snapshot']
+        job = self.command('experiment', {'snapshotId': snapshot['snapshotId'], 'baseline': {},
+            'candidate': {'applicationMethod': {'body': 'Real method'}}, 'optimizePrompt': False})['job']
+        with self.assertRaisesRegex(AgentLabGoldenValidationError, '已完成'):
+            self.store.application_configuration(self.suite['suiteId'], job['jobId'], 'candidate')
+        self.store.update_job(job['jobId'], {'state': 'running'})
+        bound = self.store.job_input(job['jobId'])
+        result = {'suiteId': self.suite['suiteId'], 'snapshotId': snapshot['snapshotId'],
+            'executionMode': 'context_qa', 'optimizationScope': 'skill',
+            'baseline': bound['input']['baseline'], 'candidate': bound['input']['candidate']}
+        result['applicationMethodComparison'] = application_method_comparison(result['baseline'], result['candidate'])
+        with self.assertRaisesRegex(AgentLabGoldenValidationError, '实际作答回执'):
+            self.store.finish_job(job['jobId'], result)
+        result['candidate']['applicationMethod']['body'] = 'Forged replacement'
+        with self.assertRaisesRegex(AgentLabGoldenValidationError, '准入冻结正文'):
+            self.store.finish_job(job['jobId'], result)
+
+    def test_application_method_body_is_frozen_at_admission_and_not_metadata_only(self):
+        self.reviewed(); self.calibration()
+        snapshot = self.command('freeze')['suite']['snapshot']
+        method = {'title': 'Comparison method', 'body': '# Method\nCompare each author separately.\n'}
+        job = self.command('experiment', {'snapshotId': snapshot['snapshotId'],
+            'baseline': {}, 'candidate': {'applicationMethod': method}, 'optimizePrompt': False})['job']
+        method['body'] = 'changed after admission'
+        bound = AgentLabGoldenStore(self.path).job_input(job['jobId'])
+        frozen = bound['input']['candidate']['applicationMethod']
+        self.assertEqual(frozen['body'], '# Method\nCompare each author separately.\n')
+        self.assertEqual(frozen['sha256'], hashlib.sha256(frozen['body'].encode()).hexdigest())
+        self.assertEqual(frozen['source'], {'kind': 'inline'})
+        self.assertEqual(bound['snapshot']['snapshotId'], snapshot['snapshotId'])
+        self.assertNotIn('applicationMethod', bound['snapshot']['judgeConfig'])
+
+    def test_application_method_rejects_unverified_identity_or_wrong_body_hash(self):
+        self.reviewed(); self.calibration()
+        snapshot = self.command('freeze')['suite']['snapshot']
+        for method in ({'title': 'metadata only'}, {'body': 'actual', 'sha256': '0' * 64},
+                       {'body': 'actual', 'source': {'kind': 'project_artifact', 'artifactId': 'forged'}}):
+            with self.subTest(method=method), self.assertRaises(AgentLabGoldenValidationError):
+                self.command('experiment', {'snapshotId': snapshot['snapshotId'], 'baseline': {},
+                    'candidate': {'applicationMethod': method}, 'optimizePrompt': False})
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="paw-golden-test-")
         self.addCleanup(temporary.cleanup)

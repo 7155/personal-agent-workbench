@@ -39,7 +39,7 @@ const bridge = `<script>(()=>{
 })();</script>`;
 const policy = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
 
-export function LabAppPreview({ app, version, calls, onActivity }: { app: LabApp; version: LabAppVersion; calls: LabAppCall[]; onActivity: () => void }) {
+export function LabAppPreview({ app, version, calls, selectedCallId = '', onActivity }: { app: LabApp; version: LabAppVersion; calls: LabAppCall[]; selectedCallId?: string; onActivity: () => void }) {
   const transport = useControlTransport(); const frame = useRef<HTMLIFrameElement>(null);
   const inFlight = useRef(new Set<string>()); const delivered = useRef(new Set<string>());
   const requestCalls = useRef(new Map<string, string>());
@@ -76,8 +76,9 @@ export function LabAppPreview({ app, version, calls, onActivity }: { app: LabApp
     }
   }, [transport, onActivity]);
   useEffect(() => {
+    if (selectedCallId) return;
     const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow) return;
+      if (!frame.current || event.source !== frame.current.contentWindow) return;
       const data = object(event.data);
       if (typeof data.requestId !== 'string' || !/^[a-f0-9-]{36}$/u.test(data.requestId)) return;
       if (data.kind === 'paw.lab-app.ready') { setIntegratedProgress(true); return; }
@@ -150,8 +151,9 @@ export function LabAppPreview({ app, version, calls, onActivity }: { app: LabApp
         input: { version: version.version, actionId: data.actionId, values: object(data.input) as Record<string, JsonValue>, ...(data.model ? { model: object(data.model) as Record<string, JsonValue> } : {}) } }, data.requestId);
     };
     window.addEventListener('message', receive); return () => window.removeEventListener('message', receive);
-  }, [app.appId, app.revision, version.spec.actions, version.version, calls, send, onActivity, transport, version.spec.model]);
+  }, [app.appId, app.revision, version.spec.actions, version.version, calls, send, onActivity, transport, version.spec.model, selectedCallId]);
   useEffect(() => {
+    if (selectedCallId) return;
     for (const call of calls) {
       const requestId = requestCalls.current.get(call.callId);
       if (!requestId || call.appId !== app.appId || call.version !== version.version || delivered.current.has(call.callId)) continue;
@@ -170,9 +172,21 @@ export function LabAppPreview({ app, version, calls, onActivity }: { app: LabApp
       frame.current?.contentWindow?.postMessage({ kind: 'paw.lab-app.result', requestId, ok: call.state === 'completed', state: call.state, result: call.result, message: call.error }, '*');
       delivered.current.add(call.callId);
     }
-  }, [calls, app.appId, app.revision, version.version, send]);
+  }, [calls, app.appId, app.revision, version.version, send, selectedCallId]);
+  const displayCalls = selectedCallId ? calls.filter((call) => call.callId === selectedCallId) : calls;
+  const receipts = displayCalls.length ? <details className="lab-app-preview__receipts" open={Boolean(selectedCallId) || undefined}><summary>实际调用记录 · {displayCalls.length}</summary>{displayCalls.map((call) => <article key={call.callId} aria-label={call.callId === selectedCallId ? '选中的原应用调用' : undefined} data-selected={call.callId === selectedCallId || undefined}>
+      <strong>{version.spec.actions.find((action) => action.id === call.actionId)?.title ?? call.actionId} · {call.state === 'completed' ? '已完成' : call.state === 'failed' ? '失败' : call.state === 'cancelled' ? '已停止' : call.state === 'interrupted' ? '中断' : '处理中'}</strong>
+      {call.callId === selectedCallId ? <p>原调用 {call.callId} · 查看不会重新执行。</p> : null}
+      <small>应用 v{call.version} · {call.sessionId || '等待 Runtime 接纳'}</small>
+      {['queued', 'running'].includes(call.state) ? <small>{appProgressLabel(call.progress?.stage)}</small> : null}
+      {call.result.text ? <pre>{call.result.text}</pre> : call.error ? <p>{call.error}</p> : null}
+      {call.callId === selectedCallId ? <details><summary>查看原输入、来源与完整公开回执</summary><pre>{JSON.stringify(call, null, 2)}</pre></details> : null}
+      <SourceReadCount call={call} />
+      {call.result.usage && Object.keys(call.result.usage).length ? <small>实际用量：{JSON.stringify(call.result.usage)}</small> : null}
+    </article>)}</details> : null;
   const active = calls.filter((call) => call.appId === app.appId && ['queued', 'running', 'interrupted'].includes(call.state)
     && (!integratedProgress || !requestCalls.current.has(call.callId) || call.state === 'interrupted' || pending.length > 0 || error));
+  if (selectedCallId) return <div className="lab-app-preview">{receipts}</div>;
   return <div className={`lab-app-preview${split ? ' lab-app-preview--split' : ''}`} data-workspace-view={workspaceVisible ? 'workspace' : 'chat'}>
     {external ? <nav className="lab-app-preview__workspaces" aria-label="应用工作区">
       <button type="button" aria-pressed={!workspaceVisible} onClick={() => setWorkspaceVisible(false)}>资料问答</button>
@@ -183,6 +197,7 @@ export function LabAppPreview({ app, version, calls, onActivity }: { app: LabApp
     {active.length ? <div className="lab-app-preview__activity" role="status">{active.map((call) => <span key={call.callId}>
       <small>应用 v{call.version}</small>
       {call.state === 'interrupted' ? '调用中断，保留原请求' : call.cancelRequested ? '正在停止…' : appProgressLabel(call.progress?.stage)}
+      <SourceReadCount call={call} />
       {call.state === 'interrupted' && !call.cancelRequested ? <Button size="small" onClick={() => void send({ action: 'resume', appId: app.appId, expectedRevision: app.revision, clientRequestId: `app-resume:${crypto.randomUUID()}`, input: { callId: call.callId } })}>恢复原调用</Button> : null}
       <Button size="small" disabled={call.cancelRequested && call.state !== 'interrupted'} onClick={() => void send({ action: 'cancel', appId: app.appId, expectedRevision: app.revision, clientRequestId: `app-cancel:${crypto.randomUUID()}`, input: { callId: call.callId } })}>{call.cancelRequested && call.state === 'interrupted' ? '重试停止' : '停止'}</Button>
     </span>)}</div> : null}
@@ -192,16 +207,17 @@ export function LabAppPreview({ app, version, calls, onActivity }: { app: LabApp
       ? <iframe data-pane="workspace" title={external.title} hidden={!split && !workspaceVisible} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" src={workspaceUrl} />
       : <p hidden={!split && !workspaceVisible} className="lab-project-error" role="alert">工作台地址不可用。请检查应用声明的 HTTPS 或本机服务地址；不能嵌入当前控制服务。</p> : null}
     </div>
-    {calls.length ? <details className="lab-app-preview__receipts"><summary>实际调用记录 · {calls.length}</summary>{calls.map((call) => <article key={call.callId}>
-      <strong>{version.spec.actions.find((action) => action.id === call.actionId)?.title ?? call.actionId} · {call.state === 'completed' ? '已完成' : call.state === 'failed' ? '失败' : call.state === 'cancelled' ? '已停止' : call.state === 'interrupted' ? '中断' : '处理中'}</strong>
-      <small>应用 v{call.version} · {call.sessionId || '等待 Runtime 接纳'}</small>
-      {call.result.text ? <pre>{call.result.text}</pre> : call.error ? <p>{call.error}</p> : null}
-      {call.result.usage && Object.keys(call.result.usage).length ? <small>实际用量：{JSON.stringify(call.result.usage)}</small> : null}
-    </article>)}</details> : null}
+    {receipts}
   </div>;
 }
 
 function appProgressLabel(stage?: string): string {
-  const labels: Record<string, string> = { context_ready: '已读取应用资料', retrieving: '正在检索资料…', sources_ready: '来源已找到', model_starting: '正在连接模型…', model_wait: '正在等待模型响应…', thinking: '模型正在思考…', answering: '正在输出回答…' };
+  const labels: Record<string, string> = { researching: '读取研究原文', context_ready: '已读取应用资料', retrieving: '正在检索资料…', sources_ready: '来源已找到', model_starting: '正在连接模型…', model_wait: '正在等待模型响应…', thinking: '模型正在思考…', answering: '正在输出回答…' };
   return labels[stage ?? ''] ?? '应用正在处理…';
+}
+
+function SourceReadCount({ call }: { call: LabAppCall }) {
+  const knowledge = object(call.progress?.knowledge ?? object(call.result).knowledge);
+  const count = object(knowledge.workflow).executedSourceReadCallCount;
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? <small>已完成 {count} 次原文查找／打开</small> : null;
 }

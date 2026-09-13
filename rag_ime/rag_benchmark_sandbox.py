@@ -451,6 +451,66 @@ class RagBenchmarkSandbox:
             snapshot["externalDocumentIds"] = _reverse_document_ids(manifest)
             return snapshot
 
+    def export_dense_snapshot(self, owner_session_id: object, run_id: object, *, base_alias: object) -> dict[str, Any]:
+        """Export the actual owned projection; this never embeds documents."""
+        from .embeddings import portable_embedding_configuration
+        with self._lock:
+            run_path, manifest = self._load_owned_run(owner_session_id, run_id)
+            base = self._base_record(manifest, _identifier(base_alias, "base alias"))
+            service = self._service(str(manifest["runId"]), run_path)
+            export = getattr(service.dense_index, "export_snapshot", None)
+            if not callable(export):
+                raise RagBenchmarkSandboxError("owned index has no exportable dense projection")
+            search = service.store.export_search_snapshot(str(base["kbId"]))
+            configuration = portable_embedding_configuration(service.dense_index.provider)
+            snapshot = export(base_id=str(base["kbId"]),
+                document_hashes={d["id"]: d["sha256"] for d in search["documents"]},
+                provider_config=configuration, model_revision=configuration["modelRevision"])
+            if {c["chunkId"] for c in snapshot["chunks"]} != {c["id"] for c in search["chunks"]}:
+                raise RagBenchmarkSandboxError("dense projection is incomplete for the frozen search snapshot")
+            snapshot["provider"]["dimensions"] = snapshot["dimension"]
+            return snapshot
+
+    def restore_search_snapshot(self, owner_session_id: object, run_id: object, *, base_alias: object,
+                                snapshot: dict[str, Any], external_document_ids: Mapping[str, str],
+                                dense_snapshot: dict[str, Any] | None = None,
+                                cancelled: Callable[[], bool] = lambda: False) -> dict[str, Any]:
+        """Restore derived Knowledge caches into an empty caller-owned run."""
+        clean_alias = _identifier(base_alias, "base alias")
+        with self._lock:
+            run_path, manifest = self._load_owned_run(owner_session_id, run_id)
+            if manifest["bases"] or manifest["documents"]:
+                raise RagBenchmarkSandboxError("snapshot restoration requires an empty owned run")
+            documents = snapshot["documents"]
+            if (len(documents) > self.policy.max_documents_per_run
+                    or sum(d["byteSize"] for d in documents) > self.policy.max_total_source_bytes
+                    or any(d["byteSize"] > self.policy.max_document_bytes for d in documents)
+                    or set(external_document_ids) != {d["id"] for d in documents}
+                    or len(set(external_document_ids.values())) != len(documents)):
+                raise RagBenchmarkSandboxError("snapshot source mapping or run budget is invalid")
+            service = self._service(str(manifest["runId"]), run_path)
+            if cancelled():
+                raise InterruptedError("snapshot restoration was cancelled")
+            service.store.import_search_snapshot(snapshot)
+            if dense_snapshot is not None:
+                importer = getattr(service.dense_index, "import_snapshot", None)
+                if not callable(importer):
+                    raise RagBenchmarkSandboxError("owned run has no compatible dense projection owner")
+                importer(dense_snapshot, expected_base_id=snapshot["base"]["id"],
+                    expected_document_hashes={d["id"]: d["sha256"] for d in documents},
+                    expected_fingerprint=dense_snapshot["fingerprint"], expected_model_revision=dense_snapshot["modelRevision"],
+                    cancelled=cancelled)
+            if cancelled():
+                raise InterruptedError("snapshot restoration was cancelled")
+            # Only a complete import becomes a visible base in the run manifest.
+            manifest["bases"][clean_alias] = {"kbId": snapshot["base"]["id"], "name": snapshot["base"]["name"]}
+            manifest["documents"] = {external_document_ids[d["id"]]: {"documentId": d["id"], "baseAlias": clean_alias,
+                "name": d["title"], "byteSize": d["byteSize"], "sha256": d["sha256"]} for d in documents}
+            manifest["usage"]["sourceBytes"] = sum(d["byteSize"] for d in documents)
+            _write_manifest(run_path, manifest)
+            return {"runId": manifest["runId"], "documentCount": len(documents), "chunkCount": len(snapshot["chunks"]),
+                    "embeddingModelCalls": 0, "restored": True}
+
     def rebuild_graph(
         self,
         owner_session_id: object,

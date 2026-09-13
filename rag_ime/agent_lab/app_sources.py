@@ -15,10 +15,10 @@ from .projects import AgentLabProjectValidationError
 
 
 SOURCE_SCHEMA = 'paw.lab-app-source.v1'
-EXPORT_RECIPE_VERSION = 'paw.lab-app-export.v11'
+EXPORT_RECIPE_VERSION = 'paw.lab-app-export.v13'
 _ACTION_ID = re.compile(r'^[a-z][a-z0-9_-]{0,63}$')
 _BLOCKED_FILES = {'auth.json', 'credentials.json', 'pi-providers.json', 'models.json', 'package-lock.json'}
-_EXPORT_FILES = {'app.json', 'app.py', 'readme.md', 'paw-app.json', 'paw-runtime.json', 'agent-ui.js', 'agent-ui.css'}
+_EXPORT_FILES = {'app.json', 'app.py', 'app_research.py', 'readme.md', 'paw-app.json', 'paw-runtime.json', 'agent-ui.js', 'agent-ui.css', 'launch.py', 'start.command', 'requirements-app.txt'}
 
 
 def _relative(value: Any) -> str:
@@ -74,7 +74,8 @@ def validate_input_schema(value: Any) -> dict:
     return {'type':'object','properties':copy.deepcopy(properties),'required':required,'additionalProperties':False}
 
 
-def freeze_source(workspace: Path, directory: str, default_model: dict[str,str], *, freeze_knowledge: Callable | None = None) -> dict:
+def freeze_source(workspace: Path, directory: str, default_model: dict[str,str], *, freeze_knowledge: Callable | None = None,
+                  select_evaluation: Callable | None = None, evaluation_selection: dict | None = None) -> dict:
     workspace = workspace.resolve(strict=True)
     directory = _relative(directory)
     root = workspace
@@ -86,9 +87,31 @@ def freeze_source(workspace: Path, directory: str, default_model: dict[str,str],
     _, encoded = _read(root, 'app.json')
     try: value = json.loads(encoded)
     except ValueError as exc: raise AgentLabProjectValidationError('app.json 不是有效 JSON。') from exc
-    fields = {'schemaVersion','title','description','html','skill','context','actions','model','knowledge','externalWorkspace','appearance'}
+    fields = {'schemaVersion','title','description','html','skill','context','actions','model','knowledge','externalWorkspace','appearance','evaluationSelection','workflow'}
     if not isinstance(value, dict) or set(value) - fields or value.get('schemaVersion') != SOURCE_SCHEMA:
         raise AgentLabProjectValidationError('app.json 需要 paw.lab-app-source.v1 格式。')
+    if evaluation_selection is not None:
+        # A UI selection overrides the source declaration for this immutable
+        # preparation only; it never edits the user's working app.json.
+        value['evaluationSelection'] = copy.deepcopy(evaluation_selection)
+    selection = None
+    if 'evaluationSelection' in value:
+        if select_evaluation is None:
+            raise AgentLabProjectValidationError('当前应用准备器没有连接评测记录，请保留所选版本后重新连接。')
+        selection = select_evaluation(value['evaluationSelection'])
+        configuration = selection['configuration']
+        if not configuration.get('applicationMethod'):
+            raise AgentLabProjectValidationError('这次评测没有冻结应用方法，请先验证需要导出的 Skill。')
+        # The completed execution owns this selection. Never silently export
+        # the source folder's later model, prompt, method, or retrieval values.
+        value['model'] = {key: configuration[key] for key in ('provider', 'model', 'thinkingLevel')}
+        if selection.get('knowledge'):
+            binding = selection['knowledge']
+            declared = value.get('knowledge') or {}
+            value['knowledge'] = {'indexId': binding['indexId'], 'profile': binding['profile'],
+                                  'queryField': declared.get('queryField', 'question')}
+        elif value.get('knowledge'):
+            raise AgentLabProjectValidationError('所选评测未使用此知识库，不能将它标记为已验证的知识库应用。')
     title = _text(value.get('title'), '应用名称', 100)
     description = _text(value.get('description', ''), '应用说明', 3000, empty=True)
     context = value.get('context', [])
@@ -98,6 +121,8 @@ def freeze_source(workspace: Path, directory: str, default_model: dict[str,str],
         raise AgentLabProjectValidationError('app.json、app.py、README.md 和 paw-app.json 是导出运行器的保留文件名，请将业务材料换一个文件名。')
     if not str(value['html']).endswith('.html') or not str(value['skill']).endswith('SKILL.md'):
         raise AgentLabProjectValidationError('应用需要 HTML 入口和 SKILL.md 方法文件。')
+    if selection:
+        files[_relative(value['skill'])] = selection['configuration']['applicationMethod']['body']
     if sum(len(text.encode()) for text in files.values()) > 2_000_000:
         raise AgentLabProjectValidationError('应用源文件合计超过 2 MB。')
     actions = value.get('actions')
@@ -111,7 +136,9 @@ def freeze_source(workspace: Path, directory: str, default_model: dict[str,str],
         if kind not in {'completion','retrieval'} or (kind == 'retrieval' and 'knowledge' not in value):
             raise AgentLabProjectValidationError('检索操作需要声明应用知识库。')
         normalized.append({'id':action['id'],'title':_text(action['title'],'操作名称',120),
-                           'prompt':_text(action['prompt'],'操作方法',30_000),'inputSchema':validate_input_schema(action['inputSchema']),
+                           'prompt':_text(selection['configuration']['prompt'] if selection and kind == 'completion' else action['prompt'],
+                                          '操作方法',30_000,empty=bool(selection and kind == 'completion')),
+                           'inputSchema':validate_input_schema(action['inputSchema']),
                            **({'kind':kind} if kind != 'completion' else {})})
     if len({item['id'] for item in normalized}) != len(normalized): raise AgentLabProjectValidationError('应用操作标识不能重复。')
     model = value.get('model', default_model)
@@ -122,6 +149,12 @@ def freeze_source(workspace: Path, directory: str, default_model: dict[str,str],
         raise AgentLabProjectValidationError('应用推理强度无效。')
     spec = {'schemaVersion':SOURCE_SCHEMA,'title':title,'description':description,'html':_relative(value['html']),
             'skill':_relative(value['skill']),'context':[_relative(path) for path in context],'actions':normalized,'model':model}
+    if selection:
+        method = selection['configuration']['applicationMethod']
+        spec['evaluationSelection'] = {key: copy.deepcopy(selection[key]) for key in
+            ('suiteId', 'jobId', 'variant', 'snapshotId', 'configurationSha256', 'summary') if key in selection}
+        spec['evaluationSelection'].update(scope='application_method_and_configuration',
+            applicationMethod={key: copy.deepcopy(method[key]) for key in ('title', 'sha256', 'source') if key in method})
     if 'appearance' in value:
         appearance = value['appearance']
         if not isinstance(appearance, dict) or set(appearance) - {'accent','icon','colorScheme'} or not {'accent','icon'}.issubset(appearance):
@@ -149,21 +182,44 @@ def freeze_source(workspace: Path, directory: str, default_model: dict[str,str],
         if any(action['inputSchema']['properties'].get(field,{}).get('type') != 'string'
                or field not in action['inputSchema']['required'] for action in normalized):
             raise AgentLabProjectValidationError('每个知识库操作都需要声明必填的问题文本字段。')
+    if 'workflow' in value:
+        from .app_research import normalize_workflow
+        if not spec.get('knowledge'):
+            raise AgentLabProjectValidationError('按需研究需要冻结的应用知识库。')
+        try:
+            spec['workflow'] = normalize_workflow(value['workflow'], spec['knowledge']['profile'])
+        except ValueError as exc:
+            raise AgentLabProjectValidationError(str(exc)) from exc
+        if 'historyField' in spec['workflow'] and any(action['inputSchema']['properties'].get(spec['workflow']['historyField'], {}).get('type') != 'string' for action in normalized):
+            raise AgentLabProjectValidationError('研究历史字段需要在每个操作声明为文本。')
+        resource_files = {**resource_files, 'app_research.py': Path(__file__).with_name('app_research.py').read_text(encoding='utf-8')}
+        if selection:
+            spec['evaluationSelection']['workflowValidated'] = False
+    from .app_bootstrap import DENSE_DEPENDENCIES
+    dense = spec.get('knowledge', {}).get('profile', {}).get('mode') in {'dense', 'hybrid'}
+    bootstrap_files = {
+        'launch.py': Path(__file__).with_name('app_bootstrap.py').read_text(encoding='utf-8'),
+        'requirements-app.txt': ('\n'.join(f'{name}=={version}' for name, version in DENSE_DEPENDENCIES.items()) + '\n'
+                                 if dense else '# This App only requires Python standard-library modules.\n'),
+        'Start.command': '#!/bin/sh\ncd "$(dirname "$0")" || exit 1\npython3 launch.py '
+                         + ('--paw ' if spec.get('workflow') else '')
+                         + '"$@"\nstatus=$?\nif [ "$status" -ne 0 ]; then printf "\\nPress Enter to close…"; read -r reply; fi\nexit "$status"\n',
+    }
     runtime = Path(__file__).with_name('app_runtime.py').read_text(encoding='utf-8')
     ui_files = {}
     if 'pawAgentUI.mount' in files[spec['html']]:
         built = Path(__file__).resolve().parents[2]/'control-center-web/.generated/portable-agent-ui'
         try: ui_files = {name:(built/name).read_text() for name in ('agent-ui.js','agent-ui.css')}
         except OSError as exc: raise AgentLabProjectValidationError('请先运行前端 build:app-ui，准备共享 Agent 控件。') from exc
-    digest = hashlib.sha256(json.dumps({'spec':spec,'files':files,'uiFiles':ui_files,'resourceFiles':resource_files,'runtimeSource':runtime,'exportRecipeVersion':EXPORT_RECIPE_VERSION},ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps({'spec':spec,'files':files,'uiFiles':ui_files,'resourceFiles':resource_files,'bootstrapFiles':bootstrap_files,'runtimeSource':runtime,'exportRecipeVersion':EXPORT_RECIPE_VERSION},ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return {'spec':spec,'files':files,'runtimeSource':runtime,'runtimeSha256':hashlib.sha256(runtime.encode()).hexdigest(),
-            'contentHash':digest,'sourceDirectory':directory,'exportRecipeVersion':EXPORT_RECIPE_VERSION,
+            'bootstrapFiles':bootstrap_files,'contentHash':digest,'sourceDirectory':directory,'exportRecipeVersion':EXPORT_RECIPE_VERSION,
             **({'resourceFiles':resource_files} if resource_files else {}), **({'uiFiles':ui_files} if ui_files else {})}
 
 
 def export_zip(version: dict, target: str) -> tuple[str, bytes]:
     if target not in {'standalone','paw'}: raise AgentLabProjectValidationError('不支持此导出目标。')
-    spec, files = version['spec'], {**version['files'], **version.get('resourceFiles',{}), **version.get('uiFiles',{})}
+    spec, files = version['spec'], {**version['files'], **version.get('resourceFiles',{}), **version.get('uiFiles',{}), **version.get('bootstrapFiles',{})}
     files['app.json'] = json.dumps(spec, ensure_ascii=False, indent=2)+'\n'
     files['app.py'] = version['runtimeSource']
     files['paw-runtime.json'] = json.dumps({'appId':version['appId'], 'version':version['version'],
@@ -173,9 +229,16 @@ def export_zip(version: dict, target: str) -> tuple[str, bytes]:
 
 {spec['description']}
 
-这是独立可运行的应用源码包，使用 Python 3.10+ 标准库，不需要 PAW 后端。
+{'本研究版使用本机 PAW 的 Pi 及冻结知识库。保持 PAW 运行后，双击 Start.command，或运行 python3 launch.py --paw；无需为此包重装向量模型。基础入口需要 Python 3.10+。' if spec.get('workflow') else '这是独立可运行的应用源码包。基础运行器使用 Python 3.10+ 标准库，不需要 PAW 后端；语义检索等附加功能的依赖见下方知识库运行说明。'}
 
-在此目录运行 `python3 app.py`，打开终端输出的本机地址。
+独立本地检索环境的首次安装，在解压目录运行 `python3 launch.py --setup`。它只在显式安装时创建此 App 的 `.venv`，
+安装 `requirements-app.txt` 中的依赖，并准备固定版本的模型；中断后重新执行同一命令即可继续。
+之后运行 `python3 launch.py`，或在 macOS 双击 `Start.command`，打开终端输出的本机地址。
+解压工具若未保留执行位，可先运行 `chmod +x Start.command`。
+默认监听 `127.0.0.1:8080`；换端口用 `python3 launch.py --port 8081`。
+`python3 launch.py --check` 只做离线环境检查，正常启动不会安装依赖或下载模型。
+高级用法：`python3 launch.py --python /path/to/existing/python` 显式复用既有环境，不修改它。
+安装失败会保留缓存并指出恢复入口。Python 及第三方 wheel 需要适配当前系统。
 调用模型前，在当前终端设置 `APP_API_BASE_URL`（HTTPS、以 API v1 路径结尾）和
 `APP_API_KEY`。不要把凭据写入源码。`APP_MODEL`、`APP_REASONING_EFFORT` 可选；
 默认模型为 `{spec['model']['model']}`，推理强度 `{spec['model']['thinkingLevel']}`。
@@ -201,15 +264,54 @@ HTML 使用 `window.pawApp.invoke(actionId, input)`，返回包含 `text` 与 `u
 """
     if spec.get('knowledge'):
         knowledge = spec['knowledge']
+        mode = knowledge['profile']['mode']
+        retrieval_name = {'lexical': 'FTS5 关键词检索', 'dense': '语义向量检索', 'hybrid': '关键词与语义混合检索'}.get(mode, mode)
         files['README.md'] += f"""\n## 知识库运行依赖
 
 此包冻结了 {knowledge['documentCount']:,} 篇独立正文的 {knowledge['chunkCount']:,} 个切片，
-保留 {knowledge['sourceCount']:,} 个来源。实际运行使用 KnowledgeStore 的 FTS5 关键词检索，
+保留 {knowledge['sourceCount']:,} 个来源。实际运行使用冻结的 {retrieval_name}，
 Top K 为 {knowledge['profile']['topK']}，回答证据最多 {knowledge['profile']['contextChars']:,} 个字符。
 首次检索会在 `.knowledge-cache` 中恢复本包自己的索引，不需要 PAW 服务或全库上下文拼接。
 需要 Python 的 SQLite 支持 FTS5；原评测答案、标注、运行日志与模型密钥没有随包导出。
 声明为 retrieval 的操作只检索来源，不调用回答模型；completion 操作还需要上述模型配置。
 更改知识库、检索配置、模型或方法后应重新验证。检索成功不代表回答质量已经通过。
+"""
+        if mode in {'dense', 'hybrid'}:
+            embedding = knowledge.get('embedding') or knowledge.get('dense', {}).get('provider', {})
+            files['README.md'] += f"""\n语义检索还需要 `sentence-transformers` 及本版固定的 Embedding 模型
+`{embedding.get('model', '见 app.json 的 embedding 配置')}`，commit `{embedding.get('modelRevision', '')}`。
+`--setup` 安装本版固定的 torch / sentence-transformers / transformers / huggingface-hub，
+并从公开仓库准备这个 commit 的模型（不使用本机 Hugging Face 登录 token，不执行远程模型代码）。
+依赖版本对应本版 uv.lock；平台相关的间接依赖由 pip 解析，未承诺跨平台逐字节相同环境。
+模型默认缓存在此 App 的 `.app-model-cache/hub`；可以显式设置 `HF_HUB_CACHE` 复用已有缓存。
+首次安装需要联网和模型所需磁盘空间，后续启动只读取本地固定模型。模型权重与 API 密钥不在此 ZIP 中。
+随包向量会恢复到本包自己的缓存，不需要重算整库。依赖不可用时会报告原因，不会自动改为关键词检索。
+"""
+    if spec.get('evaluationSelection'):
+        selection = spec['evaluationSelection']
+        files['README.md'] += f"""\n## 所选实验
+
+此版本使用实验 `{selection['jobId']}` 的 `{selection['variant']}` 配置，
+评测快照为 `{selection['snapshotId']}`。SKILL.md、模型、问题方法和检索配置来自该次已完成回执，
+完整身份保存在 app.json 的 evaluationSelection 中。后续编辑源码不会改写已导出的版本。
+这记录方法与配置的验证来源；App 界面和部署仍需另行试用验收，不代表所有新问题都已通过。
+"""
+    if spec.get('workflow'):
+        # Research never silently degrades to the direct completion adapter.
+        files['README.md'] = files['README.md'].replace('基础运行器使用 Python 3.10+ 标准库，不需要 PAW 后端；',
+            '基础页面运行器使用 Python 3.10+ 标准库；此研究版需要 PAW 的 Pi 执行服务；')
+        files['README.md'] += f"""\n## 按需研究执行依赖
+
+此版本必须设置 `APP_PAW_GATEWAY_URL=http://127.0.0.1:8768`，连接持有本冻结版本的 PAW。
+PAW 已运行时可直接用 `APP_PAW_GATEWAY_URL=http://127.0.0.1:8768 python3 app.py` 启动，
+此桥接入口只需 Python 标准库，无需先安装本地语义模型或复制 API 密钥。
+Pi 使用 `lab_research` 在冻结快照内发现论文、文内定位、按页或切片读取、按缺口搜索；
+最多 {spec['workflow']['maxToolCalls']} 次知识工具操作，其中最多 {spec['workflow']['maxSearchCalls']} 次搜索，
+总证据预算 {spec['knowledge']['profile']['contextChars']} 字符，为阅读预留 {spec['workflow']['readReserveChars']} 字符。
+来源与预算回执跟随原 App 调用保存。没有 PAW/Pi 连接时，本版不会退化为一次检索加直接模型回答。
+`APP_API_BASE_URL` 与 `APP_API_KEY` 不能代替研究工具执行服务；本地独立模型循环尚未随包提供。
+随包 reader 可读取完整冻结文本与真实页码，原 PDF 文件和机器路径不属于读取契约。
+若版本还选择了 Golden 方法实验，该旧单包实验没有验证此新增工具工作流；需要另行验证研究质量。
 """
     if target == 'paw':
         files['paw-app.json'] = json.dumps({'schemaVersion':'paw.lab-app-package.v1','source':'app.json',
@@ -232,6 +334,6 @@ PAW 与独立 App 均提供单独的工作台页面和浏览器入口。
     with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED) as archive:
         for path, text in sorted(files.items()):
             info = zipfile.ZipInfo(path, date_time=(1980,1,1,0,0,0)); info.compress_type=zipfile.ZIP_DEFLATED
-            info.external_attr = 0o100644 << 16
+            info.external_attr = (0o100755 if path == 'Start.command' else 0o100644) << 16
             archive.writestr(info, text.encode())
     return f"lab-app-v{version['version']}-{target}.zip", output.getvalue()

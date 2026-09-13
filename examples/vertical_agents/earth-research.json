@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "rag-ime.vertical-agent-manifest.v1",
+  "appId": "earth-research",
+  "suiteRevision": "source-grounding-v1",
+  "displayName": "Earth Agent 来源使用验证（非选址计算验收）",
+  "capabilities": ["trace.emit", "eval.ground_truth", "rag.retrieval", "memory.recall", "sandbox.self_test"],
+  "fixtures": [{
+    "fixtureId": "analysis-evidence", "inputLabel": "分析证据边界",
+    "truth": {"requiredEvidenceIds": ["knowledge:analysis-contract", "memory:fixture:earth-research:constraints"]},
+    "ragEvidence": {"evidenceId": "knowledge:analysis-contract", "sourceKind": "knowledge", "sourceLane": "sandbox_knowledge", "sourceRef": "K-5a9215edf8"}
+  }],
+  "selfTest": {"fixturePath": "earth-research/analysis-contract.md", "documentId": "analysis-contract", "baseAlias": "public", "baseName": "Earth analysis evidence", "query": "Earth Engine execution evidence", "memory": {"memoryId": "memory:fixture:earth-research:constraints", "sourceRef": "fixture://memory/earth-research/constraints", "summaryFingerprint": "sha256:earth-research-constraints-v1"}},
+  "traceRequirements": {"requiredSpanNames": ["agent.input", "rag.retrieve", "memory.recall", "agent.answer"]},
+  "ragChecks": {"required": true, "requiredSpanNames": ["rag.retrieve"], "requiredEvidenceSourceKinds": ["knowledge"], "requiredEvidenceStages": ["retrieval_output"]},
+  "memoryChecks": {"required": true, "requiredSpanNames": ["memory.recall"], "requiredEvidenceSourceKinds": ["memory"], "requiredEvidenceStages": ["memory_recall"]},
+  "sandbox": {"workspaceRoot": "examples/vertical_agents/runs/earth-research", "mutationMode": "staged", "network": "blocked", "productionWriteBlocked": true}
+}

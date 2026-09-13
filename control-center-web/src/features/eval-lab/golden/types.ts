@@ -1,7 +1,9 @@
-export type ModelConfig = { provider: string; model: string; thinkingLevel: string; prompt: string };
+import { isApplicationMethod, isApplicationMethodComparison, type ApplicationMethod, type ApplicationMethodComparison, type ApplicationMethodInput } from './application-method';
+export type ModelConfig = { provider: string; model: string; thinkingLevel: string; prompt: string; applicationMethod?: ApplicationMethod | ApplicationMethodInput };
 export const goldenThinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export const isGoldenThinkingLevel = (value: string) => goldenThinkingLevels.some((level) => level === value);
-export const isRunnableGoldenModel = (value: ModelConfig) => Boolean(value.provider.trim() && value.model.trim() && isGoldenThinkingLevel(value.thinkingLevel));
+export const isRunnableGoldenModel = (value: ModelConfig) => Boolean(value.provider.trim() && value.model.trim() && isGoldenThinkingLevel(value.thinkingLevel)
+  && (!value.applicationMethod || ('body' in value.applicationMethod ? value.applicationMethod.body.trim() : value.applicationMethod.artifactId && value.applicationMethod.artifactRevision > 0)));
 export type GoldenSource = { sourceId: string; title: string; kind: 'document' | 'history' | 'failure'; uri: string; text: string };
 export type GoldenEvidence = { sourceId: string; quote: string };
 export type Verdict = 'pass' | 'fail' | 'uncertain';
@@ -30,7 +32,7 @@ export type GoldenSnapshot = {
   judgeProtocolVersion?: string;
 };
 export type GoldenJob = {
-  jobId: string; kind: 'draft' | 'calibrate' | 'experiment';
+  jobId: string; kind: 'draft' | 'review' | 'calibrate' | 'experiment';
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   progress: string; sessionId: string; error: string; result: Record<string, unknown> | null;
   canReprocess?: boolean;
@@ -47,7 +49,7 @@ export type GoldenSuite = {
   datasetProvenance?: { kind: string; totalCases: number; selectedCases: number; diagnosticSamples?: string };
 };
 export type GoldenRead = { ok: true; items: GoldenSuite[]; suite: GoldenSuite | null };
-export type GoldenAction = 'create' | 'draft' | 'review_case' | 'label_sample' | 'judge_config' | 'calibrate' | 'freeze' | 'experiment' | 'cancel' | 'resume';
+export type GoldenAction = 'create' | 'draft' | 'review' | 'review_case' | 'label_sample' | 'judge_config' | 'calibrate' | 'freeze' | 'experiment' | 'cancel' | 'resume';
 export type GoldenCommand = {
   action: GoldenAction; suiteId?: string; expectedRevision: number; clientRequestId: string;
   input: Record<string, import('@/platform/transport').JsonValue>;
@@ -73,10 +75,12 @@ export type ExperimentUsage = {
   estimatedCostUsd?: number | null; knownEstimatedCostUsd?: number | null; estimatedPricedCalls?: number; estimateComplete?: boolean;
 };
 export type ExperimentResult = {
+  knowledge?: GoldenSuite['knowledge'];
   referenceAuthority?: 'human' | 'agent_assisted' | 'unrecorded';
   labelAuthors?: { human: number; agent: number; unrecorded: number } | null;
   schemaVersion: 'rag-ime.agent-lab-golden-experiment.v1'; suiteId: string; snapshotId: string;
-  executionMode: 'context_qa' | 'knowledge_qa'; optimizationScope: 'prompt' | 'model' | 'model_and_prompt' | 'repeat'; judgeConfig: ModelConfig;
+  executionMode: 'context_qa' | 'knowledge_qa'; optimizationScope: 'prompt' | 'model' | 'model_and_prompt' | 'repeat' | 'skill' | 'model_and_skill' | 'prompt_and_skill' | 'model_and_prompt_and_skill'; judgeConfig: ModelConfig;
+  applicationMethodComparison?: ApplicationMethodComparison;
   baseline: ModelConfig; candidate: ModelConfig; development: PhaseReport; holdout: PhaseReport;
   optimization: { enabled: boolean; maxCandidates: number; selectedCandidateIndex: number; proposals: { candidateIndex: number; modelConfig: ModelConfig; developmentMetrics: ExperimentMetrics; selected: boolean; proposalRequestId: string }[] };
   comparison: { decision: 'improved' | 'no_improvement' | 'inconclusive'; comparable: boolean | number; developmentDelta: number | null; holdoutDelta: number | null; reasons: string[]; sameSnapshot: true; goldenChanged: false; improvementBasis?: 'quality' | 'answer_cost' | 'answer_cost_estimate' | null; groupRegressions?: unknown[] };
@@ -91,7 +95,7 @@ export const isActiveJob = (job: GoldenJob) => job.state === 'queued' || job.sta
 export const verdictLabel: Record<Verdict, string> = { pass: '通过', fail: '不通过', uncertain: '无法判定' };
 export const splitLabel = { development: '开发题', holdout: '留出题' };
 export const categoryLabel = { correct: '正确样例', incorrect: '错误样例', boundary: '边界样例' };
-export const jobLabel = { draft: '起草题目', calibrate: '校准评审', experiment: '运行实验' };
+export const jobLabel = { draft: '起草题目', review: 'Agent 核对', calibrate: '校准评审', experiment: '运行实验' };
 export const jobStateLabel = { queued: '排队中', running: '进行中', completed: '已完成', failed: '失败', cancelled: '已停止', interrupted: '已中断' };
 export const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -105,7 +109,7 @@ const evidence = (value: unknown) => Array.isArray(value) && value.every((item) 
 export function isGoldenJob(value: unknown): value is GoldenJob {
   const job = object(value);
   return fields(job, ['jobId', 'progress', 'sessionId', 'error']) && job.jobId !== ''
-    && ['draft', 'calibrate', 'experiment'].includes(String(job.kind))
+    && ['draft', 'review', 'calibrate', 'experiment'].includes(String(job.kind))
     && ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'].includes(String(job.state))
     && (job.canReprocess === undefined || typeof job.canReprocess === 'boolean')
     && (job.canRetryFailedCall === undefined || typeof job.canRetryFailedCall === 'boolean')
@@ -172,7 +176,10 @@ export function isExperimentResult(value: unknown): value is ExperimentResult {
     });
   };
   return result.schemaVersion === 'rag-ime.agent-lab-golden-experiment.v1' && fields(result, ['suiteId', 'snapshotId'])
-    && ['context_qa', 'knowledge_qa'].includes(String(result.executionMode)) && ['prompt', 'model', 'model_and_prompt', 'repeat'].includes(String(result.optimizationScope))
+    && (result.knowledge === undefined || (fields(object(result.knowledge), ['indexId', 'corpusHash']) && number(object(result.knowledge).documentCount) && number(object(result.knowledge).chunkCount) && typeof object(object(result.knowledge).profile).mode === 'string'))
+    && ['context_qa', 'knowledge_qa'].includes(String(result.executionMode)) && ['prompt', 'model', 'model_and_prompt', 'repeat', 'skill', 'model_and_skill', 'prompt_and_skill', 'model_and_prompt_and_skill'].includes(String(result.optimizationScope))
+    && (result.applicationMethodComparison === undefined || isApplicationMethodComparison(result.applicationMethodComparison))
+    && ['baseline', 'candidate'].every((key) => object(result[key]).applicationMethod === undefined || isApplicationMethod(object(result[key]).applicationMethod))
     && (result.validationUse === undefined || (Number.isSafeInteger(validation.ordinal) && Number(validation.ordinal) > 0 && typeof validation.reused === 'boolean'
       && number(validation.priorStartedRuns) && number(validation.priorCompletedRuns) && number(validation.startedAtMs)
       && (validation.overlappingQuestionCount === undefined || number(validation.overlappingQuestionCount))))

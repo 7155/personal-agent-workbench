@@ -6,6 +6,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -49,8 +50,8 @@ class AgentLabAppStore:
 
     @staticmethod
     def _public_version(version: dict, *, include_html: bool = True) -> dict:
-        result = {key:value for key,value in version.items() if key not in {'files','uiFiles','resourceFiles','resourceManifest','assetKey','sourceDirectory','runtimeSource','exports'}}
-        files = {**version['files'], **version.get('resourceFiles',{}), **version.get('uiFiles',{})}
+        result = {key:value for key,value in version.items() if key not in {'files','uiFiles','bootstrapFiles','resourceFiles','resourceManifest','assetKey','sourceDirectory','runtimeSource','exports'}}
+        files = {**version['files'], **version.get('resourceFiles',{}), **version.get('uiFiles',{}), **version.get('bootstrapFiles',{})}
         result['fileCount'] = len(files)
         result['byteSize'] = sum(len(value.encode()) for value in files.values())
         if include_html: result['html'] = agent_ui_html(version.get('uiFiles', {}))+version['files'][version['spec']['html']]
@@ -61,13 +62,17 @@ class AgentLabAppStore:
         return result
 
     def prepare(self, conn: sqlite3.Connection, project: dict, value: dict, default_model: dict[str,str]) -> dict:
-        value = _object(value, {'directory','appId'}, '应用准备')
+        value = _object(value, {'directory','appId','evaluationSelection'}, '应用准备')
+        if 'evaluationSelection' in value and not isinstance(value['evaluationSelection'], dict):
+            raise AgentLabProjectValidationError('应用评测选择需要套件、实验和基线或候选标识。')
         directory = _text(value.get('directory'), '应用目录', 500)
         workspace = project.get('executionWorkspace') or {}
         if workspace.get('kind') != 'managed' or not workspace.get('path'):
             raise AgentLabProjectValidationError('此项目没有可用的托管执行目录。')
         try: frozen = freeze_source(Path(workspace['path']), directory, default_model,
-                                   freeze_knowledge=(lambda value:self.freeze_knowledge(project['projectId'],value)) if self.freeze_knowledge else None)
+                                   freeze_knowledge=(lambda value:self.freeze_knowledge(project['projectId'],value)) if self.freeze_knowledge else None,
+                                   select_evaluation=lambda value: self._evaluation_selection(project, value, connection=conn),
+                                   evaluation_selection=value.get('evaluationSelection'))
         except ValueError as exc:
             if isinstance(exc, AgentLabProjectValidationError): raise
             raise AgentLabProjectValidationError(str(exc)) from exc
@@ -103,6 +108,24 @@ class AgentLabAppStore:
                      (app_id,project['projectId'],self.scope_id,app['revision'],version_number,app['activeVersion'],_json(app),app['createdAtMs'],now))
         conn.execute('INSERT INTO agent_lab_app_versions(app_id,version,payload_json,created_at_ms) VALUES(?,?,?,?)', (app_id,version_number,_json(version),now))
         return {**app,'version':self._public_version(version)}
+
+    def _evaluation_selection(self, project: dict, value: Any, *, connection: sqlite3.Connection) -> dict:
+        """Select one completed owner receipt, never an Agent-written claim."""
+        from .golden import AgentLabGoldenStore
+        value = _object(value, {'suiteId', 'jobId', 'variant'}, '应用评测选择')
+        suite_id = _text(value.get('suiteId'), '评测集标识', 240)
+        job_id = _text(value.get('jobId'), '实验标识', 240)
+        variant = value.get('variant')
+        if variant not in {'baseline', 'candidate'}:
+            raise AgentLabProjectValidationError('请选择基线或候选的已完成配置。')
+        if not any(binding.get('ownerRef') == {'kind': 'golden_suite', 'id': suite_id}
+                   for binding in project.get('bindings', [])):
+            raise AgentLabProjectValidationError('所选实验不属于此项目的评测绑定。')
+        selected = AgentLabGoldenStore(self.db_path).application_configuration(suite_id, job_id, variant, connection=connection)
+        knowledge = selected.get('knowledge')
+        if knowledge and knowledge.get('projectId') != project['projectId']:
+            raise AgentLabProjectValidationError('所选实验的知识库不属于此项目。')
+        return selected
 
     def read(self, payload: Mapping[str, Any] | None = None) -> dict:
         value = _object(payload or {}, {'appId','projectId','version','callId'}, '应用读取')
@@ -151,6 +174,63 @@ class AgentLabAppStore:
                 'skillSha256':hashlib.sha256(version['files'][spec['skill']].encode()).hexdigest(),
                 'verticalSuiteId':app['projectId'],'verticalSuiteRevision':str(version['projectRevision']),
                 'hosting':{'kind':'lab-html','appId':app['appId'],'projectId':app['projectId'],'version':version['version']}}
+
+    def project_calls(self, project_id: str, *, limit: int = 200) -> dict:
+        """Small read projection; never hydrate versions, answers or journals.
+
+        The selected project owner has initialized the schema. Do not migrate,
+        recover calls or construct an execution worker from this polling path.
+        Counts cover the whole project; displayed history is explicitly bounded.
+        """
+        project_id = _text(project_id, '项目标识', 500)
+        limit = _integer(limit, 1, 1000)
+        joins = ' FROM agent_lab_app_calls c JOIN agent_lab_apps a ON a.app_id=c.app_id '
+        scope = ' WHERE a.scope_id=? AND a.project_id=? '
+        with sqlite_connection(self.db_path, row_factory=sqlite3.Row) as conn:
+            conn.execute('BEGIN')
+            counts = {row['state']: row['count'] for row in conn.execute(
+                'SELECT c.state,COUNT(*) AS count' + joins + scope + 'GROUP BY c.state', (self.scope_id, project_id))}
+            rows = conn.execute("SELECT c.call_id,c.app_id,c.app_version,c.action_id,c.state,c.session_id,c.updated_at_ms,"
+                "substr(json_extract(v.payload_json,'$.spec.title'),1,240) AS title,"
+                "(SELECT substr(json_extract(value,'$.title'),1,120) FROM json_each(v.payload_json,'$.spec.actions') "
+                "WHERE json_extract(value,'$.id')=c.action_id LIMIT 1) AS action_title,"
+                "json_extract(c.progress_json,'$.stage') AS stage,"
+                "json_extract(c.progress_json,'$.runtime.operation') AS operation,"
+                "json_extract(c.progress_json,'$.research.budget.executedToolCalls') AS tools,"
+                "json_extract(c.progress_json,'$.research.budget.executedSearchCalls') AS searches,"
+                "json_extract(c.progress_json,'$.research.budget.executedSourceReadCalls') AS reads,"
+                "json_extract(c.progress_json,'$.research.budget.contextChars') AS chars,"
+                "d.call_id AS reuse_call,d.app_version AS reuse_version,"
+                "json_extract(c.progress_json,'$.research.evidenceReuse.sourceCount') AS reuse_sources,"
+                "json_extract(c.progress_json,'$.research.evidenceReuse.windowCount') AS reuse_windows,"
+                "json_extract(c.progress_json,'$.research.evidenceReuse.contextChars') AS reuse_chars"
+                + joins + 'JOIN agent_lab_app_versions v ON v.app_id=c.app_id AND v.version=c.app_version'
+                + " LEFT JOIN agent_lab_app_calls d ON d.call_id=json_extract(c.progress_json,'$.research.evidenceReuse.sourceCallId') "
+                "AND d.app_id=c.app_id AND d.state='completed' AND d.cancel_requested=0 "
+                "AND json_extract(c.progress_json,'$.research.evidenceReuse.schemaVersion')='paw.app-evidence-reuse.v1' "
+                "AND json_extract(c.progress_json,'$.research.evidenceReuse.snapshotSha256')=json_extract(v.payload_json,'$.spec.knowledge.snapshotSha256') "
+                + scope + "ORDER BY CASE c.state WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,c.updated_at_ms DESC,c.call_id LIMIT ?",
+                (self.scope_id, project_id, limit)).fetchall()
+        calls = []
+        stages = {'queued','context_ready','retrieving','researching','sources_ready','model_starting','model_wait',
+                  'thinking','answering','completed','failed','cancelled','interrupted','unconfirmed'}
+        for row in rows:
+            progress = {'stage': row['stage']} if row['stage'] in stages else {}
+            if row['operation'] in {'discover','find','open','search'}:
+                progress['operation'] = row['operation']
+            for column, name in [('tools','executedToolCalls'), ('searches','executedSearchCalls'),
+                                 ('reads','executedSourceReadCalls'), ('chars','contextChars')]:
+                if type(row[column]) is int and row[column] >= 0:
+                    progress[name] = row[column]
+            calls.append({'callId': row['call_id'], 'appId': row['app_id'], 'version': row['app_version'],
+                          'title': row['title'] or '', 'actionId': row['action_id'], 'actionTitle': row['action_title'] or row['action_id'],
+                          'state': row['state'], 'sessionId': row['session_id'], 'updatedAtMs': row['updated_at_ms'], 'progress': progress})
+            if row['reuse_call'] and all(type(row[key]) is int and row[key] >= 0 for key in ('reuse_sources', 'reuse_windows', 'reuse_chars')):
+                calls[-1]['evidenceReuse'] = {'sourceCallId': row['reuse_call'], 'sourceAppVersion': row['reuse_version'],
+                    'sourceCount': row['reuse_sources'], 'windowCount': row['reuse_windows'], 'contextChars': row['reuse_chars']}
+        total = sum(counts.values())
+        return {'projectId': project_id, 'calls': calls, 'counts': counts, 'totalCount': total,
+                'returnedCount': len(calls), 'truncated': len(calls) < total}
 
     def download(self, payload: Mapping[str, Any]) -> dict:
         value = _object(payload, {'appId','version','target'}, '应用导出')
@@ -266,14 +346,16 @@ class AgentLabAppStore:
 
 
 class AgentLabAppApplication:
-    def __init__(self, store: AgentLabAppStore, *, complete: Callable[...,dict], abort: Callable[[str],Any], start_workers: bool = True) -> None:
+    def __init__(self, store: AgentLabAppStore, *, complete: Callable[...,dict], abort: Callable[[str],Any], start_workers: bool = True, recover: bool = True) -> None:
         self.store,self.complete,self.abort = store,complete,abort
         self._pool = ThreadPoolExecutor(max_workers=2,thread_name_prefix='paw-lab-app') if start_workers else None
         self._lock = threading.Lock(); self._active: set[str] = set(); self._closed = False
         self._knowledge_runtimes: dict[str, tuple[Path, Any]] = {}
+        self._research_locks: dict[str, threading.RLock] = {}
         store.initialize()
-        with sqlite_connection(store.db_path) as conn:
-            conn.execute("UPDATE agent_lab_app_calls SET state='interrupted',error='执行进程已离线，请恢复原调用。',updated_at_ms=? WHERE state IN ('queued','running') AND app_id IN (SELECT app_id FROM agent_lab_apps WHERE scope_id=?)",(_now(),store.scope_id))
+        if recover:
+            with sqlite_connection(store.db_path) as conn:
+                conn.execute("UPDATE agent_lab_app_calls SET state='interrupted',error='执行进程已离线，请恢复原调用。',updated_at_ms=? WHERE state IN ('queued','running') AND app_id IN (SELECT app_id FROM agent_lab_apps WHERE scope_id=?)",(_now(),store.scope_id))
 
     def command(self, payload: Mapping[str,Any]) -> dict:
         result = self.store.command(payload); call = result.get('call')
@@ -299,7 +381,128 @@ class AgentLabAppApplication:
 
     def session_identity(self, request_id: str) -> dict:
         call,version = self.store.call_input(request_id)
-        return {'title':version['spec']['title'],'owner_app_id':call['appId'],'surface_key':f"application.{call['callId']}"}
+        return {'title':version['spec']['title'],'owner_app_id':call['appId'],'surface_key':f"application.{call['callId']}",
+                'allowed_tools': ['lab_research'] if version['spec'].get('workflow') else []}
+
+    def _research_seed(self, call_id: str, version: dict):
+        call, _ = self.store.call_input(call_id)
+        field = version['spec']['workflow'].get('historyField', 'conversation')
+        raw = call['input'].get(field)
+        if not raw:
+            return None, None
+        try:
+            history = json.loads(raw) if isinstance(raw, str) else raw
+        except (ValueError, TypeError):
+            return None, None
+        if not isinstance(history, list) or not history or not isinstance(history[-1], dict):
+            return None, None
+        reference = history[-1].get('callId')
+        if reference is None:
+            return None, None
+        if not isinstance(reference, str) or not re.fullmatch(r'lab-app-call-[a-f0-9]{32}', reference) or reference == call_id:
+            raise AppInputError('追问证据需要有效的原 App 调用标识。')
+        donor, donor_version = self.store.call_input(reference)
+        if (donor['appId'] != call['appId'] or donor['state'] != 'completed' or donor['cancelRequested']
+                or donor['updatedAtMs'] > call['createdAtMs']
+                or donor_version['spec'].get('knowledge', {}).get('snapshotSha256') != version['spec']['knowledge']['snapshotSha256']):
+            raise AppInputError('追问只能复用同一 App、同一知识快照的先前已完成调用。')
+        query_field = donor_version['spec']['knowledge'].get('queryField', 'question')
+        if history[-1].get('question') != donor['input'].get(query_field):
+            raise AppInputError('追问历史问题与原调用不一致。')
+        sources = donor.get('result', {}).get('sources')
+        if not isinstance(sources, list):
+            raise AppInputError('原调用没有可核对的原文窗口。')
+        return copy.deepcopy(sources), {'sourceCallId': reference, 'sourceAppVersion': donor['version']}
+
+    def _research_reader(self, call_id: str, version: dict):
+        root, runtime = self._knowledge_runtime(version)
+        path = root / 'app_research.py'
+        runtime_path = root / 'knowledge_runtime.py'
+        if version.get('assetKey'):
+            record = next((row for row in version['resourceManifest'] if row['path'] == 'app_research.py'), None)
+            expected = record['sha256'] if record else ''
+            runtime_record = next((row for row in version['resourceManifest'] if row['path'] == 'knowledge_runtime.py'), None)
+            runtime_expected = runtime_record['sha256'] if runtime_record else ''
+        else:
+            expected = hashlib.sha256(version.get('resourceFiles', {}).get('app_research.py', '').encode()).hexdigest()
+            runtime_expected = hashlib.sha256(version.get('resourceFiles', {}).get('knowledge_runtime.py', '').encode()).hexdigest()
+        if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise AppInputError('冻结的研究读取组件不存在或已变化。')
+        if runtime_path.is_symlink() or not runtime_path.is_file() or hashlib.sha256(runtime_path.read_bytes()).hexdigest() != runtime_expected:
+            raise AppInputError('冻结的知识读取组件不存在或已变化。')
+        spec = importlib.util.spec_from_file_location('paw_app_research_' + version['contentHash'], path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sources, context = self._research_seed(call_id, version)
+        seed = {}
+        if sources is not None:
+            if getattr(module, 'EVIDENCE_REUSE_PROTOCOL', None) != 'paw.app-evidence-reuse.v1':
+                raise AppInputError('此冻结研究版本尚不支持原调用证据复用，请使用更新的 App 版本。')
+            seed = {'seed_sources': sources, 'seed_context': context}
+        return module.FrozenResearchReader(root, version['spec']['knowledge'], version['spec']['workflow'],
+                                          call_id=call_id, search=runtime.retrieve, **seed)
+
+    def research_tool(self, session: Mapping[str, Any], operation: str, args: Mapping[str, Any]) -> dict:
+        """One native Pi tool execution, bound to the original App/model call.
+
+        The App journal CAS commits before the result is returned to Pi. An
+        uncertain delivery can replay the same toolCallId without another read.
+        No model loop or alternate Session is started here.
+        """
+        session_id = session.get('id')
+        tool_call_id = args.get('_toolCallId')
+        if not isinstance(session_id, str) or not session_id or args.get('_sessionId') != session_id or not isinstance(tool_call_id, str) or not tool_call_id:
+            raise AppInputError('研究工具缺少 Gateway 注入的原 Session/Tool 身份。')
+        if self._closed:
+            raise AppInputError('研究执行 owner 已停止。')
+        with sqlite_connection(self.store.db_path, row_factory=sqlite3.Row) as conn:
+            rows = conn.execute('SELECT m.request_id FROM agent_lab_golden_model_calls m '
+                'JOIN agent_lab_app_calls c ON c.call_id=m.request_id '
+                'JOIN agent_lab_apps a ON a.app_id=c.app_id '
+                'WHERE m.session_id=? AND c.session_id=? AND a.scope_id=?',
+                (session_id, session_id, self.store.scope_id)).fetchall()
+        if len(rows) != 1:
+            raise AppInputError('此 Session 没有唯一的冻结 App 研究调用。')
+        call_id = rows[0]['request_id']
+        with self._lock:
+            lock = self._research_locks.setdefault(call_id, threading.RLock())
+        with lock:
+            call, version = self.store.call_input(call_id)
+            if call['state'] != 'running' or call['cancelRequested'] or call['sessionId'] != session_id or not version['spec'].get('workflow'):
+                raise AppInputError('此 App 调用未在执行研究，或已经停止。')
+            reader = self._research_reader(call_id, version)
+            journal = call.get('progress', {}).get('research', {}).get('journal', [])
+            values = {key: value for key, value in args.items() if key not in {'op', 'operation', '_sessionId', '_toolCallId'}}
+            if args.get('op', operation) != operation or args.get('operation', operation) != operation:
+                raise AppInputError('研究操作与 Gateway 路由不一致。')
+            transition = reader.execute({'op': operation, **values}, tool_call_id=tool_call_id, journal=journal)
+            next_journal = [*journal, transition['journalEntry']] if transition['journalEntry'] else journal
+            summary = reader.summarize(next_journal)
+            with sqlite_connection(self.store.db_path, row_factory=sqlite3.Row) as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                row = conn.execute('SELECT * FROM agent_lab_app_calls WHERE call_id=?', (call_id,)).fetchone()
+                if row is None or row['state'] != 'running' or row['cancel_requested'] or row['session_id'] != session_id:
+                    raise AppInputError('研究调用已停止，未交付新的证据。')
+                current = json.loads(row['progress_json'])
+                entries = current.get('research', {}).get('journal', [])
+                head = entries[-1]['entryHash'] if entries else ''
+                if head != transition['expectedJournalHead']:
+                    raise AgentLabProjectConflict('研究回执已更新，请用原 Tool 身份重试。')
+                if transition['journalEntry']:
+                    progress = advance_progress(current, {'stage': 'researching', 'research': {**summary, 'journal': next_journal},
+                        'sources': summary['sources'], 'knowledge': self._research_knowledge(version, summary)})
+                    conn.execute('UPDATE agent_lab_app_calls SET progress_json=?,updated_at_ms=? WHERE call_id=?',
+                                 (_json(progress), progress['updatedAtMs'], call_id))
+            return transition['result']
+
+    @staticmethod
+    def _research_knowledge(version: dict, summary: dict) -> dict:
+        knowledge = version['spec']['knowledge']
+        return {'snapshotSha256': knowledge['snapshotSha256'], 'indexId': knowledge['sourceIndexId'],
+                'profile': knowledge['profile'], 'documentCount': knowledge['documentCount'],
+                'chunkCount': knowledge['chunkCount'], 'contextChars': summary['contextChars'],
+                **({'evidenceReuse': copy.deepcopy(summary['evidenceReuse'])} if summary.get('evidenceReuse') else {}),
+                'workflow': {key: value for key, value in summary.items() if key != 'sources'}}
 
     def run_call(self, call_id: str) -> None:
         try:
@@ -316,10 +519,21 @@ class AgentLabAppApplication:
                 try: self.store.update_progress(call_id, update)
                 except (OSError, ValueError, sqlite3.Error): pass
             evidence = None
+            research = bool(version['spec'].get('workflow')) and action.get('kind') != 'retrieval'
+            initial_research = None
+            if research:
+                reader = self._research_reader(call_id, version)
+                # Rebuild the same admission prompt on recovery. Current Tool
+                # results belong to Pi's durable transcript, not a new prompt.
+                initial_research = reader.summarize([])
+                journal = call.get('progress', {}).get('research', {}).get('journal', [])
+                summary = reader.summarize(journal)
+                progress({'research': {**summary, 'journal': journal}, 'sources': summary['sources'],
+                          'knowledge': self._research_knowledge(version, summary)})
             context = provided_context(version['spec'], version['files'])
             if context:
                 progress({'stage':'context_ready', **context})
-            if version['spec'].get('knowledge'):
+            if version['spec'].get('knowledge') and not research:
                 progress({'stage':'retrieving','model':model})
                 try:
                     resource_root, runtime = self._knowledge_runtime(version)
@@ -334,10 +548,17 @@ class AgentLabAppApplication:
                 progress({'stage':'model_starting','model':model})
                 result = self.complete(request_id=call_id,model=model,
                                        prompt=build_prompt(version['spec'],version['files'],call['actionId'],values,
-                                                           knowledge_sources=evidence['sources'] if evidence else None),
+                                                           knowledge_sources=initial_research['sources'] if initial_research else evidence['sources'] if evidence else None,
+                                                           research_state=initial_research),
                                        on_session=lambda session_id:self.store.update_call(call_id,session_id=session_id),cancelled=cancelled,
                                        on_progress=progress)
-                if evidence:
+                if research:
+                    latest, _ = self.store.call_input(call_id)
+                    journal = latest.get('progress', {}).get('research', {}).get('journal', [])
+                    summary = self._research_reader(call_id, version).summarize(journal)
+                    result.update(sources=summary['sources'], research=summary,
+                                  knowledge=self._research_knowledge(version, summary))
+                elif evidence:
                     result.update(sources=evidence['sources'],knowledge={key:value for key,value in evidence.items() if key != 'sources'})
                 elif context:
                     result.update(context)

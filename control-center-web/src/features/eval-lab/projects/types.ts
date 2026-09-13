@@ -1,3 +1,4 @@
+import { isLabProjectWorkflow, type LabProjectWorkflow } from './project-workflow-types';
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type ArtifactView = 'markdown' | 'table' | 'form' | 'code' | 'html' | 'json';
 export type ArtifactAction = { actionId: string; label: string; prompt: string };
@@ -41,6 +42,7 @@ export type LabProjectLatestRecord = {
   kind: 'artifact' | 'history'; status: 'available' | 'historical'; title: string; updatedAtMs: number; artifactId: string;
 };
 export type LabProjectSummary = {
+  knowledgeResources?: { corpusCount: number; indexCount: number; datasetCount: number; documentCount: number; chunkCount: number };
   projectId: string; revision: number; title: string; materialCount: number; artifactCount: number;
   guideSessionId: string; createdAtMs: number; updatedAtMs: number;
   workState?: LabProjectWorkState; nextAction?: LabProjectNextAction;
@@ -48,6 +50,8 @@ export type LabProjectSummary = {
   historyOrigin?: { sceneId: string; sourceHash: string; experimentCount: number; importedAtMs: number; snapshotArtifactId: string; snapshotArtifactRevision: number };
 };
 export type LabProject = LabProjectSummary & {
+  workflow?: LabProjectWorkflow;
+  directory?: LabProjectDirectory;
   schemaVersion: 'rag-ime.agent-lab-project.v1'; description: string; briefVersion: number;
   materialSetId: string; materialSet: MaterialSet;
   materialVersions: { materialSetId: string; version: number; createdAtMs: number }[];
@@ -58,6 +62,7 @@ export type LabProject = LabProjectSummary & {
   workspace: { artifactOrder: string[]; primaryArtifactId: string; layout: 'split' | 'focus' };
   workspaceBinding: { kind: string; path: string; pathKind: string; checkedAtMs: number } | null;
 };
+export type LabProjectDirectory = { path: string; status: 'ready' | 'partial' | 'unavailable'; sourceRevision: number; generatedAtMs: number; files: { path: string; title: string; kind: string }[]; warnings: string[] };
 export type ProjectRead = {
   ok: true; items: LabProjectSummary[]; project: LabProject | null; artifact?: LabArtifact; materialSet?: MaterialSet;
   supportedViews: ArtifactView[]; availableAdapters?: { adapterId: string; title: string; description: string }[];
@@ -91,6 +96,11 @@ const isLatestRecord = (value: unknown): value is LabProjectLatestRecord => {
   const item = object(value); return ['artifact', 'history'].includes(String(item.kind)) && ['available', 'historical'].includes(String(item.status))
     && text(item.title) && natural(item.updatedAtMs) && text(item.artifactId);
 };
+export function isProjectDirectory(value: unknown): value is LabProjectDirectory {
+  const item = object(value);
+  return text(item.path) && ['ready', 'partial', 'unavailable'].includes(String(item.status)) && natural(item.sourceRevision) && natural(item.generatedAtMs)
+    && texts(item.warnings) && Array.isArray(item.files) && item.files.every((raw) => { const file = object(raw); return text(file.path) && text(file.title) && text(file.kind); });
+}
 const isBindingExecution = (value: unknown): value is LabBindingExecution => {
   const item = object(value); const latest = item.latestJob === null ? null : object(item.latestJob);
   return ['not_started', 'queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted', 'unavailable'].includes(String(item.status))
@@ -125,6 +135,7 @@ export function isProjectSummary(value: unknown): value is LabProjectSummary {
   const item = object(value);
   return text(item.projectId) && !!item.projectId && natural(item.revision) && item.revision > 0 && text(item.title)
     && natural(item.materialCount) && natural(item.artifactCount) && text(item.guideSessionId) && natural(item.createdAtMs) && natural(item.updatedAtMs)
+    && (item.knowledgeResources === undefined || ['corpusCount', 'indexCount', 'datasetCount', 'documentCount', 'chunkCount'].every((key) => natural(object(item.knowledgeResources)[key])))
     && (item.workState === undefined || isWorkState(item.workState))
     && (item.nextAction === undefined || isNextAction(item.nextAction))
     && (item.rerunReadiness === undefined || isRerunReadiness(item.rerunReadiness))
@@ -133,6 +144,8 @@ export function isProjectSummary(value: unknown): value is LabProjectSummary {
 export function isProject(value: unknown): value is LabProject {
   const item = object(value); const materialSet = object(item.materialSet); const intake = object(item.intake); const workspace = object(item.workspace);
   return isProjectSummary(value) && item.schemaVersion === 'rag-ime.agent-lab-project.v1' && text(item.description)
+    && (item.workflow === undefined || isLabProjectWorkflow(item.workflow))
+    && (item.directory === undefined || isProjectDirectory(item.directory))
     && natural(item.briefVersion) && text(item.materialSetId) && text(materialSet.materialSetId) && natural(materialSet.version)
     && Array.isArray(materialSet.materials) && materialSet.materials.every((raw) => { const source = object(raw); return ['sourceId', 'title', 'text', 'uri', 'kind'].every((key) => text(source[key])) && natural(source.byteSize); })
     && Array.isArray(item.materialVersions) && Array.isArray(item.artifacts) && item.artifacts.every(isArtifactSummary)

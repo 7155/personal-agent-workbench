@@ -58,3 +58,10 @@
 .lab-knowledge-mode-choice span { grid-column: 2; color: var(--text-muted, #667085); font-size: .82rem; line-height: 1.45; }
 .lab-knowledge-agent-dataset { padding: 1rem; border: 1px dashed var(--border-subtle, #d9e0ea); border-radius: .7rem; }
 @media (max-width: 680px) { .lab-knowledge-mode-choice { grid-template-columns: 1fr; } }
+.lab-knowledge-record { min-width: 0; overflow-wrap: anywhere; }
+.lab-knowledge-record > :not(header) { margin: 16px; }
+.lab-knowledge-record > header > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.lab-knowledge-record pre { max-height: 520px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+.lab-knowledge-record article { padding-block: 12px; border-top: 1px solid var(--lab-line); }
+.lab-knowledge-record article h5 { margin-block: 0 8px; font-size: 13px; }
+.lab-knowledge-record article p { white-space: pre-wrap; line-height: 1.75; }

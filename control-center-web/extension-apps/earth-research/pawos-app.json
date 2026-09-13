@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "pawos.extension-app.v1",
+  "id": "extension:earth-research",
+  "version": "0.7.0",
+  "packageId": "@paw/earth-research",
+  "label": "Google Earth Agent",
+  "shortLabel": "Earth",
+  "tagline": "Agent 驱动的地图、代码与选址分析工作区",
+  "route": "/extensions/earth-research",
+  "presentation": "workspace",
+  "accent": "green",
+  "icon": {
+    "symbol": "analytics",
+    "background": "#176B4D"
+  },
+  "skillRef": "earth-research",
+  "skillSha256": "870dade26ae1075bc04a065767381f998b512e21c6cbba90d4678c624679554d",
+  "verticalSuiteId": "earth-research",
+  "verticalSuiteRevision": "source-grounding-v1",
+  "bindingSha256": "0e40a474ba62be9bbbae3ce39fc15baf14f9e1c77721b34f13d2589ed34d9e15"
+}

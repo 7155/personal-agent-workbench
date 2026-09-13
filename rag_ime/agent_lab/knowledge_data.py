@@ -180,8 +180,8 @@ def collect_folder(path: Path, *, progress: Callable[[str], None], cancelled: Ca
 
 def normalize_cases(rows: list[dict], documents: list[dict], fields: Mapping | None = None) -> tuple[list[dict], dict]:
     fields = dict(fields or {})
-    if set(fields) - {"id", "question", "answer", "sources"} or any(not isinstance(value, str) or not value for value in fields.values()):
-        raise KnowledgeIntakeError("评测集字段映射仅支持 id、question、answer 和 sources。")
+    if set(fields) - {"id", "question", "answer", "sources", "split"} or any(not isinstance(value, str) or not value for value in fields.values()):
+        raise KnowledgeIntakeError("评测集字段映射仅支持 id、question、answer、sources 和 split。")
     known = {row["sourceId"] for row in documents}
     _, source_aliases = content_identities(documents)
     result, seen = [], set()
@@ -204,8 +204,12 @@ def normalize_cases(rows: list[dict], documents: list[dict], fields: Mapping | N
         if case_id in seen:
             raise KnowledgeIntakeError(f"第 {number} 题的 ID 重复，请先去重。")
         seen.add(case_id)
+        source_split = row.get(fields.get('split', 'split'))
+        if source_split not in (None, '', 'development', 'holdout'):
+            raise KnowledgeIntakeError(f"第 {number} 题的分组需要是 development 或 holdout。")
         result.append({"caseId": case_id, "question": question, "answer": answer, "sourceIds": list(dict.fromkeys(ids)),
-                       "sourceRow": number, "provenance": "imported_reference", "retrievalEvaluable": bool(ids)})
+                       "sourceRow": number, "provenance": "imported_reference", "retrievalEvaluable": bool(ids),
+                       **({'sourceSplit': source_split} if source_split else {})})
     if not result or len(result) > MAX_CASES:
         raise KnowledgeIntakeError(f"评测集需要 1–{MAX_CASES:,} 条问题。")
     # Connected components prevent exact duplicate questions OR shared gold
@@ -228,7 +232,11 @@ def normalize_cases(rows: list[dict], documents: list[dict], fields: Mapping | N
         groups.setdefault(find(index), []).append(index)
     for members in groups.values():
         family = digest(sorted(result[index]["caseId"] for index in members))
-        split = "development" if int(digest(["paw-knowledge-split-v1", family])[:8], 16) % 100 < 70 else "holdout"
+        supplied = {result[index]['sourceSplit'] for index in members if result[index].get('sourceSplit')}
+        if len(supplied) > 1:
+            raise KnowledgeIntakeError("原评测分组存在交叉：相同问题或共享参考来源同时出现在开发集和保留集。请先核对分组，系统不会静默重分。")
+        split = next(iter(supplied)) if supplied else (
+            "development" if int(digest(["paw-knowledge-split-v1", family])[:8], 16) % 100 < 70 else "holdout")
         for index in members:
             result[index].update(familyId=family, split=split)
     counts = {split: sum(row["split"] == split for row in result) for split in ("development", "holdout")}
@@ -236,7 +244,9 @@ def normalize_cases(rows: list[dict], documents: list[dict], fields: Mapping | N
                     "retrievalEvaluableCount": sum(row["retrievalEvaluable"] for row in result),
                     "referenceAnswerCount": sum(bool(row["answer"].strip()) for row in result),
                     "preview": [{"caseId": row["caseId"], "question": row["question"]} for row in result if row["split"] == "development"][:3],
-                    "splitPolicy": "paw-knowledge-split-v2; shared exact-content sources and exact normalized questions stay together",
+                    "splitPolicy": "provided splits preserved; shared exact-content sources and exact normalized questions stay together"
+                        if any(row.get('sourceSplit') for row in result) else "paw-knowledge-split-v2; shared exact-content sources and exact normalized questions stay together",
+                    "providedSplit": all(row.get('sourceSplit') for row in result),
                     "officialSplit": False}
 
 

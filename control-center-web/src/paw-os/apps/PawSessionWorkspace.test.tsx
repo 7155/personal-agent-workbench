@@ -59,6 +59,23 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it('shows map context separately from the draft and includes it only when the user sends', async () => {
+    const transport=idleSessionTransport();
+    const context={label:'选中区域',detail:'多边形 · 4 个顶点 · WGS84',text:'{"type":"Polygon","coordinates":[]}',onClear:vi.fn()};
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{...liveSession(),id:"session-map-context-test"}} recordId="session-map-context-test" composerContext={context}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()}/>
+    </TooltipProvider></ControlTransportProvider>);
+    const user=userEvent.setup();const composer=await screen.findByRole('textbox',{name:'消息'});
+    expect(composer).toHaveValue('');
+    expect(screen.getByText(context.label)).toBeVisible();
+    await user.type(composer,'比较这个区域的坡度');
+    expect(composer).toHaveValue('比较这个区域的坡度');
+    expect(transport.requests.filter(r=>r.pathId==='agent.session.prompt')).toHaveLength(0);
+    await user.click(screen.getByRole('button',{name:'发送'}));
+    await waitFor(()=>expect(transport.requests.some(r=>r.pathId==='agent.session.prompt')).toBe(true));
+    expect(transport.requests.find(r=>r.pathId==='agent.session.prompt')?.body).toMatchObject({message:expect.stringContaining('```geojson\n'+context.text)});
+  });
   it.each(['missing', 'provisional'])('does not invent a permission preset with %s canonical Session metadata', async (kind) => {
     const transport = new StubControlTransport('mock', idleSessionRoutes());
     const workspace = (record?: SessionSummary, known = Boolean(record)) => <ControlTransportProvider transport={transport}><TooltipProvider>

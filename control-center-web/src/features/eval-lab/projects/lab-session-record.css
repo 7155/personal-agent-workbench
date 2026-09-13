@@ -1,0 +1,13 @@
+.lab-session-record { margin: 22px; min-width: 0; max-height: 75vh; overflow: auto; border: 1px solid var(--lab-line-strong); border-radius: 12px; background: var(--lab-surface); color: var(--lab-ink); overflow-wrap: anywhere; }
+.lab-session-record > header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--lab-line); background: var(--lab-surface); }
+.lab-session-record > header > div:last-child { display: flex; flex-wrap: wrap; align-content: start; gap: 8px; }
+.lab-session-record h3 { margin: 0 0 8px; font-size: 15px; }
+.lab-session-record h3:focus-visible { outline: 2px solid var(--lab-muted); outline-offset: 3px; }
+.lab-session-record > p, .lab-session-record__body { margin: 16px; }
+.lab-session-record header p, .lab-session-record small { margin: 0; color: var(--lab-muted); font-size: 11px; }
+.lab-session-record article { padding-block: 16px; border-top: 1px solid var(--lab-line); }
+.lab-session-record article > header { display: flex; gap: 12px; justify-content: space-between; margin-bottom: 12px; }
+.lab-session-record details { margin-block: 12px; }
+.lab-session-record summary { cursor: pointer; line-height: 1.6; }
+.lab-session-record pre { max-height: 420px; overflow: auto; white-space: pre-wrap; font: 12px/1.7 ui-monospace, monospace; }
+@container lab-project (max-width: 680px) { .lab-session-record { margin: 12px; } .lab-session-record > header { flex-direction: column; } }

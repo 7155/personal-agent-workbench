@@ -6,10 +6,13 @@ import type { ControlTransport } from '@/platform/transport';
 import { projectCommandRejected, projectError } from './api';
 
 export type LabAppAction = { id: string; title: string; prompt: string; kind?: 'completion' | 'retrieval'; inputSchema: Record<string, JsonValue> };
+export type LabEvaluationSelection = { suiteId: string; jobId: string; variant: 'baseline' | 'candidate' };
 export type LabAppSpec = { title: string; description: string; html: string; skill: string; context: string[];
   model: { provider: string; model: string; thinkingLevel: string }; actions: LabAppAction[];
   externalWorkspace?: { title: string; url: string; presentation?: 'tabs' | 'split' };
   appearance?: { accent: string; icon: { symbol: string; background: string }; colorScheme?: 'inherit' | 'light' | 'dark' };
+  evaluationSelection?: { suiteId: string; jobId: string; variant: 'baseline' | 'candidate'; snapshotId?: string; configurationSha256?: string; scope?: string;
+    applicationMethod?: { title: string; sha256: string; source?: { kind: string; projectId?: string; artifactId?: string; artifactRevision?: number } } | null };
   knowledge?: { documentCount: number; sourceCount: number; chunkCount: number; profile: { mode: string; topK: number; contextChars: number }; sourceIndexId: string; snapshotSha256: string } };
 export type LabApp = { appId: string; projectId: string; title: string; description: string; revision: number;
   latestVersion: number; activeVersion: number | null; createdAtMs: number; updatedAtMs: number; installation?: unknown };
@@ -31,7 +34,7 @@ export function isLabApp(raw: unknown): raw is LabApp {
     && typeof value.projectId === 'string' && typeof value.title === 'string' && typeof value.description === 'string'
     && natural(value.revision) && natural(value.latestVersion) && (value.activeVersion === null || natural(value.activeVersion));
 }
-export function parseLabAppRead(raw: unknown, appId = ''): LabAppRead {
+export function parseLabAppRead(raw: unknown, appId = '', callId = '', expectedVersion?: number): LabAppRead {
   const value = object(raw);
   if (value.ok !== true || !Array.isArray(value.items) || !value.items.every(isLabApp)
       || !(value.app === null || isLabApp(value.app)) || (appId && (!isLabApp(value.app) || value.app.appId !== appId))) throw new Error('应用数据未完整返回。');
@@ -40,10 +43,21 @@ export function parseLabAppRead(raw: unknown, appId = ''): LabAppRead {
     if (version.appId !== appId || !natural(version.version) || typeof version.html !== 'string' || typeof version.contentHash !== 'string'
         || typeof spec.title !== 'string' || !Array.isArray(spec.actions)
         || !spec.actions.every((raw) => { const action = object(raw); return typeof action.id === 'string' && typeof action.title === 'string' && typeof action.prompt === 'string'; })) throw new Error('应用版本未完整返回。');
+    if (expectedVersion !== undefined && version.version !== expectedVersion) throw new Error('返回版本与选中的原应用版本不匹配。');
+    if (callId) {
+      const call = object(value.call);
+      if (call.callId !== callId || call.appId !== appId || call.version !== version.version || typeof call.state !== 'string' || !call.result || typeof call.result !== 'object' || Array.isArray(call.result)) throw new Error('原应用调用未完整返回，未替换为其他调用。');
+    }
     if (spec.externalWorkspace !== undefined) {
       const workspace = object(spec.externalWorkspace);
       if (workspace.presentation !== undefined && !['tabs', 'split'].includes(String(workspace.presentation))) throw new Error('应用工作台布局无效。');
       if (typeof workspace.title !== 'string' || !workspace.title.trim() || workspace.title.length > 100 || !externalWorkspaceUrl(workspace.url)) throw new Error('应用工作台地址未完整返回。');
+    }
+    if (spec.evaluationSelection !== undefined) {
+      const selection = object(spec.evaluationSelection); const method = object(selection.applicationMethod);
+      if (typeof selection.suiteId !== 'string' || typeof selection.jobId !== 'string' || !['baseline', 'candidate'].includes(String(selection.variant))
+        || !['snapshotId', 'configurationSha256', 'scope'].every((key) => selection[key] === undefined || typeof selection[key] === 'string')
+        || !(selection.applicationMethod === undefined || selection.applicationMethod === null || (typeof method.title === 'string' && typeof method.sha256 === 'string'))) throw new Error('应用的评测来源未完整返回。');
     }
   }
   return value as LabAppRead;
@@ -59,12 +73,12 @@ export function externalWorkspaceUrl(value: unknown): string | null {
     return url.href;
   } catch { return null; }
 }
-export function useLabApps(projectId = '', appId = '', version?: number) {
+export function useLabApps(projectId = '', appId = '', version?: number, callId = '') {
   const transport = useControlTransport();
-  return useQuery<LabAppRead>({ queryKey: ['lab-apps', labConnectionKey(transport), projectId, appId, version ?? 0], retry: false,
+  return useQuery<LabAppRead>({ queryKey: ['lab-apps', labConnectionKey(transport), projectId, appId, version ?? 0, callId], retry: false,
     refetchInterval: (query) => query.state.data?.calls?.some((call) => ['queued', 'running'].includes(call.state)) ? 1000 : 3000, refetchOnWindowFocus: false,
     queryFn: async ({ signal }) => parseLabAppRead(await requestLabControl(transport, { pathId: 'agent.eval-lab.apps.get', signal,
-      query: { ...(projectId ? { projectId } : {}), ...(appId ? { appId } : {}), ...(version ? { version } : {}) } }), appId),
+      query: { ...(projectId ? { projectId } : {}), ...(appId ? { appId } : {}), ...(version ? { version } : {}), ...(callId ? { callId } : {}) } }), appId, callId, version),
   });
 }
 export async function commandLabApp(transport: ControlTransport, command: LabAppCommand): Promise<LabAppReceipt> {

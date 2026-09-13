@@ -42,9 +42,13 @@ export function useLabProjects(projectId: string) {
     // execution projection. This observes the real owner without starting a
     // second worker or replaying a command.
     refetchInterval: (query) => {
-      const bindings = query.state.data?.project?.bindings ?? [];
-      const active = bindings.some((binding) => binding.execution?.status === 'queued' || binding.execution?.status === 'running');
-      return active ? 2000 : query.state.status === 'error' ? 3000 : false;
+      const data = query.state.data; const current = data?.project;
+      const active = current?.bindings.some((binding) => ['queued', 'running'].includes(binding.execution?.status ?? ''))
+        || Boolean(current?.workflow?.counts.running || current?.workflow?.counts.queued)
+        || data?.knowledge?.jobs.some((job) => ['queued', 'running', 'cancelling'].includes(job.state));
+      // Jobs can advance or start without changing the project revision. Keep
+      // the visible project observable even when its Guide is idle or closed.
+      return active ? 2000 : projectId ? 3000 : false;
     }, refetchIntervalInBackground: false });
   const observedRevision = catalog.data?.items.find((item) => item.projectId === projectId)?.revision;
   const savedRevision = project.data?.project?.revision;

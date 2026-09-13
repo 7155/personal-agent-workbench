@@ -9,6 +9,16 @@ const project = { projectId: 'p', title: '知识库实验', materialCount: 1, ar
 ] } as never;
 
 describe('LabExperimentLifecycle', () => {
+  it('recognizes completed Knowledge resources without requiring duplicate text-material intake', () => {
+    const onOpenKnowledge = vi.fn();
+    render(<LabExperimentLifecycle project={{ ...(project as Record<string, unknown>), materialCount: 0,
+      knowledgeResources: { corpusCount: 1, indexCount: 1, datasetCount: 1, documentCount: 209, chunkCount: 20017 } } as never}
+      onOpenArtifact={vi.fn()} onOpenRuns={vi.fn()} onDirection={vi.fn()} onContinue={vi.fn()} onOpenKnowledge={onOpenKnowledge} />);
+    expect(screen.getByText(/已接入 209 篇知识文档，已有索引 20017 个切片/)).toBeVisible();
+    expect(screen.queryByText('待添加材料')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '用示例走通流程' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看知识库' })); expect(onOpenKnowledge).toHaveBeenCalledOnce();
+  });
   it('does not turn a completed dataset draft into an experiment or metric decision', () => {
     const draft = { projectId: 'draft', title: '待审核评测集', materialCount: 1,
       artifactCount: 0, artifacts: [], bindings: [{ bindingId: 'golden',

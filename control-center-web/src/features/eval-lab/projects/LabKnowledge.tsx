@@ -8,6 +8,7 @@ import { projectError, readLabProject } from './api';
 import { object, type JsonValue, type LabBinding, type LabProject, type ProjectReceipt } from './types';
 import { activeKnowledgeJob, defaultRetrieval, parseKnowledgeState, type KnowledgeEvaluation, type KnowledgeJob, type RetrievalProfile } from './knowledge-types';
 import './lab-knowledge.css';
+import { LabKnowledgeRecord } from './LabKnowledgeRecord';
 
 type Page = 'sources' | 'index' | 'evaluation';
 type Draft = { page: Page; corpusId: string; datasetId: string; indexId: string; sourcePath: string; datasetPath: string;
@@ -17,14 +18,14 @@ const initial: Draft = { page: 'sources', corpusId: '', datasetId: '', indexId: 
   strategy: 'markdown', size: 1200, overlap: 160, embedding: 'none', count: 4, profile: defaultRetrieval,
   corpusFields: {}, datasetFields: {}, noDataset: false, datasetMode: 'import' };
 const labels: Record<string, string> = { download_wix: '下载 WixQA', import_corpus: '整理资料', connect_base: '连接知识库',
-  import_dataset: '导入评测集', index: '建立索引', search: '试检索', evaluate: '检索评测' };
+  import_dataset: '导入评测集', restore_index: '复用已有索引', index: '建立索引', search: '试检索', evaluate: '检索评测' };
 const stateLabels: Record<string, string> = { queued: '排队中', running: '进行中', cancelling: '正在停止', completed: '已完成', failed: '未完成', interrupted: '已中断', cancelled: '已停止' };
 const modeLabels = { lexical: '关键词', dense: '语义', hybrid: '混合' };
 const amount = (value: number) => Number.isFinite(value) ? value.toLocaleString() : '—';
 const rate = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : '—';
 
-export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding }: {
-  project: LabProject; busy: boolean;
+export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding, initialJobId = '' }: {
+  project: LabProject; busy: boolean; initialJobId?: string;
   onCommand: (input: Record<string, JsonValue>) => Promise<ProjectReceipt | undefined>;
   onBind: (input: Record<string, JsonValue>) => Promise<ProjectReceipt | undefined>;
   onOpenBinding: (binding: LabBinding) => void;
@@ -33,6 +34,8 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding }
   const key = `paw.lab.knowledge-draft.v1:${connection}:${project.projectId}`;
   const [draft, setDraft] = useState<Draft>(() => { try { const saved = object(JSON.parse(sessionStorage.getItem(key) ?? '{}')); return { ...initial, ...saved, profile: { ...defaultRetrieval, ...object(saved.profile) } } as Draft; } catch { return initial; } });
   const [sourceFile, setSourceFile] = useState<File>(); const [datasetFile, setDatasetFile] = useState<File>();
+  const [recordId, setRecordId] = useState(initialJobId);
+  useEffect(() => { setRecordId(initialJobId); }, [initialJobId]);
   const [error, setError] = useState(''); const [uploadProgress, setUploadProgress] = useState('');
   const [showBases, setShowBases] = useState(false); const [baseId, setBaseId] = useState('');
   const lastJob = useRef(''); const uploadStop = useRef(false);
@@ -117,6 +120,7 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding }
   const validCount = Number.isInteger(draft.count) && draft.count >= 2 && draft.count <= 100;
   return <section className="lab-knowledge" aria-label="知识库实验">
     <header><div><h2>知识库实验</h2><p>整理真实资料，检查检索，再比较回答。</p></div><Button size="small" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw size={14} />重新读取</Button></header>
+    {recordId ? <LabKnowledgeRecord projectId={project.projectId} jobId={recordId} onClose={() => setRecordId('')} /> : null}
     <nav aria-label="知识库实验步骤">{([['sources', '资料'], ['index', '索引与检索'], ['evaluation', '评测']] as const).map(([page, title]) => <button key={page} aria-current={draft.page === page ? 'step' : undefined} onClick={() => patch({ page })}>{title}</button>)}</nav>
     {query.isPending ? <p role="status">正在读取知识库实验…</p> : null}
     {query.isError ? <p role="alert" className="lab-project-error">{projectError(query.error)}</p> : null}
@@ -155,7 +159,7 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding }
         <div className="lab-knowledge-mode-choice" role="radiogroup" aria-label="评测集来源"><label className={draft.datasetMode === 'import' ? 'is-selected' : ''}><input type="radio" name="dataset-mode" checked={draft.datasetMode === 'import'} disabled={disabled} onChange={() => patch({ datasetMode: 'import', noDataset: false })} /><strong>我提供评测集</strong><span>上传或读取 JSONL/CSV，题目、参考答案和来源由我控制。</span></label><label className={draft.datasetMode === 'agent' ? 'is-selected' : ''}><input type="radio" name="dataset-mode" checked={draft.datasetMode === 'agent'} disabled={disabled} onChange={() => patch({ datasetMode: 'agent', noDataset: true })} /><strong>Agent 起草评测集</strong><span>根据已接入资料生成候选题，先审核标准，再允许运行指标。</span></label></div>
         {draft.datasetMode === 'import' ? <><div className="lab-knowledge-inline"><label className="lab-project-file-picker"><Upload size={15} />{datasetFile?.name ?? '选择评测集文件'}<input type="file" accept=".jsonl,.ndjson,.csv" disabled={disabled} onChange={(event) => setDatasetFile(event.target.files?.[0])} /></label>{datasetFile ? <Button disabled={disabled} size="small" onClick={() => setDatasetFile(undefined)}>移除文件</Button> : null}</div>
         {!datasetFile ? <label>执行器上的评测集路径<input value={draft.datasetPath} placeholder="JSONL 或 CSV 文件的绝对路径" disabled={disabled} onChange={(event) => patch({ datasetPath: event.target.value })} /></label> : null}<FieldMapping kind="dataset" value={draft.datasetFields} onChange={(datasetFields) => patch({ datasetFields })} disabled={disabled} /><Button disabled={disabled || (!datasetFile && !draft.datasetPath.trim())} onClick={() => void importFile('dataset')}>导入评测集</Button></> : <div className="lab-knowledge-agent-dataset"><p>Agent 只会生成候选题和参考标准，不会把它们直接当作真实指标。</p><Button variant="primary" disabled={disabled || !index} onClick={() => void bind()}>生成待审核评测集</Button></div>}
-        {dataset ? <><label>评测集版本<select value={dataset.datasetId} onChange={(event) => patch({ datasetId: event.target.value, noDataset: false })}>{datasets.map((row) => <option key={row.datasetId} value={row.datasetId}>{row.title} · {row.caseCount} 题</option>)}</select></label><p>{dataset.caseCount} 道原题 · {dataset.splits.development} 道开发题 / {dataset.splits.holdout} 道保留题 · {dataset.retrievalEvaluableCount} 道有来源标注</p><p className="lab-knowledge-note">按共享来源和重复问题分组，避免分组间重复使用；这是本项目派生分组，不是数据集官方划分。</p></> : <p className="lab-knowledge-note">尚无评测集。下方可以建立待审核标准；合成题会明确标记，不计作真实客户问题。</p>}
+        {dataset ? <><label>评测集版本<select value={dataset.datasetId} onChange={(event) => patch({ datasetId: event.target.value, noDataset: false })}>{datasets.map((row) => <option key={row.datasetId} value={row.datasetId}>{row.title} · {row.caseCount} 题</option>)}</select></label><p>{dataset.caseCount} 道原题 · {dataset.splits.development} 道开发题 / {dataset.splits.holdout} 道保留题 · {dataset.retrievalEvaluableCount} 道有来源标注</p><p className="lab-knowledge-note">{dataset.providedSplit ? '保留原分组：开发题与保留题沿用导入文件的划分；不据此声明官方金标。' : '按共享来源和重复问题分组，避免分组间重复使用；这是本项目派生分组，不是数据集官方划分。'}</p></> : <p className="lab-knowledge-note">尚无评测集。下方可以建立待审核标准；合成题会明确标记，不计作真实客户问题。</p>}
         {index && dataset ? <><h3>先检查资料是否找对</h3><label>本次评测的索引<select value={index.jobId} disabled={disabled} onChange={(event) => patch({ indexId: event.target.value })}>{indexes.map((row, number) => <option key={row.jobId} value={row.jobId}>{indexes.length - number} · {row.chunking.strategy} {row.chunking.size}/{row.chunking.overlap} · {amount(row.chunkCount)} 片</option>)}</select></label><RetrievalFields value={profile} onChange={updateProfile} disabled={disabled} semantic={index.dense.provider.semantic} reranker={index.reranker.configured === true} />
           <div className="lab-knowledge-inline"><Button variant="primary" disabled={disabled || !dataset.splits.development || !dataset.retrievalEvaluableCount} onClick={() => void evaluate('development')}>运行开发集检索评测</Button><Button disabled={disabled || !dataset.splits.holdout || !dataset.retrievalEvaluableCount} onClick={() => void evaluate('holdout')}>固定配置，检查保留集</Button></div>
           <p className="lab-knowledge-note">仅评测检索，不调用回答模型。语义检索和重排仍会使用所配置的服务。保留集用于配置选定后的检查；重复使用会记录次数。</p>
@@ -166,14 +170,14 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding }
           <p className="lab-knowledge-note">此步只绑定索引、检索配置和题目预算。下一页可以核对标准、校准评审，再运行基线与候选提示词。</p></> : null}
       </>}
     </div>}
-    {state?.jobs.length ? <details className="lab-knowledge-history"><summary>任务记录 · {state.jobs.length}</summary><ol>{state.jobs.map((job: KnowledgeJob) => <li key={job.jobId}><strong>{labels[job.publicSpec.operation]} · {stateLabels[job.state] ?? job.state}</strong><span>{job.result?.message || job.progress || job.error}</span><small>{job.jobId}</small></li>)}</ol></details> : null}
+    {state?.jobs.length ? <details className="lab-knowledge-history"><summary>任务记录 · {state.jobs.length}</summary><ol>{state.jobs.map((job: KnowledgeJob) => <li key={job.jobId}><strong>{labels[job.publicSpec.operation]} · {stateLabels[job.state] ?? job.state}</strong><span>{job.result?.message || job.progress || job.error}</span><small>{job.jobId}</small><Button size="small" onClick={() => setRecordId(job.jobId)}>查看原任务</Button></li>)}</ol></details> : null}
   </section>;
 }
 
 function Empty({ onSources }: { onSources: () => void }) { return <div className="lab-knowledge-empty"><p>先接入一份真实知识库，再配置检索和评测。</p><Button onClick={onSources}>接入资料</Button></div>; }
 function FieldMapping({ kind, value, onChange, disabled }: { kind: 'corpus' | 'dataset'; value: Record<string, string>; onChange: (value: Record<string, string>) => void; disabled: boolean }) {
   const fields = kind === 'corpus' ? [['id', '来源 ID', 'id'], ['text', '正文', 'contents / text / content'], ['title', '标题', 'title'], ['uri', '来源地址', 'url']]
-    : [['id', '题目 ID', 'id（可缺省）'], ['question', '问题', 'question'], ['answer', '参考答案', 'answer'], ['sources', '参考来源 ID 列表', 'article_ids / sourceIds']];
+    : [['id', '题目 ID', 'id（可缺省）'], ['question', '问题', 'question'], ['answer', '参考答案', 'answer'], ['sources', '参考来源 ID 列表', 'article_ids / sourceIds'], ['split', '原分组（可选）', 'split: development / holdout']];
   return <details className="lab-knowledge-mapping"><summary>文件字段不同？设置字段映射</summary><div className="lab-knowledge-fields">{fields.map(([key, title, placeholder]) => <label key={key}>{title}<input value={value[key] ?? ''} placeholder={placeholder} disabled={disabled} onChange={(event) => { const next = { ...value }; if (event.target.value.trim()) next[key] = event.target.value.trim(); else delete next[key]; onChange(next); }} /></label>)}</div><p className="lab-knowledge-note">留空使用自动识别。CSV 中的来源列表可以写成 JSON 数组，或用分号分隔。</p></details>;
 }
 function RetrievalFields({ value, onChange, disabled, semantic, reranker }: { value: RetrievalProfile; onChange: (value: Partial<RetrievalProfile>) => void; disabled: boolean; semantic: boolean; reranker: boolean }) {

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, FileText, FolderOpen, FlaskConical, Layers3, Play, PackageCheck, LayoutDashboard, Database, History, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, FileText, FolderOpen, FlaskConical, GitBranch, Layers3, Play, PackageCheck, LayoutDashboard, Database, History, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useControlTransport } from '@/app/control-transport';
@@ -13,7 +13,13 @@ import { initialProjectMessage, pendingProjectMessages, ProjectGuide, retainProj
 import { readArtifactDrafts, writeArtifactDrafts } from './drafts';
 import { LabAppDelivery } from './LabAppDelivery';
 import { LabKnowledge } from './LabKnowledge';
+import { LabKnowledgeRecord } from './LabKnowledgeRecord';
+import { LabSessionRecord } from './LabSessionRecord';
 import { LabExperimentLifecycle } from './LabExperimentLifecycle';
+import { LabWorkflowGraph } from './LabWorkflowGraph';
+import { LabProjectSpace } from './LabProjectSpace';
+import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import type { LabWorkflowNode } from './project-workflow-types';
 import { projectGuidanceMessage, type ProjectGuidanceMode } from './project-guidance';
 import { defaultProjectView, readProjectViews, writeProjectViews, type ProjectPage, type ProjectView } from './views';
 import { object, type ArtifactAction, type JsonValue, type LabBinding, type LabBindingExecution, type LabProject, type ProjectReceipt } from './types';
@@ -40,6 +46,7 @@ function ProjectBindingList({ bindings, onOpen }: { bindings: LabBinding[]; onOp
 }
 
 export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onProjectSelect }: { initialProjectId?: string; onOpenHistory?: () => void; onProjectSelect?: (id: string) => void }) {
+  const desktop = usePawOsDesktop();
   const transport = useControlTransport(); const [projectId, setProjectId] = useState(initialProjectId);
   const currentProjectId = useRef(projectId); currentProjectId.current = projectId;
   const workflow = useLabProjects(projectId); const project = workflow.project.data?.project;
@@ -65,6 +72,39 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
   const setPage = (next: ProjectPage) => updateView({ page:next });
   const setGuideOpen = (next: boolean | ((current: boolean) => boolean)) => updateView({ guideOpen:typeof next === 'function' ? next(viewsRef.current[projectId]?.guideOpen ?? projectDefaultView.guideOpen) : next });
   const setBinding = (next?: LabBinding) => updateView({ bindingId:next?.bindingId });
+  const openWorkflowNode = (node: LabWorkflowNode) => {
+    if (node.ref.kind === 'application_call') {
+      const owner = node.evidenceRefs?.find((ref) => ref.kind === 'application');
+      const appVersion = typeof node.ref.version === 'number' ? node.ref.version : owner?.version;
+      if (!owner || !appVersion) { setNotice('原应用调用缺少明确的应用或版本来源，暂不能定位。'); return; }
+      updateView({ page: 'apps', appId: owner.id, appVersion, appCallId: node.ref.id }); return;
+    }
+    if (node.ref.kind === 'runtime_session' || node.ref.kind === 'runtime_turn') {
+      const sessions = [...new Set(node.evidenceRefs?.filter((ref) => ref.kind === 'runtime_session').map((ref) => ref.id) ?? [])];
+      const sessionId = node.ref.kind === 'runtime_session' ? node.ref.id : sessions.length === 1 ? sessions[0] : undefined;
+      if (!sessionId) { setNotice('这条回合来源未明确对应唯一 Session，暂不能定位原记录。'); return; }
+      setSessionRecord({ projectId, sessionId, ...(node.ref.kind === 'runtime_turn' ? { turnId: node.ref.id } : {}) }); return;
+    }
+    if (node.ref.kind === 'progress_step') {
+      const source = node.evidenceRefs?.find((ref) => ref.kind === 'artifact');
+      if (source) { updateView({ page: 'artifact', artifactId: source.id, bindingId: undefined }); return; }
+      setGuideOpen(true); return;
+    }
+    if (node.ref.kind === 'experiment_record') {
+      const source = node.evidenceRefs?.find((ref) => ref.kind === 'artifact');
+      const artifactId = source?.id ?? project?.historyOrigin?.snapshotArtifactId;
+      if (artifactId) { setExperimentSelections((current) => ({ ...current, [projectId]: node.ref.id })); updateView({ page: 'artifact', artifactId, bindingId: undefined }); return; }
+    }
+    if (node.kind === 'materials') { setPage('materials'); return; }
+    if (node.kind === 'application') { setPage('apps'); return; }
+    if (node.ref.kind === 'artifact') { updateView({ page: 'artifact', artifactId: node.ref.id, bindingId: undefined }); return; }
+    if (node.ref.kind === 'knowledge_job') { updateView({ jobId: node.ref.id }); setKnowledgeRecord({ projectId, jobId: node.ref.id }); return; }
+    const parentNode = project?.workflow?.nodes.find((item) => item.id === node.parentId);
+    const suiteRef = (node.evidenceRefs ?? parentNode?.evidenceRefs)?.find((ref) => ref.kind === 'golden_suite');
+    const owner = project?.bindings.find((item) => (suiteRef && item.ownerRef.id === suiteRef.id) || item.execution?.latestJob?.jobId === node.ref.id
+      || item.ownerRef.id === node.ref.id || (node.ref.kind === 'golden_job' && item.ownerRef.kind === 'golden_suite'));
+    updateView({ page: 'runs', bindingId: owner?.bindingId, jobId: node.ref.kind === 'runtime_request' ? parentNode?.ref.id : node.ref.id });
+  };
   const updateDraft = (key: string, draft?: ArtifactDraft) => {
     const next = { ...draftsRef.current }; if (draft) next[key] = draft; else delete next[key];
     draftsRef.current = next; setDrafts(next);
@@ -90,11 +130,16 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
     try { if (id) localStorage.setItem(selectionKey, id); else localStorage.removeItem(selectionKey); } catch { /* The current view remains usable. */ }
     onProjectSelect?.(id);
   };
-  const selectedId = project ? view.artifactId ?? project.workspace.primaryArtifactId : '';
+  const workspaceArtifact = project?.artifacts.find((item) => item.artifactId === project.workspace.primaryArtifactId && item.view !== 'json') ?? project?.artifacts.find((item) => item.view !== 'json');
+  const selectedId = project ? view.artifactId ?? (page === 'workspace' ? workspaceArtifact?.artifactId ?? project.workspace.primaryArtifactId : project.workspace.primaryArtifactId) : '';
   const selected = project?.artifacts.find((item) => item.artifactId === selectedId);
   const artifact = useLabArtifact(projectId, selected?.artifactId ?? '', selected?.revision);
+  const [sessionRecord, setSessionRecord] = useState<{ projectId: string; sessionId: string; turnId?: string }>();
+  const [knowledgeRecord, setKnowledgeRecord] = useState<{ projectId: string; jobId: string }>();
+  const [sourceRef, setSourceRef] = useState<{ projectId: string; artifactId: string; revision?: number }>();
+  const sourceArtifact = useLabArtifact(projectId, sourceRef?.projectId === projectId ? sourceRef.artifactId : '', sourceRef?.revision);
   const history = project?.historyOrigin;
-  const needsReport = page === 'artifact' && selected?.kind === 'experiment_history';
+  const needsReport = (page === 'artifact' || page === 'workspace') && selected?.kind === 'experiment_history';
   const historySnapshot = useLabArtifact(projectId, needsReport ? history?.snapshotArtifactId ?? '' : '', history?.snapshotArtifactRevision);
   const snapshot = historySnapshot.data;
   const reportSnapshot = snapshot && snapshot.artifactId === history?.snapshotArtifactId && snapshot.revision === history.snapshotArtifactRevision
@@ -169,13 +214,20 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
     catch (reason) { setNotice(projectError(reason)); }
     finally { setSending(false); if (currentProjectId.current === project.projectId) setPendingMessages(pendingProjectMessages(transport, project)); }
   };
+  const renderArtifact = () => { if (!project) return null; return selected ? artifact.isPending ? <p className="lab-project-loading" role="status">正在读取成果…</p> : artifact.isError ? <div className="lab-project-error" role="alert"><p>{projectError(artifact.error)}</p><Button onClick={() => void artifact.refetch()}>重新读取成果</Button></div>
+                    : artifact.data ? <ArtifactSurface artifact={artifact.data} draft={drafts[draftKey]} busy={busy || sending}
+                      reportSnapshot={reportSnapshot} selectedExperiment={experimentSelections[projectId]} onSelectExperiment={(id) => setExperimentSelections((current) => ({ ...current, [projectId]: id }))}
+                      onDraft={(draft) => updateDraft(draftKey, draft)}
+                      onSave={async (content, revision) => Boolean(await workflow.submit('publish_artifact', { artifactId: artifact.data!.artifactId, expectedArtifactRevision: revision, content }, project))}
+                      onAction={(action, values, staged) => void act(action, values, staged)} /> : null
+                    : <section className="lab-project-empty"><span><MessageSquare size={24} /></span><h2>让成果跟随项目生长。</h2><p>和 Agent 继续工作，它会把适合当前项目的文档、表格、交互页面或其他成果放在这里。</p>{!guideOpen ? <Button onClick={() => setGuideOpen(true)}>打开项目对话</Button> : null}</section>; };
   const projectItems = workflow.catalog.data?.items ?? [];
   return <main className="eval-lab lab-project-workbench" aria-label="Agent Lab 项目工作台">
     <header className="lab-project-header">
       <div className="lab-project-heading">{projectId ? <IconButton icon={<ArrowLeft size={17} />} label="返回 Lab 项目" onClick={() => openProject('')} /> : <span className="lab-project-logo" aria-hidden="true"><FlaskConical size={21} /></span>}
         <div><small>Agent Lab</small><h1>{project?.title ?? (projectId ? '正在读取项目' : '工作台')}</h1></div></div>
       <div className="lab-project-header__actions"><IconButton icon={<RefreshCw size={16} />} label="重新读取 Lab 项目" onClick={refresh} disabled={workflow.catalog.isFetching || workflow.project.isFetching} />
-        {project ? <><Button size="small" variant="primary" title={project.nextAction?.reason} disabled={busy || sending} onClick={() => void continueProject('guided')}>继续下一步</Button><Button size="small" onClick={() => setPage('brief')}>项目说明</Button><IconButton icon={<Upload size={16} />} label="添加材料" onClick={() => setIntakeOpen(true)} /><IconButton icon={guideOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />} label={guideOpen ? '收起项目 Agent' : '展开项目 Agent'} onClick={() => setGuideOpen((value) => !value)} /></> : null}
+        {project ? <><Button size="small" variant="primary" title={project.nextAction?.reason} disabled={busy || sending} onClick={() => void continueProject('guided')}>继续下一步</Button><Button size="small" onClick={() => setPage('brief')}>项目说明</Button>{project.directory?.path ? <IconButton icon={<FolderOpen size={16} />} label="在 Files 打开项目文件夹" onClick={() => openPawOsRoute(desktop, `/files?path=${encodeURIComponent(project.directory!.path)}`)} /> : null}<IconButton icon={<Upload size={16} />} label="添加材料" onClick={() => setIntakeOpen(true)} /><IconButton icon={guideOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />} label={guideOpen ? '收起项目 Agent' : '展开项目 Agent'} onClick={() => setGuideOpen((value) => !value)} /></> : null}
         {!projectId ? <><Button size="small" onClick={() => setHistoryImportOpen(true)}><History size={14} />导入已有实验</Button></> : null}
         {onOpenHistory ? <Button size="small" onClick={onOpenHistory}><History size={14} />已有实验</Button> : null}</div>
     </header>
@@ -184,11 +236,11 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
     {notice && !pendingMessages.length ? <p className="lab-project-notice" role="status">{notice}</p> : null}
     {pendingMessages.map((message) => <div className="lab-project-notice" role="status" key={message.clientMessageId}><p>{message.error || '项目消息的接纳结果尚未确认，原输入已保留。'}</p><Button disabled={sending} onClick={() => void recoverMessage(message)}>{message.outcome === 'unknown' ? '核对原消息' : '重新发送项目消息'}</Button></div>)}
     {!projectId ? workflow.catalog.isPending ? <p className="lab-project-loading" role="status">正在读取项目…</p> : <LabProjectHome items={projectItems} onOpen={openProject} onCreate={() => setNewProjectOpen(true)} /> : !project ? <div className="lab-project-loading" role="status">{workflow.project.isError ? '项目未能读取，已保存的工作仍保留。' : '正在恢复项目与成果…'}</div>
-      : <><div className="lab-project-body" data-guide-open={guideOpen}>
+      : <><div className="lab-project-body" data-guide-open={guideOpen} data-workflow={page === 'workflow' || page === 'workspace'}>
         {guideOpen ? <ProjectGuide key={project.projectId} project={project} draftRequest={draftRequest} onNewProject={() => openProject('')} onProjectActivity={refresh} onEnsure={() => void ensureGuide()} /> : null}
         <div className="lab-project-results">
           <nav className="lab-project-tabs" aria-label="项目成果">
-            <div className="lab-project-tabs__resources"><button aria-current={page === 'lifecycle' ? 'page' : undefined} onClick={() => setPage('lifecycle')}><LayoutDashboard size={15} />实验闭环</button><button aria-current={page === 'materials' || page === 'knowledge' ? 'page' : undefined} onClick={() => setPage('materials')}><Database size={15} />材料 {project.materialCount}</button>
+            <div className="lab-project-tabs__resources"><button aria-current={page === 'workspace' ? 'page' : undefined} onClick={() => setPage('workspace')}><LayoutDashboard size={15} />项目工作面</button><button aria-current={page === 'workflow' ? 'page' : undefined} onClick={() => setPage('workflow')}><GitBranch size={15} />工作流</button><button aria-current={page === 'lifecycle' ? 'page' : undefined} onClick={() => setPage('lifecycle')}><LayoutDashboard size={15} />实验闭环</button><button aria-current={page === 'materials' || page === 'knowledge' ? 'page' : undefined} onClick={() => setPage(project.knowledgeResources?.documentCount ? 'knowledge' : 'materials')}><Database size={15} />{project.knowledgeResources?.documentCount ? `知识库 ${project.knowledgeResources.documentCount} 篇` : `材料 ${project.materialCount}`}</button>
             <button aria-current={page === 'runs' ? 'page' : undefined} onClick={() => setPage('runs')}><Play size={15} />运行</button><button aria-current={page === 'artifact' ? 'page' : undefined} onClick={() => setPage('artifact')}><Layers3 size={15} />成果 {project.artifactCount}</button>
             <button aria-current={page === 'apps' ? 'page' : undefined} onClick={() => setPage('apps')}><PackageCheck size={15} />应用交付</button>
             </div>
@@ -197,21 +249,19 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
           </nav>
           {stagedAction ? <div className="lab-project-notice" role="status"><span>“{stagedAction.title}”提供了一项交互输入。</span><Button size="small" onClick={() => { setDraftRequest({ id: Date.now(), text: stagedAction.text }); setStagedAction(undefined); setGuideOpen(true); }}>带入对话</Button><Button size="small" onClick={() => setStagedAction(undefined)}>关闭</Button></div> : null}
           <div className="lab-project-stage">
-            {page === 'materials' ? <Materials project={project} onAdd={() => setIntakeOpen(true)} />
-              : page === 'knowledge' ? <LabKnowledge key={project.projectId} project={project} busy={busy} onCommand={(input) => workflow.submit('knowledge', input, project)} onBind={(input) => workflow.submit('bind_execution', input, project)} onOpenBinding={(binding) => updateView({ page: 'runs', bindingId: binding.bindingId })} />
-              : page === 'lifecycle' ? <LabExperimentLifecycle project={project} busy={busy || sending} onOpenArtifact={(artifactId) => updateView({ page: 'artifact', artifactId, bindingId: undefined })} onOpenRuns={() => updateView({ page: 'runs', bindingId: undefined })} onDirection={(direction) => void beginOptimization(direction)} onContinue={(mode) => void continueProject(mode)} onAddMaterials={() => setIntakeOpen(true)} onOpenMaterials={() => setPage('materials')} onOpenApps={() => setPage('apps')} />
-              : page === 'apps' ? <LabAppDelivery key={project.projectId} projectId={project.projectId} preparing={busy || sending} onGuide={() => void continueProject('guided', project, '把当前项目方案实现为可试用、可导出的应用，保留过程可视化与来源；检查已有版本后再准备新版本。')} onPrepare={async (directory, appId) => Boolean(await workflow.submit('prepare_app', { directory, ...(appId ? { appId } : {}) }, project))} />
+            {page === 'workspace' ? <LabProjectSpace key={project.projectId} project={project} artifactId={selectedId} artifactContent={renderArtifact()} sourceContent={sourceRef?.projectId === projectId ? sourceArtifact.isPending ? <p role="status">正在读取来源成果…</p> : sourceArtifact.isError ? <p role="alert">{projectError(sourceArtifact.error)}</p> : sourceArtifact.data ? <ArtifactSurface artifact={sourceArtifact.data} busy onDraft={() => undefined} onSave={async () => false} onAction={() => undefined} /> : null : undefined} onOpenSource={(node) => node.ref.kind === 'artifact' ? setSourceRef({ projectId, artifactId: node.ref.id, revision: typeof node.ref.version === 'number' ? node.ref.version : undefined }) : openWorkflowNode(node)} onCloseSource={() => setSourceRef(undefined)} onSelectArtifact={(artifactId) => updateView({ page: 'workspace', artifactId })} onOpenNode={openWorkflowNode} onOpenGraph={() => setPage('workflow')} onOpenRuns={() => setPage('runs')} onOpenApps={() => setPage('apps')} onOpenChat={() => setGuideOpen(true)} onOpenFile={(path) => openPawOsRoute(desktop, `/files?path=${encodeURIComponent(path)}`)} />
+              : page === 'workflow' ? <LabWorkflowGraph key={`${workflow.connection}:${project.projectId}`} projectId={project.projectId} connection={workflow.connection} workflow={project.workflow} onOpenNode={openWorkflowNode} onOpenMaterials={() => setPage('materials')} onOpenRuns={() => setPage('runs')} onOpenApps={() => setPage('apps')} onOpenExperiments={() => setPage('lifecycle')} />
+              : page === 'materials' ? <Materials project={project} onAdd={() => setIntakeOpen(true)} />
+              : page === 'knowledge' ? <LabKnowledge key={project.projectId} initialJobId={view.jobId} project={project} busy={busy} onCommand={(input) => workflow.submit('knowledge', input, project)} onBind={(input) => workflow.submit('bind_execution', input, project)} onOpenBinding={(binding) => updateView({ page: 'runs', bindingId: binding.bindingId })} />
+              : page === 'lifecycle' ? <LabExperimentLifecycle project={project} busy={busy || sending} onOpenArtifact={(artifactId) => updateView({ page: 'artifact', artifactId, bindingId: undefined })} onOpenRuns={() => updateView({ page: 'runs', bindingId: undefined })} onDirection={(direction) => void beginOptimization(direction)} onContinue={(mode) => void continueProject(mode)} onAddMaterials={() => setIntakeOpen(true)} onOpenMaterials={() => setPage('materials')} onOpenKnowledge={() => setPage('knowledge')} onOpenApps={() => setPage('apps')} />
+              : page === 'apps' ? <LabAppDelivery key={project.projectId} projectId={project.projectId} initialAppId={view.appId} initialVersion={view.appVersion} initialCallId={view.appCallId} onOpenEvaluation={(suiteId, jobId) => { const owner = project.bindings.find((item) => item.ownerRef.kind === 'golden_suite' && item.ownerRef.id === suiteId); if (owner) updateView({ page: 'runs', bindingId: owner.bindingId, jobId }); else setNotice('原评测绑定暂不可读取，应用版本与配置仍保留。'); }} preparing={workflow.pending?.command.projectId === projectId && workflow.pending.command.action === 'prepare_app' && workflow.pending.outcome === 'sending'} blocked={busy || sending} evaluationSelection={view.evaluationSelection} onClearSelection={() => updateView({ evaluationSelection: undefined })} onGuide={() => void continueProject('guided', project, '把当前项目方案实现为可试用、可导出的应用，保留过程可视化与来源；检查已有版本后再准备新版本。')} onPrepare={async (directory, appId, evaluationSelection) => Boolean(await workflow.submit('prepare_app', { directory, ...(appId ? { appId } : {}), ...(evaluationSelection ? { evaluationSelection } : {}) }, project))} />
               : page === 'brief' ? <section className="lab-project-brief"><small>用户描述 · v{project.briefVersion}</small><h2>{project.title}</h2><p>{project.description}</p><p className="lab-project-muted">需要调整方向时，可以直接告诉项目 Agent。</p></section>
-                : page === 'runs' ? binding?.ownerRef.kind === 'golden_suite' ? <GoldenWorkflow key={binding.bindingId} initialSuiteId={binding.ownerRef.id} onClose={() => setBinding(undefined)} />
+                : page === 'runs' ? binding?.ownerRef.kind === 'golden_suite' ? <GoldenWorkflow onSelectDelivery={(evaluationSelection) => updateView({ page: 'apps', evaluationSelection })} key={binding.bindingId} initialSuiteId={binding.ownerRef.id} initialJobId={view.jobId} onClose={() => setBinding(undefined)} />
                   : binding?.ownerRef.kind === 'scene_trial' ? <section className="lab-project-bindings"><h2>继续场景验证</h2><p>历史对照保存在项目成果中。这里使用执行器当前登记的资料与规则，新运行单独记录；不会覆盖历史成绩。</p><SceneTrialPanel sceneId={binding.ownerRef.id} /></section>
                   : <ProjectBindingList bindings={project.bindings} onOpen={setBinding} />
-                  : selected ? artifact.isPending ? <p className="lab-project-loading" role="status">正在读取成果…</p> : artifact.isError ? <div className="lab-project-error" role="alert"><p>{projectError(artifact.error)}</p><Button onClick={() => void artifact.refetch()}>重新读取成果</Button></div>
-                    : artifact.data ? <ArtifactSurface artifact={artifact.data} draft={drafts[draftKey]} busy={busy || sending}
-                      reportSnapshot={reportSnapshot} selectedExperiment={experimentSelections[projectId]} onSelectExperiment={(id) => setExperimentSelections((current) => ({ ...current, [projectId]: id }))}
-                      onDraft={(draft) => updateDraft(draftKey, draft)}
-                      onSave={async (content, revision) => Boolean(await workflow.submit('publish_artifact', { artifactId: artifact.data!.artifactId, expectedArtifactRevision: revision, content }, project))}
-                      onAction={(action, values, staged) => void act(action, values, staged)} /> : null
-                    : <section className="lab-project-empty"><span><MessageSquare size={24} /></span><h2>让成果跟随项目生长。</h2><p>和 Agent 继续工作，它会把适合当前项目的文档、表格、交互页面或其他成果放在这里。</p>{!guideOpen ? <Button onClick={() => setGuideOpen(true)}>打开项目对话</Button> : null}</section>}
+                  : renderArtifact()}
+            {sessionRecord?.projectId === projectId ? <LabSessionRecord key={`${sessionRecord.sessionId}:${sessionRecord.turnId ?? ''}`} sessionId={sessionRecord.sessionId} turnId={sessionRecord.turnId} onClose={() => setSessionRecord(undefined)} /> : null}
+            {knowledgeRecord?.projectId === projectId ? <LabKnowledgeRecord projectId={projectId} jobId={knowledgeRecord.jobId} onClose={() => setKnowledgeRecord(undefined)} onOpenKnowledge={() => { updateView({ page: 'knowledge', jobId: knowledgeRecord.jobId }); setKnowledgeRecord(undefined); }} /> : null}
           </div>
         </div>
       </div></>}

@@ -11,6 +11,7 @@ import { GoldenWorkflow } from './GoldenWorkflow';
 import { CaseReview } from './CaseReview';
 import { CalibrationPanel } from './Calibration';
 import { GoldenExperiment } from './Experiment';
+import { LabAppDelivery } from '../projects/LabAppDelivery';
 import { isExperimentResult, parseGoldenRead, type ExperimentResult, type ExperimentUsage, type GoldenCase, type GoldenCommand, type GoldenJob, type GoldenSuite } from './types';
 
 const clients: QueryClient[] = [];
@@ -56,6 +57,65 @@ function experimentResult(): ExperimentResult {
 }
 
 describe('Golden workflow user boundaries', () => {
+  it('selects a completed frozen variant without submitting another experiment', () => {
+    const result = experimentResult();
+    const method = { kind: 'application_skill' as const, title: '冻结方法', body: '逐项核对来源', sha256: 'a'.repeat(64), source: { kind: 'inline' as const } };
+    result.candidate.applicationMethod = method;
+    const onSelectDelivery = vi.fn(); const onExperiment = vi.fn();
+    render(<GoldenExperiment suite={suite({ jobs: [job('completed', 'experiment', result as unknown as Record<string, unknown>)] })} disabled={false} onFreeze={vi.fn()} onExperiment={onExperiment} onSelectDelivery={onSelectDelivery} />);
+    expect(screen.getByRole('button', { name: '选择基线用于交付' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '选择候选用于交付' }));
+    expect(onSelectDelivery).toHaveBeenCalledWith({ suiteId: 'suite-1', jobId: 'job-experiment', variant: 'candidate' });
+    expect(onExperiment).not.toHaveBeenCalled();
+  });
+  it('reads the selected completion for delivery and submits only its exact identity', async () => {
+    const result = experimentResult();
+    result.candidate.applicationMethod = { kind: 'application_skill', title: '冻结方法', body: '逐项核对来源', sha256: 'a'.repeat(64), source: { kind: 'inline' } };
+    const current = suite({ jobs: [job('completed', 'experiment', result as unknown as Record<string, unknown>)] });
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.apps.get': () => ({ ok: true, items: [], app: null }),
+      'agent.eval-lab.golden.get': () => read(current),
+    } });
+    const client = new QueryClient(); clients.push(client);
+    const prepare = vi.fn(async () => false);
+    const selection = { suiteId: 'suite-1', jobId: 'job-experiment', variant: 'candidate' as const };
+    render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><LabAppDelivery projectId="project-1" evaluationSelection={selection} onPrepare={prepare} /></ControlTransportProvider></QueryClientProvider>);
+    expect(await screen.findByText('冻结方法')).toBeVisible();
+    fireEvent.click(screen.getByText('审查原评测、双方 Prompt、指标与逐题来源'));
+    expect(screen.getByText('基线 Prompt')).toBeVisible();
+    fireEvent.click(await enabledButton('准备应用版本'));
+    expect(prepare).toHaveBeenCalledWith('app', undefined, selection);
+    expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+  });
+  it('accepts Agent review as its own running job rather than an experiment result', () => {
+    const value = job('running', 'review');
+    const parsed = parseGoldenRead(read(suite({ jobs: [value] })), 'suite-1');
+    expect(parsed.suite?.jobs[0]?.kind).toBe('review');
+    expect(isExperimentResult(value.result)).toBe(false);
+  });
+  it('keeps a missing selected delivery job blocked instead of using a different completion', async () => {
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.apps.get': () => ({ ok: true, items: [], app: null }),
+      'agent.eval-lab.golden.get': () => read(suite({ jobs: [job('completed', 'experiment', experimentResult() as unknown as Record<string, unknown>)] })),
+    } });
+    const client = new QueryClient(); clients.push(client); const prepare = vi.fn(async () => false);
+    render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><LabAppDelivery projectId="project-1" evaluationSelection={{ suiteId: 'suite-1', jobId: 'missing-job', variant: 'candidate' }} onPrepare={prepare} /></ControlTransportProvider></QueryClientProvider>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('未替换为其他实验');
+    expect(screen.getByRole('button', { name: '准备应用版本' })).toBeDisabled();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+  it('accepts an exact application method comparison and displays the retained requested job', () => {
+    const result = experimentResult(); result.optimizationScope = 'skill';
+    const method = { kind: 'application_skill' as const, title: '证据核对方法', body: '阅读原文后核对限制', sha256: 'a'.repeat(64), source: { kind: 'inline' as const } };
+    result.candidate = { ...model, applicationMethod: method };
+    result.applicationMethodComparison = { scope: 'application_skill_body', changed: true, baseline: null, candidate: method, diff: '+阅读原文后核对限制' };
+    expect(isExperimentResult(result)).toBe(true);
+    const old = { ...job('completed', 'experiment', result), jobId: 'retained-job', createdAtMs: 1 };
+    const recent = { ...job('completed', 'experiment', experimentResult()), jobId: 'recent-job', createdAtMs: 2 };
+    render(<GoldenExperiment suite={suite({ jobs: [old, recent] })} initialJobId="retained-job" disabled={false} onFreeze={vi.fn()} onExperiment={vi.fn(async () => true)} />);
+    expect(screen.getByText('证据核对方法')).toBeVisible();
+    expect(screen.getByRole('region', { name: '应用 Skill 方法对照' })).toBeVisible();
+  });
   it('keeps the frozen annotation provenance on a historical experiment after calibration changes', () => {
     const result = { ...experimentResult(), referenceAuthority: 'agent_assisted' as const };
     render(<GoldenExperiment suite={suite({ jobs: [job('completed', 'experiment', result)] })} disabled={false} onFreeze={vi.fn()} onExperiment={vi.fn(async () => true)} />);

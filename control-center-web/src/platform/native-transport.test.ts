@@ -10,6 +10,28 @@ import { NativeControlTransport } from './native-transport';
 import { agentEventFixture } from '@/test/fixtures/events';
 
 describe('NativeControlTransport', () => {
+  it('honors a bounded per-request observation timeout without changing the native wire payload', async () => {
+    vi.useFakeTimers();
+    const sent: NativeBridgeRequestEnvelope[] = [];
+    const bridgeWindow = fakeBridgeWindow((envelope) => sent.push(envelope));
+    const transport = new NativeControlTransport({ bridgeWindow, createId: () => 'long-prepare' });
+    try {
+      const pending = transport.request({ pathId: 'agent.eval-lab.projects.command', timeoutMs: 300_000,
+        body: { action: 'prepare_app', projectId: 'project-one', expectedRevision: 14,
+          clientRequestId: 'lab-project:original', input: { directory: 'app' } } });
+      const result = expect(pending).resolves.toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(202_000);
+      expect(sent).toHaveLength(1); expect(sent[0]?.payload).not.toHaveProperty('timeoutMs');
+      bridgeWindow.__RAG_IME_NATIVE_BRIDGE__?.receive({ id: 'long-prepare', ok: true, result: { ok: true } });
+      await result;
+      const expired = transport.request({ pathId: 'system.health', timeoutMs: 300_000 });
+      const rejected = expect(expired).rejects.toMatchObject({ code: 'timeout' });
+      await vi.advanceTimersByTimeAsync(300_000); await rejected;
+      expect(sent.at(-1)?.method).toBe('cancelRequest');
+      await expect(transport.request({ pathId: 'system.health', timeoutMs: 300_001 })).rejects.toThrow('timeoutMs');
+    } finally { transport.dispose(); vi.useRealTimers(); }
+  });
+
   it('uses the allowlisted loopback image route without loading the HTTP transport', () => {
     const transport = new NativeControlTransport({
       bridgeWindow: fakeBridgeWindow(() => {}),

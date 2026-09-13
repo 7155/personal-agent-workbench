@@ -5,13 +5,14 @@ import { goldenErrorMessage, isGoldenRejection, useGoldenWorkflow } from './api'
 import { CalibrationPanel } from './Calibration';
 import { CaseReview } from './CaseReview';
 import { GoldenExperiment } from './Experiment';
+import type { LabEvaluationSelection } from '../projects/apps';
 import { formatTime, GoldenModelCatalog, ModelFields } from './Shared';
 import { goldenJourney, goldenSteps as steps, WorkflowGuide } from './WorkflowGuide';
 import { GoldenRunRecord } from './RunRecord';
 import { isActiveJob, isRunnableGoldenModel, jobLabel, jobStateLabel, type GoldenAction, type GoldenCommand, type GoldenJob, type GoldenSource, type GoldenSuite } from './types';
 import './GoldenWorkflow.css';
 
-export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '' }: { onClose?: () => void; startNew?: boolean; initialSuiteId?: string }) {
+export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '', initialJobId = '', onSelectDelivery }: { onSelectDelivery?: (selection: LabEvaluationSelection) => void; onClose?: () => void; startNew?: boolean; initialSuiteId?: string; initialJobId?: string }) {
   const id = useId();
   const [selectedSuiteId, setSelectedSuiteId] = useState<string | null | undefined>(initialSuiteId || (startNew ? null : undefined));
   const [step, setStep] = useState(0);
@@ -48,8 +49,8 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '' 
   useEffect(() => {
     if (!suite || suite.suiteId === lastSuite.current) return;
     lastSuite.current = suite.suiteId;
-    setStep(suite.snapshot ? 3 : suite.calibration ? 2 : goldenJourney(suite).next);
-  }, [suite]);
+    setStep(initialJobId ? 3 : suite.snapshot ? 3 : suite.calibration ? 2 : goldenJourney(suite).next);
+  }, [suite, initialJobId]);
   const createNew = () => {
     setSelectedSuiteId(null); setStep(0); lastSuite.current = ''; setNewGeneration((value) => value + 1);
   };
@@ -104,7 +105,7 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '' 
     {suite ? <>
         <div id={`${id}-panel-1`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-1`} hidden={step !== 1}><CaseReview key={suite.suiteId} suite={suite} disabled={disabled} onDirtyChange={reportReviewDirty} onReview={(input) => submit('review_case', input)} onNext={() => setStep(2)} onDraft={() => setStep(0)} /></div>
       <div id={`${id}-panel-2`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-2`} hidden={step !== 2}><CalibrationPanel key={suite.suiteId} suite={suite} disabled={disabled} onDirtyChange={reportCalibrationDirty} reviewDirty={reviewDirty} onLabel={(input) => submit('label_sample', input)} onJudge={(input) => submit('judge_config', input)} onCalibrate={() => void submit('calibrate')} onNext={() => setStep(3)} onReview={() => setStep(1)} /></div>
-      <div id={`${id}-panel-3`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-3`} hidden={step !== 3}><GoldenExperiment key={suite.suiteId} suite={suite} disabled={disabled} unsaved={hasUnsaved} onFreeze={() => void submit('freeze')} onExperiment={(input) => submit('experiment', input)} onReview={() => setStep(1)} onCalibrate={() => setStep(2)} /></div>
+      <div id={`${id}-panel-3`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-3`} hidden={step !== 3}><GoldenExperiment onSelectDelivery={onSelectDelivery} key={suite.suiteId} initialJobId={initialJobId} suite={suite} disabled={disabled} unsaved={hasUnsaved} onFreeze={() => void submit('freeze')} onExperiment={(input) => submit('experiment', input)} onReview={() => setStep(1)} onCalibrate={() => setStep(2)} /></div>
     </> : null}
   </section></GoldenModelCatalog>;
 }

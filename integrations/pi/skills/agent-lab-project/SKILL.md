@@ -49,6 +49,12 @@ surface. Add a declared action for the next user decision when it helps. A statu
 snapshot is not live runtime state. Publish actual comparisons and failure evidence,
 then continue the next affordable experiment or the usable application delivery;
 if blocked, leave a concrete input/action and preserve everything needed to resume.
+Read the current `project.workflow` before dispatch: unchanged completed work is
+reusable. Bind steps to their real jobs, keep parallel child work visible, and
+create a new dependent candidate only when its inputs or acceptance changed.
+Use `project.directory` to locate the durable requirements, methods, results and
+continuation notes; those files are snapshots, while the bound owners supply live
+state. Preserve user edits and immutable previous versions.
 
 ## Make the Work Visible in Its Own Form
 
@@ -101,6 +107,20 @@ the changed version separate and verify its actual behavior under comparable
 conditions. A result can support adopting a candidate, retaining the original,
 or investigating further.
 
+For a Knowledge App, keep the full intended corpus and report its document count
+separately from the number of evaluation questions. Preserve supplied data splits;
+do not widen Top K and describe that alone as an end-to-end quality improvement.
+Compare retrieval coverage, answer support and missing-evidence behavior under
+stated budgets. When adapting a smaller model, test the actual method or Prompt
+change alongside the unchanged model control. The application-method comparison
+freezes its text; it does not exercise native Skill discovery or Tool execution.
+Agent-authored reviews and labels must retain their Agent attribution.
+When the user asks the Agent to prepare the evaluation, use the independent
+standard-review job for pending cases before calibration. Keep completed reviews
+and human decisions. The optimizing Guide may correct development cases; the
+independent reviewer receives held-out standards without exposing them to that
+Guide. Agent-reviewed calibration is not human ground truth.
+
 Optional execution bindings connect artifacts/material versions to their real
 owner. Read the available adapters; creating a binding is not running a task.
 Use actual Tool receipts for progress, outputs and usage. Artifact prose cannot
@@ -118,5 +138,9 @@ unfinished output and recoverable errors as part of the App's implementation.
 For a new portable App, adapt [the interaction starter](assets/portable-app.html)
 to the domain; do not deliver a submit button that only waits for a final answer.
 Use the current project's `commandGuide` for the live source and command contract.
+When selecting an evaluated application method, bind the completed experiment
+in the source manifest as described by that guide. Export the selected frozen
+version rather than copying a later draft by hand. Test the App's real inputs,
+source reading, continuation and export separately from the model comparison.
 The supported portable runtime must fit the actual application; keep unsupported
 Tool/environment requirements explicit instead of replacing them with a mock.

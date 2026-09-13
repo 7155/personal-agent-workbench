@@ -137,6 +137,39 @@ class StandaloneRequestTests(unittest.TestCase):
             finally:
                 server.shutdown();server.server_close();worker.join(timeout=3)
 
+    def test_research_without_pi_never_falls_back_to_direct_completion(self):
+        root = write_app(Path(self.temp.name))
+        spec = json.loads((root / 'app.json').read_text())
+        spec['workflow'] = {'kind': 'adaptive_research'}
+        (root / 'app.json').write_text(json.dumps(spec))
+        with patch.dict('os.environ', {'APP_API_KEY': 'fixture', 'APP_API_BASE_URL': 'https://invalid.example/v1'}, clear=True), \
+             patch('rag_ime.agent_lab.app_runtime.provider_complete') as complete:
+            server = create_server(root, '127.0.0.1', 0)
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            base = f'http://127.0.0.1:{server.server_port}'
+            try:
+                with urlopen(base + '/health', timeout=3) as response:
+                    health = json.load(response)
+                self.assertFalse(health['configured'])
+                self.assertEqual(health['transport'], 'paw_pi_required')
+                request = {**self.request, 'actionId': 'answer'}
+                with urlopen(Request(base + '/api/invoke', data=json.dumps(request).encode(),
+                                     headers={'Content-Type': 'application/json'}), timeout=3) as response:
+                    json.load(response)
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    with urlopen(base + '/api/requests/' + request['requestId'], timeout=3) as response:
+                        record = json.load(response)['record']
+                    if record['state'] != 'running':
+                        break
+                    time.sleep(.01)
+                self.assertEqual(record['state'], 'failed')
+                self.assertIn('APP_PAW_GATEWAY_URL', record['message'])
+                complete.assert_not_called()
+            finally:
+                server.shutdown(); server.server_close(); worker.join(timeout=3)
+
     def test_exported_workspace_shell_keeps_service_separate_and_conversation_same_origin(self):
         root = write_app(Path(self.temp.name)); spec_path = root/'app.json'
         spec = json.loads(spec_path.read_text()); spec['externalWorkspace'] = {'title':'空间工作台','url':'http://127.0.0.1:5173/'}

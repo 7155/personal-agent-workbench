@@ -10,13 +10,15 @@ as through this API.
 from __future__ import annotations
 
 import copy
+import difflib
+import hashlib
 import json
 import sqlite3
 import threading
 import time
 import uuid
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -34,11 +36,28 @@ GOLDEN_JUDGE_PROTOCOL_VERSION = "paw.golden.context-qa-judge.v3"
 def optimization_scope(baseline: Mapping, candidate: Mapping, optimize_prompt: bool) -> str:
     model_changed = any(baseline.get(key) != candidate.get(key) for key in ("provider", "model", "thinkingLevel"))
     prompt_changed = optimize_prompt or baseline.get("prompt", "") != candidate.get("prompt", "")
-    return "model_and_prompt" if model_changed and prompt_changed else "model" if model_changed else "prompt" if prompt_changed else "repeat"
+    skill_changed = application_method_identity(baseline).get("sha256") != application_method_identity(candidate).get("sha256")
+    changed = [name for name, enabled in (("model", model_changed), ("prompt", prompt_changed), ("skill", skill_changed)) if enabled]
+    return "_and_".join(changed) if changed else "repeat"
+
+
+def application_method_identity(model: Mapping) -> dict:
+    method = model.get("applicationMethod")
+    return {key: copy.deepcopy(value) for key, value in method.items() if key != "body"} if isinstance(method, Mapping) else {}
+
+
+def application_method_comparison(baseline: Mapping, candidate: Mapping) -> dict:
+    left, right = application_method_identity(baseline), application_method_identity(candidate)
+    before = (baseline.get("applicationMethod") or {}).get("body", "")
+    after = (candidate.get("applicationMethod") or {}).get("body", "")
+    return {"scope": "application_skill_body", "changed": left.get("sha256") != right.get("sha256"),
+            "baseline": left or None, "candidate": right or None,
+            "diff": "".join(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True),
+                                                fromfile="baseline/SKILL.md", tofile="candidate/SKILL.md"))}
 
 _ACTIVE = {"queued", "running"}
 _TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
-_ACTIONS = {"create", "draft", "review_case", "label_sample", "judge_config",
+_ACTIONS = {"create", "draft", "review", "review_case", "label_sample", "judge_config",
             "calibrate", "freeze", "experiment", "cancel", "resume"}
 _MODEL_FIELDS = ("provider", "model", "thinkingLevel", "prompt")
 _SNAPSHOT_FIELDS = ("snapshotId", "suiteId", "version", "sourceRevision", "createdAtMs",
@@ -116,7 +135,7 @@ def _strings(value: object, name: str) -> list[str]:
     return [_text(item, name, limit=20_000) for item in _array(value, name, limit=100)]
 
 
-def _model(value: object, fallback: Mapping[str, Any], *, required: bool = True) -> dict[str, str]:
+def _model(value: object, fallback: Mapping[str, Any], *, required: bool = True) -> dict[str, Any]:
     provided = _object(value, "模型配置")
     result = {}
     for key in _MODEL_FIELDS:
@@ -128,6 +147,53 @@ def _model(value: object, fallback: Mapping[str, Any], *, required: bool = True)
     if required and any(not result[key].strip() for key in ("provider", "model", "thinkingLevel")):
         raise AgentLabGoldenValidationError("请先选择明确的 Provider、模型和推理强度。")
     return result
+
+
+def _freeze_application_method(conn: sqlite3.Connection, value: object, project_id: str) -> dict:
+    """Freeze an explicit application method, never Pi Skill discovery or labels."""
+    value = _object(value, "应用 Skill")
+    if "artifactId" in value:
+        if set(value) != {"artifactId", "artifactRevision"} or not project_id:
+            raise AgentLabGoldenValidationError("方法成果需要本评测绑定的项目与明确成果版本。")
+        artifact_id = _text(value["artifactId"], "方法成果标识", limit=240)
+        revision = _integer(value["artifactRevision"], "方法成果版本", 1, 1_000_000)
+        row = conn.execute("SELECT v.payload_json FROM agent_lab_project_artifact_versions v "
+                           "JOIN agent_lab_project_artifacts a USING(artifact_id) "
+                           "WHERE a.project_id=? AND a.artifact_id=? AND v.revision=?",
+                           (project_id, artifact_id, revision)).fetchone()
+        if row is None:
+            raise AgentLabGoldenValidationError("此项目的方法成果版本不存在。")
+        artifact = json.loads(row[0])
+        body = artifact.get("content")
+        if artifact.get("view") == "code" and isinstance(body, Mapping):
+            body = body.get("source")
+        elif artifact.get("view") != "markdown":
+            raise AgentLabGoldenValidationError("应用 Skill 需要 Markdown 或代码正文成果。")
+        title = artifact.get("title", "Application Skill")
+        source = {"kind": "project_artifact", "projectId": project_id, "artifactId": artifact_id, "artifactRevision": revision}
+    else:
+        if set(value) - {"body", "title", "sha256"}:
+            raise AgentLabGoldenValidationError("内联方法只接受正文、标题与可选正文哈希，不能声明未核对的成果身份。")
+        body, title, source = value.get("body"), value.get("title", "Application Skill"), {"kind": "inline"}
+    body = _text(body, "应用 Skill 正文", limit=64_000)
+    title = _text(title, "应用 Skill 标题", limit=500)
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    if "sha256" in value and value["sha256"] != digest:
+        raise AgentLabGoldenValidationError("应用 Skill 正文与哈希不一致。")
+    return {"kind": "application_skill", "title": title, "body": body, "sha256": digest, "source": source}
+
+
+def validated_application_method(value: object) -> dict:
+    """Check the already admitted body when recovering an execution input."""
+    method = _object(value, "冻结应用 Skill")
+    if set(method) != {"kind", "title", "body", "sha256", "source"} or method["kind"] != "application_skill":
+        raise AgentLabGoldenValidationError("冻结应用 Skill 结构无效。")
+    body = _text(method["body"], "冻结应用 Skill 正文", limit=64_000)
+    if method["sha256"] != hashlib.sha256(body.encode("utf-8")).hexdigest():
+        raise AgentLabGoldenValidationError("冻结应用 Skill 正文已变化，不能恢复原调用。")
+    _text(method["title"], "冻结应用 Skill 标题", limit=500)
+    _object(method["source"], "冻结应用 Skill 来源")
+    return copy.deepcopy(method)
 
 
 def _sources(value: object) -> list[dict[str, str]]:
@@ -287,6 +353,33 @@ def _can_reprocess_draft(job: Mapping[str, Any]) -> bool:
             and record["receipt"].get("status") == "completed")
 
 
+def _can_reprocess_experiment(job: Mapping[str, Any], bound: Mapping[str, Any]) -> bool:
+    """Rebuild a failed report only when every fixed-arm call already settled."""
+    result, snapshot, inputs = job.get("result"), bound.get("snapshot"), bound.get("input", {})
+    if (job.get("state") != "failed" or job.get("kind") != "experiment"
+            or inputs.get("optimizePrompt") is not False
+            or not isinstance(result, Mapping) or not isinstance(snapshot, Mapping)):
+        return False
+    cases = snapshot.get("cases", [])
+    expected = {":".join(quote(str(part), safe="-_.") for part in
+                (job["jobId"], stage, case["split"], variant, 0, case["caseId"]))
+                for case in cases for variant in ("baseline", "candidate") for stage in ("answer", "judge")}
+    receipts = result.get("receipts", [])
+    if not expected or not isinstance(receipts, list) or len(receipts) != len(expected):
+        return False
+    if {r.get("requestId") for r in receipts if isinstance(r, Mapping)} != expected:
+        return False
+    if any(not isinstance(r, Mapping) or not all(r.get(k) for k in ("sessionId", "turnId"))
+           or not isinstance(r.get("receipt"), Mapping) or r["receipt"].get("status") != "completed"
+           for r in receipts):
+        return False
+    if snapshot.get("knowledge"):
+        packets = result.get("knowledgePackets", {})
+        if not isinstance(packets, Mapping) or set(packets) != {case["caseId"] for case in cases}:
+            return False
+    return True
+
+
 def _retryable_request(job: Mapping[str, Any]) -> str:
     """An exact unsuccessful terminal Pi settlement permits explicit retry.
 
@@ -354,8 +447,9 @@ class AgentLabGoldenStore:
             (suite["suiteId"],),
         ):
             job = json.loads(row[0])
-            unchanged = job['kind'] == 'experiment' or json.loads(row[1])["suite"]["revision"] == suite["revision"]
-            job["canReprocess"] = bool(_can_reprocess_draft(job) and unchanged)
+            bound = json.loads(row[1])
+            unchanged = job['kind'] == 'experiment' or bound["suite"]["revision"] == suite["revision"]
+            job["canReprocess"] = bool((_can_reprocess_draft(job) or _can_reprocess_experiment(job, bound)) and unchanged)
             job['canRetryFailedCall'] = bool(_retryable_request(job) and unchanged)
             result["jobs"].append(job)
         return result
@@ -416,7 +510,7 @@ class AgentLabGoldenStore:
                 suite = self._suite(conn, suite_id)
                 if revision != suite["revision"]:
                     raise AgentLabGoldenConflict("Golden 标准已经更新，请刷新后保留你的修改重新操作。")
-                if action in {"draft", "calibrate", "experiment"}:
+                if action in {"draft", "review", "calibrate", "experiment"}:
                     job = self._admit_job(conn, suite, action, value)
                 elif action in {"review_case", "label_sample", "judge_config"}:
                     self._edit(suite, action, value)
@@ -505,6 +599,44 @@ class AgentLabGoldenStore:
         suite["revision"] += 1
         suite["calibration"] = None
 
+    @staticmethod
+    def _finish_review(suite: dict, bound: dict, result: dict, job_id: str) -> None:
+        """Ingest an independent review, preserving questions and human edits."""
+        expected = set(bound['input']['caseIds'])
+        reviews = _array(result.get('reviews'), 'Agent 核对结果', minimum=1, limit=100)
+        if (len(reviews) != len(expected) or any(not isinstance(row, Mapping) for row in reviews)
+                or {row.get('caseId') for row in reviews} != expected):
+            raise AgentLabGoldenValidationError('核对结果必须与本次待核对题目一一对应。')
+        normalized = []
+        for row in reviews:
+            item = next(case for case in suite['cases'] if case['caseId'] == row['caseId'])
+            verdict = _choice(row.get('verdict'), 'Agent 核对', {'approved', 'rejected'})
+            if item['review']['status'] != 'pending':
+                raise AgentLabGoldenConflict('已核对的题目不能被后台结果覆盖。')
+            if verdict == 'approved' and (not item['rubric'] or (item['answerable'] and (not item['requiredFacts'] or not item['evidence']))):
+                raise AgentLabGoldenValidationError('通过的题目仍需要评分标准、必答事实及原文证据。')
+            samples = _array(row.get('samples'), 'Agent 样本标注', limit=30)
+            sample_ids = {sample['sampleId'] for sample in item['samples']}
+            if (len(samples) != len(sample_ids) or any(not isinstance(sample, Mapping) for sample in samples)
+                    or {sample.get('sampleId') for sample in samples} != sample_ids):
+                raise AgentLabGoldenValidationError('Agent 标注必须对应本次每个原始样本。')
+            note = _text(row.get('note', ''), '核对说明', optional=True)
+            item['review'] = {'status': verdict, 'author': 'agent', 'note': note, 'reviewedAtMs': _now(), 'jobId': job_id}
+            labels = []
+            for label in samples:
+                sample = next(sample for sample in item['samples'] if sample['sampleId'] == label['sampleId'])
+                decision = _choice(label.get('verdict'), 'Agent 标注', {'pass', 'fail', 'uncertain'})
+                reason = _text(label.get('note', ''), '标注说明', optional=True)
+                # Historical field names stay compatible. Explicit authorship
+                # is authoritative; never copy a model's claimed human author.
+                sample.update(humanVerdict=decision, humanNote=reason, labelAuthor='agent', labelJobId=job_id)
+                labels.append({'sampleId': sample['sampleId'], 'verdict': decision, 'note': reason})
+            normalized.append({'caseId': item['caseId'], 'verdict': verdict, 'note': note, 'samples': labels})
+        result.update(reviews=normalized, reviewAuthor='agent', reviewedCount=len(normalized),
+                      approvedCount=sum(row['verdict'] == 'approved' for row in normalized))
+        suite['revision'] += 1
+        suite['calibration'] = None
+
     def _admit_job(self, conn: sqlite3.Connection, suite: dict[str, Any], kind: str, value: dict[str, Any]) -> dict[str, Any]:
         active = conn.execute("SELECT 1 FROM agent_lab_golden_jobs WHERE suite_id = ? AND kind = ? AND state IN ('queued', 'running')",
                               (suite["suiteId"], kind)).fetchone()
@@ -515,12 +647,20 @@ class AgentLabGoldenStore:
             if suite.get("datasetProvenance", {}).get("kind") == "imported_reference":
                 raise AgentLabGoldenValidationError("原始评测题已经导入，请直接核对题目；重新起草请建立独立的合成评测集。")
             value = {"model": _model(value.get("model", {}), suite["judgeConfig"])}
+        elif kind == "review":
+            if set(value) - {"model"}:
+                raise AgentLabGoldenValidationError("Agent 核对只接受可选的审核模型配置。")
+            pending = [item['caseId'] for item in suite['cases'] if item['review']['status'] == 'pending']
+            if not pending:
+                raise AgentLabGoldenValidationError("没有待核对题目；已完成的核对会保留。")
+            value = {"model": _model(value.get("model", {}), suite["judgeConfig"]), "caseIds": pending}
         elif kind == "calibrate":
             _model(suite["judgeConfig"], {})
             if not _labeled_samples(suite):
-                raise AgentLabGoldenValidationError("请先审核开发集题目，并为答案样本添加人工标签。")
+                raise AgentLabGoldenValidationError("请先核对开发集题目，并标注答案样本；会记录人工或 Agent 作者。")
             value = {}
         else:
+            experiment_input = value
             snapshot_id = _text(value.get("snapshotId"), "冻结版本标识", limit=240)
             row = conn.execute("SELECT payload_json FROM agent_lab_golden_snapshots WHERE suite_id = ? AND snapshot_id = ?",
                                (suite["suiteId"], snapshot_id)).fetchone()
@@ -537,6 +677,11 @@ class AgentLabGoldenStore:
                      "candidate": _model(value.get("candidate", {}), suite["judgeConfig"]),
                      "optimizePrompt": optimize,
                      "maxCandidates": _integer(value.get("maxCandidates", 1), "候选数量", 1, 3)}
+            for variant in ("baseline", "candidate"):
+                configured = experiment_input.get(variant, {})
+                if "applicationMethod" in configured:
+                    value[variant]["applicationMethod"] = _freeze_application_method(
+                        conn, configured["applicationMethod"], snapshot.get("knowledge", {}).get("projectId", ""))
         now = _now()
         job = {"jobId": _id("golden-job"), "kind": kind, "state": "queued", "progress": "等待执行",
                "sessionId": "", "error": "", "result": None, "createdAtMs": now, "updatedAtMs": now}
@@ -557,7 +702,7 @@ class AgentLabGoldenStore:
         approved = [item for item in suite["cases"] if item["review"]["status"] == "approved"]
         counts = {split: sum(item["split"] == split for item in approved) for split in ("development", "holdout")}
         if not all(counts.values()):
-            raise AgentLabGoldenValidationError("开发集和保留集都需要至少一道人工审核通过的题目。")
+            raise AgentLabGoldenValidationError("开发集和保留集都需要至少一道核对通过的题目。")
         development_questions = {" ".join(item["question"].split()).casefold()
                                  for item in approved if item["split"] == "development"}
         if any(" ".join(item["question"].split()).casefold() in development_questions
@@ -601,11 +746,11 @@ class AgentLabGoldenStore:
             else:
                 job["progress"] = "停止请求已记录"
         else:
-            reprocess = _can_reprocess_draft(job)
+            bound = json.loads(row["input_json"])
+            reprocess = _can_reprocess_draft(job) or _can_reprocess_experiment(job, bound)
             retry = _retryable_request(job)
             if job["state"] != "interrupted" and not reprocess and not retry:
                 raise AgentLabGoldenConflict("只有已中断的任务或有明确失败回执的调用可以恢复。")
-            bound = json.loads(row["input_json"])
             if job["kind"] != "experiment" and bound["suite"]["revision"] != suite["revision"]:
                 raise AgentLabGoldenConflict("任务对应的标准已经更新，请按当前标准重新开始。")
             if conn.execute("SELECT 1 FROM agent_lab_golden_jobs WHERE suite_id = ? AND kind = ? AND state IN ('queued', 'running')",
@@ -613,7 +758,7 @@ class AgentLabGoldenStore:
                 raise AgentLabGoldenConflict("此类任务仍在进行中，暂不能恢复另一个任务。")
             conn.execute("UPDATE agent_lab_golden_jobs SET cancel_requested = 0 WHERE job_id = ?", (job["jobId"],))
             if reprocess:
-                # Re-parse the original completed model output. This mode
+                # Re-parse the original completed model outputs. This mode
                 # never admits another model request, even if its cache is gone.
                 job["reprocessOnly"] = True
             if retry:
@@ -634,6 +779,41 @@ class AgentLabGoldenStore:
             row = self._job_row(conn, _text(job_id, "任务标识", limit=240))
             return {**json.loads(row["input_json"]), "job": json.loads(row["payload_json"]),
                     "cancelRequested": bool(row["cancel_requested"])}
+
+    def application_configuration(self, suite_id: str, job_id: str, variant: str, *, connection: sqlite3.Connection | None = None) -> dict[str, Any]:
+        """Read a completed tested arm without exposing Golden cases or answers.
+
+        The project application owner still verifies its own suite binding.
+        Candidate prompts come from the executed selection, not a newer draft.
+        """
+        variant = _choice(variant, "评测方案", {"baseline", "candidate"})
+        suite_id = _text(suite_id, "评测集标识", limit=240)
+        if connection is None:
+            self.initialize()
+        # App preparation already holds the project transaction. Reuse its
+        # committed schema and read snapshot rather than start another writer.
+        with nullcontext(connection) if connection is not None else self._connection() as conn:
+            row = self._job_row(conn, _text(job_id, "任务标识", limit=240))
+            job = json.loads(row["payload_json"])
+            if row["suite_id"] != suite_id or job["kind"] != "experiment" or job["state"] != "completed":
+                raise AgentLabGoldenValidationError("应用配置需要本评测集已完成的对照实验。")
+            bound, result = json.loads(row["input_json"]), job.get("result") or {}
+            selected = _object(result.get(variant), "已执行方案")
+            configuration = _model(selected, {}, required=True)
+            if selected.get("applicationMethod"):
+                configuration["applicationMethod"] = validated_application_method(selected["applicationMethod"])
+            if configuration.get("applicationMethod") != bound["input"][variant].get("applicationMethod"):
+                raise AgentLabGoldenValidationError("已执行方法与原实验冻结正文不一致。")
+            knowledge = copy.deepcopy(bound["snapshot"].get("knowledge"))
+            metrics = {phase: {key: result.get(phase, {}).get(variant + "Metrics", {}).get(key)
+                              for key in ("passed", "failed", "uncertain", "runtimeErrors", "total", "passRate")}
+                       for phase in ("development", "holdout")}
+            return {"suiteId": suite_id, "jobId": job_id, "variant": variant,
+                    "snapshotId": bound["snapshot"]["snapshotId"],
+                    "projectId": knowledge.get("projectId") if knowledge else None,
+                    "configuration": configuration, "configurationSha256": hashlib.sha256(_json(configuration).encode()).hexdigest(),
+                    "knowledge": knowledge, "summary": {"state": "completed", "optimizationScope": result.get("optimizationScope"),
+                    "qualityDecision": result.get("comparison", {}).get("decision"), "metrics": metrics}}
 
     def begin_validation(self, job_id: str) -> dict[str, Any]:
         """Record entry into held-out validation, once per logical job.
@@ -715,7 +895,7 @@ class AgentLabGoldenStore:
                 raise AgentLabGoldenConflict("任务尚未开始执行，不能录入完成结果。")
             bound = json.loads(row["input_json"])
             suite = self._suite(conn, row["suite_id"])
-            if job["kind"] in {"draft", "calibrate"}:
+            if job["kind"] in {"draft", "review", "calibrate"}:
                 if suite["revision"] != bound["suite"]["revision"]:
                     raise AgentLabGoldenConflict("执行期间 Golden 标准已更新，旧结果不能覆盖新的人工审核。")
                 if job["kind"] == "draft":
@@ -728,6 +908,8 @@ class AgentLabGoldenStore:
                     result["cases"] = cases
                     suite["revision"] += 1
                     suite["calibration"] = None
+                elif job["kind"] == "review":
+                    self._finish_review(suite, bound, result, job['jobId'])
                 else:
                     if result.get("judgeProtocolVersion", GOLDEN_JUDGE_PROTOCOL_VERSION) != GOLDEN_JUDGE_PROTOCOL_VERSION:
                         raise AgentLabGoldenValidationError("评审协议已变化，请按当前协议重新校准。")
@@ -749,6 +931,35 @@ class AgentLabGoldenStore:
                         or (snapshot.get("knowledge") and result.get("knowledge") != snapshot["knowledge"])
                         or result.get("judgeProtocolVersion", GOLDEN_JUDGE_PROTOCOL_VERSION) != snapshot["judgeProtocolVersion"]):
                     raise AgentLabGoldenValidationError("实验结果必须绑定本次冻结版本和实际优化范围。")
+                method_bound = any(bound["input"][variant].get("applicationMethod") for variant in ("baseline", "candidate"))
+                method_claimed = any(result.get(variant, {}).get("applicationMethod") for variant in ("baseline", "candidate"))
+                if method_bound or method_claimed or result.get("applicationMethodComparison"):
+                    for variant in ("baseline", "candidate"):
+                        if result.get(variant, {}).get("applicationMethod") != bound["input"][variant].get("applicationMethod"):
+                            raise AgentLabGoldenValidationError("实验应用 Skill 必须与本次准入冻结正文一致。")
+                    if result.get("applicationMethodComparison") != application_method_comparison(result["baseline"], result["candidate"]):
+                        raise AgentLabGoldenValidationError("应用 Skill 差异必须来自实际冻结正文。")
+                    answer_receipts = {item.get("requestId"): item for item in result.get("receipts", [])
+                                       if isinstance(item, Mapping) and item.get("stage") == "answer"}
+                    if method_bound and not answer_receipts:
+                        raise AgentLabGoldenValidationError("应用 Skill 对照不能只提交方法元数据，必须有实际作答回执。")
+                    for phase in ("development", "holdout"):
+                        # The execution owner uses canonical case-id order;
+                        # source-import order is not a coverage requirement.
+                        expected_cases = sorted(case["caseId"] for case in snapshot["cases"] if case["split"] == phase)
+                        if [case.get("caseId") for case in result.get(phase, {}).get("cases", [])] != expected_cases:
+                            raise AgentLabGoldenValidationError("应用 Skill 成绩必须覆盖相同冻结题目，不能替换或省略案例。")
+                        for case in result.get(phase, {}).get("cases", []):
+                            for variant in ("baseline", "candidate"):
+                                expected_method = application_method_identity(bound["input"][variant])
+                                answer = case.get(variant, {})
+                                receipt = answer_receipts.get(answer.get("requestId"), {})
+                                if expected_method and (answer.get("applicationMethod") != expected_method
+                                        or receipt.get("applicationMethod") != expected_method
+                                        or receipt.get("variant") != variant or receipt.get("caseId") != case.get("caseId")
+                                        or receipt.get("split") != phase
+                                        or not isinstance(receipt.get("promptSha256"), str) or len(receipt["promptSha256"]) != 64):
+                                    raise AgentLabGoldenValidationError("应用 Skill 成绩缺少对应作答正文身份与执行回执。")
                 if isinstance(job.get('validationUse'), dict): result['validationUse'] = copy.deepcopy(job['validationUse'])
             job.update(state="completed", progress="已完成", error="", result=result)
             self._save_job(conn, job)

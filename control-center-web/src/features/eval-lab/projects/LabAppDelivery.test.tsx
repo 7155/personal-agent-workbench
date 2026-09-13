@@ -7,8 +7,10 @@ import { MockControlTransport } from '@/test/mock-transport';
 import { currentPawApps, pawApp, pawAppForPath } from '@/paw-os/runtime/app-registry';
 import { pawExtensionApps, registerLabExtensionApps } from '@/paw-os/extensions/registry';
 import { LabAppDelivery } from './LabAppDelivery';
+import { LabAppConfiguration } from './LabAppConfiguration';
 import { LabAppPreview } from './LabAppPreview';
 import type { LabApp, LabAppCall, LabAppVersion } from './apps';
+import { parseLabAppRead } from './apps';
 import type { ControlRequest } from '@/platform/transport';
 
 const firstId = 'extension:lab-11111111111111111111111111111111';
@@ -18,6 +20,22 @@ const version = (appId = firstId): LabAppVersion => ({ appId, version: 1, conten
   sourceFiles: [{ path: 'SKILL.md', byteSize: 100, sha256: 'a'.repeat(64) }], spec: { title: '售后助手', description: '按当前规则工作', html: 'index.html', skill: 'SKILL.md', context: ['rules.md'],
     model: { provider: 'test', model: 'test-model', thinkingLevel: 'medium' }, actions: [{ id: 'answer', title: '处理问题', prompt: '按规则回答', inputSchema: { type: 'object' } }] } });
 const clients: QueryClient[] = [];
+describe('Frozen App configuration', () => {
+  it('shows the actual selected method, corpus and evaluation without starting execution', () => {
+    const value = version(); value.spec.knowledge = { documentCount: 209, sourceCount: 209, chunkCount: 20017, profile: { mode: 'hybrid', topK: 8, contextChars: 24000 }, sourceIndexId: 'full-index', snapshotSha256: 'c'.repeat(64) };
+    value.spec.evaluationSelection = { suiteId: 'suite', jobId: 'job', variant: 'candidate', snapshotId: 'snapshot', configurationSha256: 'd'.repeat(64), applicationMethod: { title: '论文方法与证据核对', sha256: 'e'.repeat(64) } };
+    const open = vi.fn(); render(<LabAppConfiguration version={value} onOpenEvaluation={open} />);
+    expect(screen.getByText('209 篇文档 · 20,017 个切片')).toBeVisible();
+    expect(screen.getByText('hybrid · Top-K 8 · 24,000 字符预算')).toBeVisible();
+    expect(screen.getByText('论文方法与证据核对')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '查看原评测' })); expect(open).toHaveBeenCalledWith('suite', 'job');
+  });
+  it('does not imply an unbound app was validated', () => {
+    render(<LabAppConfiguration version={version()} />);
+    expect(screen.getByText(/尚未绑定可追溯的评测选择/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: '查看原评测' })).not.toBeInTheDocument();
+  });
+});
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); sessionStorage.clear(); registerLabExtensionApps({ ok: true, items: [] }); vi.restoreAllMocks(); });
 function mount(transport: MockControlTransport, body = <LabAppDelivery projectId="project-1" />) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
@@ -26,6 +44,34 @@ function mount(transport: MockControlTransport, body = <LabAppDelivery projectId
 const read = (current: LabApp, item = version()) => ({ ok: true, items: [current], app: current, version: item, versions: [item], calls: [] });
 
 describe('Lab application delivery', () => {
+  it('reads an exact older call outside recent calls without mounting or invoking the App', async () => {
+    const original: LabAppCall = { callId: 'original-call', appId: firstId, version: 1, actionId: 'answer', input: { question: '原问题' }, state: 'completed', sessionId: 'original-session', result: { text: '原调用的完整研究结果' }, error: '', cancelRequested: false, createdAtMs: 1, updatedAtMs: 2 };
+    const current = { ...app(), latestVersion: 2 };
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.apps.get': ({ query }: ControlRequest) => query?.callId
+      ? { ...read(current), call: original, calls: [{ ...original, callId: 'recent-call', version: 2, result: { text: '其他调用结果' } }] }
+      : { ok: true, items: [current], app: null } } });
+    mount(transport, <LabAppDelivery projectId="project-1" initialAppId={firstId} initialVersion={1} initialCallId="original-call" />);
+    expect(await screen.findByText('原调用的完整研究结果')).toBeVisible();
+    expect(screen.getByRole('article', { name: '选中的原应用调用' })).toHaveTextContent('original-call');
+    expect(screen.queryByText('其他调用结果')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('售后助手 · 应用预览')).not.toBeInTheDocument();
+    fireEvent(window, new MessageEvent('message', { data: { kind: 'paw.lab-app.invoke', actionId: 'answer', requestId: '11111111-1111-1111-1111-111111111111', input: {} } }));
+    expect(transport.requests.some(({ request }) => request.query?.appId === firstId && request.query?.version === 1 && request.query?.callId === 'original-call')).toBe(true);
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.apps.get')).toBe(true);
+  });
+  it('rejects a substituted call or version rather than displaying a different original result', () => {
+    const original = { callId: 'original-call', appId: firstId, version: 1, state: 'completed', result: {} };
+    expect(() => parseLabAppRead({ ...read(app()), call: { ...original, callId: 'other-call' } }, firstId, 'original-call', 1)).toThrow('原应用调用未完整返回');
+    expect(() => parseLabAppRead({ ...read(app(), { ...version(), version: 2 }), call: original }, firstId, 'original-call', 1)).toThrow('返回版本与选中的原应用版本不匹配');
+    expect(() => parseLabAppRead({ ...read(app()), call: { ...original, appId: secondId } }, firstId, 'original-call', 1)).toThrow('原应用调用未完整返回');
+  });
+  it('shows research activity and actual successful source operations without implying full papers were read', () => {
+    const call: LabAppCall = { callId: 'research-call', appId: firstId, version: 1, actionId: 'answer', input: {}, state: 'running', sessionId: 'source-session', result: {}, error: '', cancelRequested: false, createdAtMs: 1, updatedAtMs: 2, progress: { stage: 'researching', knowledge: { workflow: { executedSourceReadCallCount: 3 } } } };
+    mount(new MockControlTransport(), <LabAppPreview app={app()} version={version()} calls={[call]} onActivity={() => undefined} />);
+    expect(screen.getByRole('status')).toHaveTextContent('读取研究原文');
+    expect(screen.getByRole('status')).toHaveTextContent('已完成 3 次原文查找／打开');
+    expect(screen.getByRole('status')).not.toHaveTextContent('论文读完');
+  });
   it('persists local App state across versions, isolates App owners and rejects oversized state', () => {
     const transport = new MockControlTransport();
     const one = mount(transport, <LabAppPreview app={app()} version={version()} calls={[]} onActivity={() => undefined} />);
@@ -120,7 +166,7 @@ describe('Lab application delivery', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '应用源目录' }), { target: { value: 'knowledge-app' } });
     fireEvent.click(screen.getByRole('button', { name: '准备应用版本' }));
     await waitFor(() => expect(screen.getByRole('combobox', { name: '应用版本' })).toHaveValue('2'));
-    expect(prepare).toHaveBeenCalledWith('knowledge-app', firstId);
+    expect(prepare).toHaveBeenCalledWith('knowledge-app', firstId, undefined);
   });
 
   it('keeps a prepared version separate from activation and replays an unknown activation exactly', async () => {

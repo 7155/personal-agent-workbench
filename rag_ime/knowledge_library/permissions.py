@@ -44,4 +44,11 @@ def harden_knowledge_tree(root: Path) -> None:
             child = current_path / name
             if child.is_symlink():
                 continue
-            secure_file(child)
+            try:
+                secure_file(child)
+            except FileNotFoundError:
+                # SQLite removes these transient files when its last handle
+                # closes. A concurrent reader may have listed them just before
+                # that close; retain failures for persistent source files.
+                if not name.endswith(("-wal", "-shm")):
+                    raise

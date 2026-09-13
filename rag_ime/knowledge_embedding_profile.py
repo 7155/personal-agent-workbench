@@ -92,6 +92,12 @@ def normalize_knowledge_embedding_profile(
                 raw_profile.get("denseBackend") or "sqlite-exact"
             ),
         }
+    for key, environment_key in (("modelRevision", "RAG_IME_EMBEDDING_MODEL_REVISION"), ("modelReference", "RAG_IME_EMBEDDING_MODEL_REFERENCE")):
+        value = source_environment.get(environment_key, "") if selected_provider == "environment" else raw_profile.get(key, "")
+        if value:
+            profile[key] = _bounded_text(value, maximum=1000)
+    if profile.get("modelRevision") and not re.fullmatch(r"[0-9a-f]{40}", profile["modelRevision"]):
+        raise ValueError("Embedding model revision must be a fixed commit")
     _validate_profile(profile)
     secret_reference = str(profile["secretReference"])
     secret_available = bool(
@@ -143,6 +149,8 @@ def embedding_environment_from_settings(
     }
     optional = {
         "RAG_IME_EMBEDDING_MODEL": profile["model"],
+        "RAG_IME_EMBEDDING_MODEL_REVISION": profile.get("modelRevision", ""),
+        "RAG_IME_EMBEDDING_MODEL_REFERENCE": profile.get("modelReference", ""),
         "RAG_IME_EMBEDDING_BASE_URL": profile["baseUrl"],
         "RAG_IME_EMBEDDING_QUERY_PREFIX": profile["queryPrefix"],
         "RAG_IME_EMBEDDING_DOCUMENT_PREFIX": profile["documentPrefix"],

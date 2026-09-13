@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   StopCircle,
   Wrench,
+  X,
 } from 'lucide-react';
 import {
   useCallback,
@@ -136,6 +137,8 @@ export function sessionWorkspaceProjectionSlice(
   };
 }
 
+import { applyWorkspaceDraft, messageWithWorkspaceContext, type WorkspaceDraftRequest, type WorkspaceComposerContext } from './workspace-draft';
+
 export function PawSessionWorkspace({
   active = true,
   persona,
@@ -145,6 +148,7 @@ export function PawSessionWorkspace({
   initialDraft = '',
   initialAttachments = [],
   draftRequest,
+  composerContext,
   screenContext,
   onNewWork,
   onSessionCreated,
@@ -163,7 +167,8 @@ export function PawSessionWorkspace({
   recordId: string;
   initialDraft?: string;
   initialAttachments?: ComposerAttachment[];
-  draftRequest?: { id: number; text: string };
+  draftRequest?: WorkspaceDraftRequest;
+  composerContext?: WorkspaceComposerContext;
   screenContext?: ScreenContext;
   /** 反向证据链落点：直接进入轨迹视图并聚焦这个装配节点。 */
   traceFocusNodeId?: string;
@@ -200,7 +205,7 @@ export function PawSessionWorkspace({
   const [draft, setDraft] = useState(initialDraft);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialAttachments);
   useEffect(() => {
-    if (draftRequest) setDraft(draftRequest.text);
+    if (draftRequest) setDraft(current => applyWorkspaceDraft(current, draftRequest));
   }, [draftRequest]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -1473,6 +1478,8 @@ export function PawSessionWorkspace({
               </div>
             ) : null}
             {workspaceRecord && !evaluationSnapshot ? (
+              <>
+              {composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div><button aria-label="移除地图上下文" onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
               <AgentComposer
                 attachments={attachments}
                 busy={busy}
@@ -1514,7 +1521,7 @@ export function PawSessionWorkspace({
                 onPasteImages={pasteFiles}
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
-                onSend={(delivery, value) => void send(delivery, value)}
+                onSend={(delivery, value) => void send(delivery, editState ? value : messageWithWorkspaceContext(value,composerContext))}
                 onStop={() => void stop()}
                 showJumpLatest={!timelineFollow.following}
                 unseenUpdates={timelineFollow.unseenUpdates}
@@ -1523,8 +1530,9 @@ export function PawSessionWorkspace({
                 onPermissionChange={(selection) => void changePermission(selection)}
                 onWorkspaceRootsChange={() => void manageWorkspaceRoots()}
                 queueDepth={queue.queue.length}
-                onQueue={queue.enqueue}
+                onQueue={(value) => queue.enqueue(messageWithWorkspaceContext(value,composerContext))}
               />
+              </>
             ) : null}
           </div>
         </div>

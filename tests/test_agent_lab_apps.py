@@ -9,7 +9,7 @@ import unittest
 import zipfile
 from itertools import count
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from rag_ime.agent_lab.app_runtime import build_prompt, validate_input, AppInputError
 from rag_ime.agent_lab.app_sources import freeze_source
@@ -69,7 +69,7 @@ class LabAppTests(unittest.TestCase):
 
     def test_prepare_freezes_files_without_activation_or_execution(self):
         app = self.prepare()
-        self.assertIsNone(app['activeVersion']); self.assertEqual(app['version']['fileCount'],3)
+        self.assertIsNone(app['activeVersion']); self.assertEqual(app['version']['fileCount'],6)
         (self.workspace/'app/rules.md').write_text('源文件已经改变。')
         filename = self.apps.download({'appId':app['appId'],'version':1,'target':'standalone'})
         with zipfile.ZipFile(io.BytesIO(base64.b64decode(filename['base64']))) as archive:
@@ -78,6 +78,125 @@ class LabAppTests(unittest.TestCase):
             self.assertNotIn('from rag_ime',runtime); compile(runtime,'app.py','exec')
             self.assertNotIn(str(self.root),''.join(archive.read(name).decode() for name in archive.namelist()))
         self.assertEqual(self.apps.read({'appId':app['appId']})['calls'],[])
+
+    def test_project_call_projection_is_scoped_bounded_and_excludes_full_content(self):
+        app = self.prepare()
+        calls = []
+        for i in range(3):
+            receipt = self.command(app, 'invoke', {'version': 1, 'actionId': 'answer',
+                'values': {'question': f'SECRET_QUESTION_{i}'}}, f'project-call-{i}')
+            calls.append(receipt['call']['callId'])
+            app = receipt['app']
+        self.apps.update_call(calls[0], state='running')
+        self.apps.update_progress(calls[0], {'stage': 'researching', 'text': 'SECRET_PARTIAL',
+            'sources': [{'text': 'SECRET_SOURCE'}], 'research': {'journal': [{'private': 'SECRET_JOURNAL'}],
+            'budget': {'executedToolCalls': 3, 'executedSearchCalls': 1, 'executedSourceReadCalls': 2, 'contextChars': 900}}})
+        self.apps.update_call(calls[2], state='completed', result_json='{"text":"SECRET_ANSWER"}')
+        with patch.object(self.apps, '_public_version', side_effect=AssertionError('large version hydration')), \
+             patch.object(self.apps, '_call', side_effect=AssertionError('full call hydration')), \
+             patch.object(self.apps, 'initialize', side_effect=AssertionError('read migration')):
+            result = self.apps.project_calls(self.project['projectId'], limit=1)
+            self.assertEqual(self.apps.project_calls('other-project')['totalCount'], 0)
+        self.assertEqual(result['totalCount'], 3)
+        self.assertEqual(result['counts'], {'completed': 1, 'queued': 1, 'running': 1})
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['calls'][0]['callId'], calls[0])
+        self.assertEqual(result['calls'][0]['title'], '规则助手')
+        self.assertEqual(result['calls'][0]['actionTitle'], '处理问题')
+        self.assertEqual(result['calls'][0]['progress']['executedSourceReadCalls'], 2)
+        self.assertNotIn('SECRET_', json.dumps(result))
+        other_scope = AgentLabAppStore(self.db, scope_id='other')
+        self.assertEqual(other_scope.project_calls(self.project['projectId'])['totalCount'], 0)
+
+    def test_export_uses_completed_selected_method_model_and_prompt_not_later_source_edits(self):
+        import hashlib
+        source = self.workspace / 'app' / 'app.json'
+        spec = json.loads(source.read_text())
+        reference = {'suiteId': 'suite-one', 'jobId': 'job-one', 'variant': 'candidate'}
+        spec['evaluationSelection'] = reference
+        source.write_text(json.dumps(spec))
+        method = 'Validated method: separate findings from uncertainty and cite each material claim.'
+        selected = {**reference, 'snapshotId': 'snapshot-one', 'configurationSha256': 'a' * 64,
+                    'configuration': {'provider': 'configured', 'model': 'validated-model', 'thinkingLevel': 'low',
+                        'prompt': 'Validated prompt.', 'applicationMethod': {'body': method, 'title': 'Evidence method',
+                            'sha256': hashlib.sha256(method.encode()).hexdigest(), 'source': {'kind': 'inline'}}},
+                    'summary': {'passCount': 2, 'totalCount': 3}, 'knowledge': None}
+        with patch.object(self.apps, '_evaluation_selection', return_value=selected) as resolve:
+            app = self.prepare()
+        resolve.assert_called_once_with(ANY, reference, connection=ANY)
+        version = self.apps.read({'appId': app['appId']})['version']
+        self.assertEqual(version['spec']['model']['model'], 'validated-model')
+        self.assertEqual(version['spec']['actions'][0]['prompt'], 'Validated prompt.')
+        (self.workspace / 'app' / 'SKILL.md').write_text('Later untested method.')
+        downloaded = self.apps.download({'appId': app['appId'], 'version': 1, 'target': 'standalone'})
+        with zipfile.ZipFile(io.BytesIO(base64.b64decode(downloaded['base64']))) as archive:
+            self.assertEqual(archive.read('SKILL.md').decode(), method)
+            frozen = json.loads(archive.read('app.json'))
+            self.assertEqual(frozen['evaluationSelection']['applicationMethod']['sha256'], hashlib.sha256(method.encode()).hexdigest())
+            self.assertNotIn('cases', frozen['evaluationSelection'])
+
+    def test_evaluation_selection_cannot_reference_another_projects_suite(self):
+        source = self.workspace / 'app' / 'app.json'
+        spec = json.loads(source.read_text())
+        spec['evaluationSelection'] = {'suiteId': 'foreign-suite', 'jobId': 'job-one', 'variant': 'candidate'}
+        source.write_text(json.dumps(spec))
+        with self.assertRaisesRegex(AgentLabProjectValidationError, '不属于此项目'):
+            self.prepare()
+
+    def test_prepare_uses_ui_selection_without_rewriting_source_or_weakening_owner_check(self):
+        path = self.workspace / 'app' / 'app.json'
+        source = json.loads(path.read_text())
+        source['evaluationSelection'] = {'suiteId': 'old-suite', 'jobId': 'old-job', 'variant': 'baseline'}
+        path.write_text(json.dumps(source))
+        original = path.read_bytes()
+        reference = {'suiteId': 'new-suite', 'jobId': 'new-job', 'variant': 'candidate'}
+        selected = {**reference, 'snapshotId': 'snapshot-ui', 'configuration': {**MODEL, 'prompt': 'Frozen selected prompt',
+            'applicationMethod': {'body': 'Frozen selected method', 'title': 'Selected method',
+                                  'sha256': 'a' * 64, 'source': {'kind': 'inline'}}}, 'knowledge': None}
+        request = {'action': 'prepare_app', 'projectId': self.project['projectId'],
+            'expectedRevision': self.project['revision'], 'clientRequestId': 'selection-from-ui',
+            'input': {'directory': 'app', 'evaluationSelection': reference}}
+        with patch.object(self.apps, '_evaluation_selection', return_value=selected) as resolve:
+            result = self.projects.command(request)
+        resolve.assert_called_once_with(ANY, reference, connection=ANY)
+        frozen = result['application']['version']['spec']
+        self.assertEqual(frozen['evaluationSelection']['jobId'], 'new-job')
+        self.assertEqual(frozen['actions'][0]['prompt'], 'Frozen selected prompt')
+        self.assertEqual(path.read_bytes(), original)
+        replay = self.projects.command(request)
+        self.assertTrue(replay['replayed'])
+        self.assertEqual(replay['application']['appId'], result['application']['appId'])
+        with self.assertRaisesRegex(AgentLabProjectValidationError, '不属于此项目'):
+            self.projects.command({**request, 'clientRequestId': 'foreign-ui-selection',
+                'expectedRevision': result['project']['revision']})
+
+    def test_selected_empty_prompt_is_preserved_without_reintroducing_untested_action_instructions(self):
+        source = self.workspace / 'app' / 'app.json'
+        spec = json.loads(source.read_text())
+        reference = {'suiteId': 'suite-one', 'jobId': 'job-one', 'variant': 'candidate'}
+        spec['evaluationSelection'] = reference
+        source.write_text(json.dumps(spec))
+        selected = {**reference, 'snapshotId': 'snapshot-one', 'configurationSha256': 'b' * 64,
+            'configuration': {**MODEL, 'prompt': '',
+            'applicationMethod': {'body': 'Use the frozen method.', 'title': 'Selected method',
+                                  'sha256': 'a' * 64, 'source': {'kind': 'inline'}}},
+            'knowledge': None}
+        with patch.object(self.apps, '_evaluation_selection', return_value=selected):
+            app = self.prepare()
+        _, version = self.apps.call_input(self.command(app, 'invoke',
+            {'version': 1, 'actionId': 'answer', 'values': {'question': 'day 7'}}, 'empty-prompt')['call']['callId'])
+        self.assertEqual(version['spec']['actions'][0]['prompt'], '')
+        prompt = build_prompt(version['spec'], version['files'], 'answer', {'question': 'day 7'})
+        self.assertIn('Use the frozen method.', prompt)
+        self.assertNotIn('依据材料回答并指出缺失信息。', prompt)
+
+    def test_evaluation_selection_requires_an_actual_frozen_application_method(self):
+        source = self.workspace / 'app' / 'app.json'
+        spec = json.loads(source.read_text()); spec['evaluationSelection'] = {'suiteId': 'suite-one', 'jobId': 'job-one', 'variant': 'candidate'}
+        source.write_text(json.dumps(spec))
+        with patch.object(self.apps, '_evaluation_selection', return_value={'configuration': {**MODEL, 'prompt': 'Method-free answer'}}):
+            with self.assertRaisesRegex(AgentLabProjectValidationError, '没有冻结应用方法'):
+                self.prepare()
 
     def test_external_workspace_is_a_frozen_browser_dependency_without_tool_authority(self):
         path = self.workspace/'app/app.json'; source = json.loads(path.read_text())

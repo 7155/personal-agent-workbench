@@ -10,6 +10,7 @@ import type { ControlTransport } from '@/platform/transport';
 import { labConnectionKey, requestLabControl } from '../control-request';
 import { object, type LabProject } from './types';
 import { projectGuidanceMessage } from './project-guidance';
+import { LabGuideWorkflow } from './LabGuideWorkflow';
 
 export function ProjectGuide({ project, draftRequest, onNewProject, onProjectActivity, onEnsure }: {
   project: LabProject; draftRequest?: { id: number; text: string }; onNewProject: () => void;
@@ -29,7 +30,7 @@ export function ProjectGuide({ project, draftRequest, onNewProject, onProjectAct
   });
   const session = updated?.id === project.guideSessionId ? updated : query.data;
   return <section className="lab-project-guide" aria-label="项目 Agent">
-    <header><span className="lab-project-agent-mark" aria-hidden="true" /><div><strong>项目 Agent</strong><small>围绕当前项目继续工作</small></div></header>
+    <header><span className="lab-project-agent-mark" aria-hidden="true" /><div><strong>项目 Agent</strong><small>围绕当前项目继续工作</small></div>{project.guideSessionId ? <LabGuideWorkflow key={project.guideSessionId} sessionId={project.guideSessionId} /> : null}</header>
     {!project.guideSessionId ? <div className="lab-project-guide__empty"><p>连接项目 Agent 后，就可以围绕材料和成果继续工作。</p><Button onClick={onEnsure}>连接项目 Agent</Button></div>
       : session ? <PawSessionWorkspace key={session.id} record={session} recordId={session.id} appearance="embedded" showComposerControls
         composerPlaceholder="继续描述、修正成果，或让我尝试下一步…" draftRequest={draftRequest}

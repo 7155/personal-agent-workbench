@@ -24,6 +24,7 @@ ASSISTANT_CONTROL_TOOL_IDS = (
     "sandbox",
     "work_documents",
     "lab_project",
+    "lab_research",
     "desktop_semantic",
 )
 

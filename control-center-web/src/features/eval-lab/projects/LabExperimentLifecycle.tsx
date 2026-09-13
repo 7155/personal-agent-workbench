@@ -10,6 +10,7 @@ type Props = {
   onOpenRuns: () => void;
   onDirection: (direction: string) => void;
   onOpenMaterials?: () => void;
+  onOpenKnowledge?: () => void;
   onAddMaterials?: () => void;
   onOpenApps?: () => void;
   onContinue?: (mode: ProjectGuidanceMode) => void;
@@ -25,7 +26,10 @@ const directions = [
 const artifactFor = (artifacts: ArtifactSummary[], ...names: string[]) => artifacts.find((item) => names.some((name) => item.title.includes(name)));
 const titleOf = (artifact?: ArtifactSummary) => artifact?.title ?? '尚无记录';
 
-export function LabExperimentLifecycle({ project, onOpenArtifact, onOpenRuns, onDirection, onOpenMaterials, onAddMaterials, onOpenApps, onContinue, busy = false }: Props) {
+export function LabExperimentLifecycle({ project, onOpenArtifact, onOpenRuns, onDirection, onOpenMaterials, onOpenKnowledge, onAddMaterials, onOpenApps, onContinue, busy = false }: Props) {
+  const knowledge = project.knowledgeResources;
+  const hasKnowledge = Boolean(knowledge?.documentCount);
+  const hasMaterials = project.materialCount > 0 || hasKnowledge;
   const records = useMemo(() => ({
     materials: artifactFor(project.artifacts, '冻结材料', '材料目录'),
     overview: artifactFor(project.artifacts, '实验总览', '评测数据'),
@@ -63,8 +67,8 @@ export function LabExperimentLifecycle({ project, onOpenArtifact, onOpenRuns, on
     </div>
     {onContinue ? <div className="lab-lifecycle-continue"><div><h3>从当前进度继续</h3><p>Agent 检查已有工作，按实际结果推进。你可以随时在项目对话中补充方向或停止。</p></div><div><Button variant="primary" disabled={busy || running} onClick={() => onContinue('auto')}>自动推进优化</Button><Button variant="secondary" disabled={busy || running} onClick={() => onContinue('guided')}>带我逐步完成</Button></div></div> : null}
     <ol className="lab-lifecycle-stages" aria-label="从材料到应用的评测流程">
-      {step(1, '材料与知识库', project.materialCount ? `已接入 ${project.materialCount} 份材料，可查看内容、来源和接入问题。` : '添加业务资料、已有代码或失败案例，让评测围绕你的实际任务展开。', project.materialCount ? '已接入材料' : '待添加材料', project.materialCount > 0,
-        <>{onAddMaterials ? <Button size="small" variant={project.materialCount ? 'secondary' : 'primary'} onClick={onAddMaterials}><Plus size={14} />添加材料</Button> : null}{project.materialCount && onOpenMaterials ? <Button size="small" variant="secondary" onClick={onOpenMaterials}>查看材料</Button> : null}{!project.materialCount && onContinue ? <Button size="small" variant="secondary" disabled={busy || running} onClick={() => onContinue('sample')}>用示例走通流程</Button> : null}{records.materials ? openRecord(records.materials, '查看材料记录') : null}</>, records.materials)}
+      {step(1, '材料与知识库', hasKnowledge ? `已接入 ${knowledge!.documentCount} 篇知识文档${knowledge!.chunkCount ? `，已有索引 ${knowledge!.chunkCount} 个切片` : ''}。可沿用当前资源继续评测。` : project.materialCount ? `已接入 ${project.materialCount} 份材料，可查看内容、来源和接入问题。` : '添加业务资料、已有代码或失败案例，让评测围绕你的实际任务展开。', hasMaterials ? '已接入材料' : '待添加材料', hasMaterials,
+        <>{onAddMaterials ? <Button size="small" variant={hasMaterials ? 'secondary' : 'primary'} onClick={onAddMaterials}><Plus size={14} />添加材料</Button> : null}{project.materialCount && onOpenMaterials ? <Button size="small" variant="secondary" onClick={onOpenMaterials}>查看材料</Button> : null}{hasKnowledge && onOpenKnowledge ? <Button size="small" variant="secondary" onClick={onOpenKnowledge}>查看知识库</Button> : null}{!hasMaterials && onContinue ? <Button size="small" variant="secondary" disabled={busy || running} onClick={() => onContinue('sample')}>用示例走通流程</Button> : null}{records.materials ? openRecord(records.materials, '查看材料记录') : null}</>, records.materials)}
       {step(2, '评测集与通过标准', '使用你提供的题目，或让 Agent 起草评测集。先核对题目和标准，再开始比较。', records.overview ? '有评测文档' : completed ? '回执已保存在运行中' : '等待评测集', Boolean(records.overview) || completed,
         <>{records.overview ? openRecord(records.overview, '查看评测文档') : <Button size="small" variant="secondary" disabled={busy || running} onClick={() => onDirection('准备评测集与基线运行')}>与 Agent 准备评测</Button>}{binding ? <Button size="small" variant="secondary" onClick={onOpenRuns}>查看评测与运行</Button> : null}</>, records.overview)}
       {step(3, '运行与原始记录', '在同一评测条件下运行基线与候选，保留每个案例的回答、工具调用和结果。', completed ? '运行已完成' : running ? '运行中' : records.snapshot ? '有运行文档' : '待运行', completed || Boolean(records.snapshot),

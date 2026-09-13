@@ -86,17 +86,21 @@ def _strings(value: Any, label: str, *, maximum: int = 100) -> list[str]:
 _ARTIFACT_FIELDS = {"title", "kind", "view", "content", "summary", "templateRef", "actions"}
 
 
-def _project_work_summary(project: Mapping[str, Any], artifacts: list[Mapping[str, Any]] | None = None) -> dict[str, Any]:
+def _project_work_summary(project: Mapping[str, Any], artifacts: list[Mapping[str, Any]] | None = None,
+                          knowledge: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Return a truthful, read-only projection for the Lab home page.
 
     Project payloads deliberately do not store a guessed execution outcome.
-    This projection only uses durable material intake, bindings, history
-    provenance, and published artifact receipts so the home page can answer
+    This projection only uses durable material intake, completed Knowledge
+    resource receipts, bindings, history provenance, and published artifacts so the home page can answer
     "what should I do next?" without turning an Agent statement into a system
     status.
     """
     intake = project.get("intake") if isinstance(project.get("intake"), Mapping) else {}
     materials = int(project.get("materialCount") or 0)
+    knowledge_ready = bool(knowledge and int(knowledge.get("documentCount") or 0) > 0
+                           and (int(knowledge.get("corpusCount") or 0) > 0 or int(knowledge.get("indexCount") or 0) > 0))
+    has_materials = materials > 0 or knowledge_ready
     bindings = project.get("bindings") if isinstance(project.get("bindings"), list) else []
     history = project.get("historyOrigin") if isinstance(project.get("historyOrigin"), Mapping) else None
     intake_state = str(intake.get("state") or "needs_materials")
@@ -105,7 +109,7 @@ def _project_work_summary(project: Mapping[str, Any], artifacts: list[Mapping[st
     missing: list[str] = []
     if intake_state == "unavailable" or partial:
         missing.append("材料路径或文件需重新核对")
-    if materials == 0:
+    if not has_materials:
         missing.append("至少一份当前材料快照")
     if not bindings:
         missing.append("一个已登记的执行绑定")
@@ -113,14 +117,16 @@ def _project_work_summary(project: Mapping[str, Any], artifacts: list[Mapping[st
     if intake_state == "unavailable" or partial:
         status, label, reason = "blocked", "材料受阻", "材料尚未完整读取，先修复来源后再继续。"
         next_kind, next_label, next_reason = "fix_materials", "修复材料", "核对来源路径、权限或未读取项。"
-    elif history and materials == 0:
+    elif history and not has_materials:
         status, label, reason = "history_only", "历史结果", "这是迁移的历史记录，可以查看，但没有当前材料快照，不能直接复跑。"
         next_kind, next_label, next_reason = "prepare_rerun", "准备复跑", "先绑定当前数据与执行环境；历史导入本身没有重新运行。"
-    elif materials == 0:
+    elif not has_materials:
         status, label, reason = "draft", "待接入材料", "项目还没有可用于验证的当前材料。"
         next_kind, next_label, next_reason = "add_materials", "添加材料", "上传、粘贴或连接执行器上的材料。"
     elif not bindings:
         status, label, reason = "needs_binding", "待连接执行", "材料已保存，但还没有登记本项目的执行绑定。"
+        if knowledge_ready:
+            reason = "Knowledge 资料已接入，可继续索引、评测准备或连接本项目的回答评测；没有登记回答执行绑定。"
         next_kind, next_label, next_reason = "bind_execution", "连接执行", "选择已登记的评测或运行适配器。"
     elif artifacts:
         status, label, reason = "active", "可继续", "项目已有成果和执行绑定，可以从最近成果继续核对。"
@@ -144,6 +150,7 @@ def _project_work_summary(project: Mapping[str, Any], artifacts: list[Mapping[st
         latest = {"kind": "artifact", "status": "available", "title": str(item.get("title") or "最近成果"),
                   "updatedAtMs": int(item.get("updatedAtMs") or 0), "artifactId": str(item.get("artifactId") or "")}
     return {
+        **({"knowledgeResources": dict(knowledge)} if knowledge else {}),
         "workState": {"status": status, "label": label, "reason": reason},
         "nextAction": {"kind": next_kind, "label": next_label, "reason": next_reason},
         "rerunReadiness": {"status": readiness_status, "reason": readiness_reason, "missing": missing},
@@ -188,7 +195,11 @@ class AgentLabProjectStore:
         row = conn.execute("SELECT payload_json FROM agent_lab_projects WHERE project_id=? AND scope_id=?", (project_id, self.scope_id)).fetchone()
         if row is None:
             raise AgentLabProjectNotFound("优化项目不存在，请从项目列表重新打开。")
-        return json.loads(row[0])
+        project = json.loads(row[0])
+        if not project.get('executionWorkspace'):
+            from .project_directory import managed_workspace
+            project['executionWorkspace'] = managed_workspace(self.db_path, self.scope_id, project)
+        return project
 
     @staticmethod
     def _material_set(conn: sqlite3.Connection, project_id: str, material_set_id: str) -> dict[str, Any]:
@@ -201,7 +212,7 @@ class AgentLabProjectStore:
         return json.loads(row[0])
 
     @classmethod
-    def _public(cls, conn: sqlite3.Connection, project: dict[str, Any]) -> dict[str, Any]:
+    def _public(cls, conn: sqlite3.Connection, project: dict[str, Any], knowledge: Mapping[str, Any] | None = None) -> dict[str, Any]:
         result = copy.deepcopy(project)
         result["materialSet"] = cls._material_set(conn, project["projectId"], project["materialSetId"])
         result["materialVersions"] = [{"materialSetId": row[0], "version": row[1], "createdAtMs": row[2]}
@@ -212,7 +223,7 @@ class AgentLabProjectStore:
         for row in conn.execute("SELECT payload_json FROM agent_lab_project_artifacts WHERE project_id=? ORDER BY created_at_ms,rowid", (project["projectId"],)):
             artifact = json.loads(row[0])
             result["artifacts"].append({key: value for key, value in artifact.items() if key != "content"})
-        result.update(_project_work_summary(result, result["artifacts"]))
+        result.update(_project_work_summary(result, result["artifacts"], knowledge))
         return result
 
     @staticmethod
@@ -225,7 +236,8 @@ class AgentLabProjectStore:
             raise AgentLabProjectNotFound("此项目的成果或版本不存在。")
         return json.loads(row[0])
 
-    def read(self, project_id: str = "", *, material_set_id: str = "", artifact_id: str = "", artifact_revision: int | None = None) -> dict[str, Any]:
+    def read(self, project_id: str = "", *, material_set_id: str = "", artifact_id: str = "", artifact_revision: int | None = None,
+             knowledge_resources: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
         project_id = _text(project_id, "项目标识", optional=True)
         material_set_id = _text(material_set_id, "材料版本", optional=True)
         artifact_id = _text(artifact_id, "成果标识", optional=True)
@@ -255,11 +267,11 @@ class AgentLabProjectStore:
                     if snapshot_row is not None:
                         latest_artifact.append(json.loads(snapshot_row[0]))
                 summary = {key: item[key] for key in ("projectId", "revision", "title", "materialCount", "artifactCount", "guideSessionId", "createdAtMs", "updatedAtMs")}
-                summary.update(_project_work_summary(item, latest_artifact))
+                summary.update(_project_work_summary(item, latest_artifact, (knowledge_resources or {}).get(item["projectId"])))
                 items.append(summary)
                 if "historyOrigin" in item:
                     items[-1]["historyOrigin"] = item["historyOrigin"]
-            project = self._public(conn, self._project(conn, project_id)) if project_id else None
+            project = self._public(conn, self._project(conn, project_id), (knowledge_resources or {}).get(project_id)) if project_id else None
             result = {"ok": True, "items": items, "project": project, "supportedViews": sorted(VIEWS)}
             if material_set_id:
                 result["materialSet"] = self._material_set(conn, project_id, material_set_id)
@@ -335,6 +347,8 @@ class AgentLabProjectStore:
                    "artifactCount": 0, "intake": empty_intake(), "bindings": [], "guideSessionId": "",
                    "workspace": {"artifactOrder": [], "primaryArtifactId": "", "layout": "split"},
                    "workspaceBinding": None, "executionWorkspace": None, "createdAtMs": now, "updatedAtMs": now}
+        from .project_directory import managed_workspace
+        project['executionWorkspace'] = managed_workspace(self.db_path, self.scope_id, project)
         conn.execute("INSERT INTO agent_lab_projects(project_id,scope_id,revision,payload_json,created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?)",
                      (project["projectId"], self.scope_id, 1, _json(project), now, now))
         self._save_brief(conn, project)

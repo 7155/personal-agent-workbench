@@ -59,9 +59,11 @@ if [[ -z "$EMBEDDING_PROVIDER_HINT" && -f "$PLIST_PATH" ]]; then
   )"
 fi
 REQUIRE_MLX_EMBEDDING=0
+REQUIRE_LOCAL_EMBEDDING="${RAG_IME_REQUIRE_LOCAL_EMBEDDING:-0}"
 EMBEDDING_PROVIDER_HINT_LOWER="$(printf '%s' "$EMBEDDING_PROVIDER_HINT" | tr '[:upper:]' '[:lower:]')"
 case "$EMBEDDING_PROVIDER_HINT_LOWER" in
   mlx-bert|local-bge-mlx|mlx-bge) REQUIRE_MLX_EMBEDDING=1 ;;
+  sentence-transformers|sentence_transformers) REQUIRE_LOCAL_EMBEDDING=1 ;;
 esac
 
 if [[ ! "$HEALTH_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || (( HEALTH_TIMEOUT_SECONDS < 1 )); then
@@ -93,6 +95,7 @@ PY
 python_has_required_runtime() {
   local candidate="$1"
   RAG_IME_INSTALL_REQUIRE_MLX_EMBEDDING="$REQUIRE_MLX_EMBEDDING" \
+  RAG_IME_INSTALL_REQUIRE_LOCAL_EMBEDDING="$REQUIRE_LOCAL_EMBEDDING" \
     "$candidate" - <<'PY' >/dev/null 2>&1
 import os
 import pypdf
@@ -101,6 +104,9 @@ import yaml
 if os.environ.get("RAG_IME_INSTALL_REQUIRE_MLX_EMBEDDING") == "1":
     import mlx
     import transformers
+if os.environ.get("RAG_IME_INSTALL_REQUIRE_LOCAL_EMBEDDING") == "1":
+    import torch
+    import sentence_transformers
 PY
 }
 
