@@ -205,7 +205,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   return <main className="earth-app">
     <header className="earth-app__header"><div><strong>Earth Agent</strong><span>地理分析与选址选线</span></div>{sessions.length ? <select aria-label="分析会话" value={session?.id || ''} onChange={event => { const next = sessions.find(x => x.id === event.target.value); if (next) { setSession(next); setRun(null); setLastCompleted(null); setFile(null); setSelection(null); setViewCommand(undefined); viewSeen.current = ""; } }}><option value="" disabled>新分析</option>{sessions.map(item => <option key={item.id} value={item.id}>{item.title} · {new Date(item.updatedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</option>)}</select> : null}<span role="status">{run ? runStatus[run.status] : '准备开始分析'}</span><button onClick={startAnother} disabled={sending || Boolean(pending)}>新分析</button><button onClick={() => setRefresh(x => x + 1)} disabled={!session}>刷新结果</button></header>
     <div className="earth-app__body">
-      <section className="earth-agent" aria-label="Agent 工作栏">
+      <section className="earth-agent" data-earth-surface="agent" aria-label="Agent 工作栏">
 
         {error ? <div className="earth-error" role="alert"><p>{error}</p>{!session ? <button onClick={() => setHistoryRevision(x => x + 1)}>重新读取</button> : null}</div> : null}
         {pending ? <div className="earth-error" role="status"><p>这条请求尚未确认接纳，已保留原消息标识。</p><button disabled={sending} onClick={() => void retry()}>核对并重试原请求</button></div> : null}

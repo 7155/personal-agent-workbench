@@ -29,3 +29,21 @@ it('keeps created, edited and deleted geometry in sync with context and local im
   expect(selected.mock.lastCall?.[0].id).toBe(id);
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:test-workspace')!)).toEqual([]);
 });
+
+it('starts with a geography-ready satellite basemap and exposes a roads fallback', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Reflect.set(L.Browser, 'svg', true);
+  const tileLayer = vi.spyOn(L, 'tileLayer');
+  render(<EarthMap run={null} selection={[]} workspaceKey="basemap-test" onActivity={vi.fn()} onSelect={vi.fn()} />);
+
+  expect(tileLayer).toHaveBeenCalledWith(
+    expect.stringContaining('mt1.google.com/vt/lyrs=s'),
+    expect.objectContaining({ attribution: 'Google satellite imagery', maxZoom: 20 }),
+  );
+  expect(tileLayer).toHaveBeenCalledWith(
+    expect.stringContaining('tile.openstreetmap.org'),
+    expect.objectContaining({ attribution: '© OpenStreetMap contributors', maxZoom: 19 }),
+  );
+  expect(screen.getByText('Google 卫星影像')).toBeVisible();
+  expect(screen.getByText('道路地图（备用）')).toBeVisible();
+});

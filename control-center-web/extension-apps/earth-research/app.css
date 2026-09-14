@@ -18,3 +18,61 @@
 .earth-agent>.paw-session-workspace{grid-template-rows:auto minmax(0,1fr)}
 .earth-agent .paw-session-workspace__header{grid-template-columns:minmax(0,1fr) auto auto}
 .earth-agent .paw-session-workspace__tools>button>span{display:none}
+
+/* Geography is a map-first surface. Its Session is embedded beside a map and
+   must keep the response card and composer reachable at the same time. The
+   shared Session shell floats the composer over the transcript; cap the
+   geography-specific answer card so a grouped question cannot cover it. */
+.paw-desktop-root .earth-agent {
+  container: earth-agent / inline-size;
+  overflow: hidden;
+}
+.paw-desktop-root .earth-agent > .paw-session-workspace,
+.paw-desktop-root .earth-agent .paw-session-workspace__body,
+.paw-desktop-root .earth-agent .paw-session-workspace__primary {
+  min-height: 0;
+}
+.paw-desktop-root .earth-agent .paw-session-workspace__composer {
+  min-height: 0;
+  max-height: 100%;
+  padding: 8px 12px 12px;
+}
+.paw-desktop-root .earth-agent .paw-session-workspace__composer > .agent-user-input-card {
+  min-height: 0;
+  max-height: min(420px, 44dvh);
+  margin-bottom: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.paw-desktop-root .earth-agent .agent-user-input-dialog__grouped {
+  max-block-size: min(250px, 30dvh);
+}
+.paw-desktop-root .earth-agent .paw-session-workspace__composer > .agent-composer-wrap {
+  width: 100%;
+  max-width: 100%;
+}
+.paw-desktop-root .earth-agent .paw-session-workspace__composer .agent-composer {
+  border-radius: 14px;
+}
+.paw-desktop-root .earth-agent .paw-session-workspace__composer .agent-composer.paw-unified-composer textarea {
+  min-height: 40px;
+  max-height: 96px;
+  padding: 10px 12px 3px;
+  font-size: 13px;
+  line-height: 20px;
+}
+.paw-desktop-root .earth-agent .paw-session-workspace__composer .agent-composer__toolbar {
+  margin-inline: 4px;
+}
+@container earth-agent (max-width: 560px) {
+  .paw-desktop-root .earth-agent .paw-session-workspace__composer {
+    padding-inline: 8px;
+  }
+  .paw-desktop-root .earth-agent .paw-session-workspace__composer > .agent-user-input-card {
+    max-height: min(360px, 42dvh);
+  }
+  .paw-desktop-root .earth-agent .agent-user-input-dialog__grouped {
+    max-block-size: min(210px, 28dvh);
+  }
+}

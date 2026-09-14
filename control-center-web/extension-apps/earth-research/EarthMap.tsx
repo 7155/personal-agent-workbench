@@ -6,6 +6,24 @@ import type { EarthViewCommand } from './pi-package/view-contract';
 import { drawingControls, type EditableGeometry } from './drawing-controls';
 import { selectionKey, type SelectionMode } from './map-selection';
 
+declare global { interface Window { google?: { maps?: unknown } } }
+
+const googleMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+let googleMapsLoader: Promise<void> | undefined;
+function loadGoogleMapsApi() {
+  if (!googleMapsKey || typeof window === 'undefined') return Promise.resolve();
+  if (window.google?.maps) return Promise.resolve();
+  if (googleMapsLoader) return googleMapsLoader;
+  googleMapsLoader = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsKey)}&v=weekly`;
+    script.async = true; script.defer = true;
+    script.onload = () => resolve(); script.onerror = () => reject(new Error('Google Maps JavaScript API 加载失败'));
+    document.head.appendChild(script);
+  });
+  return googleMapsLoader;
+}
+
 export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity }: { run: EarthRun | null; onSelect: (feature: GeoJSON.Feature | null,mode?:SelectionMode) => void; command?: EarthViewCommand; selection: GeoJSON.Feature[]; workspaceKey: string; onActivity: () => void }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -13,6 +31,8 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   const callback=useRef<(feature:GeoJSON.Feature|null,mode?:SelectionMode|'select')=>void>(()=>{});
   callback.current=(feature,mode='select')=>onSelect(feature,mode==='select' ? multiSelect ? 'toggle' : 'replace' : mode);
   const rasterLayers = useRef(new Map<string, L.Layer>());
+  const baseLayers = useRef<Record<string, L.Layer>>({});
+  const layerControl = useRef<L.Control.Layers | null>(null);
   const [tileError, setTileError] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [imports, setImports] = useState<EditableGeometry[]>([]);
@@ -23,15 +43,24 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   const suppressClick = useRef(0);
   useEffect(() => {
     if (!container.current) return;
+    void loadGoogleMapsApi().catch(() => undefined);
     const instance = L.map(container.current, { zoomControl: true }).setView([30, 110], 4);
     map.current = instance;
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(instance);
+    // Google satellite is the product-facing basemap. Leaflet remains only the
+    // rendering/event layer; OSM is an explicit fallback for offline use.
+    const satellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Google satellite imagery' });
+    const roads = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
+    satellite.on('tileerror', () => setTileError(true));
+    roads.on('tileerror', () => setTileError(true));
+    satellite.addTo(instance);
+    baseLayers.current = { 'Google 卫星影像': satellite, '道路地图（备用）': roads };
+    layerControl.current = L.control.layers(baseLayers.current, undefined, { collapsed: false }).addTo(instance);
     instance.on('click', (event: L.LeafletMouseEvent) => {
       if (Date.now() < suppressClick.current) return;
       if (!drawingRef.current) callback.current({ type: 'Feature', geometry: { type: 'Point', coordinates: [event.latlng.lng, event.latlng.lat] }, properties: { source: 'user_selection' } });
     });
     const resize = new ResizeObserver(() => instance.invalidateSize()); resize.observe(container.current);
-    return () => { resize.disconnect(); instance.remove(); map.current = null; };
+    return () => { resize.disconnect(); layerControl.current?.remove(); layerControl.current = null; instance.remove(); map.current = null; };
   }, []);
   useEffect(() => {
     const instance=map.current;if(!instance)return;
@@ -56,7 +85,6 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   },[selection]);
   useEffect(() => {
     const instance = map.current; if (!instance || !run) return;
-    setTileError(false);
     rasterLayers.current.clear();
     const overlays: L.Layer[] = [];
     const choices: Record<string, L.Layer> = {};
@@ -86,8 +114,8 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
       }).addTo(instance);
       overlays.push(layer); choices[output.label] = layer;
     }
-    const control = L.control.layers(undefined, choices, { collapsed: false }).addTo(instance);
-    return () => { control.remove(); overlays.forEach(layer => instance.removeLayer(layer)); };
+    Object.entries(choices).forEach(([label, layer]) => layerControl.current?.addOverlay(layer, label));
+    return () => { overlays.forEach(layer => { layerControl.current?.removeLayer(layer); instance.removeLayer(layer); }); };
   }, [run?.runId, run?.updatedAt]);
   const center = run?.view?.center; const zoom = run?.view?.zoom;
   useEffect(() => {
@@ -119,7 +147,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
       <small>绘制几何保留在本机；分析结果来自当前运行。</small>
       {storageError ? <p role="alert">{storageError}</p> : null}
     </details>
-    {tileError ? <p className="earth-map__notice" role="status">部分图层未载入，可能已过期或网络不可用。可让 Agent 重新生成图层。</p> : null}
+    {tileError ? <p className="earth-map__notice" role="status">底图或结果图层暂未载入。可在右上角切换“道路地图（备用）”，或让 Agent 重新生成图层。</p> : null}
     {!run ? <p className="earth-map__notice">选择地点开始任务，运行后的真实图层会显示在这里。</p> : null}
   </div>;
 }
