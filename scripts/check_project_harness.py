@@ -90,23 +90,26 @@ def _git_candidate_paths(root: Path, base_commit: str) -> tuple[dict[str, str], 
                 "diff",
                 "--name-status",
                 "--no-renames",
+                "-z",
                 f"{base_commit}..HEAD",
             ],
             check=True,
             capture_output=True,
-            text=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         return {}, f"release scope Git diff failed: {type(exc).__name__}"
 
     status_names = {"A": "added", "M": "modified", "D": "deleted"}
     paths: dict[str, str] = {}
-    for line in completed.stdout.splitlines():
-        if not line.strip():
-            continue
-        try:
-            raw_status, relative = line.split("\t", 1)
-        except ValueError:
+    # -z disables Git's C-style quoting and uses NUL separators for both
+    # status and path. Decode bytes without universal-newline translation:
+    # tabs, line breaks, CRs and non-ASCII characters are valid in Git paths.
+    fields = completed.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+    if fields.pop() != "" or len(fields) % 2:
+        return {}, "release scope Git diff returned an unsupported row"
+    for index in range(0, len(fields), 2):
+        raw_status, relative = fields[index:index + 2]
+        if not relative:
             return {}, "release scope Git diff returned an unsupported row"
         status = status_names.get(raw_status)
         if status is None:

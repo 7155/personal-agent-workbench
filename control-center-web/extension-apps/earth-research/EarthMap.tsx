@@ -8,22 +8,6 @@ import { selectionKey, type SelectionMode } from './map-selection';
 
 declare global { interface Window { google?: { maps?: unknown } } }
 
-const googleMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-let googleMapsLoader: Promise<void> | undefined;
-function loadGoogleMapsApi() {
-  if (!googleMapsKey || typeof window === 'undefined') return Promise.resolve();
-  if (window.google?.maps) return Promise.resolve();
-  if (googleMapsLoader) return googleMapsLoader;
-  googleMapsLoader = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsKey)}&v=weekly`;
-    script.async = true; script.defer = true;
-    script.onload = () => resolve(); script.onerror = () => reject(new Error('Google Maps JavaScript API 加载失败'));
-    document.head.appendChild(script);
-  });
-  return googleMapsLoader;
-}
-
 export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity }: { run: EarthRun | null; onSelect: (feature: GeoJSON.Feature | null,mode?:SelectionMode) => void; command?: EarthViewCommand; selection: GeoJSON.Feature[]; workspaceKey: string; onActivity: () => void }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -43,7 +27,6 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   const suppressClick = useRef(0);
   useEffect(() => {
     if (!container.current) return;
-    void loadGoogleMapsApi().catch(() => undefined);
     const instance = L.map(container.current, { zoomControl: true }).setView([30, 110], 4);
     map.current = instance;
     // Google satellite is the product-facing basemap. Keep a same-provider
