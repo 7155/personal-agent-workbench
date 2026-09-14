@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-13T03:00:11.541115+00:00",
+  "generatedAt": "2026-09-14T00:00:00.000000+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -19,15 +19,15 @@
     },
     "composition_refactor": {
       "description": "Typed application dependencies and construction using existing Runtime and store owners.",
-      "pathCount": 31
+      "pathCount": 32
     },
     "lab_backend": {
       "description": "Agent Lab package, resource resolution and service consumers.",
-      "pathCount": 62
+      "pathCount": 74
     },
     "lab_tools": {
       "description": "Operator scripts that import Lab owners or record current source paths.",
-      "pathCount": 8
+      "pathCount": 10
     },
     "local_docs": {
       "description": "Stop tracking local development records and their dedicated checks; preserve local files.",
@@ -35,7 +35,7 @@
     },
     "owner_boundaries": {
       "description": "Product extension host assembly and module dependency checks.",
-      "pathCount": 7
+      "pathCount": 14
     },
     "pi_runtime_refactor": {
       "description": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
@@ -47,7 +47,7 @@
     },
     "product_integration": {
       "description": "Integrate current product source and public contribution guidance.",
-      "pathCount": 45
+      "pathCount": 47
     },
     "public_showcase": {
       "description": "Public synthetic-data screenshots and usage documentation.",
@@ -63,7 +63,7 @@
     },
     "refactor_integration": {
       "description": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
-      "pathCount": 19
+      "pathCount": 22
     },
     "refactor_verification": {
       "description": "Regression and architecture checks for the Runtime and application dependency refactoring.",
@@ -91,11 +91,11 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 88
+      "pathCount": 110
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
-      "pathCount": 17
+      "pathCount": 19
     },
     "offline_installer": {
       "description": "Unsigned offline macOS installer using existing product lifecycle owners.",
@@ -107,7 +107,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 58
+      "pathCount": 65
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -123,49 +123,54 @@
     },
     "lab_frontend": {
       "description": "Lab workflow presentation backed by project and experiment receipts.",
-      "pathCount": 28
+      "pathCount": 50
     },
     "scheduled_tasks": {
       "description": "Unified schedule management for Agent, Eval and Memory using their existing schedulers.",
       "pathCount": 25
+    },
+    "earth_research": {
+      "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
+      "pathCount": 35
     }
   },
   "summary": {
-    "pathCount": 882,
+    "pathCount": 997,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 683
+      "keep_release": 798
     },
     "groupCounts": {
+      "brand_stellar": 60,
+      "composition_refactor": 32,
+      "lab_backend": 74,
+      "lab_tools": 10,
       "local_docs": 122,
-      "product_integration": 45,
+      "owner_boundaries": 14,
+      "pi_runtime_refactor": 23,
+      "portable_agent_ui": 8,
+      "product_integration": 47,
+      "public_showcase": 30,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "brand_stellar": 60,
-      "public_showcase": 30,
+      "refactor_integration": 22,
+      "refactor_verification": 66,
       "references_history": 8,
-      "memory_lifecycle": 15,
-      "verification": 88,
-      "voice_desktop": 17,
-      "composition_refactor": 31,
-      "portable_agent_ui": 8,
-      "owner_boundaries": 7,
-      "conversation_controls": 58,
-      "trace_optimization": 61,
-      "scheduled_tasks": 25,
-      "session_full_access": 9,
-      "lab_frontend": 28,
-      "room_frontend": 20,
-      "agent_capsule": 3,
-      "offline_installer": 12,
-      "refactor_integration": 19,
-      "room_service_refactor": 43,
-      "lab_backend": 62,
-      "pi_runtime_refactor": 23,
-      "browser_recovery": 1,
       "release_scope": 1,
-      "lab_tools": 8,
-      "refactor_verification": 66
+      "room_frontend": 20,
+      "room_service_refactor": 43,
+      "trace_optimization": 61,
+      "verification": 110,
+      "voice_desktop": 19,
+      "offline_installer": 12,
+      "session_full_access": 9,
+      "conversation_controls": 65,
+      "agent_capsule": 3,
+      "memory_lifecycle": 15,
+      "browser_recovery": 1,
+      "lab_frontend": 50,
+      "scheduled_tasks": 25,
+      "earth_research": 35
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -1201,6 +1206,237 @@
       "reason": "Installed app naming and Electron voice control integration."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/App.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/App.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthMap.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthMap.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthResults.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/GoogleEarthMap.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/app.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/drawing-controls.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/export.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/export.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/gis-state.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/gis-state.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/map-selection.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/map-selection.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/message-identity.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/message-identity.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pawos-app.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/auth-token.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/earth-execution.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/earth-execution.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/index.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/index.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/official-docs.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/package.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/planning-template.js",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/route-grid.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/route-grid.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/run-script.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/skills/earth-research/SKILL.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/view-contract.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/view-contract.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/workspace.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/workspace.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
       "path": "control-center-web/index.html",
       "status": "modified",
       "disposition": "keep_release",
@@ -1409,6 +1645,27 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-configuration.v1.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-tool-call.v1.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-tool-result.v1.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
     },
     {
       "path": "control-center-web/src/contracts/generated/eval-schedule-create.v1.ts",
@@ -1698,6 +1955,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/configuration/ScenarioAgentPolicySettings.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
+      "path": "control-center-web/src/features/configuration/ScenarioAgentPolicySettings.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
+      "path": "control-center-web/src/features/configuration/configuration.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/ATTRIBUTION.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -1747,11 +2025,102 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/control-request.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/control-request.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/eval-lab.css",
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/ApplicationMethod.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/ApplicationMethod.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/Experiment.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/GoldenWorkflow.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/GoldenWorkflow.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/PromptComparison.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/PromptComparison.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/RunRecord.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/api.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/application-method.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/application-method.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
       "path": "control-center-web/src/features/eval-lab/golden/types.ts",
@@ -1803,6 +2172,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabAppConfiguration.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/LabAppDelivery.test.tsx",
       "status": "modified",
       "group": "lab_frontend",
@@ -1824,6 +2200,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabEvaluationSelectionReview.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/LabExperimentLifecycle.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -1836,6 +2219,20 @@
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabGuideWorkflow.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabGuideWorkflow.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/LabKnowledge.test.tsx",
@@ -1852,11 +2249,39 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabKnowledgeRecord.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabKnowledgeRecord.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/LabProjectHome.tsx",
       "status": "added",
       "group": "lab_frontend",
       "reason": "Integrate the Lab workflow and result visualization updates.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabProjectSpace.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabProjectSpace.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/LabProjectWorkbench.test.tsx",
@@ -1873,6 +2298,34 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabSessionRecord.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabSessionRecord.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabWorkflowGraph.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabWorkflowGraph.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/ProjectGuide.tsx",
       "status": "modified",
       "group": "lab_frontend",
@@ -1880,11 +2333,25 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/api-recovery.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/api.ts",
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/apps.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/experiment-artifact-visual.css",
@@ -1901,6 +2368,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/knowledge-types.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/lab-knowledge.css",
       "disposition": "keep_release",
       "group": "lab_frontend",
@@ -1915,11 +2389,32 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/lab-project-space.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/lab-project-workbench.css",
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/lab-session-record.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/lab-workflow-graph.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/portable-agent-ui.css",
@@ -1971,6 +2466,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/project-workflow-types.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/types.ts",
       "disposition": "keep_release",
       "group": "lab_frontend",
@@ -1986,6 +2488,13 @@
     },
     {
       "path": "control-center-web/src/features/files/PawOsFilesApp.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/features/files/WorkspaceTextEditor.tsx",
       "status": "modified",
       "disposition": "keep_release",
       "group": "product_integration",
@@ -2186,6 +2695,13 @@
       "group": "scheduled_tasks",
       "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/plugins/PluginScenes.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Integrate current product source and public contribution guidance."
     },
     {
       "path": "control-center-web/src/features/plugins/plugins-feature.test.tsx",
@@ -2713,6 +3229,20 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/workspace-draft.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/workspace-draft.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
       "path": "control-center-web/src/paw-os/assets/stellar/jupiter-frames/00.png",
       "status": "added",
       "disposition": "keep_release",
@@ -2937,6 +3467,13 @@
       "reason": "Product extension host assembly and module dependency checks."
     },
     {
+      "path": "control-center-web/src/paw-os/extensions/installation.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
+    },
+    {
       "path": "control-center-web/src/paw-os/extensions/registry-hosts.test.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -2991,6 +3528,13 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/paw-os/runtime/desktop-store.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
     },
     {
       "path": "control-center-web/src/paw-os/runtime/desktop-store.ts",
@@ -3215,6 +3759,20 @@
       "group": "voice_desktop",
       "disposition": "keep_release",
       "reason": "Installed app naming and Electron voice control integration."
+    },
+    {
+      "path": "control-center-web/src/platform/native-transport.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "voice_desktop",
+      "reason": "Installed app transport and desktop integration."
+    },
+    {
+      "path": "control-center-web/src/platform/native-transport.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "voice_desktop",
+      "reason": "Installed app transport and desktop integration."
     },
     {
       "path": "control-center-web/src/platform/routes.test.ts",
@@ -3448,6 +4006,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "examples/vertical_agents/earth-research.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "examples/vertical_agents/earth-research/analysis-contract.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "integrations/pi/rag-ime-control.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "refactor_integration",
+      "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
+    },
+    {
       "path": "integrations/pi/skills/agent-eval-room-optimizer/SKILL.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -3588,6 +4167,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/agent_configuration.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "composition_refactor",
+      "reason": "Typed application dependencies and construction using existing Runtime and store owners."
+    },
+    {
       "path": "rag_ime/agent_delegation.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -3644,11 +4230,25 @@
       "reason": "Own the source previously located at rag_ime/agent_lab_app_assets.py; preserve runtime behavior and attribution."
     },
     {
+      "path": "rag_ime/agent_lab/app_bootstrap.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
       "path": "rag_ime/agent_lab/app_knowledge_runtime.py",
       "status": "added",
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Own the source previously located at rag_ime/agent_lab_app_knowledge_runtime.py; preserve runtime behavior and attribution."
+    },
+    {
+      "path": "rag_ime/agent_lab/app_research.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
       "path": "rag_ime/agent_lab/app_runtime.py",
@@ -3742,6 +4342,13 @@
       "reason": "Own the source previously located at rag_ime/agent_lab_knowledge_data.py; preserve runtime behavior and attribution."
     },
     {
+      "path": "rag_ime/agent_lab/knowledge_package.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
       "path": "rag_ime/agent_lab/medium.py",
       "status": "added",
       "disposition": "keep_release",
@@ -3805,11 +4412,25 @@
       "reason": "Own the source previously located at rag_ime/agent_lab_project_artifacts.py; preserve runtime behavior and attribution."
     },
     {
+      "path": "rag_ime/agent_lab/project_directory.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
       "path": "rag_ime/agent_lab/project_materials.py",
       "status": "added",
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Own the source previously located at rag_ime/agent_lab_project_materials.py; preserve runtime behavior and attribution."
+    },
+    {
+      "path": "rag_ime/agent_lab/project_workflow.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
       "path": "rag_ime/agent_lab/projects.py",
@@ -4274,6 +4895,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "rag_ime/agent_scenario_policy.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
       "path": "rag_ime/agent_service.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -4300,6 +4928,20 @@
       "group": "composition_refactor",
       "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_skill_routing.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "refactor_integration",
+      "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
+    },
+    {
+      "path": "rag_ime/agent_tool_ids.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "refactor_integration",
+      "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
     },
     {
       "path": "rag_ime/agent_tools.py",
@@ -4335,6 +4977,27 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-configuration.v1.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-tool-call.v1.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-tool-result.v1.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
     },
     {
       "path": "rag_ime/contracts/json/eval-schedule-create.v1.json",
@@ -4470,6 +5133,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/db/migrations/0203_agent_lab_agent_review.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
       "path": "rag_ime/debug_server.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -4482,6 +5152,13 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/embeddings.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
       "path": "rag_ime/eval_lab.py",
@@ -4503,6 +5180,41 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "rag_ime/knowledge_embedding_profile.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/dense.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/permissions.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/service.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_backend",
+      "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
       "path": "rag_ime/local_sqlite_core.py",
@@ -4811,6 +5523,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "rag_ime/rag_benchmark_sandbox.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_tools",
+      "reason": "Operator scripts that import Lab owners or record current source paths."
     },
     {
       "path": "rag_ime/rooms/README.md",
@@ -5324,6 +6043,13 @@
       "reason": "Operator scripts that import Lab owners or record current source paths."
     },
     {
+      "path": "scripts/setup_knowledge_worker_env.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_tools",
+      "reason": "Operator scripts that import Lab owners or record current source paths."
+    },
+    {
       "path": "scripts/smoke_pi_room_composition.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -5464,11 +6190,46 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_agent_lab_agent_review.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_agent_lab_app_bootstrap.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_agent_lab_app_knowledge_conversation.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
       "path": "tests/test_agent_lab_app_paw_gateway.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Existing executable regressions updated for the owning package."
+    },
+    {
+      "path": "tests/test_agent_lab_app_research.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_agent_lab_app_research_integration.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
     },
     {
       "path": "tests/test_agent_lab_app_runtime.py",
@@ -5597,11 +6358,39 @@
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
     },
     {
+      "path": "tests/test_agent_lab_portable_dense.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_agent_lab_project_directory.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_agent_lab_project_knowledge_state.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
       "path": "tests/test_agent_lab_project_routes.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "tests/test_agent_lab_project_workflow.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
     },
     {
       "path": "tests/test_agent_lab_projects.py",
@@ -5616,6 +6405,13 @@
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "tests/test_agent_lab_research_tool_gateway.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
     },
     {
       "path": "tests/test_agent_lab_room_comparison.py",
@@ -5821,6 +6617,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_scenario_policy.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
       "path": "tests/test_agent_service.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -6012,6 +6815,13 @@
     {
       "path": "tests/test_interview_metrics.py",
       "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_knowledge_library_permissions.py",
+      "status": "added",
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes."
