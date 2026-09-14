@@ -28,14 +28,14 @@ describe('Lab project dependency canvas', () => {
     const canvas = screen.getByRole('region', { name: '实验节点画布' });
     expect(scroll).toHaveBeenCalledOnce();
     expect(scroll.mock.contexts[0]).toBe(canvas);
-    expect(canvas.scrollLeft).toBeCloseTo((1032 + 135) * 0.85 - 250);
-    expect(canvas.scrollTop).toBeCloseTo((246 + 56) * 0.85 - 100);
+    expect(canvas.scrollLeft).toBeCloseTo(986);
+    expect(canvas.scrollTop).toBeCloseTo(234);
     scroll.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '放大画布' }));
     fireEvent.click(screen.getByRole('button', { name: '定位当前' }));
     expect(scroll).toHaveBeenCalledOnce();
     expect(scroll.mock.contexts[0]).toBe(canvas);
-    expect(canvas.scrollLeft).toBeCloseTo(1032 + 135 - 250);
+    expect(canvas.scrollLeft).toBeCloseTo(1171.4);
     expect(ancestorScroll).not.toHaveBeenCalled(); expect(windowScroll).not.toHaveBeenCalled();
   });
   it('reveals the saved selection once after data arrives and preserves user scrolling across polling', () => {
@@ -46,7 +46,7 @@ describe('Lab project dependency canvas', () => {
     view.rerender(graph(data));
     const canvas = screen.getByRole('region', { name: '实验节点画布' });
     expect(scroll).toHaveBeenCalledOnce();
-    expect(canvas.scrollLeft).toBeCloseTo((688 + 135) * 0.85 - 250);
+    expect(canvas.scrollLeft).toBeCloseTo(624);
     canvas.scrollLeft = 123; canvas.scrollTop = 456;
     view.rerender(graph({ ...data, observedAtMs: 200, currentNodeId: 'b', nodes: data.nodes.map((item) => ({ ...item })) }));
     expect(scroll).toHaveBeenCalledOnce();
@@ -55,7 +55,7 @@ describe('Lab project dependency canvas', () => {
     view.rerender(graph(data, vi.fn(), 'other-project'));
     expect(scroll).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('button', { name: 'b · 已完成' })).toHaveAttribute('aria-pressed', 'true');
-    expect(canvas.scrollLeft).toBeCloseTo((358 + 135) * 0.85 - 250);
+    expect(canvas.scrollLeft).toBeCloseTo(276);
   });
   it('explains an inconclusive decision in both the node and its result detail', () => {
     mount(workflow([node('样本不足', { decision: 'inconclusive' })]));

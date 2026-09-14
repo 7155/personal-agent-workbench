@@ -9,7 +9,7 @@ import { CodePreview } from '@/features/agent/file-preview/CodePreview';
 import { readCompleteFile, useWorkspaceTextEditor, type EditableWorkspacePreview } from '@/features/files/WorkspaceTextEditor';
 import type { PawExtensionAppProps } from '@/paw-os/extensions/types';
 import { createPendingAppMessage, promptRequestFor, successorForDurablyFailedCommand, type PendingAppMessage } from './message-identity';
-import { EarthMap } from './EarthMap';
+import { GoogleEarthMap as EarthMap } from './GoogleEarthMap';
 import { EarthResults } from './EarthResults';
 import { selectionDetail, selectionKey, updateSelection, type MapSelection, type SelectionMode } from './map-selection';
 import { messageWithWorkspaceContext } from '@/paw-os/apps/workspace-draft';
