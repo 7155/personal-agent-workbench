@@ -52,6 +52,12 @@ export interface AgentConfigurationV1 {
       trace: SkillRoute;
       agentLab: SkillRoute;
     };
+    scenarioPolicies: {
+      ordinary: ScenarioPolicy;
+      room: ScenarioPolicy;
+      trace: ScenarioPolicy;
+      agentLab: ScenarioPolicy;
+    };
     [k: string]: unknown;
   };
   sync: {
@@ -68,4 +74,8 @@ export interface AgentConfigurationV1 {
 export interface ModelRoute {
   modelProfile: string;
   thinkingLevel: 'inherit' | 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+export interface ScenarioPolicy {
+  promptInstructions: string;
+  toolAllowlist: string[];
 }

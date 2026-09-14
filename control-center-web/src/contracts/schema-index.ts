@@ -1484,7 +1484,8 @@ export const contractSchemas = {
           "sessionDefaults",
           "coordination",
           "modelRouting",
-          "skillRouting"
+          "skillRouting",
+          "scenarioPolicies"
         ],
         "properties": {
           "runtime": {
@@ -1631,6 +1632,30 @@ export const contractSchemas = {
               }
             },
             "additionalProperties": false
+          },
+          "scenarioPolicies": {
+            "type": "object",
+            "required": [
+              "ordinary",
+              "room",
+              "trace",
+              "agentLab"
+            ],
+            "properties": {
+              "ordinary": {
+                "$ref": "#/$defs/scenarioPolicy"
+              },
+              "room": {
+                "$ref": "#/$defs/scenarioPolicy"
+              },
+              "trace": {
+                "$ref": "#/$defs/scenarioPolicy"
+              },
+              "agentLab": {
+                "$ref": "#/$defs/scenarioPolicy"
+              }
+            },
+            "additionalProperties": false
           }
         }
       },
@@ -1709,6 +1734,29 @@ export const contractSchemas = {
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         }
+      },
+      "scenarioPolicy": {
+        "type": "object",
+        "required": [
+          "promptInstructions",
+          "toolAllowlist"
+        ],
+        "properties": {
+          "promptInstructions": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "toolAllowlist": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        "additionalProperties": false
       }
     }
   },
