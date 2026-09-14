@@ -18,6 +18,7 @@ type ScenarioPolicy = {
   builtInToolIds: string[];
   toolAllowlist: string[];
   promptInstructions: string;
+  systemPrompt: string;
 };
 type ScenarioPolicyCatalog = { revision: number; policyRevision: string; scenarios: ScenarioPolicy[] };
 
@@ -92,8 +93,8 @@ export function ScenarioAgentPolicySettings({ routeIds, transport, active = true
               </TabsList>
               {query.data.scenarios.map((scenario) => {
                 const selected = drafts[scenario.id]?.toolAllowlist ?? scenario.toolAllowlist;
-                const prompt = drafts[scenario.id]?.promptInstructions ?? scenario.promptInstructions;
-                const dirty = prompt !== scenario.promptInstructions || !sameArray(selected, scenario.toolAllowlist);
+                const prompt = drafts[scenario.id]?.promptInstructions ?? scenario.systemPrompt;
+                const dirty = prompt !== scenario.systemPrompt || !sameArray(selected, scenario.toolAllowlist);
                 return <TabsContent className="configuration-agent-policy__panel" key={scenario.id} value={scenario.id}>
                   <p className="configuration-agent-policy__variants">App：{(scenario.appLabels.length ? scenario.appLabels : scenario.appIds).join('、')} · 命中变体：{scenario.variantModes.join('、')}</p>
                   <Field htmlFor={`scenario-agent-prompt-${scenario.id}`} label="App/场景系统提示词补充" description="这是附加层；Runtime 的安全边界、证据要求和执行授权仍由系统固定控制。">
@@ -118,7 +119,8 @@ function parseCatalog(value: unknown): ScenarioPolicyCatalog {
   const configuration = asRecord(snapshot.configuration);
   const supplied = asRecord(envelope.scenarioPolicyCatalog);
   const rows = arrayRecords(supplied.scenarios);
-  if (!Number.isInteger(snapshot.revision) || snapshot.revision < 1 || rows.length !== scenarioIds.length) throw new Error('Runtime 返回的 App/场景策略不完整；不会猜测或修改现有设置。');
+  const revision = Number(snapshot.revision);
+  if (!Number.isInteger(revision) || revision < 1 || rows.length !== scenarioIds.length) throw new Error('Runtime 返回的 App/场景策略不完整；不会猜测或修改现有设置。');
   const scenarios = rows.map((row) => {
     const id = stringValue(row.id) as ScenarioId;
     const builtIn = row.builtInToolIds;
@@ -127,13 +129,14 @@ function parseCatalog(value: unknown): ScenarioPolicyCatalog {
     const modes = Array.isArray(row.variantModes) ? row.variantModes.filter((v): v is string => typeof v === 'string') : [];
     const appIds = Array.isArray(row.appIds) ? row.appIds.filter((v): v is string => typeof v === 'string') : [];
     const appLabels = Array.isArray(row.appLabels) ? row.appLabels.filter((v): v is string => typeof v === 'string') : [];
-    return { id, label: stringValue(row.label, id), description: stringValue(row.description), appIds, appLabels, variantModes: modes, builtInToolIds: builtIn.map(String), toolAllowlist: selected.map(String), promptInstructions: stringValue(row.promptInstructions) };
+    const prompt = stringValue(row.systemPrompt, stringValue(row.promptInstructions));
+    return { id, label: stringValue(row.label, id), description: stringValue(row.description), appIds, appLabels, variantModes: modes, builtInToolIds: builtIn.map(String), toolAllowlist: selected.map(String), promptInstructions: prompt, systemPrompt: prompt };
   });
   if (!rows.length) {
     const policies = asRecord(configuration.scenarioPolicies);
     if (!policies) throw new Error('Runtime 未返回场景策略目录。');
   }
-  return { revision: snapshot.revision, policyRevision: stringValue(supplied.policyRevision, 'rag-ime.agent-scenario-policy.v1'), scenarios };
+  return { revision, policyRevision: stringValue(supplied.policyRevision, 'rag-ime.agent-scenario-policy.v1'), scenarios };
 }
 
 function sameArray(left: readonly string[], right: readonly string[]) { return left.length === right.length && left.every((value, index) => value === right[index]); }

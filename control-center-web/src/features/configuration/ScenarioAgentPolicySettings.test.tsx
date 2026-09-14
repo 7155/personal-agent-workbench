@@ -40,7 +40,7 @@ it('shows scenario policy state and saves a scoped Lab prompt/tool change', asyn
   const transport = new MockControlTransport({
     routes: {
       'agent.configuration.get': () => response(revision, policies),
-      'agent.configuration.update': (request) => {
+      'agent.configuration.update': (request: ControlRequest) => {
         writes.push(request);
         const body = request.body as { expectedRevision: number; changes: Record<string, { promptInstructions: string; toolAllowlist: string[] }> };
         expect(body.expectedRevision).toBe(revision);
