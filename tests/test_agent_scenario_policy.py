@@ -24,6 +24,7 @@ class AgentScenarioPolicyTests(unittest.TestCase):
         catalog = scenario_policy_catalog(configuration)
         scenarios = {str(item["id"]): item for item in catalog["scenarios"]}
         self.assertEqual(scenarios["trace"]["appIds"], ["extension:trace-agent"])
+        self.assertIn("systemPrompt", scenarios["trace"])
         self.assertIn("trace_diagnostics", scenarios["trace"]["builtInToolIds"])
         self.assertIn("lab_research", scenarios["agentLab"]["builtInToolIds"])
         self.assertEqual(
@@ -118,6 +119,20 @@ class AgentScenarioPolicyTests(unittest.TestCase):
         )
         self.assertEqual(policy.tool_ids, {"lab_project", "workspace_read"})
         self.assertIn("输出实验编号和证据引用。", policy.prompt)
+
+    def test_app_system_prompt_alias_is_applied_to_the_runtime_layer(self) -> None:
+        policy = scenario_policy_for_session(
+            {
+                "surfaceKind": "extension_app",
+                "ownerAppId": "extension:trace-agent",
+                "surfaceKey": "diagnostic",
+            },
+            configured_policy={
+                "systemPrompt": "这个 App 的诊断输出必须带 Finding ID。",
+                "toolAllowlist": ["trace_diagnostics"],
+            },
+        )
+        self.assertIn("这个 App 的诊断输出必须带 Finding ID。", policy.prompt)
 
     def test_tool_disclosure_follows_the_scenario(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="paw-scenario-policy-")

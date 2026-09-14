@@ -135,7 +135,7 @@ def normalize_scenario_policy(value: object, *, scenario: str) -> dict[str, obje
         raise ValueError(f"unsupported Agent scenario policy: {scenario}")
     if not isinstance(value, Mapping):
         raise ValueError(f"scenarioPolicies.{scenario} must be an object")
-    prompt = value.get("promptInstructions", "")
+    prompt = value.get("promptInstructions", value.get("systemPrompt", ""))
     if not isinstance(prompt, str) or len(prompt) > 8_000:
         raise ValueError(f"scenarioPolicies.{scenario}.promptInstructions is invalid")
     allowlist = value.get("toolAllowlist")
@@ -369,6 +369,10 @@ def scenario_policy_catalog(
             "builtInToolIds": sorted(_builtin_tool_ids(scenario)),
             "toolAllowlist": list(policy["toolAllowlist"]),
             "promptInstructions": str(policy["promptInstructions"]),
+            # Keep the management contract explicit: this is the editable
+            # App system-prompt layer, while ``promptInstructions`` remains
+            # the backwards-compatible configuration key.
+            "systemPrompt": str(policy["promptInstructions"]),
         })
     return {
         "schemaVersion": "rag-ime.agent-scenario-policy-catalog.v1",
