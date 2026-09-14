@@ -76,3 +76,5 @@
     max-block-size: min(210px, 28dvh);
   }
 }
+/* Product-facing GEE geometry toolbar: labels are easier to scan than sprite icons. */
+.earth-gis-toolbar{display:flex;align-items:center;gap:2px;padding:3px;background:#fffffff5;border:1px solid #b8ccc0;border-radius:8px;box-shadow:0 2px 8px #163b2420}.earth-gis-toolbar button{min-width:34px;padding:4px 7px!important;border:0!important;border-radius:5px!important;font-size:11px!important}.earth-gis-toolbar button:hover{background:#dceee2!important;color:#176b4d}.earth-gis-toolbar__divider{width:1px;height:18px;background:#cbd7ce;margin:0 2px}.earth-map .leaflet-control-attribution a[href*="leafletjs.com"]{display:none}

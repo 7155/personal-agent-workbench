@@ -50,7 +50,11 @@ export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
   const stop=()=>{active=false;events.active(false);};
   map.on('draw:created',created).on('draw:edited',edited).on('draw:deleted',deleted)
     .on('draw:drawstart draw:editstart draw:deletestart',start).on('draw:drawstop draw:editstop draw:deletestop',stop);
-  return {dispose(){map.off('draw:created',created).off('draw:edited',edited).off('draw:deleted',deleted)
+  return {start(kind:'point'|'polyline'|'polygon'|'rectangle'|'edit'|'remove') {
+      const drawMap = map as any;
+      const handler = kind==='point' ? new L.Draw.Marker(drawMap,{icon:markerIcon}) : kind==='polyline' ? new L.Draw.Polyline(drawMap,{shapeOptions:{color:'#d08a19'}}) : kind==='polygon' ? new L.Draw.Polygon(drawMap,{shapeOptions:{color:'#d08a19'}}) : kind==='rectangle' ? new L.Draw.Rectangle(drawMap,{shapeOptions:{color:'#d08a19'}}) : kind==='edit' ? new L.EditToolbar.Edit(drawMap,{featureGroup:group}) : new L.EditToolbar.Delete(drawMap,{featureGroup:group});
+      handler.enable();
+    },dispose(){map.off('draw:created',created).off('draw:edited',edited).off('draw:deleted',deleted)
     .off('draw:drawstart draw:editstart draw:deletestart',start).off('draw:drawstop draw:editstop draw:deletestop',stop);control.remove();group.remove();},
     focus(id:string){const feature=all().find(f=>f.id===id);if(feature){const bounds=L.geoJSON(feature).getBounds();if(bounds.isValid())map.fitBounds(bounds,{maxZoom:17,padding:[30,30]});events.select(feature,'select');}},
   };
