@@ -12,6 +12,9 @@ import { LabAppPreview } from './LabAppPreview';
 import type { LabApp, LabAppCall, LabAppVersion } from './apps';
 import { parseLabAppRead } from './apps';
 import type { ControlRequest } from '@/platform/transport';
+import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
+import { createPawDesktopStore } from '@/paw-os/runtime/desktop-store';
+import { openDesktopRoute } from '@/paw-os/shell/PawWindowLayer';
 
 const firstId = 'extension:lab-11111111111111111111111111111111';
 const secondId = 'extension:lab-22222222222222222222222222222222';
@@ -44,6 +47,28 @@ function mount(transport: MockControlTransport, body = <LabAppDelivery projectId
 const read = (current: LabApp, item = version()) => ({ ok: true, items: [current], app: current, version: item, versions: [item], calls: [] });
 
 describe('Lab application delivery', () => {
+  it('opens its enabled App through the desktop owner and preserves the Lab window', async () => {
+    const current = { ...app(), activeVersion: 1 };
+    const installation = { schemaVersion: 'pawos.lab-app.v1', id: firstId, version: '0.1.0',
+      label: '售后助手', shortLabel: '售后', tagline: '规则', route: `/extensions/${firstId.slice('extension:'.length)}`,
+      presentation: 'workspace', accent: 'green', icon: { symbol: 'assistant', background: '#22876A' },
+      packageId: firstId, bindingSha256: 'a'.repeat(64), hosting: { kind: 'lab-html', appId: firstId, projectId: 'project-1', version: 1 } };
+    const enabled = registerLabExtensionApps({ ok: true, items: [{ ...current, installation }] });
+    const store = createPawDesktopStore('eval-lab', '/eval-lab?project=project-1');
+    const lab = store.getState().windows['eval-lab'];
+    store.getState().setExtensionAppGate('ready', enabled);
+    store.getState().setExtensionAppGate('loading', new Set());
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.apps.get': () => read(current) } });
+    mount(transport, <PawOsDesktopProvider openWindow={() => undefined} openRoute={(route) => openDesktopRoute(store, route)}><LabAppDelivery projectId="project-1" /></PawOsDesktopProvider>);
+    const delivery = screen.getByRole('region', { name: '项目应用交付' });
+    fireEvent.click(await screen.findByRole('button', { name: '打开 App' }));
+    expect(store.getState().windows[firstId]?.appId).toBe(firstId);
+    expect(store.getState().activeWindowId).toBe(firstId);
+    expect(store.getState().windows['eval-lab']).toBe(lab);
+    expect(screen.getByRole('region', { name: '项目应用交付' })).toBe(delivery);
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.apps.get')).toBe(true);
+  });
+
   it('reads an exact older call outside recent calls without mounting or invoking the App', async () => {
     const original: LabAppCall = { callId: 'original-call', appId: firstId, version: 1, actionId: 'answer', input: { question: '原问题' }, state: 'completed', sessionId: 'original-session', result: { text: '原调用的完整研究结果' }, error: '', cancelRequested: false, createdAtMs: 1, updatedAtMs: 2 };
     const current = { ...app(), latestVersion: 2 };

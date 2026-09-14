@@ -4,14 +4,78 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LabWorkflowGraph, layoutWorkflow } from './LabWorkflowGraph';
 import { isLabProjectWorkflow, type LabProjectWorkflow, type LabWorkflowNode } from './project-workflow-types';
 
-afterEach(() => { cleanup(); localStorage.clear(); });
+const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
+afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo); else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo'); });
 const node = (id: string, patch: Partial<LabWorkflowNode> = {}): LabWorkflowNode => ({ id, kind: 'experiment', title: id, status: 'completed', summary: `${id} 的原始记录`, dependencies: [], ref: { kind: 'golden_job', id }, source: 'runtime', ...patch });
 const workflow = (nodes: LabWorkflowNode[]): LabProjectWorkflow => ({ schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 100, nodes, edges: nodes.flatMap((item) => item.dependencies.map((source) => ({ source, target: item.id }))), counts: { running: 2, queued: 1, completed: 1, failed: 1 }, currentNodeId: nodes.find((item) => item.status === 'running')?.id ?? null });
 function mount(data?: LabProjectWorkflow, onOpenNode = vi.fn()) {
-  return render(<LabWorkflowGraph projectId="project" connection="test" workflow={data} onOpenNode={onOpenNode} onOpenMaterials={vi.fn()} onOpenRuns={vi.fn()} onOpenApps={vi.fn()} onOpenExperiments={vi.fn()} />);
+  return render(graph(data, onOpenNode));
+}
+const graph = (data?: LabProjectWorkflow, onOpenNode = vi.fn(), projectId = 'project') => <LabWorkflowGraph projectId={projectId} connection="test" workflow={data} onOpenNode={onOpenNode} onOpenMaterials={vi.fn()} onOpenRuns={vi.fn()} onOpenApps={vi.fn()} onOpenExperiments={vi.fn()} />;
+function scrollSurface() {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(500);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200);
+  const scroll = vi.fn(function (this: HTMLElement, options: ScrollToOptions) { this.scrollLeft = options.left ?? this.scrollLeft; this.scrollTop = options.top ?? this.scrollTop; });
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scroll });
+  return { scroll, ancestorScroll: vi.spyOn(HTMLElement.prototype, 'scrollIntoView'), windowScroll: vi.spyOn(window, 'scrollTo') };
 }
 
 describe('Lab project dependency canvas', () => {
+  it('centers the current node within the scaled canvas without scrolling any ancestor', () => {
+    const { scroll, ancestorScroll, windowScroll } = scrollSurface();
+    const data = workflow([node('a'), node('b', { dependencies: ['a'] }), node('c', { dependencies: ['b'] }), node('d', { dependencies: ['c'] }), node('validation', { kind: 'job', parentId: 'd', status: 'running' })]);
+    mount(data);
+    const canvas = screen.getByRole('region', { name: '实验节点画布' });
+    expect(scroll).toHaveBeenCalledOnce();
+    expect(scroll.mock.contexts[0]).toBe(canvas);
+    expect(canvas.scrollLeft).toBeCloseTo((1032 + 135) * 0.85 - 250);
+    expect(canvas.scrollTop).toBeCloseTo((246 + 56) * 0.85 - 100);
+    scroll.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '放大画布' }));
+    fireEvent.click(screen.getByRole('button', { name: '定位当前' }));
+    expect(scroll).toHaveBeenCalledOnce();
+    expect(scroll.mock.contexts[0]).toBe(canvas);
+    expect(canvas.scrollLeft).toBeCloseTo(1032 + 135 - 250);
+    expect(ancestorScroll).not.toHaveBeenCalled(); expect(windowScroll).not.toHaveBeenCalled();
+  });
+  it('reveals the saved selection once after data arrives and preserves user scrolling across polling', () => {
+    const { scroll } = scrollSurface();
+    localStorage.setItem('paw.lab.workflow-selection.v1:test:project', 'c');
+    const view = mount(); expect(scroll).not.toHaveBeenCalled();
+    const data = workflow([node('a', { status: 'running' }), node('b', { dependencies: ['a'] }), node('c', { dependencies: ['b'] })]);
+    view.rerender(graph(data));
+    const canvas = screen.getByRole('region', { name: '实验节点画布' });
+    expect(scroll).toHaveBeenCalledOnce();
+    expect(canvas.scrollLeft).toBeCloseTo((688 + 135) * 0.85 - 250);
+    canvas.scrollLeft = 123; canvas.scrollTop = 456;
+    view.rerender(graph({ ...data, observedAtMs: 200, currentNodeId: 'b', nodes: data.nodes.map((item) => ({ ...item })) }));
+    expect(scroll).toHaveBeenCalledOnce();
+    expect(canvas.scrollLeft).toBe(123); expect(canvas.scrollTop).toBe(456);
+    localStorage.setItem('paw.lab.workflow-selection.v1:test:other-project', 'b');
+    view.rerender(graph(data, vi.fn(), 'other-project'));
+    expect(scroll).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'b · 已完成' })).toHaveAttribute('aria-pressed', 'true');
+    expect(canvas.scrollLeft).toBeCloseTo((358 + 135) * 0.85 - 250);
+  });
+  it('explains an inconclusive decision in both the node and its result detail', () => {
+    mount(workflow([node('样本不足', { decision: 'inconclusive' })]));
+    expect(screen.getAllByText('结论不足 · 沿用基线')).toHaveLength(2);
+    expect(screen.queryByText('inconclusive')).not.toBeInTheDocument();
+  });
+  it('waits for a hidden canvas to become measurable and centers only once', () => {
+    const { scroll } = scrollSurface(); let visible = false; let resize!: () => void;
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => visible ? 500 : 0);
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resize = () => callback([], this); }
+      observe() {} unobserve() {} disconnect = disconnect;
+    });
+    mount(workflow([node('a'), node('b', { dependencies: ['a'], status: 'running' })]));
+    expect(scroll).not.toHaveBeenCalled();
+    visible = true; resize();
+    expect(scroll).toHaveBeenCalledOnce(); expect(disconnect).toHaveBeenCalledOnce();
+    resize(); expect(scroll).toHaveBeenCalledOnce();
+  });
   it('shows a single retrieval result and its denominator without inventing baseline or gains', () => {
     const data = workflow([node('原检索', { ref: { kind: 'knowledge_job', id: 'retrieval' }, metrics: [{ label: 'MRR', baseline: null, candidate: null, value: 0, sampleCount: 48 }] })]);
     expect(isLabProjectWorkflow(data)).toBe(true); mount(data);

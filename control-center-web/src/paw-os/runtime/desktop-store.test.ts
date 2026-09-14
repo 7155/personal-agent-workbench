@@ -83,6 +83,23 @@ describe('PAWOS desktop store', () => {
     expect(store.getState().openApp(extension.id)).toBe('');
   });
 
+  it('opens only previously enabled Extensions during refresh and revokes them on a new inventory', () => {
+    const extension = pawExtensionApps[0]!;
+    const store = createPawDesktopStore('eval-lab', '/eval-lab?project=project-1');
+    const lab = store.getState().windows['eval-lab'];
+    store.getState().setExtensionAppGate('loading', new Set([extension.id]));
+    expect(store.getState().openApp(extension.id)).toBe('');
+    store.getState().setExtensionAppGate('ready', new Set([extension.id]));
+    store.getState().setExtensionAppGate('loading', new Set());
+    expect(store.getState().openApp(extension.id)).toBe(extension.id);
+    expect(store.getState().windows['eval-lab']).toBe(lab);
+    store.getState().setExtensionAppGate('ready', new Set());
+    expect(store.getState().windows[extension.id]).toBeUndefined();
+    expect(store.getState().openApp(extension.id)).toBe('');
+    store.getState().setExtensionAppGate('loading', new Set([extension.id]));
+    expect(store.getState().openApp(extension.id)).toBe('');
+  });
+
   it('keeps a running Extension App mounted while its installation inventory refreshes', () => {
     const extension = pawExtensionApps[0]!;
     const store = createPawDesktopStore();

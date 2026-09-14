@@ -1,5 +1,5 @@
 import { ArrowRight, ArrowUpRight, Check, CheckCircle2, Circle, CircleAlert, Clock3, Database, FileText, FlaskConical, Focus, GitBranch, Layers3, LoaderCircle, Minus, PackageCheck, Plus, X } from 'lucide-react';
-import { useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, IconButton } from '@/components/primitives';
 import { ApplicationMethodDiff } from '../golden/ApplicationMethod';
 import type { LabProjectWorkflow, LabWorkflowKind, LabWorkflowMetric, LabWorkflowNode, LabWorkflowStatus } from './project-workflow-types';
@@ -15,7 +15,7 @@ function StatusIcon({ status, size = 15 }: { status: LabWorkflowStatus; size?: n
 }
 export function workflowDecisionName(decision?: string) {
   if (!decision) return '效果尚未判定';
-  return ({ keep: '保留候选', reject: '不保留候选', no_improvement: '无提升 · 沿用基线', unknown: '效果尚未判定', blocked: '判定受阻' } as Record<string, string>)[decision.toLowerCase()] ?? decision;
+  return ({ keep: '保留候选', reject: '不保留候选', no_improvement: '无提升 · 沿用基线', inconclusive: '结论不足 · 沿用基线', unknown: '效果尚未判定', blocked: '判定受阻' } as Record<string, string>)[decision.toLowerCase()] ?? decision;
 }
 export function workflowNodeStatus(node: LabWorkflowNode): string {
   if (node.source === 'artifact' && node.kind === 'step') return ({ running: '计划进行中', completed: '计划已记录完成', pending: '计划待准备', unavailable: '计划待补齐' } as Record<string, string>)[node.status] ?? `计划：${statusNames[node.status]}`;
@@ -82,17 +82,40 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
   onOpenNode: (node: LabWorkflowNode) => void; onOpenMaterials: () => void; onOpenRuns: () => void; onOpenApps: () => void; onOpenExperiments: () => void;
 }) {
   const storageKey = `paw.lab.workflow-selection.v1:${connection}:${projectId}`;
-  const [selectedId, setSelectedId] = useState(() => { try { return localStorage.getItem(storageKey) ?? ''; } catch { return ''; } });
+  const readSelection = () => { try { return localStorage.getItem(storageKey) ?? ''; } catch { return ''; } };
+  const [selection, setSelection] = useState(() => ({ key: storageKey, id: readSelection() }));
+  const selectedId = selection.key === storageKey ? selection.id : readSelection();
   const [zoom, setZoom] = useState(0.85);
   const viewport = useRef<HTMLDivElement>(null);
-  const nodeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const positionedProject = useRef('');
   const edgeId = useId().replace(/:/g, '');
   const nodes = workflow?.nodes ?? [];
   const layout = useMemo(() => layoutWorkflow(nodes, workflow?.edges), [nodes, workflow?.edges]);
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes.find((node) => node.id === workflow?.currentNodeId) ?? nodes.find((node) => node.kind === 'experiment') ?? nodes[0];
   const current = nodes.find((node) => node.id === workflow?.currentNodeId);
-  const select = (node: LabWorkflowNode) => { setSelectedId(node.id); try { localStorage.setItem(storageKey, node.id); } catch { /* Selection remains usable in this window. */ } };
-  const focusNode = (node?: LabWorkflowNode) => { if (!node) return; select(node); nodeButtons.current.get(node.id)?.scrollIntoView?.({ block: 'center', inline: 'center', behavior: 'instant' }); };
+  const select = (node: LabWorkflowNode) => { setSelection({ key: storageKey, id: node.id }); try { localStorage.setItem(storageKey, node.id); } catch { /* Selection remains usable in this window. */ } };
+  const centerNode = useCallback((id: string) => {
+    const canvas = viewport.current; const pos = layout.positions.get(id);
+    if (!canvas || !pos || !canvas.clientWidth || !canvas.clientHeight || typeof canvas.scrollTo !== 'function') return false;
+    // Layout coordinates belong to this scroll container; never scroll its hosts.
+    canvas.scrollTo({ left: Math.max(0, (pos.x + nodeWidth / 2) * zoom - canvas.clientWidth / 2),
+      top: Math.max(0, (pos.y + pos.height / 2) * zoom - canvas.clientHeight / 2), behavior: 'instant' });
+    return true;
+  }, [layout, zoom]);
+  const initialNodeId = selected?.id;
+  useLayoutEffect(() => {
+    if (!initialNodeId || positionedProject.current === storageKey) return;
+    const position = () => {
+      if (positionedProject.current === storageKey) return true;
+      if (!centerNode(initialNodeId)) return false;
+      positionedProject.current = storageKey; return true;
+    };
+    if (position() || !viewport.current || typeof ResizeObserver === 'undefined') return;
+    // A hidden host may have no viewport yet. Position once when it becomes visible.
+    const observer = new ResizeObserver(() => { if (position()) observer.disconnect(); });
+    observer.observe(viewport.current); return () => observer.disconnect();
+  }, [storageKey, initialNodeId, centerNode]);
+  const focusNode = (node?: LabWorkflowNode) => { if (!node) return; select(node); if (centerNode(node.id)) positionedProject.current = storageKey; };
   return <section className="lab-flow" aria-label="项目工作流">
     <header className="lab-flow__header"><div><h2>项目工作流</h2><p>{current ? <>当前：<strong>{current.title}</strong><span className={`lab-flow-status lab-flow-status--${current.status}`}><StatusIcon status={current.source === 'artifact' && current.status === 'running' ? 'pending' : current.status} />{workflowNodeStatus(current)}</span></> : workflow ? '查看每个已保存节点，沿着依赖继续工作。' : '正在等待执行器返回完整工作流；已有材料和成果仍可打开。'}</p></div>
       <Button size="small" onClick={onOpenExperiments}><FlaskConical size={15} />实验与优化</Button>
@@ -112,7 +135,7 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
           })}</svg>
           {!nodes.length ? <div className="lab-flow__empty"><GitBranch size={32} /><h3>{workflow ? '还没有实验节点' : '工作流记录尚未返回'}</h3><p>项目 Agent 规划的任务与实际执行记录会出现在这里。可以在项目对话中调整步骤、方向和依赖。</p><div><Button onClick={onOpenMaterials}>查看项目材料</Button><Button onClick={onOpenRuns}>查看运行记录</Button><Button onClick={onOpenApps}>查看应用交付</Button></div></div> : null}
           {nodes.map((node) => { const pos = layout.positions.get(node.id)!; const Icon = kindIcon(node.kind); const childCount = nodes.filter((child) => child.parentId === node.id).length;
-            return <button type="button" key={node.id} ref={(element) => { if (element) nodeButtons.current.set(node.id, element); else nodeButtons.current.delete(node.id); }} className={`lab-flow-node lab-flow-node--${node.kind}`} data-status={node.source === 'artifact' && node.status === 'running' ? 'pending' : node.status} data-child={Boolean(node.parentId)} aria-pressed={selected?.id === node.id} aria-label={`${node.title} · ${workflowNodeStatus(node)}`} onClick={() => select(node)} style={{ left: pos.x, top: pos.y, width: nodeWidth, height: pos.height }}>
+            return <button type="button" key={node.id} className={`lab-flow-node lab-flow-node--${node.kind}`} data-status={node.source === 'artifact' && node.status === 'running' ? 'pending' : node.status} data-child={Boolean(node.parentId)} aria-pressed={selected?.id === node.id} aria-label={`${node.title} · ${workflowNodeStatus(node)}`} onClick={() => select(node)} style={{ left: pos.x, top: pos.y, width: nodeWidth, height: pos.height }}>
               <span className="lab-flow-node__type"><Icon size={15} />{kindNames[node.kind]}{node.ref.version !== undefined ? <span>v{node.ref.version}</span> : null}</span>
               <strong className="lab-flow-node__title">{node.title}</strong><span className="lab-flow-node__summary">{node.summary || '等待执行器补充记录'}</span>
               <span className="lab-flow-node__bottom"><span className={`lab-flow-status lab-flow-status--${node.status}`}><StatusIcon status={node.source === 'artifact' && node.status === 'running' ? 'pending' : node.status} />{workflowNodeStatus(node)}</span>{node.kind === 'experiment' ? <span>{workflowDecisionName(node.decision)}</span> : childCount > 0 ? <span>{childCount} 个子任务</span> : node.source === 'artifact' ? <span>{node.kind === 'step' ? 'Agent 计划' : '已保存版本'}</span> : null}</span>

@@ -2,6 +2,7 @@ import { Download, ExternalLink, PackageCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, Field, Input } from '@/components/primitives';
+import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '@/paw-os/extensions/installation';
 import { commandLabApp, downloadLabApp, pendingLabAppCommands, useLabApps, type LabAppCommand, type LabEvaluationSelection } from './apps';
 import { LabAppPreview } from './LabAppPreview';
@@ -12,6 +13,7 @@ import { projectCommandRejected, projectError } from './api';
 type Props = { projectId: string; initialAppId?: string; initialVersion?: number; initialCallId?: string; preparing?: boolean; blocked?: boolean; evaluationSelection?: LabEvaluationSelection; onClearSelection?: () => void; onGuide?: () => void; onPrepare?: (directory: string, appId?: string, selection?: LabEvaluationSelection) => Promise<boolean>; onOpenEvaluation?: (suiteId: string, jobId: string) => void };
 export function LabAppDelivery(props: Props) { return <ProjectAppDelivery key={props.projectId} {...props} />; }
 function ProjectAppDelivery({ projectId, initialAppId = '', initialVersion, initialCallId = '', preparing = false, blocked = false, evaluationSelection, onClearSelection, onPrepare, onGuide, onOpenEvaluation }: Props) {
+  const desktop = usePawOsDesktop();
   const transport = useControlTransport(); const catalog = useLabApps(projectId); const [selectedId, setSelectedId] = useState(initialAppId);
   const appId = selectedId || catalog.data?.items[0]?.appId || ''; const [selectedVersion, setSelectedVersion] = useState<number | undefined>(initialVersion);
   const requestedVersion = selectedVersion ?? catalog.data?.items.find((item) => item.appId === appId)?.latestVersion;
@@ -71,7 +73,7 @@ function ProjectAppDelivery({ projectId, initialAppId = '', initialVersion, init
       : app && version ? <><div className="lab-app-delivery__toolbar">
         <span>{version.fileCount} 份冻结源文件 · {(version.byteSize / 1024).toFixed(1)} KB · {version.spec.model.model}</span>
         <Button disabled={busy || Boolean(pending) || app.activeVersion === version.version} onClick={() => void act({ action: 'activate', appId, expectedRevision: app.revision, clientRequestId: `app-activate:${crypto.randomUUID()}`, input: { version: version.version } })}><PackageCheck size={15} />{activity === 'activate' ? '正在添加…' : app.activeVersion === version.version ? '已添加至 PAW' : app.activeVersion ? '将此版本用于 PAW' : '添加至 PAW'}</Button>
-        {app.activeVersion === version.version ? <Button onClick={() => { window.location.hash = `/extensions/${appId.slice('extension:'.length)}`; }}><ExternalLink size={15} />打开 App</Button> : null}
+        {app.activeVersion === version.version ? <Button onClick={() => openPawOsRoute(desktop, `/extensions/${appId.slice('extension:'.length)}`)}><ExternalLink size={15} />打开 App</Button> : null}
         <Button disabled={busy} onClick={() => void download('standalone')}><Download size={15} />{activity === 'standalone' ? '正在下载独立 App…' : '下载独立 App'}</Button>
         <Button disabled={busy} onClick={() => void download('paw')}><Download size={15} />{activity === 'paw' ? '正在下载 PAW 应用…' : '下载 PAW 应用包'}</Button>
       </div><p className="lab-app-delivery__hint">{selectedCallId ? `正在阅读 v${version.version} 的原调用记录` : `正在试用 v${version.version}`} · 切换版本会打开对应实现，旧版本和运行记录会保留。</p>

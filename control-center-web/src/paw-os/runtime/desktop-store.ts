@@ -635,7 +635,9 @@ function sameWayfinderIconPositions(
 
 function canOpenApp(appId: PawAppId, gate: PawExtensionAppGate): boolean {
   if (!isPawExtensionAppId(appId)) return true;
-  return gate.status === 'ready' && gate.enabledExtensionIds.has(appId);
+  // A pending refresh retains the last authoritative enabled set. Initial
+  // loading has an empty set; ready removal and unavailable clear it.
+  return gate.status !== 'unavailable' && gate.enabledExtensionIds.has(appId);
 }
 
 function extensionGatedWindows(

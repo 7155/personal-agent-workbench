@@ -9,7 +9,7 @@ import { ThemeProvider } from '@/design/themes';
 import { MockControlTransport } from '@/test/mock-transport';
 import { PawDesktopProvider } from '../runtime/desktop-context';
 import { pawApps, type PawAppId } from '../runtime/app-registry';
-import { isPawExtensionAppId, pawExtensionApps } from '../extensions/registry';
+import { isPawExtensionAppId, pawExtensionApps, registerLabExtensionApps } from '../extensions/registry';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '../extensions/installation';
 import { PawDesktop } from './PawDesktop';
 import desktopSource from './PawDesktop.tsx?raw';
@@ -60,6 +60,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.location.hash = '';
+  registerLabExtensionApps({ ok: true, items: [] });
   delete window.pawBrowserHost;
   vi.unstubAllGlobals();
   restoreElementMethod('animate', originalAnimate);
@@ -67,6 +68,38 @@ afterEach(() => {
 });
 
 describe('PAWOS desktop', () => {
+  it('opens an enabled dynamic Lab App from Launchpad while inventory refresh is pending', async () => {
+    const id = 'extension:lab-33333333333333333333333333333333';
+    const route = '/extensions/lab-33333333333333333333333333333333';
+    const item = { appId: id, projectId: 'project-refresh', activeVersion: 7, installation: {
+      schemaVersion: 'pawos.lab-app.v1', id, version: '0.7.0', label: '刷新中的极地研究', shortLabel: '极地', tagline: '已启用的研究应用',
+      route, presentation: 'workspace', accent: 'green', icon: { symbol: 'assistant', background: '#22876A' }, packageId: id,
+      bindingSha256: 'a'.repeat(64), hosting: { kind: 'lab-html', appId: id, projectId: 'project-refresh', version: 7 },
+    } };
+    let reads = 0; let finishRefresh: (() => void) | undefined;
+    const transport = new MockControlTransport({ routes: {
+      'agent.extensions.list': { ok: true, runtimeAvailable: true, items: [] },
+      'agent.eval-lab.apps.get': async () => {
+        reads += 1;
+        if (reads > 1) await new Promise<void>((resolve) => { finishRefresh = resolve; });
+        return { ok: true, items: [item] };
+      },
+    } });
+    renderDesktop('eval-lab', transport, '/eval-lab?project=project-refresh');
+    await waitFor(() => expect(document.querySelector(`[data-desktop-app="${id}"]`)).toBeInTheDocument());
+    const lab = document.querySelector('[data-paw-window-id="eval-lab"]');
+    expect(lab).toBeInTheDocument();
+    act(() => window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT)));
+    await waitFor(() => expect(reads).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: '打开全部 App' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '全部 App' })).getByRole('button', { name: /刷新中的极地研究/ }));
+    expect(document.querySelector(`[data-paw-window-id="${id}"]`)).toBeInTheDocument();
+    expect(document.querySelector('[data-paw-window-id="eval-lab"]')).toBe(lab);
+    expect(screen.getByLabelText('eval-lab current page')).toHaveTextContent('/eval-lab?project=project-refresh');
+    await act(async () => finishRefresh?.());
+    expect(document.querySelector(`[data-paw-window-id="${id}"]`)).toBeInTheDocument();
+  });
+
   it.each(['desktop', 'launcher'])('preserves an App subpage in the reload URL when returning through %s', async (entry) => {
     const transport = new MockControlTransport();
     const page = renderDesktop('app-center', transport, '/plugins?view=skills');
@@ -243,8 +276,11 @@ describe('PAWOS desktop', () => {
       'eval-lab',
       'project-workbench',
       'agent-capsule',
-      ...pawApps.filter((app) => isPawExtensionAppId(app.id)).map((app) => app.id),
+      ...pawApps.filter((app) => isPawExtensionAppId(app.id) && app.kind === 'agent').map((app) => app.id),
     ]);
+    expect(bands.get('工具')).toEqual(expect.arrayContaining(
+      pawApps.filter((app) => isPawExtensionAppId(app.id) && app.kind !== 'agent').map((app) => app.id),
+    ));
     expect(bands.get('记忆与知识')).toEqual(['memory', 'knowledge']);
     expect(bands.get('系统')).toEqual(['system-monitor', 'system-settings']);
     expect([...bands.values()].flat()).toHaveLength(pawApps.length);
