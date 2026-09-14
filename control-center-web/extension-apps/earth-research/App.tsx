@@ -40,6 +40,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const [project, setProject] = useState('');
   const [draft, setDraft] = useState('');
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('site');
+  const [planOpen, setPlanOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [pending, setPending] = useState<PendingAppMessage>();
@@ -206,6 +207,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   }
 
   return <main className="earth-app">
+    {planOpen ? <div className="earth-plan-overlay" role="presentation"><section className="earth-plan-dialog" role="dialog" aria-modal="true" aria-labelledby="earth-plan-title"><p className="earth-app__eyebrow">GRILL · 执行前核对</p><h2 id="earth-plan-title">先把任务问清楚</h2><p>我会按「{ANALYSIS_MODES.find(([key]) => key === analysisMode)?.[1]}」组织一次真实 Earth Engine 分析。</p><dl><div><dt>分析范围</dt><dd>{root || '尚未填写'}</dd></div><div><dt>执行项目</dt><dd>{project || '尚未填写'}</dd></div><div><dt>用户目标</dt><dd>{draft || '尚未填写'}</dd></div></dl><p className="earth-plan-dialog__plan"><strong>建议方案</strong><br />读取官方资料 → 准备工作区 → 编写并保存 JavaScript → 执行真实脚本 → 在地图上展示图层与结果。缺少关键数据时先报告，不猜测结论。</p><div className="earth-plan-dialog__actions"><button type="button" onClick={() => setPlanOpen(false)}>返回修改</button><button type="button" onClick={() => { setPlanOpen(false); void start({ preventDefault: () => {} } as FormEvent); }}>确认方案并执行</button></div></section></div> : null}
     <header className="earth-app__header"><div><strong>Earth Agent</strong><span>地理分析与选址选线</span></div>{sessions.length ? <select aria-label="分析会话" value={session?.id || ''} onChange={event => { const next = sessions.find(x => x.id === event.target.value); if (next) { setSession(next); setRun(null); setLastCompleted(null); setFile(null); setSelection(null); setViewCommand(undefined); viewSeen.current = ""; } }}><option value="" disabled>新分析</option>{sessions.map(item => <option key={item.id} value={item.id}>{item.title} · {new Date(item.updatedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</option>)}</select> : null}<span role="status">{run ? runStatus[run.status] : '准备开始分析'}</span><button onClick={startAnother} disabled={sending || Boolean(pending)}>新分析</button><button onClick={() => setRefresh(x => x + 1)} disabled={!session}>刷新结果</button></header>
     <div className="earth-app__body">
       <section className="earth-agent" data-earth-surface="agent" aria-label="Agent 工作栏">
@@ -217,13 +219,13 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
           composerPlaceholder="描述分析目标，或继续调整当前方案…"
           onNewWork={startAnother}
           onSessionCreated={newSession} onSessionUpdated={setSession} onSessionActivity={() => setRefresh(x => x + 1)}
-        /></PawWindowChromeProvider> : <form className="earth-start" onSubmit={event => void start(event)}>
+        /></PawWindowChromeProvider> : <form className="earth-start" onSubmit={event => { event.preventDefault(); if (root.startsWith('/') && project.trim() && draft.trim()) setPlanOpen(true); }}>
           <h1>把地理数据<br />变成可比较的方案</h1><p>Agent 查阅资料、编写 Earth Engine 代码并执行。代码、工具和结果都留在这个工作区。</p>
           <label>项目文件夹<input aria-describedby={scopeHintId} value={root} onChange={event => setRoot(event.target.value)} placeholder="选择已有分析项目的绝对路径" required /></label><small id={scopeHintId}>开始后，Agent 可在这个文件夹内读取、编辑与运行分析。</small>
           <label>Google Cloud 项目<input value={project} onChange={event => setProject(event.target.value)} placeholder="已开通 Earth Engine 的项目 ID" required /></label>
           {mapContext ? <p className="earth-start-context">{mapContext.label} · {mapContext.detail}<button type="button" onClick={mapContext.onClear}>移除</button></p> : null}
           <fieldset className="earth-mode-picker"><legend>选择分析功能</legend><div role="radiogroup" aria-label="分析功能">{ANALYSIS_MODES.map(([key,label,hint]) => <button type="button" key={key} aria-pressed={analysisMode === key} onClick={() => setAnalysisMode(key)}><strong>{label}</strong><small>{hint}</small></button>)}</div></fieldset><label>分析任务<textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder={ANALYSIS_MODES.find(([key]) => key === analysisMode)?.[2]} rows={4} required /></label>
-          <button disabled={sending || Boolean(error)} type="submit">{sending ? '正在建立会话…' : '开始分析'}</button>
+          <button disabled={sending || Boolean(error)} type="submit">生成分析方案</button>
         </form>}
       </section>
       <section className="earth-workspace" aria-label="地图与代码工作区">
