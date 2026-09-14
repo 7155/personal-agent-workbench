@@ -10720,7 +10720,7 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; "
+            "img-src 'self' data: blob: https://mt1.google.com https://mt2.google.com https://mt3.google.com https://earthengine.googleapis.com; font-src 'self'; media-src 'self' blob:; "
             "worker-src 'self' blob:; connect-src 'self'; object-src 'none'; "
             # Portable Apps may declare a separate HTTPS or loopback workspace.
             # The App host validates that destination and keeps its message

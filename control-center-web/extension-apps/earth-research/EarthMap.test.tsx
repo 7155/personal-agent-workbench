@@ -41,8 +41,8 @@ it('starts with a geography-ready satellite basemap and exposes a roads fallback
     expect.objectContaining({ attribution: 'Google satellite imagery', maxZoom: 20 }),
   );
   expect(tileLayer).toHaveBeenCalledWith(
-    expect.stringContaining('tile.openstreetmap.org'),
-    expect.objectContaining({ attribution: '© OpenStreetMap contributors', maxZoom: 19 }),
+    expect.stringContaining('mt1.google.com/vt/lyrs=m'),
+    expect.objectContaining({ attribution: 'Google road map', maxZoom: 20 }),
   );
   expect(screen.getByText('Google 卫星影像')).toBeVisible();
   expect(screen.getByText('道路地图（备用）')).toBeVisible();

@@ -46,10 +46,11 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
     void loadGoogleMapsApi().catch(() => undefined);
     const instance = L.map(container.current, { zoomControl: true }).setView([30, 110], 4);
     map.current = instance;
-    // Google satellite is the product-facing basemap. Leaflet remains only the
-    // rendering/event layer; OSM is an explicit fallback for offline use.
+    // Google satellite is the product-facing basemap. Keep a same-provider
+    // roads layer as the fallback so the map does not depend on a tile host
+    // that rejects the gateway's privacy referrer policy.
     const satellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Google satellite imagery' });
-    const roads = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
+    const roads = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Google road map' });
     satellite.on('tileerror', () => setTileError(true));
     roads.on('tileerror', () => setTileError(true));
     satellite.addTo(instance);
@@ -139,7 +140,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   },[imports,run,selection]);
   const selectedKeys=new Set(selection.map(selectionKey));
   return <div className="earth-map" data-drawing={drawing}><div ref={container} aria-label="地理分析地图" className="earth-map__canvas" />
-    <div className="earth-map-tools"><button aria-pressed={multiSelect} onClick={()=>setMultiSelect(value=>!value)}>多选{multiSelect ? '开' : '关'}</button><span role="status">{drawing ? '绘图／编辑中 · 完成或保存后更新选择' : multiSelect ? '点击可增选或取消 · 可在几何列表批量选择' : '点击选中一个对象'}</span></div>
+    <div className="earth-map-tools"><div className="earth-gis-toolbar" aria-label="GEE 几何工具"><button onClick={()=>geometryTools.current?.start('point')}>点</button><button onClick={()=>geometryTools.current?.start('polyline')}>线</button><button onClick={()=>geometryTools.current?.start('polygon')}>面</button><button onClick={()=>geometryTools.current?.start('rectangle')}>框选</button><span aria-hidden="true" className="earth-gis-toolbar__divider"/><button onClick={()=>geometryTools.current?.start('edit')}>编辑</button><button onClick={()=>geometryTools.current?.start('remove')}>删除</button></div><button aria-pressed={multiSelect} onClick={()=>setMultiSelect(value=>!value)}>多选{multiSelect ? '开' : '关'}</button><span role="status">{drawing ? '绘图／编辑中 · 完成或保存后更新选择' : multiSelect ? '点击可增选或取消 · 可在几何列表批量选择' : '点击选中一个对象'}</span></div>
     <details className="earth-geometry-imports"><summary>几何与选择 · {selection.length} 已选</summary>
       <div className="earth-geometry-actions"><button onClick={()=>available.forEach(feature=>callback.current(feature,'upsert'))}>全选</button><button disabled={!selection.length} onClick={()=>callback.current(null)}>清空选择</button></div>
       {available.map(feature=><div className="earth-geometry-row" key={selectionKey(feature)}><label><input type="checkbox" checked={selectedKeys.has(selectionKey(feature))} onChange={()=>callback.current(feature,'toggle')}/><span>{String(feature.properties?.name ?? feature.properties?.id ?? feature.id ?? '几何')}</span></label><details><summary>GEE 代码</summary><pre>{`var geometry = ee.Geometry(${JSON.stringify(feature.geometry)}, null, false);`}</pre></details></div>)}
