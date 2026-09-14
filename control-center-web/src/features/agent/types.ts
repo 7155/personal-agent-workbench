@@ -35,7 +35,13 @@ export type SessionSummary = Pick<
     | 'ownerAppId'
     | 'surfaceKey'
     | 'evaluationSnapshot'
-  >>;
+  >> & {
+    /** TeamGateway adds ownership and audience to project Session projections. */
+    ownerUserId?: string;
+    spaceId?: string;
+    canControl?: boolean;
+    audience?: 'owner' | 'project' | string;
+  };
 
 export interface AgentPermissionSelection {
   mode: 'assistant' | 'coordinator';

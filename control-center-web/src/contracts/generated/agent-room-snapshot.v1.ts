@@ -112,6 +112,11 @@ export interface Participant {
   id: string;
   roomId: string;
   sessionId: string;
+  ownerUserId?: string;
+  ownerDisplayName?: string;
+  spaceId?: string;
+  canControl?: boolean;
+  audience?: 'owner' | 'project';
   roleId: string;
   roleVersion: string;
   displayName: string;

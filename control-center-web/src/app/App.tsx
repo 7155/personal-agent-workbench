@@ -10,6 +10,8 @@ import { PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { ThemeProvider } from '@/design/themes';
 import { useFilePreviewStore } from '@/features/agent/file-preview/file-preview-store';
 import { ProductIdentityProvider } from '@/features/identity/product-identity';
+import { TeamGateway, useTeam } from '@/features/team';
+import { isTeamDeployment } from '@/features/team/deployment';
 import { resolveFrontendProduct, type FrontendProduct } from './frontend-product';
 import { standaloneSurfaceForPath } from './standalone-surface';
 import '@/design/tokens.css';
@@ -64,6 +66,7 @@ export function App({ frontendProduct }: { frontendProduct?: FrontendProduct } =
     configured: import.meta.env.VITE_PAW_FRONTEND,
     search: typeof window === 'undefined' ? '' : window.location.search,
   });
+  const teamDeployment = isTeamDeployment();
 
   return (
     <ThemeProvider>
@@ -72,27 +75,51 @@ export function App({ frontendProduct }: { frontendProduct?: FrontendProduct } =
         <TooltipProvider delayDuration={350}>
           <ToastProvider>
             <GlobalFeedbackProvider>
-              <ControlTransportProvider>
-                <ControlConnectionMonitor />
-                <FilePreviewLayer />
-                <QueryClientProvider client={queryClient}>
-                  <ProductIdentityProvider>
-                    <Suspense fallback={<ProductLoading />}>
-                      {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : product === 'paw-os' ? (
-                        <PawOsApp />
-                      ) : (
-                        <LegacyProductApp />
-                      )}
-                    </Suspense>
-                  </ProductIdentityProvider>
-                </QueryClientProvider>
-              </ControlTransportProvider>
+              {teamDeployment ? (
+                <TeamGateway>
+                  {() => <TeamProductSurface product={product} standaloneSurface={standaloneSurface} />}
+                </TeamGateway>
+              ) : (
+                <ControlTransportProvider>
+                  <ControlConnectionMonitor />
+                  <FilePreviewLayer />
+                  <QueryClientProvider client={queryClient}>
+                    <ProductIdentityProvider>
+                      <Suspense fallback={<ProductLoading />}>
+                        {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : product === 'paw-os' ? (
+                          <PawOsApp />
+                        ) : (
+                          <LegacyProductApp />
+                        )}
+                      </Suspense>
+                    </ProductIdentityProvider>
+                  </QueryClientProvider>
+                </ControlTransportProvider>
+              )}
             </GlobalFeedbackProvider>
           </ToastProvider>
         </TooltipProvider>
         </MotionProvider>
       </PawOsAppearanceProvider>
     </ThemeProvider>
+  );
+}
+
+export { isTeamDeployment };
+
+function TeamProductSurface({ product, standaloneSurface }: { product: FrontendProduct; standaloneSurface: ReturnType<typeof standaloneSurfaceForPath> }) {
+  const team = useTeam();
+  return (
+    <>
+      <FilePreviewLayer />
+      <Suspense fallback={<ProductLoading />}>
+        {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : product === 'paw-os' ? (
+          <PawOsApp key={`team-scope:${team.scopeKey}`} desktopStorageKey={team.desktopStorageKey} />
+        ) : (
+          <LegacyProductApp />
+        )}
+      </Suspense>
+    </>
   );
 }
 

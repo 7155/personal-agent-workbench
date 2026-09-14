@@ -12,12 +12,16 @@ import './styles/paw-os-controls.css';
 import './styles/paw-os-stellar.css';
 import './styles/paw-os-stellar-dark.css';
 
-export function PawOsApp() {
+export function PawOsApp({ desktopStorageKey }: { desktopStorageKey?: string } = {}) {
   const { theme } = usePawOsAppearance();
   const initialRoute = useMemo(() => currentHashRoute(), []);
   const initialApp = useMemo(() => pawAppForPath(initialRoute), [initialRoute]);
   return (
-    <PawDesktopProvider initialAppId={initialApp?.id} initialRoute={initialRoute}>
+    <PawDesktopProvider
+      initialAppId={initialApp?.id}
+      initialRoute={initialRoute}
+      storageKey={desktopStorageKey}
+    >
       <PawOsRouteBridge />
       <div className="paw-desktop-root" data-paw-theme={theme} data-paw-visual="stellar" data-testid="paw-os-product-root">
         <PawDesktop />

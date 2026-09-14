@@ -1,0 +1,12 @@
+**
+!rag_ime/
+!rag_ime/**
+!deploy/
+!deploy/team/
+!deploy/team/worker.Dockerfile
+!deploy/team/worker.Dockerfile.dockerignore
+**/__pycache__/
+**/*.pyc
+**/*.sqlite*
+**/*.db
+**/.env*

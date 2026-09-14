@@ -78,6 +78,20 @@ describe('PawDesktopProvider persistence safety', () => {
 
     expect(screen.getByTestId('focus-group')).toHaveTextContent('none');
   });
+
+  it('keeps a Team scope in its own desktop snapshot namespace', () => {
+    vi.useFakeTimers();
+    render(<PawDesktopProvider storageKey="pawos.desktop.team.v1:user-1:space-1"><DesktopProbe /></PawDesktopProvider>);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开 Agent' }));
+
+    expect(window.localStorage.getItem('pawos.desktop.v1')).toBeNull();
+    expect(window.localStorage.getItem('pawos.desktop.team.v1:user-1:space-1')).toBeNull();
+    act(() => vi.runAllTimers());
+    expect(JSON.parse(window.localStorage.getItem('pawos.desktop.team.v1:user-1:space-1') ?? '{}')).toMatchObject({
+      windows: expect.objectContaining({ agent: expect.any(Object) }),
+    });
+  });
 });
 
 function DesktopProbe() {

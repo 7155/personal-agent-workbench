@@ -58,6 +58,9 @@ export function KnowledgeMaterialsPanel({
   dropSupported,
   error,
   loading,
+  canImport = true,
+  canManageDocuments = true,
+  uploadHint,
   filter: initialFilter,
   onFilterChange,
   importError,
@@ -83,6 +86,9 @@ export function KnowledgeMaterialsPanel({
   dropSupported: boolean;
   error: Error | null;
   loading: boolean;
+  canImport?: boolean;
+  canManageDocuments?: boolean;
+  uploadHint?: string;
   filter: string;
   onFilterChange: (filter: string) => void;
   importError: Error | null;
@@ -123,8 +129,8 @@ export function KnowledgeMaterialsPanel({
         <div><dt>需处理</dt><dd>{summary.attention}</dd></div>
         <div><dt>已索引段落</dt><dd>{summary.chunks}</dd></div>
       </dl> : null}
-      <MaterialsDropzone dropSupported={dropSupported} importing={importing} onImport={onImport} onImportFiles={onImportFiles} />
-      <UploadQueue items={uploadItems} onClear={onClearUploads} onRetry={onRetryUpload} />
+      {canImport ? <MaterialsDropzone dropSupported={dropSupported} importing={importing} onImport={onImport} onImportFiles={onImportFiles} uploadHint={uploadHint} /> : null}
+      {canImport ? <UploadQueue items={uploadItems} onClear={onClearUploads} onRetry={onRetryUpload} /> : null}
       {error ? <InlineNotice title="文件列表暂不可用" tone="warning"><p>{publicErrorText(error, '可以重新读取文件列表。')}{documents.length ? ' 以下保留已读取的资料。' : ''}</p><Button onClick={onRetryList} size="small" variant="quiet">重新读取文件列表</Button></InlineNotice> : null}
       {importError ? <InlineNotice title="导入未完成" tone="warning">{publicErrorText(importError, '请查看上传队列后重试。')}</InlineNotice> : null}
       {documents.length ? (
@@ -150,9 +156,9 @@ export function KnowledgeMaterialsPanel({
                     <StatusBadge label={documentStatusLabel(document.status)} tone={documentTone(document.status)} />
                     <span className="knowledge-material-row__chunks">{document.chunkCount || '—'}</span>
                     <span className="knowledge-material-row__actions">
-                      <IconButton disabled={pendingDocumentId === document.id || ['queued', 'parsing', 'indexing'].includes(document.status)} icon={<RotateCcw size={13} />} label={`重新解析 ${document.name}`} onClick={(event) => onReparse(document, event.currentTarget)} size="small" tooltip />
+                      {canManageDocuments ? <IconButton disabled={pendingDocumentId === document.id || ['queued', 'parsing', 'indexing'].includes(document.status)} icon={<RotateCcw size={13} />} label={`重新解析 ${document.name}`} onClick={(event) => onReparse(document, event.currentTarget)} size="small" tooltip /> : null}
                       <IconButton icon={<PanelRightOpen size={13} />} label={`查看 ${document.name}`} onClick={() => onOpen(document.id)} size="small" tooltip />
-                      <IconButton icon={<Trash2 size={13} />} label={`删除 ${document.name}`} onClick={(event) => onDelete(document, event.currentTarget)} size="small" tooltip />
+                      {canManageDocuments ? <IconButton icon={<Trash2 size={13} />} label={`删除 ${document.name}`} onClick={(event) => onDelete(document, event.currentTarget)} size="small" tooltip /> : null}
                     </span>
                     {['queued', 'parsing', 'indexing'].includes(document.status) ? <i className="knowledge-material-row__progress" style={{ '--document-progress': document.progress } as React.CSSProperties} /> : null}
                   </div>
@@ -167,10 +173,10 @@ export function KnowledgeMaterialsPanel({
               />
             )}
           </div>
-          <DocumentSummary detail={detail} document={selected} error={detailError} loading={detailLoading} onReparse={onReparse} onRetry={onRetryDetail} reparsePending={Boolean(selected && pendingDocumentId === selected.id)} />
+          <DocumentSummary detail={detail} document={selected} error={detailError} loading={detailLoading} onReparse={canManageDocuments ? onReparse : undefined} onRetry={onRetryDetail} reparsePending={Boolean(selected && pendingDocumentId === selected.id)} />
         </div>
       ) : loading ? <KnowledgeReadingLoading label="正在读取文件列表" /> : !error ? (
-        <EmptyState description="通过上方导入区选择或拖入文件；文件会在这里排队解析并进入可检索目录。" icon={FileText} title="还没有资料" />
+        <EmptyState description={canImport ? '通过上方导入区选择或拖入文件；文件会在这里排队解析并进入可检索目录。' : '当前成员可以查看项目资料；由项目维护者导入或重新处理文件。'} icon={FileText} title="还没有资料" />
       ) : null}
     </div>
   );
@@ -181,11 +187,13 @@ function MaterialsDropzone({
   importing,
   onImport,
   onImportFiles,
+  uploadHint = '支持 PDF、Word、PPT、Excel、Markdown、文本与图片 · 单次最多 20 个',
 }: {
   dropSupported: boolean;
   importing: boolean;
   onImport: () => void;
   onImportFiles: (files: File[]) => void;
+  uploadHint?: string;
 }) {
   const [dragActive, setDragActive] = useState(false);
   const [dropNotice, setDropNotice] = useState('');
@@ -241,7 +249,7 @@ function MaterialsDropzone({
         <Upload aria-hidden="true" size={17} />
         <span>
           <strong>{importing ? '正在导入文件…' : dropSupported ? '拖放文件到这里，或点击选择' : '点击选择本机文件导入'}</strong>
-          <small>支持 PDF、Word、PPT、Excel、Markdown、文本与图片 · 单次最多 20 个</small>
+          <small>{uploadHint}</small>
         </span>
       </button>
       {dropNotice ? <InlineNotice title="导入提示" tone="info">{dropNotice}</InlineNotice> : null}
@@ -270,7 +278,7 @@ function UploadQueue({ items, onClear, onRetry }: { items: readonly KnowledgeUpl
   );
 }
 
-function DocumentSummary({ detail, document, error, loading, onReparse, onRetry, reparsePending }: { detail: KnowledgeDocumentDetail | null; document: KnowledgeDocument | null; error: Error | null; loading: boolean; onReparse: (document: KnowledgeDocument, trigger: HTMLElement) => void; onRetry: () => void; reparsePending: boolean }) {
+function DocumentSummary({ detail, document, error, loading, onReparse, onRetry, reparsePending }: { detail: KnowledgeDocumentDetail | null; document: KnowledgeDocument | null; error: Error | null; loading: boolean; onReparse?: (document: KnowledgeDocument, trigger: HTMLElement) => void; onRetry: () => void; reparsePending: boolean }) {
   if (!document) return null;
   return (
     <aside className="knowledge-document-summary" aria-label={`${document.name} 处理与详情`}>
@@ -308,7 +316,7 @@ function DocumentPipeline({
   reparsePending,
 }: {
   document: KnowledgeDocument;
-  onReparse: (document: KnowledgeDocument, trigger: HTMLElement) => void;
+  onReparse?: (document: KnowledgeDocument, trigger: HTMLElement) => void;
   reparsePending: boolean;
 }) {
   const stages = pipelineStages(document);
@@ -337,25 +345,27 @@ function DocumentPipeline({
           {document.status === 'failed' && document.error ? (
             <span className="knowledge-document-summary__error" role="alert">{document.error}</span>
           ) : null}
-          <Button
-            disabled={reparsePending}
-            leadingIcon={<RotateCcw size={13} />}
-            loading={reparsePending}
-            onClick={(event) => onReparse(document, event.currentTarget)}
-            size="small"
-            variant="quiet"
-          >
-            {document.status === 'stale' ? '重新解析以重建' : '重新解析'}
-          </Button>
-          <TraceAgentHandoffButton handoff={{
-            kind: 'knowledge',
-            entityId: document.id,
-            title: `知识文档解析${document.status === 'failed' ? '失败' : '过期'}`,
-            summary: document.error || pipelineNote(document),
-            error: document.error || undefined,
-            sourceRoute: `/knowledge?base=${encodeURIComponent(document.baseId)}&document=${encodeURIComponent(document.id)}`,
-            refs: { baseId: document.baseId, documentId: document.id, status: document.status },
-          }} />
+          {onReparse ? <>
+            <Button
+              disabled={reparsePending}
+              leadingIcon={<RotateCcw size={13} />}
+              loading={reparsePending}
+              onClick={(event) => onReparse(document, event.currentTarget)}
+              size="small"
+              variant="quiet"
+            >
+              {document.status === 'stale' ? '重新解析以重建' : '重新解析'}
+            </Button>
+            <TraceAgentHandoffButton handoff={{
+              kind: 'knowledge',
+              entityId: document.id,
+              title: `知识文档解析${document.status === 'failed' ? '失败' : '过期'}`,
+              summary: document.error || pipelineNote(document),
+              error: document.error || undefined,
+              sourceRoute: `/knowledge?base=${encodeURIComponent(document.baseId)}&document=${encodeURIComponent(document.id)}`,
+              refs: { baseId: document.baseId, documentId: document.id, status: document.status },
+            }} />
+          </> : <span className="knowledge-pipeline__readonly">需要项目维护者重新处理</span>}
         </div>
       ) : null}
     </div>
@@ -440,7 +450,7 @@ export function KnowledgeDocumentViewer({
   onRetry: () => void;
   onBack: () => void;
   backLabel: string;
-  onImportMaterials: () => void;
+  onImportMaterials?: () => void;
   onSelectDocument: (documentId: string) => void;
   selectedDocumentId: string;
   documents: readonly KnowledgeDocument[];
@@ -467,7 +477,7 @@ export function KnowledgeDocumentViewer({
     if (error) return <InlineNotice title="文件列表暂不可用" tone="warning"><p>{publicErrorText(error, '可以重新读取文件列表。')}</p><Button onClick={onRetry} size="small" variant="quiet">重新读取文件列表</Button></InlineNotice>;
     return (
       <EmptyState
-        action={<Button onClick={onImportMaterials} size="small">去导入资料</Button>}
+        action={onImportMaterials ? <Button onClick={onImportMaterials} size="small">去导入资料</Button> : undefined}
         description="先在“资料”页导入文件，再回来查看解析结果。"
         icon={FileText}
         title="先导入资料"
@@ -763,7 +773,7 @@ function ParsedTable({ table }: { table: KnowledgeTableArtifact }) {
   );
 }
 
-export function KnowledgeJobsPanel({ cancellingJobId, cancelError, error, jobs, loading, onCancel, onRefresh }: { cancellingJobId: string; cancelError: unknown; error: Error | null; jobs: readonly KnowledgeIndexJob[]; loading: boolean; onCancel: (jobId: string) => void; onRefresh: () => void }) {
+export function KnowledgeJobsPanel({ cancellingJobId, cancelError, error, jobs, loading, onCancel, onRefresh }: { cancellingJobId: string; cancelError: unknown; error: Error | null; jobs: readonly KnowledgeIndexJob[]; loading: boolean; onCancel?: (jobId: string) => void; onRefresh: () => void }) {
   const [expandedId, setExpandedId] = useState('');
   const active = jobs.filter((job) => ['queued', 'running', 'parsing', 'embedding', 'indexing'].includes(job.status.toLowerCase()));
   const summary = error
@@ -776,7 +786,7 @@ export function KnowledgeJobsPanel({ cancellingJobId, cancelError, error, jobs, 
       {cancelError ? <InlineNotice title="任务未取消" tone="warning">{publicErrorText(cancelError, '请刷新任务状态后重试。')}</InlineNotice> : null}
       {jobs.length ? <div className="knowledge-job-list">{jobs.map((job) => {
         const expanded = expandedId === job.id;
-        return <article data-expanded={expanded || undefined} key={job.id}><span className="knowledge-job-list__icon"><RotateCcw size={14} /></span><button aria-expanded={expanded} className="knowledge-job-list__summary" onClick={() => setExpandedId(expanded ? '' : job.id)} type="button"><span><strong>{job.documentName || job.kind}</strong><small>{jobStageLabel(job.stage)} · {formatTime(job.updatedAtMs || job.createdAtMs)}</small>{job.error ? <em>处理未完成，请展开查看详情。</em> : null}<i style={{ '--job-progress': terminalJobStatus(job.status) ? 1 : job.progress } as React.CSSProperties} /></span><ChevronDown aria-hidden="true" size={14} /></button><StatusBadge label={jobStatusLabel(job.status)} tone={jobTone(job.status)} />{job.cancellable ? <IconButton disabled={cancellingJobId === job.id} icon={<CircleStop size={14} />} label="取消任务" onClick={() => onCancel(job.id)} size="small" tooltip /> : null}{expanded ? <JobDetails job={job} /> : null}</article>;
+        return <article data-expanded={expanded || undefined} key={job.id}><span className="knowledge-job-list__icon"><RotateCcw size={14} /></span><button aria-expanded={expanded} className="knowledge-job-list__summary" onClick={() => setExpandedId(expanded ? '' : job.id)} type="button"><span><strong>{job.documentName || job.kind}</strong><small>{jobStageLabel(job.stage)} · {formatTime(job.updatedAtMs || job.createdAtMs)}</small>{job.error ? <em>处理未完成，请展开查看详情。</em> : null}<i style={{ '--job-progress': terminalJobStatus(job.status) ? 1 : job.progress } as React.CSSProperties} /></span><ChevronDown aria-hidden="true" size={14} /></button><StatusBadge label={jobStatusLabel(job.status)} tone={jobTone(job.status)} />{job.cancellable && onCancel ? <IconButton disabled={cancellingJobId === job.id} icon={<CircleStop size={14} />} label="取消任务" onClick={() => onCancel(job.id)} size="small" tooltip /> : null}{expanded ? <JobDetails job={job} /> : null}</article>;
       })}</div> : loading ? <p className="knowledge-detail-loading">正在读取处理记录…</p> : !error ? <EmptyState description="导入或重新处理材料后，进度和结果会显示在这里。" icon={RotateCcw} title="还没有处理记录" /> : null}
     </div>
   );

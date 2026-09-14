@@ -24,6 +24,9 @@ vi.mock('@/features/input-method', () => ({
 }));
 vi.mock('@/features/observability', () => ({ ObservabilityFeature: () => <h1>活动真实界面</h1> }));
 vi.mock('@/features/plugins', () => ({ PluginsFeature: () => <h1>Package 生命周期真实界面</h1> }));
+vi.mock('@/features/team/TeamSharedResources', () => ({
+  TeamSharedResources: ({ pageId }: { pageId: string }) => <h1>团队共享资源真实界面 {pageId}</h1>,
+}));
 vi.mock('@/features/voice', () => ({ VoiceFeature: () => <h1>语音真实界面</h1> }));
 
 import {
@@ -33,6 +36,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   document.documentElement.style.removeProperty('color-scheme');
@@ -50,6 +54,28 @@ describe('PawSystemAppsMigrated', () => {
 
     const navigation = screen.getByRole('navigation', { name: new RegExp('页面$') });
     expect(within(navigation).getByRole('button', { name: label })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('uses the Team resource surface and hides local installation controls in Team App Center', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const transport = baseTransport({
+      'agent.extensions.proposals': {
+        ok: true,
+        items: [{ proposalId: 'local-proposal', summary: { action: 'install' } }],
+      },
+    });
+    const user = userEvent.setup();
+    renderSystemApp('app-center', '/plugins', transport);
+
+    expect(await screen.findByRole('heading', { name: '团队共享资源真实界面 installed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已发布版本' })).toHaveAttribute('aria-current', 'page');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.proposals')).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: '发布目录' }));
+    expect(await screen.findByRole('heading', { name: '团队共享资源真实界面 catalog' })).toBeInTheDocument();
   });
 
   it('opens the optimization report as an external webpage instead of mounting it in System Monitor', async () => {
@@ -407,6 +433,23 @@ describe('PawSystemAppsMigrated', () => {
     ])));
     await waitFor(() => expect(within(permissions).getByRole('radio', { name: '全自动' })).toBeChecked());
     expect(settingsReads).toBeGreaterThanOrEqual(2);
+  });
+
+  it('hides local full-trust defaults when the surface is served by TeamGateway', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const transport = baseTransport({
+      'configuration.settings': agentPreferenceSettings('per_action'),
+    });
+    renderSystemApp('system-settings', '/configuration?view=agent', transport);
+
+    const permissions = await screen.findByRole('radiogroup', { name: 'Agent 执行权限' });
+    expect(within(permissions).getAllByRole('radio')).toHaveLength(1);
+    expect(within(permissions).getByRole('radio', { name: '工作区托管（沙箱）' })).toBeChecked();
+    expect(within(permissions).queryByRole('radio', { name: '全自动' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'configuration.settings.preview')).toBe(false);
   });
 
   it.each([

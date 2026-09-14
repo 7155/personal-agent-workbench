@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 from urllib.request import getproxies
 from rag_ime.agent_core_policy import base_agent_safety_policy_prompt, core_agent_policy_prompt
@@ -19,6 +20,7 @@ from rag_ime.deepseek_config import load_deepseek_config
 from rag_ime.managed_pi_runtime import ManagedPiRuntimeError, discover_managed_pi_runtime
 from rag_ime.pi.provider_config import PiProviderConfigError, load_pi_provider_config
 from rag_ime.pi.protocols import normalize_protocol_version
+from rag_ime.secure_files import atomic_write, regular_reader
 
 __all__ = ["PiRuntimeConfig"]
 
@@ -32,6 +34,22 @@ _DEFAULT_DEBUG_CONTEXT_MAX_CALLS = 128
 
 
 _MAX_DEBUG_CONTEXT_MAX_CALLS = 256
+
+
+def _descriptor_path(path: Path) -> Path:
+    """Normalize only macOS root aliases before O_NOFOLLOW file access."""
+
+    absolute = path.expanduser().absolute()
+    parts = absolute.parts
+    if len(parts) > 1 and parts[1] in {"var", "tmp", "etc"}:
+        name = parts[1]
+        private_target = Path("/private") / name
+        try:
+            if (Path("/") / name).resolve(strict=False) == private_target:
+                return private_target.joinpath(*parts[2:])
+        except (OSError, RuntimeError):
+            pass
+    return absolute
 
 
 _IME_SURFACE_SYSTEM_PROMPT = """你是输入法中的连续联想引擎，只处理用户明确点击触发的文字生成。
@@ -458,6 +476,19 @@ class PiRuntimeConfig:
         repr=False,
         compare=False,
     )
+    # Team execution supplies a container-visible environment overlay and an
+    # opaque ExecutionSpec.  Both are opt-in; personal macOS Hosts retain the
+    # environment and local process launch path above unchanged.
+    runtime_environment: Mapping[str, str] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    execution_spec: Any = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         normalize_protocol_version(self.protocol_version)
@@ -603,6 +634,18 @@ class PiRuntimeConfig:
         )
 
     def launch_host_command(self) -> list[str]:
+        # A team Host command lives in the trusted runtime image, so its
+        # executable is intentionally absent from the server's host filesystem.
+        # The isolated launcher validates and supplies this immutable argv;
+        # personal Hosts continue through the installed executable checks.
+        if self.isolated_execution:
+            spec = self.execution_spec
+            command = tuple(str(part) for part in getattr(spec, "runtime_command", ()))
+            if not command or any(
+                not part or any(ord(char) < 32 for char in part) for part in command
+            ):
+                raise PiRuntimeError("isolated team runtime command is unavailable")
+            return list(command)
         if self.executable is None:
             raise PiRuntimeError("managed Pi runtime is not installed")
         executable = self.executable.expanduser().resolve(strict=False)
@@ -682,6 +725,81 @@ class PiRuntimeConfig:
                 selected_model = configured_ids[0]
         return selected_provider, selected_model
 
+    @property
+    def isolated_execution(self) -> bool:
+        """Whether this config is bound to a server-owned isolated attempt."""
+
+        return self.execution_spec is not None
+
+    def workspace_paths_for_host(self, roots: Sequence[str]) -> list[str]:
+        """Map persisted host workspace roots into the worker namespace.
+
+        Session rows keep the canonical checkout path because the server and
+        workspace coordinator own that state.  A team Pi Host runs in a
+        container where only the attempt workspace is mounted at
+        ``/workspace``.  Refusing roots outside the bound checkout prevents a
+        stale or forged Session row from turning ``cwd`` into a host path.
+        Personal Hosts retain their existing paths unchanged.
+        """
+
+        if not self.isolated_execution:
+            return [str(value) for value in roots if str(value).strip()]
+        spec = self.execution_spec
+        host_root = Path(str(getattr(spec, "workspace_root"))).expanduser().resolve(
+            strict=False
+        )
+        container_root = Path(str(getattr(spec, "container_workspace")))
+        values = [str(value).strip() for value in roots if str(value).strip()]
+        if not values:
+            raise PiRuntimeError(
+                "isolated team Session requires a bound workspace root"
+            )
+        mapped: list[str] = []
+        for value in values:
+            candidate = Path(value).expanduser().resolve(strict=False)
+            try:
+                relative = candidate.relative_to(host_root)
+            except ValueError as exc:
+                raise PiRuntimeError(
+                    "team Session workspace root is outside its execution workspace"
+                ) from exc
+            mapped.append((container_root / relative).as_posix())
+        return mapped
+
+    def container_session_path(self, path: str) -> str:
+        """Translate a persisted session transcript path for Pi in the worker."""
+
+        value = str(path or "").strip()
+        if not value or not self.isolated_execution:
+            return value
+        spec = self.execution_spec
+        session_root = self.session_dir.expanduser().resolve(strict=False)
+        candidate = Path(value).expanduser().resolve(strict=False)
+        try:
+            relative = candidate.relative_to(session_root)
+        except ValueError as exc:
+            raise PiRuntimeError(
+                "team Session transcript is outside its scoped session directory"
+            ) from exc
+        return (Path(str(getattr(spec, "container_session_dir"))) / relative).as_posix()
+
+    def host_session_path(self, path: str) -> str:
+        """Translate a worker transcript path back to the persisted host path."""
+
+        value = str(path or "").strip()
+        if not value or not self.isolated_execution:
+            return value
+        spec = self.execution_spec
+        container_root = Path(str(getattr(spec, "container_session_dir")))
+        candidate = Path(value).expanduser().resolve(strict=False)
+        try:
+            relative = candidate.relative_to(container_root)
+        except ValueError as exc:
+            raise PiRuntimeError(
+                "Pi returned a transcript outside its scoped session directory"
+            ) from exc
+        return (self.session_dir.expanduser() / relative).as_posix()
+
     def child_environment(
         self, *, session: Mapping[str, object] | None = None
     ) -> dict[str, str]:
@@ -694,7 +812,11 @@ class PiRuntimeConfig:
             "SSL_CERT_FILE",
             "SSL_CERT_DIR",
         )
-        environment = {key: os.environ[key] for key in allowed if os.environ.get(key)}
+        environment = (
+            {}
+            if self.isolated_execution
+            else {key: os.environ[key] for key in allowed if os.environ.get(key)}
+        )
         environment.update(
             {str(key): str(value) for key, value in self.provider_environment.items()}
         )
@@ -724,6 +846,13 @@ class PiRuntimeConfig:
             environment["RAG_IME_TOOL_GATEWAY_URL"] = self.tool_gateway_url
         if self.plugin_approval_token:
             environment["RAG_IME_PLUGIN_APPROVAL_TOKEN"] = self.plugin_approval_token
+        # A trusted team launcher may replace host paths with the fixed paths
+        # visible inside its isolated container.  Apply this last so no
+        # inherited HOME, provider endpoint or host state directory wins over
+        # the server-derived scope.  Personal configs leave it empty.
+        environment.update(
+            {str(key): str(value) for key, value in self.runtime_environment.items()}
+        )
         if session is not None:
             environment["RAG_IME_AGENT_SESSION_ID"] = str(session.get("id") or "")
             environment["RAG_IME_AGENT_SESSION_MODE"] = str(
@@ -753,6 +882,7 @@ class PiRuntimeConfig:
         target = self.agent_dir / "models.json"
         if target.is_symlink():
             raise PiRuntimeError("managed Pi models.json must not be a symlink")
+        descriptor_target = _descriptor_path(target)
         providers = dict(self.model_providers)
         if not providers and self.provider == "deepseek" and self.model_base_url:
             providers = {
@@ -772,18 +902,17 @@ class PiRuntimeConfig:
                 raise PiRuntimeError(
                     "managed Pi models.json must not contain provider credentials"
                 )
-        temporary = self.agent_dir / f".models.json.tmp-{uuid.uuid4().hex}"
         try:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(encoded)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, target)
-            os.chmod(target, 0o600)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+            # ``atomic_write`` opens every parent component with
+            # O_NOFOLLOW, creates the temporary file with O_EXCL, and
+            # replaces the target relative to the held parent descriptor.
+            # A concurrent directory/file symlink swap therefore cannot
+            # redirect this config write outside the scoped agent directory.
+            atomic_write(descriptor_target, encoded)
+        except (OSError, ValueError) as exc:
+            raise PiRuntimeError(
+                "managed Pi models.json could not be written safely"
+            ) from exc
 
     def _prepare_retry_settings(self) -> None:
         """Fill PAW defaults into Pi's native retry settings without overriding the user."""
@@ -791,15 +920,26 @@ class PiRuntimeConfig:
         target = self.agent_dir / "settings.json"
         if target.is_symlink():
             raise PiRuntimeError("managed Pi settings.json must not be a symlink")
+        descriptor_target = _descriptor_path(target)
         settings: dict[str, object] = {}
         if target.exists():
-            if not target.is_file():
-                raise PiRuntimeError("managed Pi settings.json must be a regular file")
             try:
-                loaded = json.loads(target.read_text(encoding="utf-8"))
+                # Read through a descriptor opened relative to O_NOFOLLOW
+                # parent directories.  The path checks above are only a
+                # friendly error; they are not the security boundary.
+                with regular_reader(descriptor_target) as source:
+                    loaded = json.loads(source.read().decode("utf-8"))
+            except FileNotFoundError:
+                # A concurrent unlink is harmless: the atomic replacement
+                # below will recreate the scoped settings file.
+                loaded = {}
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
                 raise PiRuntimeError(
                     "managed Pi settings.json is not valid JSON"
+                ) from exc
+            except ValueError as exc:
+                raise PiRuntimeError(
+                    "managed Pi settings.json must be a regular file"
                 ) from exc
             if not isinstance(loaded, dict):
                 raise PiRuntimeError("managed Pi settings.json must contain an object")
@@ -826,19 +966,9 @@ class PiRuntimeConfig:
         encoded = (
             json.dumps(settings, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
         ).encode("utf-8")
-        temporary = self.agent_dir / f".settings.json.tmp-{uuid.uuid4().hex}"
         try:
-            descriptor = os.open(
-                temporary,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                0o600,
-            )
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(encoded)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, target)
-            os.chmod(target, 0o600)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+            atomic_write(descriptor_target, encoded)
+        except (OSError, ValueError) as exc:
+            raise PiRuntimeError(
+                "managed Pi settings.json could not be written safely"
+            ) from exc

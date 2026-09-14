@@ -6,8 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { TeamProvider } from '@/features/team/team-context';
+import { TeamApi } from '@/features/team/team-api';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
+import type { TeamSession, TeamSessionResourceSnapshot } from '@/features/team/types';
 import manifest from './pawos-app.json';
 import ZhangguiWenshuApp from './App';
 
@@ -52,6 +55,7 @@ vi.mock('react-virtuoso', () => ({
 
 afterEach(() => {
   cleanup();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
   window.localStorage.clear();
   sessionWorkspaceProps.mockClear();
   renderRealWorkspace.current = false;
@@ -548,14 +552,238 @@ describe('掌柜问数 Extension App', () => {
     expect(screen.getByText('已选择受控数据')).toBeInTheDocument();
     expect(screen.queryByText('对话已连接')).not.toBeInTheDocument();
   });
+
+  it('uses the current Team project data and workspace-managed Session without sandbox or host-directory routes', async () => {
+    const user = userEvent.setup();
+    const project: TeamSession['spaces'][number] = {
+      id: 'project-team', kind: 'project', name: '官网', role: 'contributor', revision: 1,
+    };
+    const teamSession: TeamSession = {
+      user: { id: 'user-team', username: 'xiaowang', displayName: '小王', role: 'member', active: true },
+      csrfToken: 'csrf-team',
+      spaces: [project],
+    };
+    const ownSession = {
+      id: 'session-team-own',
+      title: '掌柜问数 · 问数',
+      mode: 'coordinator',
+      status: 'idle',
+      updatedAtMs: 12,
+      surfaceKind: 'extension_app',
+      ownerAppId: manifest.id,
+      surfaceKey: 'ask',
+      ownerUserId: 'user-team',
+      spaceId: project.id,
+      canControl: true,
+      audience: 'project',
+    };
+    const otherSession = { ...ownSession, id: 'session-team-other', ownerUserId: 'user-other', canControl: false };
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.create': { ok: true, session: { id: 'session-team-new', title: '掌柜问数 · 对账', status: 'idle', updatedAtMs: 1 } },
+      'agent.session.mode.update': { ok: true },
+      'agent.session.prompt': { ok: true },
+    } });
+    const api = fakeTeamApi(teamSession, [ownSession, otherSession]);
+    vi.mocked(api.getSessionResourceSnapshot).mockResolvedValue(teamExtensionSnapshot(project.id, ownSession.id));
+    setTeamDeploymentMeta();
+    renderApp(transport, teamSession, api);
+
+    expect(await screen.findByTestId('shared-session')).toHaveTextContent('session-team-own');
+    expect(screen.queryByText('session-team-other')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '启动前运行受管沙箱自测' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /迁移到数据目录|更换数据目录/ })).not.toBeInTheDocument();
+    expect(transport.filePickCalls).toEqual([]);
+    expect(api.listProjectSessions).toHaveBeenCalledWith(project.id, 'csrf-team', {
+      surfaceKind: 'extension_app',
+      ownerAppId: manifest.id,
+      includeArchived: false,
+      limit: 100,
+    });
+    expect(api.getSessionResourceSnapshot).toHaveBeenCalledWith(project.id, ownSession.id, 'csrf-team');
+    expect(transport.requests).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: '新对话' }));
+    await user.click(screen.getByRole('tab', { name: '对账' }));
+    await user.type(screen.getByRole('textbox', { name: '对账问题' }), '项目中的问题');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByTestId('shared-session');
+
+    expect(requestFor(transport, 'agent.sessions.create').body).toMatchObject({
+      mode: 'coordinator',
+      executionMode: 'workspace_managed',
+      workspaceRoots: [],
+      piSkillsEnabled: false,
+      codexSkillsEnabled: false,
+      surfaceKind: 'extension_app',
+      ownerAppId: manifest.id,
+    });
+    expect(requestFor(transport, 'agent.session.mode.update').body).toMatchObject({
+      mode: 'coordinator',
+      executionMode: 'workspace_managed',
+      workspaceRoots: [],
+      piSkillsEnabled: false,
+      codexSkillsEnabled: false,
+    });
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.list')).toBe(false);
+    expect(transport.requests.some(({ request }) => request.pathId === 'extension.sandbox.experiment.run')).toBe(false);
+  });
+
+  it('does not restore an App Session whose Team resource snapshot has no matching fixed version', async () => {
+    const project: TeamSession['spaces'][number] = {
+      id: 'project-team', kind: 'project', name: '官网', role: 'viewer', revision: 1,
+    };
+    const teamSession: TeamSession = {
+      user: { id: 'user-team', username: 'xiaowang', displayName: '小王', role: 'member', active: true },
+      csrfToken: 'csrf-team',
+      spaces: [project],
+    };
+    const session = {
+      id: 'session-team-old', title: '旧版本掌柜问数', mode: 'coordinator', status: 'idle', updatedAtMs: 2,
+      surfaceKind: 'extension_app', ownerAppId: manifest.id, surfaceKey: 'ask',
+      ownerUserId: 'user-team', spaceId: project.id, canControl: true, audience: 'project',
+    };
+    const transport = new MockControlTransport();
+    const api = fakeTeamApi(teamSession, [session]);
+    vi.mocked(api.getSessionResourceSnapshot).mockResolvedValue(teamExtensionSnapshot(project.id, session.id, { items: [] }));
+    setTeamDeploymentMeta();
+    renderApp(transport, teamSession, api);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('固定资源');
+    expect(screen.queryByTestId('shared-session')).not.toBeInTheDocument();
+    expect(api.getSessionResourceSnapshot).toHaveBeenCalledWith(project.id, session.id, 'csrf-team');
+    expect(transport.requests).toEqual([]);
+  });
+
+  it('stops a Team creation chain after unmount before the create receipt arrives', async () => {
+    const project: TeamSession['spaces'][number] = {
+      id: 'project-team', kind: 'project', name: '官网', role: 'contributor', revision: 1,
+    };
+    const teamSession: TeamSession = {
+      user: { id: 'user-team', username: 'xiaowang', displayName: '小王', role: 'member', active: true },
+      csrfToken: 'csrf-team',
+      spaces: [project],
+    };
+    const createReceipt = deferred<unknown>();
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.create': () => createReceipt.promise,
+      'agent.session.mode.update': { ok: true },
+      'agent.session.prompt': { ok: true },
+    } });
+    setTeamDeploymentMeta();
+    const rendered = renderApp(transport, teamSession, fakeTeamApi(teamSession));
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole('textbox', { name: '问数问题' }), '卸载前的问题');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.sessions.create')).toHaveLength(1));
+
+    rendered.unmount();
+    await act(async () => {
+      createReceipt.resolve({ ok: true, session: { id: 'session-after-unmount' } });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.mode.update')).toBe(false);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
 });
 
-function renderApp(transport: MockControlTransport) {
-  return render(
+function renderApp(transport: MockControlTransport, teamSession?: TeamSession, api?: TeamApi) {
+  const content = (
     <ControlTransportProvider transport={transport}>
       <TooltipProvider><ZhangguiWenshuApp manifest={manifest as never} /></TooltipProvider>
-    </ControlTransportProvider>,
+    </ControlTransportProvider>
   );
+  return render(teamSession ? <TeamProvider api={api ?? fakeTeamApi(teamSession)}>{content}</TeamProvider> : content);
+}
+
+function setTeamDeploymentMeta(): void {
+  const meta = document.createElement('meta');
+  meta.name = 'paw-deployment';
+  meta.content = 'team';
+  document.head.appendChild(meta);
+}
+
+function fakeTeamApi(teamSession: TeamSession, projectSessions: unknown[] = []): TeamApi {
+  return {
+    status: vi.fn().mockResolvedValue({ enabled: true, name: 'PAW Team' }),
+    login: vi.fn(),
+    me: vi.fn().mockResolvedValue(teamSession),
+    logout: vi.fn().mockResolvedValue({ ok: true }),
+    createProject: vi.fn(),
+    listMembers: vi.fn().mockResolvedValue([]),
+    listDirectory: vi.fn().mockResolvedValue([]),
+    createMember: vi.fn(),
+    setMemberStatus: vi.fn(),
+    listProjectMembers: vi.fn().mockResolvedValue([]),
+    addProjectMember: vi.fn(),
+    removeProjectMember: vi.fn(),
+    getProjectOverview: vi.fn(),
+    getProjectPreview: vi.fn(),
+    startProjectPreview: vi.fn(),
+    stopProjectPreview: vi.fn(),
+    listConnections: vi.fn().mockResolvedValue({ connections: [], grants: [] }),
+    createConnectionWithToken: vi.fn(),
+    startConnectionOAuth: vi.fn(),
+    revokeConnection: vi.fn(),
+    createConnectionGrant: vi.fn(),
+    revokeConnectionGrant: vi.fn(),
+    updateProjectBrief: vi.fn(),
+    adoptSessionRequirements: vi.fn(),
+    getSessionResourceSnapshot: vi.fn(),
+    listProjectDrafts: vi.fn().mockResolvedValue([]),
+    listProjectSessions: vi.fn().mockResolvedValue(projectSessions),
+    getProjectDraftDiff: vi.fn(),
+    publishProjectDraft: vi.fn(),
+    integrateProjectDraft: vi.fn(),
+    adoptProjectDraft: vi.fn(),
+  } as unknown as TeamApi;
+}
+
+function teamExtensionSnapshot(spaceId: string, sessionId: string, overrides: Record<string, unknown> = {}): TeamSessionResourceSnapshot {
+  const digest = 'team-extension-digest';
+  return {
+    sessionId,
+    spaceId,
+    selectionRevision: 1,
+    publicationIds: ['publication-zhanggui'],
+    items: [{
+      publicationId: 'publication-zhanggui',
+      packageId: manifest.packageId,
+      version: manifest.version,
+      digest,
+      status: 'published',
+      metadata: {
+        displayName: manifest.label,
+        description: '',
+        publisher: 'PAW',
+        source: { kind: 'bundled', label: 'Product bundle' },
+        permissions: [],
+        compatibility: {},
+        security: {},
+        installable: true,
+        distribution: 'team_staged_source',
+        version: manifest.version,
+        extensionApp: {
+          id: manifest.id,
+          packageId: manifest.packageId,
+          version: manifest.version,
+          bindingSha256: manifest.bindingSha256,
+          bindingCapability: `pawos.extension.binding.${manifest.bindingSha256.slice(0, 40)}`,
+          skillRef: manifest.skillRef,
+          skillSha256: manifest.skillSha256,
+          verticalSuiteId: manifest.verticalSuiteId,
+          verticalSuiteRevision: manifest.verticalSuiteRevision,
+          sandbox: manifest.sandbox,
+          packageDigest: digest,
+        },
+      },
+      publishedByUserId: 'user-admin',
+      publishedAtMs: 1,
+      updatedAtMs: 1,
+    }],
+    createdAtMs: 1,
+    ...overrides,
+  };
 }
 
 function firstPromptTransport(sessionId: string, prompt: MockRouteHandler, routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler>> = {}): MockControlTransport {

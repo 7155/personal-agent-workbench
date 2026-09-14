@@ -61,6 +61,45 @@ class PiProjectionBoundaryTests(unittest.TestCase):
             self.assertIsNone(read_recent_transcript_tail(path, path.stat().st_size))
             self.assertEqual(path.read_bytes(), b"not-json\n")
 
+    def test_transcript_readers_reject_file_and_directory_symlink_swaps(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            session_root = root / "sessions"
+            outside = root / "outside"
+            session_root.mkdir()
+            outside.mkdir()
+            target = session_root / "history.jsonl"
+            target.write_bytes(b'{"type":"session","id":"pi:test"}\n')
+            size = target.stat().st_size
+
+            # The caller may have measured the old regular file before a
+            # concurrent writer replaces it with a symlink.  The descriptor
+            # open must reject the new final component rather than follow it.
+            swapped_file = session_root / "swapped.jsonl"
+            swapped_file.write_bytes(target.read_bytes())
+            old_size = swapped_file.stat().st_size
+            swapped_file.unlink()
+            swapped_file.symlink_to(outside / "secret.jsonl")
+            (outside / "secret.jsonl").write_bytes(target.read_bytes())
+            with self.assertRaises(OSError):
+                read_recent_transcript_tail(swapped_file, old_size)
+            with self.assertRaises(OSError):
+                transcript_boundary_sha256(swapped_file, old_size)
+
+            # A parent directory can be exchanged for a symlink after the
+            # path was persisted.  O_NOFOLLOW is required on every parent,
+            # not only on the final transcript filename.
+            swapped_parent = session_root / "parts"
+            swapped_parent.mkdir()
+            swapped_path = swapped_parent / "history.jsonl"
+            swapped_path.write_bytes(target.read_bytes())
+            swapped_parent.rename(session_root / "parts-old")
+            swapped_parent.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(OSError):
+                read_recent_transcript_tail(swapped_path, size)
+            with self.assertRaises(OSError):
+                transcript_boundary_sha256(swapped_path, size)
+
     def test_text_delta_keeps_identity_and_filters_internal_preamble(self) -> None:
         message = {"content": "<thinking>private</thinking>Visible"}
         event = text_delta_payload(

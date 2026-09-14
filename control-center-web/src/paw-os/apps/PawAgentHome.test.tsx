@@ -11,11 +11,17 @@ import type { AgentImagePasteOptions, ControlRequest, PickedFile } from '@/platf
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { ControlTransportHttpError } from '@/platform/http-transport';
+import { TeamProvider } from '@/features/team/team-context';
+import type { TeamApi } from '@/features/team/team-api';
+import type { TeamSession } from '@/features/team/types';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import agentNextCss from '../styles/paw-os-agent-next.css?raw';
 import { PawAgentHome } from './PawAgentHome';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
+});
 
 describe('PAWOS Agent Home 首屏合同', () => {
   it('completes the new-work composer and 继续工作 on one fixed surface without a galaxy landing section', async () => {
@@ -160,6 +166,76 @@ describe('PAWOS Agent Home 首屏合同', () => {
       workspaceRoots: ['/work/paw'],
       workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
     });
+  });
+
+  it('uses the TeamGateway workspace contract without exposing local roots or full trust', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const user = userEvent.setup();
+    const { transport } = renderHome({ projectRoots: ['/work/should-not-be-picked'] });
+
+    expect(screen.queryByRole('button', { name: /起始项目/ })).not.toBeInTheDocument();
+    const permission = await screen.findByRole('button', { name: '权限 · 工作区托管（沙箱）' });
+    expect(permission).toBeDisabled();
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '团队服务端分配工作区');
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.create')).toBe(true));
+    const create = transport.requests.find(({ request }) => request.pathId === 'agent.sessions.create')?.request;
+    expect(create?.body).toMatchObject({
+      executionMode: 'workspace_managed',
+      toolProfileVersion: 'control-center-v1',
+      workspaceRoots: [],
+    });
+    expect(create?.body).not.toHaveProperty('dangerousModeConfirmation');
+  });
+
+  it('states project record visibility beside the Team project creation composer', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const projectSession: TeamSession = {
+      user: { id: 'user-1', username: 'alice', displayName: 'Alice', role: 'member', active: true },
+      csrfToken: 'csrf-memory',
+      spaces: [{ id: 'project-1', kind: 'project', name: '共享输入法', role: 'contributor', revision: 2 }],
+    };
+
+    renderHome({ teamSession: projectSession });
+
+    expect(await screen.findByText(
+      '在「共享输入法」创建的对话和工具记录对项目成员可见；私人讨论请使用个人空间。',
+    )).toBeInTheDocument();
+  });
+
+  it('bounds Team Room creation to the server-managed workspace policy', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const user = userEvent.setup();
+    const { transport } = renderHome({
+      personas: [persona('partner-1', '伙伴 1'), persona('partner-2', '伙伴 2')],
+      projectRoots: ['/work/should-not-be-picked'],
+    });
+
+    await user.click(screen.getByRole('radio', { name: 'Room' }));
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '团队 Room 使用项目挂载');
+    await user.click(screen.getByRole('button', { name: '开始 Room' }));
+
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.rooms.create')).toBe(true));
+    const create = transport.requests.find(({ request }) => request.pathId === 'agent.rooms.create')?.request;
+    expect(create?.body).toMatchObject({
+      workspaceRoots: [],
+      permissionPolicy: {
+        room: { executionMode: 'workspace_managed' },
+        partner: { executionMode: 'inherit' },
+        toolAgent: { executionMode: 'inherit' },
+      },
+    });
+    expect(create?.body).not.toHaveProperty('dangerousModeConfirmation');
   });
 
   it('keeps a pasted image visible, removable, and sends its managed receipt with a new Session', async () => {
@@ -590,6 +666,7 @@ function renderHome({
   imagePaste,
   onCreated = vi.fn(),
   promptRoute = { ok: true },
+  teamSession,
 }: {
   modelReference?: string;
   models?: PiModelOption[];
@@ -598,6 +675,7 @@ function renderHome({
   imagePaste?: (input: AgentImagePasteOptions) => PickedFile[] | Promise<PickedFile[]>;
   onCreated?: Parameters<typeof PawAgentHome>[0]['onCreated'];
   promptRoute?: MockRouteHandler;
+  teamSession?: TeamSession;
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const transport = new MockControlTransport({
@@ -630,26 +708,52 @@ function renderHome({
     },
     ...(imagePaste ? { imagePaste } : {}),
   });
+  const home = (
+    <PawAgentHome
+      defaultModel="gpt/gpt-5.6-luna"
+      models={models}
+      personas={personas}
+      projectRoots={projectRoots}
+      rooms={[room()]}
+      sessions={[session()]}
+      onCreated={onCreated}
+      onOpenRoom={vi.fn()}
+      onOpenSession={vi.fn()}
+    />
+  );
   const rendered = render(
     <QueryClientProvider client={client}>
       <ControlTransportProvider transport={transport}>
         <TooltipProvider>
-          <PawAgentHome
-            defaultModel="gpt/gpt-5.6-luna"
-            models={models}
-            personas={personas}
-            projectRoots={projectRoots}
-            rooms={[room()]}
-            sessions={[session()]}
-            onCreated={onCreated}
-            onOpenRoom={vi.fn()}
-            onOpenSession={vi.fn()}
-          />
+          {teamSession ? <TeamProvider api={fakeTeamApi(teamSession)}>{home}</TeamProvider> : home}
         </TooltipProvider>
       </ControlTransportProvider>
     </QueryClientProvider>,
   );
   return { ...rendered, transport };
+}
+
+function fakeTeamApi(session: TeamSession): TeamApi {
+  return {
+    status: vi.fn().mockResolvedValue({ enabled: true, name: 'PAW Team' }),
+    login: vi.fn(),
+    me: vi.fn().mockResolvedValue(session),
+    logout: vi.fn().mockResolvedValue({ ok: true }),
+    createProject: vi.fn(),
+    listMembers: vi.fn().mockResolvedValue([]),
+    listDirectory: vi.fn().mockResolvedValue([]),
+    createMember: vi.fn(),
+    setMemberStatus: vi.fn(),
+    listProjectMembers: vi.fn().mockResolvedValue([]),
+    addProjectMember: vi.fn(),
+    removeProjectMember: vi.fn(),
+    listProjectDrafts: vi.fn().mockResolvedValue([]),
+    listProjectSessions: vi.fn().mockResolvedValue([]),
+    getProjectDraftDiff: vi.fn(),
+    publishProjectDraft: vi.fn(),
+    integrateProjectDraft: vi.fn(),
+    adoptProjectDraft: vi.fn(),
+  } as unknown as TeamApi;
 }
 
 function model(id: string, name: string): PiModelOption {

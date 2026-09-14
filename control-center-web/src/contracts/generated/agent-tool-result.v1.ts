@@ -30,6 +30,7 @@ export interface AgentToolResultV1 {
     | 'sandbox'
     | 'work_documents'
     | 'lab_project'
+    | 'connections'
     | 'workspace_list'
     | 'workspace_lsp'
     | 'workspace_read'
@@ -40,6 +41,12 @@ export interface AgentToolResultV1 {
     | 'workspace_shell'
     | 'workspace_job';
   operation:
+    | 'repo.read'
+    | 'file.read'
+    | 'issues.list'
+    | 'issue.read'
+    | 'issue.create'
+    | 'issue.comment'
     | 'status'
     | 'capabilities'
     | 'recent_activity'

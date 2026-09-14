@@ -34,6 +34,9 @@ interface AgentFilesPanelProps {
   workspaceRoots: string[];
   open: boolean;
   modal?: boolean;
+  /** TeamGateway owns the mounted workspace; local directory picking is not
+   * available in that deployment. */
+  allowWorkspaceRootManagement?: boolean;
   onClose: () => void;
   onManageRoots: () => void;
 }
@@ -56,6 +59,7 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
   workspaceRoots,
   open,
   modal = false,
+  allowWorkspaceRootManagement = true,
   onClose,
   onManageRoots,
 }, ref) {
@@ -306,7 +310,7 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
           <span><strong>文件目录</strong><small>{roots.length ? `${roots.length} 个工作区` : '未选择工作区'}</small></span>
           <div className="agent-files-panel__actions">
             <IconButton label="刷新文件目录" icon={<RefreshCw size={16} />} onClick={refresh} disabled={!roots.length} tooltip />
-            <IconButton label="管理工作区目录" icon={<Settings2 size={16} />} onClick={onManageRoots} tooltip />
+            {allowWorkspaceRootManagement ? <IconButton label="管理工作区目录" icon={<Settings2 size={16} />} onClick={onManageRoots} tooltip /> : null}
             <IconButton data-drawer-autofocus label="收起文件目录" icon={<PanelRightClose size={17} />} onClick={onClose} tooltip />
           </div>
         </header>
@@ -349,8 +353,8 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
             </nav>
           ) : (
             <p className="agent-files-panel__empty" role="status">
-              <span>当前没有文件；选择工作区目录后即可浏览。</span>
-              <button type="button" onClick={onManageRoots}>选择目录</button>
+              <span>{allowWorkspaceRootManagement ? '当前没有文件；选择工作区目录后即可浏览。' : '当前团队工作区由服务管理，等待服务器返回文件范围。'}</span>
+              {allowWorkspaceRootManagement ? <button type="button" onClick={onManageRoots}>选择目录</button> : null}
             </p>
           )}
         </div>

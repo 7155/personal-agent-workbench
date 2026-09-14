@@ -11,6 +11,18 @@ import type {
 export type KnowledgeParserMode = 'auto' | 'builtin' | 'mineru';
 export type KnowledgeDocumentStatus = 'queued' | 'parsing' | 'indexing' | 'ready' | 'failed' | 'stale';
 
+/** Team uploads are deliberately bounded before they reach the transport.
+ * The gateway enforces the same limit; keeping it here gives the user a
+ * recoverable queue item instead of an opaque request failure. */
+export const TEAM_KNOWLEDGE_MAX_FILE_BYTES = 8 * 1024 * 1024;
+export const TEAM_KNOWLEDGE_FILE_ACCEPT = '.txt,.md,.csv,.html,.htm,.json,.docx,.pptx,.xlsx';
+
+export function knowledgeUploadSizeError(file: Pick<File, 'name' | 'size'>): string | null {
+  return file.size > TEAM_KNOWLEDGE_MAX_FILE_BYTES
+    ? `${file.name} 超过团队资料单文件 8 MiB 上限。`
+    : null;
+}
+
 export interface DocumentKnowledgeBase {
   id: string;
   name: string;
@@ -375,8 +387,14 @@ export const knowledgeLibraryKeys = {
   ] as const,
 };
 
-export function useKnowledgeLibraryQueries(baseId: string, enabled = true) {
+export interface KnowledgeLibraryQueryOptions {
+  /** Team spaces do not expose vector/model configuration to the client. */
+  includeAdvanced?: boolean;
+}
+
+export function useKnowledgeLibraryQueries(baseId: string, enabled = true, options: KnowledgeLibraryQueryOptions = {}) {
   const transport = useControlTransport();
+  const includeAdvanced = options.includeAdvanced ?? true;
   const bases = useQuery({
     queryKey: knowledgeLibraryKeys.bases(),
     enabled,
@@ -441,7 +459,7 @@ export function useKnowledgeLibraryQueries(baseId: string, enabled = true) {
   });
   const embeddingProfile = useQuery({
     queryKey: knowledgeLibraryKeys.embeddingProfile(),
-    enabled,
+    enabled: enabled && includeAdvanced,
     queryFn: async ({ signal }) => normalizeEmbeddingProfileState(await transport.request({
       pathId: 'knowledgeEmbedding.profile',
       signal,
@@ -450,7 +468,7 @@ export function useKnowledgeLibraryQueries(baseId: string, enabled = true) {
   });
   const settings = useQuery({
     queryKey: knowledgeLibraryKeys.settings(),
-    enabled,
+    enabled: enabled && includeAdvanced,
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.settings', signal }),
     staleTime: 10_000,
   });
@@ -770,12 +788,12 @@ export async function openKnowledgeHit(
   });
 }
 
-export function chooseKnowledgeFiles(maxFiles = 20): Promise<File[]> {
+export function chooseKnowledgeFiles(maxFiles = 20, accept?: string): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.webp';
+    input.accept = accept ?? '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.webp';
     input.addEventListener('change', () => resolve([...(input.files ?? [])].slice(0, maxFiles)), { once: true });
     input.addEventListener('cancel', () => resolve([]), { once: true });
     input.click();

@@ -52,7 +52,20 @@ def apply_database_migrations(
     migrations_dir: str | Path = DEFAULT_MIGRATIONS_DIR,
     applied_at_ms: int | None = None,
 ) -> MigrationResult:
-    migrations = load_migrations(migrations_dir)
+    # A caller that already opened a transaction (the team identity store uses
+    # BEGIN IMMEDIATE) owns the migration transaction.  Committing one
+    # migration at a time in that case releases SQLite's writer lock between
+    # migrations while this function still holds a stale `applied` snapshot;
+    # another initializer can then apply the next migration first.  Keep the
+    # caller's transaction open so schema inspection and every migration are
+    # serialized as one unit.  Callers without an active transaction retain
+    # the historical per-migration commit behavior.
+    caller_transaction_open = conn.in_transaction
+    resolved_migrations_dir = Path(migrations_dir).resolve(strict=False)
+    migrations = load_migrations(resolved_migrations_dir)
+    default_migration_names = {
+        migration.version: migration.name for migration in _load_default_migrations()
+    }
     _ensure_migration_table(conn)
     applied = {
         int(row[0]): str(row[1])
@@ -71,16 +84,41 @@ def apply_database_migrations(
     for migration in migrations:
         if migration.version in applied:
             continue
-        hook = _MIGRATION_HOOKS.get(migration.version)
-        with conn:
+        # Hooks belong to the packaged PAW schema.  Test/deployment fixtures
+        # may copy or deliberately alter a packaged migration in a custom
+        # directory, so retain the source migration name as its identity.
+        # Team and other isolated stores intentionally reuse version numbers
+        # with different names and must never inherit a hook by coincidence.
+        hook = (
+            _MIGRATION_HOOKS.get(migration.version)
+            if default_migration_names.get(migration.version) == migration.name
+            else None
+        )
+        if caller_transaction_open:
+            # Hooks are allowed to manage a transaction themselves for legacy
+            # migrations.  If one commits the caller's transaction, reacquire
+            # the writer lock before recording the migration row; team schema
+            # migrations have no such hooks and stay under the original lock.
             if hook is not None:
                 hook(conn, timestamp)
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
             if migration.sql.strip():
                 _execute_sql_script(conn, migration.sql)
             conn.execute(
                 "INSERT INTO schema_migrations(version, name, applied_at_ms, checksum) VALUES (?, ?, ?, ?)",
                 (migration.version, migration.name, timestamp, migration.checksum),
             )
+        else:
+            with conn:
+                if hook is not None:
+                    hook(conn, timestamp)
+                if migration.sql.strip():
+                    _execute_sql_script(conn, migration.sql)
+                conn.execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at_ms, checksum) VALUES (?, ?, ?, ?)",
+                    (migration.version, migration.name, timestamp, migration.checksum),
+                )
         newly_applied.append(migration.version)
         applied[migration.version] = migration.checksum
     return MigrationResult(
@@ -107,7 +145,7 @@ def migration_status(
             "name": str(row[1]),
             "appliedAtMs": int(row[2]),
             "checksum": str(row[3]),
-            "sourceChecksum": source.get(int(row[0])).checksum if int(row[0]) in source else "",
+            "sourceChecksum": source[int(row[0])].checksum if int(row[0]) in source else "",
             "checksumMatches": int(row[0]) in source and str(row[3]) == source[int(row[0])].checksum,
         }
         for row in rows

@@ -14,6 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+team = [
+  "cryptography>=46.0,<52",
+]
 # Textual is intentionally optional so headless/runtime installs stay small.
 tui = [
   "textual>=0.50,<1",

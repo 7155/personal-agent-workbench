@@ -68,6 +68,8 @@ import {
 import type { PawAppId } from '../runtime/app-registry';
 import { pawApp } from '../runtime/app-registry';
 import { AppSidebarToggle, useAppSidebar } from './app-sidebar';
+import { isTeamDeployment } from '@/features/team/deployment';
+import { TeamSharedResources } from '@/features/team/TeamSharedResources';
 
 const ApprovalsFeature = lazy(async () => ({ default: (await import('@/features/approvals')).ApprovalsFeature }));
 const ConfigurationFeature = lazy(async () => ({ default: (await import('@/features/configuration')).ConfigurationFeature }));
@@ -135,6 +137,23 @@ const systemPages: Record<PawSystemAppId, readonly SystemPage[]> = {
   ],
 };
 
+const teamAppCenterPages: readonly SystemPage[] = [
+  {
+    id: 'installed',
+    label: '已发布版本',
+    icon: PackageCheck,
+    route: '/plugins',
+    purpose: '查看团队已发布的共享版本与当前空间选择',
+  },
+  {
+    id: 'catalog',
+    label: '发布目录',
+    icon: LibraryBig,
+    route: '/plugins?view=catalog',
+    purpose: '管理员从已验证清单发布精确版本',
+  },
+];
+
 export function isPawSystemAppId(appId: PawAppId): appId is PawSystemAppId {
   return (pawSystemAppIds as readonly string[]).includes(appId);
 }
@@ -160,7 +179,8 @@ export function PawSystemAppsMigrated({
   appId,
   initialRoute = '',
 }: PawSystemAppsMigratedProps) {
-  const pages = systemPages[appId];
+  const teamMode = isTeamDeployment();
+  const pages = teamMode && appId === 'app-center' ? teamAppCenterPages : systemPages[appId];
   const sidebar = useAppSidebar(appId);
   const app = pawApp(appId);
   const desktop = usePawOsDesktop();
@@ -280,6 +300,7 @@ function PawSystemSurface({ appId, pageId }: { appId: PawSystemAppId; pageId: st
     return <InputMethodFeature />;
   }
   if (appId === 'app-center') {
+    if (isTeamDeployment()) return <TeamSharedResources pageId={pageId} />;
     if (pageId === 'scenes') return <PluginScenes />;
     if (pageId === 'catalog') return <PawPackageCatalog />;
     return <PluginsFeature />;
@@ -345,6 +366,7 @@ const agentExecutionModes: readonly {
 
 function PawAgentSettings() {
   const desktop = usePawOsDesktop();
+  const teamMode = isTeamDeployment();
   const resource = useAgentModelResource();
   const modelRouting = useAgentModelRoutingAuthority();
   const authority = useAgentPreferencesAuthority();
@@ -458,19 +480,23 @@ function PawAgentSettings() {
           {modelRouting.readError ? <InlineNotice title="模型分工没有读取" tone="danger">{modelRouting.readError}</InlineNotice> : null}
           {modelRouting.saveError ? <InlineNotice title="模型分工没有保存" tone="danger">{modelRouting.saveError}</InlineNotice> : null}
 
-          <ManagementSection
-            description="新对话可以默认使用只读沙箱、全权限、工作区托管沙箱或全自动；每种选择都会原样保存。"
+            <ManagementSection
+            description={teamMode
+              ? '团队空间统一使用服务管理的工作区托管权限；本机不会保存或扩大执行范围。'
+              : '新对话可以默认使用只读沙箱、全权限、工作区托管沙箱或全自动；每种选择都会原样保存。'}
             title="Agent 执行权限"
           >
             <div aria-label="Agent 执行权限" className="paw-agent-modes" role="radiogroup">
-              {agentExecutionModes.map((mode) => {
+              {agentExecutionModes.filter((mode) => !teamMode || mode.value === 'workspace_managed').map((mode) => {
                 const Icon = mode.icon;
                 return (
                   <label className="paw-agent-mode" key={mode.value}>
                     <input
                       aria-label={mode.title}
-                      checked={mode.value === preferences.executionMode}
-                      disabled={controlsDisabled}
+                      checked={teamMode
+                        ? mode.value === 'workspace_managed'
+                        : mode.value === preferences.executionMode}
+                      disabled={controlsDisabled || teamMode}
                       name="paw-agent-execution-mode"
                       onChange={() => { void authority.save({ executionMode: mode.value }); }}
                       type="radio"
@@ -850,7 +876,9 @@ function useSystemRailSignal(appId: PawSystemAppId): {
   tone: 'decision' | 'attention';
 } | null {
   const transport = useControlTransport();
-  const contract = systemRailContracts[appId];
+  const contract = isTeamDeployment() && appId === 'app-center'
+    ? undefined
+    : systemRailContracts[appId];
   const signalQuery = useQuery({
     queryKey: contract?.queryKey ?? ['paw-system-rail', appId],
     queryFn: ({ signal }) => contract

@@ -33,6 +33,7 @@ import {
   unrestrictedWorkspaceRoots,
 } from './permission-policy';
 import { toolAvailableForPolicy } from './tool-policy';
+import { isTeamDeployment } from '@/features/team/deployment';
 
 export function PermissionPicker({
   session,
@@ -53,6 +54,7 @@ export function PermissionPicker({
   onChange: (selection: AgentPermissionSelection) => void;
   onWorkspaceRootsChange: () => void;
 }) {
+  const teamMode = isTeamDeployment();
   const [open, setOpen] = useState(false);
   const [dangerousOpen, setDangerousOpen] = useState(false);
   const profile = session?.toolProfileVersion ?? 'control-center-v1';
@@ -75,7 +77,21 @@ export function PermissionPicker({
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      {teamMode ? (
+        <Button
+          aria-label="对话权限：团队工作区托管"
+          className="agent-composer__picker"
+          data-permission="workspace-managed"
+          disabled
+          leadingIcon={<PermissionMark mode="workspace_managed" size={16} />}
+          size="small"
+          title="团队工作区和执行权限由服务管理。"
+          variant="quiet"
+        >
+          <span className="agent-composer__picker-text">团队工作区托管</span>
+        </Button>
+      ) : (
+        <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             aria-label={metadataKnown ? `对话权限：${current.label}` : '对话权限：尚未同步'}
@@ -189,7 +205,8 @@ export function PermissionPicker({
             </p>
           ) : null}
         </PopoverContent>
-      </Popover>
+        </Popover>
+      )}
       <Dialog
         open={dangerousOpen}
         onOpenChange={setDangerousOpen}

@@ -12,6 +12,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations, sqlite_connection
+from .secure_files import atomic_write, regular_reader, replace_file, unlink_file
 
 
 WorkDocumentState = Literal[
@@ -552,7 +553,7 @@ class WorkDocumentService:
         if path.exists():
             if path.is_symlink() or not path.is_file() or _sha256_file(path) != str(document["contentSha256"]):
                 raise WorkDocumentError("work document changed after erase approval")
-            path.unlink()
+            unlink_file(path)
             _fsync_dir(path.parent)
         now = _now_ms()
         with self._lock, sqlite_connection(self.db_path, row_factory=sqlite3.Row, foreign_keys=True) as conn:
@@ -834,7 +835,6 @@ class WorkDocumentService:
         with sqlite_connection(self.db_path, row_factory=sqlite3.Row, foreign_keys=True) as conn:
             rows = conn.execute("SELECT * FROM work_documents WHERE workspace_root=? ORDER BY updated_at_ms DESC,document_id", (str(root),)).fetchall()
         projection_root = _resolve(root, "docs/agent/work")
-        projection_root.mkdir(parents=True, exist_ok=True)
         for name, archived in (("ACTIVE.json", False), ("ARCHIVE.json", True)):
             items = [_projection(row) for row in rows if (str(row["state"]) == "archived") == archived]
             _atomic_json(projection_root / name, {"schemaVersion": "rag-ime.work-document-index.v1", "scope": "archive" if archived else "active", "items": items})
@@ -1078,26 +1078,19 @@ def _move(source: Path, target: Path, expected: str) -> None:
         if source_exists:
             if not source.is_file() or _sha256_file(source) != expected:
                 raise WorkDocumentError("move source changed during reconciliation")
-            source.unlink()
+            unlink_file(source)
             _fsync_dir(source.parent)
         return
     if not source_exists or not source.is_file() or _sha256_file(source) != expected:
         raise WorkDocumentError("move source is missing or changed")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(source, target)
+    replace_file(source, target)
     _fsync_dir(source.parent)
     _fsync_dir(target.parent)
 
 
 def _atomic_json(path: Path, payload: Mapping[str, object]) -> None:
-    temporary = path.with_name(f".{path.name}.tmp")
     data = (json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
-    with temporary.open("wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
-    _fsync_dir(path.parent)
+    atomic_write(path, data)
 
 
 def _fsync_dir(path: Path) -> None:
@@ -1113,7 +1106,7 @@ def _fsync_dir(path: Path) -> None:
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with regular_reader(path) as handle:
         for chunk in iter(lambda: handle.read(131072), b""):
             digest.update(chunk)
     return digest.hexdigest()

@@ -220,6 +220,12 @@
 .paw-session-workspace[data-status='stopping'] .paw-session-workspace__runtime i { background: var(--paw-warning); animation: none; }
 .paw-session-workspace__runtime button { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 9px; color: var(--paw-danger); cursor: pointer; }
 .paw-session-workspace__runtime button:hover { background: color-mix(in srgb, var(--paw-danger) 9%, transparent); }
+.paw-session-workspace__publish-draft { min-height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--paw-accent) 34%, var(--paw-line)); border-radius: 8px; color: var(--paw-accent); background: color-mix(in srgb, var(--paw-accent) 7%, var(--paw-panel-soft)); font-size: 12px; font-weight: 650; cursor: pointer; }
+.paw-session-workspace__publish-draft:hover, .paw-session-workspace__publish-draft:focus-visible { border-color: var(--paw-accent); background: color-mix(in srgb, var(--paw-accent) 13%, var(--paw-panel-soft)); }
+.paw-session-workspace__read-only { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--paw-warning) 32%, var(--paw-line)); border-radius: 10px; color: var(--paw-muted); background: color-mix(in srgb, var(--paw-warning) 8%, var(--paw-panel-soft)); }
+.paw-session-workspace__read-only > svg { flex: none; color: var(--paw-warning); }
+.paw-session-workspace__read-only > span { display: grid; gap: 3px; }
+.paw-session-workspace__read-only small { color: var(--paw-muted); line-height: 1.45; }
 /* 回合的开始与结束不许推挤同一行的视图切换与工具簇：状态词按常见四字状态
    （已同步/正在执行/正在停止）保留宽度并向右对齐，让文字换词时右缘钉住；
    停止钮缺席时由同尺寸占位补上，挂载与卸载都发生在已经空出的格子里。
@@ -392,7 +398,8 @@
 .paw-room-governance > section > header small { font-size: 12px; }
 .paw-room-governance__members, .paw-room-governance__topics, .paw-room-governance__work { display: grid; gap: 5px; }
 .paw-room-governance__members article, .paw-room-governance__topics article, .paw-room-governance__work article { min-width: 0; display: grid; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid var(--paw-line-soft); border-radius: 9px; background: var(--paw-panel-strong); }
-.paw-room-governance__members article { grid-template-columns: 25px minmax(0, 1fr) auto 27px; }
+.paw-room-governance__members article { grid-template-columns: 25px minmax(0, 1fr) auto auto 27px; }
+.paw-room-governance__members article[data-roleplay] { grid-template-columns: 25px minmax(0, 1fr) auto 27px; }
 .paw-room-governance__member-mark { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid var(--paw-line-soft); border-radius: 7px; color: var(--paw-accent); background: var(--paw-panel-soft); }
 .paw-room-governance__topics article { grid-template-columns: minmax(0, 1fr) auto auto; }
 .paw-room-governance__work article { grid-template-columns: minmax(0, 1fr) minmax(88px, 32%); }
@@ -402,6 +409,8 @@
 .paw-room-governance article small { color: var(--paw-muted); font-size: 12px; }
 .paw-room-governance__topics article[data-active] { border-color: color-mix(in srgb, var(--paw-success) 42%, var(--paw-line)); box-shadow: inset 2px 0 var(--paw-success); }
 .paw-room-governance .ui-select__trigger, .paw-room-governance input { min-width: 0; height: 32px; min-height: 32px; padding: 0 8px; border: 1px solid var(--paw-line); border-radius: 7px; outline: 0; color: var(--paw-ink); background: var(--paw-panel-strong); box-shadow: none; font-size: 13px; }
+.paw-room-governance textarea { width: 100%; min-width: 0; min-height: 76px; resize: vertical; padding: 7px 8px; border: 1px solid var(--paw-line); border-radius: 7px; color: var(--paw-ink); background: var(--paw-panel-strong); font: inherit; font-size: 13px; }
+.paw-room-governance textarea:focus-visible { outline: 2px solid var(--paw-accent); outline-offset: 2px; }
 .paw-room-governance input:focus, .paw-room-governance .ui-select__trigger:focus-visible { border-color: color-mix(in srgb, var(--paw-accent) 50%, var(--paw-line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--paw-accent) 8%, transparent); }
 .paw-room-governance .ui-select__trigger:hover:not(:disabled), .paw-room-governance .ui-select__trigger[data-state='open'] { border-color: color-mix(in srgb, var(--paw-accent) 50%, var(--paw-line)); }
 .paw-room-governance .ui-select__icon { color: var(--paw-muted); }
@@ -410,6 +419,8 @@
 .paw-room-governance__members .ui-select__trigger { width: auto; min-width: 112px; }
 .paw-room-governance article > button { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 7px; color: var(--paw-muted); cursor: pointer; }
 .paw-room-governance article > button:hover { color: var(--paw-ink); background: var(--paw-panel-soft); }
+.paw-room-governance__members article > .paw-room-governance__open-session { width: auto; min-width: 110px; height: 27px; min-height: 27px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; border: 1px solid var(--paw-line); border-radius: 7px; color: var(--paw-accent); background: var(--paw-panel-soft); font-size: 12px; white-space: nowrap; }
+.paw-room-governance__members article > .paw-room-governance__open-session:hover { border-color: color-mix(in srgb, var(--paw-accent) 50%, var(--paw-line)); background: color-mix(in srgb, var(--paw-accent) 8%, var(--paw-panel-strong)); }
 .paw-room-governance__invite { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; color: var(--paw-muted); font-size: 13px; }
 .paw-room-governance__invite > span { display: flex; align-items: center; gap: 5px; }
 .paw-room-governance__form { display: grid; gap: 5px; }
@@ -422,6 +433,8 @@
 @media (max-width: 760px) {
   .paw-room-workspace__runtime > span { display: none; }
   .paw-room-workspace__header nav button { width: 30px; justify-content: center; padding: 0; font-size: 0; }
+  .paw-room-governance__members article > .paw-room-governance__open-session { width: 27px; min-width: 27px; padding: 0; }
+  .paw-room-governance__open-session > span { display: none; }
   .paw-room-timeline > .ccui-conversation-surface { --ccui-reading-width: 100%; }
   .paw-room-workspace__composer { padding-inline: 9px; }
 }

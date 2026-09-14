@@ -13,6 +13,7 @@ export const ROOM_PARTICIPANT_BUSY_TEXT = '目标伙伴正在处理另一条请�
 export const MEMORY_BOOTSTRAP_SKIPPED_TEXT = '记忆召回本轮已跳过，消息仍可继续；下次会重新尝试。';
 export const MODEL_QUOTA_EXHAUSTED_TEXT = '模型服务额度暂时用尽，请稍后重试或切换已配置模型。';
 export const MODEL_AUTH_FAILURE_TEXT = '模型账号登录已失效或凭据无效。请在系统设置的“模型账号”中重新登录或更新密钥，再继续当前对话。';
+export const TEAM_WORKER_UNAVAILABLE_TEXT = '团队尚未配置执行服务，请联系管理员配置模型与隔离运行环境。';
 export const SESSION_WORKSPACE_MISSING_TEXT = (
   '这个 Session 的工作目录已不存在。请选择新的工作目录后继续，或返回桌面新建工作。'
 );
@@ -139,6 +140,14 @@ export function publicAgentErrorText(
   const payload = errorPayload(value);
   const errorCode = stringValue(payload?.errorCode);
   const message = (value instanceof Error ? value.message : String(value ?? '')).trim();
+  // TeamGateway rejects execution before persistence with this explicit
+  // status/code pair. It is a definitive admission failure, so expose the
+  // recovery path instead of the generic ambiguous-delivery copy.
+  const responseStatus = transportResponseStatus(value);
+  if (
+    errorCode === 'team_worker_unavailable'
+    && (responseStatus === undefined || responseStatus === 409)
+  ) return TEAM_WORKER_UNAVAILABLE_TEXT;
   if (isModelAuthError(message)) return MODEL_AUTH_FAILURE_TEXT;
   if (/APP_API_(?:BASE_URL|KEY)/u.test(message)) {
     return '模型连接配置不完整。请连接 PAW 或检查模型服务设置后重试。';

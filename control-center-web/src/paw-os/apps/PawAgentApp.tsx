@@ -319,6 +319,10 @@ export function PawAgentApp({
   }, [desktop, selectedRoom, selectedSessionRecord, selection.kind, surfaceIdentity?.windowId]);
 
   async function archiveSession(session: SessionSummary): Promise<void> {
+    if (session.canControl === false) {
+      setActionError('这是项目成员可见的 Session；当前账号没有控制权限。');
+      return;
+    }
     const archived = session.status === 'archived';
     setActionError('');
     setActionTrace(undefined);
@@ -345,6 +349,11 @@ export function PawAgentApp({
 
   async function deleteSession(): Promise<void> {
     if (!deleteTarget || deleting) return;
+    if (deleteTarget.canControl === false) {
+      setActionError('这是项目成员可见的 Session；当前账号没有控制权限。');
+      setDeleteTarget(undefined);
+      return;
+    }
     setDeleting(true);
     setActionError('');
     setActionTrace(undefined);
@@ -569,7 +578,7 @@ function ProjectFolder({
               projection={sessionFileProjection(session)}
               onClick={() => onOpenSession(session.id)}
               title={session.title}
-              trailing={session.evaluationSnapshot ? null : <SessionActions onArchive={() => onArchiveSession(session)} onDelete={() => onDeleteSession(session)} session={session} />}
+              trailing={session.evaluationSnapshot || session.canControl === false ? null : <SessionActions onArchive={() => onArchiveSession(session)} onDelete={() => onDeleteSession(session)} session={session} />}
             />
           ))}
         </WorkGroup> : null}
@@ -740,6 +749,7 @@ function projectName(paths: string[] | undefined): string {
 
 function sessionFileProjection(session: SessionSummary): WorkFileProjection {
   const base = `${projectName(session.workspaceRoots)} · ${relativeTime(session.updatedAtMs)}`;
+  const readOnly = session.canControl === false;
   if (session.evaluationSnapshot) {
     return {
       detail: '冻结 JSONL · 不可继续提问、改写或删除',
@@ -758,8 +768,8 @@ function sessionFileProjection(session: SessionSummary): WorkFileProjection {
       ? preview ? `故障原因不可用 · 最近公开内容：${preview}` : '故障原因不可用'
       : preview ? `最近公开内容：${preview}` : '暂无公开进度';
   return {
-    detail,
-    meta: `${state} · ${base}`,
+    detail: readOnly ? `仅可查看 · ${detail}` : detail,
+    meta: readOnly ? `${state} · 仅可查看 · ${base}` : `${state} · ${base}`,
     state: session.status === 'faulted' ? 'attention'
       : session.status === 'busy' ? 'working'
       : session.status === 'archived' ? 'complete'

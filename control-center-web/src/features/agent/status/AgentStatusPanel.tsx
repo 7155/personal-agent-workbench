@@ -293,7 +293,9 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
               sessionId,
               label: session?.title || '当前 Session',
               detail: session?.mode === 'coordinator' ? '主持 Session' : '助手 Session',
+              canControl: session?.canControl,
               canWrite: session?.mode === 'coordinator'
+                && session.canControl !== false
                 && session.executionMode !== 'read_only'
                 && Boolean(session.workspaceRoots?.length),
               workspaceRoots: session?.workspaceRoots ?? [],

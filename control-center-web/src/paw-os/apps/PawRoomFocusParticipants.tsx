@@ -113,17 +113,20 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
           const satelliteLabel = snapshot?.status === 'ready' ? `卫星 ${snapshot.satellites.length}`
             : snapshot?.status === 'error' ? '卫星暂不可用' : '卫星读取中';
           const stateLabel = roomFocusStateLabel(partner.state);
+          const memberLabel = partner.ownerDisplayName?.trim()
+            ? `${partner.ownerDisplayName.trim()} · ${partner.celestialName}`
+            : partner.celestialName;
           return <button
-            aria-label={`${partner.celestialName}，${stateLabel}，${satelliteLabel}`}
+            aria-label={`${memberLabel}，${stateLabel}，${satelliteLabel}`}
             aria-pressed={selectedParticipantId === partner.participantId}
             className="paw-room-focus-participant"
             key={partner.participantId}
             onClick={() => inspect(partner.participantId)}
-            title={`${partner.displayName} · ${partner.currentAction}`}
+            title={`${memberLabel} · ${partner.displayName} · ${partner.currentAction}`}
             type="button"
           >
             <i aria-hidden="true" data-state={partner.state} />
-            <strong>{partner.celestialName}</strong>
+            <strong>{memberLabel}</strong>
             <span>{stateLabel}</span>
             <small><Satellite aria-hidden="true" size={12} />{satelliteLabel}</small>
           </button>;

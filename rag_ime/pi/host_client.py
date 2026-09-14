@@ -23,6 +23,12 @@ from rag_ime.pi.values import (
     as_mapping, redact_runtime_text,
 )
 from rag_ime.room_runtime_host_kill_gate import RuntimeHostKillGate, process_birth_token
+from rag_ime.team.execution import (
+    ExecutionLauncher,
+    ExecutionProcess,
+    ExecutionReceipt,
+    TeamExecutionError,
+)
 
 __all__ = ["PiRuntimeHostClient"]
 
@@ -38,12 +44,14 @@ class PiRuntimeHostClient:
         on_exit: Callable[[int | None, str], None],
         kill_gate: RuntimeHostKillGate,
         owner_instance_id: str,
+        launcher: ExecutionLauncher | None = None,
     ) -> None:
         self.config = config
         self.on_event = on_event
         self.on_exit = on_exit
         self.kill_gate = kill_gate
         self.owner_instance_id = owner_instance_id
+        self.launcher = launcher
         self.host_identity = f"pi-host:{uuid.uuid4()}"
         self.job_identity = f"pi-job:{uuid.uuid4()}"
         self._lock = threading.RLock()
@@ -55,16 +63,31 @@ class PiRuntimeHostClient:
         # therefore delay or deadlock an otherwise immediate command ACK.
         self._event_queue: queue.Queue[object] = queue.Queue()
         self._stderr: deque[str] = deque(maxlen=32)
-        self._process: subprocess.Popen[bytes] | None = None
+        self._process: ExecutionProcess | None = None
         self._stdout_thread: threading.Thread | None = None
         self._event_thread: threading.Thread | None = None
         self._stderr_thread: threading.Thread | None = None
         self._stopping = False
+        self._execution_cleanup_done = False
+        self._execution_stop_receipt: ExecutionReceipt | None = None
+        self._execution_stop_error = ""
 
     @property
     def running(self) -> bool:
         process = self._process
         return process is not None and process.poll() is None
+
+    @property
+    def execution_stop_receipt(self) -> ExecutionReceipt | None:
+        """Return the last verified team launcher stop receipt, if any."""
+
+        with self._lock:
+            return self._execution_stop_receipt
+
+    @property
+    def execution_stop_error(self) -> str:
+        with self._lock:
+            return self._execution_stop_error
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -74,20 +97,45 @@ class PiRuntimeHostClient:
             self.config.session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             self.config.logs_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             self.config.prepare_agent_config()
+            command = self.config.launch_host_command()
+            execution_spec = self.config.execution_spec
+            if execution_spec is not None and self.launcher is None:
+                raise PiRuntimeError(
+                    "isolated team execution requires a trusted Host launcher"
+                )
+            # Reset lifecycle cleanup state before attempting a replacement
+            # process. A failed start after a prior explicit stop must still
+            # tear down the newly-created process/container.
+            self._execution_cleanup_done = False
+            self._execution_stop_receipt = None
+            self._execution_stop_error = ""
             try:
                 environment = self.config.child_environment()
                 environment["RAG_IME_RUNTIME_HOST_IDENTITY"] = self.host_identity
                 environment["RAG_IME_RUNTIME_JOB_IDENTITY"] = self.job_identity
-                self._process = subprocess.Popen(
-                    self.config.launch_host_command(),
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=self.config.agent_dir,
-                    env=environment,
-                    bufsize=0,
-                    start_new_session=os.name == "posix",
-                )
+                if execution_spec is not None:
+                    assert self.launcher is not None
+                    process = self.launcher.start(
+                        execution_spec,
+                        command,
+                        environment,
+                    )
+                else:
+                    process = subprocess.Popen(
+                        command,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=self.config.agent_dir,
+                        env=environment,
+                        bufsize=0,
+                        start_new_session=os.name == "posix",
+                    )
+                if not isinstance(process, ExecutionProcess):
+                    raise TeamExecutionError(
+                        "Host launcher did not return a process-compatible pipe handle"
+                    )
+                self._process = process
             except OSError as exc:
                 raise PiRuntimeError(f"failed to start managed Pi Runtime Host: {exc}") from exc
             process_group_id = (
@@ -101,17 +149,24 @@ class PiRuntimeHostClient:
                     process_group_id=process_group_id,
                     job_identity=self.job_identity,
                     process_birth_token=process_birth_token(self._process.pid),
-                    executable_ref=str(self.config.executable or ""),
+                    executable_ref=str(
+                        self.config.executable
+                        or (
+                            self.config.execution_spec.runtime_command[0]
+                            if self.config.execution_spec is not None
+                            else ""
+                        )
+                    ),
                     now_ms=int(time.time() * 1000),
                 )
             except Exception:
                 process = self._process
-                process.kill()
-                process.wait(timeout=2)
+                if process is not None:
+                    self._cleanup_execution(process)
                 for stream in (
-                    process.stdin,
-                    process.stdout,
-                    process.stderr,
+                    process.stdin if process is not None else None,
+                    process.stdout if process is not None else None,
+                    process.stderr if process is not None else None,
                 ):
                     if stream is not None:
                         stream.close()
@@ -207,7 +262,7 @@ class PiRuntimeHostClient:
 
     def _write_record(
         self,
-        process: subprocess.Popen[bytes],
+        process: ExecutionProcess,
         request: Mapping[str, object],
         *,
         before_write: Callable[[], None] | None = None,
@@ -234,13 +289,7 @@ class PiRuntimeHostClient:
             process = self._process
         if process is None:
             return
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
+        cleanup_error = self._cleanup_execution(process)
         self._fail_pending(PiRuntimeError("Pi Runtime Host stopped"))
         current = threading.current_thread()
         for thread in (self._stdout_thread, self._event_thread, self._stderr_thread):
@@ -252,6 +301,53 @@ class PiRuntimeHostClient:
         with self._lock:
             self._process = None
         self.kill_gate.mark_terminated(self.host_identity, now_ms=int(time.time() * 1000))
+        if cleanup_error is not None:
+            raise cleanup_error
+
+    def _cleanup_execution(self, process: ExecutionProcess) -> TeamExecutionError | None:
+        """Stop the trusted execution backend before closing the Pi pipes."""
+
+        execution_spec = self.config.execution_spec
+        launcher = self.launcher
+        with self._lock:
+            if self._execution_cleanup_done:
+                return (
+                    TeamExecutionError("isolated execution stop could not be verified")
+                    if self._execution_stop_error
+                    else None
+                )
+            self._execution_cleanup_done = True
+        cleanup_error: TeamExecutionError | None = None
+        if execution_spec is not None and launcher is not None:
+            try:
+                receipt = launcher.stop(execution_spec, process)
+            except Exception as exc:
+                # A failed verification is observable and never represented as
+                # a successful receipt.  Still terminate the local Docker
+                # client so reader threads and the kill gate can converge.
+                with self._lock:
+                    self._execution_stop_error = redact_runtime_text(str(exc))
+                cleanup_error = TeamExecutionError(
+                    "isolated execution stop could not be verified"
+                )
+            else:
+                with self._lock:
+                    self._execution_stop_receipt = receipt
+            if process.poll() is None:
+                self._terminate_local_process(process)
+            return cleanup_error
+        self._terminate_local_process(process)
+        return None
+
+    @staticmethod
+    def _terminate_local_process(process: ExecutionProcess) -> None:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
 
     def diagnostic_error(self) -> str:
         return redact_runtime_text(self._stderr[-1] if self._stderr else "")
@@ -301,6 +397,7 @@ class PiRuntimeHostClient:
         error = protocol_error or self.diagnostic_error()
         self.on_exit(exit_code, error)
         self.kill_gate.mark_terminated(self.host_identity, now_ms=int(time.time() * 1000))
+        self._cleanup_execution(process)
         # Wake RPC callers only after the manager and durable process registry
         # agree the Host is terminal; callers must not observe a stale ready state.
         self._fail_pending(PiRuntimeError(error or "Pi Runtime Host exited"))

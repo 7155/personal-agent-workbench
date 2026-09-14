@@ -126,9 +126,9 @@ def build_capabilities(
         "security": {
             "failClosed": True,
             "remoteUsesGatewayOnly": True,
-            "devicePairingRequired": True,
+            "devicePairingRequired": not context.is_team,
             "corsWildcard": False,
-            "cookieCredentials": False,
+            "cookieCredentials": context.is_team,
             "csrfRequiredForCookieAuth": True,
             "debugApi": False,
             "arbitraryUrl": False,

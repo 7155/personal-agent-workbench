@@ -20,6 +20,7 @@ class ControlClientKind(str, Enum):
     NATIVE = "native"
     LOOPBACK_WEB = "loopback-web"
     REMOTE_WEB = "remote-web"
+    TEAM_WEB = "team-web"
 
 
 class ControlScope(str, Enum):
@@ -44,6 +45,26 @@ class ControlAccessContext:
     client_kind: ControlClientKind
     granted_scopes: frozenset[str] = frozenset()
     device_id: str = ""
+    user_id: str = ""
+    space_id: str = ""
+    allowed_path_ids: frozenset[str] = frozenset()
+
+    @classmethod
+    def team(
+        cls, *, user_id: str, space_id: str, allowed_paths: frozenset[str] | set[str],
+    ) -> ControlAccessContext:
+        """Carry authority resolved by the team gateway, never by request JSON."""
+        if not user_id.strip() or not space_id.strip():
+            raise ValueError("team access requires an authenticated user and space")
+        return cls(
+            client_kind=ControlClientKind.TEAM_WEB,
+            user_id=user_id.strip(), space_id=space_id.strip(),
+            allowed_path_ids=frozenset(allowed_paths),
+        )
+
+    @property
+    def is_team(self) -> bool:
+        return self.client_kind is ControlClientKind.TEAM_WEB
 
     @classmethod
     def native(cls) -> ControlAccessContext:
@@ -68,10 +89,12 @@ class ControlAccessContext:
 
     @property
     def is_remote(self) -> bool:
-        return self.client_kind is ControlClientKind.REMOTE_WEB
+        return self.client_kind in {ControlClientKind.REMOTE_WEB, ControlClientKind.TEAM_WEB}
 
     @property
     def remote_authenticated(self) -> bool:
+        if self.is_team:
+            return bool(self.user_id and self.space_id)
         return self.is_remote and bool(self.device_id) and bool(self.granted_scopes)
 
 

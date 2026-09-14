@@ -1,0 +1,16 @@
+{
+  "image": "paw-team-worker:local",
+  "command": ["python3", "-m", "rag_ime.team.worker_proxy", "--", "node", "/opt/pi/runtime-host/cli.mjs"],
+  "model": {
+    "base_url": "https://model-gateway.example.com/v1",
+    "model": "your-model-id",
+    "api_key": "replace-in-a-private-server-file",
+    "wire_api": "openai-completions",
+    "user_daily_requests": 500,
+    "project_daily_requests": 2000,
+    "max_output_tokens": 8192
+  },
+  "validationCommand": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+  "memoryLimit": "2g",
+  "cpuLimit": "2.0"
+}

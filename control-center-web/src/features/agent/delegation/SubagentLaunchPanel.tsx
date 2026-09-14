@@ -19,12 +19,15 @@ import type { AgentTemplateV1 } from '@/contracts/generated/agent-template.v1';
 import type { ToolManifest } from '@/features/agent/types';
 import { toolItems } from '@/features/agent/types';
 import { publicAgentErrorText } from '@/features/agent/public-error';
+import { isTeamDeployment } from '@/features/team/deployment';
 import './subagent-launch.css';
 
 export interface SubagentParentOption {
   sessionId: string;
   label: string;
   detail?: string;
+  /** TeamGateway marks another member's Session as visible but not operable. */
+  canControl?: boolean;
   canWrite?: boolean;
   defaultAccess?: 'read_only' | 'write';
   accessPolicyDetail?: string;
@@ -73,6 +76,7 @@ function SubagentLaunchForm({
   surface: 'session' | 'room';
 }) {
   const transport = useControlTransport();
+  const teamMode = isTeamDeployment();
   const queryClient = useQueryClient();
   const [parentSessionId, setParentSessionId] = useState(parents[0]?.sessionId ?? '');
   const [templateId, setTemplateId] = useState('');
@@ -116,8 +120,12 @@ function SubagentLaunchForm({
   );
   const template = templates.find((item) => item.templateId === templateId) ?? templates[0];
   const parent = parents.find((item) => item.sessionId === parentSessionId) ?? parents[0];
-  const effectivePiSkillsEnabled = piSkillsEnabled ?? parent?.piSkillsEnabled ?? false;
-  const effectiveCodexSkillsEnabled = codexSkillsEnabled ?? parent?.codexSkillsEnabled ?? false;
+  const effectivePiSkillsEnabled = teamMode
+    ? false
+    : piSkillsEnabled ?? parent?.piSkillsEnabled ?? false;
+  const effectiveCodexSkillsEnabled = teamMode
+    ? false
+    : codexSkillsEnabled ?? parent?.codexSkillsEnabled ?? false;
 
   useEffect(() => {
     if (!parents.some((item) => item.sessionId === parentSessionId)) {
@@ -160,6 +168,7 @@ function SubagentLaunchForm({
   const selectedToolCount = customTools ? selectedTools.length : tools.length;
   const canLaunch = Boolean(
     parentSessionId
+    && parent?.canControl !== false
     && template
     && task.trim()
     && expectedOutput.trim()
@@ -190,8 +199,10 @@ function SubagentLaunchForm({
             ? { workspaceRoots: parent.workspaceRoots }
             : {}),
           ...(customTools ? { allowedTools: selectedTools } : {}),
-          ...(piSkillsEnabled === undefined ? {} : { piSkillsEnabled }),
-          ...(codexSkillsEnabled === undefined ? {} : { codexSkillsEnabled }),
+          ...(teamMode || piSkillsEnabled === undefined ? {} : { piSkillsEnabled }),
+          ...(teamMode
+            ? { codexSkillsEnabled: false }
+            : codexSkillsEnabled === undefined ? {} : { codexSkillsEnabled }),
           wait: false,
         },
       });
@@ -295,8 +306,10 @@ function SubagentLaunchForm({
         {!tools.length ? <p className="subagent-launch__quiet">这个父 Session 还没有可核对的工具目录。</p> : null}
       </div> : null}
       <div className="subagent-launch__skill-flags">
-        <label><input checked={effectivePiSkillsEnabled} onChange={(event) => setPiSkillsEnabled(event.target.checked)} type="checkbox" /><span><strong>Pi Skills</strong><small>{piSkillsEnabled === undefined ? `继承父 Session · ${effectivePiSkillsEnabled ? '已开启' : '未开启'}` : '本次启动显式配置'}</small></span></label>
-        <label><input checked={effectiveCodexSkillsEnabled} onChange={(event) => setCodexSkillsEnabled(event.target.checked)} type="checkbox" /><span><strong>Codex Skills</strong><small>{codexSkillsEnabled === undefined ? `继承父 Session · ${effectiveCodexSkillsEnabled ? '已开启' : '未开启'}` : '本次启动显式配置'}</small></span></label>
+        {teamMode
+          ? <p className="subagent-launch__quiet">应用与 Skills 继承父任务的固定版本</p>
+          : <label><input checked={effectivePiSkillsEnabled} onChange={(event) => setPiSkillsEnabled(event.target.checked)} type="checkbox" /><span><strong>Pi Skills</strong><small>{piSkillsEnabled === undefined ? `继承父 Session · ${effectivePiSkillsEnabled ? '已开启' : '未开启'}` : '本次启动显式配置'}</small></span></label>}
+        {teamMode ? null : <label><input checked={effectiveCodexSkillsEnabled} onChange={(event) => setCodexSkillsEnabled(event.target.checked)} type="checkbox" /><span><strong>Codex Skills</strong><small>{codexSkillsEnabled === undefined ? `继承父 Session · ${effectiveCodexSkillsEnabled ? '已开启' : '未开启'}` : '本次启动显式配置'}</small></span></label>}
       </div>
     </Disclosure>
 

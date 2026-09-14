@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "rag-ime.plugin-catalog.v1",
+  "catalogVersion": "2026.09.13",
+  "entries": [
+    {
+      "id": "session-review",
+      "displayName": "Session Review",
+      "description": "The existing PAW session review Package.",
+      "publisher": "Personal Agent Workbench",
+      "source": {"kind": "bundled", "label": "PAW source bundle"},
+      "permissions": ["session.read"],
+      "compatibility": {"runtimeProtocol": "2"},
+      "versions": [
+        {"version": "1.1.0", "sourcePath": "rag_ime/bundled_plugins/session-review/1.1.0"},
+        {"version": "1.0.0", "sourcePath": "rag_ime/bundled_plugins/session-review/1.0.0"}
+      ]
+    },
+    {
+      "id": "@paw/zhanggui-wenshu",
+      "displayName": "掌柜问数",
+      "description": "The existing PAW vertical App and its named Skill. Requires its matching compiled page host.",
+      "publisher": "Personal Agent Workbench",
+      "source": {"kind": "bundled", "label": "PAW source bundle"},
+      "permissions": [],
+      "compatibility": {"runtimeProtocol": "2"},
+      "versions": [
+        {"version": "0.2.0", "sourcePath": "control-center-web/extension-apps/zhanggui-wenshu/pi-package"}
+      ]
+    }
+  ]
+}

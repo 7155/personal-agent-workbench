@@ -11,6 +11,9 @@ const buildChannel = process.env.VITE_BUILD_CHANNEL ?? 'preview';
 const controlProxyTarget = normalizeControlProxyTarget(
   process.env.VITE_CONTROL_PROXY_TARGET ?? 'http://127.0.0.1:8768',
 );
+const teamProxyTarget = normalizeControlProxyTarget(
+  process.env.VITE_TEAM_PROXY_TARGET ?? 'http://127.0.0.1:8770',
+);
 const nativeOnlyBuild = controlTransport === 'native';
 const httpOnlyBuild = controlTransport === 'http';
 const isolatedTransportBuild = nativeOnlyBuild || httpOnlyBuild;
@@ -36,6 +39,14 @@ const nativeTransportEntry = path.resolve(
 const httpTransportEntry = path.resolve(
   rootDirectory,
   'src/app/control-transport.http.tsx',
+);
+const nativeTeamTransportEntry = path.resolve(
+  rootDirectory,
+  'src/features/team/team-transport.native.ts',
+);
+const httpTeamTransportEntry = path.resolve(
+  rootDirectory,
+  'src/features/team/team-transport.ts',
 );
 const productionDataEntry = path.resolve(
   rootDirectory,
@@ -167,6 +178,10 @@ export default defineConfig({
         : httpOnlyBuild
           ? [{ find: /^@\/app\/control-transport$/, replacement: httpTransportEntry }]
         : []),
+      {
+        find: /^@\/features\/team\/team-transport$/,
+        replacement: nativeOnlyBuild ? nativeTeamTransportEntry : httpTeamTransportEntry,
+      },
       ...(buildChannel === 'production'
         ? [{ find: /^@\/features\/agent\/preview-data$/, replacement: productionDataEntry }]
         : []),
@@ -179,15 +194,21 @@ export default defineConfig({
   },
   server: {
     fs: { allow: [path.resolve(rootDirectory, '..')] },
-    ...(controlProxyTarget
-      ? {
-          proxy: {
+    proxy: {
+      '/api/team': {
+        target: teamProxyTarget,
+      },
+      '/team': {
+        target: teamProxyTarget,
+      },
+      ...(controlProxyTarget
+        ? {
             '/api': {
               target: controlProxyTarget,
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
+    },
   },
   test: {
     environment: 'jsdom',

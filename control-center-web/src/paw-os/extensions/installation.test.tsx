@@ -8,11 +8,13 @@ import {
   PawExtensionInstallationProvider,
   PAW_EXTENSION_INSTALLATION_CHANGED_EVENT,
   projectPawExtensionInstallation,
+  projectPawExtensionTeamSelection,
   usePawExtensionInstallation,
 } from './installation';
 
 afterEach(() => {
   cleanup();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -77,6 +79,123 @@ describe('PAWOS Extension App installation projection', () => {
 
     expect([...projection.installedExtensionIds]).toEqual([]);
     expect([...projection.enabledExtensionIds]).toEqual([]);
+  });
+
+  it('projects only a published Team selection whose App metadata matches the registered manifest', () => {
+    const projection = projectPawExtensionTeamSelection({
+      spaceId: 'project-team',
+      revision: 3,
+      publicationIds: ['pub-selected', 'pub-withdrawn'],
+      items: [
+        {
+          publicationId: 'pub-selected',
+          packageId: extension.packageId,
+          version: extension.version,
+          digest: 'digest-selected',
+          status: 'published',
+          metadata: {
+            displayName: extension.label,
+            description: '',
+            publisher: 'PAW',
+            source: { kind: 'bundled', label: 'Product bundle' },
+            permissions: [],
+            compatibility: {},
+            security: {},
+            installable: true,
+            distribution: 'team_staged_source',
+            version: extension.version,
+            extensionApp: { ...evidence, packageDigest: 'digest-selected' },
+          },
+        },
+        {
+          publicationId: 'pub-withdrawn',
+          packageId: extension.packageId,
+          version: extension.version,
+          digest: 'digest-withdrawn',
+          status: 'withdrawn',
+          metadata: {
+            displayName: extension.label,
+            description: '',
+            publisher: 'PAW',
+            source: { kind: 'bundled', label: 'Product bundle' },
+            permissions: [],
+            compatibility: {},
+            security: {},
+            installable: true,
+            distribution: 'team_staged_source',
+            version: extension.version,
+            extensionApp: { ...evidence, packageDigest: 'digest-withdrawn' },
+          },
+        },
+      ],
+    });
+
+    expect(projection.installedExtensionIds.has(extension.id)).toBe(true);
+    expect(projection.enabledExtensionIds.has(extension.id)).toBe(true);
+    expect(projection.availableExtensionIds.has(extension.id)).toBe(true);
+  });
+
+  it('uses the Team selection adapter without probing local installation or eval-lab routes', async () => {
+    const meta = document.createElement('meta');
+    meta.name = 'paw-deployment';
+    meta.content = 'team';
+    document.head.appendChild(meta);
+    const transport = new MockControlTransport({ routes: {
+      'agent.extensions.list': { ok: true, runtimeAvailable: true, items: [] },
+      'agent.eval-lab.apps.get': { ok: true, items: [] },
+    } });
+    const load = vi.fn().mockResolvedValue({
+      spaceId: 'project-team',
+      revision: 1,
+      publicationIds: [],
+      items: [],
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <ControlTransportProvider transport={transport}>
+        <PawExtensionInstallationProvider pollIntervalMs={0} teamSelection={{ scopeKey: 'team:user:project', load }}>{children}</PawExtensionInstallationProvider>
+      </ControlTransportProvider>
+    );
+    const { result } = renderHook(() => usePawExtensionInstallation(), { wrapper });
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.source).toBe('team');
+    expect(load).toHaveBeenCalledOnce();
+    expect(transport.requests).toEqual([]);
+  });
+
+  it('keeps a required sandbox App unavailable in Team even when the evidence matches itself', () => {
+    const projection = projectPawExtensionTeamSelection({
+      spaceId: 'project-team',
+      revision: 1,
+      publicationIds: ['pub-required'],
+      items: [{
+        publicationId: 'pub-required',
+        packageId: extension.packageId,
+        version: extension.version,
+        digest: 'digest-required',
+        status: 'published',
+        metadata: {
+          displayName: extension.label,
+          description: '',
+          publisher: 'PAW',
+          source: { kind: 'bundled', label: 'Product bundle' },
+          permissions: [],
+          compatibility: {},
+          security: {},
+          installable: true,
+          distribution: 'team_staged_source',
+          version: extension.version,
+          extensionApp: {
+            ...evidence,
+            packageDigest: 'digest-required',
+            sandbox: { ...extension.sandbox!, default: 'required' },
+          },
+        },
+      }],
+    });
+
+    expect(projection.availableExtensionIds.has(extension.id)).toBe(false);
+    expect(projection.enabledExtensionIds.has(extension.id)).toBe(false);
   });
 
   it('projects an uninstall by removing the Extension App identity from both sets', () => {

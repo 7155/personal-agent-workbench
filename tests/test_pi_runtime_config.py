@@ -138,6 +138,56 @@ class PiRuntimeConfigTests(unittest.TestCase):
         )
         self.assertEqual(settings_path.stat().st_mode & 0o777, 0o600)
 
+    def test_managed_config_rejects_agent_parent_and_target_symlinks(self) -> None:
+        outside = self.root / "outside-config"
+        outside.mkdir()
+        outside_settings = outside / "settings.json"
+        outside_models = outside / "models.json"
+        outside_settings.write_text('{"outside": true}\n', encoding="utf-8")
+        outside_models.write_text('{"outside": true}\n', encoding="utf-8")
+        provider = {
+            "team": {
+                "baseUrl": "http://127.0.0.1:8766/v1",
+                "apiKey": "$TEAM_ATTEMPT_TOKEN",
+                "models": [{"id": "team-model"}],
+            }
+        }
+
+        linked_agent = self.root / "linked-agent"
+        linked_agent.symlink_to(outside, target_is_directory=True)
+        linked_config = replace(
+            self.config,
+            agent_dir=linked_agent,
+            provider="team",
+            model="team-model",
+            model_configured=True,
+            model_providers=provider,
+        )
+        with self.assertRaisesRegex(PiRuntimeError, "agent directory"):
+            linked_config.prepare_agent_config()
+
+        for filename, outside_target in (
+            ("settings.json", outside_settings),
+            ("models.json", outside_models),
+        ):
+            with self.subTest(filename=filename):
+                agent = self.root / f"agent-{filename[:-5]}"
+                agent.mkdir()
+                target = agent / filename
+                target.symlink_to(outside_target)
+                config = replace(
+                    self.config,
+                    agent_dir=agent,
+                    provider="team",
+                    model="team-model",
+                    model_configured=True,
+                    model_providers=provider,
+                )
+                with self.assertRaisesRegex(PiRuntimeError, "must not be a symlink"):
+                    config.prepare_agent_config()
+        self.assertEqual(outside_settings.read_text(encoding="utf-8"), '{"outside": true}\n')
+        self.assertEqual(outside_models.read_text(encoding="utf-8"), '{"outside": true}\n')
+
     def test_launch_does_not_inject_persistent_persona_without_package(self) -> None:
         personas = AgentPersonaStore(self.root / "rag-ime.sqlite")
         personas.initialize()

@@ -6,7 +6,10 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { SubagentLaunchPanel } from './SubagentLaunchPanel';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
+});
 
 describe('SubagentLaunchPanel', () => {
   it('keeps the reviewer read-only and launches a real Pi fork with a structured contract', async () => {
@@ -126,6 +129,57 @@ describe('SubagentLaunchPanel', () => {
       workspaceRoots: ['/workspace'],
       allowedTools: ['knowledge'],
     }));
+  });
+
+  it('removes the host Codex Skills switch and sends an explicit disabled value in Team mode', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const transport = new StubControlTransport('mock', {
+      'agent.subagents.templates': {
+        ok: true,
+        items: [template('worker', '执行者', 'write', ['read_only', 'write'])],
+      },
+      'agent.tools.list': {
+        ok: true,
+        items: [tool('workspace', '工作区')],
+      },
+      'agent.subagents.create': {
+        ok: true,
+        batch: { runs: [{ id: 'run:team-worker' }] },
+      },
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const user = userEvent.setup();
+    render(
+      <ControlTransportProvider transport={transport}>
+        <QueryClientProvider client={queryClient}>
+          <SubagentLaunchPanel parents={[{
+            sessionId: 'session:team',
+            label: 'Team Root',
+            canWrite: true,
+            workspaceRoots: ['/workspace'],
+            piSkillsEnabled: true,
+            codexSkillsEnabled: true,
+          }]} />
+        </QueryClientProvider>
+      </ControlTransportProvider>,
+    );
+
+    await user.click(screen.getByText('工具与技能'));
+    expect(screen.queryByRole('checkbox', { name: /Codex Skills/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Pi Skills/ })).not.toBeInTheDocument();
+    expect(screen.getByText('应用与 Skills 继承父任务的固定版本')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '子 Agent 有界任务' }), '只使用团队工作区');
+    await user.type(screen.getByRole('textbox', { name: '子 Agent 预期交付' }), '交付摘要');
+    await user.type(screen.getByRole('textbox', { name: '子 Agent 验收条件' }), '不读取本机技能');
+    await user.click(screen.getByRole('button', { name: '启动子 Agent' }));
+
+    await screen.findByText(/1 个子 Agent 已排队/);
+    const request = transport.requests.find((item) => item.pathId === 'agent.subagents.create');
+    expect(request?.body).toMatchObject({ codexSkillsEnabled: false });
+    expect(request?.body).not.toHaveProperty('piSkillsEnabled');
   });
 
   it('defaults a Room-bound Tool Agent to inherited write access and allows an explicit narrow launch', async () => {

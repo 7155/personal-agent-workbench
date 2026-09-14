@@ -1,0 +1,8 @@
+{
+  "image": "paw-team-worker:local",
+  "originTemplate": "https://{deployment}.previews.example.com",
+  "host": "127.0.0.1",
+  "port": 8771,
+  "memoryLimit": "2g",
+  "cpuLimit": "2.0"
+}

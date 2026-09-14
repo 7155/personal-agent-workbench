@@ -1173,6 +1173,10 @@
 .room-user-message, .room-group-activity { overflow-wrap: anywhere; }
 .room-agent-lane__post[data-projection='execution'] { border-left: 2px solid var(--color-accent); padding-left: 10px; }
 .room-agent-lane__projection-label { display: block; margin-bottom: 5px; color: var(--color-accent); font-size: 12px; font-weight: 700; }
+.room-user-message__header { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 12px; }
+.room-user-message__header strong { color: var(--color-text-primary); font-weight: 700; }
+.room-user-message__header small { padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--color-accent) 24%, transparent); border-radius: 999px; color: var(--color-accent); font-size: 10px; font-weight: 700; }
+.room-user-message__avatar { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); font-size: 10px; font-weight: 800; }
 .room-user-message .agent-markdown p { margin: 0; }
 .room-user-message .agent-markdown { font-family: var(--font-sans); font-size: var(--font-size-chat); line-height: var(--line-height-chat); letter-spacing: -.004em; }
 .room-user-message > small { display: block; margin-top: 4px; color: var(--color-text-tertiary); font-size: 12px; text-align: right; }

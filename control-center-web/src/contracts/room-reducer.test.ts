@@ -2335,6 +2335,24 @@ describe('RoomEventReducer', () => {
     ]);
   });
 
+  it('retains Team ownership when restoring a strict Room snapshot', () => {
+    const fixture = roomSnapshotFixture([]);
+    const participant = {
+      ...fixture.room.participants[0],
+      ownerUserId: 'user-wang', ownerDisplayName: '小王', spaceId: 'project-website',
+      canControl: false, audience: 'project',
+    };
+    const snapshot = parseRoomEventSnapshot({
+      ...fixture,
+      room: { ...fixture.room, participants: [participant, fixture.room.participants[1]] },
+    });
+    expect(snapshot.room.participants[0]).toMatchObject(participant);
+    expect(() => parseRoomEventSnapshot({
+      ...fixture,
+      room: { ...fixture.room, participants: [{ ...participant, canControl: 'true' }, fixture.room.participants[1]] },
+    })).toThrow(/Invalid agent-room-snapshot.v1 payload/);
+  });
+
   it('rejects extra snapshot fields and non-contiguous retained events', () => {
     expect(() => parseRoomEventSnapshot({ ...roomSnapshotFixture([]), arbitrary: true })).toThrow(
       /Invalid agent-room-snapshot.v1 payload/,

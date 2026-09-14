@@ -70,7 +70,7 @@ import {
 } from '@/contracts/attachment-policy';
 import {
   defaultRoomPermissionPolicy,
-  effectiveRoomPermissionPolicy,
+  effectiveRoomPermissionPolicy as resolveEffectiveRoomPermissionPolicy,
   roomPermissionPolicyNeedsDangerousConfirmation,
   roomPermissionPolicyNeedsWorkspaceConfirmation,
   type RoomPermissionPolicy,
@@ -91,6 +91,8 @@ import {
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { clipboardFilesFromEvent } from '@/features/agent/composer/AgentComposer';
 import type { PickedFile } from '@/platform/transport';
+import { isTeamDeployment } from '@/features/team/deployment';
+import { useOptionalTeam } from '@/features/team/team-context';
 import { pawBrowserHost } from './paw-browser-host';
 import { ModelPicker } from '@/features/agent/composer/ModelPicker';
 import { PawAppIcon } from '../shell/PawAppIcon';
@@ -113,6 +115,16 @@ const PROMPT_STARTERS: ReadonlyArray<{ label: string; prompt: string }> = [
   { label: '审查改动', prompt: '审查最近的改动，指出风险、遗漏和需要跟进的问题。' },
   { label: '拆解任务', prompt: '把这件事拆成可执行的步骤，并从第一步开始：' },
 ];
+
+/* TeamGateway assigns the actual project mount and execution grant on the
+ * server. Keep the Room creation contract bounded to that managed workspace
+ * instead of exposing the local full-trust default in the shared client. */
+const TEAM_ROOM_PERMISSION_POLICY: RoomPermissionPolicy = {
+  schemaVersion: 'rag-ime.room-permission-policy.v1',
+  room: { executionMode: 'workspace_managed' },
+  partner: { executionMode: 'inherit' },
+  toolAgent: { executionMode: 'inherit' },
+};
 
 export function PawAgentHome({
   catalogError = '',
@@ -144,7 +156,12 @@ export function PawAgentHome({
   sessions: SessionSummary[];
 }) {
   const transport = useControlTransport();
-  const electronHost = pawBrowserHost();
+  const teamMode = isTeamDeployment();
+  const team = useOptionalTeam();
+  const teamProjectName = teamMode && team?.activeSpace?.kind === 'project'
+    ? team.activeSpace.name
+    : '';
+  const electronHost = teamMode ? null : pawBrowserHost();
   const preferenceRead = useAgentPreferencesRead();
   const preferences = preferenceRead.preferences;
   const [mode, setMode] = useState<WorkMode>('session');
@@ -176,13 +193,19 @@ export function PawAgentHome({
   useEffect(() => {
     if (preferenceRead.isPending || preferenceRead.readError || preferenceHydratedRef.current) return;
     preferenceHydratedRef.current = true;
-    if (!preferenceEditedRef.current.executionMode) setExecutionMode(preferences.executionMode);
+    if (!teamMode && !preferenceEditedRef.current.executionMode) setExecutionMode(preferences.executionMode);
     if (!preferenceEditedRef.current.modelReference) setModelReference(preferences.modelReference || defaultModel);
     if (!preferenceEditedRef.current.thinking) setThinking(preferences.thinking);
-  }, [defaultModel, preferenceRead.isPending, preferenceRead.readError, preferences.executionMode, preferences.modelReference, preferences.thinking]);
+  }, [defaultModel, preferenceRead.isPending, preferenceRead.readError, preferences.executionMode, preferences.modelReference, preferences.thinking, teamMode]);
   useEffect(() => {
+    if (teamMode) {
+      setWorkspaceRoot('');
+      setExecutionMode('workspace_managed');
+      setOptionsPanel(null);
+      return;
+    }
     if (!workspaceRoot && projectRoots[0]) setWorkspaceRoot(projectRoots[0]);
-  }, [projectRoots, workspaceRoot]);
+  }, [projectRoots, teamMode, workspaceRoot]);
 
   const selectedModel = models.find((item) => item.reference === modelReference);
   const thinkingLevels = supportedPiThinkingLevels(selectedModel, { includeOff: true });
@@ -200,15 +223,19 @@ export function PawAgentHome({
   );
   const roomPersonas = availableRoomPersonas.slice(0, roomParticipantCount);
   const roomReady = roomPersonas.length >= 2;
+  const effectiveExecutionMode: AgentExecutionMode = teamMode ? 'workspace_managed' : executionMode;
   const sessionPermission = SESSION_PERMISSION_PRESETS.find(
-    (item) => item.executionMode === executionMode,
+    (item) => item.executionMode === effectiveExecutionMode,
   ) ?? SESSION_PERMISSION_PRESETS.find((item) => item.id === 'full-access')!;
+  const effectiveRoomPermissionPolicy: RoomPermissionPolicy = teamMode
+    ? TEAM_ROOM_PERMISSION_POLICY
+    : roomPermissionPolicy;
   const roomPermission = roomPermissionLayerPresentation(
-    roomPermissionPolicy,
+    effectiveRoomPermissionPolicy,
     'room',
     'collaboration',
   );
-  const effectiveRoomPermissions = effectiveRoomPermissionPolicy(roomPermissionPolicy);
+  const effectiveRoomPermissions = resolveEffectiveRoomPermissionPolicy(effectiveRoomPermissionPolicy);
   const uniformRoomPermissions = Object.values(effectiveRoomPermissions).every(
     (value) => value === effectiveRoomPermissions.room,
   );
@@ -216,8 +243,8 @@ export function PawAgentHome({
     ? `${uniformRoomPermissions ? roomPermission.effectiveLabel : '自定义'} · 分层`
     : sessionPermission.label;
   const permissionMode = mode === 'room'
-    ? roomPermissionPolicy.room.executionMode
-    : executionMode;
+    ? effectiveRoomPermissionPolicy.room.executionMode
+    : effectiveExecutionMode;
 
   // 继续工作按真实更新时间取最近四条，而不是按目录返回顺序截断。
   const recents = useMemo(() => [
@@ -241,6 +268,10 @@ export function PawAgentHome({
   }
 
   async function pickWorkspace(): Promise<void> {
+    if (teamMode) {
+      setError('团队项目由服务管理，无法在本机选择目录。');
+      return;
+    }
     if (!transport.pickFiles && !electronHost?.pickWorkspaceDirectory) {
       setError('当前运行环境不能选择本地目录。');
       return;
@@ -333,20 +364,20 @@ export function PawAgentHome({
       setError('当前没有足够的 Room 伙伴。');
       return;
     }
-    if (mode === 'session' && executionMode === 'workspace_managed' && !workspaceRoot) {
+    if (!teamMode && mode === 'session' && effectiveExecutionMode === 'workspace_managed' && !workspaceRoot) {
       setError('工作区托管需要先选择一个项目。');
       return;
     }
     setSubmitting(true);
     setError('');
-    const toolProfileVersion = sessionPermission.toolProfileVersion;
-    const systemWorkspaceRoots = unrestrictedWorkspaceRoots(workspaceRoot);
-    const sessionWorkspaceRoots = executionMode === 'per_action' || executionMode === 'full_trust'
+    const toolProfileVersion = teamMode ? 'control-center-v1' : sessionPermission.toolProfileVersion;
+    const systemWorkspaceRoots = teamMode ? [] : unrestrictedWorkspaceRoots(workspaceRoot);
+    const sessionWorkspaceRoots = teamMode ? [] : effectiveExecutionMode === 'per_action' || effectiveExecutionMode === 'full_trust'
       ? systemWorkspaceRoots
       : workspaceRoot ? [workspaceRoot] : [];
-    const roomWorkspaceRoots = (
-      roomPermissionPolicy.room.executionMode === 'per_action'
-      || roomPermissionPolicy.room.executionMode === 'full_trust'
+    const roomWorkspaceRoots = teamMode ? [] : (
+      effectiveRoomPermissionPolicy.room.executionMode === 'per_action'
+      || effectiveRoomPermissionPolicy.room.executionMode === 'full_trust'
     )
       ? systemWorkspaceRoots
       : workspaceRoot ? [workspaceRoot] : [];
@@ -357,13 +388,13 @@ export function PawAgentHome({
           body: {
             title: workTitle(message),
             mode: sessionPermission.mode,
-            executionMode,
+            executionMode: effectiveExecutionMode,
             toolProfileVersion,
             workspaceRoots: sessionWorkspaceRoots,
-            ...(executionMode === 'workspace_managed'
+            ...(!teamMode && effectiveExecutionMode === 'workspace_managed'
               ? { workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE' }
               : {}),
-            ...(executionMode === 'full_trust'
+            ...(!teamMode && effectiveExecutionMode === 'full_trust'
               ? { dangerousModeConfirmation: 'ENABLE_FULL_TRUST' }
               : {}),
           },
@@ -376,7 +407,7 @@ export function PawAgentHome({
           rawSession,
           message,
           sessionWorkspaceRoots,
-          executionMode,
+          effectiveExecutionMode,
           toolProfileVersion,
         );
         const attachmentImport = importPendingAttachments({ sessionId });
@@ -462,11 +493,11 @@ export function PawAgentHome({
             routingPolicy: 'parallel',
             routingConfig: { maxResponders: selectedPersonas.length, naturalJitter: 0, fallbackParticipantId: '' },
             workspaceRoots: roomWorkspaceRoots,
-            permissionPolicy: roomPermissionPolicy,
-            ...(roomPermissionPolicyNeedsWorkspaceConfirmation(roomPermissionPolicy)
+            permissionPolicy: effectiveRoomPermissionPolicy,
+            ...(!teamMode && roomPermissionPolicyNeedsWorkspaceConfirmation(effectiveRoomPermissionPolicy)
               ? { workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE' }
               : {}),
-            ...(roomPermissionPolicyNeedsDangerousConfirmation(roomPermissionPolicy)
+            ...(!teamMode && roomPermissionPolicyNeedsDangerousConfirmation(effectiveRoomPermissionPolicy)
               ? { dangerousModeConfirmation: 'ENABLE_FULL_TRUST' }
               : {}),
           },
@@ -513,7 +544,7 @@ export function PawAgentHome({
     <button
       aria-label={`权限 · ${permissionLabel}`}
       className="an-chip"
-      disabled={submitting}
+      disabled={submitting || teamMode}
       title={`权限 · ${permissionLabel}`}
       type="button"
     >
@@ -584,6 +615,11 @@ export function PawAgentHome({
               placeholder="交给 Agent 一件事…"
               value={prompt}
             />
+            {teamProjectName ? (
+              <p className="an-project-visibility-note" role="note">
+                在「{teamProjectName}」创建的对话和工具记录对项目成员可见；私人讨论请使用个人空间。
+              </p>
+            ) : null}
             <div className="an-composer-foot">
               <span className="an-mode-seg" role="radiogroup" aria-label="工作类型">
                 <button
@@ -620,6 +656,7 @@ export function PawAgentHome({
 
               <span className="an-anchor">
                 {mode === 'room' ? (
+                  teamMode ? permissionTrigger : (
                   <Popover open={optionsPanel === 'permission'} onOpenChange={(open) => setOptionsPanel(open ? 'permission' : null)}>
                     <PopoverTrigger asChild>{permissionTrigger}</PopoverTrigger>
                     <PopoverContent align="start" aria-label="Room 三层权限" className="paw-agent-next an-home-menu an-home-menu--policy" side="bottom">
@@ -632,7 +669,9 @@ export function PawAgentHome({
                       />
                     </PopoverContent>
                   </Popover>
+                  )
                 ) : (
+                  teamMode ? permissionTrigger : (
                   <Menu modal={false} open={optionsPanel === 'permission'} onOpenChange={(open) => setOptionsPanel(open ? 'permission' : null)}>
                     <MenuTrigger asChild>{permissionTrigger}</MenuTrigger>
                     <MenuContent align="start" aria-label="权限模式" className="paw-agent-next an-home-menu" side="bottom">
@@ -657,6 +696,7 @@ export function PawAgentHome({
                       </MenuRadioGroup>
                     </MenuContent>
                   </Menu>
+                  )
                 )}
               </span>
 
@@ -677,7 +717,7 @@ export function PawAgentHome({
                 />
               </span>
 
-              <span className="an-anchor">
+              {!teamMode ? <span className="an-anchor">
                 <Menu modal={false} open={optionsPanel === 'project'} onOpenChange={(open) => setOptionsPanel(open ? 'project' : null)}>
                 <MenuTrigger asChild><button
                   aria-label={workspaceRoot ? `起始项目 · ${projectName([workspaceRoot])}` : '起始项目（可选）'}
@@ -715,7 +755,7 @@ export function PawAgentHome({
                     ) : null}
                   </MenuContent>
                 </Menu>
-              </span>
+              </span> : null}
 
               <button
                 aria-label={submitting ? '正在创建' : `开始 ${mode === 'session' ? 'Session' : 'Room'}`}

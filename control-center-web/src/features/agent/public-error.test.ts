@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   agentCommandReceiptFailure,
+  isAmbiguousAgentPromptFailure,
   MODEL_QUOTA_EXHAUSTED_TEXT,
   MODEL_AUTH_FAILURE_TEXT,
   isModelAuthError,
@@ -32,6 +33,29 @@ describe('Agent command receipt public recovery', () => {
     })).toBe(expected);
     expect(publicAgentErrorText(new Error('Agent 3 is currently busy'))).toBe(expected);
     expect(publicAgentErrorText(new Error('Room participants are currently busy: Agent 3'))).toBe(expected);
+  });
+
+  it('explains a definitive team worker rejection without marking delivery uncertain', () => {
+    const error = Object.assign(
+      new Error('team worker unavailable'),
+      {
+        status: 409,
+        payload: {
+          ok: false,
+          errorCode: 'team_worker_unavailable',
+          error: '团队尚未配置执行服务，请联系管理员配置模型与隔离运行环境。',
+        },
+      },
+    );
+
+    expect(publicAgentErrorText(error)).toBe('团队尚未配置执行服务，请联系管理员配置模型与隔离运行环境。');
+    expect(isAmbiguousAgentPromptFailure(error)).toBe(false);
+
+    const serverFailure = Object.assign(new Error('worker gateway failed'), {
+      status: 500,
+      payload: error.payload,
+    });
+    expect(isAmbiguousAgentPromptFailure(serverFailure)).toBe(true);
   });
 
   it('turns an optional memory budget failure into a non-blocking message', () => {

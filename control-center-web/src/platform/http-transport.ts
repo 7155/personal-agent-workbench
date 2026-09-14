@@ -42,6 +42,14 @@ import {
 
 export interface HttpControlTransportOptions {
   baseUrl: string;
+  /** Optional path mounted before the control API (for example TeamGateway). */
+  routePrefix?: string;
+  /** Keep cookies same-origin for browser hosted TeamGateway sessions. */
+  credentials?: RequestCredentials;
+  /** Dynamic headers are evaluated for every request, never persisted. */
+  getHeaders?: () => HeadersInit | undefined;
+  /** Stable non-secret identity for cache/recovery ownership. */
+  connectionIdentity?: string;
   fetch?: typeof fetch;
   validationRuntimeLoader?: () => Promise<ContractValidationRuntime>;
   reconnectBaseDelayMs?: number;
@@ -80,6 +88,9 @@ export class HttpControlTransport implements ControlTransport {
   readonly runVoiceAction?: ControlTransport['runVoiceAction'];
 
   private readonly baseUrl: URL;
+  private readonly routePrefix: string;
+  private readonly credentials: RequestCredentials;
+  private readonly getHeaders?: () => HeadersInit | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly validationRuntimeLoader: () => Promise<ContractValidationRuntime>;
   private readonly reconnectBaseDelayMs: number;
@@ -89,8 +100,11 @@ export class HttpControlTransport implements ControlTransport {
 
   constructor(options: HttpControlTransportOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
+    this.routePrefix = normalizeRoutePrefix(options.routePrefix);
+    this.credentials = options.credentials ?? 'same-origin';
+    this.getHeaders = options.getHeaders;
     // Only the installed preload supplies this bridge. A URL flag is not a capability.
-    const voice = typeof window !== 'undefined' && window.location.origin === this.baseUrl.origin
+    const voice = typeof window !== 'undefined' && !this.routePrefix && window.location.origin === this.baseUrl.origin
       ? window.pawVoiceHost : undefined;
     if (voice) {
       this.voiceStatus = () => voice.status();
@@ -98,7 +112,8 @@ export class HttpControlTransport implements ControlTransport {
       this.saveVoiceCredentials = (request) => voice.saveCredentials(request);
       this.runVoiceAction = (action) => voice.action(action);
     }
-    this.connectionIdentity = `http:${this.baseUrl.href}`;
+    this.connectionIdentity = options.connectionIdentity
+      ?? `http:${this.baseUrl.href}${this.routePrefix}`;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.validationRuntimeLoader = options.validationRuntimeLoader ?? loadContractValidationRuntime;
     this.reconnectBaseDelayMs = clamp(options.reconnectBaseDelayMs ?? 250, 0, 30_000);
@@ -137,12 +152,12 @@ export class HttpControlTransport implements ControlTransport {
     const url = this.url(request.pathId, request.params, request.query);
     const headers = new Headers({ Accept: 'application/json' });
     if (route.method !== 'GET') headers.set('Content-Type', 'application/json');
-    const response = await this.fetchImpl(url, {
+    const response = await this.fetchImpl(url, this.requestInit({
       method: route.method,
       headers,
       ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
       ...(request.signal ? { signal: request.signal } : {}),
-    });
+    }));
     const payload = await responsePayload(response);
     if (!response.ok) {
       const message =
@@ -173,7 +188,7 @@ export class HttpControlTransport implements ControlTransport {
   agentMediaContentUrl(receiptPath: string): string {
     const managedPath = managedAgentMediaContentPath(receiptPath);
     if (!managedPath) throw new TypeError('Agent media content requires a managed receipt path');
-    return new URL(managedPath, this.baseUrl).toString();
+    return this.pathUrl(managedPath).toString();
   }
 
   async pasteImages(options: AgentImagePasteOptions): Promise<PickedFile[]> {
@@ -183,18 +198,18 @@ export class HttpControlTransport implements ControlTransport {
       // Pasted code/text/archive files often carry no browser MIME type;
       // they import as octet-stream instead of being refused.
       const mimeType = normalizeComposerAttachmentMimeType(file.type);
-      const url = new URL('/api/agent/media/import', this.baseUrl);
+      const url = this.pathUrl('/api/agent/media/import');
       url.searchParams.set(ownerKey, ownerId);
       url.searchParams.set('fileName', file.name);
-      const response = await this.fetchImpl(url, {
+      const response = await this.fetchImpl(url, this.requestInit({
         method: 'POST',
-        headers: new Headers({
+        headers: this.requestHeaders({
           Accept: 'application/json',
           'Content-Type': mimeType,
           'Cache-Control': 'no-store',
         }),
         body: file,
-      });
+      }));
       const payload = await responsePayload(response);
       if (!response.ok) {
         const message = isRecord(payload) && typeof payload.error === 'string'
@@ -230,9 +245,9 @@ export class HttpControlTransport implements ControlTransport {
           ...(parserProvider ? { parserProvider } : {}),
         },
       );
-      const response = await this.fetchImpl(url, {
+      const response = await this.fetchImpl(url, this.requestInit({
         method: 'POST',
-        headers: new Headers({
+        headers: this.requestHeaders({
           Accept: 'application/json',
           'Content-Type': mimeType,
           'Cache-Control': 'no-store',
@@ -240,7 +255,7 @@ export class HttpControlTransport implements ControlTransport {
         }),
         body: file,
         ...(input.signal ? { signal: input.signal } : {}),
-      });
+      }));
       const payload = await responsePayload(response);
       if (!response.ok) {
         const message =
@@ -266,14 +281,14 @@ export class HttpControlTransport implements ControlTransport {
       { kbId: input.kbId, fileId: input.fileId, assetId: input.assetId },
       undefined,
     );
-    const response = await this.fetchImpl(url, {
+    const response = await this.fetchImpl(url, this.requestInit({
       method: 'GET',
-      headers: new Headers({
+      headers: this.requestHeaders({
         Accept: [...KNOWLEDGE_ASSET_MIME_TYPES].join(', '),
         'Cache-Control': 'no-store',
       }),
       ...(input.signal ? { signal: input.signal } : {}),
-    });
+    }));
     if (!response.ok) {
       const payload = await responsePayload(response);
       const message =
@@ -327,14 +342,14 @@ export class HttpControlTransport implements ControlTransport {
       { kbId: input.kbId, fileId: input.fileId },
       undefined,
     );
-    const response = await this.fetchImpl(url, {
+    const response = await this.fetchImpl(url, this.requestInit({
       method: 'GET',
-      headers: new Headers({
+      headers: this.requestHeaders({
         Accept: [...KNOWLEDGE_SOURCE_MIME_TYPES].join(', '),
         'Cache-Control': 'no-store',
       }),
       ...(input.signal ? { signal: input.signal } : {}),
-    });
+    }));
     if (!response.ok) {
       const payload = await responsePayload(response);
       const message =
@@ -425,7 +440,7 @@ export class HttpControlTransport implements ControlTransport {
     while (!controller.signal.aborted) {
       let retryAfterMs: number | undefined;
       try {
-        const headers = new Headers({
+        const headers = this.requestHeaders({
           Accept: 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Last-Event-ID': lastEventId,
@@ -435,11 +450,11 @@ export class HttpControlTransport implements ControlTransport {
             ...(request.query ?? {}),
             lastEventId,
           }),
-          {
+          this.requestInit({
             method: 'GET',
             headers,
             signal: controller.signal,
-          },
+          }),
         );
         if (!response.ok) {
           throw new ControlTransportHttpError(
@@ -568,12 +583,37 @@ export class HttpControlTransport implements ControlTransport {
     params: Readonly<Record<string, string>> | undefined,
     query: Readonly<Record<string, ControlQueryValue>> | undefined,
   ): URL {
-    const url = new URL(resolveControlPath(pathId, params), this.baseUrl);
+    const url = this.pathUrl(resolveControlPath(pathId, params));
     for (const [key, rawValue] of Object.entries(query ?? {})) {
       if (rawValue === undefined) continue;
       url.searchParams.append(key, String(rawValue));
     }
     return url;
+  }
+
+  private pathUrl(path: string): URL {
+    const url = new URL(path, this.baseUrl);
+    if (this.routePrefix && path.startsWith('/')) {
+      url.pathname = `${this.routePrefix}${url.pathname}`;
+    }
+    return url;
+  }
+
+  private requestHeaders(base?: HeadersInit): Headers {
+    const headers = new Headers(base);
+    const dynamic = this.getHeaders?.();
+    if (dynamic) {
+      for (const [key, value] of new Headers(dynamic).entries()) headers.set(key, value);
+    }
+    return headers;
+  }
+
+  private requestInit(init: RequestInit): RequestInit {
+    return {
+      ...init,
+      credentials: this.credentials,
+      headers: this.requestHeaders(init.headers),
+    };
   }
 }
 
@@ -855,6 +895,18 @@ function normalizeBaseUrl(value: string): URL {
     throw new TypeError('HttpControlTransport baseUrl must not contain credentials, query, or hash');
   }
   return url;
+}
+
+function normalizeRoutePrefix(value: string | undefined): string {
+  if (!value) return '';
+  if (!value.startsWith('/') || value.includes('?') || value.includes('#') || /[\u0000-\u001f]/u.test(value)) {
+    throw new TypeError('HttpControlTransport routePrefix must be a safe absolute path');
+  }
+  const normalized = `/${value.replace(/^\/+|\/+$/g, '')}`;
+  if (normalized === '/' || normalized.split('/').some((segment) => segment === '..' || segment === '.')) {
+    throw new TypeError('HttpControlTransport routePrefix must not contain dot segments');
+  }
+  return normalized;
 }
 
 function reconnectDelay(

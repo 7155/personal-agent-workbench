@@ -39,6 +39,7 @@ import {
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import { roomParticipantPlanetName } from '../room-participant-identity';
 import { publicAgentErrorText } from '@/features/agent/public-error';
+import { useOptionalTeam } from '@/features/team/team-context';
 import { AgentBlocks, MarkdownBody } from '@/features/agent/timeline/BlockRenderer';
 import {
   PublicToolError,
@@ -830,12 +831,16 @@ function RoomUserPost({
   message: RoomMessageProjection;
   roomId: string;
 }) {
+  const team = useOptionalTeam();
   const visibleBlocks = roomVisibleBlocks(message.message?.blocks ?? []);
+  const actorName = message.actorDisplayName?.trim()
+    || (message.actorUserId && team?.user?.id === message.actorUserId ? '你' : '');
   return <div
     className="room-user-message"
     data-room-message-id={message.id}
     data-status={message.status}
   >
+    {actorName ? <div className="room-user-message__header"><span className="room-user-message__avatar" aria-hidden="true">{actorName.slice(0, 1).toLocaleUpperCase()}</span><strong>{actorName}</strong>{message.actorUserId && team?.user?.id === message.actorUserId ? <small>你</small> : null}</div> : null}
     {visibleBlocks.length ? (
       <AgentBlocks
         blocks={visibleBlocks}

@@ -8,7 +8,7 @@ export function transientControlErrorRefetchInterval(active: boolean) {
   );
 }
 
-export const queryClient = new QueryClient({
+const queryClientOptions = {
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
@@ -19,4 +19,15 @@ export const queryClient = new QueryClient({
       retry: false,
     },
   },
-});
+} as const;
+
+/**
+ * Team workspaces must never reuse the cache of another account or space.
+ * Keep the local singleton for the existing product path, while allowing the
+ * team shell to create a disposable client for each scoped OS mount.
+ */
+export function createQueryClient(): QueryClient {
+  return new QueryClient(queryClientOptions);
+}
+
+export const queryClient = createQueryClient();

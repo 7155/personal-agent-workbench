@@ -407,6 +407,9 @@ class ControlRouteSpec:
         request: ControlRequest,
         context: ControlAccessContext,
     ) -> None:
+        # Team requests use the canonical body after their explicit per-space
+        # route policy. Paired-device routes retain the narrower remote body.
+        paired_remote = context.is_remote and not context.is_team
         _validate_keys(request.params, allowed=self.params, required=self.params, field_name="params")
         for key, value in request.params.items():
             text = str(value)
@@ -420,7 +423,7 @@ class ControlRouteSpec:
 
         allowed_query = (
             self.remote_query
-            if context.is_remote and self.remote_query is not None
+            if paired_remote and self.remote_query is not None
             else self.query
         )
         _validate_keys(
@@ -439,10 +442,10 @@ class ControlRouteSpec:
             ):
                 raise _invalid_field("query", key)
 
-        allowed_body = self.remote_body if context.is_remote else self.body
+        allowed_body = self.remote_body if paired_remote else self.body
         required_body = (
             self.remote_required_body
-            if context.is_remote and self.remote_required_body is not None
+            if paired_remote and self.remote_required_body is not None
             else self.required_body
         )
         _validate_keys(
@@ -457,12 +460,20 @@ class ControlRouteSpec:
                 "GET control routes do not accept a request body",
                 details={"pathId": self.path_id.value},
             )
-        if context.is_remote:
+        if paired_remote:
             for key, allowed_values in self.remote_body_values.items():
                 if key in request.body and request.body[key] not in allowed_values:
                     raise _invalid_field("body", key)
 
     def authorize(self, context: ControlAccessContext) -> None:
+        if context.is_team:
+            if not context.remote_authenticated or self.path_id.value not in context.allowed_path_ids:
+                raise ControlApiError(
+                    ControlErrorCode.ROUTE_NOT_ALLOWED,
+                    "control route is not available in this team space",
+                    details={"pathId": self.path_id.value}, status=403,
+                )
+            return
         if not context.is_remote:
             return
         if not self.remote_safe:
@@ -563,17 +574,16 @@ class ControlRoutePolicy:
         route.validate_request(request, context)
         return route
 
-    def authorize_http(
+    def resolve_http_requests(
         self,
         *,
         method: str | ControlMethod,
         path: str,
         query: Mapping[str, object],
         body: Mapping[str, object],
-        context: ControlAccessContext,
         request_id: str = "http-request",
-    ) -> ControlRouteSpec:
-        """Resolve a fixed legacy HTTP path back to its canonical pathId policy."""
+    ) -> tuple[ControlRequest, ...]:
+        """Resolve canonical requests without granting execution authority."""
 
         try:
             control_method = method if isinstance(method, ControlMethod) else ControlMethod(str(method))
@@ -610,20 +620,27 @@ class ControlRoutePolicy:
                 status=404,
             )
 
+        return tuple(
+            ControlRequest(
+                request_id=request_id, path_id=route.path_id.value,
+                params=params, query=query, body=body,
+            )
+            for route, params in candidates
+        )
+
+    def authorize_http(
+        self, *, method: str | ControlMethod, path: str,
+        query: Mapping[str, object], body: Mapping[str, object],
+        context: ControlAccessContext, request_id: str = "http-request",
+    ) -> ControlRouteSpec:
+        """Resolve and authorize through the same contract as pathId requests."""
+        requests = self.resolve_http_requests(
+            method=method, path=path, query=query, body=body, request_id=request_id,
+        )
         errors: list[ControlApiError] = []
-        for route, params in candidates:
+        for request in requests:
             try:
-                self.authorize(
-                    ControlRequest(
-                        request_id=request_id,
-                        path_id=route.path_id.value,
-                        params=params,
-                        query=query,
-                        body=body,
-                    ),
-                    context,
-                )
-                return route
+                return self.authorize(request, context)
             except ControlApiError as exc:
                 errors.append(exc)
 
@@ -847,7 +864,7 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_EVAL_LAB_TRIALS_CANCEL, ControlMethod.POST, "/api/agent/eval-lab/trials/cancel", None, body={"jobId"}, required_body={"jobId"}),
         _route(ControlPathId.AGENT_EVAL_LAB_SCENE_RECIPES_APPLY, ControlMethod.POST, "/api/agent/eval-lab/scene-recipes/apply", None, body={"sceneId", "experimentId", "expectedRevision", "clientRequestId"}, required_body={"sceneId", "experimentId", "expectedRevision", "clientRequestId"}),
         _route(ControlPathId.AGENT_EVAL_LAB_SCENE_RECIPES_ROLLBACK, ControlMethod.POST, "/api/agent/eval-lab/scene-recipes/rollback", None, body={"sceneId", "expectedRevision", "clientRequestId"}, required_body={"sceneId", "expectedRevision", "clientRequestId"}),
-        _route(ControlPathId.AGENT_SESSIONS_LIST, ControlMethod.GET, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "includeInternal", "limit", "beforeUpdatedAtMs", "beforeId", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId"}),
+        _route(ControlPathId.AGENT_SESSIONS_LIST, ControlMethod.GET, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "includeInternal", "limit", "beforeUpdatedAtMs", "beforeId", "surfaceKind", "ownerAppId", "surfaceKey", "projectionOnly"}, remote_query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId"}),
         _route(ControlPathId.AGENT_SESSIONS_CREATE, ControlMethod.POST, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, body={"title", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "toolAllowlistMode", "allowedTools", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_body={"title", "mode", "roleId", "roleVersion", "modelProfile", "toolProfileVersion"}, remote_body_values={"mode": {"assistant"}}),
         _route(ControlPathId.AGENT_SESSIONS_SURFACE_ENSURE, ControlMethod.POST, "/api/agent/sessions/surface/ensure", None, body={"title", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, required_body={"title", "mode", "toolProfileVersion", "executionMode", "workspaceRoots", "surfaceKind", "ownerAppId", "surfaceKey"}),
         _route(ControlPathId.AGENT_SESSION_SNAPSHOT, ControlMethod.GET, "/api/agent/sessions/{sessionId}/messages", "/control/v1/agent/sessions/{sessionId}/snapshot", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_SESSION, query={"view"}),
@@ -893,7 +910,7 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_MEDIA_PREVIEW, ControlMethod.GET, "/api/agent/media/{mediaId}/preview", "/control/v1/agent/media/{mediaId}/preview", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_MEDIA, query={"sessionId", "sha256"}, required_query={"sessionId"}),
         _route(ControlPathId.AGENT_DEEP_SEARCH, ControlMethod.POST, "/api/agent/deep-search", "/control/v1/agent/deep-search", body={"query", "privacyDisposition", "context", "frontAppBundleId", "contextSource", "evidence"}, required_body={"query", "privacyDisposition"}),
 
-        _route(ControlPathId.AGENT_ROOMS_LIST, ControlMethod.GET, "/api/agent/rooms", "/control/v1/agent/rooms", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId", "ownerAppId", "surfaceKey"}),
+        _route(ControlPathId.AGENT_ROOMS_LIST, ControlMethod.GET, "/api/agent/rooms", "/control/v1/agent/rooms", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId", "ownerAppId", "surfaceKey", "projectionOnly"}),
         _route(ControlPathId.AGENT_ROOMS_CREATE, ControlMethod.POST, "/api/agent/rooms", "/control/v1/agent/rooms", body={"title", "roomKind", "avatar", "description", "scenarioPrompt", "participants", "routingPolicy", "routingConfig", "moderatorRoleId", "workspaceRoots", "executionMode", "permissionPolicy", "workspaceScopeConfirmation", "dangerousModeConfirmation", "ownerAppId", "surfaceKey"}, required_body={"participants"}),
         _route(ControlPathId.AGENT_ROOM_GET, ControlMethod.GET, "/api/agent/rooms/{roomId}", "/control/v1/agent/rooms/{roomId}", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_ROOM),
         _route(ControlPathId.AGENT_ROOM_SNAPSHOT, ControlMethod.GET, "/api/agent/rooms/{roomId}/snapshot", "/control/v1/agent/rooms/{roomId}/snapshot", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_ROOM),

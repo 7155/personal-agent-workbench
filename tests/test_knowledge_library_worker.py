@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -26,6 +27,18 @@ from rag_ime.knowledge_worker_supervisor import (
     _knowledge_python_runtime,
     _knowledge_worker_env,
 )
+
+
+class KnowledgeHttpErrorTests(unittest.TestCase):
+    def test_error_response_is_closed_and_keeps_a_safe_message(self) -> None:
+        for payload in [b'{"error":{"message":"not found","code":"not_found"}}', b'[]', b'{"error":"bad reply"}']:
+            with self.subTest(payload=payload):
+                source = io.BytesIO(payload)
+                response = urllib.error.HTTPError('http://127.0.0.1/', 404, 'Not Found', {}, source)
+                result = HttpKnowledgeClient._http_error(response)
+                self.assertTrue(source.closed, 'Rejected worker responses must release their sockets')
+                self.assertIsInstance(result, KnowledgeLibraryError)
+                self.assertIn(result.code, {'not_found', 'worker_http_error'})
 
 
 class KnowledgeWorkerTests(unittest.TestCase):

@@ -17,6 +17,8 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import { useOptionalTeam } from '@/features/team/team-context';
+import { TeamProjectWorkbench } from '@/features/team/TeamProjectWorkbench';
 import { useWorkDocumentWorkspace, type WorkDocumentScope } from '@/features/work-documents/api';
 import type { ControlPathId } from '@/platform/routes';
 import type { ControlRequest } from '@/platform/transport';
@@ -115,11 +117,16 @@ function NativeSurface({ appId, pageId, route }: { appId: PawFeatureAppId; pageI
 }
 
 function ProjectSurface({ pageId, route }: { pageId: string; route: string }) {
+  const desktop = usePawOsDesktop();
+  const team = useOptionalTeam();
   const workbenchPageId: PawWorkbenchPageId = pageId === 'planning'
     ? 'planning'
     : pageId === 'documents'
       ? 'documents'
       : 'overview';
+  if (team?.activeSpace?.kind === 'project' && workbenchPageId === 'overview') {
+    return <TeamProjectWorkbench onNavigate={(nextPage) => openPawOsRoute(desktop, nextPage === 'planning' ? '/planning' : '/work-documents')} />;
+  }
   return <ProjectWorkbenchSurface pageId={workbenchPageId} route={route} />;
 }
 

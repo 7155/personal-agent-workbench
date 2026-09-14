@@ -2280,7 +2280,8 @@ class AgentDelegationCoordinator:
                         or parent.get("thinkingLevel")
                         or ""
                     )
-                    child = self.sessions.create(
+                    child = self.sessions.create_child(
+                        str(parent['id']),
                         title=f"{template.display_name} · {_bounded_text(task['task'], maximum=72)}",
                         mode=child_mode,
                         role_id=str(parent.get("roleId") or "companion-present-v1"),

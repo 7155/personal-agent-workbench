@@ -95,10 +95,12 @@ class AgentRoomStore:
         *,
         room_dir: str | Path | None = None,
         persistent_reads: bool = False,
+        participant_identity_provider: Callable[[str], str] | None = None,
     ):
         self.db_path = Path(db_path)
         self.room_dir = Path(room_dir) if room_dir is not None else self.db_path.parent / "Agent" / "rooms"
         self._persistent_reads = bool(persistent_reads)
+        self._participant_identity_provider = participant_identity_provider
         self._read_lock = threading.RLock()
         self._read_connection: sqlite3.Connection | None = None
 
@@ -627,6 +629,18 @@ class AgentRoomStore:
         if cursor.rowcount != 1:
             raise AgentRoomNotFound(room_id)
 
+    def _same_participant_identity(self, left_session: str, right_session: str) -> bool:
+        # Personal Rooms retain their one-instance-per-persona behavior. Team
+        # composition supplies an authenticated human/membership scope, so two
+        # people can bring the same reusable persona without sharing a Session.
+        if self._participant_identity_provider is None:
+            return True
+        left = self._participant_identity_provider(left_session)
+        right = self._participant_identity_provider(right_session)
+        if not left or not right:
+            raise ValueError("Room participant identity is unavailable")
+        return left == right
+
     def add_participant(
         self,
         room_id: str,
@@ -661,6 +675,7 @@ class AgentRoomStore:
         if any(
             str(value.get("roleId") or "") == normalized_role_id
             and str(value.get("roleVersion") or "") == normalized_role_version
+            and self._same_participant_identity(str(value.get("sessionId") or ""), session_id)
             for value in active
         ):
             raise ValueError("this role is already active in the Room")
@@ -695,14 +710,13 @@ class AgentRoomStore:
                 )
             duplicate = conn.execute(
                 """
-                SELECT 1 FROM agent_room_participants
+                SELECT session_id FROM agent_room_participants
                 WHERE room_id = ? AND participant_status = 'active'
                   AND role_id = ? AND role_version = ?
-                LIMIT 1
                 """,
                 (room_id, normalized_role_id, normalized_role_version),
-            ).fetchone()
-            if duplicate is not None:
+            ).fetchall()
+            if any(self._same_participant_identity(str(row["session_id"]), session_id) for row in duplicate):
                 raise ValueError("this role is already active in the Room")
             ordinal_row = conn.execute(
                 "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM agent_room_participants WHERE room_id = ?",

@@ -204,6 +204,33 @@
     0 0 0 1px color-mix(in srgb, var(--paw-chrome-ink) 5%, transparent);
 }
 
+.paw-desktop-root .paw-room-window-chrome__team-action {
+  min-height: 26px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--paw-accent) 34%, var(--paw-line-soft));
+  border-radius: 7px;
+  color: var(--paw-accent);
+  background: color-mix(in srgb, var(--paw-accent) 7%, transparent);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 100ms ease;
+}
+
+.paw-desktop-root .paw-room-window-chrome__team-action:hover {
+  border-color: color-mix(in srgb, var(--paw-accent) 54%, var(--paw-line-soft));
+  color: color-mix(in srgb, var(--paw-accent) 86%, #1d2430);
+  background: color-mix(in srgb, var(--paw-accent) 12%, transparent);
+}
+
+.paw-desktop-root .paw-room-window-chrome__team-action:active { transform: scale(.97); }
+
 .paw-desktop-root .paw-room-workspace__signal {
   min-width: 0;
   min-height: 56px;
@@ -946,6 +973,8 @@
   }
   .paw-desktop-root .paw-room-window-chrome nav button { width: 28px; justify-content: center; padding-inline: 0; }
   .paw-desktop-root .paw-room-window-chrome nav button > span { display: none; }
+  .paw-desktop-root .paw-room-window-chrome__team-action { width: 28px; justify-content: center; padding-inline: 0; }
+  .paw-desktop-root .paw-room-window-chrome__team-action > span { display: none; }
 }
 
 @keyframes paw-room-tools-enter-up {

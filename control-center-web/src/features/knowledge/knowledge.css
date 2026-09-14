@@ -397,6 +397,24 @@
   white-space: nowrap;
 }
 
+.knowledge-base-switcher__scope {
+  min-width: 0;
+  max-width: min(34ch, 38vw);
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-settings__team-note,
+.knowledge-parser-health__team-note {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .knowledge-base-switcher > .ui-field {
   display: none;
   min-width: 210px;

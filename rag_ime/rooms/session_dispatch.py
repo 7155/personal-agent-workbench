@@ -72,6 +72,7 @@ class RoomSessionDispatchService:
         resolve_attachments: Callable[
             [str, Sequence[str], Sequence[str]], list[dict[str, object]]
         ],
+        human_actor_provider: Callable[[], Mapping[str, object]] | None = None,
     ) -> None:
         self.rooms = rooms
         self.room_work = room_work
@@ -89,6 +90,7 @@ class RoomSessionDispatchService:
         self.prompt = prompt
         self.build_participant_prompt = build_participant_prompt
         self.resolve_attachments = resolve_attachments
+        self.human_actor_provider = human_actor_provider
 
     def post_message(
         self,
@@ -301,6 +303,11 @@ class RoomSessionDispatchService:
                     for decision in decisions
                 ],
             }
+            if self.human_actor_provider is not None:
+                actor = self.human_actor_provider()
+                if actor.get('userId'):
+                    user_event_payload['actorUserId'] = str(actor['userId'])
+                    user_event_payload['actorDisplayName'] = str(actor.get('displayName') or actor['userId'])
             if client_message_id:
                 user_event_payload["clientMessageId"] = client_message_id
             if retry_of_root_id:

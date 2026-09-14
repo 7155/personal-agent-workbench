@@ -459,6 +459,13 @@ class DebugServerConfig:
     knowledge_control: object | None = None
     memory_projection_worker_enabled: bool | None = None
     memory_projection_poll_interval_s: float | None = None
+    # Explicit workspace dependencies for server-owned spaces. Local desktop
+    # deployments retain their existing environment-derived defaults.
+    workspace_root: Path | None = None
+    project_skill_roots: tuple[Path, ...] | None = None
+    plugin_inbox_root: Path | None = None
+    integration_environment: Mapping[str, str] | None = None
+    tool_gateway_factory: Callable[..., ControlToolGateway] | None = None
 
 
 @dataclass
@@ -507,7 +514,7 @@ class DebugImeService:
         self.predictor = config.predictor or prediction_provider_from_env()
         self.adapter = InputMethodAdapter(self.core, project=config.project)
         self.deepseek_completion_provider = DeepSeekV4FlashCompletionProvider(
-            load_deepseek_config(),
+            load_deepseek_config(env=config.integration_environment),
             enforce_runtime_flags=True,
         )
         self.active_rag = ActiveRagService(
@@ -518,9 +525,9 @@ class DebugImeService:
         )
         self.knowledge_workbench = KnowledgeWorkbenchService(
             evidence_retriever=self._knowledge_workbench_evidence,
-            generator=DeepSeekKnowledgeProvider(load_deepseek_config()),
+            generator=DeepSeekKnowledgeProvider(load_deepseek_config(env=config.integration_environment)),
             database_organizer=self._knowledge_workbench_database_organizer,
-            notion_client=NotionAsyncKnowledgeClient(load_notion_knowledge_config()),
+            notion_client=NotionAsyncKnowledgeClient(load_notion_knowledge_config(env=config.integration_environment)),
         )
         self.knowledge_worker = None
         if config.knowledge_client is None:
@@ -625,7 +632,10 @@ class DebugImeService:
             self.core.initialize(perform_maintenance=False)
         self._embedding_warmup_report = self._initial_embedding_warmup_report()
         self._startup_recovery_report = self._initial_startup_recovery_report()
-        self.runtime_config_resolver = RuntimeConfigResolver(self.settings_store, environ=os.environ)
+        self.runtime_config_resolver = RuntimeConfigResolver(
+            self.settings_store,
+            environ=os.environ if config.integration_environment is None else config.integration_environment,
+        )
         self.management = ManagementService(
             db_path=config.db_path,
             project=config.project,
@@ -670,9 +680,12 @@ class DebugImeService:
             for value in project_skill_paths.split(os.pathsep)
             if value.strip()
         )
-        if not project_skill_roots:
+        if config.project_skill_roots is not None:
+            project_skill_roots = config.project_skill_roots
+        elif not project_skill_roots:
             project_workspace = Path(
-                os.environ.get("RAG_IME_DEFAULT_WORKSPACE")
+                config.workspace_root
+                or os.environ.get("RAG_IME_DEFAULT_WORKSPACE")
                 or os.environ.get("RAG_IME_SOURCE_ROOT")
                 or Path.cwd()
             ).expanduser()
@@ -684,7 +697,9 @@ class DebugImeService:
         self.agent_extensions = AgentExtensionService(
             runtime_provider=lambda: self.agent.runtime,
             inbox_root=(
-                Path(plugin_inbox).expanduser()
+                config.plugin_inbox_root
+                if config.plugin_inbox_root is not None
+                else Path(plugin_inbox).expanduser()
                 if plugin_inbox
                 else Path(config.db_path).expanduser().resolve(strict=False).parent
                 / "Agent"
@@ -703,7 +718,9 @@ class DebugImeService:
             sandbox_store=self.agent.sandbox_runs,
             workspace_harness=self.agent.background_jobs.workspace_harness,
             repository_root=(
-                Path(os.environ["RAG_IME_ROOT"]).expanduser()
+                config.workspace_root
+                if config.workspace_root is not None
+                else Path(os.environ["RAG_IME_ROOT"]).expanduser()
                 if os.environ.get("RAG_IME_ROOT")
                 else Path(__file__).resolve().parents[1]
             ),
@@ -725,6 +742,7 @@ class DebugImeService:
         self.agent.bind_external_trace_resolver(self._resolve_external_common_trace)
         self.system_terminal = SystemTerminalService(
             default_cwd=(
+                str(config.workspace_root) if config.workspace_root is not None else
                 os.environ.get("RAG_IME_DEFAULT_WORKSPACE")
                 or os.environ.get("RAG_IME_SOURCE_ROOT")
                 or Path.cwd()
@@ -732,7 +750,7 @@ class DebugImeService:
         )
         self.desktop_files = DesktopFiles(editability=lambda session_id, path:
             self.agent_tools.workspace_harness.file_editability(self.agent.sessions.get(session_id), path))
-        self.agent_tools = ControlToolGateway(
+        self.agent_tools = (config.tool_gateway_factory or ControlToolGateway)(
             sessions=self.agent.sessions,
             management=self.management,
             core=self.core,
@@ -800,7 +818,8 @@ class DebugImeService:
         )
         initial_settings = self.settings_store.get_settings(include_sensitive=True)
         initial_snapshot = self.runtime_config_snapshot(settings=initial_settings)
-        _apply_pinyin_settings_to_process_env(initial_snapshot.effective_settings(initial_settings))
+        if config.integration_environment is None:
+            _apply_pinyin_settings_to_process_env(initial_snapshot.effective_settings(initial_settings))
         if config.seed_if_empty and self._event_count() == 0:
             seed_demo_memories(self.adapter, default_fixture_memories())
         self._vector_auto_rebuild_report = self._maybe_auto_rebuild_vector_index()
@@ -9527,7 +9546,7 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                     raise ValueError("knowledge import requires a non-empty Content-Length")
                 if length > _MAX_KNOWLEDGE_IMPORT_BYTES:
                     raise ValueError("knowledge document exceeds the 200 MiB limit")
-                data = self.rfile.read(length)
+                data = self._read_knowledge_upload(length)
                 if len(data) != length:
                     raise ValueError("knowledge upload ended before Content-Length")
                 query = parse_qs(parsed.query or "")
@@ -10927,6 +10946,10 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         if control is None:
             raise RuntimeError("document knowledge management is unavailable")
         return control
+
+    def _read_knowledge_upload(self, length: int) -> bytes:
+        """Read one bounded document body; deployment adapters can add deadlines."""
+        return self.rfile.read(length)
 
     @staticmethod
     def _knowledge_error(exc: Exception) -> dict[str, object]:

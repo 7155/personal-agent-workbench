@@ -11,6 +11,8 @@ import { parseAgentEvent } from '@/contracts/validators';
 import { SessionSubagentPanel } from '@/features/agent/delegation/SessionSubagentPanel';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import type { SessionSummary } from '@/features/agent/types';
+import { TeamProvider } from '@/features/team/team-context';
+import type { TeamApi } from '@/features/team/team-api';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { ControlTransportHttpError } from '@/platform/http-transport';
@@ -56,6 +58,7 @@ vi.mock('react-virtuoso', () => ({
 afterEach(() => {
   delete window.pawBrowserHost;
   cleanup();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
 });
 
 describe('PAWOS Agent Session structural migration', () => {
@@ -318,6 +321,52 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(screen.queryByRole('button', { name: 'Agent 轨迹' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Session 工具' })).toBeNull();
     expect(screen.getByText('评测快照')).toBeInTheDocument();
+  });
+
+  it('keeps another project member\'s Session read-only', async () => {
+    const sessionId = 'team-owned-by-other';
+    const transport = new StubControlTransport('mock', idleSessionRoutes());
+    render(
+      <ControlTransportProvider transport={transport}>
+        <TooltipProvider>
+          <PawSessionWorkspace
+            record={{ ...liveSession(), id: sessionId, canControl: false, ownerUserId: 'user-other', audience: 'project' }}
+            recordId={sessionId}
+            onNewWork={vi.fn()}
+            onSessionCreated={vi.fn()}
+            onSessionUpdated={vi.fn()}
+          />
+        </TooltipProvider>
+      </ControlTransportProvider>,
+    );
+
+    expect(await screen.findByText('仅可查看')).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: '消息' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '发布当前 Session 固定版本' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent 轨迹' })).toBeVisible();
+  });
+
+  it('lets the owner publish a Room partner checkout as a fixed project version', async () => {
+    const meta = document.createElement('meta');
+    meta.name = 'paw-deployment'; meta.content = 'team'; document.head.append(meta);
+    const api = {
+      status: vi.fn().mockResolvedValue({ enabled: true, name: 'Team' }),
+      me: vi.fn().mockResolvedValue({
+        user: { id: 'wang', username: 'wang', displayName: '小王', role: 'member', active: true },
+        csrfToken: 'fixture', spaces: [{ id: 'website', kind: 'project', name: '官网', role: 'contributor', revision: 1 }],
+      }),
+    } as unknown as TeamApi;
+    const record: SessionSummary = { ...liveSession(), id: 'owned-partner', canControl: true,
+      audience: 'project', ownerUserId: 'wang',
+      roomParticipant: { roomId: 'room-1', participantId: 'participant-wang', status: 'active' } };
+    render(<TeamProvider api={api}>
+      <ControlTransportProvider transport={new StubControlTransport('mock', idleSessionRoutes())}>
+        <TooltipProvider><PawSessionWorkspace record={record} recordId={record.id}
+          onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider>
+      </ControlTransportProvider>
+    </TeamProvider>);
+    await userEvent.setup().click(await screen.findByRole('button', { name: '发布当前 Session 固定版本' }));
+    expect(await screen.findByRole('heading', { name: '发布 Session 固定版本' })).toBeVisible();
   });
 
   it('gives the recent snapshot priority over nonessential control catalogs', async () => {

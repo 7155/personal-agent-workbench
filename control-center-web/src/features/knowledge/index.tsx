@@ -67,6 +67,7 @@ import {
 } from '@/features/configuration/api';
 import {
   chooseKnowledgeFiles,
+  TEAM_KNOWLEDGE_FILE_ACCEPT,
   cancelKnowledgeJob,
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -81,6 +82,7 @@ import {
   rebuildKnowledgeBase,
   retryKnowledgeDocument,
   searchKnowledgeBase,
+  knowledgeUploadSizeError,
   updateKnowledgeBase,
   useKnowledgeDocumentDetail,
   useKnowledgeLibraryQueries,
@@ -103,10 +105,38 @@ import { KnowledgeGraphPanel } from './knowledge-graph';
 import { publicKnowledgeText } from './public-copy';
 import { useKnowledgeReadingContext, type KnowledgeReadingController } from './reading-context';
 import { usePawOsAppActive, usePawOsAppCompact, usePawOsAppIdentity } from '@/features/paw-os/surface-context';
+import { useOptionalTeam, type TeamContextValue } from '@/features/team/team-context';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import './knowledge.css';
 
 type DetailTab = 'materials' | 'viewer' | 'search' | 'graph' | 'jobs' | 'settings';
+
+interface KnowledgeAccess {
+  teamMode: boolean;
+  canImport: boolean;
+  canManage: boolean;
+  scopeLabel: string;
+  includeAdvanced: boolean;
+}
+
+function knowledgeAccess(team: TeamContextValue | null): KnowledgeAccess {
+  if (!team) {
+    return { teamMode: false, canImport: true, canManage: true, scopeLabel: '', includeAdvanced: true };
+  }
+  const space = team.activeSpace;
+  const project = space?.kind === 'project';
+  const canManage = Boolean(space && (!project || space.role === 'owner' || space.role === 'maintainer'));
+  const canImport = Boolean(space && (!project || canManage || space.role === 'contributor'));
+  return {
+    teamMode: true,
+    canImport,
+    canManage,
+    scopeLabel: space ? `${space.name} · ${project ? '项目成员可见' : '仅本人可见'}` : '正在读取当前空间',
+    // Team Knowledge deliberately stays on built-in parsing and keyword
+    // search; vector/model configuration is not a Team client capability.
+    includeAdvanced: false,
+  };
+}
 
 export function KnowledgeFeature() {
   const appSurface = usePawOsAppIdentity();
@@ -115,9 +145,12 @@ export function KnowledgeFeature() {
   const compact = usePawOsAppCompact();
   const pageVisible = usePageVisibility();
   const queriesEnabled = (surfaceActive ?? true) && pageVisible;
+  const team = useOptionalTeam();
+  const access = knowledgeAccess(team);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedBaseId, setSelectedBaseId] = useState(searchParams.get('base') ?? '');
   const tab = asDetailTab(searchParams.get('tab') ?? 'search');
+  const visibleTab = access.teamMode && (tab === 'graph' || (tab === 'settings' && !access.canManage)) ? 'search' : tab;
   // 从别处深链进来的一条资料：只在还没有有效选择时决定落点，之后由人自己开。
   const routeBaseId = searchParams.get('base') ?? '';
   const routeDocumentId = searchParams.get('document') ?? '';
@@ -130,9 +163,15 @@ export function KnowledgeFeature() {
   const setFocusedHit = (focusHit: KnowledgeSearchHit | null) => reading.update((current) => current.focusHit === focusHit ? current : { ...current, focusHit });
   const [reparseDocument, setReparseDocument] = useState<KnowledgeDocument | null>(null);
   const [uploadItems, setUploadItems] = useState<KnowledgeUploadItem[]>([]);
+  const importScopeRef = useRef<string | null>(team?.scopeKey ?? 'local');
+  const importBaseRef = useRef(selectedBaseId);
+  const importOperationScopeRef = useRef<string | null>(null);
+  const importOperationBaseRef = useRef('');
+  importScopeRef.current = team?.scopeKey ?? 'local';
+  importBaseRef.current = selectedBaseId;
   const dialogTriggerRef = useRef<HTMLElement | null>(null);
   const libraryToolsTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const queries = useKnowledgeLibraryQueries(selectedBaseId, queriesEnabled);
+  const queries = useKnowledgeLibraryQueries(selectedBaseId, queriesEnabled, { includeAdvanced: access.includeAdvanced });
   const queryClient = useQueryClient();
   const bases = queries.bases.data ?? [];
   const selectedBase = queries.base.data ?? bases.find((item) => item.id === selectedBaseId) ?? null;
@@ -192,6 +231,20 @@ export function KnowledgeFeature() {
     setUploadItems([]);
   }, [selectedBaseId]);
 
+  useEffect(() => {
+    // Restore the live identity in the setup phase as well as during render.
+    // React StrictMode replays setup/cleanup once on mount; cleanup must not
+    // leave a valid, already-loaded base permanently closed after that replay.
+    importScopeRef.current = team?.scopeKey ?? 'local';
+    importBaseRef.current = selectedBaseId;
+    return () => {
+      // A Team scope remount can leave a batch promise alive briefly. Mark the
+      // old scope closed so it cannot submit the next file to the old space.
+      importScopeRef.current = null;
+      importBaseRef.current = '';
+    };
+  }, [selectedBaseId, team?.scopeKey]);
+
   const refresh = () => void Promise.all([
     queries.bases.refetch(),
     queries.worker.refetch(),
@@ -215,6 +268,7 @@ export function KnowledgeFeature() {
 
   const createMutation = useMutation({
     mutationFn: async (input: { name: string; description: string }) => {
+      if (!access.canManage) throw new Error('当前空间成员不能创建知识库。');
       const created = await createKnowledgeBase(queries.transport, input);
       if (!created.id || created.name !== input.name) {
         throw new Error('知识服务没有确认新知识库，未关闭创建窗口。');
@@ -234,7 +288,9 @@ export function KnowledgeFeature() {
     },
   });
   const deleteBaseMutation = useMutation({
-    mutationFn: () => selectedBase
+    mutationFn: () => !access.canManage
+      ? Promise.reject(new Error('当前空间成员不能删除知识库。'))
+      : selectedBase
       ? deleteKnowledgeBase(queries.transport, selectedBase)
       : Promise.reject(new Error('没有选中的知识库。')),
     onSuccess: async () => {
@@ -245,9 +301,21 @@ export function KnowledgeFeature() {
   });
   const importMutation = useMutation({
     mutationFn: async ({ retryItem, droppedFiles }: { retryItem?: KnowledgeUploadItem; droppedFiles?: File[] }) => {
+      if (!access.canImport) throw new Error('当前空间成员不能导入资料。');
       if (!selectedBase) return [];
-      const parser = retryItem?.parser ?? selectedBase.parser;
+      const importScope = team?.scopeKey ?? 'local';
+      const importBase = selectedBase.id;
+      importOperationScopeRef.current = importScope;
+      importOperationBaseRef.current = importBase;
+      const assertCurrentScope = () => {
+        if (access.teamMode && (importScopeRef.current !== importScope || importBaseRef.current !== importBase)) {
+          throw new Error('当前空间已切换，已停止继续导入。');
+        }
+      };
+      assertCurrentScope();
+      const parser = access.teamMode ? 'builtin' : (retryItem?.parser ?? selectedBase.parser);
       if (queries.transport.kind !== 'http') {
+        if (access.teamMode) throw new Error('当前空间不支持本机文件导入。');
         try {
           const receipts = await importKnowledgeDocuments(queries.transport, {
             kbId: selectedBase.id,
@@ -265,15 +333,24 @@ export function KnowledgeFeature() {
         ? [retryItem.file]
         : droppedFiles?.length
           ? droppedFiles.slice(0, 20)
-          : await chooseKnowledgeFiles(20);
+          : await chooseKnowledgeFiles(20, access.teamMode ? TEAM_KNOWLEDGE_FILE_ACCEPT : undefined);
       if (!files.length) return [];
-      const queue = retryItem ? [retryItem] : files.map((file, index) => ({
+      const acceptedFiles = access.teamMode ? files.filter((file) => !knowledgeUploadSizeError(file)) : files;
+      const rejectedItems = access.teamMode ? files.filter((file) => Boolean(knowledgeUploadSizeError(file))).map((file, index) => ({
+        id: uploadItemId(file, index), fileName: file.name, byteSize: file.size, file, parser, status: 'failed' as const, documentId: '', error: knowledgeUploadSizeError(file) ?? '',
+      })) : [];
+      if (retryItem && rejectedItems.length) {
+        setUploadItems(rejectedItems);
+        throw new Error(rejectedItems[0]?.error || '团队资料单文件不能超过 8 MiB。');
+      }
+      const queue = retryItem ? [retryItem] : acceptedFiles.map((file, index) => ({
         id: uploadItemId(file, index), fileName: file.name, byteSize: file.size, file, parser, status: 'queued' as const, documentId: '', error: '',
       }));
-      if (!retryItem) setUploadItems(queue);
+      if (!retryItem) setUploadItems([...rejectedItems, ...queue]);
       const receipts = [];
-      const errors: string[] = [];
+      const errors: string[] = rejectedItems.map((item) => `${item.fileName}: ${item.error}`);
       for (const item of queue) {
+        assertCurrentScope();
         setUploadItems((current) => replaceUploadItem(current, item.id, { status: 'uploading', error: '' }));
         try {
           const [receipt] = await importKnowledgeDocuments(queries.transport, {
@@ -282,10 +359,12 @@ export function KnowledgeFeature() {
             parserProvider: parser === 'mineru' ? 'mineru_local_http' : parser,
             maxFiles: 1,
           });
+          assertCurrentScope();
           if (!receipt) throw new Error('导入服务没有返回文件回执。');
           receipts.push(receipt);
           setUploadItems((current) => replaceUploadItem(current, item.id, { status: 'accepted', documentId: receipt.documentId, error: '' }));
         } catch (error) {
+          assertCurrentScope();
           const message = publicErrorText(error, '上传失败。');
           errors.push(`${item.fileName}: ${message}`);
           setUploadItems((current) => replaceUploadItem(current, item.id, { status: 'failed', error: message }));
@@ -294,10 +373,23 @@ export function KnowledgeFeature() {
       if (errors.length) throw new Error(errors.join('\n'));
       return receipts;
     },
-    onSettled: () => invalidateBase(),
+    onSettled: () => {
+      const currentScope = team?.scopeKey ?? 'local';
+      if (!access.teamMode || (
+        importOperationScopeRef.current === currentScope
+        && importOperationBaseRef.current === selectedBaseId
+        && importScopeRef.current === currentScope
+        && importBaseRef.current === selectedBaseId
+      )) {
+        return invalidateBase();
+      }
+      return undefined;
+    },
   });
   const retryMutation = useMutation({
-    mutationFn: ({ document, parser }: { document: KnowledgeDocument; parser: KnowledgeParserMode }) => selectedBase
+    mutationFn: ({ document, parser }: { document: KnowledgeDocument; parser: KnowledgeParserMode }) => !access.canManage
+      ? Promise.reject(new Error('当前空间成员不能重新解析资料。'))
+      : selectedBase
       ? retryKnowledgeDocument(queries.transport, selectedBase, document, { parser })
       : Promise.reject(new Error('没有选中的知识库。')),
     onSuccess: async () => {
@@ -307,7 +399,9 @@ export function KnowledgeFeature() {
     },
   });
   const deleteDocumentMutation = useMutation({
-    mutationFn: (documentId: string) => deleteKnowledgeDocument(queries.transport, selectedBaseId, documentId),
+    mutationFn: (documentId: string) => !access.canManage
+      ? Promise.reject(new Error('当前空间成员不能删除资料。'))
+      : deleteKnowledgeDocument(queries.transport, selectedBaseId, documentId),
     onSuccess: async () => {
       setDocumentToDelete(null);
       await invalidateBase();
@@ -322,6 +416,7 @@ export function KnowledgeFeature() {
       chunkingConfig?: KnowledgeChunkingConfig;
       retrievalConfig?: KnowledgeRetrievalConfig;
     }) => {
+      if (!access.canManage) throw new Error('当前空间成员不能修改知识库设置。');
       if (!selectedBase) throw new Error('没有选中的知识库。');
       const updated = await updateKnowledgeBase(queries.transport, selectedBase, patch);
       if (
@@ -342,6 +437,7 @@ export function KnowledgeFeature() {
   });
   const rebuildMutation = useMutation({
     mutationFn: async () => {
+      if (!access.canManage) throw new Error('当前空间成员不能重建索引。');
       if (!selectedBase) throw new Error('没有选中的知识库。');
       const preview = await previewKnowledgeReindex(queries.transport, selectedBase);
       await rebuildKnowledgeBase(queries.transport, selectedBase, preview);
@@ -352,12 +448,16 @@ export function KnowledgeFeature() {
     },
   });
   const cancelJobMutation = useMutation({
-    mutationFn: (jobId: string) => cancelKnowledgeJob(queries.transport, selectedBaseId, jobId),
+    mutationFn: (jobId: string) => !access.canManage
+      ? Promise.reject(new Error('当前空间成员不能取消处理任务。'))
+      : cancelKnowledgeJob(queries.transport, selectedBaseId, jobId),
     onSettled: () => invalidateBase(),
   });
   const chunkPreviewMutation = useMutation({
     mutationFn: ({ documentId, config }: { documentId: string; config: KnowledgeChunkingConfig }) => (
-      selectedBase
+      !access.canManage
+        ? Promise.reject(new Error('当前空间成员不能预览切分设置。'))
+        : selectedBase
         ? previewKnowledgeChunking(queries.transport, selectedBase.id, documentId, config)
         : Promise.reject(new Error('没有选中的知识库。'))
     ),
@@ -377,7 +477,7 @@ export function KnowledgeFeature() {
     <Surface
       aria-label={appSurface ? '知识库' : undefined}
       className="knowledge-feature knowledge-feature--migrated-v1"
-      data-knowledge-view={tab}
+      data-knowledge-view={visibleTab}
       data-paw-os-app={appSurface?.appId}
       data-paw-os-compact={compact || undefined}
       data-route-id="knowledge"
@@ -397,23 +497,25 @@ export function KnowledgeFeature() {
             <KnowledgeBaseSwitcher
               base={selectedBase}
               bases={bases}
-              onCreate={(trigger) => { rememberDialogTrigger(trigger); setCreateOpen(true); }}
+              onCreate={access.canManage ? (trigger) => { rememberDialogTrigger(trigger); setCreateOpen(true); } : undefined}
               onRefresh={refresh}
               onSelect={selectBase}
               refreshing={queries.bases.isFetching || queries.worker.isFetching}
               selectedBaseId={selectedBaseId}
               sidebarToggle={<AppSidebarToggle collapsed={sidebar.collapsed} controlsId={sidebar.controlsId} label="知识库目录" onToggle={() => sidebar.setCollapsed(!sidebar.collapsed)} toggleRef={sidebar.toggleRef} />}
+              scopeLabel={access.scopeLabel}
               worker={worker}
             />
           ) : null}
           <KnowledgeBaseRail
             bases={bases}
-            onCreate={(trigger) => { rememberDialogTrigger(trigger); setCreateOpen(true); }}
+            onCreate={access.canManage ? (trigger) => { rememberDialogTrigger(trigger); setCreateOpen(true); } : undefined}
             onRefresh={refresh}
             onSelect={selectBase}
             refreshing={queries.bases.isFetching || queries.worker.isFetching}
             selectedBaseId={selectedBaseId}
             sidebar={appSurface ? sidebar : undefined}
+            scopeLabel={appSurface ? undefined : access.scopeLabel}
             variant={appSurface ? 'app' : 'web'}
             worker={worker}
           />
@@ -425,7 +527,7 @@ export function KnowledgeFeature() {
                     workspace is the first object on screen. The web route keeps
                     the full header sheet. */}
                 {appSurface ? null : <KnowledgeBaseHeader base={selectedBase} worker={worker} />}
-                <Tabs className="knowledge-library__tabs" onValueChange={(value) => selectTab(asDetailTab(value))} value={tab}>
+                <Tabs className="knowledge-library__tabs" onValueChange={(value) => selectTab(asDetailTab(value))} value={visibleTab}>
                   <TabsList aria-label="知识库管理视图">
                     <TabsTrigger value="search"><Search aria-hidden="true" size={14} />搜索</TabsTrigger>
                     <TabsTrigger value="materials"><Files aria-hidden="true" size={14} />资料</TabsTrigger>
@@ -433,17 +535,19 @@ export function KnowledgeFeature() {
                   </TabsList>
                   <Menu>
                     <MenuTrigger asChild>
-                      <Button aria-label="更多知识库工具" className="knowledge-library__tools" data-current-tool={['graph', 'jobs', 'settings'].includes(tab) ? tab : undefined} leadingIcon={<MoreHorizontal size={15} />} ref={libraryToolsTriggerRef} size="small" variant="quiet">
-                        {tab === 'graph' ? '图谱' : tab === 'jobs' ? '处理记录' : tab === 'settings' ? '设置' : '更多'}
+                      <Button aria-label="更多知识库工具" className="knowledge-library__tools" data-current-tool={['graph', 'jobs', 'settings'].includes(visibleTab) ? visibleTab : undefined} leadingIcon={<MoreHorizontal size={15} />} ref={libraryToolsTriggerRef} size="small" variant="quiet">
+                        {visibleTab === 'graph' ? '图谱' : visibleTab === 'jobs' ? '处理记录' : visibleTab === 'settings' ? '设置' : '更多'}
                       </Button>
                     </MenuTrigger>
                     <MenuContent align="end" onCloseAutoFocus={(event) => { if (deleteBaseOpen) event.preventDefault(); }}>
-                      <MenuItem onSelect={() => selectTab('graph')}><Network size={14} />知识图谱</MenuItem>
+                      {!access.teamMode ? <MenuItem onSelect={() => selectTab('graph')}><Network size={14} />知识图谱</MenuItem> : null}
                       <MenuItem onSelect={() => selectTab('jobs')}><RefreshCw size={14} />处理记录</MenuItem>
-                      <MenuItem onSelect={() => selectTab('settings')}><Settings2 size={14} />设置</MenuItem>
+                      {access.canManage ? <MenuItem onSelect={() => selectTab('settings')}><Settings2 size={14} />设置</MenuItem> : null}
                       <MenuLabel>知识服务：{worker.label}</MenuLabel>
-                      <MenuSeparator />
-                      <MenuItem onSelect={() => { rememberDialogTrigger(libraryToolsTriggerRef.current ?? undefined); setDeleteBaseOpen(true); }}><Trash2 size={14} />删除知识库</MenuItem>
+                      {access.canManage ? <>
+                        <MenuSeparator />
+                        <MenuItem onSelect={() => { rememberDialogTrigger(libraryToolsTriggerRef.current ?? undefined); setDeleteBaseOpen(true); }}><Trash2 size={14} />删除知识库</MenuItem>
+                      </> : null}
                     </MenuContent>
                   </Menu>
                   <TabsContent value="materials">
@@ -456,6 +560,9 @@ export function KnowledgeFeature() {
                       dropSupported={queries.transport.kind === 'http'}
                       error={queries.documents.error as Error | null}
                       loading={queries.documents.isPending}
+                      canImport={access.canImport}
+                      canManageDocuments={access.canManage}
+                      uploadHint={access.teamMode ? '支持文本、Markdown、CSV、HTML、JSON 与有界 Office 文件（DOCX、PPTX、XLSX） · 单文件最大 8 MiB；PDF 与扫描图片不支持' : undefined}
                       filter={reading.context.materialsFilter}
                       onFilterChange={(materialsFilter) => reading.update((current) => ({ ...current, materialsFilter }))}
                       importError={importMutation.error as Error | null}
@@ -485,7 +592,7 @@ export function KnowledgeFeature() {
                       focusHit={focusedHit}
                       onBack={() => selectTab(reading.context.readerOrigin)}
                       backLabel={reading.context.readerOrigin === 'search' ? '返回搜索结果' : reading.context.readerOrigin === 'graph' ? '返回图谱' : '返回资料'}
-                      onImportMaterials={() => selectTab('materials')}
+                      onImportMaterials={access.canImport ? () => selectTab('materials') : undefined}
                       hasMoreChunks={Boolean(detailQuery.hasNextPage)}
                       hasMoreContent={Boolean(detailQuery.hasNextContentPage)}
                       loadMoreChunksFailed={detailQuery.isFetchNextPageError}
@@ -499,10 +606,10 @@ export function KnowledgeFeature() {
                     />
                   </TabsContent>
                   <TabsContent value="search">
-                    <KnowledgeSearchPanel key={selectedBase.id} base={selectedBase} reading={reading} onOpenHit={(hit) => openSource(hit.documentId, 'search', hit)} transport={queries.transport} />
+                    <KnowledgeSearchPanel key={selectedBase.id} base={selectedBase} reading={reading} onOpenHit={(hit) => openSource(hit.documentId, 'search', hit)} teamMode={access.teamMode} transport={queries.transport} />
                   </TabsContent>
                   <TabsContent aria-label="知识图谱" aria-labelledby={undefined} value="graph">
-                    <KnowledgeGraphPanel
+                    {!access.teamMode ? <KnowledgeGraphPanel
                       active={queriesEnabled}
                       base={selectedBase}
                       documents={documents}
@@ -524,7 +631,7 @@ export function KnowledgeFeature() {
                         } : null);
                       }}
                       transport={queries.transport}
-                    />
+                    /> : null}
                   </TabsContent>
                   <TabsContent aria-label="处理记录" aria-labelledby={undefined} value="jobs">
                     <KnowledgeJobsPanel
@@ -533,12 +640,12 @@ export function KnowledgeFeature() {
                       error={queries.jobs.error as Error | null}
                       jobs={queries.jobs.data ?? []}
                       loading={queries.jobs.isFetching}
-                      onCancel={(jobId) => cancelJobMutation.mutate(jobId)}
+                      onCancel={access.canManage ? (jobId) => cancelJobMutation.mutate(jobId) : undefined}
                       onRefresh={() => void queries.jobs.refetch()}
                     />
                   </TabsContent>
                   <TabsContent aria-label="知识库设置" aria-labelledby={undefined} value="settings">
-                    <KnowledgeSettingsPanel
+                    {access.canManage ? <KnowledgeSettingsPanel
                       key={selectedBase.id}
                       base={selectedBase}
                       documents={documents}
@@ -546,10 +653,10 @@ export function KnowledgeFeature() {
                       embeddingStateError={queries.embeddingProfile.error}
                       indexRuntime={knowledgeIndexRuntimeStatus(queries.worker.data)}
                       onAgentEnabled={(agentEnabled) => updateMutation.mutate({ agentEnabled })}
-                      onParser={(parser) => updateMutation.mutate({ parser })}
+                      onParser={(parser) => updateMutation.mutate({ parser: access.teamMode ? 'builtin' : parser })}
                       onSaveInfo={(name, description) => updateMutation.mutate({ name, description })}
                       onSaveChunking={(chunkingConfig) => updateMutation.mutate({ chunkingConfig })}
-                      onSaveRetrieval={(retrievalConfig) => updateMutation.mutate({ retrievalConfig })}
+                      onSaveRetrieval={(retrievalConfig) => updateMutation.mutate({ retrievalConfig: access.teamMode ? teamKeywordRetrievalConfig(retrievalConfig) : retrievalConfig })}
                       onPreviewChunking={(documentId, config) => chunkPreviewMutation.mutate({ documentId, config })}
                       onRebuild={() => rebuildMutation.mutate()}
                       parserData={queries.parsers.data}
@@ -563,14 +670,15 @@ export function KnowledgeFeature() {
                       refreshParser={() => void Promise.all([queries.parsers.refetch(), queries.worker.refetch()])}
                       settingsEnvelope={queries.settings.data}
                       worker={worker}
-                    />
+                      teamMode={access.teamMode}
+                    /> : <EmptyState description="当前成员可以查看资料与检索结果；项目设置由项目维护者管理。" icon={Settings2} title="当前空间只读" />}
                   </TabsContent>
                 </Tabs>
               </>
             ) : (
               <EmptyState
-                action={<Button leadingIcon={<FolderPlus size={15} />} onClick={(event) => { rememberDialogTrigger(event.currentTarget); setCreateOpen(true); }} variant="primary">新建知识库</Button>}
-                description="为项目资料、论文或产品文档建立独立知识库。"
+                action={access.canManage ? <Button leadingIcon={<FolderPlus size={15} />} onClick={(event) => { rememberDialogTrigger(event.currentTarget); setCreateOpen(true); }} variant="primary">新建知识库</Button> : undefined}
+                description={access.canManage ? '为项目资料、论文或产品文档建立独立知识库。' : '当前空间还没有资料知识库；请联系项目维护者创建。'}
                 icon={Database}
                 title="还没有文档知识库"
               />
@@ -578,15 +686,15 @@ export function KnowledgeFeature() {
           </section>
         </div>
       </QueryState>
-      <CreateKnowledgeBaseDialog
+      {access.canManage ? <CreateKnowledgeBaseDialog
         error={createMutation.error}
         loading={createMutation.isPending}
         onCreate={(input) => createMutation.mutate(input)}
         onOpenChange={(open) => { setCreateOpen(open); if (!open) createMutation.reset(); }}
         open={createOpen}
         returnFocusRef={dialogTriggerRef}
-      />
-      <ConfirmDialog
+      /> : null}
+      {access.canManage ? <ConfirmDialog
         description={selectedBase ? `将删除“${selectedBase.name}”及其文档索引。个人记忆不会受到影响。` : ''}
         error={deleteBaseMutation.error}
         loading={deleteBaseMutation.isPending}
@@ -595,8 +703,8 @@ export function KnowledgeFeature() {
         open={deleteBaseOpen}
         returnFocusRef={dialogTriggerRef}
         title="删除文档知识库"
-      />
-      <ConfirmDialog
+      /> : null}
+      {access.canManage ? <ConfirmDialog
         description={documentToDelete ? `将移除“${documentToDelete.name}”及其索引段落。` : ''}
         error={deleteDocumentMutation.error}
         loading={deleteDocumentMutation.isPending}
@@ -605,15 +713,15 @@ export function KnowledgeFeature() {
         open={Boolean(documentToDelete)}
         returnFocusRef={dialogTriggerRef}
         title="删除文档"
-      />
-      <ReparseDocumentDialog
+      /> : null}
+      {access.canManage ? <ReparseDocumentDialog
         document={reparseDocument}
         error={retryMutation.error}
         loading={retryMutation.isPending}
         onConfirm={(parser) => { if (reparseDocument) retryMutation.mutate({ document: reparseDocument, parser }); }}
         onOpenChange={(open) => { if (!open) { setReparseDocument(null); retryMutation.reset(); } }}
         returnFocusRef={dialogTriggerRef}
-      />
+      /> : null}
     </Surface>
   );
 }
@@ -626,16 +734,18 @@ function KnowledgeBaseRail({
   refreshing,
   selectedBaseId,
   sidebar,
+  scopeLabel,
   variant = 'web',
   worker,
 }: {
   bases: readonly DocumentKnowledgeBase[];
-  onCreate: (trigger: HTMLElement) => void;
+  onCreate?: (trigger: HTMLElement) => void;
   onRefresh: () => void;
   onSelect: (baseId: string) => void;
   refreshing: boolean;
   selectedBaseId: string;
   sidebar?: ReturnType<typeof useAppSidebar>;
+  scopeLabel?: string;
   variant?: 'web' | 'app';
   worker: WorkerState;
 }) {
@@ -647,11 +757,11 @@ function KnowledgeBaseRail({
   return (
     <aside className="knowledge-base-rail" aria-label="文档知识库" data-variant={variant} {...sidebar?.contentProps}>
       <header>
-        <div><strong>知识库</strong><span>{bases.length} 个独立库</span></div>
+        <div><strong>知识库</strong><span>{bases.length} 个独立库{scopeLabel ? ` · ${scopeLabel}` : ''}</span></div>
         {app ? null : (
           <div className="knowledge-base-rail__actions">
             <IconButton disabled={refreshing} icon={<RefreshCw size={14} />} label="刷新知识库" onClick={onRefresh} size="small" tooltip />
-            <IconButton icon={<FolderPlus size={15} />} label="新建知识库" onClick={(event) => onCreate(event.currentTarget)} size="small" tooltip />
+            {onCreate ? <IconButton icon={<FolderPlus size={15} />} label="新建知识库" onClick={(event) => onCreate(event.currentTarget)} size="small" tooltip /> : null}
           </div>
         )}
       </header>
@@ -675,7 +785,7 @@ function KnowledgeBaseRail({
           </span>
           <div className="knowledge-base-rail__actions">
             <IconButton disabled={refreshing} icon={<RefreshCw size={15} />} label="刷新知识库" onClick={onRefresh} size="large" tooltip />
-            <IconButton icon={<FolderPlus size={16} />} label="新建知识库" onClick={(event) => onCreate(event.currentTarget)} size="large" tooltip />
+            {onCreate ? <IconButton icon={<FolderPlus size={16} />} label="新建知识库" onClick={(event) => onCreate(event.currentTarget)} size="large" tooltip /> : null}
           </div>
         </div>
       )}
@@ -724,22 +834,25 @@ function KnowledgeBaseSwitcher({
   refreshing,
   selectedBaseId,
   sidebarToggle,
+  scopeLabel,
   worker,
 }: {
   base: DocumentKnowledgeBase | null;
   bases: readonly DocumentKnowledgeBase[];
-  onCreate: (trigger: HTMLElement) => void;
+  onCreate?: (trigger: HTMLElement) => void;
   onRefresh: () => void;
   onSelect: (baseId: string) => void;
   refreshing: boolean;
   selectedBaseId: string;
   sidebarToggle?: ReactNode;
+  scopeLabel?: string;
   worker: WorkerState;
 }) {
   return (
     <section aria-label="切换文档知识库" className="knowledge-base-switcher">
       {sidebarToggle}
       <p className="knowledge-base-switcher__current">{base ? base.name : '还没有知识库'}</p>
+      {scopeLabel ? <span aria-label="当前空间与资料可见范围" className="knowledge-base-switcher__scope">{scopeLabel}</span> : null}
       <Field htmlFor="knowledge-native-base" label="当前知识库">
         <Select
           disabled={!bases.length}
@@ -765,7 +878,7 @@ function KnowledgeBaseSwitcher({
       </span> : null}
       <div className="knowledge-base-switcher__actions">
         <IconButton disabled={refreshing} icon={<RefreshCw size={15} />} label="刷新知识库" onClick={onRefresh} size="small" tooltip />
-        <Button leadingIcon={<FolderPlus size={15} />} onClick={(event) => onCreate(event.currentTarget)} size="small">新建知识库</Button>
+        {onCreate ? <Button leadingIcon={<FolderPlus size={15} />} onClick={(event) => onCreate(event.currentTarget)} size="small">新建知识库</Button> : null}
       </div>
     </section>
   );
@@ -788,7 +901,18 @@ function KnowledgeBaseHeader({ base, worker }: { base: DocumentKnowledgeBase; wo
   );
 }
 
-function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: DocumentKnowledgeBase; reading: KnowledgeReadingController; onOpenHit: (hit: KnowledgeSearchHit) => void; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
+function teamKeywordRetrievalConfig(config: KnowledgeRetrievalConfig): KnowledgeRetrievalConfig {
+  return {
+    ...config,
+    mode: 'lexical',
+    lexicalWeight: Math.max(config.lexicalWeight, 1),
+    denseWeight: 0,
+    graphEnabled: false,
+    graphWeight: 0,
+  };
+}
+
+function KnowledgeSearchPanel({ base, reading, onOpenHit, teamMode = false, transport }: { base: DocumentKnowledgeBase; reading: KnowledgeReadingController; onOpenHit: (hit: KnowledgeSearchHit) => void; teamMode?: boolean; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
   const snapshot = reading.context.search;
   const [draft, setLocalDraft] = useState(snapshot.draft);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -810,7 +934,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   });
   const hits = snapshot.hits;
   const selected = hits.find((item) => item.id === snapshot.selectedId) ?? hits[0] ?? null;
-  const config = snapshot.config ?? base.retrievalConfig;
+  const config = teamMode ? teamKeywordRetrievalConfig(snapshot.config ?? base.retrievalConfig) : (snapshot.config ?? base.retrievalConfig);
   useEffect(() => {
     if (detailOpen && backRef.current && getComputedStyle(backRef.current).display !== 'none') {
       backRef.current.focus();
@@ -824,7 +948,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
     event.preventDefault();
     if (!draft.trim() || snapshot.status === 'pending') return;
     setDetailOpen(false);
-    const config = { ...base.retrievalConfig };
+    const config = teamMode ? teamKeywordRetrievalConfig(base.retrievalConfig) : { ...base.retrievalConfig };
     const next = reading.update((current) => ({ ...current, search: {
       ...current.search, query: draft.trim(), config, hits: [], selectedId: '', status: 'pending', error: '', request: current.search.request + 1,
     } }));
@@ -859,14 +983,14 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
           }}>
             {hits.map((hit, index) => (
               <button aria-selected={selected?.id === hit.id} data-selected={selected?.id === hit.id || undefined} key={hit.id} onClick={() => { reading.update((current) => ({ ...current, search: { ...current.search, selectedId: hit.id } })); setDetailOpen(true); }} ref={(node) => { resultRefs.current[index] = node; }} role="option" tabIndex={selected?.id === hit.id ? 0 : -1} type="button">
-                <span><strong>{publicKnowledgeText(hit.documentName)}</strong><small>{publicKnowledgeText(hit.title)} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{publicKnowledgeText(hit.excerpt) || '没有可显示的摘录'}</small></span>
+                <span><strong>{publicKnowledgeText(hit.documentName)}</strong><small>{publicKnowledgeText(hit.title)} · {citationLabel(hit)}{!teamMode && hit.diagnostics.graphRank !== null ? ' · 图谱关联' : ''}</small><small>{publicKnowledgeText(hit.excerpt) || '没有可显示的摘录'}</small></span>
                 <b data-level={relevanceLevel(hit.score)}>{relevanceLabel(hit.score)}</b>
               </button>
             ))}
           </div>
           {selected ? <div className="knowledge-search__reader">
             <Button className="knowledge-search__back" leadingIcon={<ArrowLeft size={14} />} onClick={() => { returnFocusRef.current = true; setDetailOpen(false); }} ref={backRef} size="small" variant="quiet">返回检索结果</Button>
-            <KnowledgeHitDetail key={selected.id} baseId={base.id} hit={selected} onOpen={onOpenHit} transport={transport} />
+            <KnowledgeHitDetail key={selected.id} baseId={base.id} hit={selected} onOpen={onOpenHit} teamMode={teamMode} transport={transport} />
           </div> : null}
         </div>
       ) : snapshot.status === 'success' ? (
@@ -878,9 +1002,9 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   );
 }
 
-function KnowledgeHitDetail({ baseId, hit, onOpen, transport }: { baseId: string; hit: KnowledgeSearchHit; onOpen: (hit: KnowledgeSearchHit) => void; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
+function KnowledgeHitDetail({ baseId, hit, onOpen, teamMode = false, transport }: { baseId: string; hit: KnowledgeSearchHit; onOpen: (hit: KnowledgeSearchHit) => void; teamMode?: boolean; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
   const openMutation = useMutation({ mutationFn: () => openKnowledgeHit(transport, baseId, hit), onSuccess: () => onOpen(hit) });
-  const graphPaths = hit.diagnostics.graphPaths;
+  const graphPaths = teamMode ? [] : hit.diagnostics.graphPaths;
   const visibleGraphPaths = graphPaths.slice(0, 2);
   return (
     <article className="knowledge-search__detail">
@@ -895,7 +1019,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, transport }: { baseId: string
       <Disclosure className="knowledge-search__advanced" summary="高级：检索详情">
         <dl>
           <div><dt>相关度分数</dt><dd>{scorePoints(hit.score)} / 100</dd></div>
-          <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit)}</dd></div>
+          <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit, teamMode)}</dd></div>
           {graphPaths.length ? (
             <div>
               <dt>关联路径</dt>
@@ -1006,6 +1130,7 @@ function KnowledgeSettingsPanel({
   settingsEnvelope,
   updateError,
   worker,
+  teamMode,
 }: {
   base: DocumentKnowledgeBase;
   chunkPreview: KnowledgeChunkPreview | null;
@@ -1030,7 +1155,9 @@ function KnowledgeSettingsPanel({
   settingsEnvelope: unknown;
   updateError: unknown;
   worker: WorkerState;
+  teamMode?: boolean;
 }) {
+  const teamKnowledge = teamMode === true;
   const mineru = mineruState(parserData);
   const [chunking, setChunking] = useState(base.chunkingConfig);
   const [retrieval, setRetrieval] = useState(base.retrievalConfig);
@@ -1113,10 +1240,10 @@ function KnowledgeSettingsPanel({
         <section>
           <div className="knowledge-settings__heading"><Settings2 size={16} /><div><strong>解析器</strong><span>新导入与重试</span></div></div>
           <Field htmlFor="knowledge-parser" label="解析方式">
-            <Select disabled={pending} id="knowledge-parser" onValueChange={(value) => onParser(asParserMode(value))} options={[{ value: 'auto', label: '自动选择' }, { value: 'builtin', label: '内置解析' }, { value: 'mineru', label: 'MinerU' }]} value={base.parser} />
+            <Select disabled={pending || teamKnowledge} id="knowledge-parser" onValueChange={(value) => onParser(asParserMode(value))} options={teamKnowledge ? [{ value: 'builtin', label: '内置解析' }] : [{ value: 'auto', label: '自动选择' }, { value: 'builtin', label: '内置解析' }, { value: 'mineru', label: 'MinerU' }]} value={teamKnowledge ? 'builtin' : base.parser} />
           </Field>
-          <div className="knowledge-parser-health"><div><span>解析服务</span><StatusBadge label={worker.label} tone={worker.tone} /></div><div><span>MinerU</span><StatusBadge label={mineru.label} tone={mineru.tone} /></div><IconButton icon={<RefreshCw size={14} />} label="检查解析服务" onClick={refreshParser} size="small" tooltip /></div>
-          {base.parser === 'mineru' && !mineru.ready ? <InlineNotice title="MinerU 未连接" tone="warning">本机服务不可用。</InlineNotice> : null}
+          <div className="knowledge-parser-health"><div><span>解析服务</span><StatusBadge label={worker.label} tone={worker.tone} /></div>{teamKnowledge ? <span className="knowledge-parser-health__team-note">团队空间使用内置解析</span> : <><div><span>MinerU</span><StatusBadge label={mineru.label} tone={mineru.tone} /></div><IconButton icon={<RefreshCw size={14} />} label="检查解析服务" onClick={refreshParser} size="small" tooltip /></>}</div>
+          {!teamKnowledge && base.parser === 'mineru' && !mineru.ready ? <InlineNotice title="MinerU 未连接" tone="warning">本机服务不可用。</InlineNotice> : null}
         </section>
       </div>
       <section>
@@ -1145,11 +1272,11 @@ function KnowledgeSettingsPanel({
       <section>
         <div className="knowledge-settings__heading"><Search size={16} /><div><strong>检索</strong><span>页面测试与伙伴检索</span></div></div>
         <div className="knowledge-settings-fields">
-          <Field htmlFor="knowledge-retrieval-mode" label="模式"><Select id="knowledge-retrieval-mode" onValueChange={(value) => setRetrieval({ ...retrieval, mode: asRetrievalMode(value) })} options={[{ value: 'hybrid', label: '混合' }, { value: 'dense', label: '向量' }, { value: 'lexical', label: '关键词' }]} value={retrieval.mode} /></Field>
+          <Field htmlFor="knowledge-retrieval-mode" label="模式"><Select disabled={teamKnowledge} id="knowledge-retrieval-mode" onValueChange={(value) => setRetrieval({ ...retrieval, mode: asRetrievalMode(value) })} options={teamKnowledge ? [{ value: 'lexical', label: '关键词' }] : [{ value: 'hybrid', label: '混合' }, { value: 'dense', label: '向量' }, { value: 'lexical', label: '关键词' }]} value={teamKnowledge ? 'lexical' : retrieval.mode} /></Field>
           <Field htmlFor="knowledge-retrieval-topk" label="返回数量"><Input id="knowledge-retrieval-topk" max={100} min={1} onChange={(event) => setRetrieval({ ...retrieval, topK: Number(event.target.value) })} type="number" value={retrieval.topK} /></Field>
           <Field htmlFor="knowledge-retrieval-threshold" label="最低相关度"><Input id="knowledge-retrieval-threshold" max={1} min={0} onChange={(event) => setRetrieval({ ...retrieval, threshold: Number(event.target.value) })} step={0.05} type="number" value={retrieval.threshold} /></Field>
         </div>
-        <Disclosure
+        {!teamKnowledge ? <Disclosure
           className="knowledge-settings__advanced-details"
           contentClassName="knowledge-settings__advanced-content"
           summary="高级：检索调优"
@@ -1162,7 +1289,7 @@ function KnowledgeSettingsPanel({
             <Field htmlFor="knowledge-rrf-k" label="融合系数"><Input id="knowledge-rrf-k" max={1_000} min={1} onChange={(event) => setRetrieval({ ...retrieval, rrfK: Number(event.target.value) })} type="number" value={retrieval.rrfK} /></Field>
             <Field htmlFor="knowledge-candidate-multiplier" label="候选范围"><Input id="knowledge-candidate-multiplier" max={20} min={1} onChange={(event) => setRetrieval({ ...retrieval, candidateMultiplier: Number(event.target.value) })} type="number" value={retrieval.candidateMultiplier} /></Field>
           </div>
-        </Disclosure>
+        </Disclosure> : <p className="knowledge-settings__team-note">团队空间只使用内置关键词检索；外部向量服务与图谱不在此空间开放。</p>}
         {retrievalError ? <p className="knowledge-inline-error" role="alert">{retrievalError}</p> : null}
         <SettingsDraftDiff changes={retrievalChanges} effect="保存后从下一次检索开始生效，不需要重建索引。" />
         <div className="knowledge-settings__actions">
@@ -1170,14 +1297,14 @@ function KnowledgeSettingsPanel({
           <Button disabled={pending || Boolean(retrievalError) || !retrievalChanges.length} loading={pending} onClick={() => onSaveRetrieval(retrieval)} size="small" variant="primary">保存检索设置</Button>
         </div>
       </section>
-      <KnowledgeEmbeddingSettings
+      {!teamKnowledge ? <KnowledgeEmbeddingSettings
         baseRevision={String(base.revision)}
         documents={documents}
         error={embeddingStateError}
         fallbackRuntime={indexRuntime}
         settingsEnvelope={settingsEnvelope}
         state={embeddingState}
-      />
+      /> : null}
       <section>
         <div className="knowledge-settings__heading"><RefreshCw size={16} /><div><strong>索引重建</strong><span>{base.documentCount} 个材料 · {base.chunkCount} 个现有段落</span></div></div>
         <div className="knowledge-settings__actions"><Button loading={rebuilding} onClick={onRebuild} size="small" variant="primary">重建索引</Button></div>
@@ -1591,14 +1718,16 @@ function asRetrievalMode(value: string): KnowledgeRetrievalConfig['mode'] { retu
 function retrievalModeLabel(value: KnowledgeRetrievalConfig['mode']): string { return value === 'dense' ? '向量检索' : value === 'lexical' ? '关键词检索' : '混合检索'; }
 function parserLabel(value: KnowledgeParserMode): string { return value === 'builtin' ? '内置' : value === 'mineru' ? 'MinerU' : '自动'; }
 function scorePoints(value: number | null): string { return value === null ? '未提供' : String(Math.round(value <= 1 ? value * 100 : value)); }
-function retrievalEvidenceLabel(hit: KnowledgeSearchHit): string {
-  const mode = hit.diagnostics.effectiveMode === 'hybrid' ? '混合检索' : hit.diagnostics.effectiveMode === 'lexical' ? '关键词检索' : hit.diagnostics.effectiveMode === 'dense' ? '向量检索' : '检索服务未报告';
+function retrievalEvidenceLabel(hit: KnowledgeSearchHit, teamMode = false): string {
+  const mode = teamMode
+    ? '关键词检索'
+    : hit.diagnostics.effectiveMode === 'hybrid' ? '混合检索' : hit.diagnostics.effectiveMode === 'lexical' ? '关键词检索' : hit.diagnostics.effectiveMode === 'dense' ? '向量检索' : '检索服务未报告';
   const ranks = [
     hit.diagnostics.lexicalRank === null ? '' : `关键词候选第 ${hit.diagnostics.lexicalRank}`,
-    hit.diagnostics.denseRank === null ? '' : `向量候选第 ${hit.diagnostics.denseRank}`,
-    hit.diagnostics.graphRank === null ? '' : `图谱候选第 ${hit.diagnostics.graphRank}`,
+    teamMode || hit.diagnostics.denseRank === null ? '' : `向量候选第 ${hit.diagnostics.denseRank}`,
+    teamMode || hit.diagnostics.graphRank === null ? '' : `图谱候选第 ${hit.diagnostics.graphRank}`,
   ].filter(Boolean);
-  const matches = hit.diagnostics.graphMatches.length ? ` · 关联 ${publicKnowledgeText(hit.diagnostics.graphMatches.slice(0, 3).join('、'))}` : '';
+  const matches = !teamMode && hit.diagnostics.graphMatches.length ? ` · 关联 ${publicKnowledgeText(hit.diagnostics.graphMatches.slice(0, 3).join('、'))}` : '';
   return ranks.length ? `${mode} · ${ranks.join(' · ')}${matches}` : mode;
 }
 function citationLabel(hit: KnowledgeSearchHit): string { if (hit.page !== null) return `第 ${hit.page} 页`; if (hit.lineStart !== null) return hit.lineEnd && hit.lineEnd !== hit.lineStart ? `第 ${hit.lineStart}-${hit.lineEnd} 行` : `第 ${hit.lineStart} 行`; return '文档段落'; }

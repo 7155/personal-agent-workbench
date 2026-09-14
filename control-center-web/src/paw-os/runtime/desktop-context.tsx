@@ -9,9 +9,20 @@ const pawDesktopSnapshotKey = 'pawos.desktop.v1';
 const pawDesktopPersistDelayMs = 200;
 const pawAppIds = new Set<PawAppId>(pawApps.map((app) => app.id));
 
-export function PawDesktopProvider({ children, initialAppId, initialRoute }: { children: ReactNode; initialAppId?: PawAppId | null; initialRoute?: string }) {
+export function PawDesktopProvider({
+  children,
+  initialAppId,
+  initialRoute,
+  storageKey = pawDesktopSnapshotKey,
+}: {
+  children: ReactNode;
+  initialAppId?: PawAppId | null;
+  initialRoute?: string;
+  /** Team scopes provide an isolated desktop snapshot namespace. */
+  storageKey?: string;
+}) {
   const storeRef = useRef<PawDesktopStore | null>(null);
-  storeRef.current ??= createPawDesktopStore(initialAppId, initialRoute, readPawDesktopSnapshot());
+  storeRef.current ??= createPawDesktopStore(initialAppId, initialRoute, readPawDesktopSnapshot(storageKey));
   useEffect(() => {
     const store = storeRef.current;
     if (!store) return undefined;
@@ -36,7 +47,7 @@ export function PawDesktopProvider({ children, initialAppId, initialRoute }: { c
         dismissedBackgroundToolIds: state.dismissedBackgroundToolIds,
       };
       try {
-        window.localStorage.setItem(pawDesktopSnapshotKey, JSON.stringify(snapshot));
+        window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
       } catch {
         // Persistence is a convenience boundary, never an interaction gate.
         // Quota/private-mode failures leave the live desktop untouched.
@@ -61,14 +72,14 @@ export function PawDesktopProvider({ children, initialAppId, initialRoute }: { c
       document.removeEventListener('visibilitychange', flushWhenHidden);
       flush();
     };
-  }, []);
+  }, [storageKey]);
   return <PawDesktopContext.Provider value={storeRef.current}>{children}</PawDesktopContext.Provider>;
 }
 
-function readPawDesktopSnapshot(): PawDesktopSnapshot | undefined {
+function readPawDesktopSnapshot(storageKey: string): PawDesktopSnapshot | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    const value = window.localStorage.getItem(pawDesktopSnapshotKey);
+    const value = window.localStorage.getItem(storageKey);
     if (!value) return undefined;
     return sanitizePawDesktopSnapshot(JSON.parse(value));
   } catch {

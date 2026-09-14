@@ -457,10 +457,14 @@ class HttpKnowledgeClient:
 
     @staticmethod
     def _http_error(exc: urllib.error.HTTPError) -> KnowledgeLibraryError:
-        raw = exc.read(256 * 1024)
+        with exc:
+            raw = exc.read(256 * 1024)
         try:
-            error = json.loads(raw.decode("utf-8")).get("error", {})
+            payload = json.loads(raw.decode("utf-8"))
+            error = payload.get("error", {}) if isinstance(payload, dict) else {}
         except (json.JSONDecodeError, UnicodeDecodeError):
+            error = {}
+        if not isinstance(error, dict):
             error = {}
         return KnowledgeLibraryError(
             str(error.get("message") or f"knowledge worker returned HTTP {exc.code}"),

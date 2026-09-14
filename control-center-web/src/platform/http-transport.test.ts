@@ -19,6 +19,9 @@ describe('HttpControlTransport', () => {
       expect((await desktop.capabilities()).native).toMatchObject({ keychain: true, tcc: true });
       await desktop.runVoiceAction!('reload_configuration');
       expect(voice.action).toHaveBeenCalledWith('reload_configuration');
+      const scoped = new HttpControlTransport({ baseUrl: window.location.origin, routePrefix: '/team/spaces/project-7', fetch });
+      expect(scoped.runVoiceAction).toBeUndefined();
+      expect((await scoped.capabilities()).native).toMatchObject({ keychain: false, tcc: false });
       const remote = new HttpControlTransport({ baseUrl: 'https://gateway.example.test', fetch });
       expect(remote.runVoiceAction).toBeUndefined();
       expect((await remote.capabilities()).native.tcc).toBe(false);
@@ -47,6 +50,83 @@ describe('HttpControlTransport', () => {
       'https://evil.example.test/api/agent/media/media_remote_fixture_01/content?roomId=room:remote-1',
     )).toThrow(/managed receipt path/);
     expect(() => transport.browserSnapshotImageUrl('../private')).toThrow(/bounded snapshotId/);
+  });
+
+  it('keeps TeamGateway requests, media URLs, cookies and CSRF scoped', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ sessions: [] }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200,
+    }));
+    const transport = new HttpControlTransport({
+      baseUrl: window.location.origin,
+      routePrefix: '/team/spaces/project-7/',
+      credentials: 'same-origin',
+      getHeaders: () => ({ 'X-CSRF-Token': 'csrf-memory-only' }),
+      connectionIdentity: 'team:user-1:project-7',
+      fetch: fetchMock as typeof globalThis.fetch,
+    });
+
+    await transport.request({ pathId: 'agent.sessions.list' });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${window.location.origin}/team/spaces/project-7/api/agent/sessions`,
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'same-origin' });
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('X-CSRF-Token')).toBe('csrf-memory-only');
+    expect(transport.browserSnapshotImageUrl('snap_team-1')).toBe(
+      `${window.location.origin}/team/spaces/project-7/api/browser/snapshots/snap_team-1/image`,
+    );
+    expect(transport.agentMediaContentUrl(
+      '/api/agent/media/media_team_fixture_01/content?sessionId=session:team-1',
+    )).toBe(
+      `${window.location.origin}/team/spaces/project-7/api/agent/media/media_team_fixture_01/content?sessionId=session%3Ateam-1`,
+    );
+    expect(transport.connectionIdentity).toBe('team:user-1:project-7');
+  });
+
+  it('rejects unsafe TeamGateway route prefixes', () => {
+    expect(() => new HttpControlTransport({
+      baseUrl: window.location.origin,
+      routePrefix: '/team/../api',
+      fetch: vi.fn() as typeof globalThis.fetch,
+    })).toThrow(/routePrefix/);
+  });
+
+  it('opens scoped SSE streams with the same cookie and CSRF policy', async () => {
+    const payload = agentEventFixture(1, 'turn_completed', {});
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      `id: session-team:1\ndata: ${JSON.stringify(payload)}\n\n`,
+      { headers: { 'Content-Type': 'text/event-stream' }, status: 200 },
+    ));
+    const transport = new HttpControlTransport({
+      baseUrl: window.location.origin,
+      routePrefix: '/team/spaces/project-7',
+      getHeaders: () => ({ 'X-CSRF-Token': 'csrf-memory-only' }),
+      fetch: fetchMock as typeof globalThis.fetch,
+    });
+    const done = new Promise<void>((resolve) => {
+      let cancel = () => {};
+      cancel = transport.subscribe(
+        {
+          pathId: 'agent.session.events',
+          params: { sessionId: 'session-team' },
+          lastEventId: 'session-team:0',
+        },
+        {
+          next() {
+            cancel();
+            resolve();
+          },
+        },
+      );
+    });
+    await done;
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${window.location.origin}/team/spaces/project-7/api/agent/sessions/session-team/events?lastEventId=session-team%3A0`,
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'same-origin' });
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('X-CSRF-Token')).toBe('csrf-memory-only');
   });
 
   it('uploads browser clipboard Files to the fixed owner-scoped managed media route', async () => {

@@ -1,4 +1,5 @@
 import type { RefObject } from 'react';
+import { isTeamDeployment } from '@/features/team/deployment';
 
 export const PAW_BROWSER_PARTITION = 'persist:paw-browser';
 
@@ -147,6 +148,10 @@ export type PawBrowserGuestProcessGoneEvent = Event & { reason?: string };
 export type PawBrowserGuestFaviconEvent = Event & { favicons?: string[] };
 
 export function pawBrowserHost(): PawBrowserHost | null {
+  // Electron's persistent guest partition is host-scoped. Team spaces use
+  // the HTTP Browser surface until the native host supplies an account-safe
+  // partition, so cookies/history/downloads cannot cross identities.
+  if (isTeamDeployment()) return null;
   const host = window.pawBrowserHost;
   return host?.kind === 'electron-webview' && host.partition === PAW_BROWSER_PARTITION
     ? host

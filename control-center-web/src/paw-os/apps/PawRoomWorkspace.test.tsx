@@ -6,9 +6,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { createPreviewTransport } from '@/app/preview-control-transport';
 import { previewRoomSnapshot } from '@/app/preview-room-data';
+import { previewPersonas } from '@/features/agent/preview-data';
+import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import { TooltipProvider } from '@/components/primitives';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
-import { ROOM_WORKSPACE_MISSING_TEXT } from '@/features/agent/public-error';
+import { TeamProvider } from '@/features/team/team-context';
+import type { TeamApi } from '@/features/team/team-api';
+import type { TeamSession } from '@/features/team/types';
+import { ROOM_WORKSPACE_MISSING_TEXT, TEAM_WORKER_UNAVAILABLE_TEXT } from '@/features/agent/public-error';
 import type { ControlRequest } from '@/platform/transport';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
@@ -28,6 +33,7 @@ vi.mock('./PawStarfield', async (importOriginal) => {
 afterEach(() => {
   cleanup();
   useRoomLiveStore.getState().reset();
+  document.querySelector('meta[name="paw-deployment"]')?.remove();
 });
 
 describe('PAWOS Room collaboration tools', () => {
@@ -159,6 +165,43 @@ describe('PAWOS Room collaboration tools', () => {
     expect(composer).toHaveValue('是什么问题呀');
     expect(document.querySelector('.paw-room-workspace__runtime')).not.toHaveTextContent('同步离线');
     expect(within(alert).queryByRole('button', { name: '重新同步' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
+  });
+
+  it('shows a definitive Team worker rejection instead of an uncertain delivery state', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const user = userEvent.setup();
+    const openWindow = vi.fn();
+    const { transport } = renderRoom(
+      900,
+      openWindow,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      vi.fn(),
+      (request) => {
+        if (request.pathId !== 'agent.room.message') return undefined;
+        throw Object.assign(new Error(TEAM_WORKER_UNAVAILABLE_TEXT), {
+          status: 409,
+          payload: {
+            ok: false,
+            errorCode: 'team_worker_unavailable',
+            error: TEAM_WORKER_UNAVAILABLE_TEXT,
+          },
+        });
+      },
+    );
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.type(composer, '请开始执行');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(TEAM_WORKER_UNAVAILABLE_TEXT);
+    expect(alert).not.toHaveTextContent('服务端仍在确认这条消息是否已接收');
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
   });
 
@@ -964,6 +1007,97 @@ describe('PAWOS Room collaboration tools', () => {
     ))).toBe(true));
   });
 
+  it('lets Team members reuse other owners personas and create work with their own identity', async () => {
+    const teamMeta = document.createElement('meta');
+    teamMeta.name = 'paw-deployment';
+    teamMeta.content = 'team';
+    document.head.appendChild(teamMeta);
+    const user = userEvent.setup();
+    const openWindow = vi.fn();
+    const sourceRoom = previewRoomSnapshot('room-team-members').room as unknown as RoomSummary;
+    const teamRoom = {
+      ...sourceRoom,
+      participants: sourceRoom.participants.map((participant) => participant.ordinal === 1
+        ? { ...participant, ownerUserId: 'user-wang', ownerDisplayName: '小王', canControl: false }
+        : participant.ordinal === 0
+          ? { ...participant, ownerUserId: 'user-alice', ownerDisplayName: 'Alice', canControl: true }
+          : participant),
+    };
+    const teamSession: TeamSession = {
+      user: { id: 'user-alice', username: 'alice', displayName: 'Alice', role: 'member', active: true },
+      csrfToken: 'csrf-team',
+      spaces: [{ id: 'project-team', kind: 'project', name: 'PAW Team', role: 'contributor', revision: 1 }],
+    };
+    const { transport, controlTransport } = renderRoom(
+      900,
+      openWindow,
+      teamRoom,
+      undefined,
+      undefined,
+      undefined,
+      vi.fn(),
+      undefined,
+      undefined,
+      true,
+      false,
+      'session-window',
+      undefined,
+      previewPersonas,
+      teamSession,
+    );
+
+    await screen.findByRole('textbox', { name: '协作消息' });
+    await user.click(screen.getByRole('button', { name: '添加我的 Agent' }));
+    const governance = await screen.findByRole('complementary', { name: 'Room 协作态势' });
+    expect(within(governance).getByText('小王 · Mars')).toBeInTheDocument();
+    expect(within(governance).getByRole('combobox', { name: '小王 · Mars 的分工' })).toBeDisabled();
+    expect(within(governance).getByRole('button', { name: '移出 小王 · Mars' })).toBeDisabled();
+    await user.click(within(governance).getByRole('button', { name: '打开 小王 · Mars Session' }));
+    expect(openWindow).toHaveBeenLastCalledWith(expect.objectContaining({
+      background: false,
+      target: expect.objectContaining({
+        kind: 'session',
+        id: teamRoom.participants.find((participant) => participant.ownerUserId === 'user-wang')?.sessionId,
+      }),
+    }));
+    const picker = within(governance).getByRole('combobox', { name: '添加我的 Agent' });
+    expect(picker).toBeInTheDocument();
+    await user.click(picker);
+    const listbox = await screen.findByRole('listbox');
+    const otherPersona = previewPersonas.find((persona) => persona.roleId === teamRoom.participants[1].roleId)!;
+    const ownPersona = previewPersonas.find((persona) => persona.roleId === teamRoom.participants[0].roleId)!;
+    expect(within(listbox).queryByRole('option', { name: `Alice · Jupiter · ${ownPersona.displayName}` })).not.toBeInTheDocument();
+    await user.click(within(listbox).getByRole('option', { name: `Alice · Jupiter · ${otherPersona.displayName}` }));
+
+    await waitFor(() => expect(transport.requests.some(({ request }) => (
+      request.pathId === 'agent.room.participant.add'
+      && (request.body as { roleId?: string }).roleId === otherPersona.roleId
+    ))).toBe(true));
+
+    await user.type(within(governance).getByRole('textbox', { name: '工作项目标' }), '实现注册表单');
+    await user.type(within(governance).getByRole('textbox', { name: '工作项交付' }), '固定版本与测试结果');
+    const createWork = within(governance).getByRole('button', { name: '创建工作项' });
+    expect(createWork).toBeDisabled();
+    await user.type(within(governance).getByRole('textbox', { name: '工作项验收标准' }), '重复邮箱有提示\n错误状态可恢复');
+    const send = controlTransport.request.bind(controlTransport);
+    const requestSpy = vi.spyOn(controlTransport, 'request').mockImplementation(async (request) => {
+      if (request.pathId === 'agent.room.workItem.create') throw new Error('成员权限已变化');
+      return send(request);
+    });
+    await user.click(createWork);
+    await waitFor(() => expect(requestSpy).toHaveBeenCalledWith(expect.objectContaining({
+      pathId: 'agent.room.workItem.create',
+      body: expect.objectContaining({
+        createdByParticipantId: teamRoom.participants[0].id,
+        accountableParticipantId: teamRoom.participants[0].id,
+        currentOwnerParticipantId: teamRoom.participants[0].id,
+        acceptanceCriteria: ['重复邮箱有提示', '错误状态可恢复'], state: 'active', depth: 1,
+      }),
+    })));
+    expect(within(governance).getByRole('textbox', { name: '工作项目标' })).toHaveValue('实现注册表单');
+    expect(within(governance).getByRole('textbox', { name: '工作项验收标准' })).toHaveValue('重复邮箱有提示\n错误状态可恢复');
+  });
+
   it('edits all three Room permission layers without falling back to the legacy projection', async () => {
     const user = userEvent.setup();
     const { container, transport } = renderRoom(900);
@@ -1107,6 +1241,8 @@ function renderRoom(
   snapshotFailure = false,
   participantProcessLocation: 'session-window' | 'room-transcript' = 'session-window',
   collaborationFocusGroup?: string | null,
+  personas: AgentPersonaV1[] = [],
+  teamSession?: TeamSession,
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const room = record ?? previewRoomSnapshot('room-preview').room as unknown as RoomSummary;
@@ -1164,7 +1300,7 @@ function renderRoom(
                 initialDraft={initialDraft}
                 initialError={initialError}
                 participantProcessLocation={participantProcessLocation}
-                personas={[]}
+                personas={personas}
                 record={room}
                 recordId={room.id}
                 onRoomUpdated={vi.fn()}
@@ -1175,7 +1311,9 @@ function renderRoom(
       </ControlTransportProvider>
     </QueryClientProvider>
   );
-  const rendered = render(renderSurface());
+  const rendered = render(teamSession
+    ? <TeamProvider api={fakeTeamApi(teamSession)}>{renderSurface()}</TeamProvider>
+    : renderSurface());
   return {
     closeWindow,
     transport: { requests },
@@ -1183,10 +1321,35 @@ function renderRoom(
     ...rendered,
     setDesktopFocusGroup: (next: string | null | undefined) => {
       focusState.value = next;
-      rendered.rerender(renderSurface());
+      rendered.rerender(teamSession
+        ? <TeamProvider api={fakeTeamApi(teamSession)}>{renderSurface()}</TeamProvider>
+        : renderSurface());
     },
     room,
   };
+}
+
+function fakeTeamApi(session: TeamSession): TeamApi {
+  return {
+    status: vi.fn().mockResolvedValue({ enabled: true, name: 'PAW Team' }),
+    login: vi.fn(),
+    me: vi.fn().mockResolvedValue(session),
+    logout: vi.fn().mockResolvedValue({ ok: true }),
+    createProject: vi.fn(),
+    listMembers: vi.fn().mockResolvedValue([]),
+    listDirectory: vi.fn().mockResolvedValue([]),
+    createMember: vi.fn(),
+    setMemberStatus: vi.fn(),
+    listProjectMembers: vi.fn().mockResolvedValue([]),
+    addProjectMember: vi.fn(),
+    removeProjectMember: vi.fn(),
+    listProjectDrafts: vi.fn().mockResolvedValue([]),
+    listProjectSessions: vi.fn().mockResolvedValue([]),
+    getProjectDraftDiff: vi.fn(),
+    publishProjectDraft: vi.fn(),
+    integrateProjectDraft: vi.fn(),
+    adoptProjectDraft: vi.fn(),
+  } as unknown as TeamApi;
 }
 
 function setDocumentVisibility(state: 'hidden' | 'visible'): void {

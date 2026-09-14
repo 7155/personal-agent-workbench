@@ -40,6 +40,22 @@ describe('PAW Electron Browser host', () => {
     expect(loadURL).toHaveBeenCalledWith('https://example.com');
   });
 
+  it('does not expose the host-scoped guest partition in Team deployments', () => {
+    window.pawBrowserHost = {
+      kind: 'electron-webview',
+      partition: PAW_BROWSER_PARTITION,
+    } as never;
+    const meta = document.createElement('meta');
+    meta.name = 'paw-deployment';
+    meta.content = 'team';
+    document.head.append(meta);
+
+    expect(pawBrowserHost()).toBeNull();
+
+    meta.remove();
+    delete window.pawBrowserHost;
+  });
+
   it('treats zoom as unavailable while Electron is still attaching the guest', () => {
     const getZoomFactor = vi.fn(() => {
       throw new Error('The WebView must be attached to the DOM and the dom-ready event emitted');

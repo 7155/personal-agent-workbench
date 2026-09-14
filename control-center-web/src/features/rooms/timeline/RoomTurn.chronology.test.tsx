@@ -1,5 +1,5 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createRoomProjection,
@@ -9,6 +9,8 @@ import {
   type RoomProjectionState,
 } from '@/contracts/room-reducer';
 import { parseRoomEvent } from '@/contracts/validators';
+import type { TeamApi } from '@/features/team/team-api';
+import { TeamProvider } from '@/features/team/team-context';
 import { RoomTurn } from './RoomTurn';
 
 describe('RoomTurn canonical conversation chronology', () => {
@@ -73,6 +75,31 @@ describe('RoomTurn canonical conversation chronology', () => {
     expect(lanes.map((lane) => (
       lane.querySelector('[data-room-message-id]')?.getAttribute('data-room-message-id')
     ))).toEqual(['a-first', 'b-middle', 'a-last']);
+  });
+
+  it('renders the persisted human actor on a Room post and marks the current account', async () => {
+    const projection = liveProjection([event(1, 'user_message', {
+      messageId: 'opening',
+      text: '请一起完成跨角色任务',
+      rootId: 'root-a',
+      actorUserId: 'user-1',
+      actorDisplayName: 'Alice',
+    }, null, '')]);
+    expect(projection.messagesById.opening).toMatchObject({ actorUserId: 'user-1', actorDisplayName: 'Alice' });
+
+    const api = {
+      status: vi.fn().mockResolvedValue({ enabled: true, name: 'PAW Team' }),
+      me: vi.fn().mockResolvedValue({
+        user: { id: 'user-1', username: 'alice', displayName: 'Alice', role: 'member', active: true },
+        csrfToken: 'csrf-memory',
+        spaces: [{ id: 'project-1', kind: 'project', name: 'PAW Team', role: 'contributor', revision: 1 }],
+      }),
+    } as unknown as TeamApi;
+    const view = render(<TeamProvider api={api}>{roomTurn(projection)}</TeamProvider>);
+    const header = view.container.querySelector<HTMLElement>('.room-user-message__header');
+    expect(header).toHaveTextContent('Alice');
+    await waitFor(() => expect(header).toHaveTextContent('你'));
+    expect(header?.querySelector('small')).toHaveTextContent('你');
   });
 
   it('opens a participant lane when authoritative assistant text starts streaming', async () => {

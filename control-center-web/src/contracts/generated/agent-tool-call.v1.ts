@@ -31,6 +31,7 @@ export interface AgentToolCallV1 {
     | 'sandbox'
     | 'work_documents'
     | 'lab_project'
+    | 'connections'
     | 'desktop_semantic'
     | 'ls'
     | 'read'

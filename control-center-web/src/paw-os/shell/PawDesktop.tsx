@@ -18,6 +18,8 @@ import { PawWorkDirectoryProvider } from './PawWorkDirectory';
 import { isPawExtensionAppId, pawExtensionApp, pawExtensionApps } from '../extensions/registry';
 import { PawExtensionInstallationProvider, usePawExtensionInstallation } from '../extensions/installation';
 import { warmPawAppProcess } from '../apps/PawApps';
+import { isTeamDeployment, TeamSwitcher, useOptionalTeam } from '@/features/team';
+import type { PawExtensionTeamSelection } from '../extensions/installation';
 import {
   PAW_BUILD_COMMIT,
   PAW_PRODUCT_BUILD_LABEL,
@@ -69,10 +71,32 @@ const selectNoMenuSignature = () => '';
 export function PawDesktop() {
   return (
     <PawWorkDirectoryProvider>
-      <PawExtensionInstallationProvider>
-        <PawDesktopSurface />
-      </PawExtensionInstallationProvider>
+      <PawDesktopInstallationScope />
     </PawWorkDirectoryProvider>
+  );
+}
+
+/** Keep the installation projection at the shell boundary: local PAWOS reads
+ * the native inventory, while Team reads only the active space's publication
+ * selection. The Extension provider stays independent of Team context so its
+ * local behavior remains unchanged when the Team deployment is absent. */
+function PawDesktopInstallationScope() {
+  const team = useOptionalTeam();
+  const teamDeployment = isTeamDeployment();
+  const teamSelection = useMemo<PawExtensionTeamSelection | null>(() => {
+    if (!teamDeployment || team?.phase !== 'authenticated' || !team.activeSpace || !team.scopeKey) return null;
+    const spaceId = team.activeSpace.id;
+    const api = team.api;
+    const csrfToken = team.csrfToken;
+    return {
+      scopeKey: team.scopeKey,
+      load: () => api.getSpaceResourceSelection(spaceId, csrfToken ?? undefined),
+    };
+  }, [team?.activeSpace, team?.api, team?.csrfToken, team?.phase, team?.scopeKey, teamDeployment]);
+  return (
+    <PawExtensionInstallationProvider teamSelection={teamSelection}>
+      <PawDesktopSurface />
+    </PawExtensionInstallationProvider>
   );
 }
 
@@ -741,6 +765,7 @@ function PawDesktopSurface() {
           </button>
         </div>
         <div className="paw-menu-status">
+          <TeamSwitcher />
           <ConnectionIndicator />
           <PawBackgroundActivity />
           <PawNotificationCenter />
@@ -1321,14 +1346,18 @@ function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: P
               {group.apps.map(({ app, order }) => {
                 const extension = isPawExtensionAppId(app.id) ? pawExtensionApp(app.id) : null;
                 const installationLabel = extension
-                  ? installation.isInstalled(app.id)
-                    ? installation.isEnabled(app.id) ? '已安装' : '未启用'
-                    : '未安装'
+                  ? installation.source === 'team'
+                    ? installation.isEnabled(app.id) ? '已选择' : '未选择'
+                    : installation.isInstalled(app.id)
+                      ? installation.isEnabled(app.id) ? '已安装' : '未启用'
+                      : '未安装'
                   : '';
                 return (
                 <button
                   data-app={app.id}
-                  data-extension-installation={extension ? installationLabel === '已安装' ? 'enabled' : installationLabel === '未启用' ? 'disabled' : 'uninstalled' : undefined}
+                  data-extension-installation={extension
+                    ? installation.isEnabled(app.id) ? 'enabled' : installation.isInstalled(app.id) ? 'disabled' : 'uninstalled'
+                    : undefined}
                   draggable
                   key={app.id}
                   onClick={() => onOpen(app.id)}

@@ -151,6 +151,29 @@ export function PawWorkDirectoryProvider({
     }
   }, [maintenanceFreshnessMs, transport]);
 
+  // A Team space switch replaces the transport identity. Clear the old
+  // projection immediately and invalidate every in-flight completion so a
+  // response from the previous space cannot repaint the new desktop.
+  useEffect(() => {
+    directoryGenerationRef.current += 1;
+    maintenanceGenerationRef.current += 1;
+    directoryAbortRef.current?.abort();
+    maintenanceAbortRef.current?.abort();
+    loadedRef.current = false;
+    maintenanceSuccessAtRef.current = 0;
+    maintenanceRunningRef.current = false;
+    setSessions([]);
+    setRooms([]);
+    setMaintenance(null);
+    setMaintenanceJob(null);
+    setSessionStatusFresh(false);
+    setRoomStatusFresh(false);
+    setMaintenanceStatusFresh(false);
+    setFailed(false);
+    setLoaded(false);
+    setLoading(true);
+  }, [transport]);
+
   const refresh = useCallback(async () => {
     if (document.visibilityState === 'hidden') return;
     /* Explicit user/terminal refresh is immediate, but also restarts the

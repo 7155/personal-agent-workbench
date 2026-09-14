@@ -192,6 +192,37 @@ describe('PawWorkDirectoryProvider', () => {
 
     expect(screen.getByTestId('directory-state')).toHaveTextContent('stale:已离线');
   });
+
+  it('drops an old space projection before a replacement transport can resolve', async () => {
+    const oldSession = deferred<{ ok: true; items: ReturnType<typeof session>[] }>();
+    const oldTransport = new MockControlTransport({ routes: {
+      'agent.sessions.list': () => oldSession.promise,
+      'agent.rooms.list': { ok: true, items: [] },
+      'agent.memoryMaintenance.run': { ok: true, projection: { running: false } },
+    } });
+    const nextTransport = new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, items: [{ ...session('idle'), id: 'session-project' }] },
+      'agent.rooms.list': { ok: true, items: [] },
+      'agent.memoryMaintenance.run': { ok: true, projection: { running: false } },
+    } });
+    const view = renderDirectory(oldTransport, { initialPollDelayMs: 0, maintenancePollIntervalMs: 60_000 });
+    await flushRequests();
+    expect(requestCount(oldTransport, 'agent.sessions.list')).toBe(1);
+
+    view.rerender(
+      <ControlTransportProvider transport={nextTransport}>
+        <PawWorkDirectoryProvider initialPollDelayMs={0} maintenancePollIntervalMs={60_000}>
+          <DirectoryProbe />
+        </PawWorkDirectoryProvider>
+      </ControlTransportProvider>,
+    );
+    await flushRequests();
+    expect(requestCount(nextTransport, 'agent.sessions.list')).toBe(1);
+    expect(screen.getByTestId('directory-session')).toHaveTextContent('session-project');
+
+    await act(async () => { oldSession.resolve({ ok: true, items: [{ ...session('busy'), id: 'session-personal' }] }); });
+    expect(screen.getByTestId('directory-session')).toHaveTextContent('session-project');
+  });
 });
 
 function renderDirectory(
@@ -221,6 +252,7 @@ function DirectoryProbe() {
       <output data-testid="directory-state">
         {directory.sessionStatusFresh && directory.roomStatusFresh ? 'fresh' : 'stale'}:{item?.statusLabel ?? 'none'}
       </output>
+      <output data-testid="directory-session">{directory.sessions[0]?.id ?? 'none'}</output>
       <button onClick={() => void directory.refresh()} type="button">刷新目录状态</button>
     </>
   );
@@ -257,6 +289,12 @@ async function flushRequests() {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => { resolve = nextResolve; });
+  return { promise, resolve };
 }
 
 function setDocumentVisibility(state: 'hidden' | 'visible'): void {

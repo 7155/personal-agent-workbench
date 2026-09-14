@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from threading import RLock
+from typing import Any
 
 from .db import sqlite_connection
 from .agent_capability_catalog import capability_disclosure_enabled, session_resource_disclosure_policy
@@ -216,9 +217,15 @@ class AgentService:
         collaboration_profile_signers: Mapping[str, bytes] | None = None,
         startup_recovery_enabled: bool = True,
         defer_startup_recovery: bool = False,
+        session_store: AgentSessionStore | None = None,
+        workspace_harness: Any | None = None,
+        human_actor_provider: Callable[[], Mapping[str, object]] | None = None,
+        room_participant_identity_provider: Callable[[str], str] | None = None,
+        additional_session_context_provider: Callable[[Mapping[str, object]], str] | None = None,
     ) -> None:
         self.db_path = Path(db_path)
         self.project = str(project or "")
+        self._additional_session_context_provider = additional_session_context_provider
         self._startup_recovery_enabled = bool(startup_recovery_enabled)
         self._startup_recovery_run_lock = RLock()
         self._startup_recovery_status_lock = RLock()
@@ -269,7 +276,9 @@ class AgentService:
             # guarded install step is permanently disabled.
             runtime_factory.reconfigure(configured)
             self.runtime_factory = runtime_factory
-        self.sessions = AgentSessionStore(db_path, persistent_reads=True)
+        if session_store is not None and session_store.db_path.resolve() != self.db_path.resolve():
+            raise ValueError("Session store must use the Agent service database")
+        self.sessions = session_store or AgentSessionStore(db_path, persistent_reads=True)
         self.sessions.initialize()
         self._eval_lab_golden_lock = RLock()
         self._eval_lab_golden_store = None
@@ -354,7 +363,10 @@ class AgentService:
             role_book_applier=self.role_books,
         )
         self.personal_context.initialize()
-        room_stores = build_room_stores(db_path, session_root=self.runtime_factory.session_root)
+        room_stores = build_room_stores(
+            db_path, session_root=self.runtime_factory.session_root,
+            participant_identity_provider=room_participant_identity_provider,
+        )
         self.rooms = room_stores.rooms
         self.room_start_gates = room_stores.start_gates
         self.room_work = room_stores.work
@@ -420,6 +432,8 @@ class AgentService:
             db_path,
             events=self.events.publish,
             execution_owner=background_job_execution_owner,
+            sessions=self.sessions,
+            workspace_harness=workspace_harness,
         )
         if background_job_execution_owner and startup_recovery_enabled:
             self._golden_store().recover_interrupted_jobs()
@@ -714,6 +728,7 @@ class AgentService:
             prompt=lambda session_id, payload: self.prompt(session_id, payload),
             build_participant_prompt=self._room_participant_prompt_with_documents,
             resolve_attachments=self._resolve_room_attachments,
+            human_actor_provider=human_actor_provider,
         )
         self.room_cancellation = RoomSessionCancellationService(
             rooms=self.rooms, room_events=self.room_events,
@@ -1435,11 +1450,16 @@ class AgentService:
 
     def _runtime_session_context(self, session: Mapping[str, object]) -> Mapping[str, object]:
         resource_policy = session_resource_disclosure_policy(session, configuration_store=self.configuration_store)
+        additional_context = (
+            self._additional_session_context_provider(session)
+            if self._additional_session_context_provider is not None else ""
+        )
         delegation = getattr(self, "delegation", None)
         if delegation is not None:
             delegated = delegation.runtime_session_context(session)
             if delegated:
-                return {**delegated, "resourceDisclosurePolicy": resource_policy}
+                context = "\n\n".join(value for value in (str(delegated.get("sessionContext") or ""), additional_context) if value)
+                return {**delegated, "resourceDisclosurePolicy": resource_policy, **({"sessionContext": context} if context else {})}
         session_id = str(session.get("id") or "")
         session_context = "\n\n".join(
             value
@@ -1448,6 +1468,7 @@ class AgentService:
                 self.memory_context_application.provider_context(session_id)
                 if self.memory_enabled() and self._session_memory_disclosed(session_id)
                 else "",
+                additional_context,
             )
             if value
         )

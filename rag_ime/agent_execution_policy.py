@@ -70,7 +70,7 @@ _WORKSPACE_EFFECTS = frozenset(
 # harness, rather than command text, is the write boundary for workspace_shell.
 READ_ONLY_BLOCKED_EFFECTS = _WORKSPACE_EFFECTS - {
     ("workspace_shell", "run"),
-}
+} | {("connections", "issue.create"), ("connections", "issue.comment")}
 
 
 def read_only_blocks_effect(tool: object, operation: object) -> bool:

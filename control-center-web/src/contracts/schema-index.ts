@@ -7957,6 +7957,28 @@ export const contractSchemas = {
             "type": "string",
             "minLength": 1
           },
+          "ownerUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ownerDisplayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "spaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canControl": {
+            "type": "boolean"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "project"
+            ]
+          },
           "roleId": {
             "type": "string",
             "minLength": 1
@@ -10592,6 +10614,7 @@ export const contractSchemas = {
           "sandbox",
           "work_documents",
           "lab_project",
+          "connections",
           "desktop_semantic",
           "ls",
           "read",
@@ -10733,6 +10756,7 @@ export const contractSchemas = {
           "sandbox",
           "work_documents",
           "lab_project",
+          "connections",
           "workspace_list",
           "workspace_lsp",
           "workspace_read",
@@ -10747,6 +10771,12 @@ export const contractSchemas = {
       "operation": {
         "type": "string",
         "enum": [
+          "repo.read",
+          "file.read",
+          "issues.list",
+          "issue.read",
+          "issue.create",
+          "issue.comment",
           "status",
           "capabilities",
           "recent_activity",

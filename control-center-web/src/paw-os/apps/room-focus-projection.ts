@@ -86,6 +86,8 @@ export interface RoomFocusPartner {
   sessionId: string;
   displayName: string;
   celestialName: string;
+  ownerUserId?: string;
+  ownerDisplayName?: string;
   collaborationRole?: RoomCollaborationRole;
   state: RoomFocusState;
   ownedWorkItemIds: string[];
@@ -231,6 +233,8 @@ export function buildRoomFocusProjection(
         sessionId: participant.sessionId,
         displayName: participant.displayName,
         celestialName: roomFocusCelestialName(participant.ordinal),
+        ...(participant.ownerUserId ? { ownerUserId: participant.ownerUserId } : {}),
+        ...(participant.ownerDisplayName?.trim() ? { ownerDisplayName: participant.ownerDisplayName.trim() } : {}),
         collaborationRole: participant.collaborationRole,
         state,
         ownedWorkItemIds: owned.map((item) => item.id),

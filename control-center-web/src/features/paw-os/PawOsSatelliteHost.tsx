@@ -16,7 +16,7 @@ import { useRoomLiveSession } from '@/features/rooms/runtime/use-room-live-sessi
 import { openPawOsRoute, usePawOsDesktop } from './surface-context';
 import { routePath } from './model/app-registry';
 import type { PawOsWindowTarget } from './model/desktop';
-import { roomPlanetObserverWindowRequest } from '@/paw-os/apps/room-satellite-auto-open';
+import { roomPartnerSessionWindowRequest, roomPlanetObserverWindowRequest } from '@/paw-os/apps/room-satellite-auto-open';
 import { PawRoomLiveFocusOverview } from '@/paw-os/apps/PawRoomLiveFocusOverview';
 import { PawRoomGovernance } from '@/paw-os/apps/PawRoomWorkspace';
 import { PawRoomConversation } from '@/paw-os/apps/PawRoomConversation';
@@ -399,6 +399,11 @@ function RoomPanelSatellite({ target }: { target: Extract<PawOsWindowTarget, { k
     if (!participant) return;
     desktop?.openWindow(roomPlanetObserverWindowRequest(participant, target.id));
   };
+  const openParticipantSession = (participantId: string) => {
+    const participant = room?.participants.find((candidate) => candidate.id === participantId);
+    if (!participant) return;
+    desktop?.openWindow(roomPartnerSessionWindowRequest(participant));
+  };
   return (
     <section className="paw-os-satellite paw-os-satellite--room-panel" data-panel={target.panel}>
       {roomQuery.isPending ? <div className="paw-os-satellite__loading" role="status"><Skeleton /><Skeleton /></div> : null}
@@ -409,7 +414,7 @@ function RoomPanelSatellite({ target }: { target: Extract<PawOsWindowTarget, { k
         <div className="paw-os-satellite__room-panel-body">
           {target.panel === 'focus' && focus ? <PawRoomLiveFocusOverview roomId={target.id} focus={focus} onOpenParticipant={openParticipant} /> : null}
           {target.panel === 'progress' ? <RoomStatusPanel room={room} roomId={target.id} projection={projection} open /> : null}
-          {target.panel === 'governance' ? <PawRoomGovernance personas={personas} room={room} onError={setError} onRefresh={refresh} onRoomUpdated={() => { void roomQuery.refetch(); }} /> : null}
+          {target.panel === 'governance' ? <PawRoomGovernance personas={personas} room={room} onError={setError} onOpenSession={openParticipantSession} onRefresh={refresh} onRoomUpdated={() => { void roomQuery.refetch(); }} /> : null}
         </div>
       ) : null}
     </section>

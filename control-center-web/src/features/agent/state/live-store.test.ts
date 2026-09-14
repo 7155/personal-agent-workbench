@@ -6,7 +6,7 @@ import { useAgentLiveStore } from './live-store';
 const sessionId = 'session-room-managed';
 
 afterEach(() => {
-  useAgentLiveStore.getState().clear(sessionId);
+  useAgentLiveStore.getState().reset();
 });
 
 describe('Agent live store snapshot hydration', () => {
@@ -120,6 +120,20 @@ describe('Agent live store snapshot hydration', () => {
     const after = useAgentLiveStore.getState().projections[sessionId];
     expect(after.messageOrder).toEqual(['recent-cached']);
     expect(after.status).toBe('active');
+  });
+
+  it('resets every projection when an authenticated Team scope is replaced', () => {
+    const store = useAgentLiveStore.getState();
+    store.ensure('scope-a-session');
+    store.ensure('scope-b-session');
+    expect(Object.keys(useAgentLiveStore.getState().projections)).toEqual([
+      'scope-a-session',
+      'scope-b-session',
+    ]);
+
+    store.reset();
+
+    expect(useAgentLiveStore.getState().projections).toEqual({});
   });
 
   it.each([true, false])('restores activity-only turns consistently with snapshot quiescence (%s)', (runtimeQuiescent) => {

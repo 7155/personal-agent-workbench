@@ -56,6 +56,11 @@
         "id": {"type": "string", "minLength": 1},
         "roomId": {"type": "string", "minLength": 1},
         "sessionId": {"type": "string", "minLength": 1},
+        "ownerUserId": {"type": "string", "minLength": 1},
+        "ownerDisplayName": {"type": "string", "minLength": 1},
+        "spaceId": {"type": "string", "minLength": 1},
+        "canControl": {"type": "boolean"},
+        "audience": {"type": "string", "enum": ["owner", "project"]},
         "roleId": {"type": "string", "minLength": 1},
         "roleVersion": {"type": "string", "minLength": 1},
         "displayName": {

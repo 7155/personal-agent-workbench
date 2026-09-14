@@ -6,6 +6,10 @@ export interface RoomParticipant {
   roleId: string;
   roleVersion: string;
   displayName: string;
+  /** TeamGateway enriches shared Room participants with the owning human. */
+  ownerUserId?: string;
+  ownerDisplayName?: string;
+  canControl?: boolean;
   collaborationRole?: RoomCollaborationRole;
   status: string;
   ordinal: number;

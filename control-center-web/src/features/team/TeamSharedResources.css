@@ -1,0 +1,313 @@
+.team-shared-resources {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  overflow: auto;
+  padding: 20px clamp(16px, 3vw, 30px) 30px;
+  color: #27344a;
+  background: #fff;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.team-shared-resources__header,
+.team-shared-resources__section-heading,
+.team-shared-resources__resource,
+.team-shared-resources__catalog-row,
+.team-shared-resources__actions,
+.team-shared-resources__scope,
+.team-shared-resources__conflict,
+.team-shared-resources__readonly {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.team-shared-resources__header > div,
+.team-shared-resources__section-heading > div,
+.team-shared-resources__resource-main,
+.team-shared-resources__catalog-row > div {
+  min-width: 0;
+}
+
+.team-shared-resources__eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: #245bc5;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.team-shared-resources h1,
+.team-shared-resources h2,
+.team-shared-resources p {
+  margin: 0;
+}
+
+.team-shared-resources h1 {
+  color: #17243a;
+  font-size: clamp(20px, 2.4vw, 25px);
+  letter-spacing: -.02em;
+}
+
+.team-shared-resources h2 {
+  color: #1d293d;
+  font-size: 15px;
+}
+
+.team-shared-resources__header p,
+.team-shared-resources__section-heading p {
+  max-width: 680px;
+  margin-top: 4px;
+  color: #68758a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.team-shared-resources__scope {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 9px 11px;
+  border: 1px solid #dbe3ef;
+  border-radius: 9px;
+  color: #52627a;
+  background: #f7f9fc;
+  font-size: 12px;
+}
+
+.team-shared-resources__scope svg {
+  flex: 0 0 auto;
+  color: #245bc5;
+}
+
+.team-shared-resources__scope strong {
+  color: #25344b;
+}
+
+.team-shared-resources__scope span {
+  margin-left: auto;
+  color: #68758a;
+}
+
+.team-shared-resources__disclosure,
+.team-shared-resources__edit-note {
+  color: #52627a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.team-shared-resources__disclosure {
+  padding: 10px 12px;
+  border: 1px solid rgb(138 169 230 / .45);
+  border-radius: 8px;
+  background: #f4f7fd;
+}
+
+.team-shared-resources__section {
+  display: grid;
+  gap: 12px;
+  padding-top: 17px;
+  border-top: 1px solid rgb(23 26 33 / .1);
+}
+
+.team-shared-resources__section-heading {
+  align-items: center;
+}
+
+.team-shared-resources__section-heading .mgmt-status {
+  flex: 0 0 auto;
+}
+
+.team-shared-resources__list,
+.team-shared-resources__catalog {
+  display: grid;
+  gap: 8px;
+}
+
+.team-shared-resources__resource,
+.team-shared-resources__catalog-row {
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e0e6ef;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+.team-shared-resources__resource-main {
+  display: grid;
+  gap: 4px;
+}
+
+.team-shared-resources__resource-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.team-shared-resources__resource-heading strong {
+  overflow: hidden;
+  color: #1d293d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-shared-resources__resource p,
+.team-shared-resources__catalog-row p {
+  color: #52627a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.team-shared-resources__resource small,
+.team-shared-resources__catalog-row small {
+  color: #7a8799;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.team-shared-resources__selection-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.team-shared-resources__selection-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e0e6ef;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.team-shared-resources__selection-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.team-shared-resources__selection-row strong {
+  overflow: hidden;
+  color: #27344a;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-shared-resources__selection-row small,
+.team-shared-resources__actions span,
+.team-shared-resources__muted {
+  color: #7a8799;
+  font-size: 11px;
+}
+
+.team-shared-resources__actions {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.team-shared-resources__readonly,
+.team-shared-resources__conflict {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  border: 1px solid #d8e0eb;
+  border-radius: 9px;
+  color: #52627a;
+  background: #f8fafc;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.team-shared-resources__readonly svg {
+  flex: 0 0 auto;
+  color: #7a8799;
+}
+
+.team-shared-resources__conflict {
+  border-color: rgb(161 95 5 / .25);
+  color: #88530e;
+  background: #fff8e9;
+}
+
+.team-shared-resources__conflict svg {
+  flex: 0 0 auto;
+}
+
+.team-shared-resources__conflict .ui-button {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.team-shared-resources__loading,
+.team-shared-resources__empty {
+  padding: 22px 12px;
+  color: #68758a;
+  font-size: 13px;
+  text-align: center;
+}
+
+.team-shared-resources__review-only {
+  flex: 0 0 auto;
+  color: #7a8799;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .team-shared-resources {
+    padding: 16px 13px 24px;
+  }
+
+  .team-shared-resources__header,
+  .team-shared-resources__resource,
+  .team-shared-resources__catalog-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .team-shared-resources__header .ui-button,
+  .team-shared-resources__resource > .ui-button,
+  .team-shared-resources__catalog-row > .ui-button {
+    align-self: flex-start;
+  }
+
+  .team-shared-resources__scope {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .team-shared-resources__scope span {
+    width: 100%;
+    margin-left: 23px;
+  }
+
+  .team-shared-resources__selection-row {
+    grid-template-columns: 1fr;
+  }
+
+  .team-shared-resources__conflict {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .team-shared-resources__conflict .ui-button {
+    margin-left: 23px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-shared-resources * {
+    scroll-behavior: auto;
+  }
+}

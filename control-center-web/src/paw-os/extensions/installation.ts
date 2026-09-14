@@ -2,6 +2,7 @@ import { createContext, createElement, useCallback, useContext, useEffect, useMe
 import { useOptionalControlTransport } from '@/app/control-transport';
 import type { PawAppId } from '../runtime/app-registry';
 import { extensionAppForPackage, isPawExtensionAppId, registerLabExtensionApps } from './registry';
+import { isTeamDeployment } from '@/features/team/deployment';
 import type {
   PawExtensionAppId,
   PawExtensionAppInstallationEvidence,
@@ -19,6 +20,8 @@ export type PawExtensionInstallationProjection = {
 };
 
 export type PawExtensionInstallation = PawExtensionInstallationProjection & {
+  /** Whether this projection came from the Team space selection or the local Runtime inventory. */
+  source: 'local' | 'team';
   status: PawExtensionInstallationStatus;
   loading: boolean;
   unavailable: boolean;
@@ -27,6 +30,17 @@ export type PawExtensionInstallation = PawExtensionInstallationProjection & {
   isEnabled: (appId: PawAppId) => boolean;
   isAvailable: (appId: PawAppId) => boolean;
   refresh: () => void;
+};
+
+/**
+ * The shell supplies this deliberately small adapter instead of making the
+ * Extension installation layer depend on Team context. The scope key changes
+ * on account or space changes, while `load` reads the current server-owned
+ * publication selection for that one scope.
+ */
+export type PawExtensionTeamSelection = {
+  scopeKey: string;
+  load: () => Promise<unknown>;
 };
 
 const EMPTY_IDS: ReadonlySet<PawExtensionAppId> = new Set<PawExtensionAppId>();
@@ -65,14 +79,84 @@ export function projectPawExtensionInstallation(payload: unknown): PawExtensionI
   return { installedExtensionIds, enabledExtensionIds, availableExtensionIds };
 }
 
+/**
+ * Project the current Team space's selected, published Package metadata onto
+ * registered Extension Apps. Team selection is a publication/metadata proof;
+ * it is intentionally not treated as a native installation or Pi runtime
+ * receipt. An App is exposed only after the same binding, Skill, vertical
+ * suite, version and sandbox contract checks used by local inventory pass.
+ */
+export function projectPawExtensionTeamSelection(payload: unknown): PawExtensionInstallationProjection {
+  const source = asRecord(payload);
+  const selection = asRecord(source.selection);
+  const root = Object.keys(selection).length ? selection : source;
+  const installedExtensionIds = new Set<PawExtensionAppId>();
+  const enabledExtensionIds = new Set<PawExtensionAppId>();
+  const availableExtensionIds = new Set<PawExtensionAppId>();
+  const items = Array.isArray(root.items) ? root.items : [];
+
+  for (const candidate of items) {
+    const item = asRecord(candidate);
+    if (item.status !== 'published') continue;
+    const packageId = text(item.packageId);
+    const version = text(item.version);
+    const metadata = asRecord(item.metadata);
+    const metadataVersion = text(metadata.version);
+    if (!packageId || !version || metadata.installable !== true || metadataVersion !== version) continue;
+    const app = extensionAppForPackage(packageId);
+    if (!app) continue;
+    const extensionEvidence = asRecord(metadata.extensionApp);
+    if ('manifest' in extensionEvidence && !extensionAppManifestMatches(app, extensionEvidence.manifest)) continue;
+    if (app.sandbox?.default === 'required') continue;
+    if (extensionSandboxContract(extensionEvidence.sandbox)?.default === 'required') continue;
+    const bindingCapability = text(extensionEvidence.bindingCapability);
+    if (!bindingCapability) continue;
+    const publicationDigest = text(item.digest);
+    const evidenceDigest = text(extensionEvidence.packageDigest);
+    if (!publicationDigest || !evidenceDigest || publicationDigest !== evidenceDigest) continue;
+    const runtimeLikeItem: Record<string, unknown> = {
+      id: packageId,
+      packageId,
+      version,
+      installed: true,
+      enabled: true,
+      capabilities: [bindingCapability],
+      extensionApp: extensionEvidence,
+    };
+    if (!extensionAppInstallationMatches(app, runtimeLikeItem)) continue;
+    installedExtensionIds.add(app.id);
+    enabledExtensionIds.add(app.id);
+    availableExtensionIds.add(app.id);
+  }
+
+  return { installedExtensionIds, enabledExtensionIds, availableExtensionIds };
+}
+
+function extensionAppManifestMatches(app: PawExtensionAppManifest, value: unknown): boolean {
+  const manifest = asRecord(value);
+  return Object.keys(manifest).length > 0
+    && text(manifest.id) === app.id
+    && text(manifest.packageId) === app.packageId
+    && text(manifest.version) === app.version
+    && text(manifest.bindingSha256) === app.bindingSha256
+    && text(manifest.skillRef) === app.skillRef
+    && text(manifest.skillSha256) === app.skillSha256
+    && text(manifest.verticalSuiteId) === app.verticalSuiteId
+    && text(manifest.verticalSuiteRevision) === app.verticalSuiteRevision
+    && sameSandboxContract(extensionSandboxContract(manifest.sandbox), app.sandbox);
+}
+
 export function PawExtensionInstallationProvider({
   children,
   pollIntervalMs = DEFAULT_RECONCILIATION_INTERVAL_MS,
+  teamSelection,
 }: {
   children: ReactNode;
   pollIntervalMs?: number;
+  teamSelection?: PawExtensionTeamSelection | null;
 }) {
   const transport = useOptionalControlTransport();
+  const teamMode = isTeamDeployment();
   const [projection, setProjection] = useState<PawExtensionInstallationProjection>(() => emptyProjection());
   const [status, setStatus] = useState<PawExtensionInstallationStatus>('loading');
   const activeRequest = useRef<AbortController | null>(null);
@@ -80,6 +164,32 @@ export function PawExtensionInstallationProvider({
 
   const load = useCallback(async () => {
     activeRequest.current?.abort();
+    if (teamMode) {
+      const selection = teamSelection;
+      if (!selection?.scopeKey) {
+        activeRequest.current = null;
+        setProjection(emptyProjection());
+        setStatus('unavailable');
+        return;
+      }
+      const controller = new AbortController();
+      activeRequest.current = controller;
+      setStatus('loading');
+      try {
+        const payload = await selection.load();
+        if (controller.signal.aborted || activeRequest.current !== controller) return;
+        const next = projectPawExtensionTeamSelection(payload);
+        setProjection((current) => sameProjection(current, next) ? current : next);
+        setStatus('ready');
+      } catch {
+        if (controller.signal.aborted || activeRequest.current !== controller) return;
+        setProjection(emptyProjection());
+        setStatus('unavailable');
+      } finally {
+        if (activeRequest.current === controller) activeRequest.current = null;
+      }
+      return;
+    }
     if (!transport) {
       activeRequest.current = null;
       setProjection(emptyProjection());
@@ -112,7 +222,7 @@ export function PawExtensionInstallationProvider({
     } finally {
       if (activeRequest.current === controller) activeRequest.current = null;
     }
-  }, [transport]);
+  }, [teamMode, teamSelection, transport]);
 
   const refresh = useCallback(() => scheduledRefresh.current(), []);
 
@@ -176,6 +286,7 @@ export function PawExtensionInstallationProvider({
     installedExtensionIds: projection.installedExtensionIds,
     enabledExtensionIds: projection.enabledExtensionIds,
     availableExtensionIds: projection.availableExtensionIds,
+    source: teamMode ? 'team' : 'local',
     status,
     loading: status === 'loading',
     unavailable: status === 'unavailable',
@@ -184,7 +295,7 @@ export function PawExtensionInstallationProvider({
     isEnabled: (appId) => !isPawExtensionAppId(appId) || projection.enabledExtensionIds.has(appId),
     isAvailable: (appId) => !isPawExtensionAppId(appId) || projection.availableExtensionIds.has(appId),
     refresh,
-  }), [projection, refresh, status]);
+  }), [projection, refresh, status, teamMode]);
 
   return createElement(INSTALLATION_CONTEXT.Provider, { value }, children);
 }

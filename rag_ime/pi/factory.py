@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from rag_ime.agent_runtime_driver import (
 )
 from rag_ime.pi.config import PiRuntimeConfig
 from rag_ime.pi.runtime import PiRuntimeHostManager
+from rag_ime.team.execution import ExecutionLauncher
+from rag_ime.room_runtime_host_kill_gate import RuntimeHostKillGate
 
 __all__ = ["PiRuntimeDriverFactory"]
 
@@ -28,6 +31,9 @@ class PiRuntimeDriverFactory:
         config: PiRuntimeConfig,
         *,
         execution_owner: bool = True,
+        execution_binding_resolver: Callable[[Mapping[str, object]], object] | None = None,
+        execution_stop: Callable[[str], None] | None = None,
+        execution_history_root: Callable[[str], Path] | None = None,
     ) -> None:
         # The Sidecar and Agent Gateway may share the same configuration DB,
         # but only one process may own a managed Runtime Host.  Keep this
@@ -35,6 +41,9 @@ class PiRuntimeDriverFactory:
         # cannot be re-enabled when the shared `runtime.enabled` setting is
         # applied or refreshed.
         self._execution_owner = bool(execution_owner)
+        self._execution_binding_resolver = execution_binding_resolver
+        self._execution_stop = execution_stop
+        self._execution_history_root = execution_history_root
         self._config = replace(
             config,
             enabled=config.enabled and self._execution_owner,
@@ -71,6 +80,29 @@ class PiRuntimeDriverFactory:
     ) -> AgentRuntimeDriver:
         if purpose not in {"interactive", "delegated"}:
             raise ValueError("runtime driver purpose must be interactive or delegated")
+        if self._execution_binding_resolver is not None:
+            # Import lazily to keep personal Pi construction independent from
+            # team execution and avoid making the team multiplexer another
+            # Agent/Tool loop. It only creates ordinary Pi Host Managers.
+            from rag_ime.team.runtime import TeamRuntimeDriver
+
+            return TeamRuntimeDriver(
+                base_config=replace(
+                    self._config,
+                    tool_gateway_token=context.tool_gateway_token,
+                    tool_gateway_url=context.tool_gateway_url,
+                    idle_timeout_seconds=(
+                        0 if purpose == "delegated" else self._config.idle_timeout_seconds
+                    ),
+                ),
+                context=context,
+                purpose=purpose,
+                binding_resolver=self._execution_binding_resolver,
+                manager_builder=self._create_manager,
+                session_context_provider=session_context_provider,
+                execution_stop=self._execution_stop,
+                execution_history_root=self._execution_history_root,
+            )
         config = replace(
             self._config,
             tool_gateway_token=context.tool_gateway_token,
@@ -79,6 +111,23 @@ class PiRuntimeDriverFactory:
                 0 if purpose == "delegated" else self._config.idle_timeout_seconds
             ),
         )
+        return self._create_manager(
+            config=config,
+            context=context,
+            session_context_provider=session_context_provider,
+        )
+
+    @staticmethod
+    def _create_manager(
+        *,
+        config: PiRuntimeConfig,
+        context: RuntimeDriverContext,
+        session_context_provider: SessionContextProvider | None = None,
+        execution_launcher: ExecutionLauncher | None = None,
+        kill_gate: RuntimeHostKillGate | None = None,
+    ) -> PiRuntimeHostManager:
+        # Keep this adapter's argument list aligned with PiRuntimeHostManager;
+        # the team multiplexer supplies only scoped config and launcher values.
         return PiRuntimeHostManager(
             config=config,
             sessions=context.sessions,
@@ -90,6 +139,8 @@ class PiRuntimeDriverFactory:
             compaction_observer=context.compaction_observer,
             prompt_settings_provider=context.prompt_settings_provider,
             candidate_skill_paths_provider=context.candidate_skill_paths_provider,
+            execution_launcher=execution_launcher,
+            kill_gate=kill_gate,
         )
 
     def reconfigure(self, config: object) -> None:

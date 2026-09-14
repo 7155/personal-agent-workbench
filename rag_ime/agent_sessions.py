@@ -11,7 +11,7 @@ from contextvars import ContextVar
 from datetime import date
 from pathlib import Path
 from threading import RLock
-from typing import Callable, Iterable, Mapping, cast
+from typing import Any, Callable, Iterable, Mapping, cast
 from urllib.parse import quote
 
 from .agent_approval_model import pending_model_arbitration
@@ -166,6 +166,11 @@ class AgentSessionStore:
             return
         with self._connect() as conn:
             apply_database_migrations(conn)
+
+    def create_child(self, parent_session_id: str, **kwargs: Any) -> dict[str, object]:
+        """Create from an explicit persisted parent, retaining the normal store owner."""
+        self.get(parent_session_id)
+        return self.create(**kwargs)
 
     def create(
         self,

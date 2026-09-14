@@ -53,11 +53,17 @@ class RoomStores:
     partner_dispatches: AgentRoomPartnerDispatchStore
 
 
-def build_room_stores(db_path: str | Path, *, session_root: Path) -> RoomStores:
+def build_room_stores(
+    db_path: str | Path,
+    *,
+    session_root: Path,
+    participant_identity_provider: Callable[[str], str] | None = None,
+) -> RoomStores:
     rooms = AgentRoomStore(
         db_path,
         room_dir=session_root.expanduser().resolve(strict=False).parent / "rooms",
         persistent_reads=True,
+        participant_identity_provider=participant_identity_provider,
     )
     try:
         rooms.initialize()

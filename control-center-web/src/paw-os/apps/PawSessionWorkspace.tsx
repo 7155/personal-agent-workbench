@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Network,
   Orbit,
+  Upload,
   ShieldCheck,
   StopCircle,
   Wrench,
@@ -79,6 +80,8 @@ import { AgentTimeline } from '@/features/agent/timeline/AgentTimeline';
 import { QueueTray, useConversationQueue } from '@/features/conversation-ui';
 import { toolIntentPrompt } from '@/features/agent/tool-presentation';
 import { AgentFilesPanel } from '@/features/agent/workspace/AgentFilesPanel';
+import { isTeamDeployment } from '@/features/team/deployment';
+import { TeamDraftPublishDialog } from '@/features/team/TeamDraftPublishDialog';
 import { pawBrowserHost } from './paw-browser-host';
 import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
 import { usePageVisibility } from '@/platform/use-page-visibility';
@@ -177,12 +180,21 @@ export function PawSessionWorkspace({
   composerPlaceholder?: string;
 }) {
   const transport = useControlTransport();
-  const electronHost = pawBrowserHost();
+  const teamMode = isTeamDeployment();
+  const electronHost = teamMode ? null : pawBrowserHost();
   const desktop = usePawOsDesktop();
   const windowChromeTarget = usePawWindowChromeTarget();
   const embedded = appearance === 'embedded';
   const workspaceRecord = record ?? provisionalSessionRecord(recordId);
   const evaluationSnapshot = record?.evaluationSnapshot === true;
+  const canControl = workspaceRecord.canControl !== false;
+  const readOnlyReason = '这是项目成员可见的 Session；当前账号没有控制权限，请从 Room 入口参与公开协作。';
+  const canPublishCurrentDraft = teamMode
+    && canControl
+    && !evaluationSnapshot
+    && recordMetadataKnown
+    && record?.id === recordId
+    && workspaceRecord.audience === 'project';
   const pageVisible = usePageVisibility();
   // Keep every mounted chat window current even when another PAW window has
   // focus. Only a hidden document suspends the authoritative event stream.
@@ -209,6 +221,7 @@ export function PawSessionWorkspace({
   const [panel, setPanel] = useState<WorkbenchPanel>('none');
   const [statusPanelVisited, setStatusPanelVisited] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [draftPublishOpen, setDraftPublishOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<SessionWorkspaceView>(embedded ? 'conversation' : traceFocusNodeId ? 'trace' : 'conversation');
   const [error, setError] = useState('');
   const [syncError, setSyncError] = useState('');
@@ -525,6 +538,10 @@ export function PawSessionWorkspace({
   }
 
   async function send(delivery: AgentMessageDelivery, rawDraft: string): Promise<void> {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return;
+    }
     if (!workspaceRecord || sending || modelChanging) return;
     const value = rawDraft.trim();
     if (editState) {
@@ -723,6 +740,10 @@ export function PawSessionWorkspace({
   }
 
   async function stop(): Promise<void> {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return;
+    }
     if (!busy || stopping) return;
     setStopping(true);
     /* Stopping the turn cancels the intent behind everything held for it, so
@@ -742,6 +763,11 @@ export function PawSessionWorkspace({
   }
 
   function retryTurn(turnId: string, onAdmissionRolledBack?: () => void): boolean {
+    if (!canControl) {
+      setError(readOnlyReason);
+      onAdmissionRolledBack?.();
+      return false;
+    }
     if (!workspaceRecord || sending || busy || sessionActionLockRef.current) return false;
     sessionActionLockRef.current = true;
     void (async () => {
@@ -899,6 +925,10 @@ export function PawSessionWorkspace({
   }
 
   function continueTurn(turnId: string): boolean {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return false;
+    }
     const current = agentProjection(recordId);
     if (current.turnOrder.at(-1) !== turnId || current.turnsById[turnId]?.status !== 'failed') return false;
     void send('prompt', '继续。请基于当前 Session 已保留的工具结果和文件生成最终回复，不要重试或重复已经完成的操作；如果仍缺少信息，明确说明下一步。');
@@ -906,15 +936,21 @@ export function PawSessionWorkspace({
   }
 
   function openForkDialog(initialEntryId = ''): void {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return;
+    }
     setForkDialogNodes(conversationNodes(agentProjection(recordId)));
     setForkDialogInitialEntryId(initialEntryId);
     setForkDialogOpen(true);
   }
 
   async function beginEditMessage(messageId = ''): Promise<void> {
-    if (!record || busy || sending || !conversationRewriteAvailable || record.roomParticipant) {
+    if (!canControl || !record || busy || sending || !conversationRewriteAvailable || record.roomParticipant) {
       setError(record?.roomParticipant
         ? '这段对话属于 Room 伙伴，历史修改由 Room 管理。'
+        : !canControl
+          ? readOnlyReason
         : conversationRewriteAvailable
           ? '请等待当前回复结束后再修改历史消息。'
           : '当前 Pi Runtime 尚未提供原位修改能力。');
@@ -969,6 +1005,10 @@ export function PawSessionWorkspace({
   }
 
   async function decideApproval(approvalId: string, decision: 'approved' | 'rejected', payloadSha256: string): Promise<void> {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return;
+    }
     try {
       await transport.request({
         pathId: 'agent.approval.decide',
@@ -1016,6 +1056,10 @@ export function PawSessionWorkspace({
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
+    if (teamMode) {
+      setError('团队 Session 的工作区和执行权限由服务管理。');
+      return;
+    }
     if (!record || busy) { setError('请先停止当前回合，再调整运行权限。'); return; }
     try {
       const scopedWorkspaceRoots = (selection.workspaceRoots ?? record.workspaceRoots ?? [])
@@ -1049,6 +1093,10 @@ export function PawSessionWorkspace({
   }
 
   async function manageWorkspaceRoots(): Promise<void> {
+    if (teamMode) {
+      setError('团队 Session 的工作区由服务管理，无法在本机选择目录。');
+      return;
+    }
     if (!record || (!transport.pickFiles && !electronHost?.pickWorkspaceDirectory)) {
       setError('当前环境不能选择起始项目。');
       return;
@@ -1097,6 +1145,10 @@ export function PawSessionWorkspace({
   }
 
   async function changeModel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return;
+    }
     setModelChanging(true);
     try {
       await transport.request({ pathId: 'agent.session.model.select', params: { sessionId: recordId }, body: { provider, modelId } });
@@ -1109,6 +1161,10 @@ export function PawSessionWorkspace({
   }
 
   async function changeCapabilityPreference(canonicalId: string, preference: CapabilityPreference): Promise<void> {
+    if (!canControl) {
+      setError(readOnlyReason);
+      return;
+    }
     if (!capabilityCatalog?.sessionPolicy) return;
     setCapabilityMutation({ canonicalId, preference, status: 'pending', message: '正在更新当前 Session 的能力披露。' });
     try {
@@ -1140,6 +1196,10 @@ export function PawSessionWorkspace({
 
   function runProductCommand(command: AgentProductCommandName): void {
     setToolMenuOpen(false);
+    if (!canControl && ['branch', 'compact', 'model', 'thinking', 'permissions', 'tools', 'stop'].includes(command)) {
+      setError(readOnlyReason);
+      return;
+    }
     if (command === 'new') onNewWork();
     else if (command === 'resume') setPanel('none');
     else if (command === 'branch') openForkDialog();
@@ -1304,6 +1364,13 @@ export function PawSessionWorkspace({
           ) : null}
           {!evaluationSnapshot && busy ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
         </div>
+        {canPublishCurrentDraft ? <button
+          aria-label="发布当前 Session 固定版本"
+          className="paw-session-workspace__publish-draft"
+          onClick={() => setDraftPublishOpen(true)}
+          title="发布当前 Session 固定版本"
+          type="button"
+        ><Upload size={15} /><span>发布固定版本</span></button> : null}
         {!evaluationSnapshot ? <div className="paw-session-workspace__tools" data-open={toolMenuOpen || undefined} ref={toolMenuContainerRef}>
           <button
             aria-controls="paw-session-tools-menu"
@@ -1373,10 +1440,10 @@ export function PawSessionWorkspace({
                 includeRoomPublicPosts={Boolean(workspaceRecord.roomParticipant)}
                 persona={persona}
                 loading={loading}
-                modelSelectionAvailable={!evaluationSnapshot && Boolean(catalog)}
-                turnRecoveryDisabled={busy || sending || stopping || modelChanging}
-                forkAvailable={!evaluationSnapshot && !embedded && conversationForkAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
-                rewriteAvailable={!evaluationSnapshot && !embedded && conversationRewriteAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
+                modelSelectionAvailable={!evaluationSnapshot && canControl && Boolean(catalog)}
+                turnRecoveryDisabled={!canControl || busy || sending || stopping || modelChanging}
+                forkAvailable={!evaluationSnapshot && canControl && !embedded && conversationForkAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
+                rewriteAvailable={!evaluationSnapshot && canControl && !embedded && conversationRewriteAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
                 jumpRequest={jumpRequest}
                 scrollToLatestRequest={scrollToLatestRequest}
                 onFollowStateChange={setTimelineFollow}
@@ -1384,10 +1451,10 @@ export function PawSessionWorkspace({
                 onEditMessage={(messageId) => void beginEditMessage(messageId)}
                 onRetryTurn={retryTurn}
                 onContinueTurn={continueTurn}
-                onSwitchModel={() => setModelPickerRequest((value) => value + 1)}
+                onSwitchModel={() => { if (canControl) setModelPickerRequest((value) => value + 1); else setError(readOnlyReason); }}
                 onApprovalDecision={(id, decision, hash) => void decideApproval(id, decision, hash)}
                 onOpenApproval={setRequestedApproval}
-                onRequestPermission={() => setPermissionPickerRequest((value) => value + 1)}
+                onRequestPermission={() => { if (canControl) setPermissionPickerRequest((value) => value + 1); else setError(readOnlyReason); }}
               />
             </section>
 
@@ -1443,7 +1510,9 @@ export function PawSessionWorkspace({
                 <CircleAlert size={14} />
                 <span>{visibleError}</span>
                 {error === SESSION_WORKSPACE_MISSING_TEXT ? (
-                  <button onClick={() => void manageWorkspaceRoots()} type="button">选择工作目录</button>
+                  teamMode
+                    ? <span>团队工作区由服务管理，请刷新 Session。</span>
+                    : <button onClick={() => void manageWorkspaceRoots()} type="button">选择工作目录</button>
                 ) : (
                   <button onClick={() => { setError(''); setSyncError(''); void loadAgentSnapshot(); }} type="button">{error ? '重新同步' : '立即重连'}</button>
                 )}
@@ -1462,7 +1531,7 @@ export function PawSessionWorkspace({
               </div>
             ) : null}
             {workspaceRecord && !evaluationSnapshot ? <QueueTray busy={busy || sending} controller={queue} /> : null}
-            {pendingGenericInput && !pendingApproval && !pendingMemoryReview ? (
+            {canControl && pendingGenericInput && !pendingApproval && !pendingMemoryReview ? (
               <GenericUserInputCard activity={pendingGenericInput} sessionId={recordId} onError={setError} />
             ) : null}
             {workspaceRecord && evaluationSnapshot ? (
@@ -1471,7 +1540,13 @@ export function PawSessionWorkspace({
                 <span><strong>真实评测记录，只读</strong><small>对话、Tool 回执与结果来自冻结 JSONL；不能继续提问、改写、分支或删除。</small></span>
               </div>
             ) : null}
-            {workspaceRecord && !evaluationSnapshot ? (
+            {workspaceRecord && !evaluationSnapshot && !canControl ? (
+              <div className="paw-session-workspace__read-only" role="status">
+                <ShieldCheck size={16} />
+                <span><strong>仅可查看</strong><small>{readOnlyReason}</small></span>
+              </div>
+            ) : null}
+            {workspaceRecord && !evaluationSnapshot && canControl ? (
               <AgentComposer
                 attachments={attachments}
                 busy={busy}
@@ -1547,6 +1622,7 @@ export function PawSessionWorkspace({
             <AgentFilesPanel
               sessionId={recordId}
               workspaceRoots={workspaceRecord.workspaceRoots ?? []}
+              allowWorkspaceRootManagement={!teamMode}
               open
               onClose={closeToolPanel}
               onManageRoots={() => void manageWorkspaceRoots()}
@@ -1596,8 +1672,8 @@ export function PawSessionWorkspace({
         </aside> : null}
       </div>
 
-      {!evaluationSnapshot ? <MemoryReviewDialog activity={pendingApproval ? undefined : pendingMemoryReview} sessionId={recordId} onError={setError} /> : null}
-      {!evaluationSnapshot ? <ApprovalReviewDialog activity={pendingApproval ?? requestedApproval} onDecision={decideApproval} /> : null}
+      {canControl && !evaluationSnapshot ? <MemoryReviewDialog activity={pendingApproval ? undefined : pendingMemoryReview} sessionId={recordId} onError={setError} /> : null}
+      {canControl && !evaluationSnapshot ? <ApprovalReviewDialog activity={pendingApproval ?? requestedApproval} onDecision={decideApproval} /> : null}
       {!evaluationSnapshot ? <ConversationForkDialog
         assistantName={persona?.displayName ?? 'Agent'}
         open={forkDialogOpen}
@@ -1605,12 +1681,20 @@ export function PawSessionWorkspace({
         sessionTitle={title}
         nodes={forkDialogNodes}
         initialEntryId={forkDialogInitialEntryId}
-        branchAvailable={conversationForkAvailable && !workspaceRecord.roomParticipant}
-        branchBlocked={busy || sending}
-        branchUnavailableReason={workspaceRecord.roomParticipant ? '这段对话属于 Room 伙伴，历史分支由 Room 管理。' : undefined}
+        branchAvailable={conversationForkAvailable && canControl && !workspaceRecord.roomParticipant}
+        branchBlocked={!canControl || busy || sending}
+        branchUnavailableReason={!canControl
+          ? readOnlyReason
+          : workspaceRecord.roomParticipant ? '这段对话属于 Room 伙伴，历史分支由 Room 管理。' : undefined}
         onOpenChange={setForkDialogOpen}
         onJump={(messageId) => setJumpRequest({ messageId, requestId: Date.now() })}
         onCreated={onSessionCreated}
+      /> : null}
+      {canPublishCurrentDraft ? <TeamDraftPublishDialog
+        open={draftPublishOpen}
+        onOpenChange={setDraftPublishOpen}
+        sessionId={recordId}
+        sessionTitle={title}
       /> : null}
       </section>
     </>

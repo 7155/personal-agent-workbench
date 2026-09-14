@@ -93,6 +93,20 @@ describe('compact Room participants', () => {
     expect(view.props.onSelect).toHaveBeenLastCalledWith('mars');
   });
 
+  it('keeps the Agent persona label and adds the Team member name when provided', () => {
+    const next = {
+      ...focus,
+      partners: focus.partners.map((partner) => partner.participantId === 'mars'
+        ? { ...partner, ownerDisplayName: '小王' }
+        : partner),
+    };
+    mount({ focus: next });
+
+    const mars = screen.getByRole('button', { name: '小王 · Mars，待命，卫星暂不可用' });
+    expect(mars).toHaveTextContent('小王 · Mars');
+    expect(mars).toHaveAttribute('title', '小王 · Mars · 复核伙伴 · 等待任务');
+  });
+
   it('opens full message content and reply navigation on demand, then returns keyboard focus on Escape', async () => {
     const user = userEvent.setup();
     const { props } = mount();

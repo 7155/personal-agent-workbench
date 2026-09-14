@@ -33,6 +33,9 @@ export interface RoomMessageProjection {
   sourceMessageId?: string;
   sourceBlockId?: string;
   sourceEventId?: string;
+  /** Persisted human identity for Team Room user posts. */
+  actorUserId?: string;
+  actorDisplayName?: string;
   /** Opaque Pi Session turn identity; may contain several assistant/tool loops. */
   sourceTurnId?: string;
   /** Opaque Pi assistant/tool loop identity; exactly one Room card boundary. */
@@ -992,6 +995,8 @@ function applyUserMessage(
     ? pendingQuestion!.options.find((option) => option.value === rawAnswerText)
     : undefined;
   const answerText = text(payload.displayText) || selectedOption?.label || rawAnswerText;
+  const actorUserId = text(payload.actorUserId).trim().slice(0, 160);
+  const actorDisplayName = text(payload.actorDisplayName).trim().slice(0, 120);
   if (matchesPendingQuestion) {
     updateQuestionMessage(state, pendingQuestion!.postId, 'answered', answerText);
     state.pendingUserQuestion = undefined;
@@ -1020,6 +1025,8 @@ function applyUserMessage(
     projectionKind: 'post',
     rootId: text(payload.rootId) || event.turnId,
     ...(clientMessageId ? { clientMessageId } : {}),
+    ...(actorUserId ? { actorUserId } : {}),
+    ...(actorDisplayName ? { actorDisplayName } : {}),
     ...(answerToPostId ? { answerToPostId } : {}),
     ...(retryOfRootId ? { retryOfRootId } : {}),
     createdAtMs: event.createdAtMs,

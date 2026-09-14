@@ -62,6 +62,7 @@ interface AgentLiveStore {
   acknowledgeOptimistic(sessionId: string, clientMessageId: string, nowMs: number): void;
   abortTurn(sessionId: string, turnId: string, nowMs: number): void;
   clear(sessionId: string): void;
+  reset(): void;
 }
 
 export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
@@ -218,6 +219,9 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       delete projections[sessionId];
       return { projections };
     });
+  },
+  reset() {
+    set({ projections: {} });
   },
 }));
 

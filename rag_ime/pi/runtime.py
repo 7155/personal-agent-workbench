@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import threading
@@ -84,9 +85,12 @@ from rag_ime.pi.values import (
     redact_runtime_text,
 )
 from rag_ime.room_runtime_host_kill_gate import RuntimeHostKillGate
+from rag_ime.secure_files import regular_reader, unlink_file
+from rag_ime.team.execution import ExecutionLauncher
 
 
 __all__ = [
+    "DurableHistoryUnavailable",
     "PiRuntimeHostManager",
 ]
 
@@ -97,6 +101,21 @@ _PROMPT_TIMEOUT_SECONDS = 60.0 * 60.0
 _DURABLE_TRANSCRIPT_MAX_BYTES = 64 * 1024 * 1024
 _DURABLE_TRANSCRIPT_MAX_LINES = 200_000
 _SESSION_RESOURCE_SNAPSHOT_SCHEMA = "rag-ime.pi-session-resource-snapshot.v1"
+
+
+class DurableHistoryUnavailable(AgentRuntimeError):
+    """A durable transcript exists or was expected but cannot be trusted.
+
+    ``missing`` distinguishes a normal cold Session with no transcript yet
+    from a path that was present but failed the descriptor-relative safety or
+    transcript-integrity checks.  Callers rendering a cold projection can
+    keep the former as an empty history while exposing the latter as an
+    explicit unavailable state.
+    """
+
+    def __init__(self, message: str, *, missing: bool = False) -> None:
+        super().__init__(message)
+        self.missing = bool(missing)
 
 
 def _session_resource_snapshot(
@@ -215,6 +234,8 @@ class PiRuntimeHostManager:
         compaction_observer: CompactionObserver | None = None,
         prompt_settings_provider: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
         candidate_skill_paths_provider: Callable[[Mapping[str, object]], list[str]] | None = None,
+        execution_launcher: ExecutionLauncher | None = None,
+        kill_gate: RuntimeHostKillGate | None = None,
     ) -> None:
         self.config = config
         self.sessions = sessions
@@ -228,7 +249,9 @@ class PiRuntimeHostManager:
         self._compaction_observer = compaction_observer
         self._prompt_settings_provider = prompt_settings_provider
         self._candidate_skill_paths_provider = candidate_skill_paths_provider
+        self._execution_launcher = execution_launcher
         self._lifecycle_lock = threading.RLock()
+        self._retired = False
         self._model_catalog_lock = threading.Lock()
         self._lock = threading.RLock()
         self._recent_projection_refreshes: set[str] = set()
@@ -244,7 +267,7 @@ class PiRuntimeHostManager:
         self._idle_timer: threading.Timer | None = None
         self._intentional_stop = False
         self._owner_instance_id = f"runtime:{uuid.uuid4()}"
-        self._kill_gate = RuntimeHostKillGate(self.sessions.db_path)
+        self._kill_gate = kill_gate or RuntimeHostKillGate(self.sessions.db_path)
         self._kill_gate.initialize()
         self._orphan_kill_receipts = self._kill_gate.reconcile_orphans(
             owner_instance_id=self._owner_instance_id,
@@ -276,7 +299,15 @@ class PiRuntimeHostManager:
         return f"{provider}/{model}" if provider and model else "pi/default"
 
     def runtime_status(self) -> dict[str, object]:
-        installed = self.config.executable is not None and self.config.executable.expanduser().is_file()
+        installed = (
+            (
+                self.config.execution_spec is not None
+                and self._execution_launcher is not None
+            )
+            if self.config.isolated_execution
+            else self.config.executable is not None
+            and self.config.executable.expanduser().is_file()
+        )
         latest_kill_receipt = None
         if self._last_kill_receipt:
             latest_kill_receipt = self._kill_gate.receipt(
@@ -408,13 +439,17 @@ class PiRuntimeHostManager:
             return self._host_locked()
 
     def _host_locked(self) -> PiRuntimeHostClient:
+        if self._retired:
+            raise PiRuntimeError('Pi Runtime manager was retired; a new execution binding is required')
         with self._lock:
             if self._client is not None and self._client.running:
                 return self._client
         if not self.config.enabled:
             raise PiRuntimeError("Pi runtime is disabled")
-        if self.config.executable is None:
+        if self.config.executable is None and not self.config.isolated_execution:
             raise PiRuntimeError(self.config.installation_error or "managed Pi runtime is not installed")
+        if self.config.isolated_execution and self._execution_launcher is None:
+            raise PiRuntimeError("isolated team execution requires a trusted Host launcher")
         self.reconcile_runtime_hosts()
         client = PiRuntimeHostClient(
             self.config,
@@ -422,6 +457,7 @@ class PiRuntimeHostManager:
             on_exit=self._handle_host_exit,
             kill_gate=self._kill_gate,
             owner_instance_id=self._owner_instance_id,
+            launcher=self._execution_launcher,
         )
         with self._lock:
             self._client = client
@@ -436,7 +472,17 @@ class PiRuntimeHostManager:
                     self._client = None
                 self._status = "faulted"
                 self._last_error = redact_runtime_text(str(exc))
-            client.stop()
+            try:
+                client.stop()
+            except Exception as cleanup_error:
+                # Preserve the admission failure while retaining the cleanup
+                # verification error in diagnostics.  A failed container
+                # removal must remain observable without masking the original
+                # Host-start cause.
+                with self._lock:
+                    self._last_error = redact_runtime_text(
+                        f"{exc}; isolated cleanup failed: {cleanup_error}"
+                    )
             raise
         with self._lock:
             self._host_capabilities = dict(as_mapping(hello.get("capabilities")))
@@ -559,11 +605,16 @@ class PiRuntimeHostManager:
                     "reused": True,
                 }
 
-            roots = [
+            host_roots = [
                 str(value)
                 for value in session.get("workspaceRoots") or []
                 if str(value).strip()
             ]
+            # The persisted Session keeps server-side checkout paths.  A team
+            # Host sees only the attempt mount, so translate every root before
+            # choosing cwd and fail closed instead of falling back to the
+            # Host's agent directory (which would be outside the workspace).
+            roots = self.config.workspace_paths_for_host(host_roots)
             cwd = roots[0] if roots else str(self.config.agent_dir)
             provider, model_id = self.config.resolved_model_reference(session)
             session_file = str(
@@ -572,20 +623,24 @@ class PiRuntimeHostManager:
                 or ""
             ).strip()
             if session_file:
-                # Fork bindings store canonical paths, while the Host checks
-                # against its configured directory spelling. A managed root
-                # may be a symlink (for example, sessions on an external disk).
-                # Map only files inside that same physical root back to the
-                # Host's spelling; leave outside paths for its rejection gate.
-                session_root = self.config.session_dir.expanduser()
-                try:
-                    relative = Path(session_file).expanduser().resolve(strict=False).relative_to(
-                        session_root.resolve(strict=False)
-                    )
-                except ValueError:
-                    pass
+                if self.config.isolated_execution:
+                    session_file = self.config.container_session_path(session_file)
                 else:
-                    session_file = (session_root / relative).as_posix()
+                    # Fork bindings store canonical paths, while the Host
+                    # checks against its configured directory spelling. A
+                    # managed root may be a symlink (for example, sessions on
+                    # an external disk). Map only files inside that same
+                    # physical root back to the Host's spelling; leave
+                    # outside paths for its rejection gate.
+                    session_root = self.config.session_dir.expanduser()
+                    try:
+                        relative = Path(session_file).expanduser().resolve(strict=False).relative_to(
+                            session_root.resolve(strict=False)
+                        )
+                    except ValueError:
+                        pass
+                    else:
+                        session_file = (session_root / relative).as_posix()
             memory_curation_session = (
                 str(session.get("toolProfileVersion") or "")
                 == MEMORY_CURATION_TOOL_PROFILE
@@ -617,7 +672,15 @@ class PiRuntimeHostManager:
                 candidate_paths_provider = self._candidate_skill_paths_provider
                 paths = candidate_paths_provider(session) if candidate_paths_provider is not None else []
                 if paths:
+                    if self.config.isolated_execution:
+                        raise PiRuntimeError(
+                            "isolated team Runtime does not mount candidate Skills"
+                        )
                     resource_snapshot["candidateSkillPaths"] = self._candidate_skill_paths(paths, cwd)
+            if self.config.isolated_execution and resource_snapshot.get("candidateSkillPaths"):
+                raise PiRuntimeError(
+                    "isolated team Runtime does not mount candidate Skills"
+                )
             candidate_skill_paths = self._candidate_skill_paths(resource_snapshot.get("candidateSkillPaths", []), cwd)
             if candidate_skill_paths and (not self._host_capabilities.get("sessionCandidateSkillPaths") or not skill_allowlist or not bool(session.get("piSkillsEnabled"))):
                 raise PiRuntimeError("Pi Runtime Host does not support isolated candidate Skill loading; update the managed Runtime before evaluating this Skill")
@@ -719,6 +782,9 @@ class PiRuntimeHostManager:
                     "resourceSnapshot": resource_snapshot,
                 }
             )
+            transcript_ref = str(snapshot.get("sessionFile") or "")
+            if transcript_ref and self.config.isolated_execution:
+                transcript_ref = self.config.host_session_path(transcript_ref)
             bound = self.sessions.bind_runtime_session(
                 session_id,
                 driver_id=self.driver_id,
@@ -726,7 +792,7 @@ class PiRuntimeHostManager:
                 external_session_id=str(
                     snapshot.get("piSessionId") or session_id
                 ),
-                transcript_ref=str(snapshot.get("sessionFile") or ""),
+                transcript_ref=transcript_ref,
                 branch_anchor=str(snapshot.get("leafId") or ""),
                 binding_state="active",
                 metadata=binding_metadata,
@@ -1667,9 +1733,67 @@ class PiRuntimeHostManager:
     def messages(self, session_id: str) -> list[dict[str, object]]:
         return list(self.session_snapshot(session_id).get("messages") or [])
 
+    def _scoped_transcript_path(
+        self,
+        raw_path: str,
+        *,
+        transcript_root: Path | None = None,
+    ) -> Path | None:
+        """Build a canonical scoped path without following the transcript chain.
+
+        Persisted paths can use a platform alias such as macOS ``/var`` while
+        the Runtime's configured root is already canonicalized to
+        ``/private/var``.  Normalize only that known root spelling, preserve
+        the user/Host supplied relative components, and let
+        :func:`regular_reader` open every component with O_NOFOLLOW.  This
+        keeps both directory and final-file symlink swaps fail-closed.
+        """
+
+        value = str(raw_path or "").strip()
+        if not value:
+            return None
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            return None
+        configured_root = Path(
+            transcript_root
+            if transcript_root is not None
+            else self.config.session_dir
+        ).expanduser()
+        try:
+            root_absolute = Path(os.path.abspath(str(configured_root)))
+            root_canonical = configured_root.resolve(strict=False)
+            candidate_absolute = Path(os.path.abspath(str(candidate)))
+        except (OSError, RuntimeError):
+            return None
+        if root_canonical == Path("/"):
+            return None
+        relative: Path | None = None
+        for root in (root_absolute, root_canonical):
+            try:
+                relative = candidate_absolute.relative_to(root)
+            except ValueError:
+                continue
+            break
+        if relative is None or not relative.parts:
+            return None
+        if any(part in {".", ".."} for part in relative.parts):
+            return None
+        return root_canonical / relative
+
+    @staticmethod
+    def _secure_transcript_stat(transcript: Path) -> os.stat_result:
+        """Stat the same regular-file boundary used by transcript readers."""
+
+        with regular_reader(transcript) as source:
+            return os.fstat(source.fileno())
+
     def _durable_history_snapshot(
         self,
         session_id: str,
+        *,
+        transcript_root: Path | None = None,
+        strict: bool = False,
     ) -> dict[str, object] | None:
         """Read an idle managed Pi transcript without opening Provider context."""
 
@@ -1681,35 +1805,73 @@ class PiRuntimeHostManager:
                 or session.get("sessionFile")
                 or ""
             ).strip()
-            if not raw_path:
-                return None
-            candidate = Path(raw_path).expanduser()
-            if candidate.is_symlink():
-                return None
-            transcript = candidate.resolve(strict=True)
-            session_root = self.config.session_dir.expanduser().resolve(
-                strict=False
+            if not raw_path and transcript_root is not None:
+                safe_session_id = str(session_id)
+                if Path(safe_session_id).name == safe_session_id:
+                    raw_path = str(
+                        Path(transcript_root).expanduser()
+                        / f"{safe_session_id}.jsonl"
+                    )
+            transcript = self._scoped_transcript_path(
+                raw_path,
+                transcript_root=transcript_root,
             )
-            if not path_is_within(transcript, session_root):
-                return None
-            stat = transcript.stat()
-            if not transcript.is_file() or stat.st_size > _DURABLE_TRANSCRIPT_MAX_BYTES:
+            if transcript is None:
+                if strict and raw_path:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript is outside its scoped history root"
+                    )
                 return None
             entries: list[dict[str, object]] = []
-            with transcript.open("r", encoding="utf-8") as source:
-                for index, line in enumerate(source):
-                    if (
-                        index >= _DURABLE_TRANSCRIPT_MAX_LINES
-                        or len(line) > DURABLE_TRANSCRIPT_MAX_LINE_BYTES
-                    ):
+            try:
+                with regular_reader(transcript) as source:
+                    info = os.fstat(source.fileno())
+                    if info.st_size > _DURABLE_TRANSCRIPT_MAX_BYTES:
+                        if strict:
+                            raise DurableHistoryUnavailable(
+                                "durable Session transcript exceeds its safety limit"
+                            )
                         return None
-                    try:
-                        value = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(value, Mapping):
-                        entries.append(dict(value))
+                    for index, line in enumerate(source):
+                        if (
+                            index >= _DURABLE_TRANSCRIPT_MAX_LINES
+                            or len(line) > DURABLE_TRANSCRIPT_MAX_LINE_BYTES
+                        ):
+                            if strict:
+                                raise DurableHistoryUnavailable(
+                                    "durable Session transcript exceeds its safety limit"
+                                )
+                            return None
+                        try:
+                            value = json.loads(line)
+                        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                            if strict:
+                                raise DurableHistoryUnavailable(
+                                    "durable Session transcript is malformed"
+                                ) from exc
+                            continue
+                        if isinstance(value, Mapping):
+                            entries.append(dict(value))
+                        elif strict:
+                            raise DurableHistoryUnavailable(
+                                "durable Session transcript contains an invalid entry"
+                            )
+            except FileNotFoundError:
+                # A not-yet-created Session transcript is a normal cold state.
+                return None
+            except DurableHistoryUnavailable:
+                raise
+            except (OSError, ValueError, TypeError) as exc:
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript could not be read safely"
+                    ) from exc
+                return None
             if not entries:
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript is empty or malformed"
+                    )
                 return None
             external_session_id = str(
                 binding.get("externalSessionId")
@@ -1722,6 +1884,10 @@ class PiRuntimeHostManager:
                 and external_session_id
                 and str(header.get("id") or "") != external_session_id
             ):
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript belongs to a different Pi Session"
+                    )
                 return None
             leaf_id = str(binding.get("branchAnchor") or "")
             binding_updated_at_ms = as_integer(binding.get("updatedAtMs"))
@@ -1729,7 +1895,7 @@ class PiRuntimeHostManager:
             # Pi appended newer entries after that point, the append-only
             # transcript's final entry is the current selected leaf and avoids
             # projecting a stale pre-turn anchor.
-            if stat.st_mtime_ns // 1_000_000 > binding_updated_at_ms:
+            if info.st_mtime_ns // 1_000_000 > binding_updated_at_ms:
                 leaf_id = next(
                     (
                         str(entry.get("id") or "")
@@ -1758,12 +1924,21 @@ class PiRuntimeHostManager:
                     "followUpMode": "",
                 },
             }
-        except (KeyError, OSError, ValueError):
+        except DurableHistoryUnavailable:
+            raise
+        except (KeyError, OSError, ValueError, TypeError) as exc:
+            if strict:
+                raise DurableHistoryUnavailable(
+                    "durable Session transcript could not be projected safely"
+                ) from exc
             return None
 
     def _recent_durable_history_messages(
         self,
         session_id: str,
+        *,
+        transcript_root: Path | None = None,
+        strict: bool = False,
     ) -> tuple[
         list[dict[str, object]],
         list[dict[str, object]],
@@ -1785,24 +1960,49 @@ class PiRuntimeHostManager:
                 or session.get("sessionFile")
                 or ""
             ).strip()
-            if not raw_path:
-                return None
-            candidate = Path(raw_path).expanduser()
-            if candidate.is_symlink():
-                return None
-            transcript = candidate.resolve(strict=True)
-            session_root = self.config.session_dir.expanduser().resolve(
-                strict=False
+            if not raw_path and transcript_root is not None:
+                safe_session_id = str(session_id)
+                if Path(safe_session_id).name == safe_session_id:
+                    raw_path = str(
+                        Path(transcript_root).expanduser()
+                        / f"{safe_session_id}.jsonl"
+                    )
+            transcript = self._scoped_transcript_path(
+                raw_path,
+                transcript_root=transcript_root,
             )
-            if not path_is_within(transcript, session_root):
+            if transcript is None:
+                if strict and raw_path:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript is outside its scoped history root"
+                    )
                 return None
-            stat = transcript.stat()
-            if (
-                not transcript.is_file()
-                or stat.st_size > _DURABLE_TRANSCRIPT_MAX_BYTES
-            ):
+            try:
+                info = self._secure_transcript_stat(transcript)
+            except FileNotFoundError:
                 return None
-            tail = read_recent_transcript_tail(transcript, stat.st_size)
+            except (OSError, ValueError, TypeError) as exc:
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript could not be read safely"
+                    ) from exc
+                return None
+            if info.st_size > _DURABLE_TRANSCRIPT_MAX_BYTES:
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript exceeds its safety limit"
+                    )
+                return None
+            try:
+                tail = read_recent_transcript_tail(transcript, int(info.st_size))
+            except FileNotFoundError:
+                return None
+            except (OSError, ValueError, TypeError, UnicodeError) as exc:
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript could not be read safely"
+                    ) from exc
+                return None
             if tail is None:
                 return None
             header, entries = tail
@@ -1816,10 +2016,14 @@ class PiRuntimeHostManager:
                 and external_session_id
                 and str(header.get("id") or "") != external_session_id
             ):
+                if strict:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript belongs to a different Pi Session"
+                    )
                 return None
             leaf_id = str(binding.get("branchAnchor") or "")
             binding_updated_at_ms = as_integer(binding.get("updatedAtMs"))
-            if stat.st_mtime_ns // 1_000_000 > binding_updated_at_ms:
+            if info.st_mtime_ns // 1_000_000 > binding_updated_at_ms:
                 leaf_id = _latest_entry_id(entries)
             elif leaf_id and not any(
                 str(entry.get("id") or "") == leaf_id
@@ -1833,7 +2037,13 @@ class PiRuntimeHostManager:
                 leaf_id=leaf_id,
                 header_id=str(header.get("id") or ""),
             )
-        except (KeyError, OSError, ValueError):
+        except DurableHistoryUnavailable:
+            raise
+        except (KeyError, OSError, ValueError, TypeError, UnicodeError) as exc:
+            if strict:
+                raise DurableHistoryUnavailable(
+                    "durable Session transcript could not be projected safely"
+                ) from exc
             return None
 
     def _inspection_snapshot(
@@ -1893,9 +2103,29 @@ class PiRuntimeHostManager:
                 )
             )
 
-    def session_snapshot(self, session_id: str) -> dict[str, object]:
+    def session_snapshot(
+        self,
+        session_id: str,
+        *,
+        durable_only: bool = False,
+        transcript_root: Path | None = None,
+    ) -> dict[str, object]:
         session = self.sessions.get(session_id)
-        if session.get("evaluationSnapshot") is True:
+        if durable_only:
+            # The team cold-restart projection deliberately shares this
+            # manager's durable branch/timeline projection while forbidding
+            # every Host lifecycle transition.
+            snapshot = self._durable_history_snapshot(
+                session_id,
+                transcript_root=transcript_root,
+                strict=True,
+            )
+            if snapshot is None:
+                raise DurableHistoryUnavailable(
+                    "durable Session transcript is unavailable",
+                    missing=True,
+                )
+        elif session.get("evaluationSnapshot") is True:
             # Imported evaluation transcripts are immutable evidence.  Reading
             # one must never start, resume, or rebind a Provider Runtime; the
             # exact PAW-managed JSONL copy is the sole snapshot authority.
@@ -2046,19 +2276,34 @@ class PiRuntimeHostManager:
             "messageQueue": message_queue,
         }
 
-    def recent_session_snapshot(self, session_id: str) -> dict[str, object]:
+    def recent_session_snapshot(
+        self,
+        session_id: str,
+        *,
+        durable_only: bool = False,
+        transcript_root: Path | None = None,
+    ) -> dict[str, object]:
         """Project a bounded durable first paint without contacting Pi Host.
 
-        The append-only transcript is the only authority used here. Missing,
-        untrusted, malformed, or oversized transcript state therefore yields
-        an honestly empty window; this read never falls through to the live
-        Host or the full historical Tool-event reconstruction.
+        The append-only transcript is the only authority used here. A missing
+        transcript is represented by ``DurableHistoryUnavailable(missing=True)``
+        for callers that need to distinguish an empty cold Session from an
+        unsafe or corrupt existing file. This read never falls through to the
+        live Host or the full historical Tool-event reconstruction.
         """
 
-        projection_identity = self._recent_projection_identity(session_id)
-        cached_projection = self._recent_projected_messages(
-            session_id,
-            projection_identity,
+        projection_identity = (
+            None
+            if durable_only
+            else self._recent_projection_identity(session_id)
+        )
+        cached_projection = (
+            None
+            if durable_only
+            else self._recent_projected_messages(
+                session_id,
+                projection_identity,
+            )
         )
         if cached_projection is not None:
             cached_messages, cached_tool_history, exact = cached_projection
@@ -2072,13 +2317,30 @@ class PiRuntimeHostManager:
                 "toolHistoryEvents": cached_tool_history,
             }
 
-        recent_candidate = self._recent_durable_history_messages(session_id)
+        recent_candidate = self._recent_durable_history_messages(
+            session_id,
+            transcript_root=transcript_root,
+            strict=durable_only,
+        )
         if recent_candidate is None:
-            durable = self._durable_history_snapshot(session_id)
+            durable = self._durable_history_snapshot(
+                session_id,
+                transcript_root=transcript_root,
+                strict=durable_only,
+            )
             if durable is None:
+                if durable_only:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript is unavailable",
+                        missing=True,
+                    )
                 return {"messages": []}
             raw_messages = durable.get("messages")
             if not isinstance(raw_messages, list):
+                if durable_only:
+                    raise DurableHistoryUnavailable(
+                        "durable Session transcript has no valid message projection"
+                    )
                 return {"messages": []}
             raw_entries = (
                 list(durable.get("entries") or [])
@@ -2100,10 +2362,11 @@ class PiRuntimeHostManager:
                     projected_messages=messages,
                     session_id=session_id,
                 )
-                self._schedule_recent_projection_refresh(
-                    session_id,
-                    projection_identity,
-                )
+                if not durable_only:
+                    self._schedule_recent_projection_refresh(
+                        session_id,
+                        projection_identity,
+                    )
                 return {
                     "messages": messages,
                     "toolHistoryEvents": tool_history_events,
@@ -2120,12 +2383,13 @@ class PiRuntimeHostManager:
             projected_messages=messages,
             session_id=session_id,
         )
-        self._save_recent_message_projection(
-            session_id,
-            projection_identity,
-            messages,
-            tool_history_events,
-        )
+        if not durable_only:
+            self._save_recent_message_projection(
+                session_id,
+                projection_identity,
+                messages,
+                tool_history_events,
+            )
         return {
             "messages": messages,
             "toolHistoryEvents": tool_history_events,
@@ -2134,6 +2398,8 @@ class PiRuntimeHostManager:
     def _recent_projection_identity(
         self,
         session_id: str,
+        *,
+        transcript_root: Path | None = None,
     ) -> dict[str, object] | None:
         """Resolve the exact immutable file view that may reuse a projection."""
 
@@ -2145,22 +2411,21 @@ class PiRuntimeHostManager:
                 or session.get("sessionFile")
                 or ""
             ).strip()
-            if not raw_path:
-                return None
-            candidate = Path(raw_path).expanduser()
-            if candidate.is_symlink():
-                return None
-            transcript = candidate.resolve(strict=True)
-            session_root = self.config.session_dir.expanduser().resolve(
-                strict=False
+            if not raw_path and transcript_root is not None:
+                safe_session_id = str(session_id)
+                if Path(safe_session_id).name == safe_session_id:
+                    raw_path = str(
+                        Path(transcript_root).expanduser()
+                        / f"{safe_session_id}.jsonl"
+                    )
+            transcript = self._scoped_transcript_path(
+                raw_path,
+                transcript_root=transcript_root,
             )
-            if not path_is_within(transcript, session_root):
+            if transcript is None:
                 return None
-            stat = transcript.stat()
-            if (
-                not transcript.is_file()
-                or stat.st_size > _DURABLE_TRANSCRIPT_MAX_BYTES
-            ):
+            info = self._secure_transcript_stat(transcript)
+            if info.st_size > _DURABLE_TRANSCRIPT_MAX_BYTES:
                 return None
             return {
                 "transcriptRef": transcript.as_posix(),
@@ -2170,13 +2435,13 @@ class PiRuntimeHostManager:
                     or ""
                 ),
                 "branchAnchor": str(binding.get("branchAnchor") or ""),
-                "transcriptDevice": int(stat.st_dev),
-                "transcriptInode": int(stat.st_ino),
-                "transcriptSize": int(stat.st_size),
-                "transcriptMtimeNs": int(stat.st_mtime_ns),
+                "transcriptDevice": int(info.st_dev),
+                "transcriptInode": int(info.st_ino),
+                "transcriptSize": int(info.st_size),
+                "transcriptMtimeNs": int(info.st_mtime_ns),
                 "transcriptBoundarySha256": transcript_boundary_sha256(
                     transcript,
-                    int(stat.st_size),
+                    int(info.st_size),
                 ),
             }
         except (KeyError, OSError, ValueError):
@@ -2563,6 +2828,11 @@ class PiRuntimeHostManager:
                 transcript_ref = str(snapshot.get("sessionFile") or "").strip()
                 if not external_session_id or not transcript_ref:
                     raise PiRuntimeError("Pi returned an incomplete conversation fork identity")
+                if self.config.isolated_execution:
+                    # Pi reports the path in its worker namespace. Persist the
+                    # host-side scoped path so later durable-history reads and
+                    # the workspace coordinator never see /run/paw paths.
+                    transcript_ref = self.config.host_session_path(transcript_ref)
                 branch_candidate = Path(transcript_ref).expanduser()
                 if branch_candidate.is_symlink():
                     raise PiRuntimeError("Pi conversation fork file must not be a symlink")
@@ -3704,6 +3974,17 @@ class PiRuntimeHostManager:
         with self._lifecycle_lock:
             return self._host().send(method, params, timeout=max(30.0, self.config.command_timeout_seconds))
 
+    def retire(self) -> None:
+        """Permanently close this manager's Host admission before stopping it.
+
+        A discarded Team attempt may still have callers holding its manager.
+        Unlike the restartable personal ``stop`` lifecycle, those references
+        must never reopen a Host, including during Package preflight.
+        """
+        with self._lifecycle_lock:
+            self._retired = True
+            self.stop()
+
     def stop(self) -> None:
         with self._lifecycle_lock:
             with self._lock:
@@ -3723,8 +4004,12 @@ class PiRuntimeHostManager:
                 self._states.clear()
                 self._status = "stopped" if self.config.enabled else "disabled"
                 projection_threads = tuple(self._recent_projection_threads)
+            cleanup_error: BaseException | None = None
             if client is not None:
-                client.stop()
+                try:
+                    client.stop()
+                except BaseException as exc:
+                    cleanup_error = exc
             current_thread = threading.current_thread()
             for thread in projection_threads:
                 if thread is not current_thread:
@@ -3734,6 +4019,8 @@ class PiRuntimeHostManager:
                     self.sessions.set_status(session_id, "idle")
                 except KeyError:
                     pass
+            if cleanup_error is not None:
+                raise cleanup_error
 
     def close_session(self, session_id: str) -> bool:
         """Retire one idle hosted Session without restarting the shared Host."""
