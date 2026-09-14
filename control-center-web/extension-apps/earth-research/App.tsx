@@ -25,6 +25,8 @@ const SOURCES = [
 ];
 const SURFACE = 'analysis';
 type View = 'split' | 'map' | 'code';
+type AnalysisMode = 'site' | 'route' | 'change' | 'custom';
+const ANALYSIS_MODES: Array<[AnalysisMode, string, string]> = [['site','候选地块','筛选适合建设的候选区域'],['route','接入路线','比较道路、电网或管线接入路线'],['change','时序变化','分析遥感影像与土地覆盖变化'],['custom','自定义分析','提出你的地理问题']];
 
 export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const transport = useControlTransport();
@@ -37,6 +39,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const [root, setRoot] = useState('');
   const [project, setProject] = useState('');
   const [draft, setDraft] = useState('');
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('site');
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [pending, setPending] = useState<PendingAppMessage>();
@@ -176,7 +179,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
       const created = { ...value.session, workspaceRoots: [root.trim()] };
       setSession(created);
       setSessions(current => [created, ...current.filter(x => x.id !== created.id)]);
-      await send(createPendingAppMessage({ sessionId: created.id, ownerAppId: manifest.id, surfaceKey: SURFACE, message: firstTurn(manifest.skillRef, project.trim(), messageWithWorkspaceContext(draft.trim(),mapContext)) }));
+      await send(createPendingAppMessage({ sessionId: created.id, ownerAppId: manifest.id, surfaceKey: SURFACE, message: firstTurn(manifest.skillRef, project.trim(), analysisMode, messageWithWorkspaceContext(draft.trim(),mapContext)) }));
     } catch (reason) { setError(message(reason)); }
     finally { sendingRef.current = false; setSending(false); }
   }
@@ -219,7 +222,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
           <label>项目文件夹<input aria-describedby={scopeHintId} value={root} onChange={event => setRoot(event.target.value)} placeholder="选择已有分析项目的绝对路径" required /></label><small id={scopeHintId}>开始后，Agent 可在这个文件夹内读取、编辑与运行分析。</small>
           <label>Google Cloud 项目<input value={project} onChange={event => setProject(event.target.value)} placeholder="已开通 Earth Engine 的项目 ID" required /></label>
           {mapContext ? <p className="earth-start-context">{mapContext.label} · {mapContext.detail}<button type="button" onClick={mapContext.onClear}>移除</button></p> : null}
-          <label>分析任务<textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="读取候选地块，排除禁区，并比较接入线路…" rows={4} required /></label>
+          <fieldset className="earth-mode-picker"><legend>选择分析功能</legend><div role="radiogroup" aria-label="分析功能">{ANALYSIS_MODES.map(([key,label,hint]) => <button type="button" key={key} aria-pressed={analysisMode === key} onClick={() => setAnalysisMode(key)}><strong>{label}</strong><small>{hint}</small></button>)}</div></fieldset><label>分析任务<textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder={ANALYSIS_MODES.find(([key]) => key === analysisMode)?.[2]} rows={4} required /></label>
           <button disabled={sending || Boolean(error)} type="submit">{sending ? '正在建立会话…' : '开始分析'}</button>
         </form>}
       </section>
@@ -240,7 +243,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
     </div>
   </main>;
 }
-export function firstTurn(skill: string, project: string, task: string) {
-  return `使用已安装的 App Skill：${skill}。这是 Earth Agent 的地理分析会话。Google Cloud 项目：${project}。\n先调用 earth_workspace({project: "${project}"}) 准备执行器；写完实际 JavaScript 文件后调用 earth_run_script({script: "analysis.js"})。不要在磁盘中搜索或猜测执行器路径。使用项目的 .earth/runtime.json 配置。查阅 Google 官方资料、实际编码与运行，真实结果由执行器写入 .earth/workspace.json。禁止伪造运行记录；无数据和无可行解如实报告。\n用户任务：${task}`;
+export function firstTurn(skill: string, project: string, mode: AnalysisMode, task: string) {
+  return `使用已安装的 App Skill：${skill}。这是 Earth Agent 的地理分析会话。Google Cloud 项目：${project}。\n本次功能：${ANALYSIS_MODES.find(([key]) => key === mode)?.[1] ?? '自定义分析'}。\n先调用 earth_workspace({project: "${project}"}) 准备执行器；写完实际 JavaScript 文件后调用 earth_run_script({script: "analysis.js"})。不要在磁盘中搜索或猜测执行器路径。使用项目的 .earth/runtime.json 配置。查阅 Google 官方资料、实际编码与运行，真实结果由执行器写入 .earth/workspace.json。禁止伪造运行记录；无数据和无可行解如实报告。\n用户任务：${task}`;
 }
 function message(error: unknown) { return error instanceof Error ? error.message : String(error); }
