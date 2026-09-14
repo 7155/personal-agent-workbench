@@ -136,6 +136,11 @@ def _bound_session_resource_snapshot(
         if not isinstance(paths, list) or len(paths) > 8 or any(not isinstance(path, str) or not path or len(path) > 4096 for path in paths):
             return None
         result["candidateSkillPaths"] = list(paths)
+    if "scenarioPolicy" in snapshot:
+        policy = snapshot["scenarioPolicy"]
+        if not isinstance(policy, Mapping):
+            return None
+        result["scenarioPolicy"] = dict(policy)
     return result
 
 
@@ -214,6 +219,7 @@ class PiRuntimeHostManager:
         skill_allowlist_provider: SkillAllowlistProvider | None = None,
         compaction_observer: CompactionObserver | None = None,
         prompt_settings_provider: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
+        scenario_policy_provider: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
         candidate_skill_paths_provider: Callable[[Mapping[str, object]], list[str]] | None = None,
     ) -> None:
         self.config = config
@@ -227,6 +233,7 @@ class PiRuntimeHostManager:
         self._skill_allowlist_provider = skill_allowlist_provider
         self._compaction_observer = compaction_observer
         self._prompt_settings_provider = prompt_settings_provider
+        self._scenario_policy_provider = scenario_policy_provider
         self._candidate_skill_paths_provider = candidate_skill_paths_provider
         self._lifecycle_lock = threading.RLock()
         self._model_catalog_lock = threading.Lock()
@@ -601,6 +608,7 @@ class PiRuntimeHostManager:
             else:
                 skill_allowlist = self._session_skill_allowlist(session)
             prompt_settings: Mapping[str, object] | None = None
+            scenario_settings: Mapping[str, object] | None = None
             specialized_session = str(session.get("toolProfileVersion") or "") in {
                 "ime-surface-v1", "voice-refinement-v1", MEMORY_CURATION_TOOL_PROFILE,
             }
@@ -610,10 +618,16 @@ class PiRuntimeHostManager:
                     prompt_settings = as_mapping(resource_snapshot.get("promptSettings")) or None
                 elif self._prompt_settings_provider is not None:
                     prompt_settings = normalize_prompt_settings(self._prompt_settings_provider(session))
+            if resource_snapshot is not None:
+                scenario_settings = as_mapping(resource_snapshot.get("scenarioPolicy")) or None
+            elif self._scenario_policy_provider is not None:
+                scenario_settings = dict(self._scenario_policy_provider(session))
             if resource_snapshot is None:
                 resource_snapshot = _session_resource_snapshot(skill_allowlist)
                 if prompt_settings is not None:
                     resource_snapshot["promptSettings"] = dict(prompt_settings)
+                if scenario_settings is not None:
+                    resource_snapshot["scenarioPolicy"] = dict(scenario_settings)
                 candidate_paths_provider = self._candidate_skill_paths_provider
                 paths = candidate_paths_provider(session) if candidate_paths_provider is not None else []
                 if paths:
@@ -644,7 +658,11 @@ class PiRuntimeHostManager:
             params: dict[str, object] = {
                 "sessionId": session_id,
                 "cwd": cwd,
-                "systemPrompt": self.config.system_prompt_for_session(session, prompt_settings=prompt_settings),
+                "systemPrompt": self.config.system_prompt_for_session(
+                    session,
+                    prompt_settings=prompt_settings,
+                    scenario_settings=scenario_settings,
+                ),
                 "toolManifest": (
                     []
                     if memory_curation_session

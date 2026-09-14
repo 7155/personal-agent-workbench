@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from urllib.request import getproxies
 from rag_ime.agent_core_policy import base_agent_safety_policy_prompt, core_agent_policy_prompt
 from rag_ime.agent_tool_ids import CONTROL_TOOL_IDS, MEMORY_CURATION_TOOL_PROFILE
+from rag_ime.agent_scenario_policy import scenario_prompt_for_session
 from rag_ime.pi.values import PiRuntimeError
 from rag_ime.agent_roles import PersonaManifest, agent_role
 from rag_ime.agent_templates import agent_template, progressive_capability_policy
@@ -619,6 +620,7 @@ class PiRuntimeConfig:
         session: Mapping[str, object],
         *,
         prompt_settings: Mapping[str, object] | None = None,
+        scenario_settings: Mapping[str, object] | None = None,
     ) -> str:
         tool_profile = str(session.get("toolProfileVersion") or "")
         if tool_profile == "ime-surface-v1":
@@ -653,6 +655,15 @@ class PiRuntimeConfig:
             layers.append(("project_context_bootstrap", project_bootstrap_prompt))
         if session_mode_prompt:
             layers.append(("session_mode_policy", session_mode_prompt))
+        layers.append(
+            (
+                "scenario_policy",
+                scenario_prompt_for_session(
+                    session,
+                    configured_policy=scenario_settings,
+                ),
+            )
+        )
         layers.append(("agent_template_policy", capability_prompt))
         user_instructions = str(
             (prompt_settings or {}).get("systemInstructions") or ""

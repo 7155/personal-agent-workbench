@@ -20,6 +20,11 @@ from .agent_skill_routing import (
     normalize_skill_route,
     normalize_skill_routing,
 )
+from .agent_scenario_policy import (
+    default_scenario_policy_configuration,
+    normalize_scenario_policy,
+    normalize_scenario_policies,
+)
 from .agent_runtime_driver import AgentRuntimePolicy
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations
@@ -104,6 +109,7 @@ def default_agent_configuration(
         "coordination": {"enabled": bool(coordinator_enabled)},
         "modelRouting": _default_model_routing(),
         "skillRouting": default_skill_routing(),
+        "scenarioPolicies": default_scenario_policy_configuration(),
         "prompts": default_prompt_settings(),
         "capabilityDisclosure": {"projectPreferences": {}},
     }
@@ -148,6 +154,7 @@ class AgentConfigurationStore:
             return
         configuration = copy.deepcopy(dict(seed))
         configuration.setdefault("prompts", default_prompt_settings())
+        configuration.setdefault("scenarioPolicies", default_scenario_policy_configuration())
         defaults = configuration.get("sessionDefaults")
         if isinstance(defaults, dict):
             defaults.setdefault("capabilityDisclosurePreferences", {})
@@ -206,6 +213,21 @@ class AgentConfigurationStore:
         if "prompts" not in configuration:
             configuration["prompts"] = default_prompt_settings()
             changed_keys.append("prompts")
+        if "scenarioPolicies" not in configuration:
+            fallback_policies = fallback.get("scenarioPolicies")
+            configuration["scenarioPolicies"] = copy.deepcopy(
+                fallback_policies
+                if isinstance(fallback_policies, Mapping)
+                else default_scenario_policy_configuration()
+            )
+            changed_keys.append("scenarioPolicies")
+        else:
+            normalized_scenario_policies = normalize_scenario_policies(
+                configuration["scenarioPolicies"]
+            )
+            if configuration["scenarioPolicies"] != normalized_scenario_policies:
+                configuration["scenarioPolicies"] = normalized_scenario_policies
+                changed_keys.append("scenarioPolicies")
 
         defaults = configuration.get("sessionDefaults")
         if not isinstance(defaults, dict):
@@ -770,6 +792,7 @@ def _configuration_from_row(
     )
     _ensure_model_routing(raw)
     raw.setdefault("prompts", default_prompt_settings())
+    raw.setdefault("scenarioPolicies", default_scenario_policy_configuration())
     _validate_configuration(raw)
     return raw
 
@@ -816,6 +839,9 @@ def _normalize_changes(changes: Mapping[str, object]) -> dict[str, object]:
         elif key.startswith("skillRouting."):
             scenario = key.removeprefix("skillRouting.")
             normalized[key] = normalize_skill_route(value, scenario=scenario)
+        elif key.startswith("scenarioPolicies."):
+            scenario = key.removeprefix("scenarioPolicies.")
+            normalized[key] = normalize_scenario_policy(value, scenario=scenario)
         elif key in {"prompts.systemInstructions", "prompts.compactionInstructions"}:
             normalized[key] = prompt_text(value, field=key)
         elif key == "capabilityDisclosure.projectPreferences":
@@ -833,6 +859,7 @@ def _validate_configuration(configuration: Mapping[str, object]) -> None:
         "modelRouting",
         "capabilityDisclosure",
         "skillRouting",
+        "scenarioPolicies",
         "prompts",
     }:
         raise ValueError("agent configuration sections are invalid")
@@ -843,6 +870,10 @@ def _validate_configuration(configuration: Mapping[str, object]) -> None:
     skill_routing = _mapping(
         configuration.get("skillRouting"),
         field="skillRouting",
+    )
+    scenario_policies = _mapping(
+        configuration.get("scenarioPolicies"),
+        field="scenarioPolicies",
     )
     disclosure = _mapping(
         configuration.get("capabilityDisclosure"),
@@ -866,6 +897,7 @@ def _validate_configuration(configuration: Mapping[str, object]) -> None:
     if set(disclosure) != {"projectPreferences"}:
         raise ValueError("agent capability disclosure fields are invalid")
     normalize_skill_routing(skill_routing)
+    normalize_scenario_policies(scenario_policies)
     normalize_prompt_settings(configuration.get("prompts"))
     runtime_policy_from_configuration(configuration)
     _boolean(defaults.get("resumeLastSession"), field="sessionDefaults.resumeLastSession")

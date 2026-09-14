@@ -89,6 +89,7 @@ class PiRuntimeDriverFactory:
             skill_allowlist_provider=context.skill_allowlist_provider,
             compaction_observer=context.compaction_observer,
             prompt_settings_provider=context.prompt_settings_provider,
+            scenario_policy_provider=context.scenario_policy_provider,
             candidate_skill_paths_provider=context.candidate_skill_paths_provider,
         )
 

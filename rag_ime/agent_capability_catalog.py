@@ -6,6 +6,8 @@ import time
 from collections.abc import Mapping, Sequence
 
 from .agent_execution_policy import unrestricted_workspace_policy_active
+from .agent_scenario_policy import scenario_policy_applies, scenario_policy_for_session
+from .agent_skill_routing import skill_allowlist_for_session
 
 _DISCLOSURE_VALUES = frozenset({"inherit", "enabled", "disabled"})
 _CAPABILITY_KINDS = frozenset({"tool", "skill", "extension"})
@@ -67,6 +69,20 @@ def build_capability_catalog(
         if session is not None
         else None
     )
+    scenario = None
+    scenario_skills: set[str] | None = None
+    if session is not None and scenario_policy_applies(session):
+        scenario = scenario_policy_for_session(session)
+        configuration = _configuration_value(configuration_store)
+        if configuration is not None:
+            participant = isinstance(session.get("roomParticipant"), Mapping)
+            scenario_skills = set(
+                skill_allowlist_for_session(
+                    configuration,
+                    session,
+                    room_participant=participant,
+                )
+            )
     items = [
         _tool_item(
             manifest,
@@ -98,6 +114,7 @@ def build_capability_catalog(
                 session_preferences=session_preferences,
                 project_preferences=project_preferences,
                 effective_at_ms=effective_at_ms,
+                scenario_skills=scenario_skills,
             ),
             key=lambda item: str(item.get("canonicalId") or ""),
         )
@@ -192,6 +209,8 @@ def build_capability_catalog(
                 },
             },
             "effectiveAtMs": effective_at_ms,
+            "scenario": scenario.scenario_id if scenario is not None else "",
+            "scenarioVariant": scenario.variant if scenario is not None else "",
         }
     return response
 
@@ -216,8 +235,18 @@ def _tool_item(
         project_preferences=project_preferences,
         session_preferences=session_preferences,
     )
+    if manifest.get("scenarioAllowed") is False:
+        disclosure = {
+            **disclosure,
+            "effective": "disabled",
+            "state": "hidden",
+            "reason": "scenario_policy",
+            "scope": "scenario",
+        }
     if manifest.get("alwaysAvailable") is True:
-        if tool_id == "room_partner" and manifest.get("availability") != "online":
+        if manifest.get("scenarioAllowed") is False:
+            pass
+        elif tool_id == "room_partner" and manifest.get("availability") != "online":
             # `alwaysAvailable` describes the formal Room primitive once a
             # real participant identity is present. It must not turn an
             # offline, ordinary Session catalog entry into an enabled
@@ -321,6 +350,7 @@ def _skill_items(
     project_preferences: Mapping[str, str],
     session_preferences: Mapping[str, str],
     effective_at_ms: int,
+    scenario_skills: set[str] | None = None,
 ) -> list[dict[str, object]]:
     if governed_skills is None:
         return []
@@ -340,6 +370,29 @@ def _skill_items(
             project_preferences=project_preferences,
             session_preferences=session_preferences,
         )
+        scenario_allowed = session is None or scenario_skills is None or skill_id in scenario_skills
+        if not scenario_allowed:
+            disclosure = {
+                **disclosure,
+                "effective": "disabled",
+                "state": "hidden",
+                "reason": "scenario_policy",
+                "scope": "scenario",
+            }
+        authorization_state = (
+            "not_applicable"
+            if session is None
+            else "authorized"
+            if scenario_allowed
+            else "denied"
+        )
+        authorization_reason = (
+            "session_context_required"
+            if session is None
+            else "scenario_policy_authorizes_skill"
+            if scenario_allowed
+            else "scenario_policy"
+        )
         risk = {"low": "R0", "medium": "R1", "high": "R2"}.get(
             str(value.get("risk") or ""), "R2"
         )
@@ -358,20 +411,15 @@ def _skill_items(
                 "risk": risk,
                 "requiredPermissions": ["room_skill_load_receipt"],
                 "authorization": {
-                    "state": (
-                        "not_applicable" if session is None else "denied"
-                    ),
-                    "reason": (
-                        "session_context_required"
-                        if session is None
-                        else "room_skill_load_receipt_required"
-                    ),
+                    "state": authorization_state,
+                    "reason": authorization_reason,
                 },
+                "scenarioAllowed": scenario_allowed,
                 "disclosure": disclosure,
                 "effectiveScope": str(disclosure["scope"]),
                 "reasons": [
                     "native_skill_body_not_disclosed_by_catalog",
-                    "room_skill_load_receipt_required",
+                    "scenario_policy" if not scenario_allowed else "room_skill_load_receipt_required",
                     str(disclosure["reason"]),
                 ],
                 "revision": (
@@ -632,6 +680,14 @@ def _configuration_preferences(
         else None
     )
     return global_preferences, project_id, project_preferences
+
+
+def _configuration_value(configuration_store: object | None) -> Mapping[str, object] | None:
+    if configuration_store is None:
+        return None
+    snapshot = configuration_store.snapshot()  # type: ignore[attr-defined]
+    configuration = snapshot.get("configuration") if isinstance(snapshot, Mapping) else None
+    return configuration if isinstance(configuration, Mapping) else None
 
 
 def _project_identity(session: Mapping[str, object] | None) -> str:

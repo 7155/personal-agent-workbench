@@ -13,6 +13,11 @@ from typing import Protocol
 from urllib.parse import unquote, urlsplit
 
 from .agent_capability_catalog import build_capability_catalog, capability_disclosure_enabled
+from .agent_scenario_policy import (
+    scenario_policy_applies,
+    scenario_policy_for_session,
+    scenario_tool_operations,
+)
 from .agent_governed_memory_tools import (
     AgentRoleBookToolAdapter,
     MemoryGovernanceProposalStore,
@@ -3092,6 +3097,8 @@ class ControlToolGateway:
 
     def manifests(self, *, session_id: str = "") -> dict[str, object]:
         session = self.sessions.get(session_id) if session_id else None
+        if session is not None:
+            session = self._session_with_scenario_context(session)
         public_manifests = [
             manifest
             for manifest in self._manifest_items(
@@ -3169,6 +3176,7 @@ class ControlToolGateway:
         session_id = str(session.get("id") or "").strip()
         if session_id:
             session = self.sessions.get(session_id)
+        session = self._session_with_scenario_context(session)
         manifest_items = self._manifest_items(session)
         capability_catalog = build_capability_catalog(
             tool_manifests=manifest_items,
@@ -3329,6 +3337,54 @@ class ControlToolGateway:
             and str(participant.get("collaborationRole") or "") == "coordinator"
         )
 
+    def _room_participant_for_session(
+        self,
+        session: Mapping[str, object],
+    ) -> Mapping[str, object] | None:
+        projected = session.get("roomParticipant")
+        if isinstance(projected, Mapping):
+            return projected
+        rooms = getattr(self.collaboration, "rooms", None)
+        participant_for_session = getattr(rooms, "participant_for_session", None)
+        session_id = str(session.get("id") or "").strip()
+        if not session_id or not callable(participant_for_session):
+            return None
+        try:
+            participant = participant_for_session(session_id, active_only=False)
+        except TypeError:
+            participant = participant_for_session(session_id)
+        return participant if isinstance(participant, Mapping) else None
+
+    def _session_with_scenario_context(
+        self,
+        session: Mapping[str, object],
+    ) -> dict[str, object]:
+        participant = self._room_participant_for_session(session)
+        if participant is None:
+            return dict(session)
+        return {
+            **dict(session),
+            "roomParticipant": dict(participant),
+        }
+
+    def _configured_scenario_policy(
+        self,
+        session: Mapping[str, object],
+    ) -> Mapping[str, object] | None:
+        if not scenario_policy_applies(session):
+            return None
+        if self.configuration_store is None:
+            return None
+        snapshot = self.configuration_store.snapshot()
+        configuration = snapshot.get("configuration") if isinstance(snapshot, Mapping) else None
+        policies = configuration.get("scenarioPolicies") if isinstance(configuration, Mapping) else None
+        if not isinstance(policies, Mapping):
+            return None
+        participant = isinstance(session.get("roomParticipant"), Mapping)
+        scenario = scenario_policy_for_session(session, room_participant=participant)
+        selected = policies.get(scenario.scenario_id)
+        return selected if isinstance(selected, Mapping) else None
+
     def _lab_project(self, operation: str, args: Mapping[str, object]) -> dict[str, object]:
         execute = getattr(self.lab_projects, "eval_lab_project_tool", None)
         if not callable(execute):
@@ -3366,6 +3422,20 @@ class ControlToolGateway:
         include_runtime_projection: bool = False,
     ) -> list[dict[str, object]]:
         manifests = []
+        session = self._session_with_scenario_context(session) if session is not None else None
+        configured_policy = (
+            self._configured_scenario_policy(session) if session is not None else None
+        )
+        scenario_policy = (
+            scenario_policy_for_session(session, configured_policy=configured_policy)
+            if session is not None and scenario_policy_applies(session)
+            else None
+        )
+        room_participant = (
+            isinstance(session.get("roomParticipant"), Mapping)
+            if session is not None
+            else False
+        )
         for spec in _TOOL_SPECS:
             operations = list(spec["operations"])
             operation_risks = {
@@ -3445,6 +3515,17 @@ class ControlToolGateway:
                             operation=operation,
                             spec=spec,
                         )
+                        and (
+                            scenario_policy is None
+                            or operation
+                            in scenario_tool_operations(
+                                session,
+                                str(spec["id"]),
+                                operations,
+                                room_participant=room_participant,
+                                configured_policy=configured_policy,
+                            )
+                        )
                     ]
                     for profile in (
                         "control-center-v1",
@@ -3464,6 +3545,14 @@ class ControlToolGateway:
                         spec=spec,
                     )
                 ]
+                if scenario_policy is not None:
+                    effective_operations = scenario_tool_operations(
+                        session,
+                        str(spec["id"]),
+                        effective_operations,
+                        room_participant=room_participant,
+                        configured_policy=configured_policy,
+                    )
                 if str(spec["id"]) == "memory" and not self._memory_enabled(session):
                     # Keep the public capability card available so the UI can
                     # explain that Memory is off, but expose no executable
@@ -3494,6 +3583,14 @@ class ControlToolGateway:
                     effective_operations = []
                 manifest["enabled"] = bool(effective_operations)
                 manifest["effectiveOperations"] = effective_operations
+                manifest["scenario"] = scenario_policy.scenario_id if scenario_policy else ""
+                manifest["scenarioVariant"] = scenario_policy.variant if scenario_policy else ""
+                manifest["scenarioAllowed"] = bool(
+                    scenario_policy is None
+                    or str(spec["id"]) in scenario_policy.tool_ids
+                )
+                if scenario_policy is not None and not manifest["scenarioAllowed"]:
+                    manifest["scenarioReason"] = "scenario_policy"
                 manifest["explicitlyAllowed"] = (
                     str(session.get("toolAllowlistMode") or "profile") != "explicit"
                     or str(spec["id"])
@@ -3518,6 +3615,7 @@ class ControlToolGateway:
         session = self.sessions.get(session_id)
         if session.get("status") == "archived":
             raise ValueError("archived sessions cannot execute tools")
+        session = self._session_with_scenario_context(session)
         tool = str(request["tool"])
         raw_args = request.get("args") if isinstance(request.get("args"), Mapping) else {}
         tool, args = _normalize_runtime_tool_call(tool, raw_args)
@@ -3534,6 +3632,15 @@ class ControlToolGateway:
             )
             return {"ok": True, "result": dict(result)}
         if tool == "room_partner":
+            room_spec = _TOOL_SPEC_BY_ID[tool]
+            effective_session = self._session_with_scenario_context(session)
+            if scenario_policy_applies(effective_session) and str(raw_args.get("op") or "") not in scenario_tool_operations(
+                effective_session,
+                tool,
+                room_spec["operations"],
+                configured_policy=self._configured_scenario_policy(effective_session),
+            ):
+                raise ValueError("tool is not disclosed for this Agent scenario")
             if self.collaboration is None:
                 raise ValueError("managed room collaboration is unavailable")
             self._require_facilitator_root_work_document(
@@ -3555,6 +3662,14 @@ class ControlToolGateway:
         operation = str(args.get("op") or "")
         if operation not in spec["operations"]:
             raise ValueError(f"unsupported {tool} operation")
+        effective_session = self._session_with_scenario_context(session)
+        if scenario_policy_applies(effective_session) and operation not in scenario_tool_operations(
+            effective_session,
+            tool,
+            spec["operations"],
+            configured_policy=self._configured_scenario_policy(effective_session),
+        ):
+            raise ValueError("tool is not disclosed for this Agent scenario")
         if read_only_policy_active(session) and read_only_blocks_effect(
             tool,
             operation,
@@ -3588,7 +3703,13 @@ class ControlToolGateway:
         # Re-read immediately before authorization/approval so a waiting Room
         # Dispatch cannot apply a mutation after its workspace lease becomes
         # read-only.
-        session = self.sessions.get(session_id)
+        fresh_session = self.sessions.get(session_id)
+        if isinstance(session.get("roomParticipant"), Mapping):
+            fresh_session = {
+                **fresh_session,
+                "roomParticipant": dict(session["roomParticipant"]),
+            }
+        session = self._session_with_scenario_context(fresh_session)
         if tool == "memory" and not self._memory_enabled(session):
             raise ValueError("memory tool is disabled for this session or by settings.memory.enabled")
         # A live Room dispatch is the runtime confirmation boundary for the
@@ -3625,6 +3746,17 @@ class ControlToolGateway:
             raise ValueError(
                 "workspace mutation is blocked by the active read-only policy"
             )
+        spec = _TOOL_SPEC_BY_ID.get(tool)
+        if spec is None or (
+            scenario_policy_applies(session)
+            and operation not in scenario_tool_operations(
+                session,
+                tool,
+                spec["operations"],
+                configured_policy=self._configured_scenario_policy(session),
+            )
+        ):
+            raise ValueError("tool is not disclosed for this Agent scenario")
         if not _tool_profile_allows(session, tool=tool, operation=operation, spec=spec):
             raise ValueError("tool operation is not enabled for this session tool profile")
         read_only_validation_command = (

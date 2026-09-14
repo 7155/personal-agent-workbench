@@ -30,6 +30,10 @@ from .agent_skill_routing import (
     TRACE_AGENT_SURFACE_KEYS,
     skill_allowlist_for_session,
 )
+from .agent_scenario_policy import (
+    scenario_policy_catalog,
+    scenario_policy_for_session,
+)
 from .agent_prompt_settings import prompt_settings_catalog
 from .agent_approval_application import AgentApprovalApplicationService
 from .agent_approval_model import ApprovalModelArbiter
@@ -446,6 +450,7 @@ class AgentService:
                 candidate_skill_paths_provider=self._runtime_candidate_skill_paths,
                 compaction_observer=self._checkpoint_runtime_compaction,
                 prompt_settings_provider=self._runtime_prompt_settings,
+                scenario_policy_provider=self._runtime_scenario_policy,
             ),
             purpose="interactive",
             session_context_provider=self._runtime_session_context,
@@ -488,6 +493,7 @@ class AgentService:
             tool_manifest_provider=self._runtime_tool_manifest,
             compaction_observer=self._checkpoint_runtime_compaction,
             prompt_settings_provider=self._runtime_prompt_settings,
+            scenario_policy_provider=self._runtime_scenario_policy,
             room_context_provider=self._room_delegation_context,
             model_route_provider=self._configured_model_route,
             startup_recovery=False,
@@ -1435,12 +1441,28 @@ class AgentService:
         return execution_policy_prompt(effective_session)
 
     def _runtime_session_context(self, session: Mapping[str, object]) -> Mapping[str, object]:
+        effective_session = self._scenario_session(session)
+        participant = effective_session.get("roomParticipant")
+        scenario = scenario_policy_for_session(
+            effective_session,
+            room_participant=isinstance(participant, Mapping),
+        )
         resource_policy = session_resource_disclosure_policy(session, configuration_store=self.configuration_store)
+        scenario_context: dict[str, object] = {
+            "agentScenario": scenario.scenario_id,
+            "agentScenarioVariant": scenario.variant,
+        }
+        if isinstance(participant, Mapping):
+            scenario_context["roomParticipant"] = dict(participant)
         delegation = getattr(self, "delegation", None)
         if delegation is not None:
             delegated = delegation.runtime_session_context(session)
             if delegated:
-                return {**delegated, "resourceDisclosurePolicy": resource_policy}
+                return {
+                    **delegated,
+                    **scenario_context,
+                    "resourceDisclosurePolicy": resource_policy,
+                }
         session_id = str(session.get("id") or "")
         session_context = "\n\n".join(
             value
@@ -1452,7 +1474,11 @@ class AgentService:
             )
             if value
         )
-        return {"resourceDisclosurePolicy": resource_policy, **({"sessionContext": session_context} if session_context else {})}
+        return {
+            **scenario_context,
+            "resourceDisclosurePolicy": resource_policy,
+            **({"sessionContext": session_context} if session_context else {}),
+        }
 
     def memory_enabled(self) -> bool:
         """Resolve the live memory master switch for the next Runtime call."""
@@ -1490,6 +1516,9 @@ class AgentService:
             "ok": True,
             "configuration": self.configuration_store.snapshot(),
             "promptPolicy": prompt_settings_catalog(),
+            "scenarioPolicyCatalog": scenario_policy_catalog(
+                self.configuration_store.snapshot()["configuration"]
+            ),
         }
 
     def _runtime_prompt_settings(self, _session: Mapping[str, object]) -> Mapping[str, object]:
@@ -1497,6 +1526,39 @@ class AgentService:
         if optimization_policy is not None:
             return dict(optimization_policy["promptSettings"])
         return self.configuration_store.snapshot()["configuration"]["prompts"]
+
+    def _scenario_session(self, session: Mapping[str, object]) -> dict[str, object]:
+        session_id = str(session.get("id") or "").strip()
+        effective = dict(session)
+        if (
+            session_id
+            and not str(effective.get("ownerAppId") or "").strip()
+            and self.trace_diagnostic_reports.owns_session(session_id)
+        ):
+            effective.update(
+                {
+                    "surfaceKind": "extension_app",
+                    "ownerAppId": TRACE_AGENT_OWNER_APP_ID,
+                    "surfaceKey": "diagnostic",
+                }
+            )
+        participant = (
+            self.rooms.participant_for_session(session_id, active_only=False)
+            if session_id
+            else None
+        )
+        if isinstance(participant, Mapping):
+            effective["roomParticipant"] = dict(participant)
+        return effective
+
+    def _runtime_scenario_policy(self, session: Mapping[str, object]) -> Mapping[str, object]:
+        effective = self._scenario_session(session)
+        configured = self.configuration_store.snapshot()["configuration"].get(
+            "scenarioPolicies", {}
+        )
+        resolved = scenario_policy_for_session(effective)
+        selected = configured.get(resolved.scenario_id) if isinstance(configured, Mapping) else None
+        return dict(selected) if isinstance(selected, Mapping) else {}
 
     def _runtime_candidate_skill_paths(self, session: Mapping[str, object]) -> list[str]:
         optimization_policy = self._optimization_application().session_policy(session)
@@ -1561,6 +1623,7 @@ class AgentService:
             "ok": snapshot["sync"]["state"] != "failed",
             "changedKeys": list(update.changed_keys),
             "configuration": snapshot,
+            "scenarioPolicyCatalog": scenario_policy_catalog(snapshot["configuration"]),
             "event": sync_event or update.event,
         }
 
@@ -6520,6 +6583,7 @@ class AgentService:
                 candidate_skill_paths_provider=self._runtime_candidate_skill_paths,
                 compaction_observer=self._checkpoint_runtime_compaction,
                 prompt_settings_provider=self._runtime_prompt_settings,
+                scenario_policy_provider=self._runtime_scenario_policy,
             ),
             purpose="interactive",
             session_context_provider=self._runtime_session_context,
@@ -6543,6 +6607,7 @@ class AgentService:
                 candidate_skill_paths_provider=self._runtime_candidate_skill_paths,
                 compaction_observer=self._checkpoint_runtime_compaction,
                 prompt_settings_provider=self._runtime_prompt_settings,
+                scenario_policy_provider=self._runtime_scenario_policy,
             ),
             purpose="interactive",
             session_context_provider=self._runtime_session_context,

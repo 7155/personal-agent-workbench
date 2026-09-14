@@ -20,6 +20,7 @@ __all__ = [
     "SessionContextProvider",
     "SkillAllowlistProvider",
     "ToolManifestProvider",
+    "ScenarioPolicyProvider",
 ]
 
 
@@ -28,6 +29,7 @@ SessionContextProvider = Callable[[Mapping[str, object]], Mapping[str, object]]
 SkillAllowlistProvider = Callable[[Mapping[str, object]], list[str]]
 ToolManifestProvider = Callable[[Mapping[str, object]], list[Mapping[str, object]]]
 PromptSettingsProvider = Callable[[Mapping[str, object]], Mapping[str, object]]
+ScenarioPolicyProvider = Callable[[Mapping[str, object]], Mapping[str, object]]
 CompactionObserver = Callable[
     [str, Mapping[str, object], str],
     Mapping[str, object] | None,
@@ -51,6 +53,7 @@ class RuntimeDriverContext:
     skill_allowlist_provider: SkillAllowlistProvider | None = None
     compaction_observer: CompactionObserver | None = None
     prompt_settings_provider: PromptSettingsProvider | None = None
+    scenario_policy_provider: ScenarioPolicyProvider | None = None
     candidate_skill_paths_provider: Callable[[Mapping[str, object]], list[str]] | None = None
 
 

@@ -115,7 +115,7 @@ const systemPages: Record<PawSystemAppId, readonly SystemPage[]> = {
     { id: 'installed', label: '已安装', icon: PackageOpen, route: '/plugins', purpose: '已安装 Package 的启用、更新与移除' },
     { id: 'capabilities', label: '功能开关', icon: Settings2, route: '/plugins?view=capabilities', purpose: '查看每项功能是否启用，调整对话、项目和所有对话默认' },
     { id: 'skills', label: 'Skills', icon: BookOpen, route: '/plugins?view=skills', purpose: '查看 Bundled、项目与 Package Skill 的正文和来源' },
-    { id: 'scenes', label: '场景加载', icon: Settings2, route: '/plugins?view=scenes', purpose: '为普通对话、Room、Trace 和 Lab 选择各自加载的能力' },
+    { id: 'scenes', label: '场景策略', icon: Settings2, route: '/plugins?view=scenes', purpose: '按 App 和场景管理系统提示词、Tool 披露与 Skill 路由' },
     { id: 'studio', label: '制作', icon: Sparkles, route: '/plugins?view=studio', purpose: '自己编写插件，或让 Agent 制作 App 与插件' },
     { id: 'catalog', label: '目录', icon: LibraryBig, route: '/plugins?view=catalog', purpose: '安装之前先看清来源、权限与版本' },
     { id: 'proposals', label: '建议', icon: Sparkles, route: '/plugins?view=proposals', purpose: 'Agent 提出的安装建议，逐项等你确认' },

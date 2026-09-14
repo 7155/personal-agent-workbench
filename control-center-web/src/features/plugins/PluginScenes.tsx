@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
 import { ScenarioSkillSettings } from '@/features/configuration/ScenarioSkillSettings';
+import { ScenarioAgentPolicySettings } from '@/features/configuration/ScenarioAgentPolicySettings';
 import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import { QueryState } from '@/features/overview/management-ui';
@@ -19,6 +20,7 @@ export function PluginScenes() {
   });
   return <div className="plugin-scenes">
     <QueryState error={capabilities.error} isPending={capabilities.isPending} onRetry={() => void capabilities.refetch()}>
+      <ScenarioAgentPolicySettings active={active} routeIds={capabilities.data?.routeIds ?? []} transport={transport} />
       <ScenarioSkillSettings active={active} routeIds={capabilities.data?.routeIds ?? []} transport={transport} />
     </QueryState>
   </div>;

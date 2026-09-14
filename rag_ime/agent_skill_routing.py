@@ -16,9 +16,15 @@ SCENARIO_PRIVATE_SKILLS: dict[str, frozenset[str]] = {
 
 TRACE_AGENT_OWNER_APP_ID = "extension:trace-agent"
 TRACE_AGENT_SURFACE_KEYS = frozenset({"diagnostic", "repair"})
+TRACE_AGENT_SURFACE_PREFIXES = ("optimization.",)
 AGENT_LAB_OWNER_APP_ID = "extension:agent-lab"
 AGENT_LAB_SURFACE_KEYS = frozenset({"wizard"})
-AGENT_LAB_SURFACE_PREFIXES = ("experiment.", "candidate.", "project.")
+AGENT_LAB_SURFACE_PREFIXES = (
+    "experiment.",
+    "candidate.",
+    "project.",
+    "application.",
+)
 
 _GENERAL_SKILLS = (
     "alignment-and-decision",
@@ -123,12 +129,18 @@ def scenario_for_session(
     if (
         extension_surface
         and owner_app_id == TRACE_AGENT_OWNER_APP_ID
-        and surface_key in TRACE_AGENT_SURFACE_KEYS
+        and (
+            surface_key in TRACE_AGENT_SURFACE_KEYS
+            or surface_key.startswith(TRACE_AGENT_SURFACE_PREFIXES)
+        )
     ):
         return "trace"
     if (
         extension_surface
-        and owner_app_id == AGENT_LAB_OWNER_APP_ID
+        and (
+            owner_app_id == AGENT_LAB_OWNER_APP_ID
+            or owner_app_id.startswith("extension:lab-")
+        )
         and (
             surface_key in AGENT_LAB_SURFACE_KEYS
             or surface_key.startswith(AGENT_LAB_SURFACE_PREFIXES)
@@ -153,8 +165,13 @@ def skill_allowlist_for_session(
     )
     selected = set(routing[scenario])
     if scenario == "agentLab":
-        project_guide = str(session.get("surfaceKey") or "").startswith("project.")
-        selected.discard("agent-eval-room-optimizer" if project_guide else "agent-lab-project")
+        surface_key = str(session.get("surfaceKey") or "")
+        project_guide = surface_key.startswith("project.")
+        application = surface_key.startswith("application.")
+        if application:
+            selected.difference_update(SCENARIO_PRIVATE_SKILLS["agentLab"])
+        else:
+            selected.discard("agent-eval-room-optimizer" if project_guide else "agent-lab-project")
     # Agent Lab participants are still Room participants. Compose both
     # mandatory private capabilities without merging the two configurable
     # general-Skill selections.

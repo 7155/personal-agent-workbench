@@ -18,7 +18,7 @@
     "revisionToken": {"type": "string", "minLength": 1},
     "configuration": {
       "type": "object",
-      "required": ["runtime", "sessionDefaults", "coordination", "modelRouting", "skillRouting"],
+      "required": ["runtime", "sessionDefaults", "coordination", "modelRouting", "skillRouting", "scenarioPolicies"],
       "properties": {
         "runtime": {
           "type": "object",
@@ -92,6 +92,17 @@
             "agentLab": {"$ref": "#/$defs/skillRoute"}
           },
           "additionalProperties": false
+        },
+        "scenarioPolicies": {
+          "type": "object",
+          "required": ["ordinary", "room", "trace", "agentLab"],
+          "properties": {
+            "ordinary": {"$ref": "#/$defs/scenarioPolicy"},
+            "room": {"$ref": "#/$defs/scenarioPolicy"},
+            "trace": {"$ref": "#/$defs/scenarioPolicy"},
+            "agentLab": {"$ref": "#/$defs/scenarioPolicy"}
+          },
+          "additionalProperties": false
         }
       }
     },
@@ -131,6 +142,19 @@
         "maxLength": 128,
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
       }
+    },
+    "scenarioPolicy": {
+      "type": "object",
+      "required": ["promptInstructions", "toolAllowlist"],
+      "properties": {
+        "promptInstructions": {"type": "string", "maxLength": 8000},
+        "toolAllowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

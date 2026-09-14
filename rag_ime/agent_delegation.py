@@ -1889,6 +1889,7 @@ class AgentDelegationCoordinator:
         tool_manifest_provider: ToolManifestProvider | None = None,
         compaction_observer: CompactionObserver | None = None,
         prompt_settings_provider: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
+        scenario_policy_provider: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
         artifact_root: str | Path | None = None,
         cancellation_grace_ms: int = _DEFAULT_CANCELLATION_GRACE_MS,
         subagent_session_retention_ms: int | None = None,
@@ -1925,6 +1926,7 @@ class AgentDelegationCoordinator:
         self._tool_manifest_provider = tool_manifest_provider
         self._compaction_observer = compaction_observer
         self._prompt_settings_provider = prompt_settings_provider
+        self._scenario_policy_provider = scenario_policy_provider
         self._room_context_provider = room_context_provider
         self._model_route_provider = model_route_provider
         self._cancellation_grace_ms = max(10, min(int(cancellation_grace_ms), 30_000))
@@ -3689,6 +3691,7 @@ class AgentDelegationCoordinator:
                     tool_manifest_provider=self._tool_manifest_provider,
                     compaction_observer=self._compaction_observer,
                     prompt_settings_provider=self._prompt_settings_provider,
+                    scenario_policy_provider=self._scenario_policy_provider,
                 ),
                 purpose="delegated",
                 session_context_provider=lambda _session: context,
