@@ -294,7 +294,7 @@
 .lab-guide-workflow > .ui-button[aria-expanded='true'] { color: var(--lab-ink); background: var(--lab-accent-soft); }
 .lab-guide-workflow > .ui-button > svg { transition: transform 140ms ease-out; }
 .lab-guide-workflow > .ui-button[aria-expanded='true'] > svg { transform: rotate(180deg); }
-.lab-guide-workflow__panel { max-height: 45vh; overflow: auto; margin-top: 12px; padding: 12px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-surface); }
+.lab-guide-workflow__panel { max-height: 45vh; overflow: auto; scrollbar-gutter: stable; margin-top: 12px; padding: 12px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-surface); }
 .lab-guide-workflow__panel > p, .lab-guide-budget > p { font-size: 12px; line-height: 1.7; color: var(--lab-muted); }
 .lab-guide-budget { display: grid; gap: 10px; border-top: 1px solid var(--lab-line); padding-top: 12px; margin-top: 12px; }
 .lab-guide-budget h4 { font-size: 13px; margin: 0; }
