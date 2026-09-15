@@ -314,7 +314,7 @@
 .lab-project-guide .paw-project-context__reference > span { display: grid; flex: 1; min-width: 0; gap: 4px; }
 .lab-project-guide .paw-project-context__reference > em { flex: none; color: var(--lab-accent); font-size: 11px; font-style: normal; white-space: nowrap; }
 .lab-project-guide .paw-project-context__reference strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lab-ink); font-size: 12px; font-weight: 550; }
-.lab-project-guide .paw-project-context__reference small { font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.lab-project-guide .paw-project-context__reference small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .lab-project-guide .paw-project-context svg { flex: none; }
 .lab-project-guide .paw-project-context__remove { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 4px; background: transparent; color: var(--lab-muted); cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .lab-project-guide .paw-project-context button:hover { background: var(--lab-accent-soft); color: var(--lab-accent); }
