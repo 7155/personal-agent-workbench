@@ -308,7 +308,7 @@
 .paw-desktop-root .lab-project-guide .paw-session-workspace__conversation .agent-timeline__footer-space { height: 12px; }
 .paw-desktop-root .lab-project-guide .paw-session-workspace__conversation { scrollbar-gutter: stable; overscroll-behavior: contain; }
 .paw-desktop-root .lab-project-guide .agent-conversation-nav { bottom: 12px; }
-.lab-project-guide .paw-project-context { display: flex; gap: 4px; align-items: center; width: 100%; min-width: 0; background: var(--lab-surface-subtle); border-radius: 8px; padding: 4px; }
+.lab-project-guide .paw-project-context { display: flex; gap: 4px; align-items: center; width: 100%; min-width: 0; border: 1px solid var(--lab-line); background: var(--lab-surface-subtle); border-radius: 8px; padding: 4px; box-shadow: 0 1px 0 rgb(0 0 0 / .08); }
 .lab-project-guide .paw-project-context__reference { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--lab-muted); text-align: left; font: inherit; }
 .lab-project-guide button.paw-project-context__reference { cursor: pointer; }
 .lab-project-guide .paw-project-context__reference > span { display: grid; flex: 1; min-width: 0; gap: 4px; }
