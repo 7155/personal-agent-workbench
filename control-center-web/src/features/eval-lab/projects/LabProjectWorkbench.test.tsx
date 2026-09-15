@@ -9,12 +9,13 @@ import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
 import { EvalLabFeature } from '../index';
 import { LabProjectWorkbench } from './LabProjectWorkbench';
+import { messageWithWorkspaceContext, type WorkspaceComposerContext } from '@/paw-os/apps/workspace-draft';
 import { ArtifactSurface } from './ArtifactSurface';
 import type { LabArtifact, LabProject, ProjectCommand } from './types';
 
 vi.mock('./ProjectGuide', async () => {
   const actual = await vi.importActual<typeof import('./ProjectGuide')>('./ProjectGuide');
-  return { ...actual, ProjectGuide: ({ project, draftRequest }: { project: LabProject; draftRequest?: { text: string } }) => <section aria-label="项目 Agent"><p>{project.guideSessionId || '项目对话'}</p>{draftRequest ? <textarea aria-label="Agent 输入草稿" value={draftRequest.text} readOnly /> : null}</section> };
+  return { ...actual, ProjectGuide: ({ project, draftRequest, viewContext, onProjectActivity }: { project: LabProject; draftRequest?: { text: string }; viewContext?: Omit<WorkspaceComposerContext, 'onClear'>; onProjectActivity: () => void }) => <section aria-label="项目 Agent"><p>{project.guideSessionId || '项目对话'}</p><output aria-label="Agent 将收到的上下文">{viewContext ? messageWithWorkspaceContext('修改这个结果', { ...viewContext, onClear: () => undefined }) : ''}</output><button onClick={onProjectActivity}>模拟 Agent 结束</button>{draftRequest ? <textarea aria-label="Agent 输入草稿" value={draftRequest.text} readOnly /> : null}</section> };
 });
 const clients: QueryClient[] = [];
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); sessionStorage.clear(); localStorage.clear(); window.history.replaceState(null, '', '/'); vi.restoreAllMocks(); });
@@ -465,4 +466,46 @@ describe('artifact editing', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('JSON 格式还不完整');
     expect(save).not.toHaveBeenCalled();
   });
+});
+
+
+it('links selected artifact contents and refreshed revisions to the Guide without sending on selection', async () => {
+  let first = artifact({ title: '第一份结果', content: 'FIRST_BODY' });
+  const second = artifact({ artifactId: 'artifact-2', title: '第二份结果', content: 'SECOND_BODY' });
+  let current = withArtifact(first, { guideSessionId: 'guide-1', artifacts: [first, second], artifactCount: 2 });
+  const transport = new MockControlTransport({ routes: {
+    'agent.eval-lab.projects.get': ({ query }: ControlRequest) => read(current, [current], query?.artifactId === second.artifactId ? second : first),
+  } });
+  mount(transport, { initialProjectId: current.projectId });
+  const context = await screen.findByLabelText('Agent 将收到的上下文');
+  await waitFor(() => expect(context).toHaveTextContent('FIRST_BODY'));
+  const guide = screen.getByRole('region', { name: '项目 Agent' });
+  fireEvent.click(screen.getByRole('button', { name: /第二份结果/ }));
+  await waitFor(() => expect(context).toHaveTextContent('SECOND_BODY'));
+  expect(context).not.toHaveTextContent('FIRST_BODY');
+  fireEvent.click(screen.getByRole('button', { name: /第一份结果/ }));
+  first = { ...first, revision: 2, content: 'UPDATED_BODY' };
+  current = { ...current, revision: 2, artifacts: [first, second] };
+  fireEvent.click(screen.getByRole('button', { name: '模拟 Agent 结束' }));
+  await waitFor(() => expect(context).toHaveTextContent('UPDATED_BODY'));
+  expect(context).not.toHaveTextContent('FIRST_BODY');
+  expect(context).toHaveTextContent('v2');
+  expect(screen.getByRole('region', { name: '项目 Agent' })).toBe(guide);
+  expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+});
+
+it('links selected experiment receipts and restores artifact context when returning', async () => {
+  const item = artifact();
+  const node = { id: 'experiment-context', kind: 'experiment' as const, title: '本轮实验', status: 'failed' as const, summary: 'EXPERIMENT_FAILURE', dependencies: [], ref: { kind: 'golden_job', id: 'job-context' }, source: 'runtime' as const };
+  const current = withArtifact(item, { workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1, nodes: [node], edges: [], counts: { running: 0, queued: 0, completed: 0, failed: 1 }, currentNodeId: null } });
+  const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': read(current, [current], item) } });
+  mount(transport, { initialProjectId: current.projectId });
+  fireEvent.click(await screen.findByRole('button', { name: /本轮实验/ }));
+  const context = screen.getByLabelText('Agent 将收到的上下文');
+  expect(context).toHaveTextContent('EXPERIMENT_FAILURE');
+  expect(context).toHaveTextContent('job-context');
+  expect(context).not.toHaveTextContent(item.content as string);
+  fireEvent.click(screen.getByRole('button', { name: '返回当前成果' }));
+  await waitFor(() => expect(context).toHaveTextContent(item.content as string));
+  expect(context).not.toHaveTextContent('EXPERIMENT_FAILURE');
 });

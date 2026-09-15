@@ -17,6 +17,7 @@ import { LabKnowledgeRecord } from './LabKnowledgeRecord';
 import { LabSessionRecord } from './LabSessionRecord';
 import { LabExperimentLifecycle } from './LabExperimentLifecycle';
 import { LabWorkflowGraph } from './LabWorkflowGraph';
+import { projectViewContext } from './project-view-context';
 import { LabProjectSpace } from './LabProjectSpace';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { LabWorkflowNode } from './project-workflow-types';
@@ -60,6 +61,9 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
   const [historyImportOpen, setHistoryImportOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingProjectMessage[]>([]);
+  const [nodeSelection, setNodeSelection] = useState<{ projectId: string; nodeId: string }>();
+  const selectedNodeId = nodeSelection?.projectId === projectId ? nodeSelection.nodeId
+    : project?.artifacts.every((item) => item.view === 'json') ? project.workflow?.nodes.filter((node) => node.kind === 'experiment').at(-1)?.id ?? '' : '';
   const [draftRequest, setDraftRequest] = useState<{ id: number; text: string }>();
   const [stagedAction, setStagedAction] = useState<{ text: string; title: string }>();
   const binding = project?.bindings.find((item) => item.bindingId === view.bindingId); const [intakeOpen, setIntakeOpen] = useState(false);
@@ -149,6 +153,15 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
   const busy = Boolean(workflow.pending) || workflow.mutation.isPending;
   const activeError = workflow.mutation.error ?? workflow.project.error ?? workflow.catalog.error;
   const refresh = () => { void workflow.catalog.refetch(); if (projectId) void workflow.project.refetch(); };
+  const openGuideContext = () => {
+    if (!project) return;
+    if (page === 'workspace' && selectedNodeId) {
+      try { localStorage.setItem(`paw.lab.workflow-selection.v1:${workflow.connection}:${projectId}`, selectedNodeId); } catch { /* The current view remains usable. */ }
+      setPage('workflow');
+      return;
+    }
+    if (selected?.artifactId) updateView({ page: 'artifact', artifactId: selected.artifactId, bindingId: undefined });
+  };
   const start = async (current: LabProject) => {
     setSending(true); setNotice('');
     try { await sendProjectGuideMessage(transport, current, initialProjectMessage, `lab-project-start:${current.projectId}`); }
@@ -237,7 +250,7 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
     {pendingMessages.map((message) => <div className="lab-project-notice" role="status" key={message.clientMessageId}><p>{message.error || '项目消息的接纳结果尚未确认，原输入已保留。'}</p><Button disabled={sending} onClick={() => void recoverMessage(message)}>{message.outcome === 'unknown' ? '核对原消息' : '重新发送项目消息'}</Button></div>)}
     {!projectId ? workflow.catalog.isPending ? <p className="lab-project-loading" role="status">正在读取项目…</p> : <LabProjectHome items={projectItems} onOpen={openProject} onCreate={() => setNewProjectOpen(true)} /> : !project ? <div className="lab-project-loading" role="status">{workflow.project.isError ? '项目未能读取，已保存的工作仍保留。' : '正在恢复项目与成果…'}</div>
       : <><div className="lab-project-body" data-guide-open={guideOpen} data-workflow={page === 'workflow' || page === 'workspace'}>
-        {guideOpen ? <ProjectGuide key={project.projectId} project={project} draftRequest={draftRequest} onNewProject={() => openProject('')} onProjectActivity={refresh} onEnsure={() => void ensureGuide()} /> : null}
+        {guideOpen ? <ProjectGuide key={project.projectId} project={project} viewContext={{ ...projectViewContext(project, page, selected, artifact.data, page === 'workspace' ? project.workflow?.nodes.find((node) => node.id === selectedNodeId) : undefined), onOpen: openGuideContext }} draftRequest={draftRequest} onNewProject={() => openProject('')} onProjectActivity={refresh} onEnsure={() => void ensureGuide()} /> : null}
         <div className="lab-project-results">
           <nav className="lab-project-tabs" aria-label="项目成果">
             <div className="lab-project-tabs__resources"><button aria-current={page === 'workspace' ? 'page' : undefined} onClick={() => setPage('workspace')}><LayoutDashboard size={15} />项目工作面</button><button aria-current={page === 'workflow' ? 'page' : undefined} onClick={() => setPage('workflow')}><GitBranch size={15} />工作流</button><button aria-current={page === 'lifecycle' ? 'page' : undefined} onClick={() => setPage('lifecycle')}><LayoutDashboard size={15} />实验闭环</button><button aria-current={page === 'materials' || page === 'knowledge' ? 'page' : undefined} onClick={() => setPage(project.knowledgeResources?.documentCount ? 'knowledge' : 'materials')}><Database size={15} />{project.knowledgeResources?.documentCount ? `知识库 ${project.knowledgeResources.documentCount} 篇` : `材料 ${project.materialCount}`}</button>
@@ -249,7 +262,7 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
           </nav>
           {stagedAction ? <div className="lab-project-notice" role="status"><span>“{stagedAction.title}”提供了一项交互输入。</span><Button size="small" onClick={() => { setDraftRequest({ id: Date.now(), text: stagedAction.text }); setStagedAction(undefined); setGuideOpen(true); }}>带入对话</Button><Button size="small" onClick={() => setStagedAction(undefined)}>关闭</Button></div> : null}
           <div className="lab-project-stage">
-            {page === 'workspace' ? <LabProjectSpace key={project.projectId} project={project} artifactId={selectedId} artifactContent={renderArtifact()} sourceContent={sourceRef?.projectId === projectId ? sourceArtifact.isPending ? <p role="status">正在读取来源成果…</p> : sourceArtifact.isError ? <p role="alert">{projectError(sourceArtifact.error)}</p> : sourceArtifact.data ? <ArtifactSurface artifact={sourceArtifact.data} busy onDraft={() => undefined} onSave={async () => false} onAction={() => undefined} /> : null : undefined} onOpenSource={(node) => node.ref.kind === 'artifact' ? setSourceRef({ projectId, artifactId: node.ref.id, revision: typeof node.ref.version === 'number' ? node.ref.version : undefined }) : openWorkflowNode(node)} onCloseSource={() => setSourceRef(undefined)} onSelectArtifact={(artifactId) => updateView({ page: 'workspace', artifactId })} onOpenNode={openWorkflowNode} onOpenGraph={() => setPage('workflow')} onOpenRuns={() => setPage('runs')} onOpenApps={() => setPage('apps')} onOpenChat={() => setGuideOpen(true)} onOpenFile={(path) => openPawOsRoute(desktop, `/files?path=${encodeURIComponent(path)}`)} />
+            {page === 'workspace' ? <LabProjectSpace selectedNodeId={selectedNodeId} onSelectNode={(nodeId) => setNodeSelection({ projectId, nodeId })} key={project.projectId} project={project} artifactId={selectedId} artifactContent={renderArtifact()} sourceContent={sourceRef?.projectId === projectId ? sourceArtifact.isPending ? <p role="status">正在读取来源成果…</p> : sourceArtifact.isError ? <p role="alert">{projectError(sourceArtifact.error)}</p> : sourceArtifact.data ? <ArtifactSurface artifact={sourceArtifact.data} busy onDraft={() => undefined} onSave={async () => false} onAction={() => undefined} /> : null : undefined} onOpenSource={(node) => node.ref.kind === 'artifact' ? setSourceRef({ projectId, artifactId: node.ref.id, revision: typeof node.ref.version === 'number' ? node.ref.version : undefined }) : openWorkflowNode(node)} onCloseSource={() => setSourceRef(undefined)} onSelectArtifact={(artifactId) => updateView({ page: 'workspace', artifactId })} onOpenNode={openWorkflowNode} onOpenGraph={() => setPage('workflow')} onOpenRuns={() => setPage('runs')} onOpenApps={() => setPage('apps')} onOpenChat={() => setGuideOpen(true)} onOpenFile={(path) => openPawOsRoute(desktop, `/files?path=${encodeURIComponent(path)}`)} />
               : page === 'workflow' ? <LabWorkflowGraph key={`${workflow.connection}:${project.projectId}`} projectId={project.projectId} connection={workflow.connection} workflow={project.workflow} onOpenNode={openWorkflowNode} onOpenMaterials={() => setPage('materials')} onOpenRuns={() => setPage('runs')} onOpenApps={() => setPage('apps')} onOpenExperiments={() => setPage('lifecycle')} />
               : page === 'materials' ? <Materials project={project} onAdd={() => setIntakeOpen(true)} />
               : page === 'knowledge' ? <LabKnowledge key={project.projectId} initialJobId={view.jobId} project={project} busy={busy} onCommand={(input) => workflow.submit('knowledge', input, project)} onBind={(input) => workflow.submit('bind_execution', input, project)} onOpenBinding={(binding) => updateView({ page: 'runs', bindingId: binding.bindingId })} />

@@ -1479,7 +1479,7 @@ export function PawSessionWorkspace({
             ) : null}
             {workspaceRecord && !evaluationSnapshot ? (
               <>
-              {composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div><button aria-label="移除地图上下文" onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
+              {composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div>{composerContext.kind === 'project' && composerContext.onOpen ? <button className="paw-workspace-context__open" type="button" onClick={composerContext.onOpen}>查看左侧对应结果</button> : null}<button aria-label={composerContext.kind === 'project' ? '移除本次项目上下文' : '移除地图上下文'} onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
               <AgentComposer
                 attachments={attachments}
                 busy={busy}

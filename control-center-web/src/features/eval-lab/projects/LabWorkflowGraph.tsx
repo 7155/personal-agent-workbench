@@ -116,6 +116,14 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
     observer.observe(viewport.current); return () => observer.disconnect();
   }, [storageKey, initialNodeId, centerNode]);
   const focusNode = (node?: LabWorkflowNode) => { if (!node) return; select(node); if (centerNode(node.id)) positionedProject.current = storageKey; };
+  const fitCanvas = () => {
+    const canvas = viewport.current;
+    if (!canvas || !layout.width) return;
+    const nextZoom = Math.min(1, Math.max(0.7, (canvas.clientWidth - 24) / layout.width));
+    setZoom(nextZoom);
+    positionedProject.current = '';
+    requestAnimationFrame(() => canvas.scrollTo({ left: 0, top: 0, behavior: 'instant' }));
+  };
   return <section className="lab-flow" aria-label="项目工作流">
     <header className="lab-flow__header"><div><h2>项目工作流</h2><p>{current ? <>当前：<strong>{current.title}</strong><span className={`lab-flow-status lab-flow-status--${current.status}`}><StatusIcon status={current.source === 'artifact' && current.status === 'running' ? 'pending' : current.status} />{workflowNodeStatus(current)}</span></> : workflow ? '查看每个已保存节点，沿着依赖继续工作。' : '正在等待执行器返回完整工作流；已有材料和成果仍可打开。'}</p></div>
       <Button size="small" onClick={onOpenExperiments}><FlaskConical size={15} />实验与优化</Button>
@@ -145,7 +153,7 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
           })}
         </div></div>
       </div>
-      <div className="lab-flow__canvas-tools" aria-label="画布工具"><IconButton icon={<Minus size={16} />} label="缩小画布" disabled={zoom <= 0.7} onClick={() => setZoom((value) => Math.max(0.7, value - 0.15))} /><button onClick={() => setZoom(1)} aria-label="恢复默认缩放">{Math.round(zoom * 100)}%</button><IconButton icon={<Plus size={16} />} label="放大画布" disabled={zoom >= 1.4} onClick={() => setZoom((value) => Math.min(1.4, value + 0.15))} /><span /><Button size="small" disabled={!current && !selected} onClick={() => focusNode(current ?? selected)}><Focus size={15} />定位当前</Button></div>
+      <div className="lab-flow__canvas-tools" aria-label="画布工具"><Button size="small" onClick={fitCanvas}>适应窗口</Button><Button size="small" onClick={() => { positionedProject.current = storageKey; viewport.current?.scrollTo({ left: 0, top: 0, behavior: 'instant' }); }}>回到起点</Button><span /><IconButton icon={<Minus size={16} />} label="缩小画布" disabled={zoom <= 0.7} onClick={() => setZoom((value) => Math.max(0.7, value - 0.15))} /><button onClick={() => setZoom(1)} aria-label="恢复默认缩放">{Math.round(zoom * 100)}%</button><IconButton icon={<Plus size={16} />} label="放大画布" disabled={zoom >= 1.4} onClick={() => setZoom((value) => Math.min(1.4, value + 0.15))} /><span /><Button size="small" disabled={!current && !selected} onClick={() => focusNode(current ?? selected)}><Focus size={15} />定位当前</Button></div>
     </div>
     {selected ? <LabWorkflowNodeDetail selected={selected} nodes={nodes} onOpenNode={onOpenNode} onSelect={(node) => focusNode(node)} /> : null}
   </section>;

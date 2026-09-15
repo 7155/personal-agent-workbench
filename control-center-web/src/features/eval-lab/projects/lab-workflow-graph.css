@@ -47,7 +47,7 @@
 .lab-flow__empty h3 { font-size: 19px; margin: 15px 0 8px; }
 .lab-flow__empty p { font-size: 13px; line-height: 1.7; color: var(--lab-muted); margin: 0 0 18px; }
 .lab-flow__empty > div { display: flex; flex-wrap: wrap; gap: 8px; }
-.lab-flow-detail { padding: 20px 24px 24px; }
+.lab-flow-detail { padding: 20px 24px 24px; border-top: 1px solid var(--lab-line); background: var(--lab-surface); scroll-margin-top: 12px; }
 .lab-flow-detail > header { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
 .lab-flow-detail > header > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; min-width: 0; }
 .lab-flow-detail h3 { font-size: 17px; margin: 0; line-height: 1.5; }

@@ -10,12 +10,15 @@ import type { ControlTransport } from '@/platform/transport';
 import { labConnectionKey, requestLabControl } from '../control-request';
 import { object, type LabProject } from './types';
 import { projectGuidanceMessage } from './project-guidance';
+import type { WorkspaceComposerContext } from '@/paw-os/apps/workspace-draft';
 import { LabGuideWorkflow } from './LabGuideWorkflow';
 
-export function ProjectGuide({ project, draftRequest, onNewProject, onProjectActivity, onEnsure }: {
+export function ProjectGuide({ project, draftRequest, viewContext, onNewProject, onProjectActivity, onEnsure }: {
+  viewContext?: Omit<WorkspaceComposerContext, 'onClear'>;
   project: LabProject; draftRequest?: { id: number; text: string }; onNewProject: () => void;
   onProjectActivity: () => void; onEnsure: () => void;
 }) {
+  const [dismissedContext, setDismissedContext] = useState('');
   const transport = useControlTransport(); const [updated, setUpdated] = useState<SessionSummary>();
   const query = useQuery({ queryKey: ['lab-project-guide', labConnectionKey(transport), project.projectId, project.guideSessionId],
     enabled: Boolean(project.guideSessionId), retry: false, refetchOnWindowFocus: false,
@@ -33,6 +36,7 @@ export function ProjectGuide({ project, draftRequest, onNewProject, onProjectAct
     <header><span className="lab-project-agent-mark" aria-hidden="true" /><div><strong>项目 Agent</strong><small>围绕当前项目继续工作</small></div>{project.guideSessionId ? <LabGuideWorkflow key={project.guideSessionId} sessionId={project.guideSessionId} /> : null}</header>
     {!project.guideSessionId ? <div className="lab-project-guide__empty"><p>连接项目 Agent 后，就可以围绕材料和成果继续工作。</p><Button onClick={onEnsure}>连接项目 Agent</Button></div>
       : session ? <PawSessionWorkspace key={session.id} record={session} recordId={session.id} appearance="embedded" showComposerControls
+        composerContext={viewContext && dismissedContext !== viewContext.text ? { ...viewContext, onClear: () => setDismissedContext(viewContext.text) } : undefined}
         composerPlaceholder="继续描述、修正成果，或让我尝试下一步…" draftRequest={draftRequest}
         onNewWork={onNewProject} onSessionCreated={setUpdated} onSessionUpdated={setUpdated} onSessionActivity={onProjectActivity} />
         : <div className="lab-project-guide__empty" role={query.isError ? 'alert' : 'status'}><p>{query.isError ? publicAgentErrorText(query.error, '项目 Agent 暂时无法读取。') : '正在恢复项目对话…'}</p>{query.isError ? <Button onClick={() => void query.refetch()}>重新读取对话</Button> : null}</div>}

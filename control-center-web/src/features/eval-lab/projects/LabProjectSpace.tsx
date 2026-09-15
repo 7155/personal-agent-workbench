@@ -23,7 +23,8 @@ export function testedDimensions(node: LabWorkflowNode): Dimension[] {
   });
 }
 
-export function LabProjectSpace({ project, artifactId, artifactContent, onSelectArtifact, onOpenNode, onOpenGraph, onOpenRuns, onOpenApps, onOpenChat, onOpenFile, sourceContent, onOpenSource, onCloseSource }: {
+export function LabProjectSpace({ project, artifactId, artifactContent, onSelectArtifact, onOpenNode, onOpenGraph, onOpenRuns, onOpenApps, onOpenChat, onOpenFile, sourceContent, onOpenSource, onCloseSource, selectedNodeId, onSelectNode }: {
+  selectedNodeId?: string; onSelectNode?: (id: string) => void;
   project: LabProject; artifactId: string; artifactContent: ReactNode;
   onSelectArtifact: (id: string) => void; onOpenNode: (node: LabWorkflowNode) => void;
   onOpenGraph: () => void; onOpenRuns: () => void; onOpenApps: () => void; onOpenChat: () => void; onOpenFile: (path: string) => void;
@@ -31,7 +32,9 @@ export function LabProjectSpace({ project, artifactId, artifactContent, onSelect
 }) {
   const nodes = project.workflow?.nodes ?? [];
   const experiments = nodes.filter((node) => node.kind === 'experiment');
-  const [selection, setSelection] = useState(() => project.artifacts.every((item) => item.view === 'json') ? experiments.at(-1)?.id ?? '' : '');
+  const [localSelection, setLocalSelection] = useState(() => project.artifacts.every((item) => item.view === 'json') ? experiments.at(-1)?.id ?? '' : '');
+  const selection = selectedNodeId ?? localSelection;
+  const setSelection = (id: string) => { setLocalSelection(id); onSelectNode?.(id); };
   const [activityOpen, setActivityOpen] = useState(false);
   const selected = nodes.find((node) => node.id === selection);
   const active = nodes.filter((node) => node.source === 'runtime' && ['running', 'queued', 'failed', 'interrupted'].includes(node.status));
