@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, Input } from '@/components/primitives';
 import { parseContract } from '@/contracts/validators';
@@ -10,7 +11,7 @@ import { projectError } from './api';
 /** Native Goal controls for the same Guide Session; no project scheduler. */
 export function LabGuideWorkflow({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false); const [workflow, setWorkflow] = useState<AgentWorkflowStateV1>();
-  return <div className="lab-guide-workflow"><Button size="small" aria-expanded={open} onClick={() => setOpen((value) => !value)}>项目 Agent 推进与预算</Button>
+  return <div className="lab-guide-workflow"><Button size="small" aria-expanded={open} onClick={() => setOpen((value) => !value)}>项目 Agent 推进与预算<ChevronDown size={14} aria-hidden="true" /></Button>
     {open ? <div className="lab-guide-workflow__panel"><p>查看同一个项目 Agent 的目标与实际用量；这里的预算只约束其续行 Token 和时间。独立评测各有用量与限制，这不是整个项目的费用上限；暂停项目 Agent 不会取消所有后台任务。</p>
       <AgentWorkflowPanel sessionId={sessionId} onWorkflowResolved={setWorkflow} />
       {workflow?.sessionId === sessionId && workflow.goal.configured ? <GuideBudget key={sessionId} sessionId={sessionId} goal={workflow.goal} /> : null}

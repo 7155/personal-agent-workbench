@@ -29,7 +29,9 @@ describe('Lab result-first project surface', () => {
   it('does not infer tested dimensions from an optimistic experiment title', () => {
     expect(testedDimensions(experiment)).toEqual(['Prompt']); mount();
     expect(screen.getByRole('button', { name: 'Skill 未记录测试' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Prompt 1 次已有对照' })).toBeEnabled();
+    const prompt = screen.getByRole('button', { name: 'Prompt 1 次已有对照' });
+    expect(prompt).toBeEnabled(); expect(prompt).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(prompt); expect(prompt).toHaveAttribute('aria-pressed', 'true');
   });
   it('opens the durable folder without starting a task', () => {
     const { openFile, openNode } = mount(); fireEvent.click(screen.getByRole('button', { name: '项目文件夹' }));

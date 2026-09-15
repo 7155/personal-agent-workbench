@@ -23,7 +23,7 @@ export function projectViewContext(project: LabProject, page: ProjectPage, selec
   } : { kind: 'project_page', page };
   return {
     kind: 'project', label: node?.title ?? (showsArtifact ? selected.title : project.title),
-    detail: `${showsArtifact ? `v${selected.revision} · ${matched ? '正文已附带' : '正文未就绪，附带读取引用'}` : node ? '实验结果与来源已附带' : '项目概况已附带'} · 随下一条消息发送`,
+    detail: `${showsArtifact ? `v${selected.revision} · ${matched ? '随消息发送' : '正文加载中，附带成果引用'}` : node ? '实验结果 · 随消息发送' : '项目概况 · 随消息发送'}`,
     text: JSON.stringify({ projectId: project.projectId, projectRevision: project.revision, page,
       current, counts: project.workflow?.counts,
       artifacts: project.artifacts.slice(0, 30).map(({ artifactId, revision, title }) => ({ artifactId, revision, title })),
