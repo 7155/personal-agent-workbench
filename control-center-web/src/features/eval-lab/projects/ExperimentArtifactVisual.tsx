@@ -94,6 +94,7 @@ function ExperimentExplorer({ data }: { data: RecordValue }) {
   return <div className="lab-experiment-visual">
     <div className="lab-visual-context"><span>{data.schemaVersion === 'paw.lab-imported-experiments.v1' ? '历史实验' : '实验结果'} · {records.length} 条记录</span><p>{text(data.caption, data.executionPerformed === false ? '这是保存的实验快照，本次导入没有重新执行。当前运行请到“运行”查看。' : '按原始回执整理；当前执行状态请到“运行”查看。')}</p></div>
     <label className="lab-experiment-picker">实验记录<select value={text(record.experimentId)} onChange={(event) => navigate(event.target.value)}>{records.map((item) => <option key={text(item.experimentId)} value={text(item.experimentId)}>{text(item.title, text(item.experimentId))}</option>)}</select></label>
+    <section className="lab-visual-summary" aria-label="先看结论"><strong>先看结论</strong><span className="lab-experiment-decision">{decisionText(record.decision ?? comparison.decision)}</span><p>{text(comparison.decisionReason ?? record.whyContinue, '原始记录没有提供判定理由，请打开“指标与判定”查看实际数值。')}</p></section>
     <div className="lab-experiment-explorer">
       <nav className="lab-experiment-timeline" aria-label="实验演进"><h3>实验演进</h3><ol>{records.map((item, index) => {
         const id = text(item.experimentId, `record-${index}`); const previous = parentOf(item);
@@ -103,11 +104,11 @@ function ExperimentExplorer({ data }: { data: RecordValue }) {
         <header><h3>{text(record.title, text(record.experimentId))}</h3><span className="lab-experiment-decision">{decisionText(record.decision ?? comparison.decision)}</span></header>
         {parent ? <p className="lab-visual-note">直接对照：{records.some((item) => item.experimentId === parent) ? <button className="lab-visual-link" onClick={() => navigate(parent)}>{text(records.find((item) => item.experimentId === parent)?.title, parent)}</button> : parent}</p> : null}
         <div className="lab-experiment-structure" aria-label="实验结构">
-          <button aria-pressed={section === 'dataset'} onClick={() => setSection('dataset')}><FileText size={18} /><strong>评测条件</strong><small>{number(dataset.caseCount) === undefined ? '查看数据与固定条件' : `${dataset.caseCount} 个案例 · ${text(dataset.split, '划分未记录')}`}</small></button>
+          <button aria-pressed={section === 'dataset'} onClick={() => setSection('dataset')}><FileText size={18} /><strong>评测条件</strong><small>{number(dataset.caseCount) === undefined ? '用什么题、什么资料来测' : `${dataset.caseCount} 个案例 · ${text(dataset.split, '划分未记录')}`}</small></button>
           <ArrowRight className="lab-experiment-structure__arrow" size={17} aria-hidden="true" />
-          <button aria-pressed={section === 'changes'} onClick={() => setSection('changes')}><span className="lab-visual-pair">基线 <ArrowRight size={15} /> 候选</span><strong>方案与改动</strong><small>{factors.length ? `${factors.length} 项改动` : '查看两个方案'}</small></button>
+          <button aria-pressed={section === 'changes'} onClick={() => setSection('changes')}><span className="lab-visual-pair">基线 <ArrowRight size={15} /> 候选</span><strong>方案与改动</strong><small>{factors.length ? `${factors.length} 项改动` : '改了什么、为什么改'}</small></button>
           <ArrowRight className="lab-experiment-structure__arrow" size={17} aria-hidden="true" />
-          <button aria-pressed={section === 'metrics'} onClick={() => setSection('metrics')}><Check size={18} /><strong>指标与判定</strong><small>{decisionText(record.decision ?? comparison.decision)}</small></button>
+          <button aria-pressed={section === 'metrics'} onClick={() => setSection('metrics')}><Check size={18} /><strong>指标与判定</strong><small>结果好不好、是否采用</small></button>
         </div>
         <section className="lab-experiment-inspect" aria-label={section === 'metrics' ? '指标与判定详情' : section === 'dataset' ? '评测条件详情' : '方案与改动详情'}>
           {section === 'metrics' ? <><h4>基线与候选的实际指标</h4><MetricComparison baseline={object(baseline.metrics)} candidate={object(candidate.metrics)} /><p>{text(comparison.decisionReason ?? record.whyContinue, '这份记录未提供判定理由。')}</p></>

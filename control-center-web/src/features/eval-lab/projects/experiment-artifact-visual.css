@@ -2,6 +2,10 @@
 .lab-visual-context { padding: 0 0 12px; border-bottom: 1px solid var(--lab-line); }
 .lab-visual-context > span { font-weight: 650; font-size: 13px; }
 .lab-visual-context p, .lab-visual-note, .lab-visual-empty { color: var(--lab-muted); font-size: 13px; line-height: 1.65; margin: 6px 0; }
+.lab-visual-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; margin: 14px 0 16px; padding: 14px 16px; border: 1px solid var(--lab-line-strong); border-left: 3px solid var(--lab-accent); border-radius: 8px; background: var(--lab-surface-subtle); }
+.lab-visual-summary > strong { font-size: 14px; }
+.lab-visual-summary > .lab-experiment-decision { color: var(--lab-accent); font-weight: 600; }
+.lab-visual-summary > p { grid-column: 1 / -1; margin: 0; color: var(--lab-ink); font-size: 13px; line-height: 1.7; }
 .lab-experiment-explorer { display: grid; align-items: start; grid-template-columns: minmax(150px, .55fr) minmax(0, 2fr); gap: 24px; }
 .lab-experiment-picker { display: none; }
 .lab-experiment-timeline { min-width: 0; border-right: 1px solid var(--lab-line); padding-right: 14px; }
