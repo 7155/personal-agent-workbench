@@ -80,7 +80,7 @@ describe('Lab project dependency canvas', () => {
     const data = workflow([node('原检索', { ref: { kind: 'knowledge_job', id: 'retrieval' }, metrics: [{ label: 'MRR', baseline: null, candidate: null, value: 0, sampleCount: 48 }] })]);
     expect(isLabProjectWorkflow(data)).toBe(true); mount(data);
     expect(screen.getByText('本次结果 · 48 题')).toBeVisible();
-    expect(screen.getByText('未指定配对基线')).toBeVisible();
+    expect(screen.getByText('本次单独测量，尚无可比基线')).toBeVisible();
     expect(screen.queryByText('变化 +0')).not.toBeInTheDocument();
     expect(screen.queryByText('候选')).not.toBeInTheDocument();
   });

@@ -81,6 +81,7 @@
 .lab-flow-metric__track i { display: block; height: 100%; background: var(--lab-muted); }
 .lab-flow-metric__track i[data-role='candidate'] { background: var(--lab-accent); }
 .lab-flow-metric__row > b { text-align: right; font-variant-numeric: tabular-nums; color: var(--lab-ink); font-weight: 500; }
+.lab-flow-metric__note { display: block; margin-top: 4px; color: var(--lab-muted); line-height: 1.5; }
 .lab-flow-detail__tasks { padding-top: 20px; margin-top: 20px; border-top: 1px solid var(--lab-line); }
 .lab-flow-detail__tasks > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--lab-line); background: transparent; color: var(--lab-muted); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
 .lab-flow-detail__tasks strong { font-weight: 550; color: var(--lab-ink); flex: 1; }
