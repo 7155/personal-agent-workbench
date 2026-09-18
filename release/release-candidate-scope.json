@@ -35,7 +35,7 @@
     },
     "owner_boundaries": {
       "description": "Product extension host assembly and module dependency checks.",
-      "pathCount": 14
+      "pathCount": 15
     },
     "pi_runtime_refactor": {
       "description": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
@@ -139,10 +139,10 @@
     }
   },
   "summary": {
-    "pathCount": 1050,
+    "pathCount": 1051,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 851
+      "keep_release": 852
     },
     "groupCounts": {
       "local_docs": 122,
@@ -158,7 +158,7 @@
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
-      "owner_boundaries": 14,
+      "owner_boundaries": 15,
       "conversation_controls": 65,
       "trace_optimization": 61,
       "scheduled_tasks": 25,
@@ -3750,6 +3750,13 @@
       "disposition": "keep_release",
       "group": "owner_boundaries",
       "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
+    },
+    {
+      "path": "control-center-web/src/paw-os/extensions/installation.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "owner_boundaries",
+      "reason": "Project Extension App installation evidence and update state through the existing Runtime boundary."
     },
     {
       "path": "control-center-web/src/paw-os/extensions/registry-hosts.test.ts",
