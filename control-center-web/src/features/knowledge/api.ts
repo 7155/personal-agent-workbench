@@ -286,15 +286,15 @@ export interface KnowledgeSearchRetrievalLibrary {
   baseName: string;
   config: KnowledgeRetrievalConfig | null;
   effectiveMode: string;
-  candidateLimit: number;
-  lexicalCandidates: number;
-  denseCandidates: number;
-  graphCandidates: number;
+  candidateLimit: number | null;
+  lexicalCandidates: number | null;
+  denseCandidates: number | null;
+  graphCandidates: number | null;
   graphStatus: string;
-  graphMatchedNodes: number;
-  rerankApplied: boolean;
-  rerankCandidates: number;
-  returned: number;
+  graphMatchedNodes: number | null;
+  rerankApplied: boolean | null;
+  rerankCandidates: number | null;
+  returned: number | null;
 }
 
 export interface KnowledgeSearchRetrieval {
@@ -302,9 +302,9 @@ export interface KnowledgeSearchRetrieval {
   effectiveMode: string;
   config: KnowledgeRetrievalConfig | null;
   libraries: KnowledgeSearchRetrievalLibrary[];
-  lexicalAvailable: boolean;
-  dense: { available: boolean; degraded: boolean; provider: string; model: string };
-  reranker: { provider: string; configured: boolean; fingerprint: string; independentStage: boolean; subagentSubstitute: boolean; fallbackCount: number; error: string };
+  lexicalAvailable: boolean | null;
+  dense: { available: boolean | null; degraded: boolean | null; provider: string; model: string };
+  reranker: { provider: string; configured: boolean | null; fingerprint: string; independentStage: boolean | null; subagentSubstitute: boolean | null; fallbackCount: number | null; error: string };
 }
 
 export interface KnowledgeSearchResult {
@@ -1324,34 +1324,38 @@ function normalizeSearchRetrieval(value: unknown): KnowledgeSearchRetrieval | nu
         baseName: text(row.kbName),
         config: Object.keys(record(row.config)).length ? normalizeRetrievalConfig(row.config) : null,
         effectiveMode: text(row.effectiveMode, 'unknown'),
-        candidateLimit: number(row.candidateLimit),
-        lexicalCandidates: number(row.lexicalCandidates),
-        denseCandidates: number(row.denseCandidates),
-        graphCandidates: number(row.graphCandidates),
+        candidateLimit: optionalNumber(row.candidateLimit),
+        lexicalCandidates: optionalNumber(row.lexicalCandidates),
+        denseCandidates: optionalNumber(row.denseCandidates),
+        graphCandidates: optionalNumber(row.graphCandidates),
         graphStatus: text(row.graphStatus, 'unknown'),
-        graphMatchedNodes: number(row.graphMatchedNodes),
-        rerankApplied: row.rerankApplied === true,
-        rerankCandidates: number(row.rerankCandidates),
-        returned: number(row.returned),
+        graphMatchedNodes: optionalNumber(row.graphMatchedNodes),
+        rerankApplied: optionalBoolean(row.rerankApplied),
+        rerankCandidates: optionalNumber(row.rerankCandidates),
+        returned: optionalNumber(row.returned),
       };
     }),
-    lexicalAvailable: root.lexicalAvailable !== false,
+    lexicalAvailable: optionalBoolean(root.lexicalAvailable),
     dense: {
-      available: dense.available === true,
-      degraded: dense.degraded === true,
-      provider: text(dense.provider, text(dense.providerName)),
-      model: text(dense.model),
+      available: optionalBoolean(dense.available),
+      degraded: optionalBoolean(dense.degraded),
+      provider: text(record(dense.provider).provider, text(dense.provider, text(dense.providerName))),
+      model: text(record(dense.provider).model, text(dense.model)),
     },
     reranker: {
-      provider: text(reranker.provider, 'none'),
-      configured: reranker.configured === true,
+      provider: text(reranker.provider),
+      configured: optionalBoolean(reranker.configured),
       fingerprint: text(reranker.fingerprint),
-      independentStage: reranker.independentStage !== false,
-      subagentSubstitute: reranker.subagentSubstitute === true,
-      fallbackCount: number(reranker.fallbackCount),
+      independentStage: optionalBoolean(reranker.independentStage),
+      subagentSubstitute: optionalBoolean(reranker.subagentSubstitute),
+      fallbackCount: optionalNumber(reranker.fallbackCount),
       error: text(reranker.error),
     },
   };
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
 }
 
 function documentStatus(value: string): KnowledgeDocumentStatus {

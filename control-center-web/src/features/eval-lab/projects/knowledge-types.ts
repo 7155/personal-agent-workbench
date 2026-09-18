@@ -27,7 +27,8 @@ export type KnowledgeEvaluation = {
   report: { metrics: { metrics: { mrr: number; recallAtK: Record<string, number>; ndcgAtK: Record<string, number> } };
     costs: { meanRetrievalLatencyMs: number; retrievalCalls: number }; receiptSha256: string };
 };
-export type KnowledgeHit = { sourceId: string; title: string; uri: string; content: string; chunkId: string; score?: number };
+export type KnowledgeHit = { sourceId: string; title: string; uri: string; content: string; chunkId: string; score?: number;
+  rerankOriginalRank?: number; rerankRank?: number; rerankScore?: number; diagnostics?: Record<string, number> };
 export type KnowledgeJob = { jobId: string; state: string; progress: string; error: string; createdAtMs: number; updatedAtMs: number;
   publicSpec: { operation: string; projectId: string }; result: ({ kind?: string; message?: string; hits?: KnowledgeHit[]; query?: string } & Record<string, unknown>) | null };
 export type KnowledgeState = {

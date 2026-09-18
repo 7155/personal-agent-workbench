@@ -9,6 +9,7 @@ import { object, type JsonValue, type LabBinding, type LabProject, type ProjectR
 import { activeKnowledgeJob, defaultRetrieval, parseKnowledgeState, type KnowledgeEvaluation, type KnowledgeJob, type RetrievalProfile } from './knowledge-types';
 import './lab-knowledge.css';
 import { LabKnowledgeRecord } from './LabKnowledgeRecord';
+import { LabRetrievalRun, LabRetrievalHitMetrics } from './LabRetrievalEvidence';
 
 type Page = 'sources' | 'index' | 'evaluation';
 type Draft = { page: Page; corpusId: string; datasetId: string; indexId: string; sourcePath: string; datasetPath: string;
@@ -150,7 +151,7 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding, 
           <RetrievalFields value={profile} onChange={updateProfile} disabled={disabled} semantic={index.dense.provider.semantic} reranker={index.reranker.configured === true} />
           <form className="lab-knowledge-search" onSubmit={(event) => { event.preventDefault(); if (draft.query.trim() && !disabled) void command({ operation: 'search', indexId: index.jobId, query: draft.query, profile: { ...profile } }); }}><label>检索问题<input value={draft.query} placeholder="输入实际业务问题" onChange={(event) => patch({ query: event.target.value })} disabled={disabled} /></label><Button type="submit" disabled={disabled || !draft.query.trim()}><Search size={15} />试检索</Button></form>
           {dataset?.preview?.length && !draft.query ? <div className="lab-knowledge-examples"><span>试试原始开发题：</span>{dataset.preview.map((row) => <button key={row.caseId} onClick={() => patch({ query: row.question })}>{row.question}</button>)}</div> : null}
-          {searchJob?.result?.hits ? <div className="lab-knowledge-hits"><p>“{String(searchJob.result.query)}” · {searchJob.result.hits.length} 个实际命中</p>{searchJob.result.hits.length ? searchJob.result.hits.map((hit) => <article key={hit.chunkId}><h4>{hit.title}</h4><p>{hit.content}</p><small>来源 {hit.sourceId} · 切片 {hit.chunkId}</small></article>) : <p>未命中资料。可以换一种问法，或调整检索方式后重试。</p>}</div> : null}
+          {searchJob?.result?.hits ? <div className="lab-knowledge-hits"><p>“{String(searchJob.result.query)}” · {searchJob.result.hits.length} 个实际命中</p><LabRetrievalRun result={searchJob.result} />{searchJob.result.hits.length ? searchJob.result.hits.map((hit, index) => <article key={hit.chunkId}><h4>{hit.title}</h4><LabRetrievalHitMetrics hit={hit} index={index} /><p>{hit.content}</p><small>来源 {hit.sourceId} · 切片 {hit.chunkId}</small></article>) : <p>未命中资料。可以换一种问法，或调整检索方式后重试。</p>}</div> : null}
           <Button variant="primary" onClick={() => patch({ page: 'evaluation' })}>继续评测<ArrowRight size={15} /></Button></> : null}
       </>}
     </div> : <div className="lab-knowledge-section">

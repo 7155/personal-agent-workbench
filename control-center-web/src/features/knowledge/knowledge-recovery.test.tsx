@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,7 @@ vi.mock('react-virtuoso', () => ({
   Virtuoso: ({ data, itemContent }: { data: unknown[]; itemContent: (index: number, item: unknown) => ReactNode }) => <div>{data.map((item, index) => <div key={index}>{itemContent(index, item)}</div>)}</div>,
 }));
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('Knowledge reading recovery', () => {
   it('does not call a pending materials list an empty library', async () => {
@@ -246,6 +246,54 @@ describe('Knowledge reading recovery', () => {
     expect(workspace).not.toHaveAttribute('data-detail-open');
     expect(options[1]).toHaveFocus();
     expect(within(list).getAllByRole('option')).toHaveLength(2);
+  });
+
+  it('restores a usable search after leaving a pending query and returning', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport({ search: () => new Promise(() => {}) });
+    renderKnowledge(transport, '/knowledge?base=kb-reading&tab=search');
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '来源');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await user.click(screen.getByRole('tab', { name: '资料' }));
+    expect(transport.requests.find(({ request }) => request.pathId === 'knowledgeBases.search')?.request.signal?.aborted).toBe(true);
+    await user.click(screen.getByRole('tab', { name: '搜索' }));
+    expect(await screen.findByRole('textbox', { name: '搜索知识库' })).toHaveValue('来源');
+    expect(screen.getByRole('button', { name: '搜索' })).toBeEnabled();
+    expect(screen.queryByText('正在查找相关来源…')).not.toBeInTheDocument();
+  });
+
+  it('keeps the new search cancellable when an older cancelled request fails late', async () => {
+    let rejectOld: (error: Error) => void = () => {};
+    let attempts = 0;
+    const user = userEvent.setup();
+    const transport = createTransport({ search: () => new Promise((_resolve, reject) => {
+      if (++attempts === 1) rejectOld = reject;
+    }) });
+    renderKnowledge(transport, '/knowledge?base=kb-reading&tab=search');
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '来源');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await act(async () => { rejectOld(new Error('late connection failure')); });
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.getByRole('button', { name: '搜索' })).toBeEnabled();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search').at(-1)?.request.signal?.aborted).toBe(true);
+  });
+
+  it('releases an unresponsive search on timeout and permits a new request', async () => {
+    const transport = createTransport({ search: () => new Promise(() => {}) });
+    renderKnowledge(transport, '/knowledge?base=kb-reading&tab=search');
+    const input = await screen.findByRole('textbox', { name: '搜索知识库' });
+    vi.useFakeTimers();
+    fireEvent.change(input, { target: { value: '来源' } });
+    fireEvent.submit(input.closest('form')!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_100); });
+    expect(screen.getByText(/检索超过 20 秒/)).toBeInTheDocument();
+    expect(transport.requests.find(({ request }) => request.pathId === 'knowledgeBases.search')?.request.signal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: '搜索' })).toBeEnabled();
+    fireEvent.submit(input.closest('form')!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(2);
   });
 });
 

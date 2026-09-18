@@ -552,7 +552,8 @@ class AgentLabKnowledgeResource:
             if len(aliases) > 1:
                 hits[-1]["sourceAliases"] = [{key: document[key] for key in ("sourceId", "title", "uri")}
                                              for document in documents.values() if document["sourceId"] in aliases]
-        return {"hits": hits, "profile": profile, "reranker": result.get("reranker", {}), "retrieval": result.get("retrieval", {})}
+        retrieval = result.get("retrieval", {})
+        return {"hits": hits, "profile": profile, "reranker": retrieval.get("rerank", {}), "retrieval": retrieval}
 
     def _management(self, operation: str, *args, **kwargs):
         client = self.knowledge_client()

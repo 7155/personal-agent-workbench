@@ -713,6 +713,19 @@ class RagBenchmarkSandbox:
                 score = _optional_search_score(hit)
                 if score is not None:
                     projected_hit["score"] = score
+                diagnostics = hit.get("diagnostics")
+                if isinstance(diagnostics, Mapping):
+                    # Keep stage measurements without exposing worker-local paths or graph context.
+                    measurements = {
+                        key: diagnostics[key]
+                        for key in (
+                            "lexicalRank", "denseRank", "graphRank", "retrievalRank",
+                            "lexicalScore", "denseScore", "graphScore", "retrievalScore",
+                        )
+                        if type(diagnostics.get(key)) in (int, float) and math.isfinite(diagnostics[key])
+                    }
+                    if measurements:
+                        projected_hit["diagnostics"] = measurements
                 hits.append(projected_hit)
             rerank_receipt: dict[str, Any] = {
                 "enabled": False,

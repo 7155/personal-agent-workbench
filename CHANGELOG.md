@@ -5,6 +5,12 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Show recorded RAG parameters, candidate counts, retrieval and reranker ranks
+  in Knowledge search and Lab recall tests. Distinguish configured models from
+  stages that actually ran, and preserve unavailable measurements as unknown.
+- Recover Knowledge search after cancellation, timeout and tab switches;
+  keep late responses from replacing a newer query. Give document actions
+  enough space and wrap long titles in the detail panel.
 - Redesign the Lab home, project navigation and experiment reports. Visualize
   recorded stages, quality and cost, with precise artifact selection and source
   references; retain historical limitations and the original records.

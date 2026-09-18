@@ -1,0 +1,8 @@
+.lab-retrieval-evidence { min-width: 0; padding-block: 14px; border-block: 1px solid var(--lab-line, var(--color-border)); }
+.lab-retrieval-evidence h4 { margin: 0 0 10px; font-size: 14px; line-height: 1.6; }
+.lab-retrieval-evidence dl, .lab-retrieval-hit-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 8px 20px; margin: 0; font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.lab-retrieval-evidence dl > div, .lab-retrieval-hit-metrics > div { min-width: 0; }
+.lab-retrieval-evidence dt, .lab-retrieval-hit-metrics dt { color: var(--lab-muted, var(--color-text-secondary)); }
+.lab-retrieval-evidence dd, .lab-retrieval-hit-metrics dd { margin: 0; overflow-wrap: anywhere; }
+.lab-retrieval-evidence p { margin: 12px 0 0; font-size: 12px; line-height: 1.6; color: var(--lab-muted, var(--color-text-secondary)); }
+.lab-retrieval-hit-metrics { margin-block: 10px; }

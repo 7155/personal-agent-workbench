@@ -1827,6 +1827,13 @@ function previewResponse(pathId: ControlPathId): unknown {
     case 'knowledgeBases.search':
       return {
         ok: true,
+        retrieval: {
+          mode: 'hybrid', effectiveMode: 'hybrid', lexicalAvailable: true,
+          config: { mode: 'hybrid', topK: 10, threshold: 0.2, lexicalWeight: 1, denseWeight: 1, graphEnabled: false, graphWeight: 0.7, rrfK: 60, candidateMultiplier: 4, rerankEnabled: false, rerankCandidateDepth: 40 },
+          libraries: [{ kbId: 'kb:preview-project-docs', candidateLimit: 40, lexicalCandidates: 1, denseCandidates: 1, graphCandidates: 0, graphStatus: 'disabled', rerankApplied: false, rerankCandidates: 0, returned: 1 }],
+          dense: { available: true, degraded: false, provider: { provider: 'preview', model: '演示向量模型' } },
+          reranker: { configured: false, provider: 'none' },
+        },
         items: [
           {
             chunkId: 'chunk:preview-agent-loop',
@@ -1835,6 +1842,7 @@ function previewResponse(pathId: ControlPathId): unknown {
             heading: 'Agent Tool 边界',
             content: '文档知识库通过只读 Tool 按需检索，不会进入输入法候选热路径。',
             score: 0.92,
+            diagnostics: { effectiveMode: 'hybrid', lexicalRank: 1, denseRank: 1, lexicalScore: 0.86, denseScore: 0.92, retrievalRank: 1, retrievalScore: 0.92 },
             citation: { page: 3, heading: 'Agent Tool 边界' },
           },
         ],

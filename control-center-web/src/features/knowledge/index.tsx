@@ -801,6 +801,9 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   const [searchNotice, setSearchNotice] = useState('');
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRequestRef = useRef<number | null>(null);
+  const readingRef = useRef(reading);
+  readingRef.current = reading;
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const backRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef(false);
@@ -811,6 +814,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   const searchMutation = useMutation({
     mutationFn: ({ query, config, signal }: { query: string; config: KnowledgeRetrievalConfig; request: number; signal: AbortSignal }) => searchKnowledgeBase(transport, base.id, query, config, signal),
     onSuccess: (result: KnowledgeSearchResult, input) => {
+      if (input.signal.aborted || searchAbortRef.current?.signal !== input.signal) return;
       clearSearchObservation();
       setSearchNotice('');
       reading.update((current) => current.search.request !== input.request ? current : ({
@@ -818,7 +822,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
       }));
     },
     onError: (error, input) => {
-      if (isAbortError(error)) return;
+      if (input.signal.aborted || searchAbortRef.current?.signal !== input.signal) return;
       clearSearchObservation();
       reading.update((current) => current.search.request !== input.request ? current : ({
         ...current, search: { ...current.search, status: 'error', error: publicErrorText(error, '知识服务暂时无法完成检索。') },
@@ -836,6 +840,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
       searchTimerRef.current = null;
     }
     searchAbortRef.current = null;
+    searchRequestRef.current = null;
     setPendingSince(null);
   }
   function cancelSearch(
@@ -849,14 +854,14 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
     if (reason === 'timeout') {
       reading.update((current) => current.search.request !== request ? current : ({
         ...current,
-        search: { ...current.search, status: 'error', error: `检索超过 ${KNOWLEDGE_SEARCH_TIMEOUT_MS / 1000} 秒，已自动取消。可以缩小关键词范围后重试。` },
+        search: { ...current.search, request: current.search.request + 1, status: 'error', error: `检索超过 ${KNOWLEDGE_SEARCH_TIMEOUT_MS / 1000} 秒，已停止等待。可以重试，或在检索设置中改用关键词检索。` },
       }));
       return;
     }
     setSearchNotice('已取消检索，可以重新搜索。');
     reading.update((current) => current.search.request !== request ? current : ({
       ...current,
-      search: { ...current.search, status: 'idle', error: '', hits: [], retrieval: null, selectedId: '' },
+      search: { ...current.search, request: current.search.request + 1, status: 'idle', error: '', hits: [], retrieval: null, selectedId: '' },
     }));
   }
   useEffect(() => {
@@ -868,7 +873,14 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   }, [pendingSince, snapshot.status]);
   useEffect(() => () => {
     if (searchTimerRef.current) globalThis.clearTimeout(searchTimerRef.current);
-    searchAbortRef.current?.abort();
+    const request = searchRequestRef.current;
+    const controller = searchAbortRef.current;
+    searchAbortRef.current = null;
+    searchRequestRef.current = null;
+    controller?.abort();
+    if (request !== null) readingRef.current.update((current) => current.search.request !== request ? current : ({
+      ...current, search: { ...current.search, request: request + 1, status: 'idle', error: '' },
+    }));
   }, []);
   useEffect(() => {
     if (detailOpen && backRef.current && getComputedStyle(backRef.current).display !== 'none') {
@@ -881,7 +893,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!draft.trim() || snapshot.status === 'pending') return;
+    if (!draft.trim() || searchAbortRef.current || snapshot.status === 'pending') return;
     setDetailOpen(false);
     setSearchNotice('');
     const config = { ...base.retrievalConfig };
@@ -889,8 +901,8 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
       ...current.search, query: draft.trim(), config, hits: [], retrieval: null, selectedId: '', status: 'pending', error: '', request: current.search.request + 1,
     } }));
     const controller = new AbortController();
-    searchAbortRef.current?.abort();
     searchAbortRef.current = controller;
+    searchRequestRef.current = next.search.request;
     setPendingSince(Date.now());
     setElapsedMs(0);
     searchTimerRef.current = globalThis.setTimeout(() => cancelSearch('timeout', next.search.request, controller), KNOWLEDGE_SEARCH_TIMEOUT_MS);
@@ -906,13 +918,14 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
       </form>
       <Disclosure className="knowledge-search__config" summary="搜索范围与方式">
         <p>只查询当前知识库，不读取个人记忆。{snapshot.config ? '下列配置对应当前结果。' : ''}</p>
-        <p>{retrievalModeLabel(displayedConfig.mode)} · 最多显示 {displayedConfig.topK} 条 · 最低相关度 {displayedConfig.threshold.toFixed(2)} · {displayedConfig.rerankEnabled ? `Reranker：${retrieval?.reranker.provider || '已启用'}` : 'Reranker：关闭'}</p>
+        <KnowledgeRetrievalParameters config={displayedConfig} />
+        <p>可在「更多 → 设置」中调整；修改后重新搜索生效。</p>
       </Disclosure>
       {snapshot.error ? <InlineNotice title="检索失败" tone="warning">{snapshot.error}</InlineNotice> : null}
       {searchNotice ? <p className="knowledge-search__notice" role="status">{searchNotice}</p> : null}
       {snapshot.status === 'pending' ? (
         <div className="knowledge-search__pending" role="status">
-          <span><strong>正在查找相关来源…</strong><small>已等待 {Math.max(1, Math.ceil(elapsedMs / 1000))} 秒 · 超过 {KNOWLEDGE_SEARCH_TIMEOUT_MS / 1000} 秒会自动取消</small></span>
+          <span><strong>正在查找相关来源…</strong><small>已等待 {Math.floor(elapsedMs / 1000)} 秒 · 超过 {KNOWLEDGE_SEARCH_TIMEOUT_MS / 1000} 秒会停止等待</small></span>
           <Button onClick={() => cancelSearch()} size="small" variant="quiet">取消</Button>
         </div>
       ) : null}
@@ -939,7 +952,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
           </div>
           {selected ? <div className="knowledge-search__reader">
             <Button className="knowledge-search__back" leadingIcon={<ArrowLeft size={14} />} onClick={() => { returnFocusRef.current = true; setDetailOpen(false); }} ref={backRef} size="small" variant="quiet">返回检索结果</Button>
-            <KnowledgeHitDetail baseId={base.id} hit={selected} rank={Math.max(1, hits.findIndex((item) => item.id === selected.id) + 1)} onOpen={onOpenHit} transport={transport} />
+            <KnowledgeHitDetail key={selected.id} baseId={base.id} hit={selected} rank={Math.max(1, hits.findIndex((item) => item.id === selected.id) + 1)} onOpen={onOpenHit} transport={transport} />
           </div> : null}
         </div>
       ) : snapshot.status === 'success' ? (
@@ -954,17 +967,29 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
 function KnowledgeRetrievalSummary({ retrieval }: { retrieval: KnowledgeSearchRetrieval }) {
   const library = retrieval.libraries[0];
   const config = retrieval.config ?? library?.config;
+  const rerankState = library?.rerankApplied === true ? '本次已重排' : library?.rerankApplied === false ? '本次未重排' : '本次是否重排未报告';
+  const count = (value: number | null | undefined) => value ?? '未报告';
   return (
     <section aria-label="本次召回诊断" className="knowledge-search__retrieval-summary">
-      <header><strong>本次召回诊断</strong><span>{retrievalModeLabelValue(retrieval.effectiveMode)} · {library ? `${library.returned} 条返回` : '服务未返回分阶段统计'}</span></header>
+      <header><strong>本次召回诊断</strong><span>{retrievalModeLabelValue(retrieval.effectiveMode)} · {library?.returned != null ? `${library.returned} 条返回` : '返回数量未报告'}</span></header>
       <dl>
-        <div><dt>候选规模</dt><dd>{library ? `${library.candidateLimit}（关键词 ${library.lexicalCandidates} · 向量 ${library.denseCandidates} · 图谱 ${library.graphCandidates}）` : '未报告'}</dd></div>
-        <div><dt>图谱状态</dt><dd>{library ? `${library.graphStatus}${library.graphMatchedNodes ? ` · 关联 ${library.graphMatchedNodes} 个节点` : ''}` : '未报告'}</dd></div>
+        <div><dt>每路候选上限</dt><dd>{count(library?.candidateLimit)}</dd></div>
+        <div><dt>各路候选数</dt><dd>关键词 {count(library?.lexicalCandidates)} · 向量 {count(library?.denseCandidates)} · 图谱 {count(library?.graphCandidates)}（可重叠）</dd></div>
+        <div><dt>图谱状态</dt><dd>{library && library.graphStatus !== 'unknown' ? `${({ ready: '就绪', disabled: '关闭', unavailable: '不可用', stale: '待更新', failed: '失败' } as Record<string, string>)[library.graphStatus] ?? library.graphStatus}${library.graphMatchedNodes != null ? ` · 关联 ${library.graphMatchedNodes} 个节点` : ''}` : '未报告'}</dd></div>
         <div><dt>RAG 参数</dt><dd>{config ? `topK ${config.topK} · RRF ${config.rrfK} · 候选 ×${config.candidateMultiplier}` : '未报告'}</dd></div>
-        <div><dt>Reranker</dt><dd>{retrieval.reranker.configured ? `${retrieval.reranker.provider} · ${library?.rerankCandidates ?? 0} 个候选` : retrieval.reranker.provider === 'none' ? '未启用' : `未配置（${retrieval.reranker.provider}）`}</dd></div>
+        <div><dt>Reranker</dt><dd>{rerankState}{retrieval.reranker.provider && retrieval.reranker.provider !== 'none' ? ` · ${retrieval.reranker.provider}` : ''}{library?.rerankApplied === true ? ` · ${count(library.rerankCandidates)} 个候选` : ''}</dd></div>
+        <div><dt>向量模型</dt><dd>{[retrieval.dense.provider, retrieval.dense.model].filter(Boolean).join(' / ') || '未报告'}{retrieval.dense.degraded === true ? ' · 已降级' : ''}</dd></div>
       </dl>
     </section>
   );
+}
+
+function KnowledgeRetrievalParameters({ config }: { config: KnowledgeRetrievalConfig }) {
+  return <div className="knowledge-search__parameters">
+    <p>{retrievalModeLabel(config.mode)} · Top K {config.topK} · 分数阈值 {config.threshold.toFixed(2)}</p>
+    <p>关键词权重 {config.lexicalWeight} · 向量权重 {config.denseWeight} · 图谱 {config.graphEnabled ? `开启（权重 ${config.graphWeight}）` : '关闭'} · RRF {config.rrfK} · 候选倍数 {config.candidateMultiplier}</p>
+    <p>Reranker 请求：{config.rerankEnabled ? `开启 · 候选数 ${config.rerankCandidateDepth}` : '关闭'}；实际执行见本次召回诊断。</p>
+  </div>;
 }
 
 function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: string; hit: KnowledgeSearchHit; onOpen: (hit: KnowledgeSearchHit) => void; rank: number; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
@@ -978,7 +1003,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
       <p>{publicKnowledgeText(hit.excerpt) || '这个段落没有可显示的摘录。'}</p>
       <dl>
         <div><dt>位置</dt><dd>{citationLabel(hit)}</dd></div>
-        <div><dt>最终排名</dt><dd>第 {hit.diagnostics.rerankRank ?? rank} 条{hit.diagnostics.rerankRank !== null ? '（Reranker 后）' : ''}</dd></div>
+        <div><dt>最终排名</dt><dd>第 {rank} 条</dd></div>
         <div><dt>相关程度</dt><dd>{relevanceLabel(hit.score, false)}</dd></div>
         <div><dt>标题路径</dt><dd>{publicKnowledgeText(hit.heading) || '未提供'}</dd></div>
       </dl>
@@ -986,6 +1011,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
         <dl>
           <div><dt>相关度分数</dt><dd>{scorePoints(hit.score)} / 100</dd></div>
           <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit)}</dd></div>
+          {(['lexical', 'dense', 'graph'] as const).map((channel) => hit.diagnostics[`${channel}Rank`] !== null ? <div key={channel}><dt>{{ lexical: '关键词', dense: '向量', graph: '图谱' }[channel]}召回</dt><dd>第 {hit.diagnostics[`${channel}Rank`]} 条 · 原始分数 {hit.diagnostics[`${channel}Score`] ?? '未报告'}</dd></div> : null)}
           {hit.diagnostics.retrievalRank !== null ? <div><dt>初始召回排名</dt><dd>第 {hit.diagnostics.retrievalRank} 条 · {scorePoints(hit.diagnostics.retrievalScore)} / 100</dd></div> : null}
           {hit.diagnostics.rerankRank !== null ? <div><dt>Reranker 排名</dt><dd>第 {hit.diagnostics.rerankRank} 条 · {scorePoints(hit.diagnostics.rerankScore)} / 100 · {hit.diagnostics.rerankProvider || '已启用'}</dd></div> : null}
           {graphPaths.length ? (
@@ -1018,7 +1044,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
 
 function hitRankLabel(hit: KnowledgeSearchHit, index: number): string {
   if (hit.diagnostics.rerankRank !== null) {
-    return `最终排名 #${hit.diagnostics.rerankRank}${hit.diagnostics.retrievalRank === null ? '' : ` · 初始 #${hit.diagnostics.retrievalRank}`}`;
+    return `最终排名 #${index + 1} · 重排 #${hit.diagnostics.rerankRank}${hit.diagnostics.retrievalRank === null ? '' : ` · 初始 #${hit.diagnostics.retrievalRank}`}`;
   }
   return `排名 #${index + 1}`;
 }
@@ -1143,8 +1169,10 @@ function KnowledgeSettingsPanel({
       : chunking.strategy === 'separator' && !chunking.separator
         ? '自定义分隔符不能为空。'
       : '';
-  const retrievalError = retrieval.topK < 1 || retrieval.topK > 100
-    ? '返回数量必须在 1–100 之间。'
+  const retrievalError = !Number.isInteger(retrieval.topK) || retrieval.topK < 1 || retrieval.topK > 100
+    ? '返回数量必须是 1–100 之间的整数。'
+    : retrieval.rerankEnabled && retrieval.topK > 20
+      ? '启用 Reranker 时，返回数量不能超过 20。'
     : retrieval.threshold < 0 || retrieval.threshold > 1
       ? '最低相关度必须在 0–1 之间。'
       : retrieval.lexicalWeight < 0 || retrieval.lexicalWeight > 10 || retrieval.denseWeight < 0 || retrieval.denseWeight > 10
@@ -1157,7 +1185,7 @@ function KnowledgeSettingsPanel({
               ? '融合系数必须在 1–1000 之间。'
               : retrieval.candidateMultiplier < 1 || retrieval.candidateMultiplier > 20
                 ? '候选范围必须在 1–20 之间。'
-                : retrieval.rerankCandidateDepth < 1 || retrieval.rerankCandidateDepth > 100 || (retrieval.rerankEnabled && retrieval.rerankCandidateDepth < retrieval.topK)
+                : !Number.isInteger(retrieval.rerankCandidateDepth) || retrieval.rerankCandidateDepth < 1 || retrieval.rerankCandidateDepth > 100 || (retrieval.rerankEnabled && retrieval.rerankCandidateDepth < retrieval.topK)
                   ? 'Reranker 候选数必须在 1–100 之间，且不能小于返回数量。'
                   : '';
   useEffect(() => {
@@ -1698,10 +1726,6 @@ function retrievalModeLabelValue(value: string): string {
   return value === 'dense' ? '向量检索' : value === 'lexical' ? '关键词检索' : value === 'hybrid' ? '混合检索' : '服务未报告';
 }
 function parserLabel(value: KnowledgeParserMode): string { return value === 'builtin' ? '内置' : value === 'mineru' ? 'MinerU' : '自动'; }
-function isAbortError(value: unknown): boolean {
-  return (typeof DOMException !== 'undefined' && value instanceof DOMException && value.name === 'AbortError')
-    || (value instanceof Error && value.name === 'AbortError');
-}
 function scorePoints(value: number | null): string { return value === null ? '未提供' : String(Math.round(value <= 1 ? value * 100 : value)); }
 function retrievalEvidenceLabel(hit: KnowledgeSearchHit): string {
   const mode = hit.diagnostics.effectiveMode === 'hybrid' ? '混合检索' : hit.diagnostics.effectiveMode === 'lexical' ? '关键词检索' : hit.diagnostics.effectiveMode === 'dense' ? '向量检索' : '检索服务未报告';

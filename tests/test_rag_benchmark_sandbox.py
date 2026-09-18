@@ -221,6 +221,11 @@ class RagBenchmarkSandboxTests(unittest.TestCase):
             "documentName": "doc.md",
             "ordinal": 0,
             "content": "score fixture",
+            "diagnostics": {
+                "lexicalRank": 2, "lexicalScore": 0.0, "retrievalRank": 1,
+                "denseScore": math.nan, "graphScore": True,
+                "workerPath": "/private/worker/path", "graphPaths": ["private context"],
+            },
         }
         with patch.object(
             service,
@@ -238,6 +243,11 @@ class RagBenchmarkSandboxTests(unittest.TestCase):
         self.assertNotIn("score", missing["hits"][0])
         self.assertEqual(0.0, zero["hits"][0]["score"])
         self.assertEqual(-2.5, negative["hits"][0]["score"])
+        self.assertEqual(
+            {"lexicalRank": 2, "lexicalScore": 0.0, "retrievalRank": 1},
+            zero["hits"][0]["diagnostics"],
+        )
+        self.assertNotIn("private", json.dumps(zero))
 
         for invalid in (True, "0.5", math.nan, math.inf, -math.inf):
             with self.subTest(invalid=invalid):

@@ -28,6 +28,25 @@ function mount(read: () => unknown, onCommand = vi.fn(async (_input: Record<stri
 }
 
 describe('Knowledge resource frontend', () => {
+  it('shows the completed recall run parameters and ranks independently of the editable draft', async () => {
+    const source = ready();
+    source.jobs.push({ jobId: 'search-1', state: 'completed', progress: '', error: '', createdAtMs: 1, updatedAtMs: 2,
+      publicSpec: { projectId: 'project-1', operation: 'search' }, result: { kind: 'search', indexId: 'index-1', query: 'original question',
+        profile: { mode: 'lexical', topK: 3, threshold: 0.25, candidateDepth: 40, contextChars: 16000, rerank: true },
+        retrieval: { rerank: { enabled: true, provider: 'test-reranker', duplicateDocumentHitsDropped: 2 } },
+        hits: [{ sourceId: 'source-1', chunkId: 'chunk-1', title: 'Ranked source', uri: '', content: 'Full source text', score: 0.4,
+          rerankOriginalRank: 8, rerankRank: 3, rerankScore: 0.93 }],
+      } });
+    mount(() => source);
+    fireEvent.click(await screen.findByRole('button', { name: '索引与检索' }));
+    expect(await screen.findByText('Ranked source')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Top K'), { target: { value: '12' } });
+    expect(screen.getByRole('region', { name: '本次召回参数与执行' })).toHaveTextContent('3 / 0.25');
+    expect(screen.getByRole('region', { name: '本次召回参数与执行' })).toHaveTextContent('本次已重排 · test-reranker');
+    expect(screen.getByLabelText('结果 1 排名与分数')).toHaveTextContent('最终排名#1');
+    expect(screen.getByLabelText('结果 1 排名与分数')).toHaveTextContent('8 / 0.4');
+    expect(screen.getByLabelText('结果 1 排名与分数')).toHaveTextContent('3 / 0.93');
+  });
   it('preserves supplied split attribution and offers its optional import field mapping', async () => {
     const source = ready(); source.datasets[0]!.providedSplit = true;
     mount(() => source);

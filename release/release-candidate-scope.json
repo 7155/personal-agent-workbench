@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-14T00:00:00.000000+00:00",
+  "generatedAt": "2026-09-18T13:40:03.142401+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "main",
+    "branch": "codex/lab-visual-recovery-20260913",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately."
+    "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately. This checkpoint also includes Earth Agent GIS and cloud/local workflows plus Knowledge and Lab recall diagnostics and search recovery; it does not declare installed foreground or binary-release acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -47,7 +47,7 @@
     },
     "product_integration": {
       "description": "Integrate current product source and public contribution guidance.",
-      "pathCount": 47
+      "pathCount": 57
     },
     "public_showcase": {
       "description": "Public synthetic-data screenshots and usage documentation.",
@@ -91,7 +91,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 110
+      "pathCount": 112
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -123,7 +123,7 @@
     },
     "lab_frontend": {
       "description": "Lab workflow presentation backed by project and experiment receipts.",
-      "pathCount": 50
+      "pathCount": 54
     },
     "scheduled_tasks": {
       "description": "Unified schedule management for Agent, Eval and Memory using their existing schedulers.",
@@ -131,46 +131,46 @@
     },
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 35
+      "pathCount": 62
     }
   },
   "summary": {
-    "pathCount": 997,
+    "pathCount": 1040,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 798
+      "keep_release": 841
     },
     "groupCounts": {
-      "brand_stellar": 60,
-      "composition_refactor": 32,
-      "lab_backend": 74,
-      "lab_tools": 10,
       "local_docs": 122,
-      "owner_boundaries": 14,
-      "pi_runtime_refactor": 23,
-      "portable_agent_ui": 8,
-      "product_integration": 47,
-      "public_showcase": 30,
+      "product_integration": 57,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "refactor_integration": 22,
-      "refactor_verification": 66,
+      "earth_research": 62,
+      "brand_stellar": 60,
+      "public_showcase": 30,
       "references_history": 8,
-      "release_scope": 1,
-      "room_frontend": 20,
-      "room_service_refactor": 43,
-      "trace_optimization": 61,
-      "verification": 110,
-      "voice_desktop": 19,
-      "offline_installer": 12,
-      "session_full_access": 9,
-      "conversation_controls": 65,
-      "agent_capsule": 3,
       "memory_lifecycle": 15,
-      "browser_recovery": 1,
-      "lab_frontend": 50,
+      "verification": 112,
+      "voice_desktop": 19,
+      "composition_refactor": 32,
+      "portable_agent_ui": 8,
+      "owner_boundaries": 14,
+      "conversation_controls": 65,
+      "trace_optimization": 61,
       "scheduled_tasks": 25,
-      "earth_research": 35
+      "session_full_access": 9,
+      "lab_frontend": 54,
+      "room_frontend": 20,
+      "agent_capsule": 3,
+      "refactor_integration": 22,
+      "offline_installer": 12,
+      "room_service_refactor": 43,
+      "lab_backend": 74,
+      "pi_runtime_refactor": 23,
+      "browser_recovery": 1,
+      "lab_tools": 10,
+      "release_scope": 1,
+      "refactor_verification": 66
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -280,6 +280,13 @@
       "disposition": "keep_release",
       "group": "refactor_docs_examples",
       "reason": "Public owner navigation and an offline Lab adapter using the existing extension contract."
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
       "path": "assets/brand/README.md",
@@ -1241,11 +1248,25 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/GoogleEarthMap.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/GoogleEarthMap.tsx",
       "status": "added",
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/app.css",
@@ -1325,11 +1346,81 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/asset-upload.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/asset-upload.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/asset-upload.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/pi-package/auth-token.py",
       "status": "added",
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/batch.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/batch.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/batch.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-batch.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-batch.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-tasks.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-tasks.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/earth-execution.mjs",
@@ -1346,6 +1437,69 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-catalog.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-knowledge.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-knowledge.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-knowledge.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-knowledge.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-operations.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-operations.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-operations.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-runner.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/pi-package/index.test.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -1358,6 +1512,27 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/ml-templates.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/ml-templates.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/ml-templates.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/official-docs.ts",
@@ -1407,6 +1582,13 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/vendor/gisclaw-geo-ops.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/view-contract.test.ts",
@@ -2298,6 +2480,20 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabRetrievalEvidence.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Project context and recall-test presentation using the existing Lab owner and recorded result."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabRetrievalEvidence.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Project context and recall-test presentation using the existing Lab owner and recorded result."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/LabSessionRecord.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -2403,6 +2599,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/lab-retrieval-evidence.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Project context and recall-test presentation using the existing Lab owner and recorded result."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/lab-session-record.css",
       "status": "added",
       "disposition": "keep_release",
@@ -2466,6 +2669,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/project-view-context.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Project context and recall-test presentation using the existing Lab owner and recorded result."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/project-workflow-types.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -2522,6 +2732,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/knowledge/api.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+    },
+    {
       "path": "control-center-web/src/features/knowledge/index.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -2536,11 +2753,32 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "control-center-web/src/features/knowledge/knowledge-recovery.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/knowledge-search-api.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+    },
+    {
       "path": "control-center-web/src/features/knowledge/knowledge.css",
       "status": "modified",
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/reading-context.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
     },
     {
       "path": "control-center-web/src/features/memory/ActivityTimeline.tsx",
@@ -2702,6 +2940,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/capability-policy.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
     },
     {
       "path": "control-center-web/src/features/plugins/plugins-feature.test.tsx",
@@ -3138,6 +3383,20 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/WorkspaceProjectContext.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/WorkspaceProjectContext.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/app-sidebar.css",
       "status": "added",
       "disposition": "keep_release",
@@ -3227,6 +3486,20 @@
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/session-catalog.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/session-catalog.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
     },
     {
       "path": "control-center-web/src/paw-os/apps/workspace-draft.test.ts",
@@ -4088,6 +4361,13 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "licenses/GISclaw-LICENSE",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
       "path": "macos/PAWInstaller/main.swift",
@@ -5180,6 +5460,13 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "rag_ime/knowledge_control.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "product_integration",
+      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
     },
     {
       "path": "rag_ime/knowledge_embedding_profile.py",
@@ -7065,11 +7352,25 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "tests/test_rag_benchmark_sandbox.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Preserve finite retrieval stage measurements at the sandbox result boundary."
+    },
+    {
       "path": "tests/test_refresh_paw_dock.py",
       "status": "added",
       "group": "voice_desktop",
       "disposition": "keep_release",
       "reason": "Installed app naming and Electron voice control integration."
+    },
+    {
+      "path": "tests/test_release_scope_git_paths.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression coverage for release scope Git path parsing."
     },
     {
       "path": "tests/test_rescore_enterprise_rag_answer_evidence.py",

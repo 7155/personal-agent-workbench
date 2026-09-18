@@ -171,8 +171,8 @@ describe('document knowledge library', () => {
     expect(await screen.findByRole('option', { name: /工具注册/ })).toBeInTheDocument();
     expect(screen.getByText('“工具如何注册” · 1 条结果')).toBeInTheDocument();
     expect(screen.getByText('高相关')).toHaveAttribute('data-level', 'high');
-    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('Reranker未启用');
-    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('候选规模40');
+    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('Reranker本次未重排');
+    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('每路候选上限40');
     await user.click(screen.getByText('高级：检索详情', { selector: 'summary' }));
     expect(screen.getByText('92 / 100')).toBeInTheDocument();
     expect(screen.getByText('混合检索 · 关键词候选第 1 · 向量候选第 2 · 图谱候选第 1 · 关联 工具、知识整理服务')).toBeInTheDocument();
