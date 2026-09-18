@@ -547,6 +547,25 @@ class KnowledgeWorkerSupervisorTests(unittest.TestCase):
         self.assertNotEqual(disabled, enabled)
         self.assertNotEqual(enabled, replacement)
 
+    def test_worker_identity_changes_with_mineru_timeout(self) -> None:
+        common = {
+            "mineru_enabled": True,
+            "mineru_port": 30_001,
+            "idle_seconds": 900,
+            "python_executable": "/tmp/knowledge-runtime/bin/python",
+            "python_version": "3.13.12",
+            "embedding_provider": "none",
+            "embedding_model": "",
+            "dense_backend": "sqlite-exact",
+        }
+        short = knowledge_worker_fingerprint(
+            Path("/tmp/Knowledge"), mineru_timeout_seconds=1_800, **common
+        )
+        long = knowledge_worker_fingerprint(
+            Path("/tmp/Knowledge"), mineru_timeout_seconds=7_200, **common
+        )
+        self.assertNotEqual(short, long)
+
     def test_relative_worker_python_is_rejected_before_process_launch(self) -> None:
         with mock.patch.dict(os.environ, {"RAG_IME_KNOWLEDGE_PYTHON": "python3"}, clear=False):
             with self.assertRaises(KnowledgeLibraryError) as raised:

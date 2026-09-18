@@ -9,6 +9,7 @@ KNOWLEDGE_SCHEMA_VERSION = "rag-ime.knowledge-library.v1"
 PARSER_MODES = frozenset({"auto", "builtin", "mineru"})
 DOCUMENT_STATES = frozenset({"queued", "parsing", "indexing", "ready", "stale", "failed", "deleting"})
 JOB_STATES = frozenset({"queued", "running", "succeeded", "failed", "cancelled", "superseded"})
+DEFAULT_MINERU_TIMEOUT_SECONDS = 7_200.0
 
 
 class KnowledgeLibraryError(RuntimeError):
@@ -43,13 +44,19 @@ class KnowledgeLibraryConfig:
     max_source_preview_bytes: int = 50 * 1024 * 1024
     mineru_enabled: bool = False
     mineru_port: int = 30_001
-    mineru_timeout_seconds: float = 1_800.0
+    # MinerU is a local, synchronous HTTP adapter.  Large scanned theses can
+    # legitimately take longer than 30 minutes; keep the deadline explicit in
+    # the runtime config instead of treating a long parse as an unavailable
+    # service.
+    mineru_timeout_seconds: float = DEFAULT_MINERU_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         root = Path(self.root_dir).expanduser()
         object.__setattr__(self, "root_dir", root)
         if not 1_024 <= int(self.mineru_port) <= 65_535:
             raise ValueError("mineru_port must be between 1024 and 65535")
+        if float(self.mineru_timeout_seconds) < 1.0:
+            raise ValueError("mineru_timeout_seconds must be at least 1 second")
         if self.chunk_chars < 200:
             raise ValueError("chunk_chars must be at least 200")
         if not 0 <= self.chunk_overlap_chars < self.chunk_chars:

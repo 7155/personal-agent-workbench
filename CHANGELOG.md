@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep long local MinerU parses alive with a configurable per-document deadline,
+  distinguish timeout from service-unavailable errors, and restart workers when
+  the deadline changes.
 - Show recorded RAG parameters, candidate counts, retrieval and reranker ranks
   in Knowledge search and Lab recall tests. Distinguish configured models from
   stages that actually ran, and preserve unavailable measurements as unknown.

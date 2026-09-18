@@ -5,6 +5,7 @@ import html
 import json
 import mimetypes
 import re
+import socket
 import urllib.error
 import urllib.request
 import uuid
@@ -182,7 +183,19 @@ class MinerULocalParser:
                 f"MinerU returned HTTP {exc.code}: {detail[:500]}",
                 code="mineru_http_error",
             ) from exc
-        except (OSError, urllib.error.URLError) as exc:
+        except (socket.timeout, TimeoutError) as exc:
+            raise DocumentParseError(
+                f"MinerU parse timed out after {self.timeout_seconds:g} seconds",
+                code="mineru_timeout",
+            ) from exc
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+                raise DocumentParseError(
+                    f"MinerU parse timed out after {self.timeout_seconds:g} seconds",
+                    code="mineru_timeout",
+                ) from exc
+            raise DocumentParseError(f"MinerU is unavailable: {exc}", code="mineru_unavailable") from exc
+        except OSError as exc:
             raise DocumentParseError(f"MinerU is unavailable: {exc}", code="mineru_unavailable") from exc
         if len(payload) > self.zip_limits.max_zip_bytes:
             raise DocumentParseError("MinerU ZIP response exceeds the compressed size limit", code="unsafe_archive")

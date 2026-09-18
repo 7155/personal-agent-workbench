@@ -19,7 +19,15 @@ from typing import Any, Callable
 from ..db import sqlite_connection
 from .client import LocalKnowledgeClient
 from .identity import knowledge_worker_fingerprint, normalized_knowledge_root
-from .models import AssetBlob, KNOWLEDGE_SCHEMA_VERSION, KnowledgeConflictError, KnowledgeLibraryConfig, KnowledgeLibraryError, KnowledgeNotFoundError
+from .models import (
+    DEFAULT_MINERU_TIMEOUT_SECONDS,
+    AssetBlob,
+    KNOWLEDGE_SCHEMA_VERSION,
+    KnowledgeConflictError,
+    KnowledgeLibraryConfig,
+    KnowledgeLibraryError,
+    KnowledgeNotFoundError,
+)
 from .permissions import secure_directory, secure_file
 from .rerank import knowledge_reranker_from_env, knowledge_reranker_profile_sha256
 from .service import KnowledgeLibraryService
@@ -54,6 +62,7 @@ class KnowledgeWorkerServer(ThreadingHTTPServer):
             service.config.root_dir,
             mineru_enabled=service.config.mineru_enabled,
             mineru_port=service.config.mineru_port,
+            mineru_timeout_seconds=service.config.mineru_timeout_seconds,
             idle_seconds=idle_seconds,
             python_executable=os.environ.get("RAG_IME_KNOWLEDGE_PYTHON", "").strip() or sys.executable,
             python_version=platform.python_version(),
@@ -465,6 +474,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", type=Path, default=default_knowledge_root())
     parser.add_argument("--mineru-enabled", action="store_true")
     parser.add_argument("--mineru-port", type=int, default=30_001)
+    parser.add_argument("--mineru-timeout-seconds", type=float, default=DEFAULT_MINERU_TIMEOUT_SECONDS)
     parser.add_argument("--idle-seconds", type=float, default=900.0)
     parser.add_argument("--owner", default="")
     parser.add_argument("--parent-pid", type=int, default=0)
@@ -487,6 +497,7 @@ def main(argv: list[str] | None = None) -> int:
         root_dir=args.root,
         mineru_enabled=bool(args.mineru_enabled),
         mineru_port=int(args.mineru_port),
+        mineru_timeout_seconds=float(args.mineru_timeout_seconds),
     )
     service = KnowledgeLibraryService(
         config,

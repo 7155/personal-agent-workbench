@@ -72,16 +72,20 @@ class SettingsStoreTests(unittest.TestCase):
             {
                 "knowledgeLibrary.parser.mineru.enabled": True,
                 "knowledgeLibrary.parser.mineru.port": 30001,
+                "knowledgeLibrary.parser.mineru.timeoutSeconds": 7200,
             }
         )
 
         mineru = result.settings["knowledgeLibrary"]["parser"]["mineru"]
         self.assertTrue(mineru["enabled"])
         self.assertEqual(mineru["port"], 30001)
+        self.assertEqual(mineru["timeoutSeconds"], 7200)
         with self.assertRaisesRegex(ValueError, "must be >= 1024"):
             self.store.update_settings({"knowledgeLibrary.parser.mineru.port": 80})
         with self.assertRaisesRegex(ValueError, "must be <= 65535"):
             self.store.update_settings({"knowledgeLibrary.parser.mineru.port": 65536})
+        with self.assertRaisesRegex(ValueError, "must be >= 60"):
+            self.store.update_settings({"knowledgeLibrary.parser.mineru.timeoutSeconds": 30})
 
     def test_knowledge_embedding_profile_is_persisted_without_a_secret_value(self) -> None:
         result = self.store.update_settings(

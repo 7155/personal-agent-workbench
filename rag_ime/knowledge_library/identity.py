@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from .models import DEFAULT_MINERU_TIMEOUT_SECONDS
+
 
 _EMBEDDING_PROVIDER_ALIASES = {
     "hash": "local-hash",
@@ -45,6 +47,7 @@ def knowledge_worker_fingerprint(
     *,
     mineru_enabled: bool,
     mineru_port: int,
+    mineru_timeout_seconds: float = DEFAULT_MINERU_TIMEOUT_SECONDS,
     idle_seconds: float,
     python_executable: str,
     python_version: str,
@@ -61,6 +64,7 @@ def knowledge_worker_fingerprint(
         "idleSeconds": float(idle_seconds),
         "mineruEnabled": bool(mineru_enabled),
         "mineruPort": int(mineru_port),
+        "mineruTimeoutSeconds": float(mineru_timeout_seconds),
         "root": normalized_knowledge_root(root),
         # A virtualenv's python is normally a symlink to the base interpreter.
         # Preserve that configured path so two runtimes with different optional

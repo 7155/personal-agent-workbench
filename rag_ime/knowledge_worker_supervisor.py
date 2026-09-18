@@ -21,6 +21,7 @@ from .knowledge_embedding_profile import (
     embedding_environment_from_settings,
     normalize_knowledge_embedding_profile,
 )
+from .knowledge_library.models import DEFAULT_MINERU_TIMEOUT_SECONDS
 
 
 class KnowledgeWorkerSupervisor:
@@ -181,6 +182,7 @@ class KnowledgeWorkerSupervisor:
         with self._lock:
             settings = self.settings_provider()
             fingerprint, mineru_enabled, mineru_port = self._worker_settings(settings)
+            mineru_timeout_seconds = self._mineru_timeout_seconds(settings)
             health = self._worker_health()
             if health is not None and self._health_matches(health, fingerprint):
                 if self._process is None:
@@ -234,6 +236,8 @@ class KnowledgeWorkerSupervisor:
                 str(self.idle_seconds),
                 "--mineru-port",
                 str(mineru_port),
+                "--mineru-timeout-seconds",
+                str(mineru_timeout_seconds),
                 "--owner",
                 self._owner,
                 "--parent-pid",
@@ -347,11 +351,13 @@ class KnowledgeWorkerSupervisor:
         raw_port = mineru.get("port", 30_001) if isinstance(mineru, Mapping) else 30_001
         port = int(raw_port) if isinstance(raw_port, (int, float)) and not isinstance(raw_port, bool) else 30_001
         port = max(1_024, min(65_535, port))
+        timeout_seconds = self._mineru_timeout_seconds(settings)
         embedding = normalize_knowledge_embedding_profile(settings, environ=os.environ)
         fingerprint = knowledge_worker_fingerprint(
             self.root_dir,
             mineru_enabled=enabled,
             mineru_port=port,
+            mineru_timeout_seconds=timeout_seconds,
             idle_seconds=self.idle_seconds,
             python_executable=self.python_executable,
             python_version=self.python_version,
@@ -378,6 +384,19 @@ class KnowledgeWorkerSupervisor:
             reranker_profile_sha256=knowledge_reranker_profile_sha256(),
         )
         return fingerprint, enabled, port
+
+    @staticmethod
+    def _mineru_timeout_seconds(settings: Mapping[str, object] | None = None) -> float:
+        settings = settings if settings is not None else {}
+        knowledge = settings.get("knowledgeLibrary") if isinstance(settings, Mapping) else None
+        parser = knowledge.get("parser") if isinstance(knowledge, Mapping) else None
+        mineru = parser.get("mineru") if isinstance(parser, Mapping) else None
+        raw = mineru.get("timeoutSeconds", DEFAULT_MINERU_TIMEOUT_SECONDS) if isinstance(mineru, Mapping) else DEFAULT_MINERU_TIMEOUT_SECONDS
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = DEFAULT_MINERU_TIMEOUT_SECONDS
+        return max(1.0, min(86_400.0, value))
 
     def _worker_environment(
         self,

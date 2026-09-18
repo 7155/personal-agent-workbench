@@ -204,6 +204,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
             "mineru": {
                 "enabled": False,
                 "port": 30001,
+                "timeoutSeconds": 7200,
             },
         },
         "embedding": {
@@ -446,6 +447,12 @@ SETTINGS_SCHEMA: dict[str, object] = {
                     "type": "integer",
                     "label": "MinerU 本机端口",
                     "default": 30001,
+                },
+                {
+                    "key": "knowledgeLibrary.parser.mineru.timeoutSeconds",
+                    "type": "integer",
+                    "label": "MinerU 单文档最长等待（秒）",
+                    "default": 7200,
                 },
                 {
                     "key": "knowledgeLibrary.embedding.provider",
@@ -709,6 +716,14 @@ _FIELD_METADATA: dict[str, dict[str, object]] = {
         "min": 1024,
         "max": 65535,
         "unit": "端口",
+        "applyMode": "restart_knowledge_worker",
+        "restartComponent": "knowledge-worker",
+    },
+    "knowledgeLibrary.parser.mineru.timeoutSeconds": {
+        "description": "本机 MinerU 单个文档的最长解析等待时间；超时会保留可重试错误，不会伪装成服务未安装",
+        "min": 60,
+        "max": 86400,
+        "unit": "秒",
         "applyMode": "restart_knowledge_worker",
         "restartComponent": "knowledge-worker",
     },

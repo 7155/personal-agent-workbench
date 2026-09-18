@@ -1090,6 +1090,23 @@ class MinerUArchiveSafetyTests(unittest.TestCase):
         self.assertIn("422", str(raised.exception))
         self.assertIn(b'name="effort"\r\n\r\nhigh\r\n', captured["body"])
 
+    def test_mineru_timeout_is_distinct_from_service_unavailable(self) -> None:
+        def urlopen(_request, **_kwargs):
+            raise TimeoutError("slow document")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            pdf = Path(temporary) / "slow.pdf"
+            pdf.write_bytes(b"%PDF-1.4")
+            with self.assertRaises(DocumentParseError) as raised:
+                MinerULocalParser(urlopen=urlopen).parse(pdf)
+
+        self.assertEqual("mineru_timeout", raised.exception.code)
+
+    def test_default_mineru_deadline_allows_long_documents(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            config = KnowledgeLibraryConfig(Path(temporary) / "Knowledge")
+        self.assertEqual(7_200.0, config.mineru_timeout_seconds)
+
 
 if __name__ == "__main__":
     unittest.main()
