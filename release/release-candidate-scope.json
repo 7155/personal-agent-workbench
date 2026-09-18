@@ -132,13 +132,17 @@
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
       "pathCount": 62
+    },
+    "knowledge_runtime": {
+      "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
+      "pathCount": 10
     }
   },
   "summary": {
-    "pathCount": 1040,
+    "pathCount": 1050,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 841
+      "keep_release": 851
     },
     "groupCounts": {
       "local_docs": 122,
@@ -170,7 +174,8 @@
       "browser_recovery": 1,
       "lab_tools": 10,
       "release_scope": 1,
-      "refactor_verification": 66
+      "refactor_verification": 66,
+      "knowledge_runtime": 10
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -7455,6 +7460,76 @@
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/document-workspace.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/identity.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/models.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/parsers.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/worker.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_worker_supervisor.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/settings_schema.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "tests/test_knowledge_library.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "tests/test_knowledge_library_worker.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "tests/test_settings_store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
     }
   ]
 }
