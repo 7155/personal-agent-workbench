@@ -865,6 +865,16 @@ describe('document knowledge library', () => {
     expect(selectedRow).toHaveTextContent('runtime.pdf');
   });
 
+  it('opens document row action tips above the row so they do not cover adjacent files', async () => {
+    const user = userEvent.setup();
+    renderKnowledge(createTransport());
+
+    const view = await screen.findByRole('button', { name: '查看 runtime.pdf' });
+    await user.hover(view);
+    const tooltip = await screen.findByRole('tooltip', { name: '查看 runtime.pdf' });
+    expect(tooltip.parentElement).toHaveAttribute('data-side', 'top');
+  });
+
 });
 
 function renderKnowledge(transport: MockControlTransport, initialEntry = '/knowledge?tab=materials', pawOs = false, active = true, remountOnRoute = false) {

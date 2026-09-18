@@ -150,9 +150,9 @@ export function KnowledgeMaterialsPanel({
                     <StatusBadge label={documentStatusLabel(document.status)} tone={documentTone(document.status)} />
                     <span className="knowledge-material-row__chunks">{document.chunkCount || '—'}</span>
                     <span className="knowledge-material-row__actions">
-                      <IconButton disabled={pendingDocumentId === document.id || ['queued', 'parsing', 'indexing'].includes(document.status)} icon={<RotateCcw size={13} />} label={`重新解析 ${document.name}`} onClick={(event) => onReparse(document, event.currentTarget)} size="small" tooltip />
-                      <IconButton icon={<PanelRightOpen size={13} />} label={`查看 ${document.name}`} onClick={() => onOpen(document.id)} size="small" tooltip />
-                      <IconButton icon={<Trash2 size={13} />} label={`删除 ${document.name}`} onClick={(event) => onDelete(document, event.currentTarget)} size="small" tooltip />
+                      <IconButton disabled={pendingDocumentId === document.id || ['queued', 'parsing', 'indexing'].includes(document.status)} icon={<RotateCcw size={13} />} label={`重新解析 ${document.name}`} onClick={(event) => onReparse(document, event.currentTarget)} size="small" tooltip tooltipSide="top" />
+                      <IconButton icon={<PanelRightOpen size={13} />} label={`查看 ${document.name}`} onClick={() => onOpen(document.id)} size="small" tooltip tooltipSide="top" />
+                      <IconButton icon={<Trash2 size={13} />} label={`删除 ${document.name}`} onClick={(event) => onDelete(document, event.currentTarget)} size="small" tooltip tooltipSide="top" />
                     </span>
                     {['queued', 'parsing', 'indexing'].includes(document.status) ? <i className="knowledge-material-row__progress" style={{ '--document-progress': document.progress } as React.CSSProperties} /> : null}
                   </div>
