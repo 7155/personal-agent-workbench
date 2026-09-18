@@ -1321,14 +1321,27 @@ function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: P
               {group.apps.map(({ app, order }) => {
                 const extension = isPawExtensionAppId(app.id) ? pawExtensionApp(app.id) : null;
                 const installationLabel = extension
-                  ? installation.isInstalled(app.id)
-                    ? installation.isEnabled(app.id) ? '已安装' : '未启用'
-                    : '未安装'
+                  ? installation.loading
+                    ? '检查中…'
+                    : installation.unavailable
+                      ? '运行时不可用'
+                      : installation.isUpdateRequired(app.id)
+                        ? '需要更新'
+                        : installation.isInstalled(app.id)
+                          ? installation.isEnabled(app.id) ? '已安装' : '已安装 · 未启用'
+                          : '未安装'
                   : '';
+                const installationState = extension
+                  ? installationLabel === '已安装' ? 'enabled'
+                    : installationLabel === '需要更新' ? 'update-required'
+                      : installationLabel === '已安装 · 未启用' ? 'disabled'
+                        : installationLabel === '运行时不可用' ? 'runtime-unavailable'
+                          : installationLabel === '检查中…' ? 'loading' : 'uninstalled'
+                  : undefined;
                 return (
                 <button
                   data-app={app.id}
-                  data-extension-installation={extension ? installationLabel === '已安装' ? 'enabled' : installationLabel === '未启用' ? 'disabled' : 'uninstalled' : undefined}
+                  data-extension-installation={installationState}
                   draggable
                   key={app.id}
                   onClick={() => onOpen(app.id)}

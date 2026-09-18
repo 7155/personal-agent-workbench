@@ -47,6 +47,7 @@ describe('PAWOS Extension App installation projection', () => {
 
     expect([...projection.installedExtensionIds]).toEqual([extension.id]);
     expect([...projection.enabledExtensionIds]).toEqual([]);
+    expect([...projection.updateRequiredExtensionIds]).toEqual([]);
   });
 
   it('projects installed and enabled Extension Apps through the transport hook', async () => {
@@ -257,6 +258,7 @@ describe('PAWOS Extension App installation projection', () => {
 
     expect(projection.installedExtensionIds.has(extension.id)).toBe(true);
     expect(projection.enabledExtensionIds.has(extension.id)).toBe(false);
+    expect(projection.updateRequiredExtensionIds.has(extension.id)).toBe(true);
     expect(projection.availableExtensionIds.has(extension.id)).toBe(false);
   });
 

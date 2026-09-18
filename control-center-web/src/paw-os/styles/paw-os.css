@@ -1042,6 +1042,13 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
 .paw-launchpad section > div > button[data-extension-installation='uninstalled'] {
   opacity: .78;
 }
+.paw-launchpad section > div > button[data-extension-installation='update-required'] .paw-launchpad-installation {
+  color: var(--paw-warning, #9a6418) !important;
+}
+.paw-launchpad section > div > button[data-extension-installation='runtime-unavailable'],
+.paw-launchpad section > div > button[data-extension-installation='loading'] {
+  opacity: .72;
+}
 .paw-launchpad-group,
 .paw-launchpad-empty {
   grid-column: 1 / -1;

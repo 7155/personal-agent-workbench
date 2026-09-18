@@ -472,7 +472,7 @@ describe('PAWOS desktop', () => {
     fireEvent.click(screen.getByRole('button', { name: '全部 App' }));
     const launcher = screen.getByRole('dialog', { name: '全部 App' });
     const candidate = within(launcher).getByRole('button', { name: new RegExp(extension.label) });
-    expect(candidate).toHaveAttribute('data-extension-installation', 'uninstalled');
+    await waitFor(() => expect(candidate).toHaveAttribute('data-extension-installation', 'uninstalled'));
 
     fireEvent.click(candidate);
 
@@ -485,6 +485,24 @@ describe('PAWOS desktop', () => {
       expect(snapshot.windows?.['app-center']?.initialRoute)
         .toBe(`/plugins?packageId=${encodeURIComponent(extension.packageId)}`);
     });
+  });
+
+  it('labels an installed Extension App with stale binding evidence as needing an update', async () => {
+    const extension = pawExtensionApps[0]!;
+    const transport = new MockControlTransport({ routes: {
+      'agent.extensions.list': {
+        ok: true,
+        runtimeAvailable: true,
+        items: [{ id: extension.packageId, version: '0.0.0', installed: true, enabled: true }],
+      },
+    } });
+    renderDesktop(undefined, transport);
+
+    fireEvent.click(screen.getByRole('button', { name: '全部 App' }));
+    const launcher = screen.getByRole('dialog', { name: '全部 App' });
+    const candidate = within(launcher).getByRole('button', { name: new RegExp(extension.label) });
+    await waitFor(() => expect(candidate).toHaveAttribute('data-extension-installation', 'update-required'));
+    expect(within(candidate).getByText('需要更新')).toBeInTheDocument();
   });
 
   it('fails closed for an Extension App deep link when Runtime is unavailable', async () => {

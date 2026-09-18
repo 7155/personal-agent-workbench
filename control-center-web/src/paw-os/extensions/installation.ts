@@ -16,6 +16,9 @@ export type PawExtensionInstallationProjection = {
   installedExtensionIds: ReadonlySet<PawExtensionAppId>;
   enabledExtensionIds: ReadonlySet<PawExtensionAppId>;
   availableExtensionIds: ReadonlySet<PawExtensionAppId>;
+  /** Installed package is present, but its signed App evidence no longer
+   * matches the source manifest. It must be updated before the App can open. */
+  updateRequiredExtensionIds: ReadonlySet<PawExtensionAppId>;
 };
 
 export type PawExtensionInstallation = PawExtensionInstallationProjection & {
@@ -26,6 +29,7 @@ export type PawExtensionInstallation = PawExtensionInstallationProjection & {
   isInstalled: (appId: PawAppId) => boolean;
   isEnabled: (appId: PawAppId) => boolean;
   isAvailable: (appId: PawAppId) => boolean;
+  isUpdateRequired: (appId: PawAppId) => boolean;
   refresh: () => void;
 };
 
@@ -47,6 +51,7 @@ export function projectPawExtensionInstallation(payload: unknown): PawExtensionI
   const installedExtensionIds = new Set<PawExtensionAppId>();
   const enabledExtensionIds = new Set<PawExtensionAppId>();
   const availableExtensionIds = new Set<PawExtensionAppId>();
+  const updateRequiredExtensionIds = new Set<PawExtensionAppId>();
   const items = Array.isArray(source.items) ? source.items : [];
   for (const candidate of items) {
     const item = asRecord(candidate);
@@ -57,12 +62,14 @@ export function projectPawExtensionInstallation(payload: unknown): PawExtensionI
     const app = packageId ? extensionAppForPackage(packageId) : null;
     if (!app || item.installed !== true) continue;
     installedExtensionIds.add(app.id);
-    if (item.enabled === true && extensionAppInstallationMatches(app, item)) {
+    const matches = extensionAppInstallationMatches(app, item);
+    if (!matches) updateRequiredExtensionIds.add(app.id);
+    if (item.enabled === true && matches) {
       enabledExtensionIds.add(app.id);
       availableExtensionIds.add(app.id);
     }
   }
-  return { installedExtensionIds, enabledExtensionIds, availableExtensionIds };
+  return { installedExtensionIds, enabledExtensionIds, availableExtensionIds, updateRequiredExtensionIds };
 }
 
 export function PawExtensionInstallationProvider({
@@ -100,7 +107,8 @@ export function PawExtensionInstallationProvider({
       const legacy = projectPawExtensionInstallation(payload);
       const next = { installedExtensionIds: new Set([...legacy.installedExtensionIds, ...labIds]),
         enabledExtensionIds: new Set([...legacy.enabledExtensionIds, ...labIds]),
-        availableExtensionIds: new Set([...legacy.availableExtensionIds, ...labIds]) };
+        availableExtensionIds: new Set([...legacy.availableExtensionIds, ...labIds]),
+        updateRequiredExtensionIds: new Set(legacy.updateRequiredExtensionIds) };
       const runtimeUnavailable = asRecord(payload).runtimeAvailable === false
         && !(lab.status === 'fulfilled' && asRecord(lab.value).ok === true);
       setProjection((current) => sameProjection(current, next) ? current : next);
@@ -176,6 +184,7 @@ export function PawExtensionInstallationProvider({
     installedExtensionIds: projection.installedExtensionIds,
     enabledExtensionIds: projection.enabledExtensionIds,
     availableExtensionIds: projection.availableExtensionIds,
+    updateRequiredExtensionIds: projection.updateRequiredExtensionIds,
     status,
     loading: status === 'loading',
     unavailable: status === 'unavailable',
@@ -183,6 +192,7 @@ export function PawExtensionInstallationProvider({
     isInstalled: (appId) => !isPawExtensionAppId(appId) || projection.installedExtensionIds.has(appId),
     isEnabled: (appId) => !isPawExtensionAppId(appId) || projection.enabledExtensionIds.has(appId),
     isAvailable: (appId) => !isPawExtensionAppId(appId) || projection.availableExtensionIds.has(appId),
+    isUpdateRequired: (appId) => isPawExtensionAppId(appId) && projection.updateRequiredExtensionIds.has(appId),
     refresh,
   }), [projection, refresh, status]);
 
@@ -200,13 +210,15 @@ function emptyProjection(): PawExtensionInstallationProjection {
     installedExtensionIds: EMPTY_IDS,
     enabledExtensionIds: EMPTY_IDS,
     availableExtensionIds: EMPTY_IDS,
+    updateRequiredExtensionIds: EMPTY_IDS,
   };
 }
 
 function sameProjection(left: PawExtensionInstallationProjection, right: PawExtensionInstallationProjection): boolean {
   return sameSet(left.installedExtensionIds, right.installedExtensionIds)
     && sameSet(left.enabledExtensionIds, right.enabledExtensionIds)
-    && sameSet(left.availableExtensionIds, right.availableExtensionIds);
+    && sameSet(left.availableExtensionIds, right.availableExtensionIds)
+    && sameSet(left.updateRequiredExtensionIds, right.updateRequiredExtensionIds);
 }
 
 function sameSet(left: ReadonlySet<PawExtensionAppId>, right: ReadonlySet<PawExtensionAppId>): boolean {
