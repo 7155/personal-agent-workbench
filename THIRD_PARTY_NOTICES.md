@@ -21,6 +21,12 @@ proof: the manifest-listed files must exist and their SHA-256 values must match.
 | [MLX Examples BERT](https://github.com/ml-explore/mlx-examples/tree/main/bert) | Reference architecture and Hugging Face key conversion used by the local MLX BERT embedding provider. | Adapted source | MIT. |
 | [Ollama](https://github.com/ollama/ollama) / [llama.cpp](https://github.com/ggml-org/llama.cpp) | Optional externally managed loopback model servers. | Not vendored | Both are MIT upstream. No binaries are redistributed by the current source tree. |
 
+## Bundled Source
+
+| Project | Use in this repository | Version / source | License boundary |
+| --- | --- | --- | --- |
+| [GISclaw](https://github.com/geumjin99/GISclaw) | The Earth Agent deterministic GIS operation registry is vendored from `src/agent/geo_ops.py` to provide CRS, geometry, overlay, analysis, and raster operators. No GISclaw Agent loop or UI is embedded. | Commit `d96b5d2afc9fa90dba8974492a08837b52222569` | AGPL-3.0-or-later. The vendored source retains its upstream header; the corresponding license is `licenses/GISclaw-LICENSE`. PAW must preserve this notice and license when distributing the Earth Agent package. |
+
 ## Design And Interaction References
 
 These projects informed design study or interaction expectations. They are not

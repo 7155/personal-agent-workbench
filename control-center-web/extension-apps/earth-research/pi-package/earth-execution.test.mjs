@@ -47,3 +47,11 @@ test('awaited Earth evaluation supports data-dependent algorithms and waits for 
   const result = await executeScript({ ee, script: 'var x = await Earth.evaluate(ee.Number()); print(x * 2);' });
   assert.equal(result.status, 'completed'); assert.equal(result.console[0].values[0], 42);
 });
+
+test('starts supported export tasks and records task identity without claiming completion', async () => {
+  const task = { id: null, start() { this.id = 'task-123'; } };
+  const ee = { Image: () => ({ getMap: (_style, cb) => cb({ urlFormat: 'https://earthengine.googleapis.com/v1/tiles/{z}/{x}/{y}' }) }), batch: { Export: { image: { toAsset: () => task } } } };
+  const result = await executeScript({ ee, script: "Export.image.toAsset(ee.Image(), 'demo', 'projects/test/assets/demo');" });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.tasks[0], { id: 'task-123', kind: 'image', destination: 'toAsset', status: 'submitted', submittedAt: result.tasks[0].submittedAt });
+});

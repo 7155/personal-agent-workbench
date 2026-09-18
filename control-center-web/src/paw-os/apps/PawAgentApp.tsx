@@ -43,6 +43,7 @@ import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/featu
 import { PawSessionWorkspace } from './PawSessionWorkspace';
 import { PawRoomWorkspace } from './PawRoomWorkspace';
 import { PawAgentHome } from './PawAgentHome';
+import { readSessionCatalog } from './session-catalog';
 import { PawWindowLeadingPortal, usePawWindowLeadingChromeTarget } from '../shell/PawWindowChrome';
 import { TraceAgentHandoffButton, type TraceAgentHandoffInput } from '@/features/trace-agent/handoff';
 
@@ -132,13 +133,7 @@ export function PawAgentApp({
     const includeRooms = selection.kind !== 'session' || railOpen;
     const includeRoleModels = selection.kind === 'new';
     const [sessionResult, roomResult, roleResult, modelResult] = await Promise.allSettled([
-      transport.request({
-        pathId: 'agent.sessions.list',
-        query: {
-          limit: 100,
-          includeArchived: showArchived,
-        },
-      }),
+      readSessionCatalog(transport, showArchived, () => catalogRequestRef.current === requestId),
       includeRooms
         ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' } })
         : Promise.resolve(undefined),

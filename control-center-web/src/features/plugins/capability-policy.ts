@@ -31,7 +31,7 @@ export type CapabilityCatalogItem = Record<string, unknown> & {
     state: 'disclosed' | 'hidden';
     reason: string;
   };
-  effectiveScope: 'session' | 'project_default' | 'global_default' | 'built_in_default';
+  effectiveScope: 'scenario' | 'session' | 'project_default' | 'global_default' | 'built_in_default';
   reasons: string[];
   revision: string;
   effectiveAtMs: number;
@@ -161,6 +161,7 @@ export function capabilityKindLabel(value: CapabilityKind): string {
 }
 
 export function capabilityScopeLabel(value: CapabilityCatalogItem['effectiveScope']): string {
+  if (value === 'scenario') return '当前场景策略';
   if (value === 'session') return '当前对话临时设置';
   if (value === 'project_default') return '当前项目默认';
   if (value === 'global_default') return '所有对话默认';
@@ -280,7 +281,7 @@ function isPreference(value: unknown): value is CapabilityPreference {
 }
 function isEffective(value: unknown): value is CapabilityEffective { return value === 'enabled' || value === 'disabled'; }
 function isKind(value: unknown): value is CapabilityKind { return value === 'tool' || value === 'skill' || value === 'extension'; }
-function isScope(value: unknown): value is CapabilityCatalogItem['effectiveScope'] { return value === 'session' || value === 'project_default' || value === 'global_default' || value === 'built_in_default'; }
+function isScope(value: unknown): value is CapabilityCatalogItem['effectiveScope'] { return value === 'scenario' || value === 'session' || value === 'project_default' || value === 'global_default' || value === 'built_in_default'; }
 function isAuthorizationState(value: unknown): value is CapabilityCatalogItem['authorization']['state'] { return value === 'authorized' || value === 'denied' || value === 'not_applicable'; }
 function projectPreferenceMap(value: unknown): Record<string, Record<string, CapabilityPreference>> {
   return Object.fromEntries(Object.entries(record(value)).map(([projectId, preferences]) => [

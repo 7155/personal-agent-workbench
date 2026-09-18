@@ -25,3 +25,14 @@ it('rejects an adapter symlink before writing outside the bound workspace', asyn
   await expect(tools.get('earth_workspace').execute('id', {}, undefined, undefined, { cwd: root })).rejects.toThrow(/symlink/);
   expect(fs.readdirSync(outside)).toEqual([]);
 });
+
+it('registers the map state, GIS retrieval, cloud task, Asset, batch and ML workflow tools', () => {
+  const { tools } = setup();
+  for (const name of ['earth_map_state', 'earth_gis_search', 'earth_gis_batch', 'earth_run_batch', 'earth_task_status', 'earth_task_cancel', 'earth_asset_upload', 'earth_ml_catalog', 'earth_ml_template', 'earth_ml_prepare']) expect(tools.has(name)).toBe(true);
+});
+
+it('reads a trusted published map state from the bound workspace', async () => {
+  const { root, tools } = setup(); fs.mkdirSync(path.join(root, '.earth')); fs.writeFileSync(path.join(root, '.earth/map-state.json'), JSON.stringify({ schemaVersion: 'earth.map-state.v1', center: [120, 30], zoom: 10, bounds: [119, 29, 121, 31], visibleLayerIds: ['terrain'], selectedFeatureIds: ['A'], updatedAt: '2026-09-18T00:00:00Z' }));
+  const result = await tools.get('earth_map_state').execute('id', {}, undefined, undefined, { cwd: root });
+  expect(result.details.state.center).toEqual([120, 30]);
+});

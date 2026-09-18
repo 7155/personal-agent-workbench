@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { geoJsonOutputs, type EarthRun } from './workspace';
-import type { EarthViewCommand } from './pi-package/view-contract';
-import { drawingControls, type EditableGeometry } from './drawing-controls';
+import type { EarthMapState, EarthViewCommand } from './pi-package/view-contract';
+import { drawingControls, type DrawingKind, type EditableGeometry } from './drawing-controls';
 import { selectionKey, type SelectionMode } from './map-selection';
 
 declare global { interface Window { google?: { maps?: unknown } } }
 
-export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity }: { run: EarthRun | null; onSelect: (feature: GeoJSON.Feature | null,mode?:SelectionMode) => void; command?: EarthViewCommand; selection: GeoJSON.Feature[]; workspaceKey: string; onActivity: () => void }) {
+export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity, onMapState }: { run: EarthRun | null; onSelect: (feature: GeoJSON.Feature | null,mode?:SelectionMode) => void; command?: EarthViewCommand; selection: GeoJSON.Feature[]; workspaceKey: string; onActivity: () => void; onMapState?: (state: EarthMapState) => void }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const [multiSelect,setMultiSelect]=useState(true);
@@ -19,12 +19,16 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   const layerControl = useRef<L.Control.Layers | null>(null);
   const [tileError, setTileError] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  const [drawingKind, setDrawingKind] = useState<DrawingKind>();
   const [imports, setImports] = useState<EditableGeometry[]>([]);
   const [storageError,setStorageError] = useState('');
   const geometryTools=useRef<ReturnType<typeof drawingControls> | undefined>(undefined);
   const activity=useRef(onActivity);activity.current=onActivity;
   const drawingRef = useRef(false); drawingRef.current = drawing;
   const suppressClick = useRef(0);
+  const stateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stateCallback = useRef(onMapState); stateCallback.current = onMapState;
+  const selected = useRef(selection); selected.current = selection;
   useEffect(() => {
     if (!container.current) return;
     const instance = L.map(container.current, { zoomControl: true }).setView([30, 110], 4);
@@ -44,7 +48,18 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
       if (!drawingRef.current) callback.current({ type: 'Feature', geometry: { type: 'Point', coordinates: [event.latlng.lng, event.latlng.lat] }, properties: { source: 'user_selection' } });
     });
     const resize = new ResizeObserver(() => instance.invalidateSize()); resize.observe(container.current);
-    return () => { resize.disconnect(); layerControl.current?.remove(); layerControl.current = null; instance.remove(); map.current = null; };
+    const publish = () => {
+      if (!stateCallback.current) return;
+      clearTimeout(stateTimer.current);
+      stateTimer.current = setTimeout(() => {
+        const center = instance.getCenter(); const bounds = instance.getBounds();
+        const visibleLayerIds = [...rasterLayers.current.entries()].filter(([, layer]) => instance.hasLayer(layer)).map(([id]) => id);
+        stateCallback.current?.({ schemaVersion: 'earth.map-state.v1', center: [center.lng, center.lat], zoom: instance.getZoom(), bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], visibleLayerIds, selectedFeatureIds: selected.current.map(selectionKey), updatedAt: new Date().toISOString() });
+      }, 120);
+    };
+    instance.on('moveend zoomend overlayadd overlayremove', publish);
+    publish();
+    return () => { clearTimeout(stateTimer.current); resize.disconnect(); layerControl.current?.remove(); layerControl.current = null; instance.remove(); map.current = null; };
   }, []);
   useEffect(() => {
     const instance=map.current;if(!instance)return;
@@ -56,16 +71,20 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
     const tools=drawingControls(instance,initial,{
       select:(feature,mode)=>{suppressClick.current=Date.now()+250;callback.current(feature,mode);},
       change:features=>{setImports(features);try {localStorage.setItem(storageKey,JSON.stringify(features));setStorageError('');}catch {setStorageError('未能保存本机几何，请先复制代码或保留当前窗口。');}},
-      active:value=>{drawingRef.current=value;setDrawing(value);if(value)activity.current();else suppressClick.current=Date.now()+250;},
+      active:(value,kind)=>{drawingRef.current=value;setDrawing(value);setDrawingKind(value ? kind : undefined);if(value)activity.current();else suppressClick.current=Date.now()+250;},
     });geometryTools.current=tools;
     return()=>{tools.dispose();geometryTools.current=undefined;};
   },[workspaceKey]);
   useEffect(() => {
-    const instance=map.current; if(!instance || !selection.length) return;
+    const instance=map.current; if(!instance) return;
     const collection:GeoJSON.FeatureCollection={type:'FeatureCollection',features:selection};
-    const halo=L.geoJSON(collection,{interactive:false,style:{color:'#fff',weight:9,fill:false},pointToLayer:(_f,point)=>L.circleMarker(point,{radius:11,color:'#fff',weight:3,fillOpacity:0,interactive:false})}).addTo(instance);
-    const highlight=L.geoJSON(collection,{interactive:false,style:{color:'#d08a19',weight:4,fillOpacity:0.16},pointToLayer:(_f,point)=>L.circleMarker(point,{radius:8,color:'#d08a19',fillOpacity:0.4,interactive:false})}).addTo(instance);
-    return()=>{instance.removeLayer(highlight);instance.removeLayer(halo);};
+    const halo=selection.length ? L.geoJSON(collection,{interactive:false,style:{color:'#fff',weight:9,fill:false},pointToLayer:(_f,point)=>L.circleMarker(point,{radius:11,color:'#fff',weight:3,fillOpacity:0,interactive:false})}).addTo(instance) : undefined;
+    const highlight=selection.length ? L.geoJSON(collection,{interactive:false,style:{color:'#d08a19',weight:4,fillOpacity:0.16},pointToLayer:(_f,point)=>L.circleMarker(point,{radius:8,color:'#d08a19',fillOpacity:0.4,interactive:false})}).addTo(instance) : undefined;
+    const timer = setTimeout(() => {
+      const center = instance.getCenter(); const bounds = instance.getBounds();
+      stateCallback.current?.({ schemaVersion: 'earth.map-state.v1', center: [center.lng, center.lat], zoom: instance.getZoom(), bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], visibleLayerIds: [...rasterLayers.current.entries()].filter(([, layer]) => instance.hasLayer(layer)).map(([id]) => id), selectedFeatureIds: selection.map(selectionKey), updatedAt: new Date().toISOString() });
+    }, 0);
+    return()=>{clearTimeout(timer);if (highlight) instance.removeLayer(highlight);if (halo) instance.removeLayer(halo);};
   },[selection]);
   useEffect(() => {
     const instance = map.current; if (!instance || !run) return;
@@ -107,7 +126,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   }, [run?.runId, center?.[0], center?.[1], zoom]);
   useEffect(() => {
     const instance = map.current; if (!instance || !command) return;
-    if (command.action === 'focus' && command.center) instance.setView([command.center[1],command.center[0]],command.zoom);
+    if (command.action === 'focus' && command.center) { instance.setView([command.center[1],command.center[0]],command.zoom); }
     if (command.action === 'layer') { const layer = rasterLayers.current.get(command.layerId!); if(layer) { if(command.visible) layer.addTo(instance); else instance.removeLayer(layer); } }
     if (command.action === 'feature') {
       for (const output of geoJsonOutputs(run)) {
@@ -123,7 +142,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   },[imports,run,selection]);
   const selectedKeys=new Set(selection.map(selectionKey));
   return <div className="earth-map" data-drawing={drawing}><div ref={container} aria-label="地理分析地图" className="earth-map__canvas" />
-    <div className="earth-map-tools"><div className="earth-gis-toolbar" aria-label="GEE 几何工具"><button onClick={()=>geometryTools.current?.start('point')}>点</button><button onClick={()=>geometryTools.current?.start('polyline')}>线</button><button onClick={()=>geometryTools.current?.start('polygon')}>面</button><button onClick={()=>geometryTools.current?.start('rectangle')}>框选</button><span aria-hidden="true" className="earth-gis-toolbar__divider"/><button onClick={()=>geometryTools.current?.start('edit')}>编辑</button><button onClick={()=>geometryTools.current?.start('remove')}>删除</button></div><button aria-pressed={multiSelect} onClick={()=>setMultiSelect(value=>!value)}>多选{multiSelect ? '开' : '关'}</button><span role="status">{drawing ? '绘图／编辑中 · 完成或保存后更新选择' : multiSelect ? '点击可增选或取消 · 可在几何列表批量选择' : '点击选中一个对象'}</span></div>
+    <div className="earth-map-tools"><div className="earth-gis-toolbar" aria-label="GEE 几何工具"><button onClick={()=>geometryTools.current?.start('point')}>点</button><button onClick={()=>geometryTools.current?.start('polyline')}>线</button><button onClick={()=>geometryTools.current?.start('polygon')}>面</button><button onClick={()=>geometryTools.current?.start('rectangle')}>框选</button><span aria-hidden="true" className="earth-gis-toolbar__divider"/><button onClick={()=>geometryTools.current?.start('edit')}>编辑</button><button onClick={()=>geometryTools.current?.start('remove')}>删除</button>{drawingKind === 'edit' || drawingKind === 'remove' ? <><span aria-hidden="true" className="earth-gis-toolbar__divider"/><button className="earth-gis-toolbar__commit" onClick={()=>geometryTools.current?.save()}>保存</button><button onClick={()=>geometryTools.current?.cancel()}>取消</button></> : null}</div><button aria-pressed={multiSelect} onClick={()=>setMultiSelect(value=>!value)}>多选{multiSelect ? '开' : '关'}</button><span role="status">{drawingKind === 'edit' ? '拖动顶点后点击“保存”更新几何' : drawingKind === 'remove' ? '点击要删除的几何后点击“保存”' : drawing ? '绘图中 · 完成后更新选择' : multiSelect ? '点击可增选或取消 · 可在几何列表批量选择' : '点击选中一个对象'}</span></div>
     <details className="earth-geometry-imports"><summary>几何与选择 · {selection.length} 已选</summary>
       <div className="earth-geometry-actions"><button onClick={()=>available.forEach(feature=>callback.current(feature,'upsert'))}>全选</button><button disabled={!selection.length} onClick={()=>callback.current(null)}>清空选择</button></div>
       {available.map(feature=><div className="earth-geometry-row" key={selectionKey(feature)}><label><input type="checkbox" checked={selectedKeys.has(selectionKey(feature))} onChange={()=>callback.current(feature,'toggle')}/><span>{String(feature.properties?.name ?? feature.properties?.id ?? feature.id ?? '几何')}</span></label><details><summary>GEE 代码</summary><pre>{`var geometry = ee.Geometry(${JSON.stringify(feature.geometry)}, null, false);`}</pre></details></div>)}

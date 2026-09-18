@@ -1,0 +1,562 @@
+[
+  {
+    "category": "crs",
+    "ops": [
+      {
+        "op": "reproject",
+        "desc": "Reproject a vector layer to a target CRS",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "target_crs",
+            "type": "crs",
+            "default": 4326,
+            "required": true
+          }
+        ]
+      },
+      {
+        "op": "set_crs",
+        "desc": "Assign a CRS without transforming coordinates",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "crs",
+            "type": "crs",
+            "default": 4326,
+            "required": true
+          }
+        ]
+      },
+      {
+        "op": "detect_crs",
+        "desc": "Report a layer's CRS/EPSG/bounds",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      }
+    ]
+  },
+  {
+    "category": "geometry",
+    "ops": [
+      {
+        "op": "buffer",
+        "desc": "Buffer geometries by a distance (auto-uses a projected CRS)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "distance",
+            "type": "number",
+            "default": 100,
+            "required": true
+          },
+          {
+            "name": "dissolve",
+            "type": "bool",
+            "default": false,
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "centroid",
+        "desc": "Geometric centroids",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "convex_hull",
+        "desc": "Convex hull (by feature or whole layer)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "by",
+            "type": "select",
+            "default": "layer",
+            "required": false,
+            "choices": [
+              "layer",
+              "feature"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "dissolve",
+        "desc": "Dissolve/merge features, optionally by a field",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "by",
+            "type": "text",
+            "default": "",
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "simplify",
+        "desc": "Simplify geometries (Douglas-Peucker)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "tolerance",
+            "type": "number",
+            "default": 0.001,
+            "required": true
+          }
+        ]
+      },
+      {
+        "op": "bounding_box",
+        "desc": "Per-feature bounding boxes (envelopes)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "explode",
+        "desc": "Multipart to singleparts",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      }
+    ]
+  },
+  {
+    "category": "overlay",
+    "ops": [
+      {
+        "op": "clip",
+        "desc": "Clip layer by a mask layer",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          },
+          {
+            "role": "overlay",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "intersection",
+        "desc": "Intersection of two layers",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          },
+          {
+            "role": "overlay",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "difference",
+        "desc": "Difference (layer minus overlay)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          },
+          {
+            "role": "overlay",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "union",
+        "desc": "Union of two layers",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          },
+          {
+            "role": "overlay",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      }
+    ]
+  },
+  {
+    "category": "analysis",
+    "ops": [
+      {
+        "op": "spatial_join",
+        "desc": "Join attributes by spatial relationship",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          },
+          {
+            "role": "join_layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "predicate",
+            "type": "select",
+            "default": "intersects",
+            "required": false,
+            "choices": [
+              "intersects",
+              "contains",
+              "within",
+              "crosses",
+              "overlaps"
+            ]
+          },
+          {
+            "name": "how",
+            "type": "select",
+            "default": "inner",
+            "required": false,
+            "choices": [
+              "inner",
+              "left"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "attribute_join",
+        "desc": "Join attributes by a common field",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          },
+          {
+            "role": "join_layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "on",
+            "type": "text",
+            "default": "",
+            "required": true
+          },
+          {
+            "name": "how",
+            "type": "select",
+            "default": "left",
+            "required": false,
+            "choices": [
+              "inner",
+              "left"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "count_in_polygon",
+        "desc": "Count points within each polygon",
+        "inputs": [
+          {
+            "role": "polygons",
+            "kind": "vector"
+          },
+          {
+            "role": "points",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "count_field",
+            "type": "text",
+            "default": "NUMPOINTS",
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "select",
+        "desc": "Select/filter features by an expression (pandas query)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "expression",
+            "type": "text",
+            "default": "",
+            "required": true
+          }
+        ]
+      },
+      {
+        "op": "add_field",
+        "desc": "Add a computed field (pandas eval)",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "name",
+            "type": "text",
+            "default": "",
+            "required": true
+          },
+          {
+            "name": "expression",
+            "type": "text",
+            "default": "",
+            "required": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "category": "raster",
+    "ops": [
+      {
+        "op": "zonal_statistics",
+        "desc": "Summarize raster values within vector zones",
+        "inputs": [
+          {
+            "role": "zones",
+            "kind": "vector"
+          },
+          {
+            "role": "raster",
+            "kind": "raster"
+          }
+        ],
+        "args": [
+          {
+            "name": "stats",
+            "type": "text",
+            "default": "mean min max count",
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "clip_raster",
+        "desc": "Clip a raster by a vector mask",
+        "inputs": [
+          {
+            "role": "raster",
+            "kind": "raster"
+          },
+          {
+            "role": "mask",
+            "kind": "vector"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "slope",
+        "desc": "Slope (degrees) from a DEM",
+        "inputs": [
+          {
+            "role": "raster",
+            "kind": "raster"
+          }
+        ],
+        "args": [
+          {
+            "name": "z_factor",
+            "type": "number",
+            "default": 1.0,
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "aspect",
+        "desc": "Aspect (degrees) from a DEM",
+        "inputs": [
+          {
+            "role": "raster",
+            "kind": "raster"
+          }
+        ],
+        "args": [
+          {
+            "name": "z_factor",
+            "type": "number",
+            "default": 1.0,
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "hillshade",
+        "desc": "Hillshade from a DEM",
+        "inputs": [
+          {
+            "role": "raster",
+            "kind": "raster"
+          }
+        ],
+        "args": [
+          {
+            "name": "z_factor",
+            "type": "number",
+            "default": 1.0,
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "rasterize",
+        "desc": "Rasterize a vector layer",
+        "inputs": [
+          {
+            "role": "layer",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "resolution",
+            "type": "number",
+            "default": 100,
+            "required": true
+          },
+          {
+            "name": "field",
+            "type": "text",
+            "default": "",
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "polygonize",
+        "desc": "Convert raster pixels/regions to polygons",
+        "inputs": [
+          {
+            "role": "raster",
+            "kind": "raster"
+          }
+        ],
+        "args": []
+      },
+      {
+        "op": "sample_raster",
+        "desc": "Sample raster values at point locations",
+        "inputs": [
+          {
+            "role": "raster",
+            "kind": "raster"
+          },
+          {
+            "role": "points",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "field",
+            "type": "text",
+            "default": "value",
+            "required": false
+          }
+        ]
+      },
+      {
+        "op": "idw",
+        "desc": "IDW interpolation from points to a raster",
+        "inputs": [
+          {
+            "role": "points",
+            "kind": "vector"
+          }
+        ],
+        "args": [
+          {
+            "name": "field",
+            "type": "text",
+            "default": "",
+            "required": true
+          },
+          {
+            "name": "resolution",
+            "type": "number",
+            "default": 100,
+            "required": true
+          },
+          {
+            "name": "power",
+            "type": "number",
+            "default": 2,
+            "required": false
+          }
+        ]
+      }
+    ]
+  }
+]

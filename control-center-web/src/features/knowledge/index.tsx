@@ -96,6 +96,8 @@ import {
   type KnowledgeParserMode,
   type KnowledgeRetrievalConfig,
   type KnowledgeSearchHit,
+  type KnowledgeSearchResult,
+  type KnowledgeSearchRetrieval,
   knowledgeIndexRuntimeStatus,
 } from './api';
 import { KnowledgeDocumentViewer, KnowledgeJobsPanel, KnowledgeMaterialsPanel, type KnowledgeUploadItem } from './document-workspace';
@@ -107,6 +109,8 @@ import { usePageVisibility } from '@/platform/use-page-visibility';
 import './knowledge.css';
 
 type DetailTab = 'materials' | 'viewer' | 'search' | 'graph' | 'jobs' | 'settings';
+
+const KNOWLEDGE_SEARCH_TIMEOUT_MS = 20_000;
 
 export function KnowledgeFeature() {
   const appSurface = usePawOsAppIdentity();
@@ -520,7 +524,7 @@ export function KnowledgeFeature() {
                           heading: node.heading,
                           lineStart: null,
                           lineEnd: null,
-                          diagnostics: { effectiveMode: 'unknown', lexicalRank: null, denseRank: null, graphRank: null, lexicalScore: null, denseScore: null, graphScore: null, graphMatches: [], graphPaths: [] },
+                          diagnostics: { effectiveMode: 'unknown', lexicalRank: null, denseRank: null, graphRank: null, lexicalScore: null, denseScore: null, graphScore: null, retrievalScore: null, retrievalRank: null, rerankScore: null, rerankRank: null, rerankProvider: '', rerankFingerprint: '', independentRerankStage: false, subagentSubstitute: false, graphMatches: [], graphPaths: [] },
                         } : null);
                       }}
                       transport={queries.transport}
@@ -792,6 +796,11 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   const snapshot = reading.context.search;
   const [draft, setLocalDraft] = useState(snapshot.draft);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [searchNotice, setSearchNotice] = useState('');
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const backRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef(false);
@@ -800,17 +809,67 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
     reading.update((current) => ({ ...current, search: { ...current.search, draft: value } }));
   };
   const searchMutation = useMutation({
-    mutationFn: ({ query, config }: { query: string; config: KnowledgeRetrievalConfig; request: number }) => searchKnowledgeBase(transport, base.id, query, config),
-    onSuccess: (hits, input) => reading.update((current) => current.search.request !== input.request ? current : ({
-      ...current, search: { ...current.search, hits, selectedId: hits[0]?.id ?? '', status: 'success', error: '' },
-    })),
-    onError: (error, input) => reading.update((current) => current.search.request !== input.request ? current : ({
-      ...current, search: { ...current.search, status: 'error', error: publicErrorText(error, '知识服务暂时无法完成检索。') },
-    })),
+    mutationFn: ({ query, config, signal }: { query: string; config: KnowledgeRetrievalConfig; request: number; signal: AbortSignal }) => searchKnowledgeBase(transport, base.id, query, config, signal),
+    onSuccess: (result: KnowledgeSearchResult, input) => {
+      clearSearchObservation();
+      setSearchNotice('');
+      reading.update((current) => current.search.request !== input.request ? current : ({
+        ...current, search: { ...current.search, hits: result.hits, retrieval: result.retrieval, selectedId: result.hits[0]?.id ?? '', status: 'success', error: '' },
+      }));
+    },
+    onError: (error, input) => {
+      if (isAbortError(error)) return;
+      clearSearchObservation();
+      reading.update((current) => current.search.request !== input.request ? current : ({
+        ...current, search: { ...current.search, status: 'error', error: publicErrorText(error, '知识服务暂时无法完成检索。') },
+      }));
+    },
   });
   const hits = snapshot.hits;
   const selected = hits.find((item) => item.id === snapshot.selectedId) ?? hits[0] ?? null;
   const config = snapshot.config ?? base.retrievalConfig;
+  const retrieval = snapshot.retrieval;
+  const displayedConfig = retrieval?.config ?? config;
+  function clearSearchObservation(): void {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    searchAbortRef.current = null;
+    setPendingSince(null);
+  }
+  function cancelSearch(
+    reason: 'manual' | 'timeout' = 'manual',
+    request = snapshot.request,
+    controller = searchAbortRef.current,
+  ): void {
+    if (!controller || searchAbortRef.current !== controller) return;
+    clearSearchObservation();
+    controller.abort();
+    if (reason === 'timeout') {
+      reading.update((current) => current.search.request !== request ? current : ({
+        ...current,
+        search: { ...current.search, status: 'error', error: `检索超过 ${KNOWLEDGE_SEARCH_TIMEOUT_MS / 1000} 秒，已自动取消。可以缩小关键词范围后重试。` },
+      }));
+      return;
+    }
+    setSearchNotice('已取消检索，可以重新搜索。');
+    reading.update((current) => current.search.request !== request ? current : ({
+      ...current,
+      search: { ...current.search, status: 'idle', error: '', hits: [], retrieval: null, selectedId: '' },
+    }));
+  }
+  useEffect(() => {
+    if (snapshot.status !== 'pending' || pendingSince === null) return;
+    const updateElapsed = () => setElapsedMs(Math.max(0, Date.now() - pendingSince));
+    updateElapsed();
+    const interval = globalThis.setInterval(updateElapsed, 250);
+    return () => globalThis.clearInterval(interval);
+  }, [pendingSince, snapshot.status]);
+  useEffect(() => () => {
+    if (searchTimerRef.current) globalThis.clearTimeout(searchTimerRef.current);
+    searchAbortRef.current?.abort();
+  }, []);
   useEffect(() => {
     if (detailOpen && backRef.current && getComputedStyle(backRef.current).display !== 'none') {
       backRef.current.focus();
@@ -824,11 +883,18 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
     event.preventDefault();
     if (!draft.trim() || snapshot.status === 'pending') return;
     setDetailOpen(false);
+    setSearchNotice('');
     const config = { ...base.retrievalConfig };
     const next = reading.update((current) => ({ ...current, search: {
-      ...current.search, query: draft.trim(), config, hits: [], selectedId: '', status: 'pending', error: '', request: current.search.request + 1,
+      ...current.search, query: draft.trim(), config, hits: [], retrieval: null, selectedId: '', status: 'pending', error: '', request: current.search.request + 1,
     } }));
-    searchMutation.mutate({ query: next.search.query, config, request: next.search.request });
+    const controller = new AbortController();
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = controller;
+    setPendingSince(Date.now());
+    setElapsedMs(0);
+    searchTimerRef.current = globalThis.setTimeout(() => cancelSearch('timeout', next.search.request, controller), KNOWLEDGE_SEARCH_TIMEOUT_MS);
+    searchMutation.mutate({ query: next.search.query, config, request: next.search.request, signal: controller.signal });
   };
   return (
     <div className="knowledge-panel knowledge-search">
@@ -836,15 +902,22 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
         <Field htmlFor="knowledge-library-search" label="搜索知识库" description={`在「${publicKnowledgeText(base.name)}」的资料中查找。`}>
           <Input id="knowledge-library-search" onChange={(event) => setDraft(event.target.value)} placeholder="输入一个问题或关键词" value={draft} />
         </Field>
-        <Button disabled={!draft.trim()} leadingIcon={<Search size={15} />} loading={snapshot.status === 'pending'} type="submit" variant="primary">搜索</Button>
+        <Button disabled={!draft.trim() || snapshot.status === 'pending'} leadingIcon={<Search size={15} />} loading={snapshot.status === 'pending'} type="submit" variant="primary">搜索</Button>
       </form>
       <Disclosure className="knowledge-search__config" summary="搜索范围与方式">
         <p>只查询当前知识库，不读取个人记忆。{snapshot.config ? '下列配置对应当前结果。' : ''}</p>
-        <p>{retrievalModeLabel(config.mode)} · 最多显示 {config.topK} 条 · 最低相关度 {config.threshold.toFixed(2)}</p>
+        <p>{retrievalModeLabel(displayedConfig.mode)} · 最多显示 {displayedConfig.topK} 条 · 最低相关度 {displayedConfig.threshold.toFixed(2)} · {displayedConfig.rerankEnabled ? `Reranker：${retrieval?.reranker.provider || '已启用'}` : 'Reranker：关闭'}</p>
       </Disclosure>
       {snapshot.error ? <InlineNotice title="检索失败" tone="warning">{snapshot.error}</InlineNotice> : null}
-      {snapshot.status === 'pending' ? <p role="status">正在查找相关来源…</p> : null}
+      {searchNotice ? <p className="knowledge-search__notice" role="status">{searchNotice}</p> : null}
+      {snapshot.status === 'pending' ? (
+        <div className="knowledge-search__pending" role="status">
+          <span><strong>正在查找相关来源…</strong><small>已等待 {Math.max(1, Math.ceil(elapsedMs / 1000))} 秒 · 超过 {KNOWLEDGE_SEARCH_TIMEOUT_MS / 1000} 秒会自动取消</small></span>
+          <Button onClick={() => cancelSearch()} size="small" variant="quiet">取消</Button>
+        </div>
+      ) : null}
       {snapshot.status === 'success' ? <p className="knowledge-search__result-summary" role="status">“{snapshot.query}” · {hits.length} 条结果</p> : null}
+      {retrieval ? <KnowledgeRetrievalSummary retrieval={retrieval} /> : null}
       {hits.length ? (
         <div className="knowledge-search__results" data-detail-open={detailOpen || undefined}>
           <div className="knowledge-search__list" role="listbox" aria-label="检索结果" onKeyDown={(event) => {
@@ -859,14 +932,14 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
           }}>
             {hits.map((hit, index) => (
               <button aria-selected={selected?.id === hit.id} data-selected={selected?.id === hit.id || undefined} key={hit.id} onClick={() => { reading.update((current) => ({ ...current, search: { ...current.search, selectedId: hit.id } })); setDetailOpen(true); }} ref={(node) => { resultRefs.current[index] = node; }} role="option" tabIndex={selected?.id === hit.id ? 0 : -1} type="button">
-                <span><strong>{publicKnowledgeText(hit.documentName)}</strong><small>{publicKnowledgeText(hit.title)} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{publicKnowledgeText(hit.excerpt) || '没有可显示的摘录'}</small></span>
+                <span><strong>{publicKnowledgeText(hit.documentName)}</strong><small>{hitRankLabel(hit, index)} · {publicKnowledgeText(hit.title)} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{publicKnowledgeText(hit.excerpt) || '没有可显示的摘录'}</small></span>
                 <b data-level={relevanceLevel(hit.score)}>{relevanceLabel(hit.score)}</b>
               </button>
             ))}
           </div>
           {selected ? <div className="knowledge-search__reader">
             <Button className="knowledge-search__back" leadingIcon={<ArrowLeft size={14} />} onClick={() => { returnFocusRef.current = true; setDetailOpen(false); }} ref={backRef} size="small" variant="quiet">返回检索结果</Button>
-            <KnowledgeHitDetail key={selected.id} baseId={base.id} hit={selected} onOpen={onOpenHit} transport={transport} />
+            <KnowledgeHitDetail baseId={base.id} hit={selected} rank={Math.max(1, hits.findIndex((item) => item.id === selected.id) + 1)} onOpen={onOpenHit} transport={transport} />
           </div> : null}
         </div>
       ) : snapshot.status === 'success' ? (
@@ -878,7 +951,23 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   );
 }
 
-function KnowledgeHitDetail({ baseId, hit, onOpen, transport }: { baseId: string; hit: KnowledgeSearchHit; onOpen: (hit: KnowledgeSearchHit) => void; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
+function KnowledgeRetrievalSummary({ retrieval }: { retrieval: KnowledgeSearchRetrieval }) {
+  const library = retrieval.libraries[0];
+  const config = retrieval.config ?? library?.config;
+  return (
+    <section aria-label="本次召回诊断" className="knowledge-search__retrieval-summary">
+      <header><strong>本次召回诊断</strong><span>{retrievalModeLabelValue(retrieval.effectiveMode)} · {library ? `${library.returned} 条返回` : '服务未返回分阶段统计'}</span></header>
+      <dl>
+        <div><dt>候选规模</dt><dd>{library ? `${library.candidateLimit}（关键词 ${library.lexicalCandidates} · 向量 ${library.denseCandidates} · 图谱 ${library.graphCandidates}）` : '未报告'}</dd></div>
+        <div><dt>图谱状态</dt><dd>{library ? `${library.graphStatus}${library.graphMatchedNodes ? ` · 关联 ${library.graphMatchedNodes} 个节点` : ''}` : '未报告'}</dd></div>
+        <div><dt>RAG 参数</dt><dd>{config ? `topK ${config.topK} · RRF ${config.rrfK} · 候选 ×${config.candidateMultiplier}` : '未报告'}</dd></div>
+        <div><dt>Reranker</dt><dd>{retrieval.reranker.configured ? `${retrieval.reranker.provider} · ${library?.rerankCandidates ?? 0} 个候选` : retrieval.reranker.provider === 'none' ? '未启用' : `未配置（${retrieval.reranker.provider}）`}</dd></div>
+      </dl>
+    </section>
+  );
+}
+
+function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: string; hit: KnowledgeSearchHit; onOpen: (hit: KnowledgeSearchHit) => void; rank: number; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
   const openMutation = useMutation({ mutationFn: () => openKnowledgeHit(transport, baseId, hit), onSuccess: () => onOpen(hit) });
   const graphPaths = hit.diagnostics.graphPaths;
   const visibleGraphPaths = graphPaths.slice(0, 2);
@@ -889,6 +978,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, transport }: { baseId: string
       <p>{publicKnowledgeText(hit.excerpt) || '这个段落没有可显示的摘录。'}</p>
       <dl>
         <div><dt>位置</dt><dd>{citationLabel(hit)}</dd></div>
+        <div><dt>最终排名</dt><dd>第 {hit.diagnostics.rerankRank ?? rank} 条{hit.diagnostics.rerankRank !== null ? '（Reranker 后）' : ''}</dd></div>
         <div><dt>相关程度</dt><dd>{relevanceLabel(hit.score, false)}</dd></div>
         <div><dt>标题路径</dt><dd>{publicKnowledgeText(hit.heading) || '未提供'}</dd></div>
       </dl>
@@ -896,6 +986,8 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, transport }: { baseId: string
         <dl>
           <div><dt>相关度分数</dt><dd>{scorePoints(hit.score)} / 100</dd></div>
           <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit)}</dd></div>
+          {hit.diagnostics.retrievalRank !== null ? <div><dt>初始召回排名</dt><dd>第 {hit.diagnostics.retrievalRank} 条 · {scorePoints(hit.diagnostics.retrievalScore)} / 100</dd></div> : null}
+          {hit.diagnostics.rerankRank !== null ? <div><dt>Reranker 排名</dt><dd>第 {hit.diagnostics.rerankRank} 条 · {scorePoints(hit.diagnostics.rerankScore)} / 100 · {hit.diagnostics.rerankProvider || '已启用'}</dd></div> : null}
           {graphPaths.length ? (
             <div>
               <dt>关联路径</dt>
@@ -922,6 +1014,13 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, transport }: { baseId: string
       {openMutation.error ? <p className="knowledge-inline-error">当前无法打开来源。</p> : null}
     </article>
   );
+}
+
+function hitRankLabel(hit: KnowledgeSearchHit, index: number): string {
+  if (hit.diagnostics.rerankRank !== null) {
+    return `最终排名 #${hit.diagnostics.rerankRank}${hit.diagnostics.retrievalRank === null ? '' : ` · 初始 #${hit.diagnostics.retrievalRank}`}`;
+  }
+  return `排名 #${index + 1}`;
 }
 
 function relevanceLabel(score: number | null, detailed = true): string {
@@ -1054,11 +1153,13 @@ function KnowledgeSettingsPanel({
           ? '关系权重必须在 0–10 之间。'
         : retrieval.lexicalWeight + retrieval.denseWeight <= 0
           ? '关键词权重和向量权重不能同时为 0。'
-          : retrieval.rrfK < 1 || retrieval.rrfK > 1_000
-            ? '融合系数必须在 1–1000 之间。'
-            : retrieval.candidateMultiplier < 1 || retrieval.candidateMultiplier > 20
-              ? '候选范围必须在 1–20 之间。'
-              : '';
+            : retrieval.rrfK < 1 || retrieval.rrfK > 1_000
+              ? '融合系数必须在 1–1000 之间。'
+              : retrieval.candidateMultiplier < 1 || retrieval.candidateMultiplier > 20
+                ? '候选范围必须在 1–20 之间。'
+                : retrieval.rerankCandidateDepth < 1 || retrieval.rerankCandidateDepth > 100 || (retrieval.rerankEnabled && retrieval.rerankCandidateDepth < retrieval.topK)
+                  ? 'Reranker 候选数必须在 1–100 之间，且不能小于返回数量。'
+                  : '';
   useEffect(() => {
     if (!documents.some((document) => document.id === previewDocumentId)) {
       setPreviewDocumentId(documents[0]?.id ?? '');
@@ -1089,6 +1190,8 @@ function KnowledgeSettingsPanel({
     ['关系权重', String(base.retrievalConfig.graphWeight), String(retrieval.graphWeight)],
     ['融合系数', String(base.retrievalConfig.rrfK), String(retrieval.rrfK)],
     ['候选范围', String(base.retrievalConfig.candidateMultiplier), String(retrieval.candidateMultiplier)],
+    ['Reranker', yesNoLabel(base.retrievalConfig.rerankEnabled), yesNoLabel(retrieval.rerankEnabled)],
+    ['Reranker 候选数', String(base.retrievalConfig.rerankCandidateDepth), String(retrieval.rerankCandidateDepth)],
   ]);
   return (
     <div className="knowledge-panel knowledge-settings">
@@ -1161,6 +1264,8 @@ function KnowledgeSettingsPanel({
             <Field htmlFor="knowledge-graph-weight" label="关系权重"><Input disabled={retrieval.mode !== 'hybrid' || !retrieval.graphEnabled} id="knowledge-graph-weight" max={10} min={0} onChange={(event) => setRetrieval({ ...retrieval, graphWeight: Number(event.target.value) })} step={0.05} type="number" value={retrieval.graphWeight} /></Field>
             <Field htmlFor="knowledge-rrf-k" label="融合系数"><Input id="knowledge-rrf-k" max={1_000} min={1} onChange={(event) => setRetrieval({ ...retrieval, rrfK: Number(event.target.value) })} type="number" value={retrieval.rrfK} /></Field>
             <Field htmlFor="knowledge-candidate-multiplier" label="候选范围"><Input id="knowledge-candidate-multiplier" max={20} min={1} onChange={(event) => setRetrieval({ ...retrieval, candidateMultiplier: Number(event.target.value) })} type="number" value={retrieval.candidateMultiplier} /></Field>
+            <Switch checked={retrieval.rerankEnabled} label="启用 Reranker" onCheckedChange={(rerankEnabled) => setRetrieval({ ...retrieval, rerankEnabled })} />
+            <Field htmlFor="knowledge-rerank-depth" label="Reranker 候选数"><Input disabled={!retrieval.rerankEnabled} id="knowledge-rerank-depth" max={100} min={1} onChange={(event) => setRetrieval({ ...retrieval, rerankCandidateDepth: Number(event.target.value) })} type="number" value={retrieval.rerankCandidateDepth} /></Field>
           </div>
         </Disclosure>
         {retrievalError ? <p className="knowledge-inline-error" role="alert">{retrievalError}</p> : null}
@@ -1589,7 +1694,14 @@ function chunkingStrategyLabel(value: KnowledgeChunkingConfig['strategy']): stri
 }
 function asRetrievalMode(value: string): KnowledgeRetrievalConfig['mode'] { return value === 'dense' || value === 'lexical' ? value : 'hybrid'; }
 function retrievalModeLabel(value: KnowledgeRetrievalConfig['mode']): string { return value === 'dense' ? '向量检索' : value === 'lexical' ? '关键词检索' : '混合检索'; }
+function retrievalModeLabelValue(value: string): string {
+  return value === 'dense' ? '向量检索' : value === 'lexical' ? '关键词检索' : value === 'hybrid' ? '混合检索' : '服务未报告';
+}
 function parserLabel(value: KnowledgeParserMode): string { return value === 'builtin' ? '内置' : value === 'mineru' ? 'MinerU' : '自动'; }
+function isAbortError(value: unknown): boolean {
+  return (typeof DOMException !== 'undefined' && value instanceof DOMException && value.name === 'AbortError')
+    || (value instanceof Error && value.name === 'AbortError');
+}
 function scorePoints(value: number | null): string { return value === null ? '未提供' : String(Math.round(value <= 1 ? value * 100 : value)); }
 function retrievalEvidenceLabel(hit: KnowledgeSearchHit): string {
   const mode = hit.diagnostics.effectiveMode === 'hybrid' ? '混合检索' : hit.diagnostics.effectiveMode === 'lexical' ? '关键词检索' : hit.diagnostics.effectiveMode === 'dense' ? '向量检索' : '检索服务未报告';

@@ -1,5 +1,5 @@
 import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { KnowledgeRetrievalConfig, KnowledgeSearchHit } from './api';
+import type { KnowledgeRetrievalConfig, KnowledgeSearchHit, KnowledgeSearchRetrieval } from './api';
 
 export type KnowledgeReaderOrigin = 'materials' | 'search' | 'graph';
 
@@ -13,6 +13,7 @@ export type KnowledgeReadingContext = {
     query: string;
     config: KnowledgeRetrievalConfig | null;
     hits: KnowledgeSearchHit[];
+    retrieval: KnowledgeSearchRetrieval | null;
     selectedId: string;
     status: 'idle' | 'pending' | 'success' | 'error';
     error: string;
@@ -23,7 +24,7 @@ export type KnowledgeReadingContext = {
 function emptyContext(): KnowledgeReadingContext {
   return {
     documentId: '', materialsFilter: '', readerOrigin: 'materials', focusHit: null,
-    search: { draft: '', query: '', config: null, hits: [], selectedId: '', status: 'idle', error: '', request: 0 },
+    search: { draft: '', query: '', config: null, hits: [], retrieval: null, selectedId: '', status: 'idle', error: '', request: 0 },
   };
 }
 

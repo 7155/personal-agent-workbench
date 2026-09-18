@@ -436,6 +436,12 @@ class KnowledgeControlFacade:
             request["mode"] = _optional_retrieval_mode(payload.get("mode"))
         if payload.get("threshold") is not None:
             request["threshold"] = _bounded_float(payload.get("threshold"), default=0.0, minimum=0.0, maximum=1.0)
+        if payload.get("rerank") is not None:
+            if not isinstance(payload.get("rerank"), bool):
+                raise KnowledgeLibraryError("rerank must be boolean", code="invalid_argument")
+            request["rerank"] = payload["rerank"]
+        if payload.get("rerankCandidateDepth") is not None:
+            request["rerankCandidateDepth"] = _bounded_int(payload.get("rerankCandidateDepth"), default=40, minimum=1, maximum=100)
         if payload.get("fileName") is not None:
             request["fileName"] = _required_text(payload.get("fileName"), "fileName", maximum=512)
         result = self.worker.management_call("management_search", request)

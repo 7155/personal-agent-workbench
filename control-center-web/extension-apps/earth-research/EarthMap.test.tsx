@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import L from 'leaflet';
 import { afterEach, expect, it, vi } from 'vitest';
 import { EarthMap } from './EarthMap';
@@ -28,6 +28,28 @@ it('keeps created, edited and deleted geometry in sync with context and local im
   expect(selected.mock.lastCall?.[1]).toBe('remove');
   expect(selected.mock.lastCall?.[0].id).toBe(id);
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:test-workspace')!)).toEqual([]);
+});
+
+it('exposes an explicit save action for edit and delete modes',()=>{
+  vi.stubGlobal('ResizeObserver',class {observe(){} disconnect(){}});Reflect.set(L.Browser,'svg',true);
+  const feature: GeoJSON.Feature = { type:'Feature', id:'keep-me', properties:{name:'测试区域',source:'user_drawing'}, geometry:{type:'Polygon',coordinates:[[[120,30],[120.1,30],[120.1,30.1],[120,30.1],[120,30]]]}};
+  localStorage.setItem('paw-earth-geometries:action-test',JSON.stringify([feature]));
+  const factory=vi.spyOn(L,'map'),selected=vi.fn();
+  render(<EarthMap run={null} selection={[]} workspaceKey="action-test" onActivity={vi.fn()} onSelect={selected}/>);
+  const map=factory.mock.results[0].value as L.Map;
+  const toolbarButtons=document.querySelectorAll<HTMLButtonElement>('.earth-gis-toolbar button');
+  act(()=>fireEvent.click(toolbarButtons[4]!));
+  expect(screen.getByRole('button',{name:'保存'})).toBeVisible();
+  act(()=>fireEvent.click(screen.getByRole('button',{name:'取消'})));
+  expect(screen.queryByRole('button',{name:'保存'})).toBeNull();
+  act(()=>fireEvent.click(toolbarButtons[5]!));
+  let group:L.FeatureGroup|undefined;map.eachLayer(layer=>{if(layer instanceof L.FeatureGroup&&layer.getLayers().length)group=layer;});
+  expect(group).toBeDefined();
+  act(()=>group!.getLayers()[0]!.fire('click'));
+  expect(screen.getByRole('button',{name:'保存'})).toBeVisible();
+  act(()=>fireEvent.click(screen.getByRole('button',{name:'保存'})));
+  expect(selected.mock.lastCall?.[1]).toBe('remove');
+  expect(JSON.parse(localStorage.getItem('paw-earth-geometries:action-test')!)).toEqual([]);
 });
 
 it('starts with a geography-ready satellite basemap and exposes a roads fallback', () => {

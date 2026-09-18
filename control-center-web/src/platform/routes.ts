@@ -1744,7 +1744,7 @@ export const CONTROL_ROUTES = {
     method: 'POST',
     path: '/api/knowledge-bases/:kbId/search',
     params: { kbId: null },
-    body: ['query', 'topK', 'mode', 'threshold', 'fileIds', 'fileName'],
+    body: ['query', 'topK', 'mode', 'threshold', 'rerank', 'rerankCandidateDepth', 'fileIds', 'fileName'],
     requiredBody: ['query'],
   },
   'knowledgeBases.find': {

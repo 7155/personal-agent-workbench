@@ -46,6 +46,7 @@ it('creates the exact App-owned Session and freezes the task in its first messag
   await user.type(screen.getByRole('textbox', { name: 'Google Cloud 项目' }), 'test-project');
   await user.type(screen.getByRole('textbox', { name: '分析任务' }), '比较两个候选地块');
   await user.click(screen.getByRole('button', { name: '开始分析' }));
+  await user.click(screen.getByRole('button', { name: '确认方案并执行' }));
   await waitFor(() => expect(transport.requests.some(x => x.request.pathId === 'agent.session.prompt')).toBe(true));
   expect(transport.requests.find(x => x.request.pathId === 'agent.sessions.create')?.request.body).toMatchObject({ mode: 'coordinator', executionMode: 'workspace_managed', ownerAppId: manifest.id, surfaceKind: 'extension_app', surfaceKey: 'analysis', workspaceRoots: ['/work'] });
   const prompt = transport.requests.find(x => x.request.pathId === 'agent.session.prompt')?.request.body;

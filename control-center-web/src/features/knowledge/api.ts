@@ -45,6 +45,8 @@ export interface KnowledgeRetrievalConfig {
   graphWeight: number;
   rrfK: number;
   candidateMultiplier: number;
+  rerankEnabled: boolean;
+  rerankCandidateDepth: number;
 }
 
 export interface KnowledgeDocument {
@@ -266,9 +268,48 @@ export interface KnowledgeSearchHit {
     lexicalScore: number | null;
     denseScore: number | null;
     graphScore: number | null;
+    retrievalScore: number | null;
+    retrievalRank: number | null;
+    rerankScore: number | null;
+    rerankRank: number | null;
+    rerankProvider: string;
+    rerankFingerprint: string;
+    independentRerankStage: boolean;
+    subagentSubstitute: boolean;
     graphMatches: string[];
     graphPaths: string[];
   };
+}
+
+export interface KnowledgeSearchRetrievalLibrary {
+  baseId: string;
+  baseName: string;
+  config: KnowledgeRetrievalConfig | null;
+  effectiveMode: string;
+  candidateLimit: number;
+  lexicalCandidates: number;
+  denseCandidates: number;
+  graphCandidates: number;
+  graphStatus: string;
+  graphMatchedNodes: number;
+  rerankApplied: boolean;
+  rerankCandidates: number;
+  returned: number;
+}
+
+export interface KnowledgeSearchRetrieval {
+  mode: string;
+  effectiveMode: string;
+  config: KnowledgeRetrievalConfig | null;
+  libraries: KnowledgeSearchRetrievalLibrary[];
+  lexicalAvailable: boolean;
+  dense: { available: boolean; degraded: boolean; provider: string; model: string };
+  reranker: { provider: string; configured: boolean; fingerprint: string; independentStage: boolean; subagentSubstitute: boolean; fallbackCount: number; error: string };
+}
+
+export interface KnowledgeSearchResult {
+  hits: KnowledgeSearchHit[];
+  retrieval: KnowledgeSearchRetrieval | null;
 }
 
 export type KnowledgeGraphNodeKind = 'document' | 'chunk' | 'topic' | 'entity' | 'term' | 'unknown';
@@ -745,12 +786,23 @@ export async function searchKnowledgeBase(
   baseId: string,
   query: string,
   config: KnowledgeRetrievalConfig,
-): Promise<KnowledgeSearchHit[]> {
-  return normalizeSearchHits(await transport.request({
+  signal?: AbortSignal,
+): Promise<KnowledgeSearchResult> {
+  const payload = await transport.request({
     pathId: 'knowledgeBases.search',
     params: { kbId: baseId },
-    body: { query, topK: config.topK, mode: config.mode, threshold: config.threshold },
-  }));
+    body: {
+      query,
+      topK: config.topK,
+      mode: config.mode,
+      threshold: config.threshold,
+      rerank: config.rerankEnabled,
+      rerankCandidateDepth: config.rerankCandidateDepth,
+    },
+    ...(signal ? { signal } : {}),
+  });
+  const root = record(payload);
+  return { hits: normalizeSearchHits(payload), retrieval: normalizeSearchRetrieval(root.retrieval) };
 }
 
 export async function openKnowledgeHit(
@@ -1045,6 +1097,8 @@ function normalizeRetrievalConfig(value: unknown): KnowledgeRetrievalConfig {
     graphWeight: boundedNumber(row.graphWeight ?? row.graph_weight, 0, 10, .7),
     rrfK: boundedNumber(row.rrfK ?? row.rrf_k, 1, 1_000, 60),
     candidateMultiplier: boundedNumber(row.candidateMultiplier ?? row.candidate_multiplier, 1, 20, 4),
+    rerankEnabled: row.rerankEnabled === true || row.rerank_enabled === true,
+    rerankCandidateDepth: boundedNumber(row.rerankCandidateDepth ?? row.rerank_candidate_depth, 1, 100, 40),
   };
 }
 
@@ -1239,11 +1293,65 @@ function normalizeSearchHits(value: unknown): KnowledgeSearchHit[] {
         lexicalScore: nullableNumber(diagnostics.lexicalScore),
         denseScore: nullableNumber(diagnostics.denseScore),
         graphScore: nullableNumber(diagnostics.graphScore),
+        retrievalScore: nullableNumber(diagnostics.retrievalScore),
+        retrievalRank: nullableNumber(diagnostics.retrievalRank),
+        rerankScore: nullableNumber(diagnostics.rerankScore),
+        rerankRank: nullableNumber(diagnostics.rerankRank),
+        rerankProvider: text(diagnostics.rerankProvider),
+        rerankFingerprint: text(diagnostics.rerankFingerprint),
+        independentRerankStage: diagnostics.independentRerankStage === true,
+        subagentSubstitute: diagnostics.subagentSubstitute === true,
         graphMatches: list(diagnostics.graphMatches).map((item) => text(item)).filter(Boolean),
         graphPaths: list(diagnostics.graphPaths).map((item) => text(item)).filter(Boolean),
       },
     };
   });
+}
+
+function normalizeSearchRetrieval(value: unknown): KnowledgeSearchRetrieval | null {
+  const root = record(value);
+  if (!Object.keys(root).length) return null;
+  const dense = record(root.dense);
+  const reranker = record(root.reranker);
+  return {
+    mode: text(root.mode, 'unknown'),
+    effectiveMode: text(root.effectiveMode, 'unknown'),
+    config: Object.keys(record(root.config)).length ? normalizeRetrievalConfig(root.config) : null,
+    libraries: list(root.libraries).map((item) => {
+      const row = record(item);
+      return {
+        baseId: text(row.kbId),
+        baseName: text(row.kbName),
+        config: Object.keys(record(row.config)).length ? normalizeRetrievalConfig(row.config) : null,
+        effectiveMode: text(row.effectiveMode, 'unknown'),
+        candidateLimit: number(row.candidateLimit),
+        lexicalCandidates: number(row.lexicalCandidates),
+        denseCandidates: number(row.denseCandidates),
+        graphCandidates: number(row.graphCandidates),
+        graphStatus: text(row.graphStatus, 'unknown'),
+        graphMatchedNodes: number(row.graphMatchedNodes),
+        rerankApplied: row.rerankApplied === true,
+        rerankCandidates: number(row.rerankCandidates),
+        returned: number(row.returned),
+      };
+    }),
+    lexicalAvailable: root.lexicalAvailable !== false,
+    dense: {
+      available: dense.available === true,
+      degraded: dense.degraded === true,
+      provider: text(dense.provider, text(dense.providerName)),
+      model: text(dense.model),
+    },
+    reranker: {
+      provider: text(reranker.provider, 'none'),
+      configured: reranker.configured === true,
+      fingerprint: text(reranker.fingerprint),
+      independentStage: reranker.independentStage !== false,
+      subagentSubstitute: reranker.subagentSubstitute === true,
+      fallbackCount: number(reranker.fallbackCount),
+      error: text(reranker.error),
+    },
+  };
 }
 
 function documentStatus(value: string): KnowledgeDocumentStatus {

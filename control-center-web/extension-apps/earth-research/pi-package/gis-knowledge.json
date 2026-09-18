@@ -1,0 +1,10 @@
+[
+  {"id":"crs-buffer","title":"米制距离与 CRS","text":"buffer、距离和面积不能直接在经纬度上计算。先检查 CRS；地理坐标输入应转换到合适的投影 CRS，计算完成后按需要转回 EPSG:4326。记录单位、目标 CRS 和输入输出范围。","tags":["crs","buffer","distance","area","meter"]},
+  {"id":"overlay-order","title":"排除区与候选地块","text":"选址先执行硬约束：对水域、保护区和已有建设区做 buffer 或 union，再用 difference 扣除候选地块。权重不能覆盖硬约束；空结果必须报告为没有可行候选。","tags":["site-selection","difference","union","buffer","exclusion"]},
+  {"id":"raster-scale","title":"栅格尺度和有效数据","text":"坡度、土地覆盖、分区统计和采样必须明确数据集、日期、分辨率、scale、投影、NoData 处理和 maxPixels。不同分辨率的栅格不能只凭图层显示直接比较。","tags":["raster","scale","nodata","zonal","resolution"]},
+  {"id":"gee-local-boundary","title":"GEE 与本地计算边界","text":"本地 GIS 算子读取项目文件并在本机运行；ee.Image、ee.FeatureCollection 和 reduceRegion 由 Earth Engine 云端执行。地图瓦片只是显示结果，小型要素可 evaluate 回本地，大型影像必须通过 Export 任务和下载回执。","tags":["gee","local","cloud","export","evaluate"]},
+  {"id":"route-cost","title":"电网接入路线","text":"路线代价栅格必须使用正数代价；禁区设置为不可通行或极高代价。Earth.routeGrid 只恢复采样网格路径，必须把网格单元映射为地理坐标，再验证完整线路缓冲区与排除区相交情况。","tags":["route","grid","power","corridor","cost"]},
+  {"id":"rf-training","title":"监督分类与随机森林","text":"机器学习分类需要带类别字段的训练样本、明确影像波段和时间范围、sampleRegions、训练验证划分和混淆矩阵。分类图层显示成功不能替代精度评估；裂隙等目标必须使用足够分辨率的影像。","tags":["machine-learning","random-forest","classification","training","accuracy"]},
+  {"id":"batch-receipts","title":"批处理与可追溯回执","text":"批量运行必须为每个输入生成独立 runId，记录输入哈希、参数、执行平面、状态和输出。一个任务失败不能被后续任务覆盖；汇总必须区分 completed、failed、cancelled 和 unknown。","tags":["batch","runid","receipt","retry","status"]},
+  {"id":"map-context","title":"地图状态与分析上下文","text":"地图中心、缩放、可视范围、可见图层和选中要素是只读上下文；几何数据必须以带 runId 的 GeoJSON 显式发送给 Agent。地图状态不能冒充地理计算结果，视图命令必须有应用回执。","tags":["map","viewport","selection","context","receipt"]}
+]

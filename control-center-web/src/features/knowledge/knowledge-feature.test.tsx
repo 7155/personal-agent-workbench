@@ -171,6 +171,8 @@ describe('document knowledge library', () => {
     expect(await screen.findByRole('option', { name: /工具注册/ })).toBeInTheDocument();
     expect(screen.getByText('“工具如何注册” · 1 条结果')).toBeInTheDocument();
     expect(screen.getByText('高相关')).toHaveAttribute('data-level', 'high');
+    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('Reranker未启用');
+    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('候选规模40');
     await user.click(screen.getByText('高级：检索详情', { selector: 'summary' }));
     expect(screen.getByText('92 / 100')).toBeInTheDocument();
     expect(screen.getByText('混合检索 · 关键词候选第 1 · 向量候选第 2 · 图谱候选第 1 · 关联 工具、知识整理服务')).toBeInTheDocument();
@@ -184,7 +186,7 @@ describe('document knowledge library', () => {
     expect(document.body).not.toHaveTextContent('Knowledge Worker');
     const search = request(transport, 'knowledgeBases.search');
     expect(search?.params).toEqual({ kbId: 'kb-runtime' });
-    expect(search?.body).toEqual({ query: '工具如何注册', topK: 10, mode: 'hybrid', threshold: 0.2 });
+    expect(search?.body).toEqual({ query: '工具如何注册', topK: 10, mode: 'hybrid', threshold: 0.2, rerank: false, rerankCandidateDepth: 40 });
 
     await user.click(screen.getByRole('button', { name: '打开来源' }));
     await waitFor(() => expect(transport.requests.find((call) => call.request.pathId === 'knowledgeBases.open' && call.request.query?.chunkId === 'chunk-tool')?.request).toMatchObject({
@@ -248,7 +250,7 @@ describe('document knowledge library', () => {
     await waitFor(() => expect(transport.requests.filter((call) => call.request.pathId === 'knowledgeBases.update').at(-1)?.request.body).toMatchObject({
       retrievalConfig: {
         mode: 'hybrid', topK: 10, threshold: .2, lexicalWeight: 1, denseWeight: 1.5,
-        graphEnabled: false, graphWeight: .7, rrfK: 60, candidateMultiplier: 4,
+        graphEnabled: false, graphWeight: .7, rrfK: 60, candidateMultiplier: 4, rerankEnabled: false, rerankCandidateDepth: 40,
       },
       expectedRevision: 8,
     }));
@@ -960,6 +962,13 @@ function createTransport(options: { activeJob?: boolean; emptyGraph?: boolean; m
         ok: true, pathId: 'configuration.settings.rollback', receiptId: 'receipt-embedding-rollback', payloadSha256: 'sha256:embedding-settings', appliedAtMs: Date.now(), rollbackAvailable: false, rollbackToken: '',
       },
       'knowledgeBases.search': {
+        retrieval: {
+          mode: 'hybrid', effectiveMode: 'hybrid',
+          config: { mode: 'hybrid', topK: 10, threshold: .2, lexicalWeight: 1, denseWeight: 1, graphEnabled: true, graphWeight: .7, rrfK: 60, candidateMultiplier: 4, rerankEnabled: false, rerankCandidateDepth: 40 },
+          libraries: [{ kbId: 'kb-runtime', kbName: '伙伴运行资料', config: { mode: 'hybrid', topK: 10, threshold: .2, lexicalWeight: 1, denseWeight: 1, graphEnabled: true, graphWeight: .7, rrfK: 60, candidateMultiplier: 4, rerankEnabled: false, rerankCandidateDepth: 40 }, effectiveMode: 'hybrid', candidateLimit: 40, lexicalCandidates: 2, denseCandidates: 2, graphCandidates: 1, graphStatus: 'ready', graphMatchedNodes: 2, rerankApplied: false, rerankCandidates: 0, returned: 1 }],
+          lexicalAvailable: true, dense: { available: true, degraded: false, provider: 'local-hash', model: 'test' },
+          reranker: { provider: 'none', configured: false, independentStage: true, subagentSubstitute: false, fallbackCount: 0 },
+        },
         hits: [...(options.multipleSearchHits ? [{
           id: 'chunk-intro', documentId: 'file-runtime', documentName: 'runtime.pdf', title: '概述',
           excerpt: '运行时概述。', score: .95, page: 1, heading: '简介',
@@ -1033,7 +1042,7 @@ function knowledgeBase() {
     chunkingConfig: { strategy: 'markdown', size: 1_200, overlap: 160, separator: '\n\n', respectHeadings: true, respectPageBoundaries: true },
     retrievalConfig: {
       mode: 'hybrid', topK: 10, threshold: .2, lexicalWeight: 1, denseWeight: 1,
-      graphEnabled: true, graphWeight: .7, rrfK: 60, candidateMultiplier: 4,
+      graphEnabled: true, graphWeight: .7, rrfK: 60, candidateMultiplier: 4, rerankEnabled: false, rerankCandidateDepth: 40,
     },
   };
 }

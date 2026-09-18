@@ -207,6 +207,25 @@ describe('Knowledge reading recovery', () => {
     expect(screen.getByRole('combobox', { name: '材料' })).toHaveTextContent('other.md');
   });
 
+  it('cancels a slow search and exposes an actionable recovery state', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport({
+      search: (request: ControlRequest) => new Promise((resolve) => {
+        request.signal?.addEventListener('abort', () => resolve({ hits: [] }), { once: true });
+      }),
+    });
+    renderKnowledge(transport, '/knowledge?base=kb-reading&tab=search');
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '来源');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    expect(await screen.findByRole('button', { name: '取消' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(await screen.findByText('已取消检索，可以重新搜索。')).toBeInTheDocument();
+    const searchRequest = transport.requests.find(({ request }) => request.pathId === 'knowledgeBases.search');
+    expect(searchRequest?.request.signal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: '搜索' })).toBeEnabled();
+  });
+
   it('supports keyboard result selection and a reversible compact result detail', async () => {
     const user = userEvent.setup();
     renderKnowledge(createTransport(), '/knowledge?base=kb-reading&tab=search');
@@ -237,7 +256,7 @@ const imageAsset = { id: 'image-1', name: 'figure.png', mimeType: 'image/png', b
 const attachmentAsset = { id: 'attachment-1', name: 'notes.txt', mimeType: 'text/plain', byteSize: 3, readPath: '/v1/knowledge/assets/attachment-1' };
 const detail = { document: sourceDocument, chunks: { items: [{ id: 'chunk-1', content: '第一段来源。' }], total: 2 }, contentWindow: { items: [{ lineNumber: 1, content: '已经读取的来源正文。' }], total: 1 } };
 
-function createTransport(options: { documents?: MockRouteHandler; detail?: MockRouteHandler } & Pick<MockControlTransportOptions, 'knowledgeAsset' | 'knowledgeDocumentSource'> = {}) {
+function createTransport(options: { documents?: MockRouteHandler; detail?: MockRouteHandler; search?: MockRouteHandler } & Pick<MockControlTransportOptions, 'knowledgeAsset' | 'knowledgeDocumentSource'> = {}) {
   return new MockControlTransport({ knowledgeAsset: options.knowledgeAsset, knowledgeDocumentSource: options.knowledgeDocumentSource, routes: {
     'knowledgeBases.list': { items: [base] },
     'knowledgeBases.get': { base },
@@ -249,7 +268,7 @@ function createTransport(options: { documents?: MockRouteHandler; detail?: MockR
     'knowledgeEmbedding.profile': {},
     'configuration.settings': {},
     'knowledgeBases.open': { ok: true },
-    'knowledgeBases.search': { hits: [1, 2].map((value) => ({ id: `chunk-${value}`, documentId: sourceDocument.id, documentName: sourceDocument.name, title: `来源段落 ${value}`, excerpt: `可核对摘录 ${value}`, score: .9, page: value })) },
+    'knowledgeBases.search': options.search ?? { hits: [1, 2].map((value) => ({ id: `chunk-${value}`, documentId: sourceDocument.id, documentName: sourceDocument.name, title: `来源段落 ${value}`, excerpt: `可核对摘录 ${value}`, score: .9, page: value })) },
   } });
 }
 

@@ -4,7 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readOfficialDocs } from './official-docs';
-import { parseViewCommand } from './view-contract';
+import { parseMapState, parseViewCommand } from './view-contract';
+import { GIS_CATALOG, GIS_OPERATION_IDS, inspectGISPath, listGISFiles, prepareGISWorkspace, runGISOperation } from './gis-operations.mjs';
+import { searchGISKnowledge } from './gis-knowledge.mjs';
+import { earthTaskCancel, earthTaskStatus } from './cloud-tasks.mjs';
+import { uploadTableAsset } from './asset-upload.mjs';
+import { runGISBatch } from './batch.mjs';
+import { runEarthScriptBatch } from './cloud-batch.mjs';
+import { listMLTemplates, mlTemplate, prepareMLScript } from './ml-templates.mjs';
 
 type Context = { cwd: string };
 type Update = (value: unknown) => void;
@@ -14,6 +21,78 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 const string = { type: 'string' };
 
 export default function registerEarthResearchPackage(pi: any) {
+  pi.registerTool({
+    name: 'earth_gis_catalog', label: 'GIS 算子目录', executionMode: 'sequential',
+    description: 'List the 28 deterministic local GIS operations, with input roles and parameter specifications. No Google or model call.',
+    parameters: schema({}),
+    async execute() { return { content: [{ type: 'text', text: JSON.stringify(GIS_CATALOG) }], details: { status: 'completed', catalog: GIS_CATALOG } }; },
+  });
+  pi.registerTool({
+    name: 'earth_gis_search', label: '检索 GIS 知识', executionMode: 'sequential',
+    description: 'Search the versioned GIS operation and workflow knowledge index for CRS, scale, local/cloud boundaries, routing and machine-learning guidance. This is retrieval context, not an execution result.',
+    parameters: schema({ query: string, limit: { type: 'number' }, category: string }, ['query']),
+    async execute(_id: string, input: { query: string; limit?: number; category?: string }) {
+      const result = searchGISKnowledge(input.query, { limit: input.limit, category: input.category });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: 'completed', ...result } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_ml_catalog', label: '机器学习工作流', executionMode: 'sequential',
+    description: 'List first-class Earth Engine machine-learning templates. Templates require real datasets, labelled samples and validation; they do not invent accuracy.',
+    parameters: schema({}),
+    async execute() { const templates = listMLTemplates(); return { content: [{ type: 'text', text: JSON.stringify({ templates }) }], details: { status: 'completed', templates } }; },
+  });
+  pi.registerTool({
+    name: 'earth_ml_template', label: '生成 ML 脚本模板', executionMode: 'sequential',
+    description: 'Return a bounded JavaScript template for a real Earth Engine ML workflow. Save it in the workspace, replace placeholders with verified inputs, then run with earth_run_script.',
+    parameters: schema({ workflow: { type: 'string', enum: ['random_forest', 'kmeans', 'change_detection'] } }, ['workflow']),
+    async execute(_id: string, input: { workflow: string }) { const template = mlTemplate(input.workflow); return { content: [{ type: 'text', text: JSON.stringify(template) }], details: { status: 'completed', ...template } }; },
+  });
+  pi.registerTool({
+    name: 'earth_ml_prepare', label: '准备机器学习脚本', executionMode: 'sequential',
+    description: 'Render a selected Earth Engine ML workflow into the bound workspace with explicit replacements. Unresolved placeholders are returned and must be fixed before execution.',
+    parameters: schema({ workflow: { type: 'string', enum: ['random_forest', 'kmeans', 'change_detection'] }, saveAs: string, replacements: { type: 'object', additionalProperties: string } }, ['workflow']),
+    async execute(_id: string, input: { workflow: string; saveAs?: string; replacements?: Record<string, string> }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = prepareMLScript(workspace(ctx), input) as { unresolved: string[]; [key: string]: unknown };
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: result.unresolved.length ? 'needs_input' : 'ready', ...result }, isError: false };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_workspace', label: '准备 GIS 项目', executionMode: 'sequential',
+    description: 'Prepare the local GIS adapter in the bound Session workspace, preserving runtime configuration. Optional python selects an existing environment containing GeoPandas and Rasterio. No provider or Google call.',
+    parameters: schema({ python: string }),
+    async execute(_id: string, input: { python?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = prepareGISWorkspace(workspace(ctx), input);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: 'ready', ...result } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_files', label: '查看 GIS 数据', executionMode: 'sequential',
+    description: 'List supported local GIS files under a workspace-relative directory (default data): GeoJSON, Shapefile, GeoPackage, KML, GeoTIFF and IMG. Use before processing; files remain in the bound project.',
+    parameters: schema({ directory: string }),
+    async execute(_id: string, input: { directory?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const items = listGISFiles(workspace(ctx), input.directory || 'data');
+      return { content: [{ type: 'text', text: JSON.stringify({ items }) }], details: { status: 'completed', items } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_inspect', label: '检查 GIS 数据', executionMode: 'sequential',
+    description: 'Read the actual schema, CRS, extent, feature count and sample attributes of a local vector file, or dimensions/bands/value range of a raster. The path must be relative to the bound workspace.',
+    parameters: schema({ path: string }, ['path']),
+    async execute(_id: string, input: { path: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await inspectGISPath({ root: workspace(ctx), path: input.path });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: 'completed', result } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_geoprocess', label: '运行 GIS 算子', executionMode: 'sequential',
+    description: 'Run one deterministic local GIS operation from earth_gis_catalog. Inputs map roles to workspace-relative data paths, params follow the catalog, output is a safe layer name. Results and code are persisted under .earth/gis/runs and the workspace receipt; use actual outputs in later steps. Prefer this for buffer, clip, overlay, joins, zonal statistics and terrain, not generated code. It is independent of Earth Engine and requires the configured local GIS Python environment.',
+    parameters: schema({ op: { type: 'string', enum: [...GIS_OPERATION_IDS] }, inputs: { type: 'object', additionalProperties: string }, params: { type: 'object', additionalProperties: true }, output: string, saveAs: string }, ['op', 'inputs']),
+    async execute(_id: string, input: { op: string; inputs: Record<string, string>; params?: Record<string, unknown>; output?: string; saveAs?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await runGISOperation({ root: workspace(ctx), request: input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status !== 'completed' };
+    },
+  });
   pi.registerTool({
     name: 'earth_view', label: '操控地图与代码面板', executionMode: 'sequential',
     description: 'Control the owning workbench without rerunning Google computation. focus: center [longitude,latitude], zoom. layer: actual raster layerId, visible. feature: actual featureId to select and focus. panel: split/map/code/results/sources. Include displayed runId for result operations. Returns frontend acknowledgement or queued, never invents application success. Use for requested view changes, not to interrupt reading.',
@@ -31,6 +110,37 @@ export default function registerEarthResearchPackage(pi: any) {
         await new Promise(resolve=>setTimeout(resolve,200));
       }
       return {content:[{type:'text',text:JSON.stringify({requestId:id,status:'queued',message:'请求已保存；尚未收到工作区应用回执。'})}],details:{requestId:id,status:'queued'}};
+    },
+  });
+  pi.registerTool({
+    name: 'earth_map_state', label: '读取地图状态', executionMode: 'sequential',
+    description: 'Read the right-hand map host projection: current center, zoom, bounds, visible result layers and selected feature IDs. It never treats view state as analysis output.',
+    parameters: schema({}),
+    async execute(_id: string, _input: Record<string, never>, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const root = workspace(ctx); const file = path.join(root, '.earth', 'map-state.json');
+      if (!fs.existsSync(file)) return { content: [{ type: 'text', text: JSON.stringify({ status: 'unknown', reason: 'map_state_not_published' }) }], details: { status: 'unknown' } };
+      if (fs.lstatSync(file).isSymbolicLink()) throw new Error('Map state cannot be a symlink.');
+      const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const parsed = parseMapState(state);
+      return { content: [{ type: 'text', text: JSON.stringify(parsed) }], details: { status: 'completed', state: parsed } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_batch', label: '批量运行本地 GIS', executionMode: 'sequential',
+    description: 'Run bounded deterministic local GIS requests with independent run IDs and an aggregate receipt. Failed items remain visible and are never silently retried.',
+    parameters: schema({ requests: { type: 'array', items: { type: 'object', additionalProperties: true } }, concurrency: { type: 'number' } }, ['requests']),
+    async execute(_id: string, input: { requests: Array<Record<string, unknown>>; concurrency?: number }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await runGISBatch({ root: workspace(ctx), requests: input.requests as any, concurrency: input.concurrency });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_run_batch', label: '批量运行 GEE 脚本', executionMode: 'sequential',
+    description: 'Run saved Earth Engine scripts as a bounded batch. Every script retains its own run ID and remote task records; aggregate status is completed, partial or failed.',
+    parameters: schema({ scripts: { type: 'array', items: string }, concurrency: { type: 'number' }, project: string, python: string, dependencies: string }, ['scripts']),
+    async execute(_id: string, input: { scripts: string[]; concurrency?: number; project?: string; python?: string; dependencies?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await runEarthScriptBatch({ root: workspace(ctx), ...input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
     },
   });
   pi.registerTool({
@@ -57,7 +167,7 @@ export default function registerEarthResearchPackage(pi: any) {
   pi.registerTool({
     name: 'earth_run_script', label: '运行 Earth Engine 代码',
     executionMode: 'sequential',
-    description: 'Run a saved JavaScript file from the current Session workspace through the installed official Earth Engine SDK adapter. Emits real run ID, errors, map layers and outputs. Supports ee.*, Map.addLayer/setCenter/centerObject, print, await Earth.evaluate(object), Earth.routeGrid(costs,start,end,{clearanceCells}). No ui.* or Export.* support.',
+    description: 'Run a saved JavaScript file from the current Session workspace through the installed official Earth Engine SDK adapter. Emits real run ID, errors, map layers, evaluated outputs, export task IDs and downloaded artifacts. Supports ee.*, Map.addLayer/setCenter/centerObject, print, await Earth.evaluate(object), Earth.routeGrid(costs,start,end,{clearanceCells}), Earth.downloadImage(image,params,filename), and Export.image/table toDrive/toCloudStorage/toAsset. No ui.* support.',
     promptSnippet: 'Use earth_run_script for execution after writing the actual JavaScript file. Do not manufacture .earth run records.',
     parameters: schema({ script: { ...string, description: 'Relative saved JavaScript path; defaults to analysis.js' }, expectedSourceHash: { ...string, description: 'Optional SHA-256 of the code the user chose to run. A changed file is not executed.' } }),
     async execute(toolCallId: string, input: { script?: string; expectedSourceHash?: string }, signal: AbortSignal, onUpdate: Update, ctx: Context) {
@@ -101,6 +211,33 @@ export default function registerEarthResearchPackage(pi: any) {
           resolve({ content: [{ type: 'text', text: stdout.trim() || (signal?.aborted ? 'Execution cancelled; check the last run receipt.' : stderr || `Runner exited ${code}`) }], isError: code !== 0, details: { exitCode: code, cancelled: signal?.aborted === true } });
         });
       });
+    },
+  });
+  pi.registerTool({
+    name: 'earth_task_status', label: '读取 GEE 任务', executionMode: 'sequential',
+    description: 'Read real Google Earth Engine batch task status or the recent task list using the configured project and credentials. It never treats a submitted task as completed.',
+    parameters: schema({ taskIds: { type: 'array', items: string }, project: string, python: string, dependencies: string }, []),
+    async execute(_id: string, input: { taskIds?: string[]; project?: string; python?: string; dependencies?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await earthTaskStatus({ root: workspace(ctx), ...input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status !== 'completed' };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_task_cancel', label: '取消 GEE 任务', executionMode: 'sequential',
+    description: 'Cancel explicitly named Earth Engine batch tasks and return the real cancellation request receipt.',
+    parameters: schema({ taskIds: { type: 'array', items: string }, project: string, python: string, dependencies: string }, ['taskIds']),
+    async execute(_id: string, input: { taskIds: string[]; project?: string; python?: string; dependencies?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await earthTaskCancel({ root: workspace(ctx), ...input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_asset_upload', label: '上传 GEE Asset', executionMode: 'sequential',
+    description: 'Upload a workspace-owned Shapefile, ZIP or CSV table through the configured Earth Engine CLI. The input must be WGS84-ready and the receipt records submitted/unknown/failed separately.',
+    parameters: schema({ path: string, assetId: string, cli: string }, ['path', 'assetId']),
+    async execute(_id: string, input: { path: string; assetId: string; cli?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await uploadTableAsset({ root: workspace(ctx), ...input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
     },
   });
 }

@@ -34,7 +34,9 @@ atomicWrite(pointer, { runId, path: runFile });
 let latest = { ...base, status: 'starting', layers: [], console: [] };
 let accessToken = '';
 function save(update) {
-  latest = { ...base, ...update, updatedAt: new Date().toISOString() };
+  const normalized = { ...update };
+  if (Array.isArray(normalized.artifacts)) normalized.artifacts = normalized.artifacts.map(artifact => ({ ...artifact, path: typeof artifact.path === 'string' && path.isAbsolute(artifact.path) ? path.relative(root, artifact.path) : artifact.path }));
+  latest = { ...base, ...normalized, updatedAt: new Date().toISOString() };
   if (accessToken) latest = JSON.parse(JSON.stringify(latest).split(accessToken).join('[REDACTED]'));
   atomicWrite(runFile, latest);
   // Each run has an immutable identity. A late run never steals the active pointer.
@@ -67,7 +69,7 @@ try {
   accessToken = execFileSync(option('--python') || 'python3', [helper], { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   ee.data.setAuthToken('', 'Bearer', accessToken, 3600, [], undefined, false);
   await new Promise((resolve, reject) => ee.initialize(null, null, resolve, reject, null, project));
-  const result = await executeScript({ ee, script: source, filename: path.basename(scriptPath), onChange: save });
+  const result = await executeScript({ ee, script: source, filename: path.basename(scriptPath), downloadDir: path.join(directory, 'artifacts'), onChange: save });
   save(result);
   console.log(JSON.stringify({ runId, status: latest.status, artifact: runFile, layers: latest.layers.length, error: latest.error }));
   process.exitCode = result.status === 'completed' ? 0 : 1;
