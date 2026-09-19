@@ -9,6 +9,7 @@ export type ProjectLayer = {
   updatedAt: string;
   revision?: number;
   history?: string[];
+  source?: Record<string, unknown>;
   visible: boolean;
   features: GeoJSON.Feature[];
 };
@@ -67,6 +68,7 @@ export function parseProjectLayerCatalog(value: unknown): Array<Omit<ProjectLaye
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
     revision: Number.isFinite(Number(item.revision)) ? Number(item.revision) : 1,
     history: Array.isArray(item.history) ? item.history.filter((entry): entry is string => typeof entry === 'string') : [],
+    source: item.source && typeof item.source === 'object' && !Array.isArray(item.source) ? item.source as Record<string, unknown> : undefined,
     visible: item.visible !== false,
   }));
 }

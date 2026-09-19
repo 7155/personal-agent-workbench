@@ -1,8 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, Database, FileText, FolderOpen, Layers, PanelRightClose, PanelRightOpen, RefreshCw, Search } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Database, File, FileArchive, FileImage, FileText, Folder, FolderOpen, Layers, Link, PanelRightClose, PanelRightOpen, RefreshCw, Search, Table2, TriangleAlert } from 'lucide-react';
 import type { EarthRun } from './workspace';
 import { selectedLayerFeatures, type ProjectLayer, type SpatialSourceDraft, type SpatialSourceSummary, type WorkspaceFileSummary } from './layer-catalog';
 import { createPropertyDraft, discardPropertyDraft, hasEditedProperties, materializePropertyDraft, updatePropertyDraft, type PropertyDraft } from './property-draft';
+import { buildWorkspaceFileTree, filterWorkspaceFileTree, workspaceNodeByteSize, WORKSPACE_FILE_LABELS, type WorkspaceFileNode } from './workspace-file-tree';
+import './earth-files.css';
 
 type DockTab = 'layers' | 'attributes' | 'runs' | 'files' | 'databases';
 type BoundFeature = GeoJSON.Feature & { pawLayerId?: string; pawRevision?: number };
@@ -22,6 +24,8 @@ export type EarthDataDockProps = {
   projectLayers: ProjectLayer[];
   spatialSources: SpatialSourceSummary[];
   workspaceFiles: WorkspaceFileSummary[];
+  workspaceFilesIncomplete?: boolean;
+  workspaceFilesNotice?: string;
   localRuns?: LocalGISRunSummary[];
   activeObjectLabel?: string;
   selectedFeatures: GeoJSON.Feature[];
@@ -42,7 +46,6 @@ export type EarthDataDockProps = {
   onOpenFile?: (file: WorkspaceFileSummary) => Promise<void> | void;
 };
 
-const GIS_EXTENSIONS = /\.(geojson|json|shp|gpkg|sqlite|kml|kmz|tif|tiff|csv|html?|md|pdf|png|jpg|jpeg|zip)$/iu;
 const EMPTY_RUNS: LocalGISRunSummary[] = [];
 const PAGE_SIZE = 50;
 const valueSort = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
@@ -93,7 +96,25 @@ function fileSize(bytes: number | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSources, workspaceFiles, localRuns = EMPTY_RUNS, activeObjectLabel, selectedFeatures, onSaveLayer, onUpdateFeature, onSelectFeature, onCreateBundle, onShowRun, onCompareRuns, onExportLayer, onToggleLayer, onRemoveLayer, onOpenLayerRevision, onConnectSource, onLoadSourceLayer, onRefreshCatalog, onRefreshFiles, onOpenFile }: EarthDataDockProps) {
+type FileTreeRow = { node: WorkspaceFileNode; depth: number; parentId?: string; position: number; siblings: number };
+
+function fileTreeRows(nodes: WorkspaceFileNode[], expanded?: Set<string>, depth = 0, parentId?: string): FileTreeRow[] {
+  return nodes.flatMap((node, index) => [{ node, depth, parentId, position: index + 1, siblings: nodes.length }, ...(!expanded || expanded.has(node.id) ? fileTreeRows(node.children, expanded, depth + 1, node.id) : [])]);
+}
+
+function fileIcon(node: WorkspaceFileNode, expanded: boolean) {
+  const Icon = node.kind === 'directory' ? expanded ? FolderOpen : Folder
+    : node.category === 'symlink' ? Link
+      : ['geopackage', 'database'].includes(node.category) ? Database
+        : ['vector', 'shapefile'].includes(node.category) ? Layers
+          : ['raster', 'image'].includes(node.category) ? FileImage
+            : node.category === 'report' ? FileText
+              : node.category === 'table' ? Table2
+                : node.category === 'archive' ? FileArchive : File;
+  return <Icon size={15} aria-hidden="true" className={`earth-files__icon earth-files__icon--${node.category}`} />;
+}
+
+export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSources, workspaceFiles, workspaceFilesIncomplete = false, workspaceFilesNotice, localRuns = EMPTY_RUNS, activeObjectLabel, selectedFeatures, onSaveLayer, onUpdateFeature, onSelectFeature, onCreateBundle, onShowRun, onCompareRuns, onExportLayer, onToggleLayer, onRemoveLayer, onOpenLayerRevision, onConnectSource, onLoadSourceLayer, onRefreshCatalog, onRefreshFiles, onOpenFile }: EarthDataDockProps) {
   const dockId = useId();
   const [tab, setTab] = useState<DockTab>('layers');
   const [collapsed, setCollapsed] = useState(false);
@@ -106,6 +127,10 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
   const [sourceSecret, setSourceSecret] = useState('PAW_POSTGIS_URL');
   const [sourceLayers, setSourceLayers] = useState<Record<string, string>>({});
   const [fileFilter, setFileFilter] = useState('');
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set());
+  const [selectedFileId, setSelectedFileId] = useState('');
+  const [focusedFileId, setFocusedFileId] = useState('');
+  const fileRowsRef = useRef(new Map<string, HTMLDivElement>());
   const [attributeFilter, setAttributeFilter] = useState('');
   const [onlySelected, setOnlySelected] = useState(false);
   const [sortColumn, setSortColumn] = useState('__feature_id__');
@@ -152,9 +177,20 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
   const visibleFeatures = filteredFeatures.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const allFiles = useMemo(() => {
     const artifactFiles = (run?.artifacts ?? []).map(artifact => ({ path: artifact.path.startsWith('/') ? artifact.path : `${workspaceRoot}/${artifact.path}`, name: artifact.path.split('/').pop() || artifact.path, kind: 'file' as const, byteSize: artifact.bytes }));
-    return [...new Map([...workspaceFiles, ...artifactFiles].map(file => [file.path, file])).values()];
+    const files = new Map<string, WorkspaceFileSummary>();
+    for (const file of [...artifactFiles, ...workspaceFiles]) files.set(file.path, { ...files.get(file.path), ...file, byteSize: file.byteSize ?? files.get(file.path)?.byteSize });
+    return [...files.values()];
   }, [run?.artifacts, workspaceFiles, workspaceRoot]);
-  const filteredFiles = useMemo(() => allFiles.filter(file => file.kind === 'file' && GIS_EXTENSIONS.test(file.name) && (!fileFilter.trim() || `${file.name} ${file.path}`.toLowerCase().includes(fileFilter.toLowerCase()))), [allFiles, fileFilter]);
+  const fileTree = useMemo(() => buildWorkspaceFileTree(allFiles, workspaceRoot), [allFiles, workspaceRoot]);
+  const allFileNodes = useMemo(() => fileTreeRows(fileTree).map(row => row.node), [fileTree]);
+  const filteredFileTree = useMemo(() => filterWorkspaceFileTree(fileTree, fileFilter), [fileTree, fileFilter]);
+  const visibleFileRows = useMemo(() => fileTreeRows(filteredFileTree, expandedFiles), [filteredFileTree, expandedFiles]);
+  const selectedFile = allFileNodes.find(node => node.id === selectedFileId);
+  const focusableFileId = visibleFileRows.some(row => row.node.id === focusedFileId) ? focusedFileId : visibleFileRows[0]?.node.id;
+  useEffect(() => { setExpandedFiles(new Set()); setSelectedFileId(''); setFocusedFileId(''); setFileFilter(''); }, [workspaceRoot]);
+  useEffect(() => {
+    if (fileFilter.trim()) setExpandedFiles(current => new Set([...current, ...fileTreeRows(filteredFileTree).filter(row => row.node.kind === 'directory' || row.node.kind === 'shapefile').map(row => row.node.id)]));
+  }, [fileFilter, filteredFileTree]);
   const runLayers = run?.layers.filter(layer => layer.tileUrl) ?? [];
   const orderedRuns = useMemo(() => [...localRuns].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [localRuns]);
   const selectedRun = orderedRuns.find(item => item.runId === selectedRunId) ?? orderedRuns[0];
@@ -169,6 +205,51 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return false; }
     finally { actionLock.current = false; setPending(''); }
   }
+
+  function toggleFileBranch(node: WorkspaceFileNode) {
+    setExpandedFiles(current => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next; });
+  }
+
+  function fileOpenTarget(node: WorkspaceFileNode): WorkspaceFileSummary | undefined {
+    if (node.kind === 'directory' || node.kind === 'symlink') return undefined;
+    if (node.partOfShapefile) return allFileNodes.find(candidate => candidate.kind === 'shapefile' && candidate.path === node.partOfShapefile)?.entry;
+    if (node.category === 'sidecar') return undefined;
+    return node.entry;
+  }
+
+  function openFileNode(node: WorkspaceFileNode) {
+    const target = fileOpenTarget(node);
+    if (target && onOpenFile) void perform('打开文件', () => onOpenFile(target));
+  }
+
+  function focusFileRow(id?: string) {
+    if (!id) return;
+    setFocusedFileId(id); fileRowsRef.current.get(id)?.focus();
+  }
+
+  function fileTreeKeyDown(event: KeyboardEvent<HTMLDivElement>, row: FileTreeRow, index: number) {
+    if (event.target !== event.currentTarget) return;
+    const { node, parentId } = row;
+    const branch = node.kind === 'directory' || node.kind === 'shapefile';
+    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'ArrowDown') focusFileRow(visibleFileRows[index + 1]?.node.id);
+    else if (event.key === 'ArrowUp') focusFileRow(visibleFileRows[index - 1]?.node.id);
+    else if (event.key === 'Home') focusFileRow(visibleFileRows[0]?.node.id);
+    else if (event.key === 'End') focusFileRow(visibleFileRows.at(-1)?.node.id);
+    else if (event.key === 'ArrowRight' && branch) { if (!expandedFiles.has(node.id)) toggleFileBranch(node); else focusFileRow(node.children[0]?.id); }
+    else if (event.key === 'ArrowLeft') { if (branch && expandedFiles.has(node.id)) toggleFileBranch(node); else focusFileRow(parentId); }
+    else if (event.key === 'Enter') { setSelectedFileId(node.id); if (node.kind === 'directory') toggleFileBranch(node); else openFileNode(node); }
+    else if (event.key === ' ') setSelectedFileId(node.id);
+  }
+
+  function shapefileMissingLabel(node: WorkspaceFileNode): string {
+    const missing = node.shapefile?.missingRequired.map(extension => `.${extension}`).join('、');
+    return missing ? workspaceFilesIncomplete ? `未找到 ${missing}（目录尚未完整读取）` : `缺少必要配套 ${missing}` : '';
+  }
+
+  const selectedFileTarget = selectedFile ? fileOpenTarget(selectedFile) : undefined;
+  const selectedFileBytes = selectedFile ? workspaceNodeByteSize(selectedFile) : undefined;
 
   async function saveProperties() {
     if (!editSession || !onUpdateFeature || !draftDirty) return;
@@ -248,7 +329,7 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
         </div>)}</div>
         {!projectLayers.length ? <p className="earth-data-dock__empty">在地图上绘制或导入要素，再保存为项目图层。也可以从数据库加载子图层。</p> : null}
         {selectedLayer ? <div className="earth-data-dock__layer-detail"><div><span>{selectedLayer.crs} · v{selectedLayer.revision ?? 1}</span><button type="button" onClick={() => setTab('attributes')}>打开属性表</button></div>
-          <details className="earth-data-dock__history"><summary>版本与图层管理<ChevronDown size={13} /></summary><dl className="earth-data-dock__metadata"><div><dt>图层 ID</dt><dd><code>{selectedLayer.id}</code></dd></div><div><dt>数据位置</dt><dd><code>{selectedLayer.path}</code></dd></div><div><dt>更新时间</dt><dd>{timeLabel(selectedLayer.updatedAt)}</dd></div></dl><div className="earth-data-dock__history-list">{[...(selectedLayer.history ?? [])].reverse().map(path => <button type="button" key={path} disabled={Boolean(pending) || !onOpenLayerRevision} onClick={() => void perform('打开图层版本', () => onOpenLayerRevision?.(selectedLayer, path))}><span>{path.split('/').at(-1) ?? path}</span><small>查看快照</small></button>)}{!selectedLayer.history?.length ? <p className="earth-data-dock__empty">尚无保存的历史快照。</p> : null}</div><button type="button" className="earth-data-dock__remove" disabled={Boolean(pending) || !onRemoveLayer} onClick={() => void perform('移除图层', () => onRemoveLayer?.(selectedLayer.id))}>从目录移除 {selectedLayer.name}</button></details>
+          <details className="earth-data-dock__history"><summary>版本与图层管理<ChevronDown size={13} /></summary><dl className="earth-data-dock__metadata"><div><dt>图层 ID</dt><dd><code>{selectedLayer.id}</code></dd></div>{typeof selectedLayer.source?.path === 'string' ? <div><dt>源文件</dt><dd><code>{selectedLayer.source.path}</code></dd></div> : null}<div><dt>项目副本</dt><dd><code>{selectedLayer.path}</code></dd></div><div><dt>更新时间</dt><dd>{timeLabel(selectedLayer.updatedAt)}</dd></div></dl><div className="earth-data-dock__history-list">{[...(selectedLayer.history ?? [])].reverse().map(path => <button type="button" key={path} disabled={Boolean(pending) || !onOpenLayerRevision} onClick={() => void perform('打开图层版本', () => onOpenLayerRevision?.(selectedLayer, path))}><span>{path.split('/').at(-1) ?? path}</span><small>查看快照</small></button>)}{!selectedLayer.history?.length ? <p className="earth-data-dock__empty">尚无保存的历史快照。</p> : null}</div><button type="button" className="earth-data-dock__remove" disabled={Boolean(pending) || !onRemoveLayer} onClick={() => void perform('移除图层', () => onRemoveLayer?.(selectedLayer.id))}>从目录移除 {selectedLayer.name}</button></details>
         </div> : null}
         <details className="earth-data-dock__save-layer" open={!projectLayers.length}><summary>将地图所选保存为新图层 <span>{selectedFeatures.length} 要素</span></summary><div className="earth-data-dock__layer-actions"><input aria-label="新图层名称" value={layerName} onChange={event => setLayerName(event.target.value)} placeholder="图层名称" /><button type="button" disabled={Boolean(pending) || !onSaveLayer || !selectedFeatures.length || !layerName.trim()} onClick={() => void perform('保存图层', () => onSaveLayer?.(layerName.trim(), selectedFeatures))}>保存图层</button></div></details>
         {selectedFeatures.length ? <button type="button" className="earth-data-dock__selection-link" onClick={() => setTab('attributes')}><span>地图已选 {selectedFeatures.length} 个要素</span><strong>{draftDirty ? '继续编辑草稿' : '查看属性与编辑'}</strong></button> : null}
@@ -282,10 +363,40 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
         <section className="earth-data-dock__cloud-summary" aria-label="Earth Engine 云端运行"><div className="earth-data-dock__section-head"><strong>Earth Engine</strong><span>云端运行</span></div>{run ? <><p><strong>{STATUS_LABELS[run.status] ?? run.status}</strong> · {run.layers.length} 图层 · {run.tasks?.length ?? 0} 导出任务</p><code>{run.runId}</code><small>云端导出任务与本地 GIS 成果包分别记录。</small></> : <p className="earth-data-dock__empty">尚无 Earth Engine 运行。</p>}</section>
       </section> : null}
 
-      {tab === 'files' ? <section className="earth-data-dock__content" id={`${dockId}-panel-files`} role="tabpanel" aria-label="工作区文件管理">
-        <div className="earth-data-dock__section-head"><strong>数据与成果文件</strong><span>{filteredFiles.length} 个</span></div><label className="earth-data-dock__search"><Search size={14} /><input aria-label="筛选 GIS 文件" value={fileFilter} onChange={event => setFileFilter(event.target.value)} placeholder="按名称或路径查找" /></label>
-        {filteredFiles.map(file => <div className="earth-data-dock__file" key={file.path}><FileText size={16} aria-hidden="true" className="earth-data-dock__row-icon" /><div><strong title={file.name}>{file.name}</strong><small>{fileSize(file.byteSize)}</small></div><button type="button" aria-label={`打开 ${file.name}`} disabled={Boolean(pending) || !onOpenFile} onClick={() => void perform('打开文件', () => onOpenFile?.(file))}>打开</button><details className="earth-data-dock__resource-details"><summary>文件详情<ChevronDown size={12} aria-hidden="true" /></summary><dl className="earth-data-dock__metadata"><div><dt>位置</dt><dd><code>{file.path}</code></dd></div>{file.byteSize !== undefined ? <div><dt>大小</dt><dd>{file.byteSize.toLocaleString()} bytes</dd></div> : null}</dl></details></div>)}
-        {!filteredFiles.length ? <p className="earth-data-dock__empty">{fileFilter ? '没有匹配的文件。试试更短的名称或清空搜索。' : '工作区尚无已读取的 GIS 数据、图件或报告。导入数据或生成成果后，刷新这里。'}</p> : null}
+      {tab === 'files' ? <section className="earth-data-dock__content earth-files" id={`${dockId}-panel-files`} role="tabpanel" aria-label="工作区文件管理">
+        <div className="earth-files__toolbar">
+          <label className="earth-data-dock__search"><Search size={14} aria-hidden="true" /><input aria-label="筛选 GIS 文件" value={fileFilter} onChange={event => setFileFilter(event.target.value)} placeholder="查找文件、目录或类型" /></label>
+          <button type="button" className="earth-files__refresh" aria-label="刷新文件列表" title="重新读取当前项目目录" disabled={Boolean(pending) || !onRefreshFiles} onClick={() => void perform('刷新文件', () => onRefreshFiles?.())}><RefreshCw size={14} aria-hidden="true" /></button>
+        </div>
+        {workspaceFilesNotice || workspaceFilesIncomplete ? <p className="earth-files__listing-notice" role="status">{workspaceFilesNotice || '目录尚未完整读取；当前仅显示已读取的文件，可刷新重试。'}</p> : null}
+        <div className="earth-files__columns" aria-hidden="true"><span>名称</span><span>类型</span><span>大小</span></div>
+        <div className="earth-files__tree" role="tree" aria-label="项目文件目录">
+          {visibleFileRows.map((row, index) => {
+            const { node, depth } = row;
+            const branch = node.kind === 'directory' || node.kind === 'shapefile';
+            const expanded = expandedFiles.has(node.id);
+            const missingLabel = shapefileMissingLabel(node);
+            const unknownCrs = Boolean(node.shapefile && !node.shapefile.hasProjection);
+            const bytes = workspaceNodeByteSize(node);
+            return <div key={node.id} ref={element => { if (element) fileRowsRef.current.set(node.id, element); else fileRowsRef.current.delete(node.id); }} className="earth-files__row" role="treeitem" aria-label={node.name} aria-level={depth + 1} aria-posinset={row.position} aria-setsize={row.siblings} aria-selected={selectedFileId === node.id} aria-expanded={branch ? expanded : undefined} tabIndex={focusableFileId === node.id ? 0 : -1} title={node.path} style={{ paddingInlineStart: 5 + depth * 14 }} onFocus={() => setFocusedFileId(node.id)} onClick={() => { setSelectedFileId(node.id); setFocusedFileId(node.id); }} onDoubleClick={() => { if (node.kind === 'directory') toggleFileBranch(node); else openFileNode(node); }} onKeyDown={event => fileTreeKeyDown(event, row, index)}>
+              {branch ? <button type="button" className="earth-files__disclosure" tabIndex={-1} aria-label={`${expanded ? '收起' : '展开'}${node.kind === 'directory' ? '文件夹' : '配套'} ${node.name}`} onClick={event => { event.stopPropagation(); setSelectedFileId(node.id); toggleFileBranch(node); focusFileRow(node.id); }} onDoubleClick={event => event.stopPropagation()}>{expanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}</button> : <span className="earth-files__disclosure-space" aria-hidden="true" />}
+              {fileIcon(node, expanded)}
+              <span className="earth-files__name"><span>{node.name}</span>{missingLabel || unknownCrs ? <small className="earth-files__warning"><TriangleAlert size={11} aria-hidden="true" />{missingLabel ? <span title={missingLabel}>{workspaceFilesIncomplete ? '未找到 ' : '缺 '}{node.shapefile!.missingRequired.map(extension => `.${extension}`).join('、')}</span> : null}{unknownCrs ? <span title={workspaceFilesIncomplete ? '未找到 .prj（目录尚未完整读取）' : '缺少 .prj，CRS 未知'}>CRS 未知</span> : null}</small> : null}</span>
+              <span className="earth-files__type">{node.kind === 'shapefile' ? `SHP · ${node.children.length}` : WORKSPACE_FILE_LABELS[node.category]}</span>
+              <span className="earth-files__size" title={bytes === undefined ? '大小未读取' : `${bytes.toLocaleString()} bytes`}>{node.kind === 'directory' ? '' : bytes === undefined ? '—' : fileSize(bytes)}</span>
+            </div>;
+          })}
+        </div>
+        {!visibleFileRows.length ? <p className="earth-data-dock__empty earth-files__empty">{fileFilter ? '没有匹配的文件或目录。试试更短的名称或清空搜索。' : workspaceFilesIncomplete ? '暂未读到文件，请刷新重试。' : '当前目录列表没有文件。导入数据或生成成果后可刷新。'}</p> : null}
+        {selectedFile ? <section className="earth-files__details" aria-label="所选文件详情">
+          <div className="earth-files__detail-heading"><strong title={selectedFile.name}>{selectedFile.name}</strong>{selectedFileTarget ? <button type="button" aria-label={`打开 ${selectedFileTarget.name}`} disabled={Boolean(pending) || !onOpenFile} onClick={() => openFileNode(selectedFile)}>{selectedFile.partOfShapefile && selectedFile.path !== selectedFile.partOfShapefile ? '打开所属 SHP' : '打开'}</button> : selectedFile.kind === 'directory' ? <button type="button" onClick={() => toggleFileBranch(selectedFile)}>{expandedFiles.has(selectedFile.id) ? '收起文件夹' : '展开文件夹'}</button> : null}</div>
+          <dl><div><dt>完整路径</dt><dd><code>{selectedFile.path}</code></dd></div><div><dt>类型</dt><dd>{WORKSPACE_FILE_LABELS[selectedFile.category]}</dd></div>{selectedFileBytes !== undefined ? <div><dt>{selectedFile.kind === 'shapefile' ? '配套合计' : '大小'}</dt><dd>{fileSize(selectedFileBytes)} · {selectedFileBytes.toLocaleString()} bytes</dd></div> : null}
+            {selectedFile.kind === 'directory' ? <div><dt>目录内容</dt><dd>{selectedFile.children.length ? `当前列表有 ${selectedFile.children.length} 个直接子项` : '当前列表未列出子项'}</dd></div> : null}
+            {selectedFile.shapefile ? <><div><dt>必要配套</dt><dd className={shapefileMissingLabel(selectedFile) ? 'earth-files__warning' : undefined}>{shapefileMissingLabel(selectedFile) || '已列出 .shp、.shx、.dbf'}</dd></div><div><dt>坐标系</dt><dd>{selectedFile.shapefile.hasProjection ? '含 .prj，坐标系需读取后确认' : workspaceFilesIncomplete ? 'CRS 未知；未找到 .prj（目录尚未完整读取）' : 'CRS 未知（缺少 .prj）'}</dd></div><div><dt>配套文件</dt><dd>{selectedFile.children.map(node => node.name).join('、')}</dd></div></> : null}
+          </dl>
+          {selectedFile.kind === 'shapefile' && selectedFileBytes === undefined ? <p>配套文件大小尚未全部读取。</p> : null}
+          {selectedFile.kind === 'symlink' ? <p>符号链接保留在列表中，不跟随链接打开。</p> : selectedFile.category === 'sidecar' && !selectedFile.partOfShapefile ? <p>当前列表未找到同名 .shp；配套文件需随主文件读取。</p> : selectedFile.partOfShapefile && selectedFile.path !== selectedFile.partOfShapefile ? <p>这是 Shapefile 配套文件，打开时使用对应的 .shp 主文件。</p> : null}
+        </section> : <p className="earth-files__hint">选择查看路径；双击打开文件。SHP 配套随主文件展开。</p>}
       </section> : null}
 
       {tab === 'databases' ? <section className="earth-data-dock__content" id={`${dockId}-panel-databases`} role="tabpanel" aria-label="空间数据库">
