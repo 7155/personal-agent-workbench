@@ -112,6 +112,19 @@ function browserDependencyBoundary(): Plugin {
     name: 'rag-ime-browser-dependency-boundary',
     enforce: 'pre',
     transform(code, id) {
+      if (id.replaceAll('\\', '/').endsWith('/@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.js')) {
+        // Geoman ships an already bundled Lodash, so the individual _nodeUtil
+        // transform below cannot see it. Use its browser paths explicitly;
+        // never carry Node's util loader or the dynamic global fallback into CSP.
+        if (!code.includes('freeModule.require("util").types') || !code.includes('Function("return this")()')) {
+          this.error('Geoman browser dependency shape changed; review its bundled Lodash before upgrading.');
+        }
+        return {
+          code: code.replaceAll('freeModule.require("util").types', 'undefined')
+            .replaceAll('Function("return this")()', 'globalThis'),
+          map: null,
+        };
+      }
       if (!id.replaceAll('\\', '/').endsWith('/lodash/_nodeUtil.js')) return null;
       const browserCode = code.replace(
         /freeModule\.require\((['"])util\1\)\.types/g,
