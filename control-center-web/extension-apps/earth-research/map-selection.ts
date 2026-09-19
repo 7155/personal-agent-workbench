@@ -1,6 +1,8 @@
 export type MapSelection = { runId: string | null; features: GeoJSON.Feature[] };
 export type SelectionMode = 'replace' | 'toggle' | 'upsert' | 'remove';
 export const selectionKey=(feature:GeoJSON.Feature)=> {
+  const owner = (feature as GeoJSON.Feature & { pawLayerId?: string }).pawLayerId;
+  if (owner && feature.id != null) return JSON.stringify([owner, feature.id]);
   // Earth Engine restarts generated feature indices in each collection.
   // Business IDs and editable local IDs remain stable across edits.
   if (feature.properties?.id != null) return `object:${feature.properties.id}`;

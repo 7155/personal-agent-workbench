@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-18T13:40:03.142401+00:00",
+  "generatedAt": "2026-09-19T10:11:49.758240+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/lab-visual-recovery-20260913",
@@ -39,7 +39,7 @@
     },
     "pi_runtime_refactor": {
       "description": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
-      "pathCount": 23
+      "pathCount": 24
     },
     "portable_agent_ui": {
       "description": "Shared Agent controls and their standalone bundle entry.",
@@ -63,7 +63,7 @@
     },
     "refactor_integration": {
       "description": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
-      "pathCount": 22
+      "pathCount": 23
     },
     "refactor_verification": {
       "description": "Regression and architecture checks for the Runtime and application dependency refactoring.",
@@ -91,7 +91,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 112
+      "pathCount": 113
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -107,7 +107,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 65
+      "pathCount": 68
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -131,51 +131,51 @@
     },
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 62
+      "pathCount": 67
     },
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
-      "pathCount": 10
+      "pathCount": 12
     }
   },
   "summary": {
-    "pathCount": 1051,
+    "pathCount": 1064,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 852
+      "keep_release": 865
     },
     "groupCounts": {
       "local_docs": 122,
       "product_integration": 57,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "earth_research": 62,
+      "earth_research": 67,
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
       "memory_lifecycle": 15,
-      "verification": 112,
+      "verification": 113,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
-      "conversation_controls": 65,
+      "conversation_controls": 68,
       "trace_optimization": 61,
       "scheduled_tasks": 25,
       "session_full_access": 9,
       "lab_frontend": 54,
       "room_frontend": 20,
       "agent_capsule": 3,
-      "refactor_integration": 22,
+      "refactor_integration": 23,
       "offline_installer": 12,
       "room_service_refactor": 43,
       "lab_backend": 74,
-      "pi_runtime_refactor": 23,
+      "pi_runtime_refactor": 24,
       "browser_recovery": 1,
       "lab_tools": 10,
       "release_scope": 1,
       "refactor_verification": 66,
-      "knowledge_runtime": 10
+      "knowledge_runtime": 12
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -7537,6 +7537,97 @@
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed Earth data dock regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed Earth data dock and spatial database controls."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/layer-catalog.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed Earth project layer and spatial source catalog contracts."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-approval-model-decision.v1.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Inventory the approval decision contract already committed in 0e128f50; no current unrelated worktree change is included."
+    },
+    {
+      "path": "rag_ime/agent_approval_model.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Inventory the approval model implementation already committed in 0e128f50; no current unrelated worktree change is included."
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Inventory the approval decision schema already committed in 0e128f50; no current unrelated worktree change is included."
+    },
+    {
+      "path": "rag_ime/keychain_secrets.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi_runtime_refactor",
+      "reason": "Inventory the keychain adapter change already committed in 0e128f50; no current unrelated worktree change is included."
+    },
+    {
+      "path": "rag_ime/knowledge_library/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Inventory the Knowledge owner documentation already committed in 0e128f50; uncommitted Knowledge work remains outside this candidate."
+    },
+    {
+      "path": "scripts/configure_jev_key.sh",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Inventory the Jev key configuration helper already committed in 0e128f50; uncommitted Jev work remains outside this candidate."
+    },
+    {
+      "path": "scripts/install_earth_gis_runtime.sh",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed local Earth GIS runtime installation helper."
+    },
+    {
+      "path": "scripts/run_earth_gis_acceptance.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed plain-language Earth GIS acceptance runner."
+    },
+    {
+      "path": "tests/test_agent_approval_model.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Inventory the approval model regression already committed in 0e128f50; no current unrelated worktree change is included."
+    },
+    {
+      "path": "uv.lock",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "refactor_integration",
+      "reason": "Inventory the Python dependency lockfile already committed in 0e128f50; the Earth inventory repair adds no unrelated dependency changes."
     }
   ]
 }

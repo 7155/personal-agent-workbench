@@ -92,4 +92,29 @@ it('disables script execution while a non-script workspace artifact is open', as
   await user.click(screen.getByRole('button', { name: '地图' }));
   await user.click(screen.getByRole('button', { name: '打开 HTML 报告' }));
   expect(runButton).toBeDisabled();
+  await new Promise(resolve=>setTimeout(resolve,2700));
+  expect(screen.getByTitle('report.html')).toHaveAttribute('srcdoc','<h1>Report</h1>');
+  expect(runButton).toBeDisabled();
+  expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+});
+
+it('opens a local GIS project without Google configuration or a model prompt',async()=>{
+ const transport=new MockControlTransport({routes:{'agent.sessions.list':{items:[]},'agent.sessions.create':{session:{id:'local',title:'GIS 项目',mode:'coordinator',updatedAtMs:1,workspaceRoots:['/work']}},'agent.session.workspace.read':()=>{throw new Error('path does not exist in the authorized workspace; nearby entries: .earth/layers');}}});
+ show(transport);
+ await userEvent.type(await screen.findByRole('textbox',{name:'项目文件夹'}),'/work');
+ await userEvent.click(screen.getByRole('button',{name:'打开本地 GIS 项目'}));
+ await screen.findByTestId('original-agent');
+ await waitFor(()=>expect(screen.queryByText('尚未读到最新结果 · 已保留当前内容')).not.toBeInTheDocument());
+ expect(transport.requests.some(item=>item.request.pathId==='agent.sessions.create')).toBe(true);
+ expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+});
+
+it('opens the chosen map workflow without starting analysis or sending a model prompt',async()=>{
+ const transport=new MockControlTransport({routes:{'agent.sessions.list':{items:[]}}});
+ show(transport);
+ await screen.findByRole('textbox',{name:'项目文件夹'});
+ await userEvent.click(screen.getByRole('button',{name:'开始任务'}));
+ await userEvent.click(screen.getByRole('button',{name:/研究变化/}));
+ expect(await screen.findByRole('heading',{name:'查看植被状况'})).toBeVisible();
+ expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
 });

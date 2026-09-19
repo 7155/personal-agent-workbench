@@ -5,7 +5,12 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readOfficialDocs } from './official-docs';
 import { parseMapState, parseViewCommand } from './view-contract';
-import { GIS_CATALOG, GIS_OPERATION_IDS, connectSpatialSource, createGISBundle, exportGISLayer, inspectGISPath, listGISBackends, listGISFiles, listSpatialSources, prepareGISWorkspace, queryGISPixel, runGISOperation } from './gis-operations.mjs';
+import { prepareRemoteSensingWorkflow, runRemoteSensingWorkflow } from './remote-sensing.mjs';
+import { prepareCloudWorkflow } from './cloud-workflows.mjs';
+import { runSitingWorkflow } from './gis-workflows.mjs';
+import { listGISRuns, readGISRun, compareGISRuns, verifyGISBundle } from './gis-delivery.mjs';
+import { saveProjectLayer, updateProjectLayerMetadata } from './gis-project.mjs';
+import { GIS_CATALOG, GIS_OPERATION_IDS, connectSpatialSource, loadSpatialLayer, queryGISRegion, listQGISAlgorithms, helpQGISAlgorithm, runQGISAlgorithm, createGISBundle, exportGISLayer, inspectGISPath, listGISBackends, listGISFiles, listSpatialSources, prepareGISWorkspace, queryGISPixel, runGISOperation } from './gis-operations.mjs';
 import { searchGISKnowledge } from './gis-knowledge.mjs';
 import { earthTaskCancel, earthTaskStatus } from './cloud-tasks.mjs';
 import { uploadTableAsset } from './asset-upload.mjs';
@@ -19,6 +24,15 @@ const packageRoot = path.dirname(fileURLToPath(import.meta.url));
 const files = ['run-script.mjs', 'earth-execution.mjs', 'route-grid.mjs', 'auth-token.py', 'planning-template.js'];
 const schema = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
+
+function prepareWorkflow(input:any) {
+  if(input.plan?.provider==='gee'||['change','animation','research'].includes(input.plan?.kind)) {
+    const {kind,region,dateFrom,dateTo,collection,scale,bands,interval,splitDate,dimensions,framesPerSecond,researchQuestion,question}=input.plan;
+    const plan=Object.fromEntries(Object.entries({kind,region,dateFrom,dateTo,collection,scale,bands,interval,splitDate,dimensions,framesPerSecond,question:researchQuestion ?? question}).filter(([,value])=>value!==undefined));
+    return prepareCloudWorkflow({root:input.root,plan:plan as any});
+  }
+  return prepareRemoteSensingWorkflow(input);
+}
 
 export default function registerEarthResearchPackage(pi: any) {
   // These two commands are the workbench's deterministic UI bridge.  The map
@@ -46,8 +60,52 @@ export default function registerEarthResearchPackage(pi: any) {
     description: '把已完成 GIS 运行保存为版本化成果目录。',
     async handler(args: string, ctx: { cwd: string }) {
       const request = parseCommandArgs(args, 'earth-gis-bundle');
-      const result = createGISBundle({ root: ctx.cwd, ...(request as { runId: string; name?: string; version?: number; include?: string[] }) });
+      const result = createGISBundle({ ...(request as { runId: string; name?: string; version?: number; include?: string[] }), root: workspace(ctx) });
       appendCommandResult(pi, 'earth-gis-bundle', result);
+    },
+  });
+  const directServices: Record<string, (input: any) => unknown> = {
+    'earth-layer-save': saveProjectLayer,
+    'earth-layer-metadata':updateProjectLayerMetadata,
+    'earth-spatial-load': loadSpatialLayer,
+    'earth-gis-region': queryGISRegion,
+    'earth-gis-pixel': queryGISPixel,
+    'earth-gis-siting': runSitingWorkflow,
+    'earth-remote-prepare': prepareWorkflow,
+    'earth-remote-run': runRemoteSensingWorkflow,
+    'earth-gis-runs': listGISRuns,
+    'earth-gis-run-read': readGISRun,
+    'earth-gis-compare': compareGISRuns,
+    'earth-gis-bundle-verify': verifyGISBundle,
+  };
+  for (const [command, service] of Object.entries(directServices)) {
+    pi.registerCommand?.(command, { description: '项目 GIS 操作；直接执行，不调用模型。', async handler(args: string, ctx: Context) {
+      const input = parseCommandArgs(args || '{}', command);
+      const result = await service({...input,root:workspace(ctx)});
+      appendCommandResult(pi,command,result);
+    }});
+  }
+  const serviceTools = [
+    ['earth_remote_prepare','准备遥感工作流',prepareWorkflow,schema({plan:{type:'object',additionalProperties:true}},['plan'])],
+    ['earth_remote_run','运行本地遥感工作流',runRemoteSensingWorkflow,schema({planId:string},['planId'])],
+    ['earth_spatial_load','加载数据库图层',loadSpatialLayer,schema({sourceId:string,layer:string},['sourceId','layer'])],
+    ['earth_gis_region','查询范围内栅格统计',queryGISRegion,schema({path:string,geometry:{type:'object',additionalProperties:true},band:{type:'number'},allTouched:{type:'boolean'}},['path','geometry'])],
+    ['earth_gis_siting','运行避让选址方案',runSitingWorkflow,schema({parcels:string,avoidance:string,distance:{type:'number'},commandId:string},['parcels','avoidance','distance'])],
+    ['earth_qgis_list','列出 QGIS 算法',listQGISAlgorithms,schema({})],
+    ['earth_qgis_help','查询 QGIS 参数',helpQGISAlgorithm,schema({algorithm:string},['algorithm'])],
+    ['earth_qgis_run','运行 QGIS 算法',runQGISAlgorithm,schema({algorithm:string,inputs:{type:'object',additionalProperties:true}},['algorithm','inputs'])],
+  ] as const;
+  for(const [name,label,service,parameters] of serviceTools) pi.registerTool({name,label,parameters,executionMode:'sequential',description:label+'。读取真实数据，保留实际执行回执。',async execute(_id:string,input:any,_signal:AbortSignal,_update:Update,ctx:Context){
+    const result=await (service as (input:any)=>any)({...input,root:workspace(ctx)});
+    return {content:[{type:'text',text:JSON.stringify(result)}],details:result,isError:result.status==='failed'};
+  }});
+  pi.registerTool({
+    name:'earth_layer_save', label:'保存项目图层版本', executionMode:'sequential',
+    description:'Commit the same project layer operation used by the map. Existing layers require the revision at draft creation; creates an immutable snapshot and preserves feature IDs. No model call.',
+    parameters:schema({layerId:string,expectedRevision:{type:'number'},name:string,features:{type:'array',items:{type:'object',additionalProperties:true}},commandId:string},['name','features']),
+    async execute(_id:string,input:any,_signal:AbortSignal,_update:Update,ctx:Context) {
+      const result=saveProjectLayer({...input,root:workspace(ctx)});
+      return {content:[{type:'text',text:JSON.stringify(result)}],details:result};
     },
   });
   pi.registerTool({
@@ -113,7 +171,7 @@ export default function registerEarthResearchPackage(pi: any) {
   pi.registerTool({
     name: 'earth_gis_export', label: '导出 GIS 图层', executionMode: 'sequential',
     description: 'Export a workspace-owned vector layer as GeoJSON, ESRI Shapefile (including .shp/.shx/.dbf/.prj and a zip), GeoPackage or KML. The receipt records CRS, feature count and every output file; no cloud upload is implied.',
-    parameters: schema({ input: string, format: { type: 'string', enum: ['geojson', 'shp', 'gpkg', 'kml'] }, name: string, layer: string, targetCrs: string }, ['input', 'format', 'name']),
+    parameters: schema({ input: string, format: { type: 'string', enum: ['geojson', 'shp', 'gpkg', 'kml'] }, name: string, layer: string, sourceLayer:string,targetCrs: string,scope:{type:'string',enum:['all','selected']},featureIds:{type:'array',items:{type:['string','number']}},layerId:string,revision:{type:'number'} }, ['input', 'format', 'name']),
     async execute(_id: string, input: { input: string; format: 'geojson' | 'shp' | 'gpkg' | 'kml'; name: string; layer?: string; targetCrs?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = await exportGISLayer({ root: workspace(ctx), request: input });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status !== 'completed' };
@@ -210,7 +268,7 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Create a versioned, workspace-local deliverable directory containing one completed GIS run, its run manifest, and explicitly named report/layer files. It never claims a cloud task is complete without the saved run receipt.',
     parameters: schema({ runId: string, name: string, version: { type: 'number' }, include: { type: 'array', items: string } }, ['runId']),
     async execute(_id: string, input: { runId: string; name?: string; version?: number; include?: string[] }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = createGISBundle({ root: workspace(ctx), ...input });
+      const result = createGISBundle({ ...input, root: workspace(ctx) });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };
     },
   });
@@ -244,7 +302,7 @@ export default function registerEarthResearchPackage(pi: any) {
       return { content: [{ type: 'text', text: JSON.stringify({ workspace: root, ...configuration }) }], details: { status: 'ready', workspace: root } };
     },
   });
-  pi.registerTool({
+  const earthRunScriptTool = {
     name: 'earth_run_script', label: '运行 Earth Engine 代码',
     executionMode: 'sequential',
     description: 'Run a saved JavaScript file from the current Session workspace through the installed official Earth Engine SDK adapter. Emits real run ID, errors, map layers, evaluated outputs, export task IDs and downloaded artifacts. Supports ee.*, Map.addLayer/setCenter/centerObject, print, await Earth.evaluate(object), Earth.routeGrid(costs,start,end,{clearanceCells}), Earth.downloadImage(image,params,filename), and Export.image/table toDrive/toCloudStorage/toAsset. No ui.* support.',
@@ -292,7 +350,20 @@ export default function registerEarthResearchPackage(pi: any) {
         });
       });
     },
-  });
+  };
+  pi.registerTool(earthRunScriptTool);
+  pi.registerCommand?.('earth-cloud-run',{description:'执行已准备的云端遥感脚本，不调用模型。',async handler(args:string,ctx:Context){
+    const input=parseCommandArgs(args,'earth-cloud-run');
+    if(typeof input.planId!=='string'||!/^[a-f0-9-]{36}$/.test(input.planId))throw new Error('无效的遥感计划。');
+    const root=workspace(ctx),record=JSON.parse(fs.readFileSync(path.join(root,'.earth/cloud-workflows',input.planId,'plan.json'),'utf8'));
+    if(record.planId!==input.planId||!record.runnable)throw new Error('该计划尚不能运行。');
+    const toolId=randomUUID();
+    const reply:any=await earthRunScriptTool.execute(toolId,{script:record.scriptPath,expectedSourceHash:record.scriptSha256},new AbortController().signal,()=>{},ctx);
+    if(reply.isError)throw new Error(reply.content?.[0]?.text || '云端执行失败。');
+    const run=JSON.parse(fs.readFileSync(path.join(root,'.earth/workspace.json'),'utf8'));
+    if(run.toolCallId!==toolId)throw new Error('云端回执与请求不匹配。');
+    appendCommandResult(pi,'earth-cloud-run',run);
+  }});
   pi.registerTool({
     name: 'earth_task_status', label: '读取 GEE 任务', executionMode: 'sequential',
     description: 'Read real Google Earth Engine batch task status or the recent task list using the configured project and credentials. It never treats a submitted task as completed.',

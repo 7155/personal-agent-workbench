@@ -23,6 +23,11 @@ proof: the manifest-listed files must exist and their SHA-256 values must match.
 
 ## Bundled Source
 
+Earth Agent uses [Leaflet-Geoman Free](https://github.com/geoman-io/leaflet-geoman)
+2.20.1 for map drawing, vertex editing, snapping, and polygon cutting. It is an
+MIT-licensed npm dependency, copyright (c) 2017 Sumit Kumar. Its complete license
+is retained at `licenses/Leaflet-Geoman-LICENSE`.
+
 | Project | Use in this repository | Version / source | License boundary |
 | --- | --- | --- | --- |
 | [GISclaw](https://github.com/geumjin99/GISclaw) | The Earth Agent deterministic GIS operation registry is vendored from `src/agent/geo_ops.py` to provide CRS, geometry, overlay, analysis, and raster operators. No GISclaw Agent loop or UI is embedded. | Commit `d96b5d2afc9fa90dba8974492a08837b52222569` | AGPL-3.0-or-later. The vendored source retains its upstream header; the corresponding license is `licenses/GISclaw-LICENSE`. PAW must preserve this notice and license when distributing the Earth Agent package. |

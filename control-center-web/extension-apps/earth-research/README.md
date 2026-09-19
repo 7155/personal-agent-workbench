@@ -66,72 +66,64 @@ listing is immediate; PostGIS remains `configured_pending` until its
 secret-backed driver is installed. This is a source catalog, not a claim that a
 cloud database was queried.
 
-The four workbench acceptance stages are deliberately independent:
+## Workbench 0.9
 
-1. **基础操作**：关闭模型服务，选两块地导出 GPKG，再打开报告。导出和打开文件走确定性 Session/Package 回执。
-2. **数据与编辑**：打开已有地块，编辑顶点和属性，保存后关闭重开。每次保存增加图层 revision，并保留 `.earth/layers/history/` 快照。
-3. **专业 GIS**：从数据库读取图层，使用 `earth_gis_pixel` 查询真实栅格像元，并用已有 `difference` 算子挖掉内部湖泊。`earth_gis_backends` 会明确报告默认 GeoPandas 与可选 `qgis_process` 是否存在。
-4. **分析与交付**：每次运行保留独立 runId；云端任务仍由 `earth_task_status` 查询；`earth_gis_bundle` 把已完成运行、显式报告/图层和 `run-manifest.json` 写入版本化成果目录。
+Open a local project without a Google project or a model request. Human controls and Agent tools use the same deterministic project services. The five data views are Layers, Attributes, Runs, Files and Databases; the Agent pane can collapse.
 
-`earth_gis_backends` 只报告 QGIS Processing 是否可用，不会把检测到
-`qgis_process` 伪装成已经使用 QGIS 算法。启用 QGIS 后端前应配置
-`PAW_QGIS_PROCESS`，并在对应算法回执中记录实际执行后端。
+- **Identity and edits:** immutable GeoJSON snapshots, stable project/layer/feature IDs, typed property drafts and expected-revision checks. Cancel preserves the original. Historical snapshots remain accessible. Visibility changes preserve project identity.
+- **Drawing:** [Leaflet-Geoman Free](https://geoman.io/docs/leaflet) replaces the drawing adapter. Multi-vertex geometry, snap tolerance in pixels, edit/cut drafts, undo/redo and explicit save/cancel retain properties and IDs. A cut operates on selected editable copies, not every visible polygon.
+- **Export:** choose whole layer or selected features. A selected export with no IDs is rejected; GPKG readback validates canonical IDs, including numeric versus string identifiers. Export never resaves the source.
+- **Databases and rasters:** Chinese display names; real named GPKG/SpatiaLite layer loading with source lineage and WGS84 display; point queries and bounded polygon-window statistics including holes, NoData and outside coverage. PostGIS remains a pending configuration, not a verified connection.
+- **QGIS:** optional `qgis_process` JSON list/help/run adapter, following the [official command interface](https://docs.qgis.org/3.44/en/docs/user_manual/processing/standalone.html). A detected executable remains unverified until an actual algorithm succeeds. Native QGIS is not required for the local GeoPandas path.
+- **Plans and delivery:** the avoidance form runs buffer → difference in one metric CRS, keeping canonical GPKG and a WGS84 preview. Each run binds input bytes, parameters and step IDs. Compare two recorded runs; repeated delivery allocates a new version. Bundles include input snapshots, GPKG when applicable, statistics CSV/JSON, map PDF/SVG, HTML, quality checks and a checksummed manifest. The report and map refer to that run, not latest workspace data.
 
-Install the isolated local runtime with
-`scripts/install_earth_gis_runtime.sh`. It installs GeoPandas, Fiona, Rasterio,
-Shapely and PyProj under the PAW application-support directory; the package
-auto-detects that environment when a new Earth workspace is prepared.
+## Remote sensing
 
-The map's **GIS data workspace** is the working entry point. It has three linked
-views: **图层** shows cloud result layers and project layers; **文件** lists the
-actual Session workspace files, including GeoJSON, GeoPackage, statistics and
-HTML reports; **数据库** shows registered GeoPackage/SpatiaLite/PostGIS sources
-and their real status. The header always shows the bound Session workspace and
-the object currently supplied to the Agent, so a chat action is traceable to a
-file, layer or selected feature. Save the current selection, toggle visibility,
-remove a layer from the catalog while retaining its source file, export SHP/GPKG,
-connect a local database, or register a PostGIS secret reference. Use **刷新**
-after an Agent connection or export task; the dock only displays entries read
-back from the Session workspace.
+The Remote Sensing panel freezes an analysis region independently of later sample selection. Save labeled map points/polygons into a sample layer, choose actual image bands, prepare a plan and explicitly run it.
 
-For reports and visualizations, ask the Skill to create a self-contained
-`report.html`, `statistics.csv`, `method-and-quality.md` or GIS project package
-from the validated run receipt. The Files view exposes those real files; it does
-not treat a chat table or a map tile as a delivered dataset.
+Local Random Forest produces a classification GeoTIFF, typed class mapping, confusion matrix and feature/group holdout record. It requires at least two classes and validation groups containing every class. A one-pixel training exclusion reduces immediate adjacency leakage; this is not independent geographic or temporal validation. Imagery must actually resolve the fissures or land cover being studied. Local NDVI uses explicit red/near-infrared bands, scale/offset metadata and NoData masks. Results include a bounded WGS84 raster preview and HTML report.
 
-Jev approval is optional. Configure it without putting the key in a project by
-running `scripts/configure_jev_key.sh`; if no `TYPESAFE_API_KEY` or Keychain
-entry is available, PAW keeps Luna Max as the approval backend and preserves the
-standard compression/deterministic approval fallback.
+Cloud NDVI/time series, before/after change and animated GIF workflows currently use Sentinel-2 SR Harmonized, SCL classes 4/5/6, a fixed ROI and explicit date range/scale. Preparation creates a unique script and does not call GEE. Execution requires a configured authenticated project; failed periods stay missing. Reports/charts are written from evaluated statistics and animation saves actual GIF bytes. Research mode saves an evidence request and can hand it to the existing Agent; it does not manufacture research findings.
 
-## Acceptance task
+## Runtime and limits
 
-快速验收只需要输入一句：**找适合建变电站的地块，避开河流 200 米，并导出 SHP。**
-系统应显示候选区、保留真实运行记录，并生成可下载的 SHP 和 GeoPackage。
+Run `scripts/install_earth_gis_runtime.sh` with Python 3.12/3.13 and uv available. It creates the existing isolated PAW GIS environment and installs GeoPandas, Fiona, Rasterio, Shapely, PyProj, NumPy, pandas, scikit-learn and matplotlib. No model key is needed for local file operations or analysis. GEE authorization and QGIS are optional, separate dependencies.
 
-在本机可直接运行同一条验收流程：
+Current bounds: raster range/local learning windows up to 4 million pixels; local learning band data up to 256 MiB, 2,000 sample features and 200,000 sampled pixels; inline vector previews up to 2 MB. Exceeding a bound reports an error rather than pretending a partial result is complete. Very large dataset editing, multi-user collaboration, generic interrupted-program continuation and full ArcGIS/QGIS desktop parity are not claimed. Original inputs and prior installed packages are retained during updates.
 
-```bash
-PAW_EARTH_GIS_PYTHON="$HOME/Library/Application Support/RagIme/EarthGISRuntime/.venv/bin/python" \
-  node scripts/run_earth_gis_acceptance.mjs
-```
+## Acceptance
 
-Run a power-grid siting task with local candidate parcels and exclusion zones:
+1. With the model unused, select two IDs from 100 parcels, export GPKG, read back those exact IDs, then open HTML and ensure polling leaves it open.
+2. Change a vertex and remark, save and reopen: IDs, untouched values/types/nulls and the old snapshot must agree. Reject a stale edit.
+3. Connect with the default Chinese name, load a named GPKG layer; query known DEM point and region values; subtract a lake and validate geometry/area.
+4. Run identical inputs with 200 m and 300 m avoidance. The latter must be a spatial subset in the analysis CRS. Generate two nonoverwriting bundles and reopen one in a clean project.
 
-1. Inspect all local inputs and report geometry, CRS, fields and extents.
-2. Buffer exclusion zones, difference candidate parcels, and calculate usable
-   area locally.
-3. Send the surviving WGS84 candidates to Earth Engine and calculate terrain,
-   water, land-cover and coverage metrics at an explicit scale.
-4. Return the small candidate metrics to the local workspace and join them to
-   the local geometry.
-5. Build and validate an access corridor, then display the candidates, route,
-   cloud layers and rejected reasons in the map.
-6. Export one small result and one batch result. Show task IDs, poll the task
-   state, and report any missing Cloud Storage/Drive download configuration
-   instead of claiming a file exists.
+Run TypeScript/Vitest from `control-center-web`, and the package Node tests with `PAW_EARTH_GIS_PYTHON` pointing at the managed environment. Native QGIS and live GEE tests are separate from mocked adapters and local numerical tests.
 
-The acceptance is green only when local and cloud receipts, IDs, CRS, scale,
-outputs and foreground map state agree. Empty output, unknown task state,
-stale run IDs and a map tile presented as a local raster are failures or
-unknowns, not successful analysis.
+## Task-led interaction and professional GIS references
+
+The task launcher starts with user goals: find similar features, study changes,
+research an area, spatial analysis, animation, and deliver results. Choosing an
+entry does not execute a model or classify the current selection automatically.
+The workflow explicitly assigns the study region and training samples; export
+continues to distinguish whole-layer and selected-feature scopes.
+
+The workbench borrows the layer/source/selection distinction from the
+[ArcGIS Pro Contents pane](https://doc.esri.com/en/arcgis-pro/latest/help/mapping/map-authoring/contents-pane.html),
+the file/database organization from the
+[QGIS Browser](https://doc.qgis.org/3.44/en/docs/user_manual/introduction/browser.html),
+and the map/code/inspection/task relationship from the
+[Earth Engine Code Editor](https://developers.google.com/earth-engine/guides/playground).
+These are interaction references, not embedded copies of those applications.
+
+The current siting form performs distance-based exclusion and versioned
+comparison. It does **not** certify continuous minimum-area constraints, road
+travel times, facility capacity allocation, ownership, or engineering suitability.
+The classifier produces pixel classes, not automatically verified fissure
+centerlines. Brush labeling, independent geographic validation, interactive chart
+brushing, and editable print atlases remain separate work. A cloud workflow plan
+or a visible button is not evidence that a particular dataset ran successfully.
+
+A short local acceptance task: **选择两块地并导出；把避让距离从 200 米改成
+300 米，对比结果，再生成两版报告。** The supplied automated fixtures are
+synthetic and must not be represented as real land parcels or engineering data.

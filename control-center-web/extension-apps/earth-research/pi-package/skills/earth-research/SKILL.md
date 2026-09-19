@@ -5,7 +5,7 @@ description: 在 Earth Agent 工作区中查阅 Google 官方文档、编写和�
 
 # Earth Agent
 
-沿用当前 Pi Session 的工具、对话、停止和恢复。首先调用 `earth_workspace`，它将已安装的执行器准备到当前项目，保留 `.earth/runtime.json` 的配置；不要在磁盘里搜索或猜测执行器路径。不另建模型循环或计算服务。代码、数据集、约束、缺失数据和执行状态均应可见。
+沿用当前 Pi Session 的工具、对话、停止和恢复。本地 GIS 先使用项目图层与本地算子；只有需要云端时才调用 `earth_workspace`，它将已安装的执行器准备到当前项目，保留 `.earth/runtime.json` 的配置；不要在磁盘里搜索或猜测执行器路径。不另建模型循环或计算服务。代码、数据集、约束、缺失数据和执行状态均应可见。
 
 ## 执行真实脚本
 
@@ -83,7 +83,7 @@ For ordinary local GIS files, use the deterministic GIS tools before writing cus
    receipt is complete. It creates a versioned deliverable directory with the
    run and `run-manifest.json`; read the manifest back before claiming delivery.
 
-The local GIS path and Earth Engine path are complementary: local operators process user-provided vector/raster files; Earth Engine scripts process authorized cloud datasets and produce remote raster tiles, evaluated features, export tasks or controlled downloads. Do not imply that a local output is an Earth Engine Asset, or that a cloud layer is a local source file. Missing CRS, invalid geometry, NoData or an empty output is a failure/unknown state, not a successful analysis.
+The local GIS path and Earth Engine path are complementary: local operators process user-provided vector/raster files; Earth Engine scripts process authorized cloud datasets and produce remote raster tiles, evaluated features, export tasks or controlled downloads. Do not imply that a local output is an Earth Engine Asset, or that a cloud layer is a local source file. Missing CRS, invalid geometry and NoData must be reported explicitly. A successfully computed empty selection is a valid no-match result, distinct from missing inputs or failed execution.
 
 ## Reports, charts and HTML deliverables
 
@@ -99,3 +99,19 @@ When a user asks for “出报告、图表或 HTML”, use the current validated
 ## Batch and machine learning workflows
 
 Use `earth_gis_batch` for bounded local batches; every item gets its own run ID and the aggregate receipt reports completed, partial or failed. For cloud batch work, generate explicit `Export` tasks in the saved JavaScript, then use `earth_task_status` or `earth_task_cancel`; never hide a remote task behind a local completed state. Use `earth_ml_catalog` and `earth_ml_template` for Random Forest, K-means or change-detection scaffolds. Replace every placeholder with verified datasets, labelled samples, class fields, date range, scale and region, and report validation metrics before claiming a classification result.
+
+## Project-first editing and analysis (0.9)
+
+Human controls and Agent tools share the same project services. A selected saved object is referenced by layerId, featureId, pawRevision and its immutable file path. Read that version before editing. Call `earth_layer_save` with the expectedRevision captured when editing began; never reread the latest revision merely to overwrite it with an old draft. Preserve unedited property types, nulls, business identifiers and canonical feature IDs. New features need new IDs. Existing revisions remain readable.
+
+Export scope is explicit: `earth_gis_export({input,format,name,scope:"selected",featureIds,layerId,revision})` exports exactly those typed IDs; empty or missing selection fails. `scope:"all"` exports the whole layer. Check exportedFeatureIds and exportCount, and read the real GPKG/SHP back. Do not rewrite or resave an entire layer merely to export it.
+
+Use `earth_spatial_load({sourceId,layer})` to extract the actual named database layer and register its returned GeoJSON through `earth_layer_save`. `earth_gis_region({path,geometry,band})` reads a bounded raster window and returns polygon coverage and NoData, while `earth_gis_pixel` is only a point query. PostGIS registration is still pending, not a live database query. QGIS `earth_qgis_list/help/run` uses the optional native processing executable and records the real backend; missing executable is not success.
+
+For an editable avoidance plan, `earth_gis_siting({parcels,avoidance,distance,commandId})` freezes the two inputs, buffers and subtracts in one metric CRS, retains every step ID and canonical GPKG, and returns a local runId. Reusing the same commandId returns the original run, not a duplicate. Different distance means a new command/run. Check only the supplied constraints; unknown land ownership or engineering requirements stay unverified. Results are compared and packaged by local runId, never the currently visible GEE run.
+
+Use `earth_remote_prepare({plan})` with the actual selected WGS84 region. Local classification needs a real multiband GeoTIFF, labeled sample layer and classField: require positive and negative classes and enough separate feature/groups for held-out validation. `earth_remote_run({planId})` executes the saved local plan and rejects changed inputs. Report confusion matrix, class mapping and group split; held-out neighboring samples are not independent geographic validation. Resolution must resolve the target fissures; a basemap screenshot is not a training raster. Local NDVI requires explicit red/nir bands and preserves NoData.
+
+For cloud NDVI, change and animation, set provider:"gee", dateFrom/dateTo, region and scale. Preparation writes an immutable reviewed script; execution still uses `earth_run_script` and current authorization. Scripts write actual statistics, charts and reports using `Earth.writeArtifact`, and animation uses `Earth.downloadAnimation` to save real GIF bytes. Only after a completed run and file readback call it a result. Research preparation records questions and references with sourcesQueried:false; continue with real source retrieval and computation before writing conclusions.
+
+Deliverables contain the recorded run, frozen inputs, statistics JSON/CSV, vector GPKG when applicable, map PDF/SVG, HTML and quality record. Repeated packaging automatically allocates a new version and verifies hashes/readback. Do not describe mocks, synthetic fixture accuracy, a successful build or package installation as a completed field deployment.

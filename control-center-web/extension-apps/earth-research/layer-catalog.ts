@@ -93,3 +93,15 @@ export function parseGeoJsonFeatures(value: unknown): GeoJSON.Feature[] {
   if (data.type === 'Feature' && data.geometry) return [data as GeoJSON.Feature];
   return [];
 }
+
+export function bindLayerFeatures(layer: ProjectLayer): ProjectLayer {
+  return {...layer, features:layer.features.map(feature=>({...feature,pawLayerId:layer.id,pawRevision:layer.revision}))};
+}
+export function selectedLayerFeatures(layer: ProjectLayer, selected: GeoJSON.Feature[]): GeoJSON.Feature[] {
+  return layer.features.filter(item=>selected.some(feature=> {
+    const owner=(feature as GeoJSON.Feature & {pawLayerId?:string}).pawLayerId;
+    if (owner && owner!==layer.id) return false;
+    if (owner) return item.id !== undefined && item.id === feature.id;
+    return item.id !== undefined && item.id===feature.id && JSON.stringify(item.geometry)===JSON.stringify(feature.geometry);
+  }));
+}

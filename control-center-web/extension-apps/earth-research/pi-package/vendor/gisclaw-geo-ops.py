@@ -97,16 +97,30 @@ def _b_detect_crs(inp, p, out, save_as):
 # ── Vector geometry ─────────────────────────────────────────────────
 def _b_buffer(inp, p, out, save_as):
     layer = inp["layer"]; dist = p["distance"]; dissolve = p.get("dissolve", False)
+    keep_projected = p.get("keep_projected") is True
     code = _PRELUDE + (
         f"_src = {layer}\n"
         f"_geo = (_src.crs is None) or _src.crs.is_geographic\n"
-        f"_work = _src.to_crs(_src.estimate_utm_crs()) if _geo else _src\n"   # buffer needs projected CRS
+    )
+    if keep_projected:
+        # A composed metric workflow must keep this CRS through its later
+        # overlay and persistence steps; WGS84 is only a display projection.
+        code += (
+            "if _src.crs is None: raise ValueError('Buffer source CRS is unknown')\n"
+            "_metric = _src.crs if _src.crs.is_projected and all(axis.unit_name.lower() in {'metre', 'meter'} for axis in _src.crs.axis_info) else _src.estimate_utm_crs()\n"
+            "if _metric is None: raise ValueError('Unable to choose a metric analysis CRS')\n"
+            "_work = _src.to_crs(_metric)\n"
+        )
+    else:
+        code += "_work = _src.to_crs(_src.estimate_utm_crs()) if _geo else _src\n"
+    code += (
         f"{out} = _work.copy()\n"
         f"{out}['geometry'] = _work.geometry.buffer({_pv(dist)})\n"
     )
     if dissolve:
         code += f"{out} = {out}.dissolve().reset_index(drop=True)\n"
-    code += f"{out} = {out}.to_crs(_src.crs) if _geo and _src.crs is not None else {out}\n"
+    if not keep_projected:
+        code += f"{out} = {out}.to_crs(_src.crs) if _geo and _src.crs is not None else {out}\n"
     return code + _vector_tail(out, save_as)
 
 

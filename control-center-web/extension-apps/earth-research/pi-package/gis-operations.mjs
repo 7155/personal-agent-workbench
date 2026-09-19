@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { snapshotGISInputs } from './gis-delivery.mjs';
+export { createGISBundle, verifyGISBundle, compareGISRuns, listGISRuns, readGISRun } from './gis-delivery.mjs';
+import { findQGISProcess, helpQGISAlgorithm, listQGISAlgorithms, qgisBackendStatus, runQGISAlgorithm } from './qgis.mjs';
 
 const catalogPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'gis-catalog.json');
 const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
@@ -83,9 +86,7 @@ export function listGISFiles(root, directory = 'data') {
 }
 
 export function listGISBackends() {
-  const candidates = [process.env.PAW_QGIS_PROCESS, '/opt/homebrew/bin/qgis_process', '/usr/local/bin/qgis_process', '/usr/bin/qgis_process'].filter(Boolean);
-  const qgisProcess = candidates.find(candidate => fs.existsSync(candidate));
-  return { schemaVersion: 'earth.gis-backends.v1', default: 'geopandas', backends: [{ id: 'geopandas', available: true, role: 'deterministic local vector/raster operations' }, { id: 'qgis', available: Boolean(qgisProcess), executable: qgisProcess || null, role: 'optional QGIS Processing provider; configure PAW_QGIS_PROCESS before enabling' }] };
+  return { schemaVersion: 'earth.gis-backends.v1', default: 'geopandas', backends: [{ id: 'geopandas', available: true, nativeTested: false, status: 'runtime_unverified', role: 'default deterministic adapter; Python dependencies are checked when invoked' }, qgisBackendStatus()] };
 }
 
 function parseRunnerOutput(stdout) {
@@ -140,12 +141,18 @@ export async function runGISOperation({ root, python, request }) {
   const base = { schemaVersion: GIS_SCHEMA_VERSION, runId, startedAt: new Date().toISOString(), status: 'running', op: request.op ?? null };
   atomicWrite(path.join(runDir, 'run.json'), base);
   let result;
+  let inputVersions = [];
   try {
-    result = await executeRunner(prepared.python, prepared.runner, { operation: 'process', root: resolvedRoot, runDir, ...request }, resolvedRoot);
+    const snapshot = snapshotGISInputs(resolvedRoot, runDir, request.inputs);
+    inputVersions = snapshot.versions;
+    result = await executeRunner(prepared.python, prepared.runner, { ...request, inputs: snapshot.bindings, operation: 'process', root: resolvedRoot, runDir }, resolvedRoot);
   } catch (error) {
     result = { status: 'failed', code: 'runner_failed', error: error instanceof Error ? error.message : String(error) };
   }
-  const normalized = relativeResultPaths(resolvedRoot, { ...result, runId, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  const normalized = relativeResultPaths(resolvedRoot, { ...result, runId, inputVersions, params: request.params ?? {}, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  for (const output of normalized.outputs ?? []) {
+    if (output.path) output.sha256 = createHash('sha256').update(fs.readFileSync(safeRelative(resolvedRoot, output.path))).digest('hex');
+  }
   atomicWrite(path.join(runDir, 'run.json'), normalized);
   atomicWrite(path.join(resolvedRoot, '.earth/gis/workspace.json'), normalized);
   return normalized;
@@ -160,10 +167,19 @@ export async function inspectGISPath({ root, python, path: inputPath }) {
 }
 
 export async function queryGISPixel({ root, python, path: inputPath, longitude, latitude, band }) {
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180 || Math.abs(latitude) > 90) throw new TypeError('Pixel query requires finite WGS84 longitude and latitude.');
   const resolvedRoot = safeRoot(root);
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
   const result = await executeRunner(prepared.python, prepared.runner, { operation: 'pixel', root: resolvedRoot, path: inputPath, longitude, latitude, band }, resolvedRoot);
-  if (result.status === 'failed') throw new Error(result.error || 'GIS pixel query failed');
+  if (result.status === 'failed') throw Object.assign(new Error(result.error || 'GIS pixel query failed'), { code: result.code });
+  return result;
+}
+
+export async function queryGISRegion({ root, python, path: inputPath, geometry, band, allTouched }) {
+  const resolvedRoot = safeRoot(root);
+  const prepared = prepareGISWorkspace(resolvedRoot, { python });
+  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'region', root: resolvedRoot, path: inputPath, geometry, band, allTouched }, resolvedRoot);
+  if (result.status === 'failed') throw Object.assign(new Error(result.error || 'GIS region query failed'), { code: result.code });
   return result;
 }
 
@@ -188,50 +204,123 @@ export function listSpatialSources({ root }) {
   return readSpatialCatalog(root);
 }
 
+function displayName(value) {
+  const name = String(value || '').trim();
+  if (!name || [...name].length > 80 || /[\u0000-\u001f\u007f\\/]/u.test(name)) throw new TypeError('Spatial source name is invalid.');
+  return name;
+}
+
+function sourceIdentity({ kind, path: sourcePath, schema, table, secretReference }) {
+  return [kind, sourcePath, schema, table, secretReference].map(value => String(value || '')).join('\u001f');
+}
+
+function generatedSourceId(identity) {
+  return `spatial:${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
+}
+
+function requestedSourceId(source) {
+  const value = source?.sourceId ?? source?.id;
+  if (value === undefined || value === null || String(value).trim() === '') return '';
+  const id = String(value).trim();
+  if (!/^[A-Za-z0-9:_-]{1,128}$/.test(id)) throw new TypeError('Spatial source id is invalid.');
+  return id;
+}
+
 export async function connectSpatialSource({ root, python, source }) {
   const resolvedRoot = safeRoot(root);
   if (!source || typeof source !== 'object') throw new TypeError('Spatial source must be an object.');
-  const name = String(source.name || '').trim();
+  const name = displayName(source.name);
   const kind = String(source.kind || '').trim().toLowerCase();
-  if (!/^[A-Za-z][A-Za-z0-9 _.-]{0,79}$/.test(name)) throw new TypeError('Spatial source name is invalid.');
   if (!spatialKinds.has(kind)) throw new TypeError(`Unsupported spatial source kind: ${kind}`);
   const now = new Date().toISOString();
   let status = 'configured_pending';
   let layers = [];
   let relativePath = '';
+  const schema = String(source.schema || '').trim();
+  const table = String(source.table || '').trim();
+  const secretReference = kind === 'postgis' ? String(source.secretReference || '').trim() : '';
   if (kind !== 'postgis') {
     relativePath = String(source.path || '');
     const target = safeRelative(resolvedRoot, relativePath);
     if (!spatialDatabaseExtensions.has(path.extname(target).toLowerCase())) throw new Error('GeoPackage/SpatiaLite source must be .gpkg, .sqlite or .db.');
+    relativePath = path.relative(resolvedRoot, target);
     const prepared = prepareGISWorkspace(resolvedRoot, { python });
     const result = await executeRunner(prepared.python, prepared.runner, { operation: 'catalog_source', root: resolvedRoot, path: relativePath }, resolvedRoot);
     if (result.status === 'failed') throw new Error(result.error || 'Spatial source catalog failed.');
     layers = Array.isArray(result.layers) ? result.layers : [];
     status = 'ready';
   } else {
-    const secretReference = String(source.secretReference || '').trim();
     if (!/^[A-Z][A-Z0-9_]{2,127}$/.test(secretReference)) throw new TypeError('PostGIS requires an environment secret reference such as PAW_POSTGIS_URL.');
     if (source.url || source.connectionString) throw new Error('PostGIS credentials must stay in the referenced secret; do not send a URL or password in the workspace request.');
   }
   const catalog = readSpatialCatalog(resolvedRoot);
-  const existing = catalog.sources.find(item => item.name === name);
+  const identity = sourceIdentity({ kind, path: relativePath, schema, table, secretReference });
+  const requestedId = requestedSourceId(source);
+  const existing = catalog.sources.find(item => requestedId && item.id === requestedId)
+    || catalog.sources.find(item => sourceIdentity(item) === identity);
   const record = {
-    id: existing?.id || `spatial:${randomUUID()}`,
+    id: existing?.id || requestedId || generatedSourceId(identity),
     name,
     kind,
     path: relativePath,
-    schema: String(source.schema || '').trim(),
-    table: String(source.table || '').trim(),
-    secretReference: kind === 'postgis' ? String(source.secretReference || '').trim() : '',
+    schema,
+    table,
+    secretReference,
     readOnly: source.readOnly !== false,
     status,
     layers,
     updatedAt: now,
   };
-  const next = { schemaVersion: 'earth.spatial-catalog.v1', updatedAt: now, sources: [...catalog.sources.filter(item => item.name !== name), record] };
+  const next = { schemaVersion: 'earth.spatial-catalog.v1', updatedAt: now, sources: [...catalog.sources.filter(item => item.id !== record.id), record] };
   atomicWrite(spatialCatalogPath(resolvedRoot), next);
   return record;
 }
+
+function layerOutputPath(source, layer) {
+  const layerHash = createHash('sha256').update(`${source.id}\u0000${layer}`).digest('hex').slice(0, 20);
+  return `.earth/gis/layers/${encodeURIComponent(source.id)}/${layerHash}.geojson`;
+}
+
+export async function loadSpatialLayer({ root, python, sourceId, layer }) {
+  const resolvedRoot = safeRoot(root);
+  const id = String(sourceId || '').trim();
+  if (!id || !/^[A-Za-z0-9:_-]{1,128}$/.test(id)) throw new TypeError('Spatial source id is invalid.');
+  if (typeof layer !== 'string' || !layer || layer.includes('\0')) throw new TypeError('Spatial layer name is invalid.');
+  const catalog = readSpatialCatalog(resolvedRoot);
+  const source = catalog.sources.find(item => item.id === id);
+  if (!source) throw new Error(`Spatial source not found: ${id}`);
+  if (source.kind === 'postgis' || source.status !== 'ready') throw new Error(`Spatial source is not ready for local layer loading: ${id}`);
+  const output = layerOutputPath(source, layer);
+  const lineage = {
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceKind: source.kind,
+    sourcePath: source.path,
+    layer,
+  };
+  const prepared = prepareGISWorkspace(resolvedRoot, { python });
+  const result = await executeRunner(prepared.python, prepared.runner, {
+    operation: 'load_source',
+    root: resolvedRoot,
+    path: source.path,
+    layer,
+    output,
+    sourceLineage: lineage,
+  }, resolvedRoot);
+  if (result.status === 'failed') throw Object.assign(new Error(result.error || 'Spatial layer load failed.'), { code: result.code });
+  const relativePath = typeof result.path === 'string' && path.isAbsolute(result.path) ? path.relative(resolvedRoot, result.path) : result.path || output;
+  return {
+    ...result,
+    status: 'completed',
+    path: relativePath,
+    layer,
+    sourceId: source.id,
+    sourceLineage: result.sourceLineage || lineage,
+    crs: 'EPSG:4326',
+  };
+}
+
+export { findQGISProcess, listQGISAlgorithms, helpQGISAlgorithm, runQGISAlgorithm };
 
 export async function exportGISLayer({ root, python, request }) {
   const resolvedRoot = safeRoot(root);
@@ -240,50 +329,25 @@ export async function exportGISLayer({ root, python, request }) {
   const runRelative = `.earth/gis/runs/${runId}`;
   const runDir = safeRelative(resolvedRoot, runRelative, { allowMissing: true });
   fs.mkdirSync(runDir, { recursive: true });
-  const base = { schemaVersion: GIS_SCHEMA_VERSION, runId, startedAt: new Date().toISOString(), status: 'running', op: 'export' };
+  const context = {
+    scope: request.scope ?? 'all',
+    selectedFeatureIds: request.scope === 'selected' && Array.isArray(request.featureIds) ? request.featureIds : [],
+    layerId: request.layerId ?? null,
+    revision: request.revision ?? null,
+  };
+  const base = { schemaVersion: GIS_SCHEMA_VERSION, runId, startedAt: new Date().toISOString(), status: 'running', op: 'export', ...context };
   atomicWrite(path.join(runDir, 'run.json'), base);
   let result;
   try {
-    result = await executeRunner(prepared.python, prepared.runner, { operation: 'export', root: resolvedRoot, runDir, ...request }, resolvedRoot);
+    result = await executeRunner(prepared.python, prepared.runner, { ...request, operation: 'export', root: resolvedRoot, runDir }, resolvedRoot);
   } catch (error) {
     result = { status: 'failed', code: 'runner_failed', error: error instanceof Error ? error.message : String(error) };
   }
-  const normalized = relativeResultPaths(resolvedRoot, { ...result, runId, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  const normalized = relativeResultPaths(resolvedRoot, { ...context, ...result, op: 'export', runId, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  for (const output of normalized.outputs ?? []) {
+    if (output.path) output.sha256 = createHash('sha256').update(fs.readFileSync(safeRelative(resolvedRoot, output.path))).digest('hex');
+  }
   atomicWrite(path.join(runDir, 'run.json'), normalized);
   atomicWrite(path.join(resolvedRoot, '.earth/gis/workspace.json'), normalized);
   return normalized;
-}
-
-export function createGISBundle({ root, runId, name = 'gis-deliverable', version = 1, include = [] }) {
-  const resolvedRoot = safeRoot(root);
-  if (!/^[a-f0-9-]{8,80}$/i.test(String(runId || ''))) throw new TypeError('A valid GIS runId is required.');
-  const safeName = String(name || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'gis-deliverable';
-  const numericVersion = Number.isInteger(version) && version > 0 ? version : 1;
-  const runRoot = safeRelative(resolvedRoot, `.earth/gis/runs/${runId}`);
-  const targetRelative = `.earth/deliverables/${safeName}-v${numericVersion}`;
-  const target = safeRelative(resolvedRoot, targetRelative, { allowMissing: true });
-  if (fs.existsSync(target)) throw new Error(`Deliverable already exists: ${targetRelative}`);
-  fs.mkdirSync(target, { recursive: true });
-  const copied = [];
-  const copyTree = (source, destination) => {
-    if (fs.lstatSync(source).isSymbolicLink()) throw new Error('Deliverables cannot include symlinks.');
-    const stat = fs.statSync(source);
-    if (stat.isDirectory()) {
-      fs.mkdirSync(destination, { recursive: true });
-      for (const entry of fs.readdirSync(source)) copyTree(path.join(source, entry), path.join(destination, entry));
-      return;
-    }
-    fs.copyFileSync(source, destination);
-    copied.push(path.relative(target, destination));
-  };
-  copyTree(runRoot, path.join(target, 'run'));
-  for (const item of Array.isArray(include) ? include : []) {
-    const relative = String(item || '');
-    if (!relative || relative.startsWith('/') || relative.split('/').includes('..')) throw new TypeError('Bundle include paths must stay inside the workspace.');
-    const source = safeRelative(resolvedRoot, relative);
-    copyTree(source, path.join(target, 'workspace', relative));
-  }
-  const manifest = { schemaVersion: 'earth.gis-deliverable.v1', name: safeName, version: numericVersion, runId, createdAt: new Date().toISOString(), files: copied.sort() };
-  atomicWrite(path.join(target, 'run-manifest.json'), manifest);
-  return { status: 'completed', path: targetRelative, manifest };
 }

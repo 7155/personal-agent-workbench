@@ -1,7 +1,7 @@
 {
   "schemaVersion": "pawos.extension-app.v1",
   "id": "extension:earth-research",
-  "version": "0.8.0",
+  "version": "0.9.1",
   "packageId": "@paw/earth-research",
   "label": "Google Earth Agent",
   "shortLabel": "Earth",
@@ -14,8 +14,8 @@
     "background": "#176B4D"
   },
   "skillRef": "earth-research",
-  "skillSha256": "1d416c2a6136489fd94f056cd877053988c978db16203231f1606a181dac9bb4",
+  "skillSha256": "ff242812197decdd764fba18f7b12b78dd7071276aec2a56f7f469da9742e00f",
   "verticalSuiteId": "earth-research",
   "verticalSuiteRevision": "source-grounding-v1",
-  "bindingSha256": "dcf68d04d1a567d492404742e9294e03f3a04e027e98df4ce0efdbf85de39033"
+  "bindingSha256": "bd44bd94fa1e39b235ccb18b66e6a16b9a2eaea957c16929b90890b703f35476"
 }
