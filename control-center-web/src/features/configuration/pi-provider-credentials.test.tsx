@@ -102,6 +102,59 @@ describe('Pi provider credential UI', () => {
     ).toBeGreaterThanOrEqual(2));
   });
 
+  it('saves a Jev key and explains immediate approval activation', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({
+      capabilities: { features: { piProviderCredentials: true } },
+      routes: {
+        'agent.providers.get': { ...providerCatalog(), providers: [{ id: 'typesafe', name: 'TypeSafe / Jev · 工具审批', auth: { configured: false }, scenarios: [{ id: 'approval', name: '工具审批', status: 'needs_key', description: '按授权范围判断' }, { id: 'compression', name: '压缩前内容筛选', status: 'candidate', description: '摘要仍由 Pi 完成' }], models: [{ id: 'jev-latest' }] }] },
+        'agent.provider.auth.preview': {
+          ok: true,
+          previewToken: 'preview-provider-key',
+          provider: 'typesafe',
+          providerName: 'GPT',
+          action: 'set_api_key',
+          requiredConfirm: 'replace',
+          expiresAtMs: Date.now() + 60_000,
+          summary: ['替换 GPT 的 API 密钥。', '现有密钥不会读取或显示。'],
+          secretPolicy: '密钥仅在确认写入时送往本机 Pi。',
+          sessionBoundary: '当前回复不被中断。',
+        },
+        'agent.provider.auth.apply': {
+          ok: true,
+          receiptId: 'pi-auth-receipt-1',
+          provider: 'typesafe',
+          action: 'set_api_key',
+          receiptState: 'applied',
+          requiresAgentRestart: false,
+        },
+      },
+    });
+    renderProvider(transport);
+
+    const secret = 'secret-sentinel-ui';
+    await user.type(await screen.findByLabelText('API 密钥'), secret);
+    await user.click(screen.getByRole('button', { name: '保存密钥' }));
+
+    expect(await screen.findByText('Jev 密钥已保存')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Jev 应用场景' })).toHaveTextContent('候选场景');
+    expect(screen.getByText('压缩前内容筛选')).toBeInTheDocument();
+    expect(screen.queryByText('还没有可用模型')).not.toBeInTheDocument();
+    expect(screen.getByText('密钥已存入 macOS 钥匙串，下一次工具审批生效，无需重启。')).toBeInTheDocument();
+    expect(screen.getByLabelText('API 密钥')).toHaveValue('');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const apply = transport.requests.find(({ request }) => request.pathId === 'agent.provider.auth.apply');
+    expect(apply?.request.body).toEqual({
+      previewToken: 'preview-provider-key',
+      confirmText: 'replace',
+      apiKey: secret,
+    });
+    expect(screen.queryByText(secret)).not.toBeInTheDocument();
+    await waitFor(() => expect(
+      transport.requests.filter(({ request }) => request.pathId === 'agent.providers.get').length,
+    ).toBeGreaterThanOrEqual(2));
+  });
+
   it('keeps confirmation for disconnecting a configured account', async () => {
     const user = userEvent.setup();
     const catalog = providerCatalog();

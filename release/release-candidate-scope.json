@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-19T11:03:56.037485+00:00",
+  "generatedAt": "2026-09-19T11:09:15.331873+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "codex/lab-visual-recovery-20260913",
+    "branch": "main",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately. This checkpoint also includes Earth Agent GIS and cloud/local workflows plus Knowledge and Lab recall diagnostics and search recovery; it does not declare installed foreground or binary-release acceptance."
+    "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately. This checkpoint also includes Earth Agent GIS and cloud/local workflows plus Knowledge and Lab recall diagnostics and search recovery; it does not declare installed foreground or binary-release acceptance. Integrates the already-published optional Jev credentials and Knowledge reranker implementation with the Earth GIS workbench; existing execution owners and defaults remain authoritative."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -39,7 +39,7 @@
     },
     "pi_runtime_refactor": {
       "description": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
-      "pathCount": 24
+      "pathCount": 23
     },
     "portable_agent_ui": {
       "description": "Shared Agent controls and their standalone bundle entry.",
@@ -91,7 +91,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 113
+      "pathCount": 112
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -107,7 +107,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 68
+      "pathCount": 67
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -136,13 +136,21 @@
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
       "pathCount": 12
+    },
+    "source_inventory_reconciliation": {
+      "description": "Reconcile previously committed source inventory.",
+      "pathCount": 0
+    },
+    "jev_integration": {
+      "description": "Jev integration and regression coverage.",
+      "pathCount": 10
     }
   },
   "summary": {
-    "pathCount": 1100,
+    "pathCount": 1107,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 901
+      "keep_release": 908
     },
     "groupCounts": {
       "local_docs": 122,
@@ -154,28 +162,29 @@
       "public_showcase": 30,
       "references_history": 8,
       "memory_lifecycle": 15,
-      "verification": 113,
+      "verification": 112,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
-      "conversation_controls": 68,
+      "conversation_controls": 67,
       "trace_optimization": 61,
       "scheduled_tasks": 25,
       "session_full_access": 9,
+      "jev_integration": 10,
       "lab_frontend": 54,
+      "knowledge_runtime": 12,
       "room_frontend": 20,
       "agent_capsule": 3,
       "refactor_integration": 23,
       "offline_installer": 12,
       "room_service_refactor": 43,
       "lab_backend": 74,
-      "pi_runtime_refactor": 24,
+      "pi_runtime_refactor": 23,
       "browser_recovery": 1,
       "lab_tools": 10,
       "release_scope": 1,
-      "refactor_verification": 66,
-      "knowledge_runtime": 12
+      "refactor_verification": 66
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -1232,6 +1241,20 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed Earth data dock regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed Earth data dock and spatial database controls."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/EarthMap.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -1253,6 +1276,27 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/GISDeliveryPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/GISDeliveryPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/GISOperationPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/GoogleEarthMap.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -1267,11 +1311,46 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/MapTaskLauncher.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/MapTaskLauncher.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/README.md",
       "status": "added",
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/RasterQueryPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/RemoteSensingPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/RemoteSensingPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/app.css",
@@ -1302,6 +1381,27 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/geoman-controls.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/gis-command-queue.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/gis-command-queue.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/gis-state.test.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -1314,6 +1414,13 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/layer-catalog.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed Earth project layer and spatial source catalog contracts."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/map-selection.test.ts",
@@ -1428,6 +1535,27 @@
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/pi-package/earth-execution.mjs",
       "status": "added",
       "disposition": "keep_release",
@@ -1447,6 +1575,41 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-deliver.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-export.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/gis-knowledge.d.mts",
@@ -1498,11 +1661,60 @@
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-render-cache.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/pi-package/gis-runner.py",
       "status": "added",
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-spatial-acceptance.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-workflows.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-workflows.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/index.test.ts",
@@ -1561,6 +1773,55 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing-runner.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/pi-package/route-grid.mjs",
       "status": "added",
       "disposition": "keep_release",
@@ -1608,6 +1869,20 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/property-draft.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/property-draft.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/workspace.test.ts",
@@ -1832,6 +2107,13 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-approval-model-decision.v1.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Inventory the approval decision contract already committed in 0e128f50; no current unrelated worktree change is included."
     },
     {
       "path": "control-center-web/src/contracts/generated/agent-configuration.v1.ts",
@@ -2142,6 +2424,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/configuration/PiProviderCredentials.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
       "path": "control-center-web/src/features/configuration/ScenarioAgentPolicySettings.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -2161,6 +2450,13 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+    },
+    {
+      "path": "control-center-web/src/features/configuration/pi-provider-credentials.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
       "path": "control-center-web/src/features/conversation-ui/ATTRIBUTION.md",
@@ -2742,6 +3038,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/document-workspace.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
     },
     {
       "path": "control-center-web/src/features/knowledge/index.tsx",
@@ -4305,6 +4608,13 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "integrations/jev/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
       "path": "integrations/pi/rag-ime-control.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -4382,6 +4692,13 @@
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
+      "path": "licenses/Leaflet-Geoman-LICENSE",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS runtime, dependencies or released-change guidance committed for this task."
+    },
+    {
       "path": "macos/PAWInstaller/main.swift",
       "status": "added",
       "disposition": "keep_release",
@@ -4443,6 +4760,13 @@
       "group": "room_service_refactor",
       "reason": "Explicit Room work, dispatch, cancellation and approval dependencies with stable stores and events.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_approval_model.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
       "path": "rag_ime/agent_capability_catalog.py",
@@ -5271,6 +5595,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Inventory the approval decision schema already committed in 0e128f50; no current unrelated worktree change is included."
+    },
+    {
       "path": "rag_ime/contracts/json/agent-configuration.v1.json",
       "status": "modified",
       "disposition": "keep_release",
@@ -5474,6 +5805,20 @@
       "disposition": "delete_old_implementation"
     },
     {
+      "path": "rag_ime/jev.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/keychain_secrets.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
       "path": "rag_ime/knowledge_control.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -5488,6 +5833,13 @@
       "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
+      "path": "rag_ime/knowledge_library/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Inventory the Knowledge owner documentation already committed in 0e128f50; uncommitted Knowledge work remains outside this candidate."
+    },
+    {
       "path": "rag_ime/knowledge_library/dense.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -5495,11 +5847,46 @@
       "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
+      "path": "rag_ime/knowledge_library/identity.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/jev_rerank.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/knowledge_library/models.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/parsers.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
       "path": "rag_ime/knowledge_library/permissions.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/rerank.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
       "path": "rag_ime/knowledge_library/service.py",
@@ -5514,6 +5901,20 @@
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/worker.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_worker_supervisor.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
     },
     {
       "path": "rag_ime/local_sqlite_core.py",
@@ -5992,6 +6393,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/settings_schema.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
       "path": "rag_ime/trace_diagnostics.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -6188,6 +6596,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "scripts/configure_jev_key.sh",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Inventory the Jev key configuration helper already committed in 0e128f50; uncommitted Jev work remains outside this candidate."
+    },
+    {
       "path": "scripts/eval_memory_long_context_luna.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -6251,6 +6666,13 @@
       "reason": "Offline preview installer, bundled runtime validation and the existing stack installation path."
     },
     {
+      "path": "scripts/install_earth_gis_runtime.sh",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed local Earth GIS runtime installation helper."
+    },
+    {
       "path": "scripts/install_memory_book_maintenance_launch_agent.sh",
       "status": "modified",
       "disposition": "keep_release",
@@ -6298,6 +6720,13 @@
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "scripts/run_earth_gis_acceptance.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Account for the already-committed plain-language Earth GIS acceptance runner."
     },
     {
       "path": "scripts/run_paw_medium_eval.py",
@@ -6424,6 +6853,13 @@
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_approval_model.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
       "path": "tests/test_agent_architecture.py",
@@ -7119,11 +7555,32 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "tests/test_jev_knowledge_rerank.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "tests/test_knowledge_library.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
       "path": "tests/test_knowledge_library_permissions.py",
       "status": "added",
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes."
+    },
+    {
+      "path": "tests/test_knowledge_library_worker.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
     },
     {
       "path": "tests/test_lab_extension_example.py",
@@ -7420,6 +7877,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_settings_store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
       "path": "tests/test_trace_diagnostic_http.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -7469,417 +7933,11 @@
       "disposition": "keep_release"
     },
     {
-      "path": "control-center-web/src/features/knowledge/document-workspace.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "rag_ime/knowledge_library/identity.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "rag_ime/knowledge_library/models.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "rag_ime/knowledge_library/parsers.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "rag_ime/knowledge_library/worker.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "rag_ime/knowledge_worker_supervisor.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "rag_ime/settings_schema.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "tests/test_knowledge_library.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "tests/test_knowledge_library_worker.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "tests/test_settings_store.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.test.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Account for the already-committed Earth data dock regression coverage."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Account for the already-committed Earth data dock and spatial database controls."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/layer-catalog.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Account for the already-committed Earth project layer and spatial source catalog contracts."
-    },
-    {
-      "path": "control-center-web/src/contracts/generated/agent-approval-model-decision.v1.ts",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "conversation_controls",
-      "reason": "Inventory the approval decision contract already committed in 0e128f50; no current unrelated worktree change is included."
-    },
-    {
-      "path": "rag_ime/agent_approval_model.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "conversation_controls",
-      "reason": "Inventory the approval model implementation already committed in 0e128f50; no current unrelated worktree change is included."
-    },
-    {
-      "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "conversation_controls",
-      "reason": "Inventory the approval decision schema already committed in 0e128f50; no current unrelated worktree change is included."
-    },
-    {
-      "path": "rag_ime/keychain_secrets.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "pi_runtime_refactor",
-      "reason": "Inventory the keychain adapter change already committed in 0e128f50; no current unrelated worktree change is included."
-    },
-    {
-      "path": "rag_ime/knowledge_library/README.md",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Inventory the Knowledge owner documentation already committed in 0e128f50; uncommitted Knowledge work remains outside this candidate."
-    },
-    {
-      "path": "scripts/configure_jev_key.sh",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "knowledge_runtime",
-      "reason": "Inventory the Jev key configuration helper already committed in 0e128f50; uncommitted Jev work remains outside this candidate."
-    },
-    {
-      "path": "scripts/install_earth_gis_runtime.sh",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Account for the already-committed local Earth GIS runtime installation helper."
-    },
-    {
-      "path": "scripts/run_earth_gis_acceptance.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Account for the already-committed plain-language Earth GIS acceptance runner."
-    },
-    {
-      "path": "tests/test_agent_approval_model.py",
-      "status": "modified",
-      "disposition": "keep_release",
-      "group": "verification",
-      "reason": "Inventory the approval model regression already committed in 0e128f50; no current unrelated worktree change is included."
-    },
-    {
       "path": "uv.lock",
       "status": "modified",
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Inventory the Python dependency lockfile already committed in 0e128f50; the Earth inventory repair adds no unrelated dependency changes."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/GISDeliveryPanel.test.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/GISDeliveryPanel.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/GISOperationPanel.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/MapTaskLauncher.test.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/MapTaskLauncher.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/RasterQueryPanel.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/RemoteSensingPanel.test.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/RemoteSensingPanel.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/geoman-controls.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/gis-command-queue.test.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/gis-command-queue.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.d.mts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-deliver.py",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.d.mts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-export.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.d.mts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-render-cache.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-spatial-acceptance.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-workflows.d.mts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-workflows.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.d.mts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing-runner.py",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.d.mts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.test.mjs",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/property-draft.test.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/property-draft.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
-    },
-    {
-      "path": "licenses/Leaflet-Geoman-LICENSE",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Earth GIS runtime, dependencies or released-change guidance committed for this task."
     }
   ]
 }

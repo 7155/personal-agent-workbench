@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import io
+import urllib.error
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import rag_ime.agent_approval_model as approval_model_module
+from rag_ime import jev
 from rag_ime.agent_approval_model import ApprovalModelArbiter
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.db import sqlite_connection
@@ -27,6 +30,9 @@ class FakeCompletionRuntime:
 
 class ApprovalModelArbiterTests(unittest.TestCase):
     def setUp(self) -> None:
+        key_patch = patch.object(approval_model_module, "_jev_api_key", return_value="")
+        key_patch.start()
+        self.addCleanup(key_patch.stop)
         self.temporary = tempfile.TemporaryDirectory(prefix="approval-model-")
         self.db_path = Path(self.temporary.name) / "agent.sqlite3"
         self.workspace = Path(self.temporary.name) / "workspace"
@@ -138,6 +144,20 @@ class ApprovalModelArbiterTests(unittest.TestCase):
         self.assertEqual(receipt["modelProfile"], "openai-codex/gpt-5.6-luna")
         self.assertIn("model_unavailable", receipt["reasonCodes"])
         self.assertEqual(len(runtime.requests), 1)
+
+    def test_jev_low_confidence_deny_is_persisted_without_luna_fallback(self) -> None:
+        runtime = FakeCompletionRuntime({"text": "must not run"})
+        arbiter = ApprovalModelArbiter(self.db_path, runtime_provider=lambda: runtime)
+        approval = self.approval()
+        with patch.object(approval_model_module, "_jev_api_key", return_value="fake"), patch.object(
+            approval_model_module, "_jev_decide", return_value=("deny", ["insufficient_evidence"], "low confidence")
+        ) as decide:
+            receipt = arbiter.decide(approval, self.session)
+            self.assertEqual(arbiter.decide(approval, self.session), receipt)
+            decide.assert_called_once()
+        self.assertEqual(receipt["decision"], "deny")
+        self.assertEqual(receipt["modelProvider"], "typesafe")
+        self.assertEqual(runtime.requests, [])
 
     def test_model_input_binds_request_identity_arguments_scope_and_task(self) -> None:
         runtime = FakeCompletionRuntime(
@@ -430,3 +450,40 @@ class ApprovalModelArbiterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JevWireTests(unittest.TestCase):
+    def decide(self, answer):
+        opener = Mock()
+        opener.open.return_value = io.BytesIO(json.dumps({"answers": {"approval": answer}}).encode())
+        with patch.object(jev.urllib.request, "build_opener", return_value=opener):
+            result = approval_model_module._jev_decide({"test": "synthetic"}, api_key="fake-key", timeout_seconds=3)
+        request = opener.open.call_args.args[0]
+        body = json.loads(request.data)
+        self.assertEqual(body["model"], "jev-latest")
+        self.assertEqual(body["questions"]["approval"]["type"], "choice")
+        self.assertEqual(request.get_header("Authorization"), "Bearer fake-key")
+        return result
+
+    def test_choice_and_confidence_threshold(self):
+        for choice, confidence, expected in [("approve", .99, "approve"), ("deny", .99, "deny"),
+                                               ("approve", .69, "deny"), ("approve", .70, "approve")]:
+            with self.subTest(choice=choice, confidence=confidence):
+                self.assertEqual(self.decide({"type": "choice", "choice": choice, "confidence": confidence})[0], expected)
+
+    def test_malformed_confidence_and_answer_type_are_rejected(self):
+        for confidence in [True, "0.99", None, -1, 2, float("nan"), float("inf")]:
+            with self.subTest(confidence=confidence), self.assertRaises(ValueError):
+                self.decide({"type": "choice", "choice": "approve", "confidence": confidence})
+        for answer in [{}, {"type": "score", "choice": "approve", "confidence": .99},
+                       {"type": "choice", "choice": "unknown", "confidence": .99}]:
+            with self.subTest(answer=answer), self.assertRaises(ValueError):
+                self.decide(answer)
+
+    def test_http_error_does_not_expose_provider_body(self):
+        opener = Mock()
+        opener.open.side_effect = urllib.error.HTTPError("https://api.typesafe.ai/v1/systemone", 401,
+                                                         "private-provider-detail", {}, None)
+        with patch.object(jev.urllib.request, "build_opener", return_value=opener):
+            with self.assertRaisesRegex(RuntimeError, "^Jev HTTP 401$"):
+                approval_model_module._jev_decide({}, api_key="fake", timeout_seconds=3)

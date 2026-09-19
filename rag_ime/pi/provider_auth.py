@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
+from rag_ime.keychain_secrets import (
+    MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT, read_keychain_secret, write_keychain_secret,
+    delete_keychain_secret,
+)
 from rag_ime.pi.config import PiRuntimeConfig
 
 
@@ -180,7 +184,11 @@ class PiProviderAuthService:
             "schemaVersion": "rag-ime.pi-provider-catalog.v1",
             "ok": True,
             "available": True,
-            "providers": providers if isinstance(providers, list) else [],
+            "providers": [
+                *[item for item in (providers if isinstance(providers, list) else [])
+                  if isinstance(item, Mapping) and item.get("id") != "typesafe"],
+                self._jev_provider(),
+            ],
             "catalogWarning": (
                 "自定义模型目录未能完整载入，请检查模型配置。"
                 if result.get("catalogError")
@@ -190,11 +198,38 @@ class PiProviderAuthService:
             "sessionBoundary": "凭据变更不会打断正在回复的会话；下次重启 Agent 运行时后统一生效。",
         }
 
+    def _jev_provider(self) -> dict[str, object]:
+        configured = bool(str(os.environ.get("TYPESAFE_API_KEY") or read_keychain_secret(
+            MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT
+        ) or "").strip())
+        return {
+            "id": "typesafe", "name": "TypeSafe / Jev",
+            "scenarios": [
+                {"id": "approval", "name": "工具审批", "status": "configured" if configured else "needs_key",
+                 "description": "按用户授权与操作范围判断；服务失败回退 Luna Max。"},
+                {"id": "rerank", "name": "知识库重排", "status": "available",
+                 "description": "按查询相关性给候选片段排序；需选择 Jev 重排服务并开启知识库重排。"},
+                {"id": "compression", "name": "压缩前内容筛选", "status": "candidate",
+                 "description": "判断哪些内容应保留；压缩摘要仍由 Pi 的生成模型完成。"},
+                {"id": "memory", "name": "记忆去重与冲突判断", "status": "candidate",
+                 "description": "识别重复或冲突，保留来源；不直接覆盖已接受记忆。"},
+                {"id": "routing", "name": "检索路由", "status": "candidate",
+                 "description": "判断是否需要检索、选择检索方式；由现有检索流程执行。"},
+                {"id": "evidence", "name": "证据充分性检查", "status": "candidate",
+                 "description": "检查召回证据能否支持回答，决定是否继续检索。"},
+            ],
+            "auth": {"configured": configured, "type": "api_key" if configured else "",
+                     "oauthBrowserSupported": False, "oauthDeviceCodeSupported": False},
+            "models": [{"id": "jev-latest", "name": "Jev · 工具审批专用"}],
+        }
+
     def preview(self, payload: Mapping[str, object]) -> dict[str, object]:
         action = str(payload.get("action") or "").strip()
         provider = _provider_id(payload.get("provider"))
         if action not in _ALLOWED_ACTIONS:
             raise PiProviderAuthError("不支持这项凭据操作。")
+        if provider == "typesafe" and str(os.environ.get("TYPESAFE_API_KEY") or "").strip():
+            raise PiProviderAuthError("Jev 当前使用 TYPESAFE_API_KEY 环境变量；请先移除环境变量并重启服务，再在这里管理密钥。")
         provider_item = self._provider(provider)
         auth = provider_item.get("auth") if isinstance(provider_item.get("auth"), Mapping) else {}
         if action == "oauth_browser" and not bool(auth.get("oauthBrowserSupported")):
@@ -226,8 +261,9 @@ class PiProviderAuthService:
             "requiredConfirm": _CONFIRM_TEXT[action],
             "expiresAtMs": expires_at_ms,
             "summary": _preview_summary(action, preview.provider_name),
-            "secretPolicy": "密钥仅在确认写入时送往本机 Pi，不进入预览、收据或日志。",
-            "sessionBoundary": "正在回复的会话不被中断；凭据在 Agent 运行时下次启动时生效。",
+            "secretPolicy": "密钥仅交给本机安全存储，不进入预览、收据或日志。",
+            "sessionBoundary": ("保存后下一次工具审批生效，无需重启。" if provider == "typesafe"
+                                else "正在回复的会话不被中断；凭据在 Agent 运行时下次启动时生效。"),
         }
 
     def apply(self, payload: Mapping[str, object]) -> dict[str, object]:
@@ -250,10 +286,16 @@ class PiProviderAuthService:
             api_key = str(payload.get("apiKey") or "").strip()
             if not api_key or len(api_key) > 16 * 1024:
                 raise PiProviderAuthError("请输入有效的 API Key。")
+            if preview.provider == "typesafe":
+                self._write_jev_key(api_key)
+                return self._receipt(preview, before_type="")
             result = self._call(
                 {"action": "set_api_key", "provider": preview.provider, "apiKey": api_key}
             )
             return self._receipt(preview, before_type=str(result.get("beforeType") or ""))
+        if preview.action == "logout" and preview.provider == "typesafe":
+            self._write_jev_key(None)
+            return self._receipt(preview, before_type="api_key")
         if preview.action == "logout":
             result = self._call({"action": "logout", "provider": preview.provider})
             return self._receipt(preview, before_type=str(result.get("beforeType") or ""))
@@ -270,6 +312,17 @@ class PiProviderAuthService:
             )
             return self._receipt(preview, before_type="", login=login)
         raise PiProviderAuthError("不支持这项凭据操作。")
+
+    def _write_jev_key(self, value: str | None) -> None:
+        if str(os.environ.get("TYPESAFE_API_KEY") or "").strip():
+            raise PiProviderAuthError("Jev 当前由环境变量配置，请先移除环境变量并重启服务。")
+        try:
+            if value is None:
+                delete_keychain_secret(MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT)
+            else:
+                write_keychain_secret(MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT, value)
+        except Exception:
+            raise PiProviderAuthError("Jev 密钥保存失败，请确认 macOS 钥匙串可用后重试。") from None
 
     def oauth_status(self, login_id: object) -> dict[str, object]:
         normalized = str(login_id or "").strip()
@@ -304,6 +357,8 @@ class PiProviderAuthService:
             _terminate_process(process)
 
     def _provider(self, provider: str) -> Mapping[str, object]:
+        if provider == "typesafe":
+            return self._jev_provider()
         catalog = self.catalog()
         if not catalog.get("available"):
             raise PiProviderAuthError(str(catalog.get("unavailableReason") or "凭据管理暂不可用。"))
@@ -334,8 +389,10 @@ class PiProviderAuthService:
             "receiptState": "login_started" if login_started else "applied",
             "issuedAtMs": now,
             "completedAtMs": 0 if login_started else now,
-            "requiresAgentRestart": not login_started,
+            "requiresAgentRestart": not login_started and preview.provider != "typesafe",
             "sessionBoundary": (
+                "下一次工具审批将使用新配置，无需重启；未配置 Jev 时回退 Luna Max。"
+                if preview.provider == "typesafe" else
                 "登录完成后再重启 Agent 运行时；当前回复不会被中断。"
                 if login_started
                 else "不会中断正在回复的会话；结束当前回复后重启 Agent 运行时即可使用新凭据。"
