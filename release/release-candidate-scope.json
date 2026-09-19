@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-19T11:09:15.331873+00:00",
+  "generatedAt": "2026-09-19T11:33:03.664701+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -131,7 +131,7 @@
     },
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 103
+      "pathCount": 108
     },
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
@@ -143,44 +143,44 @@
     }
   },
   "summary": {
-    "pathCount": 1107,
+    "pathCount": 1112,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 908
+      "keep_release": 913
     },
     "groupCounts": {
-      "brand_stellar": 60,
-      "composition_refactor": 32,
-      "lab_backend": 74,
-      "lab_tools": 10,
       "local_docs": 122,
-      "owner_boundaries": 15,
-      "pi_runtime_refactor": 23,
-      "portable_agent_ui": 8,
       "product_integration": 57,
-      "public_showcase": 30,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "refactor_integration": 23,
-      "refactor_verification": 66,
+      "earth_research": 108,
+      "brand_stellar": 60,
+      "public_showcase": 30,
       "references_history": 8,
-      "release_scope": 1,
-      "room_frontend": 20,
-      "room_service_refactor": 43,
-      "trace_optimization": 61,
+      "memory_lifecycle": 15,
       "verification": 112,
       "voice_desktop": 19,
-      "offline_installer": 12,
-      "session_full_access": 9,
+      "composition_refactor": 32,
+      "portable_agent_ui": 8,
+      "owner_boundaries": 15,
       "conversation_controls": 67,
-      "agent_capsule": 3,
-      "memory_lifecycle": 15,
-      "browser_recovery": 1,
-      "lab_frontend": 54,
+      "trace_optimization": 61,
       "scheduled_tasks": 25,
-      "earth_research": 103,
+      "session_full_access": 9,
+      "jev_integration": 10,
+      "lab_frontend": 54,
       "knowledge_runtime": 12,
-      "jev_integration": 10
+      "room_frontend": 20,
+      "agent_capsule": 3,
+      "refactor_integration": 23,
+      "offline_installer": 12,
+      "room_service_refactor": 43,
+      "lab_backend": 74,
+      "pi_runtime_refactor": 23,
+      "browser_recovery": 1,
+      "lab_tools": 10,
+      "release_scope": 1,
+      "refactor_verification": 66
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -1321,6 +1321,20 @@
       "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/ProjectWorkspacePicker.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Shared GIS project selection and typed geographic file browsing with regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/ProjectWorkspacePicker.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Shared GIS project selection and typed geographic file browsing with regression coverage."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/README.md",
       "status": "added",
       "disposition": "keep_release",
@@ -1361,6 +1375,13 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/earth-files.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Shared GIS project selection and typed geographic file browsing with regression coverage."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/export.test.ts",
@@ -1879,6 +1900,20 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/workspace-file-tree.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Shared GIS project selection and typed geographic file browsing with regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/workspace-file-tree.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Shared GIS project selection and typed geographic file browsing with regression coverage."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/workspace.test.ts",
