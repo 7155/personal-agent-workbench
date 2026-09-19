@@ -509,7 +509,7 @@
 .earth-toolbar__spacer{min-width:0;flex:1}
 /* Tasks are a list of real actions, with the selected map objects kept in context. */
 .earth-task-launcher{max-width:900px;padding:18px 24px;color:var(--earth-ink)}
-.earth-task-launcher__header h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.015em;line-height:1.45}
+.earth-task-launcher__header h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.015em;line-height:1.45;color:var(--earth-ink)}
 .earth-task-launcher__header p{max-width:72ch;margin:5px 0 0;color:var(--earth-muted);font-size:12px;line-height:1.6}
 .earth-task-launcher__context{margin:13px 0 4px;padding:9px 0;border-top:1px solid var(--earth-line);border-bottom:1px solid var(--earth-line);color:var(--earth-muted);font-size:11px;line-height:1.6}
 .earth-task-launcher__context[data-has-selection=true]{color:var(--earth-accent)}
@@ -566,4 +566,5 @@
 
 /* The GIS canvas uses a light document surface even inside a dark OS shell. */
 .earth-app{color-scheme:light;--paw-control-ink:var(--earth-ink);--paw-control-muted:var(--earth-muted);--paw-control-bg:var(--earth-surface);--paw-control-bg-soft:var(--earth-surface-subtle);--paw-control-line:var(--earth-line);--paw-control-line-strong:#b2b8c2;--paw-focus-line:var(--earth-accent);--paw-focus-halo:#1677c51a}
-.earth-app .earth-data-dock__layer-select[aria-pressed=true]{background:transparent;color:var(--earth-ink)}
+.earth-app .earth-data-dock .earth-data-dock__layer-select[aria-pressed=true]{background:transparent;color:var(--earth-ink)}
+.earth-delivery-panel>h2{color:var(--earth-ink)}
