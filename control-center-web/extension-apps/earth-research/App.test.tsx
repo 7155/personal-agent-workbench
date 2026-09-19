@@ -5,7 +5,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { MockControlTransport } from '@/test/mock-transport';
 import type { PawExtensionAppManifest } from '@/paw-os/extensions/types';
-import App from './App';
+import App, { GIS_ACCEPTANCE_TASK } from './App';
 import manifest from './pawos-app.json';
 const { seen } = vi.hoisted(() => ({ seen: vi.fn() }));
 vi.mock('@/paw-os/apps/PawSessionWorkspace', () => ({ sessionWorkspaceProjectionSlice: () => ({ activeTurnId: '' }), PawSessionWorkspace: (props: { recordId: string }) => { seen(props); return <div data-testid="original-agent">{props.recordId}</div>; } }));
@@ -51,4 +51,12 @@ it('creates the exact App-owned Session and freezes the task in its first messag
   expect(transport.requests.find(x => x.request.pathId === 'agent.sessions.create')?.request.body).toMatchObject({ mode: 'coordinator', executionMode: 'workspace_managed', ownerAppId: manifest.id, surfaceKind: 'extension_app', surfaceKey: 'analysis', workspaceRoots: ['/work'] });
   const prompt = transport.requests.find(x => x.request.pathId === 'agent.session.prompt')?.request.body;
   expect(prompt).toMatchObject({ message: expect.stringContaining('比较两个候选地块'), clientMessageId: expect.any(String) });
+});
+
+it('offers a short plain-language GIS acceptance task', async () => {
+  const transport = new MockControlTransport({ routes: { 'agent.sessions.list': { items: [] } } });
+  show(transport);
+  await userEvent.click(await screen.findByRole('button', { name: '填入验收任务' }));
+  expect(screen.getByRole('textbox', { name: '分析任务' })).toHaveValue(GIS_ACCEPTANCE_TASK);
+  expect(GIS_ACCEPTANCE_TASK).toContain('避开河流 200 米');
 });

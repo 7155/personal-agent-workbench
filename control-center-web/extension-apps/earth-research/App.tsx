@@ -38,6 +38,8 @@ const ANALYSIS_MODES: Array<[AnalysisMode, string, string]> = [
   ['custom', '自定义分析', '提出你的地理问题'],
 ];
 
+export const GIS_ACCEPTANCE_TASK = '找适合建变电站的地块，避开河流 200 米，并导出 SHP。';
+
 export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const transport = useControlTransport();
   const scopeHintId = useId();
@@ -340,6 +342,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
           <div className="earth-start__fields"><label>项目文件夹<input aria-describedby={scopeHintId} value={root} onChange={event => setRoot(event.target.value)} placeholder="选择已有分析项目的绝对路径" required /></label><small id={scopeHintId}>Agent 只在这个绑定工作区内读取、编辑和运行。</small><label>Google Cloud 项目<input value={project} onChange={event => setProject(event.target.value)} placeholder="已开通 Earth Engine 的项目 ID" required /></label></div>
           {mapContext ? <p className="earth-start-context">{mapContext.label} · {mapContext.detail}<button type="button" onClick={mapContext.onClear}>移除</button></p> : null}
           <fieldset className="earth-mode-picker"><legend>从一个工作流开始</legend><div role="radiogroup" aria-label="分析功能">{ANALYSIS_MODES.map(([key,label,hint], index) => <button type="button" key={key} aria-pressed={analysisMode === key} className={`earth-mode-card earth-mode-card--${index + 1}`} onClick={() => setAnalysisMode(key)}><span className="earth-mode-card__index">0{index + 1}</span><strong>{label}</strong><small>{hint}</small></button>)}</div></fieldset>
+          <div className="earth-start__quick-task"><span>想先试运行？</span><button type="button" onClick={() => { setAnalysisMode('site'); setDraft(GIS_ACCEPTANCE_TASK); }}>填入验收任务</button><small>{GIS_ACCEPTANCE_TASK}</small></div>
           <label className="earth-start__task">分析目标<textarea aria-label="分析任务" value={draft} onChange={event => setDraft(event.target.value)} placeholder={ANALYSIS_MODES.find(([key]) => key === analysisMode)?.[2]} rows={3} required /></label>
           <div className="earth-start__submit"><span>当前会话会保留脚本、来源、运行记录和结果文件</span><button aria-label="开始分析" disabled={sending || Boolean(error)} type="submit">生成分析方案 <span aria-hidden="true">↗</span></button></div>
         </form>}

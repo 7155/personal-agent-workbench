@@ -84,6 +84,16 @@ standard compression/deterministic approval fallback.
 
 ## Acceptance task
 
+快速验收只需要输入一句：**找适合建变电站的地块，避开河流 200 米，并导出 SHP。**
+系统应显示候选区、保留真实运行记录，并生成可下载的 SHP 和 GeoPackage。
+
+在本机可直接运行同一条验收流程：
+
+```bash
+PAW_EARTH_GIS_PYTHON="$HOME/Library/Application Support/RagIme/EarthGISRuntime/.venv/bin/python" \
+  node scripts/run_earth_gis_acceptance.mjs
+```
+
 Run a power-grid siting task with local candidate parcels and exclusion zones:
 
 1. Inspect all local inputs and report geometry, CRS, fields and extents.
