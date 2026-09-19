@@ -9,7 +9,7 @@ import App, { GIS_ACCEPTANCE_TASK } from './App';
 import manifest from './pawos-app.json';
 const { seen } = vi.hoisted(() => ({ seen: vi.fn() }));
 vi.mock('@/paw-os/apps/PawSessionWorkspace', () => ({ sessionWorkspaceProjectionSlice: () => ({ activeTurnId: '' }), PawSessionWorkspace: (props: { recordId: string }) => { seen(props); return <div data-testid="original-agent">{props.recordId}</div>; } }));
-vi.mock('./EarthMap', () => ({ EarthMap: ({onSelect}: {onSelect:(feature: unknown)=>void}) => <button onClick={()=>onSelect({type:'Feature',geometry:{type:'Point',coordinates:[120.1,30.2]},properties:{source:'user_selection'}})}>选择地图地点</button> }));
+vi.mock('./EarthMap', () => ({ EarthMap: ({onSelect, onOpenFile}: {onSelect:(feature: unknown)=>void; onOpenFile?: (file: { path: string; name: string; kind: 'file' }) => void}) => <><button onClick={()=>onSelect({type:'Feature',geometry:{type:'Point',coordinates:[120.1,30.2]},properties:{source:'user_selection'}})}>选择地图地点</button>{onOpenFile ? <button onClick={() => onOpenFile({ path: '/work/report.html', name: 'report.html', kind: 'file' })}>打开 HTML 报告</button> : null}</> }));
 vi.mock('@/features/agent/file-preview/CodePreview', () => ({ CodePreview: ({ content }: { content: string }) => <pre>{content}</pre> }));
 afterEach(() => { cleanup(); seen.mockClear(); });
 function show(transport: MockControlTransport) { render(<ControlTransportProvider transport={transport}><TooltipProvider><App manifest={manifest as PawExtensionAppManifest} /></TooltipProvider></ControlTransportProvider>); }
@@ -59,4 +59,37 @@ it('offers a short plain-language GIS acceptance task', async () => {
   await userEvent.click(await screen.findByRole('button', { name: '填入验收任务' }));
   expect(screen.getByRole('textbox', { name: '分析任务' })).toHaveValue(GIS_ACCEPTANCE_TASK);
   expect(GIS_ACCEPTANCE_TASK).toContain('避开河流 200 米');
+});
+
+it('disables script execution while a non-script workspace artifact is open', async () => {
+  const revision = `sha256:${'0'.repeat(64)}`;
+  const run = {
+    schemaVersion: 'earth.run.v1', runId: 'run-1', status: 'completed', code: 'print(1);', scriptPath: '/work/analysis.js',
+    project: 'earth-test', sourceHash: 'hash', startedAt: '2026-09-19T00:00:00Z', updatedAt: '2026-09-19T00:00:01Z',
+    layers: [], console: [],
+  };
+  const snapshots: Record<string, string> = {
+    '/work/.earth/workspace.json': JSON.stringify(run),
+    '/work/analysis.js': 'print(1);',
+    '/work/report.html': '<h1>Report</h1>',
+  };
+  const transport = new MockControlTransport({ routes: {
+    'agent.sessions.list': { items: [{ id: 'ours', mode: 'assistant', title: 'Earth', updatedAtMs: 1, surfaceKind: 'extension_app', ownerAppId: manifest.id, surfaceKey: 'analysis', workspaceRoots: ['/work'] }] },
+    'agent.session.workspace.list': { items: [] },
+    'agent.session.workspace.read': (request: { query?: { path?: string } }) => {
+      const path = request.query?.path || '';
+      const content = snapshots[path];
+      if (content === undefined) throw new Error(`missing ${path}`);
+      return { ok: true, path, content, byteSize: new TextEncoder().encode(content).length, loadedBytes: new TextEncoder().encode(content).length, nextOffset: new TextEncoder().encode(content).length, truncated: false, resourceRevision: revision, editability: { editable: false } };
+    },
+  } });
+  show(transport);
+  await screen.findByTestId('original-agent');
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: '代码' }));
+  const runButton = await screen.findByRole('button', { name: '运行已保存代码' });
+  await waitFor(() => expect(runButton).not.toBeDisabled());
+  await user.click(screen.getByRole('button', { name: '地图' }));
+  await user.click(screen.getByRole('button', { name: '打开 HTML 报告' }));
+  expect(runButton).toBeDisabled();
 });

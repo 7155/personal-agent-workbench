@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { EarthRun } from './workspace';
 import type { ProjectLayer, SpatialSourceDraft, SpatialSourceSummary, WorkspaceFileSummary } from './layer-catalog';
 
@@ -13,6 +13,8 @@ type Props = {
   activeObjectLabel?: string;
   selectedFeatures: GeoJSON.Feature[];
   onSaveLayer?: (name: string, features: GeoJSON.Feature[]) => Promise<void> | void;
+  onUpdateFeature?: (feature: GeoJSON.Feature) => Promise<void> | void;
+  onCreateBundle?: () => Promise<void> | void;
   onExportLayer?: (format: 'shp' | 'gpkg', layer: ProjectLayer) => Promise<void> | void;
   onToggleLayer?: (layerId: string, visible: boolean) => Promise<void> | void;
   onRemoveLayer?: (layerId: string) => Promise<void> | void;
@@ -24,7 +26,7 @@ type Props = {
 
 const GIS_EXTENSIONS = /\.(geojson|json|shp|gpkg|sqlite|kml|kmz|tif|tiff|csv|html?|md|pdf|png|jpg|jpeg)$/iu;
 
-export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSources, workspaceFiles, activeObjectLabel, selectedFeatures, onSaveLayer, onExportLayer, onToggleLayer, onRemoveLayer, onConnectSource, onRefreshCatalog, onRefreshFiles, onOpenFile }: Props) {
+export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSources, workspaceFiles, activeObjectLabel, selectedFeatures, onSaveLayer, onUpdateFeature, onCreateBundle, onExportLayer, onToggleLayer, onRemoveLayer, onConnectSource, onRefreshCatalog, onRefreshFiles, onOpenFile }: Props) {
   const [tab, setTab] = useState<DockTab>('layers');
   const [layerName, setLayerName] = useState('候选区域');
   const [selectedLayerId, setSelectedLayerId] = useState('');
@@ -34,6 +36,7 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
   const [sourceSecret, setSourceSecret] = useState('PAW_POSTGIS_URL');
   const [fileFilter, setFileFilter] = useState('');
   const [error, setError] = useState('');
+  const [draftProperties, setDraftProperties] = useState<Record<string, string>>({});
   const selectedLayer = projectLayers.find(layer => layer.id === selectedLayerId) ?? projectLayers[0];
   const allFiles = useMemo(() => {
     const artifactFiles = (run?.artifacts ?? []).map(artifact => ({ path: artifact.path.startsWith('/') ? artifact.path : `${workspaceRoot}/${artifact.path}`, name: artifact.path.split('/').pop() || artifact.path, kind: 'file' as const, byteSize: artifact.bytes }));
@@ -41,6 +44,10 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
   }, [run?.artifacts, workspaceFiles, workspaceRoot]);
   const filteredFiles = useMemo(() => allFiles.filter(file => file.kind === 'file' && GIS_EXTENSIONS.test(file.name) && (!fileFilter.trim() || `${file.name} ${file.path}`.toLowerCase().includes(fileFilter.toLowerCase()))), [allFiles, fileFilter]);
   const runLayers = run?.layers.filter(layer => layer.tileUrl) ?? [];
+  const selectedFeature = selectedFeatures[0];
+  useEffect(() => {
+    setDraftProperties(Object.fromEntries(Object.entries(selectedFeature?.properties ?? {}).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value ?? '')])));
+  }, [selectedFeature?.id, selectedFeature?.geometry, selectedFeature?.properties]);
 
   async function saveLayer() {
     if (!onSaveLayer) return;
@@ -62,6 +69,14 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
     setError('');
     try { await onConnectSource(source); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
+  async function saveProperties() {
+    if (!selectedFeature || !onUpdateFeature) return;
+    setError('');
+    const properties = Object.fromEntries(Object.entries(draftProperties).map(([key, value]) => {
+      try { return [key, value.trim() === '' ? '' : JSON.parse(value)]; } catch { return [key, value]; }
+    }));
+    try { await onUpdateFeature({ ...selectedFeature, properties }); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
 
   return <aside className="earth-data-dock" aria-label="GIS 数据工作区">
     <header className="earth-data-dock__header">
@@ -81,12 +96,12 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
       <div className="earth-data-dock__layer-actions"><input aria-label="新图层名称" value={layerName} onChange={event => setLayerName(event.target.value)} placeholder="图层名称" /><button type="button" disabled={!onSaveLayer || !selectedFeatures.length} onClick={() => void saveLayer()}>保存图层</button></div>
       {projectLayers.map(layer => <div className={`earth-data-dock__layer ${selectedLayer?.id === layer.id ? 'is-active' : ''}`} key={layer.id}>
         <div className="earth-data-dock__layer-head"><label><input type="checkbox" aria-label={layer.name} checked={layer.visible !== false} disabled={!onToggleLayer} onChange={event => void onToggleLayer?.(layer.id, event.target.checked)} /><strong>{layer.name}</strong></label><button type="button" aria-label={`从目录移除 ${layer.name}`} onClick={() => void onRemoveLayer?.(layer.id)}>移除</button></div>
-        <button type="button" className="earth-data-dock__layer-select" onClick={() => setSelectedLayerId(layer.id)}><span>{layer.featureCount} 要素 · {layer.geometryTypes.join(' / ') || '未知'} · {layer.crs}</span><code>{layer.path}</code></button>
+        <button type="button" className="earth-data-dock__layer-select" onClick={() => setSelectedLayerId(layer.id)}><span>{layer.featureCount} 要素 · {layer.geometryTypes.join(' / ') || '未知'} · {layer.crs} · v{layer.revision ?? 1}</span><code>{layer.path}</code></button>
       </div>)}
       {!projectLayers.length ? <p className="earth-data-dock__empty">先在地图上画点、线或面，再保存为项目图层。它会写入当前 Session 的 .earth/layers/。</p> : null}
-      {selectedFeatures.length ? <section className="earth-data-dock__selection" aria-label="当前选中对象"><div className="earth-data-dock__section-head"><strong>当前选中对象</strong><span>{selectedFeatures.length} 个</span></div><table><tbody>{Object.entries(selectedFeatures[0]?.properties ?? {}).slice(0, 8).map(([key, value]) => <tr key={key}><th>{key}</th><td>{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}</td></tr>)}</tbody></table><small>这是地图选择上下文；保存图层或发送给 Agent 前仍可继续增删选择。</small></section> : null}
+      {selectedFeatures.length ? <section className="earth-data-dock__selection" aria-label="当前选中对象"><div className="earth-data-dock__section-head"><strong>当前选中对象</strong><span>{selectedFeatures.length} 个</span></div><table><tbody>{Object.entries(selectedFeature?.properties ?? {}).slice(0, 8).map(([key, value]) => <tr key={key}><th>{key}</th><td>{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}</td></tr>)}</tbody></table>{selectedFeature && onUpdateFeature ? <div className="earth-data-dock__attribute-editor"><strong>属性编辑</strong>{Object.keys(draftProperties).map(key => <label key={key}>{key}<input aria-label={`属性 ${key}`} value={draftProperties[key] ?? ''} onChange={event => setDraftProperties(current => ({ ...current, [key]: event.target.value }))} /></label>)}<button type="button" onClick={() => void saveProperties()}>保存属性版本</button></div> : null}<small>这是地图选择上下文；属性保存会生成新的图层版本，几何与字段可在项目重开后恢复。</small></section> : null}
       <div className="earth-data-dock__export"><select aria-label="导出图层" value={selectedLayer?.id ?? ''} onChange={event => setSelectedLayerId(event.target.value)}><option value="">选择项目图层</option>{projectLayers.map(layer => <option key={layer.id} value={layer.id}>{layer.name} · {layer.featureCount}</option>)}</select><button type="button" disabled={!selectedLayer || !onExportLayer} onClick={() => void exportLayer('shp')}>SHP</button><button type="button" disabled={!selectedLayer || !onExportLayer} onClick={() => void exportLayer('gpkg')}>GPKG</button></div>
-      <button type="button" className="earth-data-dock__database-link" onClick={() => setTab('databases')}>连接空间数据库</button>
+      <div className="earth-data-dock__layer-actions"><button type="button" className="earth-data-dock__database-link" onClick={() => setTab('databases')}>连接空间数据库</button>{run?.status === 'completed' && onCreateBundle ? <button type="button" onClick={() => void onCreateBundle()}>打包成果</button> : null}</div>
     </section> : null}
     {tab === 'files' ? <section className="earth-data-dock__content" role="tabpanel" aria-label="工作区文件管理">
       <div className="earth-data-dock__section-head"><strong>工作区文件</strong><span>Agent 实际可读写的文件</span></div>

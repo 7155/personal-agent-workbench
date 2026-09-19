@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readOfficialDocs } from './official-docs';
 import { parseMapState, parseViewCommand } from './view-contract';
-import { GIS_CATALOG, GIS_OPERATION_IDS, connectSpatialSource, exportGISLayer, inspectGISPath, listGISFiles, listSpatialSources, prepareGISWorkspace, runGISOperation } from './gis-operations.mjs';
+import { GIS_CATALOG, GIS_OPERATION_IDS, connectSpatialSource, createGISBundle, exportGISLayer, inspectGISPath, listGISBackends, listGISFiles, listSpatialSources, prepareGISWorkspace, queryGISPixel, runGISOperation } from './gis-operations.mjs';
 import { searchGISKnowledge } from './gis-knowledge.mjs';
 import { earthTaskCancel, earthTaskStatus } from './cloud-tasks.mjs';
 import { uploadTableAsset } from './asset-upload.mjs';
@@ -21,6 +21,35 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 const string = { type: 'string' };
 
 export default function registerEarthResearchPackage(pi: any) {
+  // These two commands are the workbench's deterministic UI bridge.  The map
+  // and data dock can invoke them through the existing Session command route,
+  // so exporting a layer or registering a local database does not require a
+  // second LLM turn.  The command receipt is returned by Pi as a package
+  // command result and still runs inside the bound workspace.
+  pi.registerCommand?.('earth-gis-export', {
+    description: '从 GIS 工作台导出图层，不经过 Agent 对话。',
+    async handler(args: string, ctx: { cwd: string; appendEntry?: (type: string, data: unknown) => void }) {
+      const request = parseCommandArgs(args, 'earth-gis-export');
+      const result = await exportGISLayer({ root: ctx.cwd, request: request as { input: string; format: 'geojson' | 'shp' | 'gpkg' | 'kml'; name: string; layer?: string; targetCrs?: string } });
+      appendCommandResult(pi, 'earth-gis-export', result);
+    },
+  });
+  pi.registerCommand?.('earth-spatial-connect', {
+    description: '从 GIS 工作台登记空间数据库，不经过 Agent 对话。',
+    async handler(args: string, ctx: { cwd: string; appendEntry?: (type: string, data: unknown) => void }) {
+      const source = parseCommandArgs(args, 'earth-spatial-connect');
+      const result = await connectSpatialSource({ root: ctx.cwd, source: source as { name: string; kind: 'geopackage' | 'spatialite' | 'postgis'; path?: string; schema?: string; table?: string; secretReference?: string; readOnly?: boolean } });
+      appendCommandResult(pi, 'earth-spatial-connect', result);
+    },
+  });
+  pi.registerCommand?.('earth-gis-bundle', {
+    description: '把已完成 GIS 运行保存为版本化成果目录。',
+    async handler(args: string, ctx: { cwd: string }) {
+      const request = parseCommandArgs(args, 'earth-gis-bundle');
+      const result = createGISBundle({ root: ctx.cwd, ...(request as { runId: string; name?: string; version?: number; include?: string[] }) });
+      appendCommandResult(pi, 'earth-gis-bundle', result);
+    },
+  });
   pi.registerTool({
     name: 'earth_gis_catalog', label: 'GIS 算子目录', executionMode: 'sequential',
     description: 'List the 28 deterministic local GIS operations, with input roles and parameter specifications. No Google or model call.',
@@ -76,6 +105,12 @@ export default function registerEarthResearchPackage(pi: any) {
     },
   });
   pi.registerTool({
+    name: 'earth_gis_backends', label: '查看 GIS 后端', executionMode: 'sequential',
+    description: 'Report the local GIS backends available to this Session. GeoPandas is the default; QGIS Processing is optional and only reported available when qgis_process is installed/configured.',
+    parameters: schema({}),
+    async execute() { const result = listGISBackends(); return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result }; },
+  });
+  pi.registerTool({
     name: 'earth_gis_export', label: '导出 GIS 图层', executionMode: 'sequential',
     description: 'Export a workspace-owned vector layer as GeoJSON, ESRI Shapefile (including .shp/.shx/.dbf/.prj and a zip), GeoPackage or KML. The receipt records CRS, feature count and every output file; no cloud upload is implied.',
     parameters: schema({ input: string, format: { type: 'string', enum: ['geojson', 'shp', 'gpkg', 'kml'] }, name: string, layer: string, targetCrs: string }, ['input', 'format', 'name']),
@@ -109,6 +144,15 @@ export default function registerEarthResearchPackage(pi: any) {
     async execute(_id: string, input: { path: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = await inspectGISPath({ root: workspace(ctx), path: input.path });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: 'completed', result } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_pixel', label: '查询栅格像元', executionMode: 'sequential',
+    description: 'Read the actual value of one local raster cell at a WGS84 longitude/latitude. It returns outside/nodata explicitly and never treats an empty value as zero.',
+    parameters: schema({ path: string, longitude: { type: 'number' }, latitude: { type: 'number' }, band: { type: 'number' } }, ['path', 'longitude', 'latitude']),
+    async execute(_id: string, input: { path: string; longitude: number; latitude: number; band?: number }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await queryGISPixel({ root: workspace(ctx), ...input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
     },
   });
   pi.registerTool({
@@ -159,6 +203,15 @@ export default function registerEarthResearchPackage(pi: any) {
     async execute(_id: string, input: { requests: Array<Record<string, unknown>>; concurrency?: number }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = await runGISBatch({ root: workspace(ctx), requests: input.requests as any, concurrency: input.concurrency });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_bundle', label: '打包 GIS 成果', executionMode: 'sequential',
+    description: 'Create a versioned, workspace-local deliverable directory containing one completed GIS run, its run manifest, and explicitly named report/layer files. It never claims a cloud task is complete without the saved run receipt.',
+    parameters: schema({ runId: string, name: string, version: { type: 'number' }, include: { type: 'array', items: string } }, ['runId']),
+    async execute(_id: string, input: { runId: string; name?: string; version?: number; include?: string[] }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = createGISBundle({ root: workspace(ctx), ...input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };
     },
   });
   pi.registerTool({
@@ -266,6 +319,22 @@ export default function registerEarthResearchPackage(pi: any) {
       const result = await uploadTableAsset({ root: workspace(ctx), ...input });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
     },
+  });
+}
+
+function parseCommandArgs(args: string, command: string): Record<string, any> {
+  let value: unknown;
+  try { value = JSON.parse(args.trim()); } catch { throw new Error(`/${command} 需要一个 JSON 参数对象。`); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`/${command} 参数必须是 JSON 对象。`);
+  return value as Record<string, any>;
+}
+
+function appendCommandResult(pi: { appendEntry?: (type: string, data: unknown) => void }, command: string, result: unknown) {
+  if (typeof pi.appendEntry !== 'function') throw new Error('Pi Package command receipts are unavailable in this runtime.');
+  pi.appendEntry('paw-pi-package-command-result', {
+    schemaVersion: 'rag-ime.pi-package-command-result.v1',
+    command,
+    result,
   });
 }
 

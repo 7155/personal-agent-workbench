@@ -17,3 +17,12 @@ it('keeps the Agent object, layer, file and database views in one dock', () => {
   expect(screen.getByRole('tabpanel', { name: '空间数据库' })).toBeVisible();
   expect(screen.getByText(/还没有登记空间数据库/)).toBeVisible();
 });
+
+it('edits a selected feature property through the versioned layer callback', () => {
+  const feature: GeoJSON.Feature = { type: 'Feature', id: 'parcel-1', properties: { name: '旧名称', area: 12 }, geometry: { type: 'Point', coordinates: [120, 30] } };
+  const onUpdateFeature = vi.fn().mockResolvedValue(undefined);
+  render(<EarthDataDock run={null} workspaceRoot="/work/project" projectLayers={[]} spatialSources={[]} workspaceFiles={[]} selectedFeatures={[feature]} onUpdateFeature={onUpdateFeature} />);
+  fireEvent.change(screen.getByRole('textbox', { name: '属性 name' }), { target: { value: '新名称' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存属性版本' }));
+  expect(onUpdateFeature).toHaveBeenCalledWith(expect.objectContaining({ id: 'parcel-1', properties: { name: '新名称', area: 12 } }));
+});

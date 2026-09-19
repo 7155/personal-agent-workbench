@@ -66,6 +66,17 @@ listing is immediate; PostGIS remains `configured_pending` until its
 secret-backed driver is installed. This is a source catalog, not a claim that a
 cloud database was queried.
 
+The four workbench acceptance stages are deliberately independent:
+
+1. **基础操作**：关闭模型服务，选两块地导出 GPKG，再打开报告。导出和打开文件走确定性 Session/Package 回执。
+2. **数据与编辑**：打开已有地块，编辑顶点和属性，保存后关闭重开。每次保存增加图层 revision，并保留 `.earth/layers/history/` 快照。
+3. **专业 GIS**：从数据库读取图层，使用 `earth_gis_pixel` 查询真实栅格像元，并用已有 `difference` 算子挖掉内部湖泊。`earth_gis_backends` 会明确报告默认 GeoPandas 与可选 `qgis_process` 是否存在。
+4. **分析与交付**：每次运行保留独立 runId；云端任务仍由 `earth_task_status` 查询；`earth_gis_bundle` 把已完成运行、显式报告/图层和 `run-manifest.json` 写入版本化成果目录。
+
+`earth_gis_backends` 只报告 QGIS Processing 是否可用，不会把检测到
+`qgis_process` 伪装成已经使用 QGIS 算法。启用 QGIS 后端前应配置
+`PAW_QGIS_PROCESS`，并在对应算法回执中记录实际执行后端。
+
 Install the isolated local runtime with
 `scripts/install_earth_gis_runtime.sh`. It installs GeoPandas, Fiona, Rasterio,
 Shapely and PyProj under the PAW application-support directory; the package

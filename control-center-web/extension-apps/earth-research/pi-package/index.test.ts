@@ -7,8 +7,9 @@ const roots: string[] = [];
 afterEach(() => { roots.splice(0).forEach(root => fs.rmSync(root, { recursive: true, force: true })); });
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'earth-package-test-')); roots.push(root);
-  const tools = new Map<string, any>(); register({ registerTool: (tool: any) => tools.set(tool.name, tool) });
-  return { root, tools };
+  const tools = new Map<string, any>(); const commands = new Map<string, any>();
+  register({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: (name: string, command: any) => commands.set(name, command) });
+  return { root, tools, commands };
 }
 it('prepares the installed adapter without losing existing Python and SDK configuration', async () => {
   const { root, tools } = setup(); fs.mkdirSync(path.join(root, '.earth'));
@@ -27,8 +28,18 @@ it('rejects an adapter symlink before writing outside the bound workspace', asyn
 });
 
 it('registers the map state, GIS retrieval, spatial data, cloud task, Asset, batch and ML workflow tools', () => {
-  const { tools } = setup();
-  for (const name of ['earth_map_state', 'earth_gis_search', 'earth_gis_export', 'earth_spatial_connect', 'earth_spatial_catalog', 'earth_gis_batch', 'earth_run_batch', 'earth_task_status', 'earth_task_cancel', 'earth_asset_upload', 'earth_ml_catalog', 'earth_ml_template', 'earth_ml_prepare']) expect(tools.has(name)).toBe(true);
+  const { tools, commands } = setup();
+  for (const name of ['earth_map_state', 'earth_gis_search', 'earth_gis_export', 'earth_spatial_connect', 'earth_spatial_catalog', 'earth_gis_pixel', 'earth_gis_backends', 'earth_gis_bundle', 'earth_gis_batch', 'earth_run_batch', 'earth_task_status', 'earth_task_cancel', 'earth_asset_upload', 'earth_ml_catalog', 'earth_ml_template', 'earth_ml_prepare']) expect(tools.has(name)).toBe(true);
+  expect(commands.has('earth-gis-export')).toBe(true);
+  expect(commands.has('earth-spatial-connect')).toBe(true);
+  expect(commands.has('earth-gis-bundle')).toBe(true);
+});
+
+it('returns a deterministic spatial connection receipt through the package command bridge', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'earth-package-command-test-')); roots.push(root); const entries: unknown[] = []; const commands = new Map<string, any>();
+  register({ registerTool: () => {}, registerCommand: (name: string, command: any) => commands.set(name, command), appendEntry: (_type: string, data: unknown) => entries.push(data) });
+  await commands.get('earth-spatial-connect').handler(JSON.stringify({ name: 'PostGIS-Test', kind: 'postgis', secretReference: 'PAW_POSTGIS_URL' }), { cwd: root });
+  expect(entries[0]).toMatchObject({ schemaVersion: 'rag-ime.pi-package-command-result.v1', command: 'earth-spatial-connect', result: { status: 'configured_pending', secretReference: 'PAW_POSTGIS_URL' } });
 });
 
 it('reads a trusted published map state from the bound workspace', async () => {

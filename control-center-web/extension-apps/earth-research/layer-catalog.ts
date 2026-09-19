@@ -7,6 +7,8 @@ export type ProjectLayer = {
   geometryTypes: string[];
   crs: string;
   updatedAt: string;
+  revision?: number;
+  history?: string[];
   visible: boolean;
   features: GeoJSON.Feature[];
 };
@@ -63,6 +65,8 @@ export function parseProjectLayerCatalog(value: unknown): Array<Omit<ProjectLaye
     geometryTypes: Array.isArray(item.geometryTypes) ? item.geometryTypes.filter((type): type is string => typeof type === 'string') : [],
     crs: typeof item.crs === 'string' ? item.crs : 'EPSG:4326',
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
+    revision: Number.isFinite(Number(item.revision)) ? Number(item.revision) : 1,
+    history: Array.isArray(item.history) ? item.history.filter((entry): entry is string => typeof entry === 'string') : [],
     visible: item.visible !== false,
   }));
 }

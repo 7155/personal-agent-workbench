@@ -85,7 +85,10 @@ export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
   }
   map.on('draw:created',created).on('draw:edited',edited).on('draw:deleted',deleted)
     .on('draw:drawstart draw:editstart draw:deletestart',start).on('draw:drawstop draw:editstop draw:deletestop',stop).on('draw:drawvertex',vertexChanged);
-  return {start(kind:DrawingKind) {
+  return {add(feature: EditableGeometry) {
+      if (all().some(item => String(item.id) === String(feature.id))) return;
+      L.geoJSON(feature,{pointToLayer:(_feature,point)=>L.marker(point,{icon:markerIcon})}).eachLayer(layer=>attach(layer,feature));
+    },start(kind:DrawingKind) {
       cancelActive();
       const drawMap = map as any;
       const handler = kind==='point' ? new L.Draw.Marker(drawMap,{icon:markerIcon}) : kind==='polyline' ? new L.Draw.Polyline(drawMap,{shapeOptions:{color:'#d08a19'}}) : kind==='polygon' ? new L.Draw.Polygon(drawMap,{shapeOptions:{color:'#d08a19'}}) : kind==='rectangle' ? new L.Draw.Rectangle(drawMap,{shapeOptions:{color:'#d08a19'}}) : kind==='edit' ? new L.EditToolbar.Edit(drawMap,{featureGroup:group}) : new L.EditToolbar.Delete(drawMap,{featureGroup:group});

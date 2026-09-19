@@ -82,6 +82,12 @@ export function listGISFiles(root, directory = 'data') {
   return items;
 }
 
+export function listGISBackends() {
+  const candidates = [process.env.PAW_QGIS_PROCESS, '/opt/homebrew/bin/qgis_process', '/usr/local/bin/qgis_process', '/usr/bin/qgis_process'].filter(Boolean);
+  const qgisProcess = candidates.find(candidate => fs.existsSync(candidate));
+  return { schemaVersion: 'earth.gis-backends.v1', default: 'geopandas', backends: [{ id: 'geopandas', available: true, role: 'deterministic local vector/raster operations' }, { id: 'qgis', available: Boolean(qgisProcess), executable: qgisProcess || null, role: 'optional QGIS Processing provider; configure PAW_QGIS_PROCESS before enabling' }] };
+}
+
 function parseRunnerOutput(stdout) {
   const lines = String(stdout || '').trim().split(/\r?\n/).reverse();
   for (const line of lines) {
@@ -151,6 +157,14 @@ export async function inspectGISPath({ root, python, path: inputPath }) {
   const result = await executeRunner(prepared.python, prepared.runner, { operation: 'inspect', root: resolvedRoot, path: inputPath }, resolvedRoot);
   if (result.status === 'failed') throw new Error(result.error || 'GIS inspect failed');
   return result.result;
+}
+
+export async function queryGISPixel({ root, python, path: inputPath, longitude, latitude, band }) {
+  const resolvedRoot = safeRoot(root);
+  const prepared = prepareGISWorkspace(resolvedRoot, { python });
+  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'pixel', root: resolvedRoot, path: inputPath, longitude, latitude, band }, resolvedRoot);
+  if (result.status === 'failed') throw new Error(result.error || 'GIS pixel query failed');
+  return result;
 }
 
 function spatialCatalogPath(root) {
@@ -238,4 +252,38 @@ export async function exportGISLayer({ root, python, request }) {
   atomicWrite(path.join(runDir, 'run.json'), normalized);
   atomicWrite(path.join(resolvedRoot, '.earth/gis/workspace.json'), normalized);
   return normalized;
+}
+
+export function createGISBundle({ root, runId, name = 'gis-deliverable', version = 1, include = [] }) {
+  const resolvedRoot = safeRoot(root);
+  if (!/^[a-f0-9-]{8,80}$/i.test(String(runId || ''))) throw new TypeError('A valid GIS runId is required.');
+  const safeName = String(name || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'gis-deliverable';
+  const numericVersion = Number.isInteger(version) && version > 0 ? version : 1;
+  const runRoot = safeRelative(resolvedRoot, `.earth/gis/runs/${runId}`);
+  const targetRelative = `.earth/deliverables/${safeName}-v${numericVersion}`;
+  const target = safeRelative(resolvedRoot, targetRelative, { allowMissing: true });
+  if (fs.existsSync(target)) throw new Error(`Deliverable already exists: ${targetRelative}`);
+  fs.mkdirSync(target, { recursive: true });
+  const copied = [];
+  const copyTree = (source, destination) => {
+    if (fs.lstatSync(source).isSymbolicLink()) throw new Error('Deliverables cannot include symlinks.');
+    const stat = fs.statSync(source);
+    if (stat.isDirectory()) {
+      fs.mkdirSync(destination, { recursive: true });
+      for (const entry of fs.readdirSync(source)) copyTree(path.join(source, entry), path.join(destination, entry));
+      return;
+    }
+    fs.copyFileSync(source, destination);
+    copied.push(path.relative(target, destination));
+  };
+  copyTree(runRoot, path.join(target, 'run'));
+  for (const item of Array.isArray(include) ? include : []) {
+    const relative = String(item || '');
+    if (!relative || relative.startsWith('/') || relative.split('/').includes('..')) throw new TypeError('Bundle include paths must stay inside the workspace.');
+    const source = safeRelative(resolvedRoot, relative);
+    copyTree(source, path.join(target, 'workspace', relative));
+  }
+  const manifest = { schemaVersion: 'earth.gis-deliverable.v1', name: safeName, version: numericVersion, runId, createdAt: new Date().toISOString(), files: copied.sort() };
+  atomicWrite(path.join(target, 'run-manifest.json'), manifest);
+  return { status: 'completed', path: targetRelative, manifest };
 }

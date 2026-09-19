@@ -145,6 +145,33 @@ def raster_summary(path: Path) -> dict[str, Any]:
         }
 
 
+def raster_pixel(root: Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Read one raster cell at a WGS84 coordinate without creating a layer."""
+    require_runtime()
+    target = inside(root, request.get("path"))
+    if kind_for(target) != "raster":
+        fail("Pixel queries require a GeoTIFF/IMG raster", code="unsupported_format")
+    try:
+        longitude = float(request.get("longitude"))
+        latitude = float(request.get("latitude"))
+    except (TypeError, ValueError):
+        fail("Pixel query requires numeric longitude and latitude", code="invalid_params")
+    band = int(request.get("band") or 1)
+    with rasterio.open(target) as source:
+        if band < 1 or band > source.count:
+            fail(f"Raster band must be between 1 and {source.count}", code="invalid_params")
+        x, y = longitude, latitude
+        if source.crs and str(source.crs).upper() not in {"EPSG:4326", "OGC:CRS84"}:
+            from rasterio.warp import transform
+            x, y = transform("EPSG:4326", source.crs, [longitude], [latitude])
+            x, y = x[0], y[0]
+        row, column = source.index(x, y)
+        if row < 0 or row >= source.height or column < 0 or column >= source.width:
+            return {"status": "outside", "path": str(target.relative_to(root)), "longitude": longitude, "latitude": latitude, "band": band, "row": row, "column": column, "value": None}
+        value = source.read(band, window=((row, row + 1), (column, column + 1)), masked=True)[0, 0]
+        return {"status": "completed", "path": str(target.relative_to(root)), "longitude": longitude, "latitude": latitude, "band": band, "row": row, "column": column, "value": None if np.ma.is_masked(value) else float(value), "crs": str(source.crs) if source.crs else None}
+
+
 def inspect(root: Path, request: dict[str, Any]) -> dict[str, Any]:
     target = inside(root, request.get("path"))
     kind = kind_for(target)
@@ -345,6 +372,9 @@ def main() -> None:
         return
     if operation == "inspect":
         print(json.dumps({"status": "completed", "result": inspect(root, request)}, ensure_ascii=False, default=str))
+        return
+    if operation == "pixel":
+        print(json.dumps(raster_pixel(root, request), ensure_ascii=False, default=str))
         return
     if operation == "process":
         print(json.dumps(process(root, request), ensure_ascii=False, default=str))

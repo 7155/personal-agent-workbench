@@ -120,3 +120,14 @@ it('manages project layers and submits a secret-safe spatial database connection
   fireEvent.click(screen.getByRole('button', { name: '连接并登记' }));
   expect(onConnectSource).toHaveBeenCalledWith({ name: '项目数据库', kind: 'postgis', secretReference: 'PAW_POSTGIS_URL' });
 });
+
+it('does not treat an empty selection as every available feature', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Reflect.set(L.Browser, 'svg', true);
+  const feature: GeoJSON.Feature = { type: 'Feature', id: 'parcel-1', properties: { name: '候选地块' }, geometry: { type: 'Point', coordinates: [120, 30] } };
+  const onSaveLayer = vi.fn();
+  const layer = { id: 'layer:roads', name: '道路候选', path: '.earth/layers/roads.geojson', format: 'geojson' as const, featureCount: 1, geometryTypes: ['Point'], crs: 'EPSG:4326', updatedAt: '2026-09-19T00:00:00Z', visible: true, features: [feature] };
+  render(<EarthMap run={null} selection={[]} projectLayers={[layer]} workspaceKey="empty-selection" onActivity={vi.fn()} onSelect={vi.fn()} onSaveLayer={onSaveLayer} />);
+  expect(screen.getByRole('button', { name: '保存图层' })).toBeDisabled();
+  expect(onSaveLayer).not.toHaveBeenCalled();
+});
