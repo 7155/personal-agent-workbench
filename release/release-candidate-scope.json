@@ -1,9 +1,9 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-18T13:40:03.142401+00:00",
+  "generatedAt": "2026-09-19T10:30:56.674333+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "codex/lab-visual-recovery-20260913",
+    "branch": "codex/jev-integration-20260919",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
     "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately. This checkpoint also includes Earth Agent GIS and cloud/local workflows plus Knowledge and Lab recall diagnostics and search recovery; it does not declare installed foreground or binary-release acceptance."
   },
@@ -136,13 +136,21 @@
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
       "pathCount": 10
+    },
+    "source_inventory_reconciliation": {
+      "description": "Reconcile previously committed source inventory.",
+      "pathCount": 10
+    },
+    "jev_integration": {
+      "description": "Jev integration and regression coverage.",
+      "pathCount": 10
     }
   },
   "summary": {
-    "pathCount": 1051,
+    "pathCount": 1071,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 852
+      "keep_release": 872
     },
     "groupCounts": {
       "local_docs": 122,
@@ -157,13 +165,16 @@
       "verification": 112,
       "voice_desktop": 19,
       "composition_refactor": 32,
+      "source_inventory_reconciliation": 10,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
       "conversation_controls": 65,
       "trace_optimization": 61,
       "scheduled_tasks": 25,
       "session_full_access": 9,
+      "jev_integration": 10,
       "lab_frontend": 54,
+      "knowledge_runtime": 10,
       "room_frontend": 20,
       "agent_capsule": 3,
       "refactor_integration": 22,
@@ -174,8 +185,7 @@
       "browser_recovery": 1,
       "lab_tools": 10,
       "release_scope": 1,
-      "refactor_verification": 66,
-      "knowledge_runtime": 10
+      "refactor_verification": 66
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -7537,6 +7547,146 @@
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/EarthDataDock.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/layer-catalog.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-approval-model-decision.v1.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "control-center-web/src/features/configuration/PiProviderCredentials.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "control-center-web/src/features/configuration/pi-provider-credentials.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "integrations/jev/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/agent_approval_model.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "rag_ime/jev.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/keychain_secrets.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/knowledge_library/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "rag_ime/knowledge_library/jev_rerank.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/knowledge_library/rerank.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "scripts/configure_jev_key.sh",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "scripts/install_earth_gis_runtime.sh",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "scripts/run_earth_gis_acceptance.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
+    },
+    {
+      "path": "tests/test_agent_approval_model.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "tests/test_jev_knowledge_rerank.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "jev_integration",
+      "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "uv.lock",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "source_inventory_reconciliation",
+      "reason": "Record an already committed source path omitted from the previous inventory; no additional implementation change."
     }
   ]
 }
