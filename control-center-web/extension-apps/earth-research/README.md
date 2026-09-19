@@ -71,11 +71,22 @@ Install the isolated local runtime with
 Shapely and PyProj under the PAW application-support directory; the package
 auto-detects that environment when a new Earth workspace is prepared.
 
-The map's **Project layers and data** panel is the working entry point: save the
-current selection, toggle visibility, remove a layer from the catalog while
-retaining its source file, export SHP/GPKG, connect a local database, or register
-a PostGIS secret reference. Use **刷新** after an Agent connection task; the
-panel only displays entries read back from the Session workspace.
+The map's **GIS data workspace** is the working entry point. It has three linked
+views: **图层** shows cloud result layers and project layers; **文件** lists the
+actual Session workspace files, including GeoJSON, GeoPackage, statistics and
+HTML reports; **数据库** shows registered GeoPackage/SpatiaLite/PostGIS sources
+and their real status. The header always shows the bound Session workspace and
+the object currently supplied to the Agent, so a chat action is traceable to a
+file, layer or selected feature. Save the current selection, toggle visibility,
+remove a layer from the catalog while retaining its source file, export SHP/GPKG,
+connect a local database, or register a PostGIS secret reference. Use **刷新**
+after an Agent connection or export task; the dock only displays entries read
+back from the Session workspace.
+
+For reports and visualizations, ask the Skill to create a self-contained
+`report.html`, `statistics.csv`, `method-and-quality.md` or GIS project package
+from the validated run receipt. The Files view exposes those real files; it does
+not treat a chat table or a map tile as a delivered dataset.
 
 Jev approval is optional. Configure it without putting the key in a project by
 running `scripts/configure_jev_key.sh`; if no `TYPESAFE_API_KEY` or Keychain

@@ -33,6 +33,14 @@ export type SpatialSourceDraft = {
   readOnly?: boolean;
 };
 
+/** A workspace entry projected into the GIS data dock. */
+export type WorkspaceFileSummary = {
+  path: string;
+  name: string;
+  kind: 'file' | 'directory' | 'symlink';
+  byteSize?: number;
+};
+
 export function layerSlug(value: string): string {
   const normalized = String(value || '').trim().normalize('NFKC').replace(/[^A-Za-z0-9\u4e00-\u9fff_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
   return normalized || 'layer';

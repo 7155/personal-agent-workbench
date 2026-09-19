@@ -16,15 +16,15 @@
   "paw": {
     "capabilities": [
       "pawos.extension.earth-research",
-      "pawos.extension.binding.fd652492c06e7436a526f2af6ab7a120b6acde95"
+      "pawos.extension.binding.27a8d12260db1ba8b7e1b1dc4ee3d4b71953a7c6"
     ],
     "extensionApp": {
       "id": "extension:earth-research",
       "packageId": "@paw/earth-research",
       "version": "0.8.0",
-      "bindingSha256": "fd652492c06e7436a526f2af6ab7a120b6acde95df9a1aebcc8044b7fb4f4ea1",
+      "bindingSha256": "27a8d12260db1ba8b7e1b1dc4ee3d4b71953a7c66f9191620e9ca06a8872a55e",
       "skillRef": "earth-research",
-      "skillSha256": "7a1d85e952e3e38d1ad20e6fbd41fc612b4d480d3d09d369ce9bda868ef18f95",
+      "skillSha256": "f8bdf65252471200e856623f93c560c0cca9bbaf5e021cd5a11219d18072bf6b",
       "verticalSuiteId": "earth-research",
       "verticalSuiteRevision": "source-grounding-v1",
       "manifest": {
@@ -43,10 +43,10 @@
           "background": "#176B4D"
         },
         "skillRef": "earth-research",
-        "skillSha256": "7a1d85e952e3e38d1ad20e6fbd41fc612b4d480d3d09d369ce9bda868ef18f95",
+        "skillSha256": "f8bdf65252471200e856623f93c560c0cca9bbaf5e021cd5a11219d18072bf6b",
         "verticalSuiteId": "earth-research",
         "verticalSuiteRevision": "source-grounding-v1",
-        "bindingSha256": "fd652492c06e7436a526f2af6ab7a120b6acde95df9a1aebcc8044b7fb4f4ea1"
+        "bindingSha256": "27a8d12260db1ba8b7e1b1dc4ee3d4b71953a7c66f9191620e9ca06a8872a55e"
       }
     }
   }

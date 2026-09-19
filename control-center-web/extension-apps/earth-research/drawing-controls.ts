@@ -10,7 +10,7 @@ const markerIcon=L.divIcon({className:'earth-drawn-point',html:'',iconSize:[14,1
 export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
   select:(feature:EditableGeometry|null,mode?:SelectionMode|'select')=>void;
   change:(features:EditableGeometry[])=>void;
-  active:(active:boolean,kind?:DrawingKind)=>void;
+  active:(active:boolean,kind?:DrawingKind,vertices?:number)=>void;
 }) {
   Object.assign(L.drawLocal.draw.toolbar.buttons,{polyline:'绘制折线',polygon:'绘制多边形',rectangle:'绘制矩形',marker:'绘制点'});
   Object.assign(L.drawLocal.draw.toolbar.actions,{title:'取消绘制',text:'取消'});
@@ -67,6 +67,15 @@ export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
   const deleted=(event:L.LeafletEvent)=>{const removed:EditableGeometry[]=[];(event as L.DrawEvents.Deleted).layers.eachLayer(layer=>removed.push(layerFeature(layer)));events.change(all());removed.forEach(feature=>events.select(feature,'remove'));};
   const start=(event:L.LeafletEvent)=>{active=true;const detail=event as L.DrawEvents.Created & {handler?:string};activeKind=(detail.handler as DrawingKind|undefined) ?? ((detail.layerType==='marker' ? 'point' : detail.layerType) as DrawingKind|undefined);events.active(true,activeKind);};
   const stop=()=>{active=false;activeKind=undefined;activeHandler=undefined;events.active(false);};
+  const vertexChanged=(event:L.LeafletEvent)=>{
+    if (!active) return;
+    // leaflet-draw does not expose draw:drawvertex in its public TypeScript
+    // declarations. Keep the runtime event narrow without depending on a
+    // missing namespace type; this event carries the temporary vertex group.
+    const layers=(event as L.LeafletEvent & { layers?: { getLayers?:()=>L.Layer[] } }).layers;
+    const vertices=layers?.getLayers?.().length ?? 0;
+    events.active(true,activeKind,vertices);
+  };
   function cancelActive() {
     if (!activeHandler) return;
     const handler=activeHandler as L.Handler & {revertLayers?:()=>void};
@@ -75,7 +84,7 @@ export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
     activeHandler=undefined;
   }
   map.on('draw:created',created).on('draw:edited',edited).on('draw:deleted',deleted)
-    .on('draw:drawstart draw:editstart draw:deletestart',start).on('draw:drawstop draw:editstop draw:deletestop',stop);
+    .on('draw:drawstart draw:editstart draw:deletestart',start).on('draw:drawstop draw:editstop draw:deletestop',stop).on('draw:drawvertex',vertexChanged);
   return {start(kind:DrawingKind) {
       cancelActive();
       const drawMap = map as any;
@@ -87,14 +96,20 @@ export function drawingControls(map:L.Map, initial:EditableGeometry[], events:{
         activeHandler=undefined;
         activeKind=undefined;
         events.active(false);
+      } else {
+        events.active(true,kind,0);
       }
+    },finish(){
+      if (!activeHandler || (activeKind!=='polygon' && activeKind!=='polyline')) return;
+      const handler=activeHandler as L.Handler & {completeShape?:()=>void};
+      handler.completeShape?.();
     },save(){
       if (!activeHandler || (activeKind!=='edit' && activeKind!=='remove')) return;
       const handler=activeHandler as L.Handler & {save?:()=>void};
       handler.save?.();
       handler.disable();
     },cancel(){cancelActive();},dispose(){cancelActive();map.off('draw:created',created).off('draw:edited',edited).off('draw:deleted',deleted)
-    .off('draw:drawstart draw:editstart draw:deletestart',start).off('draw:drawstop draw:editstop draw:deletestop',stop);control.remove();group.remove();},
+    .off('draw:drawstart draw:editstart draw:deletestart',start).off('draw:drawstop draw:editstop draw:deletestop',stop).off('draw:drawvertex',vertexChanged);control.remove();group.remove();},
     focus(id:string){const feature=all().find(f=>f.id===id);if(feature){const bounds=L.geoJSON(feature).getBounds();if(bounds.isValid())map.fitBounds(bounds,{maxZoom:17,padding:[30,30]});events.select(feature,'select');}},
   };
 }

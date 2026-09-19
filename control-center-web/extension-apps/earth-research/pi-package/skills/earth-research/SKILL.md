@@ -78,6 +78,17 @@ For ordinary local GIS files, use the deterministic GIS tools before writing cus
 
 The local GIS path and Earth Engine path are complementary: local operators process user-provided vector/raster files; Earth Engine scripts process authorized cloud datasets and produce remote raster tiles, evaluated features, export tasks or controlled downloads. Do not imply that a local output is an Earth Engine Asset, or that a cloud layer is a local source file. Missing CRS, invalid geometry, NoData or an empty output is a failure/unknown state, not a successful analysis.
 
+## Reports, charts and HTML deliverables
+
+A completed analysis may also produce a report or visualization, but these are generated from the validated run receipt and registered files, not copied from a chat paragraph. Keep the data-to-result chain explicit:
+
+1. Preserve the structured statistics, source references, parameters, quality checks and run ID in the workspace.
+2. Write a self-contained `report.html` or chart page that reads those structured values. Include a map or result link, a table/chart, method, data source, CRS/scale, quality warnings and limitations. Do not invent missing values or turn a failed run into a report of success.
+3. If the user asks for a formal document, also write `method-and-quality.md` or a PDF through the configured document workflow. If the user asks for continued GIS editing, export a project package such as `project.qgz` (when QGIS is installed), GeoPackage/SHP, statistics CSV and `run-manifest.json` together.
+4. Record every deliverable under the run's artifact list and show it in the Files view. HTML is a previewable result; it is not proof that a GIS layer was exported. A chart is a view of the structured result, not a replacement for the result data.
+
+When a user asks for “出报告、图表或 HTML”, use the current validated run and call out the exact files created, their paths and any remaining review status. If the run is only submitted or the export is still pending, label the deliverable as pending and wait for the real receipt before claiming completion.
+
 ## Batch and machine learning workflows
 
 Use `earth_gis_batch` for bounded local batches; every item gets its own run ID and the aggregate receipt reports completed, partial or failed. For cloud batch work, generate explicit `Export` tasks in the saved JavaScript, then use `earth_task_status` or `earth_task_cancel`; never hide a remote task behind a local completed state. Use `earth_ml_catalog` and `earth_ml_template` for Random Forest, K-means or change-detection scaffolds. Replace every placeholder with verified datasets, labelled samples, class fields, date range, scale and region, and report validation metrics before claiming a classification result.

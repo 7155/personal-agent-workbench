@@ -52,6 +52,33 @@ it('exposes an explicit save action for edit and delete modes',()=>{
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:action-test')!)).toEqual([]);
 });
 
+it('keeps polygon digitizing open for more than three vertices and exposes finish/cancel', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Reflect.set(L.Browser, 'svg', true);
+  const factory = vi.spyOn(L, 'map');
+  render(<EarthMap run={null} selection={[]} workspaceKey="polygon-test" onActivity={vi.fn()} onSelect={vi.fn()} />);
+  const map = factory.mock.results[0].value as L.Map;
+  act(() => map.fire('draw:drawstart', { layerType: 'polygon' }));
+  const vertices = L.layerGroup([L.marker([30, 120]), L.marker([30, 120.1]), L.marker([30.1, 120.1]), L.marker([30.1, 120.05])]);
+  act(() => map.fire('draw:drawvertex', { layers: vertices }));
+  expect(screen.getByRole('status')).toHaveTextContent('已添加 4 个点');
+  expect(screen.getByRole('button', { name: '完成' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '取消' })).toBeVisible();
+  act(() => map.fire('draw:drawstop'));
+  expect(screen.queryByRole('button', { name: '完成' })).toBeNull();
+});
+
+it('routes the explicit polygon completion button to leaflet-draw', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Reflect.set(L.Browser, 'svg', true);
+  const complete = vi.spyOn((L.Draw.Polygon as unknown as { prototype: { completeShape: () => void } }).prototype, 'completeShape').mockImplementation(() => undefined);
+  vi.spyOn(L, 'map');
+  render(<EarthMap run={null} selection={[]} workspaceKey="polygon-finish-test" onActivity={vi.fn()} onSelect={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '面' }));
+  fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  expect(complete).toHaveBeenCalledOnce();
+});
+
 it('starts with a geography-ready satellite basemap and exposes a roads fallback', () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   Reflect.set(L.Browser, 'svg', true);
