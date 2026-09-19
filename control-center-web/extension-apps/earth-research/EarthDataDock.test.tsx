@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { EarthDataDock, type EarthDataDockProps } from './EarthDataDock';
-import type { ProjectLayer, SpatialSourceSummary } from './layer-catalog';
+import type { ProjectLayer, SpatialSourceSummary, WorkspaceFileSummary } from './layer-catalog';
 import type { EarthRun } from './workspace';
 
 afterEach(cleanup);
@@ -18,8 +18,8 @@ it('keeps the Agent object, layer, file and database views in one dock', async (
   expect(screen.getByText('道路候选')).toBeVisible();
   fireEvent.click(screen.getByRole('tab', { name: /文件/ }));
   expect(screen.getByText('report.html')).toBeVisible();
-  expect(screen.getByText('/work/project/report.html')).not.toBeVisible();
-  fireEvent.click(screen.getByText('文件详情'));
+  expect(screen.queryByText('/work/project/report.html')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('treeitem', { name: 'report.html' }));
   expect(screen.getByText('/work/project/report.html')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: '打开 report.html' }));
   expect(onOpenFile).toHaveBeenCalledWith(expect.objectContaining({ path: '/work/project/report.html' }));
@@ -42,6 +42,126 @@ it('edits a selected feature property through the versioned layer callback', asy
 const defaults: EarthDataDockProps = { run: null, workspaceRoot: '/work/project', projectLayers: [], spatialSources: [], workspaceFiles: [], selectedFeatures: [] };
 const point = (id: string | number, properties: Record<string, unknown> = {}, layerId = 'layer:a'): GeoJSON.Feature & { pawLayerId: string; pawRevision: number } => ({ type: 'Feature', id, properties, geometry: { type: 'Point', coordinates: [120, 30] }, pawLayerId: layerId, pawRevision: 7 });
 const withFeatures = (features: GeoJSON.Feature[], changes: Partial<ProjectLayer> = {}): ProjectLayer => ({ ...layer, id: 'layer:a', name: '地块', revision: 7, features, featureCount: features.length, ...changes });
+
+const workspaceFile = (path: string, byteSize?: number): WorkspaceFileSummary => ({ path: `/work/project/${path}`, name: path.split('/').at(-1)!, kind: 'file', ...(byteSize === undefined ? {} : { byteSize }) });
+
+it('expands folders and Shapefile companions, and opens the real SHP entry from the dataset or its sidecar', async () => {
+  const files: WorkspaceFileSummary[] = [
+    ...['shp', 'shx', 'dbf', 'prj', 'cpg'].map(extension => workspaceFile(`data/source/parcels.${extension}`, 1024)),
+    { path: '/work/project/data/empty', name: 'empty', kind: 'directory' },
+    workspaceFile('roads.gpkg'), workspaceFile('height.tif'), workspaceFile('report.html'),
+  ];
+  const onOpenFile = vi.fn().mockResolvedValue(undefined);
+  render(<EarthDataDock {...defaults} workspaceFiles={files} onOpenFile={onOpenFile} />);
+  fireEvent.click(screen.getByRole('tab', { name: '文件' }));
+  const tree = screen.getByRole('tree', { name: '项目文件目录' });
+  expect(within(tree).getByText('GeoPackage')).toBeVisible();
+  expect(within(tree).getByText('栅格')).toBeVisible();
+  expect(within(tree).getByText('报告')).toBeVisible();
+  expect(screen.queryByRole('treeitem', { name: 'parcels.shp' })).not.toBeInTheDocument();
+  fireEvent.doubleClick(screen.getByRole('treeitem', { name: 'data' }));
+  expect(onOpenFile).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '展开文件夹 source' }));
+  const dataset = screen.getByRole('treeitem', { name: 'parcels.shp' });
+  fireEvent.click(dataset);
+  const details = screen.getByRole('region', { name: '所选文件详情' });
+  expect(within(details).getByText('/work/project/data/source/parcels.shp')).toBeVisible();
+  expect(details).toHaveTextContent('5.0 KB');
+  expect(details).toHaveTextContent('含 .prj，坐标系需读取后确认');
+  expect(details).not.toHaveTextContent('EPSG:4326');
+  fireEvent.doubleClick(dataset);
+  await waitFor(() => expect(onOpenFile).toHaveBeenCalledWith(files[0]));
+  await waitFor(() => expect(screen.getByRole('complementary')).toHaveAttribute('aria-busy', 'false'));
+  fireEvent.click(screen.getByRole('button', { name: '展开配套 parcels.shp' }));
+  expect(screen.getByRole('treeitem', { name: 'parcels.cpg' })).toBeVisible();
+  expect(screen.getByRole('treeitem', { name: 'parcels.shx' })).toBeVisible();
+  fireEvent.click(screen.getByRole('treeitem', { name: 'parcels.dbf' }));
+  expect(within(details).getByText('/work/project/data/source/parcels.dbf')).toBeVisible();
+  expect(screen.getByRole('button', { name: '打开 parcels.shp' })).toHaveTextContent('打开所属 SHP');
+  fireEvent.click(screen.getByRole('button', { name: '打开 parcels.shp' }));
+  await waitFor(() => expect(onOpenFile).toHaveBeenCalledTimes(2));
+  expect(onOpenFile).toHaveBeenLastCalledWith(files[0]);
+  await waitFor(() => expect(screen.getByRole('complementary')).toHaveAttribute('aria-busy', 'false'));
+  fireEvent.doubleClick(screen.getByRole('treeitem', { name: 'empty' }));
+  fireEvent.click(screen.getByRole('treeitem', { name: 'empty' }));
+  expect(details).toHaveTextContent('当前列表未列出子项');
+  expect(onOpenFile).toHaveBeenCalledTimes(2);
+});
+
+it.each([false, true])('reports missing Shapefile components without treating unknown CRS as complete (partial listing: %s)', incomplete => {
+  const files = [workspaceFile('unprojected.shp'), workspaceFile('unprojected.shx'), workspaceFile('unprojected.dbf'), workspaceFile('broken.shp')];
+  render(<EarthDataDock {...defaults} workspaceFiles={files} workspaceFilesIncomplete={incomplete} workspaceFilesNotice={incomplete ? '当前仅列出前 240 项。' : undefined} onOpenFile={vi.fn()} />);
+  fireEvent.click(screen.getByRole('tab', { name: '文件' }));
+  fireEvent.click(screen.getByRole('treeitem', { name: 'unprojected.shp' }));
+  const details = screen.getByRole('region', { name: '所选文件详情' });
+  expect(details).toHaveTextContent('已列出 .shp、.shx、.dbf');
+  expect(details).toHaveTextContent(incomplete ? 'CRS 未知；未找到 .prj（目录尚未完整读取）' : 'CRS 未知（缺少 .prj）');
+  expect(details).not.toHaveTextContent('配套齐全');
+  fireEvent.click(screen.getByRole('treeitem', { name: 'broken.shp' }));
+  expect(details).toHaveTextContent(incomplete ? '未找到 .shx、.dbf（目录尚未完整读取）' : '缺少必要配套 .shx、.dbf');
+  if (incomplete) {
+    expect(screen.getByRole('status')).toHaveTextContent('当前仅列出前 240 项');
+    expect(details).not.toHaveTextContent('缺少必要配套');
+  }
+});
+
+it('reveals search matches in their directories, refreshes the list, and does not follow symlinks', async () => {
+  const files: WorkspaceFileSummary[] = [...['shp', 'shx', 'dbf'].map(extension => workspaceFile(`deep/source/roads.${extension}`)), { ...workspaceFile('linked.shp'), kind: 'symlink' }];
+  const onOpenFile = vi.fn(), onRefreshFiles = vi.fn().mockResolvedValue(undefined);
+  render(<EarthDataDock {...defaults} workspaceFiles={files} onOpenFile={onOpenFile} onRefreshFiles={onRefreshFiles} />);
+  fireEvent.click(screen.getByRole('tab', { name: '文件' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '筛选 GIS 文件' }), { target: { value: 'roads.dbf' } });
+  await waitFor(() => expect(screen.getByRole('treeitem', { name: 'roads.dbf' })).toBeVisible());
+  expect(screen.getByRole('treeitem', { name: 'deep' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('treeitem', { name: 'source' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('treeitem', { name: 'roads.shx' })).toBeVisible();
+  fireEvent.click(screen.getByRole('treeitem', { name: 'roads.dbf' }));
+  expect(screen.getByRole('region', { name: '所选文件详情' })).not.toHaveTextContent('bytes');
+  fireEvent.change(screen.getByRole('textbox', { name: '筛选 GIS 文件' }), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('treeitem', { name: 'linked.shp' }));
+  fireEvent.doubleClick(screen.getByRole('treeitem', { name: 'linked.shp' }));
+  expect(onOpenFile).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '打开 linked.shp' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '刷新文件列表' }));
+  await waitFor(() => expect(onRefreshFiles).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByRole('complementary')).toHaveAttribute('aria-busy', 'false'));
+});
+
+it('supports keyboard tree navigation without opening folders as files', async () => {
+  const onOpenFile = vi.fn().mockResolvedValue(undefined);
+  const file = workspaceFile('data/roads.gpkg');
+  render(<EarthDataDock {...defaults} workspaceFiles={[file]} onOpenFile={onOpenFile} />);
+  fireEvent.click(screen.getByRole('tab', { name: '文件' }));
+  const directory = screen.getByRole('treeitem', { name: 'data' });
+  fireEvent.keyDown(directory, { key: 'ArrowRight' });
+  fireEvent.keyDown(directory, { key: 'ArrowRight' });
+  const child = screen.getByRole('treeitem', { name: 'roads.gpkg' });
+  expect(child).toHaveFocus();
+  fireEvent.keyDown(child, { key: ' ' });
+  expect(child).toHaveAttribute('aria-selected', 'true');
+  expect(onOpenFile).not.toHaveBeenCalled();
+  fireEvent.keyDown(child, { key: 'Enter' });
+  await waitFor(() => expect(onOpenFile).toHaveBeenCalledWith(file));
+  await waitFor(() => expect(screen.getByRole('complementary')).toHaveAttribute('aria-busy', 'false'));
+  fireEvent.keyDown(child, { key: 'ArrowLeft' });
+  expect(directory).toHaveFocus();
+  fireEvent.keyDown(directory, { key: 'Enter' });
+  expect(directory).toHaveAttribute('aria-expanded', 'false');
+  expect(onOpenFile).toHaveBeenCalledTimes(1);
+});
+
+it('distinguishes the recorded source file from the editable project copy in folded layer details', () => {
+  const active = withFeatures([], { source: { kind: 'file', path: 'data/source/parcels.shp', format: 'shp' } });
+  const view = render(<EarthDataDock {...defaults} projectLayers={[active]} />);
+  expect(screen.getByText('data/source/parcels.shp')).not.toBeVisible();
+  fireEvent.click(screen.getByText('版本与图层管理'));
+  expect(screen.getByText('源文件')).toBeVisible();
+  expect(screen.getByText('data/source/parcels.shp')).toBeVisible();
+  expect(screen.getByText('项目副本')).toBeVisible();
+  expect(screen.getByText(active.path)).toBeVisible();
+  view.rerender(<EarthDataDock {...defaults} projectLayers={[{ ...active, source: { path: 42 } }]} />);
+  expect(screen.queryByText('源文件')).not.toBeInTheDocument();
+});
 
 it('preserves untouched property types and the exact source feature revision', async () => {
   const feature = point('001', { name: '原名称', code: '001', truth: 'false', textNull: 'null', nested: { flag: true }, missing: null, count: 12 });

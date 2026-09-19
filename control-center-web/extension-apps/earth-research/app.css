@@ -563,6 +563,34 @@
 @container earth-map (max-width:600px){.earth-data-dock__content{padding:10px}.earth-data-dock__layer{gap:5px;padding-inline:4px}.earth-data-dock__current-label{font-size:9px}.earth-data-dock__edit-actions{bottom:-10px;margin-inline:-10px;margin-bottom:-10px;padding-inline:10px}}
 @container earth-remote (max-width:460px){.earth-remote-sensing__steps{gap:6px}.earth-remote-sensing__step{gap:3px;font-size:10px}.earth-remote-sensing__step>span:first-child{min-width:11px}}
 @container (max-width:700px){.earth-toolbar{gap:5px;padding-inline:7px}.earth-app .earth-toolbar__views button{padding-inline:5px}.earth-task-launcher,.earth-delivery-panel,.earth-remote-sensing{padding:16px}.earth-task-launcher__action{gap:9px}.earth-drawer__header{padding-inline:12px}.earth-task-context{gap:5px 9px}.earth-task-context>small{flex-basis:100%}.earth-delivery-panel select{font-size:11px}}
+/* Projects select a directory first, then one of its original Agent Sessions. */
+.earth-app__header>.earth-project-picker{position:relative;display:block;flex:1;min-width:0;align-self:stretch;z-index:1900}
+.earth-app .earth-app__header .earth-project-picker__trigger{display:flex;align-items:center;gap:9px;width:100%;height:100%;min-width:0;padding:4px 6px;border:0;border-radius:4px;background:transparent;text-align:left;box-shadow:none}
+.earth-app .earth-app__header .earth-project-picker__trigger:hover{background:var(--earth-surface-subtle)}
+.earth-project-picker svg{flex:none;stroke-width:1.7;color:var(--earth-muted)}
+.earth-project-picker__current{display:grid;flex:1;min-width:0;gap:1px}
+.earth-project-picker__current strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--earth-ink);font-size:12px;font-weight:600;line-height:1.4}
+.earth-app__header .earth-project-picker__current>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--earth-muted);font-size:10px;line-height:1.4}
+.earth-app__header .earth-project-picker__agent{flex:0 1 150px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:9px;border-left:1px solid var(--earth-line);font-size:11px;line-height:1.5}
+.earth-project-picker__trigger[aria-expanded=true]>svg:last-child{transform:rotate(180deg)}
+.earth-project-picker__panel{position:absolute;top:calc(100% + 4px);left:0;display:grid;gap:12px;width:min(420px,calc(100cqi - 28px));max-height:min(480px,calc(100vh - 120px));box-sizing:border-box;overflow:auto;padding:12px;border:1px solid var(--earth-line);border-radius:6px;background:var(--earth-surface);color:var(--earth-ink);font-size:12px}
+.earth-project-picker__panel>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:7px;border-bottom:1px solid var(--earth-line)}
+.earth-project-picker__panel>header>strong{font-size:12px;font-weight:600}
+.earth-app .earth-project-picker__panel>header>button{display:grid;place-items:center;width:25px;min-height:25px;padding:3px;border:0;background:transparent}
+.earth-project-picker__panel>label{display:grid;gap:5px;color:var(--earth-muted);font-size:11px;font-weight:500}
+.earth-project-picker__path{display:flex;align-items:center;gap:6px;min-width:0}
+.earth-app .earth-project-picker__panel :is(input,select){width:100%;max-width:none;min-width:0;min-height:32px;box-sizing:border-box;padding:6px 8px;border:1px solid var(--earth-line);border-radius:5px;background:var(--earth-surface);color:var(--earth-ink);font:inherit;font-size:12px;line-height:1.45}
+.earth-project-picker__path>input{flex:1}
+.earth-app .earth-project-picker__path>button,.earth-app .earth-project-picker__actions>button{display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:none;min-height:30px;padding:5px 9px;border:1px solid var(--earth-line);border-radius:5px;font-size:11px;white-space:nowrap}
+.earth-project-picker__hint,.earth-project-picker__empty{margin:-5px 0 0;color:var(--earth-muted);font-size:11px;line-height:1.65}
+.earth-project-picker__actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.earth-app .earth-project-picker__actions>.earth-project-picker__primary{background:var(--earth-accent);border-color:var(--earth-accent);color:#fff}
+.earth-app .earth-project-picker__actions>.earth-project-picker__primary:hover:not(:disabled){background:var(--earth-accent-pressed)}
+.earth-project-picker__actions>.earth-project-picker__primary svg{color:inherit}
+.earth-project-picker__boundary{margin:0;padding-top:10px;border-top:1px solid var(--earth-line);color:var(--earth-muted);font-size:10px;line-height:1.65}
+.earth-project-picker__error{margin:0;color:#953e2d;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.earth-project-picker__panel :disabled{cursor:default;opacity:.5}
+@container (max-width:700px){.earth-app__header .earth-project-picker__agent{flex-basis:90px}.earth-project-picker__trigger{gap:6px}.earth-app__header>.earth-project-picker~[role=status]{display:none}}
 
 /* The GIS canvas uses a light document surface even inside a dark OS shell. */
 .earth-app{color-scheme:light;--paw-control-ink:var(--earth-ink);--paw-control-muted:var(--earth-muted);--paw-control-bg:var(--earth-surface);--paw-control-bg-soft:var(--earth-surface-subtle);--paw-control-line:var(--earth-line);--paw-control-line-strong:#b2b8c2;--paw-focus-line:var(--earth-accent);--paw-focus-halo:#1677c51a}

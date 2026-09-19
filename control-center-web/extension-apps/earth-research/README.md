@@ -70,6 +70,7 @@ cloud database was queried.
 
 Open a local project without a Google project or a model request. Human controls and Agent tools use the same deterministic project services. The five data views are Layers, Attributes, Runs, Files and Databases; the Agent pane can collapse.
 
+- **Shared project folders:** choose an existing GIS project or a local folder, then enter an existing Agent or explicitly create another Agent bound to that folder. Switching projects does not change another Session's workspace. The current folder stays visible. File browsing groups Shapefile components into one dataset and distinguishes missing components from an incomplete directory scan. Project layer saves use a filesystem lock and expected revision: concurrent Agents cannot silently overwrite the same revision.
 - **Identity and edits:** immutable GeoJSON snapshots, stable project/layer/feature IDs, typed property drafts and expected-revision checks. Cancel preserves the original. Historical snapshots remain accessible. Visibility changes preserve project identity.
 - **Drawing:** [Leaflet-Geoman Free](https://geoman.io/docs/leaflet) replaces the drawing adapter. Multi-vertex geometry, snap tolerance in pixels, edit/cut drafts, undo/redo and explicit save/cancel retain properties and IDs. A cut operates on selected editable copies, not every visible polygon.
 - **Export:** choose whole layer or selected features. A selected export with no IDs is rejected; GPKG readback validates canonical IDs, including numeric versus string identifiers. Export never resaves the source.
