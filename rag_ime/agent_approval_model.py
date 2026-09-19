@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import sqlite3
 import time
 import uuid
 import threading
-import urllib.error
-import urllib.request
 from contextlib import contextmanager
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
@@ -19,7 +16,7 @@ from .agent_execution_policy import workspace_scope_is_granted
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations, sqlite_connection
 from .sensitive_content import is_sensitive_mapping_key, redact_sensitive_text
-from .keychain_secrets import MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT, read_keychain_secret
+from .jev import api_key as jev_api_key, evaluate as evaluate_jev
 
 
 APPROVAL_MODEL_PROVIDER = "openai-codex"
@@ -447,7 +444,7 @@ def pending_model_arbitration() -> dict[str, object]:
 
 
 def _jev_api_key() -> str:
-    return str(os.environ.get("TYPESAFE_API_KEY") or read_keychain_secret(MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT) or "").strip()
+    return jev_api_key()
 
 
 def approval_model_backend() -> dict[str, object]:
@@ -484,30 +481,20 @@ def _jev_decide(
             }
         },
     }
-    request = urllib.request.Request(
-        os.environ.get("TYPESAFE_API_URL", JEV_ENDPOINT),
-        data=json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    try:
-        with opener.open(request, timeout=max(1.0, float(timeout_seconds))) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Jev HTTP {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError("Jev endpoint unavailable") from exc
-    if not isinstance(payload, Mapping):
-        raise ValueError("Jev response is not an object")
+    payload = evaluate_jev(state, request_body["questions"], key=api_key, timeout_seconds=timeout_seconds)
     answers = payload.get("answers")
     answer = answers.get("approval") if isinstance(answers, Mapping) else None
     if not isinstance(answer, Mapping):
         raise ValueError("Jev response has no approval answer")
+    if answer.get("type") != "choice":
+        raise ValueError("Jev returned an unexpected answer type")
     choice = str(answer.get("choice") or "").strip().lower()
     if choice not in {"approve", "deny"}:
         raise ValueError("Jev returned an unknown approval choice")
-    confidence = float(answer.get("confidence") or 0.0)
+    raw_confidence = answer.get("confidence")
+    if isinstance(raw_confidence, bool) or not isinstance(raw_confidence, (int, float)):
+        raise ValueError("Jev returned an invalid confidence")
+    confidence = float(raw_confidence)
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("Jev returned an invalid confidence")
     if confidence < JEV_CONFIDENCE_THRESHOLD:

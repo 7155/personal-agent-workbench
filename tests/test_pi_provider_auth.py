@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from rag_ime.pi.provider_auth import (
@@ -100,6 +101,44 @@ class PiProviderAuthTests(unittest.TestCase):
                 bridge_script=bridge_script,
             )
         )
+
+    def test_jev_key_uses_keychain_without_pi_or_secret_receipts(self) -> None:
+        service = PiProviderAuthService(self.service.config)
+        with patch.object(service, "_call", return_value={"providers": []}) as bridge, patch(
+            "rag_ime.pi.provider_auth.read_keychain_secret", return_value=""
+        ), patch("rag_ime.pi.provider_auth.write_keychain_secret") as write, patch.dict(
+            "os.environ", {"TYPESAFE_API_KEY": ""}
+        ):
+            catalog = service.catalog()
+            self.assertEqual(catalog["providers"][0]["id"], "typesafe")
+            preview = service.preview({"provider": "typesafe", "action": "set_api_key"})
+            receipt = service.apply({"previewToken": preview["previewToken"],
+                                     "confirmText": "replace", "apiKey": "test-jev-secret"})
+            write.assert_called_once_with("com.rag-ime.model-provider", "typesafe-api-key", "test-jev-secret")
+            self.assertFalse(receipt["requiresAgentRestart"])
+            self.assertNotIn("test-jev-secret", json.dumps([catalog, preview, receipt]))
+            self.assertTrue(all(call.args[0]["action"] == "catalog" for call in bridge.call_args_list))
+
+    def test_jev_environment_override_rejects_keychain_changes(self) -> None:
+        service = PiProviderAuthService(self.service.config)
+        with patch.dict("os.environ", {"TYPESAFE_API_KEY": "environment-secret"}):
+            with self.assertRaisesRegex(PiProviderAuthError, "环境变量"):
+                service.preview({"provider": "typesafe", "action": "set_api_key"})
+
+    def test_jev_logout_and_storage_failure_are_secret_free(self) -> None:
+        service = PiProviderAuthService(self.service.config)
+        with patch.dict("os.environ", {"TYPESAFE_API_KEY": ""}), patch(
+            "rag_ime.pi.provider_auth.read_keychain_secret", return_value="existing-key"
+        ), patch("rag_ime.pi.provider_auth.delete_keychain_secret") as delete:
+            preview = service.preview({"provider": "typesafe", "action": "logout"})
+            receipt = service.apply({"previewToken": preview["previewToken"], "confirmText": "logout"})
+            delete.assert_called_once_with("com.rag-ime.model-provider", "typesafe-api-key")
+            self.assertFalse(receipt["requiresAgentRestart"])
+            with patch("rag_ime.pi.provider_auth.write_keychain_secret", side_effect=RuntimeError("secret-value")):
+                preview = service.preview({"provider": "typesafe", "action": "set_api_key"})
+                with self.assertRaises(PiProviderAuthError) as error:
+                    service.apply({"previewToken": preview["previewToken"], "confirmText": "replace", "apiKey": "secret-value"})
+                self.assertNotIn("secret-value", str(error.exception))
 
     def tearDown(self) -> None:
         self.service.close()

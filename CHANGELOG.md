@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Add TypeSafe / Jev credentials and scenario status to Model accounts, and an
+  opt-in Knowledge reranker that preserves source content and citations. Keep
+  approval fallback explicit and reject malformed typed decisions.
+
 - Keep long local MinerU parses alive with a configurable per-document deadline,
   distinguish timeout from service-unavailable errors, and restart workers when
   the deadline changes.

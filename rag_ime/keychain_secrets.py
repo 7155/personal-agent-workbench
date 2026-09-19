@@ -45,3 +45,15 @@ def write_keychain_secret(service: str, account: str, value: str) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "failed to write macOS Keychain")
+
+
+def delete_keychain_secret(service: str, account: str) -> None:
+    security = shutil.which("security")
+    if not security:
+        raise RuntimeError("macOS security command is unavailable")
+    result = subprocess.run(
+        [security, "delete-generic-password", "-s", service, "-a", account],
+        text=True, capture_output=True, check=False, timeout=10,
+    )
+    if result.returncode not in (0, 44):
+        raise RuntimeError("failed to delete macOS Keychain secret")

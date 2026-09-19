@@ -16,6 +16,9 @@ class ApprovalApplicationTests(unittest.TestCase):
     tearDown = fixtures.AgentRoomWorkTests.tearDown
 
     def setUp(self):
+        key_patch = patch("rag_ime.agent_approval_model._jev_api_key", return_value="")
+        key_patch.start()
+        self.addCleanup(key_patch.stop)
         fixtures.AgentRoomWorkTests.setUp(self)
         self.runtime = Mock(spec=ApprovalRuntime)
         self.runtime.has_pending_approval.return_value = True
