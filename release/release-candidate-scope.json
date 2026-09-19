@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-19T10:11:49.758240+00:00",
+  "generatedAt": "2026-09-19T10:58:40.803729+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/lab-visual-recovery-20260913",
@@ -131,7 +131,7 @@
     },
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 67
+      "pathCount": 103
     },
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
@@ -139,17 +139,17 @@
     }
   },
   "summary": {
-    "pathCount": 1064,
+    "pathCount": 1100,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 865
+      "keep_release": 901
     },
     "groupCounts": {
       "local_docs": 122,
       "product_integration": 57,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "earth_research": 67,
+      "earth_research": 103,
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
@@ -7628,6 +7628,258 @@
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Inventory the Python dependency lockfile already committed in 0e128f50; the Earth inventory repair adds no unrelated dependency changes."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/GISDeliveryPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/GISDeliveryPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/GISOperationPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/MapTaskLauncher.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/MapTaskLauncher.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/RasterQueryPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/RemoteSensingPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/RemoteSensingPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/geoman-controls.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/gis-command-queue.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/gis-command-queue.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-deliver.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-delivery.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-export.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-render-cache.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-spatial-acceptance.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-workflows.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-workflows.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/qgis.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing-runner.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.d.mts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/remote-sensing.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/property-draft.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/property-draft.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
+    },
+    {
+      "path": "licenses/Leaflet-Geoman-LICENSE",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "Earth GIS runtime, dependencies or released-change guidance committed for this task."
     }
   ]
 }
