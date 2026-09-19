@@ -137,10 +137,6 @@
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
       "pathCount": 12
     },
-    "source_inventory_reconciliation": {
-      "description": "Reconcile previously committed source inventory.",
-      "pathCount": 0
-    },
     "jev_integration": {
       "description": "Jev integration and regression coverage.",
       "pathCount": 10
@@ -184,7 +180,6 @@
       "scheduled_tasks": 25,
       "earth_research": 103,
       "knowledge_runtime": 12,
-      "source_inventory_reconciliation": 0,
       "jev_integration": 10
     },
     "unclassifiedPathCount": 0,
