@@ -7,6 +7,7 @@ import subprocess
 MODEL_KEYCHAIN_SERVICE = "com.rag-ime.model-provider"
 MODEL_KNOWLEDGE_ACCOUNT = "knowledge-api-key"
 MODEL_INSTANT_ACCOUNT = "instant-api-key"
+TYPESAFE_ACCOUNT = "typesafe-api-key"
 
 
 def read_keychain_secret(service: str, account: str) -> str:

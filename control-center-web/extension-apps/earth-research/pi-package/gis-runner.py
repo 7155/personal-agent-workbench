@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import traceback
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ MAX_REQUEST_BYTES = 256_000
 SAFE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 SUPPORTED_VECTOR = {".geojson", ".json", ".gpkg", ".shp", ".sqlite", ".kml"}
 SUPPORTED_RASTER = {".tif", ".tiff", ".img"}
+SUPPORTED_EXPORTS = {"geojson", "shp", "gpkg", "kml"}
 
 
 def fail(message: str, *, code: str = "gis_error") -> None:
@@ -182,11 +184,11 @@ def output_files(run_dir: Path) -> list[dict[str, Any]]:
     if not result_dir.is_dir():
         return []
     files: list[dict[str, Any]] = []
-    for file in sorted(result_dir.iterdir()):
+    for file in sorted(result_dir.rglob("*")):
         if not file.is_file() or file.name.startswith("."):
             continue
         suffix = file.suffix.lower()
-        kind = "vector" if suffix in {".geojson", ".json", ".kml"} else "raster" if suffix in {".tif", ".tiff"} else "file"
+        kind = "vector" if suffix in {".geojson", ".json", ".kml", ".shp", ".gpkg", ".sqlite"} else "raster" if suffix in {".tif", ".tiff"} else "file"
         item: dict[str, Any] = {"path": str(file), "relativePath": str(file.relative_to(run_dir)), "name": file.name, "kind": kind, "bytes": file.stat().st_size}
         if kind == "vector" and file.stat().st_size <= 2_000_000:
             try:
@@ -195,6 +197,79 @@ def output_files(run_dir: Path) -> list[dict[str, Any]]:
                 pass
         files.append(item)
     return files
+
+
+def safe_layer_name(value: Any) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,62}", value):
+        fail("Layer name must use letters, numbers, underscore or hyphen", code="invalid_output")
+    return value
+
+
+def export_layer(root: Path, request: dict[str, Any]) -> dict[str, Any]:
+    require_runtime()
+    source = inside(root, request.get("input"))
+    if kind_for(source) != "vector":
+        fail("Only vector layers can be exported as SHP, GeoPackage, GeoJSON or KML", code="unsupported_format")
+    output_name = safe_layer_name(request.get("name") or source.stem)
+    export_format = str(request.get("format") or "geojson").lower()
+    if export_format not in SUPPORTED_EXPORTS:
+        fail(f"Unsupported export format: {export_format}", code="unsupported_format")
+    target_crs = request.get("targetCrs")
+    frame = gpd.read_file(source)
+    if target_crs:
+        if frame.crs is None:
+            fail("A target CRS requires the source layer to have a CRS", code="missing_crs")
+        frame = frame.to_crs(str(target_crs))
+    result_dir = inside(root, request.get("runDir"), allow_missing=True) / "pred_results"
+    result_dir.mkdir(parents=True, exist_ok=True)
+    if export_format == "shp":
+        folder = result_dir / f"{output_name}_shp"
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / f"{output_name}.shp"
+        frame.to_file(target, driver="ESRI Shapefile", index=False)
+        archive = result_dir / f"{output_name}.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for sidecar in sorted(folder.iterdir()):
+                if sidecar.is_file():
+                    bundle.write(sidecar, arcname=sidecar.name)
+        driver = "ESRI Shapefile"
+    else:
+        extension = ".geojson" if export_format == "geojson" else f".{export_format}"
+        target = result_dir / f"{output_name}{extension}"
+        kwargs: dict[str, Any] = {"driver": {"geojson": "GeoJSON", "gpkg": "GPKG", "kml": "KML"}[export_format], "index": False}
+        if export_format == "gpkg":
+            kwargs["layer"] = str(request.get("layer") or output_name)
+        frame.to_file(target, **kwargs)
+        driver = kwargs["driver"]
+    outputs = output_files(inside(root, request.get("runDir"), allow_missing=True))
+    if not outputs:
+        fail("Layer export completed without a file output", code="empty_output")
+    receipt = {
+        "schemaVersion": "earth.gis-export.v1",
+        "status": "completed",
+        "input": str(source.relative_to(root)),
+        "format": export_format,
+        "driver": driver,
+        "name": output_name,
+        "targetCrs": str(frame.crs) if frame.crs is not None else None,
+        "featureCount": int(len(frame)),
+        "outputs": outputs,
+    }
+    (inside(root, request.get("runDir"), allow_missing=True) / "export.json").write_text(json.dumps(receipt, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return receipt
+
+
+def catalog_source(root: Path, request: dict[str, Any]) -> dict[str, Any]:
+    require_runtime()
+    source = inside(root, request.get("path"))
+    if source.suffix.lower() not in {".gpkg", ".sqlite", ".db"}:
+        fail("Spatial catalog currently accepts GeoPackage/SpatiaLite files", code="unsupported_format")
+    try:
+        import fiona
+        layers = [str(name) for name in fiona.listlayers(source)]
+    except Exception as exc:
+        fail(f"Unable to list spatial database layers: {type(exc).__name__}: {exc}", code="catalog_failed")
+    return {"status": "completed", "path": str(source.relative_to(root)), "kind": "geopackage" if source.suffix.lower() == ".gpkg" else "spatialite", "layers": layers}
 
 
 def process(root: Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -273,6 +348,12 @@ def main() -> None:
         return
     if operation == "process":
         print(json.dumps(process(root, request), ensure_ascii=False, default=str))
+        return
+    if operation == "export":
+        print(json.dumps(export_layer(root, request), ensure_ascii=False, default=str))
+        return
+    if operation == "catalog_source":
+        print(json.dumps(catalog_source(root, request), ensure_ascii=False, default=str))
         return
     fail(f"Unknown GIS runner operation: {operation}", code="unknown_runner_operation")
 

@@ -26,9 +26,9 @@ it('rejects an adapter symlink before writing outside the bound workspace', asyn
   expect(fs.readdirSync(outside)).toEqual([]);
 });
 
-it('registers the map state, GIS retrieval, cloud task, Asset, batch and ML workflow tools', () => {
+it('registers the map state, GIS retrieval, spatial data, cloud task, Asset, batch and ML workflow tools', () => {
   const { tools } = setup();
-  for (const name of ['earth_map_state', 'earth_gis_search', 'earth_gis_batch', 'earth_run_batch', 'earth_task_status', 'earth_task_cancel', 'earth_asset_upload', 'earth_ml_catalog', 'earth_ml_template', 'earth_ml_prepare']) expect(tools.has(name)).toBe(true);
+  for (const name of ['earth_map_state', 'earth_gis_search', 'earth_gis_export', 'earth_spatial_connect', 'earth_spatial_catalog', 'earth_gis_batch', 'earth_run_batch', 'earth_task_status', 'earth_task_cancel', 'earth_asset_upload', 'earth_ml_catalog', 'earth_ml_template', 'earth_ml_prepare']) expect(tools.has(name)).toBe(true);
 });
 
 it('reads a trusted published map state from the bound workspace', async () => {

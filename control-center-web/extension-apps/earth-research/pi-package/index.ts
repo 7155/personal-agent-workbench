@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readOfficialDocs } from './official-docs';
 import { parseMapState, parseViewCommand } from './view-contract';
-import { GIS_CATALOG, GIS_OPERATION_IDS, inspectGISPath, listGISFiles, prepareGISWorkspace, runGISOperation } from './gis-operations.mjs';
+import { GIS_CATALOG, GIS_OPERATION_IDS, connectSpatialSource, exportGISLayer, inspectGISPath, listGISFiles, listSpatialSources, prepareGISWorkspace, runGISOperation } from './gis-operations.mjs';
 import { searchGISKnowledge } from './gis-knowledge.mjs';
 import { earthTaskCancel, earthTaskStatus } from './cloud-tasks.mjs';
 import { uploadTableAsset } from './asset-upload.mjs';
@@ -73,6 +73,33 @@ export default function registerEarthResearchPackage(pi: any) {
     async execute(_id: string, input: { directory?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const items = listGISFiles(workspace(ctx), input.directory || 'data');
       return { content: [{ type: 'text', text: JSON.stringify({ items }) }], details: { status: 'completed', items } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_gis_export', label: '导出 GIS 图层', executionMode: 'sequential',
+    description: 'Export a workspace-owned vector layer as GeoJSON, ESRI Shapefile (including .shp/.shx/.dbf/.prj and a zip), GeoPackage or KML. The receipt records CRS, feature count and every output file; no cloud upload is implied.',
+    parameters: schema({ input: string, format: { type: 'string', enum: ['geojson', 'shp', 'gpkg', 'kml'] }, name: string, layer: string, targetCrs: string }, ['input', 'format', 'name']),
+    async execute(_id: string, input: { input: string; format: 'geojson' | 'shp' | 'gpkg' | 'kml'; name: string; layer?: string; targetCrs?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await exportGISLayer({ root: workspace(ctx), request: input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status !== 'completed' };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_spatial_connect', label: '连接空间数据源', executionMode: 'sequential',
+    description: 'Register a project-owned GeoPackage/SpatiaLite file or a PostGIS secret reference. Credentials never enter the workspace; local database layers are catalogued immediately, while PostGIS stays configured_pending until its secret-backed driver is available.',
+    parameters: schema({ name: string, kind: { type: 'string', enum: ['geopackage', 'spatialite', 'postgis'] }, path: string, schema: string, table: string, secretReference: string, readOnly: { type: 'boolean' } }, ['name', 'kind']),
+    async execute(_id: string, input: { name: string; kind: 'geopackage' | 'spatialite' | 'postgis'; path?: string; schema?: string; table?: string; secretReference?: string; readOnly?: boolean }, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await connectSpatialSource({ root: workspace(ctx), source: input });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: result.status, source: result } };
+    },
+  });
+  pi.registerTool({
+    name: 'earth_spatial_catalog', label: '查看空间数据源', executionMode: 'sequential',
+    description: 'List the project spatial database catalog and its redacted connection metadata. It does not reveal database URLs, passwords or secret values.',
+    parameters: schema({}),
+    async execute(_id: string, _input: Record<string, never>, _signal: AbortSignal, _update: Update, ctx: Context) {
+      const catalog = listSpatialSources({ root: workspace(ctx) });
+      return { content: [{ type: 'text', text: JSON.stringify(catalog) }], details: { status: 'completed', ...catalog } };
     },
   });
   pi.registerTool({

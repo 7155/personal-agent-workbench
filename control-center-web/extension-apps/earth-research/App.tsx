@@ -15,6 +15,7 @@ import { selectionDetail, selectionKey, updateSelection, type MapSelection, type
 import { messageWithWorkspaceContext } from '@/paw-os/apps/workspace-draft';
 import { geoJsonOutputs, parseRun, runStatus, type EarthRun } from './workspace';
 import { parseMapState, parseViewCommand, type EarthMapState, type EarthViewCommand } from './pi-package/view-contract';
+import { featureCollection, layerSlug, parseGeoJsonFeatures, parseProjectLayerCatalog, parseSpatialCatalog, type ProjectLayer, type SpatialSourceDraft, type SpatialSourceSummary } from './layer-catalog';
 import './app.css';
 import gisCatalog from './pi-package/gis-catalog.json';
 import gisKnowledge from './pi-package/gis-knowledge.json';
@@ -60,6 +61,9 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const [drawer, setDrawer] = useState<'console' | 'sources' | 'gis' | 'knowledge' | null>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState('');
   const [selection, setSelection] = useState<MapSelection | null>(null);
+  const [projectLayers, setProjectLayers] = useState<ProjectLayer[]>([]);
+  const [spatialSources, setSpatialSources] = useState<SpatialSourceSummary[]>([]);
+  const [layerMessage, setLayerMessage] = useState('');
   const [viewCommand, setViewCommand] = useState<EarthViewCommand>();
   const viewSeen = useRef('');
   const mapStateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -117,6 +121,90 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const newSession = useCallback((created: SessionSummary) => { setViewCommand(undefined); viewSeen.current = ""; setSession(created); setSessions(current => [created, ...current.filter(x => x.id !== created.id)]); setRun(null); setLastCompleted(null); setFile(null); }, []);
   function startAnother() { setViewCommand(undefined); viewSeen.current = ""; setRoot(workspaceRoot); setSession(undefined); setRun(null); setLastCompleted(null); setFile(null); setError(''); setReadError(''); setSelection(null); }
   const mapRun = run?.status === 'completed' ? run : lastCompleted;
+
+  const saveWorkspaceFile = useCallback(async (path: string, content: string) => {
+    if (!session) throw new Error('请先开始一个分析会话，再保存项目图层。');
+    let resourceRevision: string | undefined;
+    try { resourceRevision = (await readCompleteFile(transport, { sessionId: session.id, path, name: path.split('/').pop() || 'workspace-file' })).resourceRevision; } catch { /* First write. */ }
+    const body: Record<string, string> = resourceRevision ? { path, resourceRevision, content } : { path, content };
+    await transport.request({ pathId: 'agent.session.workspace.save', params: { sessionId: session.id }, body });
+  }, [session?.id, transport]);
+
+  const persistProjectLayerCatalog = useCallback(async (layers: ProjectLayer[]) => {
+    const catalogPath = `${workspaceRoot}/.earth/layers/catalog.json`;
+    const catalogLayers = layers.map(({ features: _features, ...item }) => item);
+    await saveWorkspaceFile(catalogPath, JSON.stringify({ schemaVersion: 'earth.spatial-layer-catalog.v1', updatedAt: new Date().toISOString(), layers: catalogLayers }, null, 2));
+  }, [saveWorkspaceFile, workspaceRoot]);
+
+  const refreshProjectLayers = useCallback(async () => {
+    if (!session || !workspaceRoot) { setProjectLayers([]); setSpatialSources([]); return; }
+    const catalogPath = `${workspaceRoot}/.earth/layers/catalog.json`;
+    try {
+      const catalogFile = await readCompleteFile(transport, { sessionId: session.id, path: catalogPath, name: 'catalog.json' });
+      const records = parseProjectLayerCatalog(JSON.parse(catalogFile.content));
+      const loaded = await Promise.all(records.filter(record => record.path).map(async record => {
+        try {
+          const file = await readCompleteFile(transport, { sessionId: session.id, path: `${workspaceRoot}/${record.path}`, name: record.path.split('/').pop() || record.name });
+          return { ...record, features: parseGeoJsonFeatures(JSON.parse(file.content)) } as ProjectLayer;
+        } catch { return { ...record, features: [] } as ProjectLayer; }
+      }));
+      setProjectLayers(loaded);
+      setLayerMessage(loaded.length ? `已加载 ${loaded.length} 个项目图层` : '');
+    } catch { setProjectLayers([]); }
+    try {
+      const databaseFile = await readCompleteFile(transport, { sessionId: session.id, path: `${workspaceRoot}/.earth/gis/databases.json`, name: 'databases.json' });
+      setSpatialSources(parseSpatialCatalog(JSON.parse(databaseFile.content)));
+    } catch { setSpatialSources([]); }
+  }, [session?.id, transport, workspaceRoot]);
+
+  useEffect(() => { void refreshProjectLayers(); }, [refreshProjectLayers]);
+
+  const saveProjectLayer = useCallback(async (name: string, features: GeoJSON.Feature[]) => {
+    const cleanName = name.trim();
+    if (!cleanName || !features.length) throw new Error('请先选择至少一个点、线或面，并填写图层名称。');
+    const slug = layerSlug(cleanName);
+    const relativePath = `.earth/layers/${slug}.geojson`;
+    const now = new Date().toISOString();
+    const geometryTypes = [...new Set(features.map(feature => feature.geometry?.type).filter(Boolean))] as string[];
+    const layer: ProjectLayer = { id: `layer:${slug}`, name: cleanName, path: relativePath, format: 'geojson', featureCount: features.length, geometryTypes, crs: 'EPSG:4326', updatedAt: now, visible: true, features: features.map(feature => structuredClone(feature)) };
+    await saveWorkspaceFile(`${workspaceRoot}/${relativePath}`, JSON.stringify(featureCollection(features), null, 2));
+    const current = projectLayers.filter(item => item.id !== layer.id);
+    const next = current.concat(layer);
+    await persistProjectLayerCatalog(next);
+    setProjectLayers(next);
+    setLayerMessage(`已保存图层“${cleanName}” · ${features.length} 个要素`);
+  }, [persistProjectLayerCatalog, projectLayers, saveWorkspaceFile, workspaceRoot]);
+
+  const toggleProjectLayer = useCallback(async (layerId: string, visible: boolean) => {
+    const next = projectLayers.map(layer => layer.id === layerId ? { ...layer, visible } : layer);
+    await persistProjectLayerCatalog(next);
+    setProjectLayers(next);
+    setLayerMessage(visible ? '图层已显示' : '图层已隐藏');
+  }, [persistProjectLayerCatalog, projectLayers]);
+
+  const removeProjectLayer = useCallback(async (layerId: string) => {
+    const layer = projectLayers.find(item => item.id === layerId);
+    if (!layer) return;
+    const next = projectLayers.filter(item => item.id !== layerId);
+    await persistProjectLayerCatalog(next);
+    setProjectLayers(next);
+    setLayerMessage(`已从项目目录移除“${layer.name}”；原始文件仍保留在工作区`);
+  }, [persistProjectLayerCatalog, projectLayers]);
+
+  const exportProjectLayer = useCallback(async (format: 'shp' | 'gpkg', layer: ProjectLayer) => {
+    if (!session) throw new Error('请先开始一个分析会话。');
+    await saveProjectLayer(layer.name, layer.features);
+    const message = `请调用 earth_gis_export({"input":${JSON.stringify(layer.path)},"format":${JSON.stringify(format)},"name":${JSON.stringify(layerSlug(layer.name))}})，只根据真实回执说明导出文件路径、要素数和 CRS；不要上传到 Google Earth Engine。`;
+    await send(createPendingAppMessage({ sessionId: session.id, ownerAppId: manifest.id, surfaceKey: SURFACE, message }));
+    setLayerMessage(`已提交 ${format.toUpperCase()} 导出任务，请查看控制台回执。`);
+  }, [manifest.id, saveProjectLayer, send, session?.id]);
+
+  const connectSpatialSource = useCallback(async (source: SpatialSourceDraft) => {
+    if (!session) throw new Error('请先开始一个分析会话。');
+    const details = JSON.stringify(source);
+    await send(createPendingAppMessage({ sessionId: session.id, ownerAppId: manifest.id, surfaceKey: SURFACE, message: `请调用 earth_spatial_connect(${details})，只根据真实回执说明数据源状态、图层列表和错误；不要把密钥或连接串写入工作区。完成后调用 earth_spatial_catalog 刷新目录。` }));
+    setLayerMessage(`已提交“${source.name}”连接任务，请点击刷新查看真实目录。`);
+  }, [manifest.id, send, session?.id]);
   const persistMapState = useCallback((state: EarthMapState) => {
     mapStatePending.current = state;
     clearTimeout(mapStateTimer.current);
@@ -259,7 +347,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
       <section className="earth-workspace" aria-label="地图与代码工作区">
         <nav className="earth-toolbar" aria-label="工作区视图">{([['split', '地图＋代码'], ['map', '地图'], ['code', '代码']] as const).map(([key, label]) => <button key={key} aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>)}<div className="earth-toolbar__spacer" /><button aria-pressed={drawer === 'knowledge'} onClick={() => setDrawer(drawer === 'knowledge' ? null : 'knowledge')}>GIS 知识</button><button aria-pressed={drawer === 'sources'} onClick={() => setDrawer(drawer === 'sources' ? null : 'sources')}>官方资料</button><button aria-pressed={drawer === 'gis'} onClick={() => setDrawer(drawer === 'gis' ? null : 'gis')}>GIS 工具箱</button><button aria-pressed={drawer === 'console'} onClick={() => setDrawer(drawer === 'console' ? null : 'console')}>控制台</button></nav>
         <div className="earth-panels" data-view={view}>
-          <div className="earth-map-panel" hidden={view === 'code'}><EarthMap key={workspaceRoot} workspaceKey={workspaceRoot} onActivity={mapActivity} onMapState={persistMapState} run={mapRun} command={viewCommand} selection={selection?.features ?? []} onSelect={selectMapFeature} />{mapRun && mapRun.runId !== run?.runId ? <span className="earth-map-retained" role="status">显示上次完成的结果 · {mapRun.runId.slice(0,8)}</span> : null}</div>
+          <div className="earth-map-panel" hidden={view === 'code'}><EarthMap key={workspaceRoot} workspaceKey={workspaceRoot} onActivity={mapActivity} onMapState={persistMapState} run={mapRun} command={viewCommand} selection={selection?.features ?? []} onSelect={selectMapFeature} projectLayers={projectLayers} spatialSources={spatialSources} onSaveLayer={saveProjectLayer} onExportLayer={exportProjectLayer} onToggleLayer={toggleProjectLayer} onRemoveLayer={removeProjectLayer} onConnectSource={connectSpatialSource} onRefreshCatalog={refreshProjectLayers} />{mapRun && mapRun.runId !== run?.runId ? <span className="earth-map-retained" role="status">显示上次完成的结果 · {mapRun.runId.slice(0,8)}</span> : null}{layerMessage ? <span className="earth-layer-toast" role="status">{layerMessage}</span> : null}</div>
           <section className="earth-code" hidden={view === 'map'} aria-label="Earth Engine JavaScript">
             <header><strong>Earth Engine · JavaScript</strong><button disabled={!session || !file || busy || sending || Boolean(pending) || (editor.copyContent !== null && editor.copyContent !== file?.content)} onClick={() => void runSaved()}>运行已保存代码</button></header>
             {run ? <small className="earth-version">运行 {run.runId.slice(0, 8)} · {file && file.content !== run.code ? '文件已修改，结果属于上次代码' : '代码与该次运行对应'}</small> : null}

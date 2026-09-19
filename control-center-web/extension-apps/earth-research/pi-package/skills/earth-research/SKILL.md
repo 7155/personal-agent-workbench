@@ -65,6 +65,17 @@ For ordinary local GIS files, use the deterministic GIS tools before writing cus
 4. Call `earth_geoprocess({op, inputs, params, output, saveAs})` for standard work. Input paths are relative to the bound workspace; `saveAs` must be under `pred_results/`. The tool persists an immutable run receipt under `.earth/gis/runs/` and updates `.earth/gis/workspace.json`.
 5. Read the returned output receipt and inspect the produced GeoJSON/GeoTIFF before explaining the result. For buffer and distance/area work, keep the operation's CRS-aware projected calculation and report the input/output CRS.
 
+6. When the user wants to keep drawn or computed features, save the selected
+   WGS84 FeatureCollection under `.earth/layers/` through the App layer manager
+   before exporting. Use `earth_gis_export` for SHP, GeoPackage, GeoJSON or KML;
+   report every sidecar/zip output, feature count and CRS. A browser selection
+   or a map tile is not itself a managed GIS layer.
+7. Use `earth_spatial_connect` and `earth_spatial_catalog` for project-owned
+   GeoPackage/SpatiaLite files or a PostGIS source referenced by an environment
+   secret. Never put a database URL, password or token in a prompt, workspace
+   file or receipt. `configured_pending` means registration exists but the
+   driver or connection has not been verified.
+
 The local GIS path and Earth Engine path are complementary: local operators process user-provided vector/raster files; Earth Engine scripts process authorized cloud datasets and produce remote raster tiles, evaluated features, export tasks or controlled downloads. Do not imply that a local output is an Earth Engine Asset, or that a cloud layer is a local source file. Missing CRS, invalid geometry, NoData or an empty output is a failure/unknown state, not a successful analysis.
 
 ## Batch and machine learning workflows

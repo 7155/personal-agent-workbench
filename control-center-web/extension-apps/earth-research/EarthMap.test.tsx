@@ -69,3 +69,27 @@ it('starts with a geography-ready satellite basemap and exposes a roads fallback
   expect(screen.getByText('Google 卫星影像')).toBeVisible();
   expect(screen.getByText('道路地图（备用）')).toBeVisible();
 });
+
+it('manages project layers and submits a secret-safe spatial database connection', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Reflect.set(L.Browser, 'svg', true);
+  const feature: GeoJSON.Feature = { type: 'Feature', id: 'parcel-1', properties: { name: '候选地块' }, geometry: { type: 'Point', coordinates: [120, 30] } };
+  const layer = { id: 'layer:roads', name: '道路候选', path: '.earth/layers/roads.geojson', format: 'geojson' as const, featureCount: 1, geometryTypes: ['Point'], crs: 'EPSG:4326', updatedAt: '2026-09-19T00:00:00Z', visible: true, features: [feature] };
+  const onSaveLayer = vi.fn().mockResolvedValue(undefined);
+  const onToggleLayer = vi.fn().mockResolvedValue(undefined);
+  const onRemoveLayer = vi.fn().mockResolvedValue(undefined);
+  const onConnectSource = vi.fn().mockResolvedValue(undefined);
+  render(<EarthMap run={null} selection={[feature]} projectLayers={[layer]} workspaceKey="layer-test" onActivity={vi.fn()} onSelect={vi.fn()} onSaveLayer={onSaveLayer} onToggleLayer={onToggleLayer} onRemoveLayer={onRemoveLayer} onConnectSource={onConnectSource} />);
+  expect(screen.getByText('道路候选')).toBeVisible();
+  fireEvent.click(screen.getByRole('checkbox', { name: '道路候选' }));
+  expect(onToggleLayer).toHaveBeenCalledWith('layer:roads', false);
+  fireEvent.click(screen.getByRole('button', { name: '从目录移除 道路候选' }));
+  expect(onRemoveLayer).toHaveBeenCalledWith('layer:roads');
+  fireEvent.click(screen.getByRole('button', { name: '保存图层' }));
+  expect(onSaveLayer).toHaveBeenCalledWith('候选区域', [feature]);
+  fireEvent.click(screen.getByText('连接空间数据库'));
+  fireEvent.change(screen.getByRole('combobox', { name: '空间数据源类型' }), { target: { value: 'postgis' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'PostGIS 密钥引用' }), { target: { value: 'PAW_POSTGIS_URL' } });
+  fireEvent.click(screen.getByRole('button', { name: '连接并登记' }));
+  expect(onConnectSource).toHaveBeenCalledWith({ name: '项目数据库', kind: 'postgis', secretReference: 'PAW_POSTGIS_URL' });
+});

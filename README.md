@@ -196,6 +196,9 @@ pnpm dev
 | 操作本机工作环境 | **Files / Browser / Terminal** | 文件预览、完整浏览器与终端；Files 读取不要求 Session |
 | 配置输入与系统 | **Input Studio / System Settings** | 可选输入法、语音、模型服务和外观设置 |
 
+Knowledge 的 RAGFlow 能力对齐、索引重建和回退边界见
+[`rag_ime/knowledge_library/README.md`](rag_ime/knowledge_library/README.md)。
+
 简单任务使用一个 Session；需要分工时再展开 Room。[查看完整功能图集](assets/showcase/current/README.md)。
 
 ## 常见问题

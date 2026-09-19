@@ -861,22 +861,43 @@ export const contractSchemas = {
         ]
       },
       "modelProvider": {
-        "const": "openai-codex"
+        "type": "string",
+        "enum": [
+          "openai-codex",
+          "typesafe"
+        ]
       },
       "modelId": {
-        "const": "gpt-5.6-luna"
+        "type": "string",
+        "enum": [
+          "gpt-5.6-luna",
+          "jev-latest",
+          "jev-preview",
+          "jev-1.13.0"
+        ]
       },
       "modelProfile": {
-        "const": "openai-codex/gpt-5.6-luna"
+        "type": "string",
+        "enum": [
+          "openai-codex/gpt-5.6-luna",
+          "typesafe/jev-latest",
+          "typesafe/jev-preview",
+          "typesafe/jev-1.13.0"
+        ]
       },
       "thinkingLevel": {
-        "const": "max"
+        "type": "string",
+        "enum": [
+          "max",
+          "structured"
+        ]
       },
       "promptVersion": {
         "type": "string",
         "enum": [
           "approval-arbiter-v1",
-          "approval-arbiter-v2"
+          "approval-arbiter-v2",
+          "approval-arbiter-jev-v1"
         ]
       },
       "payloadSha256": {

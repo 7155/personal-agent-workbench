@@ -5,7 +5,9 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import rag_ime.agent_approval_model as approval_model_module
 from rag_ime.agent_approval_model import ApprovalModelArbiter
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.db import sqlite_connection
@@ -98,6 +100,44 @@ class ApprovalModelArbiterTests(unittest.TestCase):
                     "UPDATE agent_approval_model_decisions SET decision = 'deny' WHERE approval_id = ?",
                     (approval["approvalId"],),
                 )
+
+    def test_jev_decision_is_recorded_with_structured_identity_when_configured(self) -> None:
+        runtime = FakeCompletionRuntime({"text": "should not be called"})
+        arbiter = ApprovalModelArbiter(
+            self.db_path,
+            runtime_provider=lambda: runtime,
+            clock_ms=lambda: 125,
+        )
+        approval = self.approval()
+        with patch.object(approval_model_module, "_jev_api_key", return_value="jev-test-key"), patch.object(
+            approval_model_module,
+            "_jev_decide",
+            return_value=("approve", ["bounded_operation", "requested_effect_matches_preview"], "Jev 判定通过。"),
+        ):
+            receipt = arbiter.decide(approval, self.session)
+        self.assertEqual(receipt["modelProvider"], "typesafe")
+        self.assertEqual(receipt["modelProfile"], "typesafe/jev-latest")
+        self.assertEqual(receipt["thinkingLevel"], "structured")
+        self.assertEqual(receipt["promptVersion"], "approval-arbiter-jev-v1")
+        self.assertEqual(runtime.requests, [])
+
+    def test_jev_transport_failure_falls_back_to_luna(self) -> None:
+        runtime = FakeCompletionRuntime({
+            "text": json.dumps({
+                "decision": "deny",
+                "reasonCodes": ["policy_boundary"],
+                "rationaleSummary": "Luna fallback deny",
+            })
+        })
+        arbiter = ApprovalModelArbiter(self.db_path, runtime_provider=lambda: runtime, clock_ms=lambda: 126)
+        approval = self.approval()
+        with patch.object(approval_model_module, "_jev_api_key", return_value="jev-test-key"), patch.object(
+            approval_model_module, "_jev_decide", side_effect=RuntimeError("endpoint unavailable")
+        ):
+            receipt = arbiter.decide(approval, self.session)
+        self.assertEqual(receipt["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertIn("model_unavailable", receipt["reasonCodes"])
+        self.assertEqual(len(runtime.requests), 1)
 
     def test_model_input_binds_request_identity_arguments_scope_and_task(self) -> None:
         runtime = FakeCompletionRuntime(

@@ -16,11 +16,15 @@ export interface AgentApprovalModelDecisionV1 {
   automatic: true;
   decision: 'approve' | 'deny';
   status: 'decided' | 'failed_closed';
-  modelProvider: 'openai-codex';
-  modelId: 'gpt-5.6-luna';
-  modelProfile: 'openai-codex/gpt-5.6-luna';
-  thinkingLevel: 'max';
-  promptVersion: 'approval-arbiter-v1' | 'approval-arbiter-v2';
+  modelProvider: 'openai-codex' | 'typesafe';
+  modelId: 'gpt-5.6-luna' | 'jev-latest' | 'jev-preview' | 'jev-1.13.0';
+  modelProfile:
+    | 'openai-codex/gpt-5.6-luna'
+    | 'typesafe/jev-latest'
+    | 'typesafe/jev-preview'
+    | 'typesafe/jev-1.13.0';
+  thinkingLevel: 'max' | 'structured';
+  promptVersion: 'approval-arbiter-v1' | 'approval-arbiter-v2' | 'approval-arbiter-jev-v1';
   payloadSha256: string;
   inputSha256: string;
   scopeSha256: string;

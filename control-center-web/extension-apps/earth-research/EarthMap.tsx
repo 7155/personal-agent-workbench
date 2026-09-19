@@ -5,16 +5,18 @@ import { geoJsonOutputs, type EarthRun } from './workspace';
 import type { EarthMapState, EarthViewCommand } from './pi-package/view-contract';
 import { drawingControls, type DrawingKind, type EditableGeometry } from './drawing-controls';
 import { selectionKey, type SelectionMode } from './map-selection';
+import type { ProjectLayer, SpatialSourceDraft, SpatialSourceSummary } from './layer-catalog';
 
 declare global { interface Window { google?: { maps?: unknown } } }
 
-export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity, onMapState }: { run: EarthRun | null; onSelect: (feature: GeoJSON.Feature | null,mode?:SelectionMode) => void; command?: EarthViewCommand; selection: GeoJSON.Feature[]; workspaceKey: string; onActivity: () => void; onMapState?: (state: EarthMapState) => void }) {
+export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity, onMapState, projectLayers = [], spatialSources = [], onSaveLayer, onExportLayer, onToggleLayer, onRemoveLayer, onConnectSource, onRefreshCatalog }: { run: EarthRun | null; onSelect: (feature: GeoJSON.Feature | null,mode?:SelectionMode) => void; command?: EarthViewCommand; selection: GeoJSON.Feature[]; workspaceKey: string; onActivity: () => void; onMapState?: (state: EarthMapState) => void; projectLayers?: ProjectLayer[]; spatialSources?: SpatialSourceSummary[]; onSaveLayer?: (name: string, features: GeoJSON.Feature[]) => Promise<void> | void; onExportLayer?: (format: 'shp' | 'gpkg', layer: ProjectLayer) => Promise<void> | void; onToggleLayer?: (layerId: string, visible: boolean) => Promise<void> | void; onRemoveLayer?: (layerId: string) => Promise<void> | void; onConnectSource?: (source: SpatialSourceDraft) => Promise<void> | void; onRefreshCatalog?: () => Promise<void> | void }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const [multiSelect,setMultiSelect]=useState(true);
   const callback=useRef<(feature:GeoJSON.Feature|null,mode?:SelectionMode|'select')=>void>(()=>{});
   callback.current=(feature,mode='select')=>onSelect(feature,mode==='select' ? multiSelect ? 'toggle' : 'replace' : mode);
   const rasterLayers = useRef(new Map<string, L.Layer>());
+  const projectLayerRefs = useRef(new Map<string, L.Layer>());
   const baseLayers = useRef<Record<string, L.Layer>>({});
   const layerControl = useRef<L.Control.Layers | null>(null);
   const [tileError, setTileError] = useState(false);
@@ -22,6 +24,13 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   const [drawingKind, setDrawingKind] = useState<DrawingKind>();
   const [imports, setImports] = useState<EditableGeometry[]>([]);
   const [storageError,setStorageError] = useState('');
+  const [layerName, setLayerName] = useState('候选区域');
+  const [selectedLayerId, setSelectedLayerId] = useState('');
+  const [layerActionError, setLayerActionError] = useState('');
+  const [sourceName, setSourceName] = useState('项目数据库');
+  const [sourceKind, setSourceKind] = useState<SpatialSourceDraft['kind']>('geopackage');
+  const [sourcePath, setSourcePath] = useState('data/roads.gpkg');
+  const [sourceSecret, setSourceSecret] = useState('PAW_POSTGIS_URL');
   const geometryTools=useRef<ReturnType<typeof drawingControls> | undefined>(undefined);
   const activity=useRef(onActivity);activity.current=onActivity;
   const drawingRef = useRef(false); drawingRef.current = drawing;
@@ -120,6 +129,41 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
     Object.entries(choices).forEach(([label, layer]) => layerControl.current?.addOverlay(layer, label));
     return () => { overlays.forEach(layer => { layerControl.current?.removeLayer(layer); instance.removeLayer(layer); }); };
   }, [run?.runId, run?.updatedAt]);
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance) return;
+    for (const layer of projectLayerRefs.current.values()) {
+      layerControl.current?.removeLayer(layer);
+      instance.removeLayer(layer);
+    }
+    projectLayerRefs.current.clear();
+    for (const projectLayer of projectLayers) {
+      if (!projectLayer.features.length) continue;
+      const layer = L.geoJSON({ type: 'FeatureCollection', features: projectLayer.features } as GeoJSON.GeoJsonObject, {
+        style: { color: '#176b4d', weight: 2, fillColor: '#176b4d', fillOpacity: 0.12 },
+        pointToLayer: (_feature, point) => L.circleMarker(point, { radius: 6, color: '#176b4d', fillColor: '#e4f4e8', fillOpacity: 0.95, weight: 2 }),
+        onEachFeature: (feature, item) => {
+          const label = String(feature.properties?.name ?? feature.properties?.id ?? projectLayer.name);
+          item.bindTooltip(`${projectLayer.name} · ${label}`);
+          item.on('click', (event: L.LeafletMouseEvent) => {
+            if (drawingRef.current || Date.now() < suppressClick.current) return;
+            if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+            callback.current(feature);
+          });
+        },
+      });
+      projectLayerRefs.current.set(projectLayer.id, layer);
+      if (projectLayer.visible !== false) layer.addTo(instance);
+      layerControl.current?.addOverlay(layer, `项目 · ${projectLayer.name}`);
+    }
+    return () => {
+      for (const layer of projectLayerRefs.current.values()) {
+        layerControl.current?.removeLayer(layer);
+        instance.removeLayer(layer);
+      }
+      projectLayerRefs.current.clear();
+    };
+  }, [projectLayers]);
   const center = run?.view?.center; const zoom = run?.view?.zoom;
   useEffect(() => {
     if (center && zoom !== undefined) map.current?.setView([center[1], center[0]], zoom);
@@ -138,11 +182,45 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   }, [command?.requestId]);
   const available=useMemo(()=>{
     const resultFeatures=geoJsonOutputs(run).flatMap(output=>{const value=output.geojson as GeoJSON.FeatureCollection|GeoJSON.Feature;return value.type==='FeatureCollection'?value.features:[value];});
-    return [...new Map([...imports,...resultFeatures,...selection].map(feature=>[selectionKey(feature),feature])).values()];
-  },[imports,run,selection]);
+    const savedFeatures = projectLayers.flatMap(layer => layer.features);
+    return [...new Map([...imports,...savedFeatures,...resultFeatures,...selection].map(feature=>[selectionKey(feature),feature])).values()];
+  },[imports,projectLayers,run,selection]);
   const selectedKeys=new Set(selection.map(selectionKey));
+  const selectedFeatures = selection.length ? selection : available;
+  const selectedProjectLayer = projectLayers.find(layer => layer.id === selectedLayerId) ?? projectLayers[0];
+  async function saveLayer() {
+    if (!onSaveLayer) return;
+    setLayerActionError('');
+    try { await onSaveLayer(layerName, selectedFeatures); } catch (error) { setLayerActionError(error instanceof Error ? error.message : String(error)); }
+  }
+  async function exportLayer(format: 'shp' | 'gpkg') {
+    if (!selectedProjectLayer || !onExportLayer) return;
+    setLayerActionError('');
+    try { await onExportLayer(format, selectedProjectLayer); } catch (error) { setLayerActionError(error instanceof Error ? error.message : String(error)); }
+  }
+  async function connectSource() {
+    if (!onConnectSource) return;
+    setLayerActionError('');
+    const name = sourceName.trim();
+    const source: SpatialSourceDraft = sourceKind === 'postgis'
+      ? { name, kind: sourceKind, secretReference: sourceSecret.trim() }
+      : { name, kind: sourceKind, path: sourcePath.trim() };
+    if (!name) { setLayerActionError('请填写数据源名称。'); return; }
+    if (sourceKind !== 'postgis' && !source.path) { setLayerActionError('本地数据库需要工作区相对路径，例如 data/roads.gpkg。'); return; }
+    if (sourceKind === 'postgis' && !source.secretReference) { setLayerActionError('PostGIS 只接受环境变量名，不填写连接串或密码。'); return; }
+    try { await onConnectSource(source); } catch (error) { setLayerActionError(error instanceof Error ? error.message : String(error)); }
+  }
   return <div className="earth-map" data-drawing={drawing}><div ref={container} aria-label="地理分析地图" className="earth-map__canvas" />
     <div className="earth-map-tools"><div className="earth-gis-toolbar" aria-label="GEE 几何工具"><button onClick={()=>geometryTools.current?.start('point')}>点</button><button onClick={()=>geometryTools.current?.start('polyline')}>线</button><button onClick={()=>geometryTools.current?.start('polygon')}>面</button><button onClick={()=>geometryTools.current?.start('rectangle')}>框选</button><span aria-hidden="true" className="earth-gis-toolbar__divider"/><button onClick={()=>geometryTools.current?.start('edit')}>编辑</button><button onClick={()=>geometryTools.current?.start('remove')}>删除</button>{drawingKind === 'edit' || drawingKind === 'remove' ? <><span aria-hidden="true" className="earth-gis-toolbar__divider"/><button className="earth-gis-toolbar__commit" onClick={()=>geometryTools.current?.save()}>保存</button><button onClick={()=>geometryTools.current?.cancel()}>取消</button></> : null}</div><button aria-pressed={multiSelect} onClick={()=>setMultiSelect(value=>!value)}>多选{multiSelect ? '开' : '关'}</button><span role="status">{drawingKind === 'edit' ? '拖动顶点后点击“保存”更新几何' : drawingKind === 'remove' ? '点击要删除的几何后点击“保存”' : drawing ? '绘图中 · 完成后更新选择' : multiSelect ? '点击可增选或取消 · 可在几何列表批量选择' : '点击选中一个对象'}</span></div>
+    <details className="earth-layer-manager" open><summary><span>项目图层与数据 · {projectLayers.length} 个</span><button className="earth-layer-refresh" type="button" title="刷新图层和数据库目录" aria-label="刷新图层和数据库目录" onClick={event => { event.preventDefault(); event.stopPropagation(); void onRefreshCatalog?.(); }}>↻</button></summary>
+      <div className="earth-layer-form"><input aria-label="新图层名称" value={layerName} onChange={event => setLayerName(event.target.value)} placeholder="图层名称" /><button disabled={!onSaveLayer || !selectedFeatures.length} onClick={() => void saveLayer()}>保存图层</button></div>
+      <div className="earth-layer-export"><select aria-label="导出图层" value={selectedProjectLayer?.id ?? ''} onChange={event => setSelectedLayerId(event.target.value)}><option value="">选择项目图层</option>{projectLayers.map(layer => <option key={layer.id} value={layer.id}>{layer.name} · {layer.featureCount}</option>)}</select><button disabled={!selectedProjectLayer || !onExportLayer} onClick={() => void exportLayer('shp')}>导出 SHP</button><button disabled={!selectedProjectLayer || !onExportLayer} onClick={() => void exportLayer('gpkg')}>导出 GPKG</button></div>
+      <details className="earth-source-connect"><summary>连接空间数据库</summary><div className="earth-source-grid"><label>名称<input aria-label="空间数据源名称" value={sourceName} onChange={event => setSourceName(event.target.value)} /></label><label>类型<select aria-label="空间数据源类型" value={sourceKind} onChange={event => setSourceKind(event.target.value as SpatialSourceDraft['kind'])}><option value="geopackage">GeoPackage</option><option value="spatialite">SpatiaLite</option><option value="postgis">PostGIS</option></select></label>{sourceKind === 'postgis' ? <label className="earth-source-grid__wide">密钥引用<input aria-label="PostGIS 密钥引用" value={sourceSecret} onChange={event => setSourceSecret(event.target.value)} placeholder="PAW_POSTGIS_URL" /><small>只填环境变量名，密码不会进入工作区。</small></label> : <label className="earth-source-grid__wide">工作区路径<input aria-label="本地数据库路径" value={sourcePath} onChange={event => setSourcePath(event.target.value)} placeholder="data/roads.gpkg" /><small>相对于当前 Session 工作区；先把数据库放进项目。</small></label>}</div><button className="earth-source-connect__submit" disabled={!onConnectSource} onClick={() => void connectSource()}>连接并登记</button></details>
+      {projectLayers.map(layer => <div className="earth-layer-row" key={layer.id}><div className="earth-layer-row__head"><label><input type="checkbox" checked={layer.visible !== false} disabled={!onToggleLayer} onChange={event => void onToggleLayer?.(layer.id, event.target.checked)} /><strong>{layer.name}</strong></label><button type="button" title="从目录移除（保留文件）" aria-label={`从目录移除 ${layer.name}`} onClick={() => void onRemoveLayer?.(layer.id)}>移除</button></div><span>{layer.featureCount} 要素 · {layer.geometryTypes.join(' / ') || '未知'} · {layer.crs} · {layer.format.toUpperCase()}</span><code>{layer.path}</code></div>)}
+      {spatialSources.length ? <><h4 className="earth-layer-section-title">空间数据库</h4>{spatialSources.map(source => <div className="earth-layer-row" key={source.id}><strong>{source.name} <small className={`earth-source-status earth-source-status--${source.status}`}>{source.status}</small></strong><span>{source.kind} · {source.layers.length ? `${source.layers.length} 个图层` : '等待连接'}</span><code>{source.path || source.schema || 'secret reference'}</code></div>)}</> : null}
+      {!projectLayers.length ? <p className="earth-layer-empty">先选择几何并保存；图层会写入当前 Session 的 .earth/layers/，之后可由 Agent 导出 SHP 或 GeoPackage。</p> : null}
+      {layerActionError ? <p className="earth-layer-error" role="alert">{layerActionError}</p> : null}
+    </details>
     <details className="earth-geometry-imports"><summary>几何与选择 · {selection.length} 已选</summary>
       <div className="earth-geometry-actions"><button onClick={()=>available.forEach(feature=>callback.current(feature,'upsert'))}>全选</button><button disabled={!selection.length} onClick={()=>callback.current(null)}>清空选择</button></div>
       {available.map(feature=><div className="earth-geometry-row" key={selectionKey(feature)}><label><input type="checkbox" checked={selectedKeys.has(selectionKey(feature))} onChange={()=>callback.current(feature,'toggle')}/><span>{String(feature.properties?.name ?? feature.properties?.id ?? feature.id ?? '几何')}</span></label><details><summary>GEE 代码</summary><pre>{`var geometry = ee.Geometry(${JSON.stringify(feature.geometry)}, null, false);`}</pre></details></div>)}

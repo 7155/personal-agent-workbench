@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { GIS_CATALOG, inspectGISPath, listGISFiles, prepareGISWorkspace, runGISOperation } from './gis-operations.mjs';
+import { GIS_CATALOG, connectSpatialSource, exportGISLayer, inspectGISPath, listGISFiles, prepareGISWorkspace, runGISOperation } from './gis-operations.mjs';
 
 const python = process.env.PAW_EARTH_GIS_PYTHON || 'python3';
 const hasGISRuntime = spawnSync(python, ['-c', 'import geopandas, rasterio'], { stdio: 'ignore' }).status === 0;
@@ -33,6 +33,15 @@ test("exposes GISclaw 28 deterministic operations and runs CRS-aware buffer", { 
     assert.equal(output.type, 'FeatureCollection');
     assert.equal(output.features[0].geometry.type, 'Polygon');
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.earth/gis/workspace.json'), 'utf8')).runId, result.runId);
+    const shp = await exportGISLayer({ root, python, request: { input: 'data/roads.geojson', format: 'shp', name: 'roads' } });
+    assert.equal(shp.status, 'completed');
+    assert.ok(shp.outputs.some(item => item.name === 'roads.zip'));
+    assert.ok(shp.outputs.some(item => item.name === 'roads.shp'));
+    const gpkg = await exportGISLayer({ root, python, request: { input: 'data/roads.geojson', format: 'gpkg', name: 'roads_db', layer: 'roads' } });
+    assert.equal(gpkg.status, 'completed');
+    const connected = await connectSpatialSource({ root, python, source: { name: 'project-gpkg', kind: 'geopackage', path: `.earth/gis/runs/${gpkg.runId}/pred_results/roads_db.gpkg` } });
+    assert.equal(connected.status, 'ready');
+    assert.deepEqual(connected.layers, ['roads']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,8 @@ const operationIds = new Set(catalog.flatMap(group => group.ops.map(operation =>
 const supportedExtensions = new Set(['.geojson', '.json', '.gpkg', '.shp', '.sqlite', '.kml', '.tif', '.tiff', '.img']);
 const vectorExtensions = new Set(['.geojson', '.json', '.gpkg', '.shp', '.sqlite', '.kml']);
 const rasterExtensions = new Set(['.tif', '.tiff', '.img']);
+const spatialDatabaseExtensions = new Set(['.gpkg', '.sqlite', '.db']);
+const spatialKinds = new Set(['geopackage', 'spatialite', 'postgis']);
 
 export const GIS_CATALOG = catalog;
 export const GIS_OPERATION_IDS = operationIds;
@@ -52,7 +55,8 @@ export function prepareGISWorkspace(root, { version = '0.8.0', python = '' } = {
   const configPath = path.join(gisRoot, 'runtime.json');
   const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
   if (configPath && fs.existsSync(configPath) && fs.lstatSync(configPath).isSymbolicLink()) throw new Error('GIS runtime configuration cannot be a symlink');
-  const selectedPython = String(config.python || python || process.env.PAW_EARTH_GIS_PYTHON || 'python3');
+  const managedPython = path.join(os.homedir(), 'Library', 'Application Support', 'RagIme', 'EarthGISRuntime', '.venv', 'bin', 'python');
+  const selectedPython = String(config.python || python || process.env.PAW_EARTH_GIS_PYTHON || (fs.existsSync(managedPython) ? managedPython : 'python3'));
   const next = { schemaVersion: 'earth.gis-runtime.v1', ...config, python: selectedPython, runner: path.join(adapterRoot, 'gis-runner.py') };
   atomicWrite(configPath, next);
   return { root: resolvedRoot, gisRoot, adapter: adapterRoot, runtime: configPath, python: selectedPython, runner: next.runner, catalog: GIS_CATALOG };
@@ -147,4 +151,91 @@ export async function inspectGISPath({ root, python, path: inputPath }) {
   const result = await executeRunner(prepared.python, prepared.runner, { operation: 'inspect', root: resolvedRoot, path: inputPath }, resolvedRoot);
   if (result.status === 'failed') throw new Error(result.error || 'GIS inspect failed');
   return result.result;
+}
+
+function spatialCatalogPath(root) {
+  const resolvedRoot = safeRoot(root);
+  const directory = safeRelative(resolvedRoot, '.earth/gis', { allowMissing: true });
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, 'databases.json');
+  if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink()) throw new Error('Spatial database catalog cannot be a symlink.');
+  return file;
+}
+
+function readSpatialCatalog(root) {
+  const file = spatialCatalogPath(root);
+  if (!fs.existsSync(file)) return { schemaVersion: 'earth.spatial-catalog.v1', sources: [] };
+  const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!value || value.schemaVersion !== 'earth.spatial-catalog.v1' || !Array.isArray(value.sources)) throw new Error('Spatial database catalog is invalid.');
+  return value;
+}
+
+export function listSpatialSources({ root }) {
+  return readSpatialCatalog(root);
+}
+
+export async function connectSpatialSource({ root, python, source }) {
+  const resolvedRoot = safeRoot(root);
+  if (!source || typeof source !== 'object') throw new TypeError('Spatial source must be an object.');
+  const name = String(source.name || '').trim();
+  const kind = String(source.kind || '').trim().toLowerCase();
+  if (!/^[A-Za-z][A-Za-z0-9 _.-]{0,79}$/.test(name)) throw new TypeError('Spatial source name is invalid.');
+  if (!spatialKinds.has(kind)) throw new TypeError(`Unsupported spatial source kind: ${kind}`);
+  const now = new Date().toISOString();
+  let status = 'configured_pending';
+  let layers = [];
+  let relativePath = '';
+  if (kind !== 'postgis') {
+    relativePath = String(source.path || '');
+    const target = safeRelative(resolvedRoot, relativePath);
+    if (!spatialDatabaseExtensions.has(path.extname(target).toLowerCase())) throw new Error('GeoPackage/SpatiaLite source must be .gpkg, .sqlite or .db.');
+    const prepared = prepareGISWorkspace(resolvedRoot, { python });
+    const result = await executeRunner(prepared.python, prepared.runner, { operation: 'catalog_source', root: resolvedRoot, path: relativePath }, resolvedRoot);
+    if (result.status === 'failed') throw new Error(result.error || 'Spatial source catalog failed.');
+    layers = Array.isArray(result.layers) ? result.layers : [];
+    status = 'ready';
+  } else {
+    const secretReference = String(source.secretReference || '').trim();
+    if (!/^[A-Z][A-Z0-9_]{2,127}$/.test(secretReference)) throw new TypeError('PostGIS requires an environment secret reference such as PAW_POSTGIS_URL.');
+    if (source.url || source.connectionString) throw new Error('PostGIS credentials must stay in the referenced secret; do not send a URL or password in the workspace request.');
+  }
+  const catalog = readSpatialCatalog(resolvedRoot);
+  const existing = catalog.sources.find(item => item.name === name);
+  const record = {
+    id: existing?.id || `spatial:${randomUUID()}`,
+    name,
+    kind,
+    path: relativePath,
+    schema: String(source.schema || '').trim(),
+    table: String(source.table || '').trim(),
+    secretReference: kind === 'postgis' ? String(source.secretReference || '').trim() : '',
+    readOnly: source.readOnly !== false,
+    status,
+    layers,
+    updatedAt: now,
+  };
+  const next = { schemaVersion: 'earth.spatial-catalog.v1', updatedAt: now, sources: [...catalog.sources.filter(item => item.name !== name), record] };
+  atomicWrite(spatialCatalogPath(resolvedRoot), next);
+  return record;
+}
+
+export async function exportGISLayer({ root, python, request }) {
+  const resolvedRoot = safeRoot(root);
+  const prepared = prepareGISWorkspace(resolvedRoot, { python });
+  const runId = randomUUID();
+  const runRelative = `.earth/gis/runs/${runId}`;
+  const runDir = safeRelative(resolvedRoot, runRelative, { allowMissing: true });
+  fs.mkdirSync(runDir, { recursive: true });
+  const base = { schemaVersion: GIS_SCHEMA_VERSION, runId, startedAt: new Date().toISOString(), status: 'running', op: 'export' };
+  atomicWrite(path.join(runDir, 'run.json'), base);
+  let result;
+  try {
+    result = await executeRunner(prepared.python, prepared.runner, { operation: 'export', root: resolvedRoot, runDir, ...request }, resolvedRoot);
+  } catch (error) {
+    result = { status: 'failed', code: 'runner_failed', error: error instanceof Error ? error.message : String(error) };
+  }
+  const normalized = relativeResultPaths(resolvedRoot, { ...result, runId, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  atomicWrite(path.join(runDir, 'run.json'), normalized);
+  atomicWrite(path.join(resolvedRoot, '.earth/gis/workspace.json'), normalized);
+  return normalized;
 }

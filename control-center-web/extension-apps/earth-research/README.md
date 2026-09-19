@@ -51,6 +51,37 @@ context, not a result. `earth_ml_catalog` lists supported templates and
 Random Forest, K-means or change detection. Replace all placeholders with
 verified datasets and labelled samples before calling `earth_run_script`.
 
+## Project layers and spatial databases
+
+The map editor keeps WGS84 GeoJSON as the editable project source under
+`.earth/layers/`. Saving a selection writes a catalog entry and a real
+FeatureCollection into the bound Session workspace. `earth_gis_export` converts
+that source to ESRI Shapefile (including `.shp`, `.shx`, `.dbf`, `.prj` and a
+zip), GeoPackage (`.gpkg` with an explicit layer name), GeoJSON or KML.
+
+`earth_spatial_connect` and `earth_spatial_catalog` register project-owned
+GeoPackage/SpatiaLite sources and secret-referenced PostGIS sources. Database
+URLs and passwords never enter the workspace or receipts. Local database layer
+listing is immediate; PostGIS remains `configured_pending` until its
+secret-backed driver is installed. This is a source catalog, not a claim that a
+cloud database was queried.
+
+Install the isolated local runtime with
+`scripts/install_earth_gis_runtime.sh`. It installs GeoPandas, Fiona, Rasterio,
+Shapely and PyProj under the PAW application-support directory; the package
+auto-detects that environment when a new Earth workspace is prepared.
+
+The map's **Project layers and data** panel is the working entry point: save the
+current selection, toggle visibility, remove a layer from the catalog while
+retaining its source file, export SHP/GPKG, connect a local database, or register
+a PostGIS secret reference. Use **刷新** after an Agent connection task; the
+panel only displays entries read back from the Session workspace.
+
+Jev approval is optional. Configure it without putting the key in a project by
+running `scripts/configure_jev_key.sh`; if no `TYPESAFE_API_KEY` or Keychain
+entry is available, PAW keeps Luna Max as the approval backend and preserves the
+standard compression/deterministic approval fallback.
+
 ## Acceptance task
 
 Run a power-grid siting task with local candidate parcels and exclusion zones:
