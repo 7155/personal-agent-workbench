@@ -286,6 +286,7 @@ class MarkdownVault:
             or (heading.group(1).strip() if heading else PurePosixPath(path).stem),
             "aliases": alias_list,
             "explicitId": field("paw_note_id"),
+            "derivedKind": field("paw_derived_kind"),
             "links": links,
         }
 

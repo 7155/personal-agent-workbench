@@ -59,6 +59,26 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_renamed_diary_keeps_derived_identity_and_cannot_be_evidence(self):
+        self.saved("GraphRAG 实验计划，尚未执行。")
+        exported = self.call("export_day", date="2026-09-20", timezone="Asia/Shanghai")
+        original = self.root / exported["path"]
+        self.call("configure", captureFolder="captured", captureProject="demo")
+        (self.root / "captured").mkdir()
+        renamed = self.root / "captured/renamed-review.md"
+        original.rename(renamed)
+        self.call("snapshot")
+        note = next(n for n in self.call("snapshot")["notes"] if n["path"] == "captured/renamed-review.md")
+        source = self.call("read", noteId=note["id"])
+        with self.assertRaises(KnowledgeLibraryError) as error:
+            self.call("suggest_targets", sourceRefs=[{"noteId":note["id"],"revision":source["revision"]}])
+        self.assertEqual(error.exception.code, "derived_source")
+        self.assertIn("paw_derived_kind: work_diary", renamed.read_text())
+        self.assertIn("paw_source_refs:", renamed.read_text())
+        with self.vault.store.connection() as db:
+            count = db.execute("SELECT COUNT(*) FROM knowledge_vault_materials WHERE note_id=?",(note["id"],)).fetchone()[0]
+        self.assertEqual(count, 0)
+
     def test_target_discovery_searches_beyond_page_limit_without_private_or_self(self):
         for index in range(205):(self.root/f"a{index:03d}.md").write_text("# Unrelated topic")
         (self.root/"z-target.md").write_text("---\naliases: [GraphRAG]\n---\n# 图检索\n关系查询的旧笔记")

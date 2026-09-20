@@ -114,7 +114,8 @@ class VaultWorkflow:
                 raise KnowledgeNotFoundError("回顾不存在。")
             self.sources(v,json.loads(draft["sources_json"]))
             return self.create_new(v,"work-model-"+draft["id"]+".md",
-                "# "+draft["day"]+" 工作回顾草稿\n\n机器生成 · 仅覆盖所选材料\n\n"+draft["markdown"])
+                self.diary_export(draft["id"], json.loads(draft["sources_json"]),
+                    "# "+draft["day"]+" 工作回顾草稿\n\n机器生成 · 仅覆盖所选材料\n\n"+draft["markdown"]))
         if action == "store_diary":
             self.dispatch(v, {**p, "action": "organize_context"})
             day = text(p, "date", 10) or datetime.now().date().isoformat()
@@ -384,7 +385,10 @@ class VaultWorkflow:
             return self.create_new(
                 v,
                 "work-" + day["id"] + "-v" + str(day["revision"]) + ".md",
-                day["markdown"],
+                self.diary_export(day["id"] + "-v" + str(day["revision"]), [
+                    {("activityId" if item.get("activityId") else "noteId"): item.get("activityId") or item["noteId"], "revision": item["revision"]}
+                    for item in day["sources"]
+                ], day["markdown"]),
             )
         if action == "forget_preview":
             with self.store.connection() as db:
@@ -419,6 +423,18 @@ class VaultWorkflow:
             return {"forgotten": True, "userFilesPreserved": True}
         raise KnowledgeLibraryError("不支持的笔记操作。", code="invalid_argument")
 
+    @staticmethod
+    def diary_export(identity, refs, body):
+        # Portable provenance survives rename and offline export. This metadata
+        # never grants permission or turns a generated summary into evidence.
+        return ("---\npaw_derived_kind: work_diary\npaw_note_id: diary-" + identity
+                + "\npaw_source_refs: " + json.dumps(refs, ensure_ascii=False, sort_keys=True)
+                + "\n---\n\n" + body)
+
+    def is_derived(self, v, path, body):
+        return (path.startswith(self.policy(v)["inbox"] + "/work-")
+                or bool(self.vault._metadata(path, body).get("derivedKind")))
+
     def suggest_targets(self, v, p):
         from ..text_utils import token_terms
         originals = self.sources(v,p.get("sourceRefs",[]))
@@ -440,6 +456,8 @@ class VaultWorkflow:
             if not cached or cached[1]["revision"]!=row["revision"]:
                 continue
             note=cached[1]
+            if self.is_derived(v, row["path"], note["body"]):
+                continue
             heading=note["title"]+" "+" ".join(note["aliases"])
             title_hits=overlap(heading)
             hits=overlap(note["body"])
@@ -506,7 +524,7 @@ class VaultWorkflow:
                 if not item["path"].startswith(folder + "/"):
                     continue
                 # Generated reports are projections, never independent raw evidence.
-                if (item["path"].startswith(policy["inbox"] + "/") and PurePosixPath(item["path"]).name.startswith(("work-", "idea-", "draft-"))) or item["identityState"] == "duplicate_id":
+                if (item["path"].startswith(policy["inbox"] + "/") and PurePosixPath(item["path"]).name.startswith(("work-", "idea-", "draft-"))) or item["identityState"] == "duplicate_id" or item.get("derivedKind"):
                     continue
                 request = "watch:" + sha(item["id"] + item["revision"])
                 identity = sha(v["id"] + request)
@@ -799,7 +817,7 @@ class VaultWorkflow:
                 note = self.vault.read(v, str(ref.get("noteId", "")))
             if ref.get("revision") != note["revision"]:
                 raise KnowledgeConflictError("来源已变化，请重新整理。")
-            if note["path"].startswith(self.policy(v)["inbox"] + "/work-"):
+            if self.is_derived(v, note["path"], note["markdown"]):
                 raise KnowledgeLibraryError(
                     "请引用日记的原始材料，不重复计算派生摘要。", code="derived_source"
                 )
