@@ -671,3 +671,21 @@
   .earth-data-dock button, .earth-app .earth-data-dock button { transition: none; }
   .earth-data-dock .is-refreshing { animation: none; }
 }
+
+/* Secondary drawing settings stay nearby without occupying the canvas. */
+.earth-snap-settings{position:relative;font-size:12px}
+.earth-snap-settings>summary{display:flex;align-items:center;gap:4px;min-height:30px;padding:0 6px;cursor:pointer;list-style:none;border-radius:4px}
+.earth-snap-settings>summary::-webkit-details-marker{display:none}
+.earth-snap-settings[open]>summary{background:var(--earth-selection);color:var(--earth-accent)}
+.earth-snap-settings>div{position:absolute;right:0;top:calc(100% + 8px);z-index:900;display:grid;gap:12px;width:208px;box-sizing:border-box;padding:14px;border:1px solid var(--earth-line);border-radius:6px;background:var(--earth-surface);color:var(--earth-ink)}
+.earth-snap-settings>div>label{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.earth-snap-settings small{line-height:1.6;color:var(--earth-muted)}
+.earth-app .earth-gis-toolbar__snap input{accent-color:var(--earth-accent)}
+.earth-app :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--earth-accent);outline-offset:2px}
+.earth-files__listing-notice>summary{cursor:pointer;min-height:24px;line-height:24px}
+.earth-files__listing-notice>p{margin:6px 0 0;line-height:1.6}
+.earth-agent .agent-timeline-empty{border:0;border-radius:0;background:transparent;box-shadow:none;max-width:280px;margin-inline:auto}
+.earth-data-dock__metadata{font-variant-numeric:tabular-nums}
+.earth-app ::selection{background:#cce2ff;color:#173a60}
+.earth-snap-settings>div>.earth-gis-toolbar__snap{justify-content:flex-start}
+.earth-snap-settings input[type=number]{min-height:30px;border:1px solid var(--earth-line);border-radius:4px;padding:4px 6px;font:inherit;color:var(--earth-ink);background:var(--earth-surface);box-sizing:border-box}

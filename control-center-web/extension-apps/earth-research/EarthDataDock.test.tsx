@@ -100,7 +100,9 @@ it.each([false, true])('reports missing Shapefile components without treating un
   fireEvent.click(screen.getByRole('treeitem', { name: 'broken.shp' }));
   expect(details).toHaveTextContent(incomplete ? '未找到 .shx、.dbf（目录尚未完整读取）' : '缺少必要配套 .shx、.dbf');
   if (incomplete) {
-    expect(screen.getByRole('status')).toHaveTextContent('当前仅列出前 240 项');
+    expect(screen.getByRole('status')).toHaveTextContent('目录未全部载入');
+    fireEvent.click(screen.getByText('目录未全部载入 · 查看说明'));
+    expect(screen.getByText('当前仅列出前 240 项。')).toBeVisible();
     expect(details).not.toHaveTextContent('缺少必要配套');
   }
 });
