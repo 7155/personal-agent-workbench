@@ -245,3 +245,28 @@ it('preserves the original SHP file and conversion run when creating its project
   expect(saved).toBeDefined();
   expect(JSON.parse(saved!.slice('/earth-layer-save '.length))).toMatchObject({ source: { kind: 'file', path: 'data/parcels.shp', format: 'shp', runId: 'import-1' } });
 });
+
+it('deletes only selected typed IDs through the versioned layer service without a model', async () => {
+  let revision=0;
+  const transport=new MockControlTransport({routes:{
+    'agent.sessions.list':{items:[projectAgent('delete-test','/gis/shared')]},
+    'agent.session.workspace.read':noRun,
+    'agent.session.workspace.list':{items:[]},
+    'agent.session.command.invoke':(request:ControlRequest)=>{
+      const command=String((request.body as {command?:string})?.command ?? '');
+      const name=command.slice(1).split(' ')[0];
+      const input=JSON.parse(command.slice(command.indexOf(' ')+1)||'{}');
+      const result=name==='earth-layer-save' ? {layer:{id:'parcels',name:'地块',path:'parcels.geojson',format:'geojson',featureCount:input.features.length,geometryTypes:['Point'],crs:'EPSG:4326',revision:++revision,visible:true,features:input.features}} : {runs:[]};
+      return {result:{schemaVersion:'rag-ime.pi-package-command-result.v1',command:name,result}};
+    }
+  }});
+  show(transport);await screen.findByTestId('original-agent');
+  const features=[1,'1',2].map(id=>({type:'Feature',id,properties:{note:'保留'},geometry:{type:'Point',coordinates:[120,30]}}));
+  await act(async()=>{await seenMap.mock.lastCall?.[0].onSaveLayer('地块',features);});
+  const selected=seenMap.mock.lastCall?.[0].projectLayers[0].features[0];
+  await act(async()=>{await seenMap.mock.lastCall?.[0].onUpdateFeatures([],[selected]);});
+  const commands=transport.requests.map(item=>String((item.request.body as {command?:string})?.command ?? '')).filter(command=>command.startsWith('/earth-layer-save '));
+  expect(JSON.parse(commands.at(-1)!.slice('/earth-layer-save '.length))).toMatchObject({layerId:'parcels',expectedRevision:1,features:[{id:'1',properties:{note:'保留'}},{id:2,properties:{note:'保留'}}]});
+  expect(seenMap.mock.lastCall?.[0].projectLayers[0].revision).toBe(2);
+  expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+});

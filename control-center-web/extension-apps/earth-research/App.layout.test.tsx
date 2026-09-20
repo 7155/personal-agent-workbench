@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -82,4 +82,20 @@ it('collapses the Agent without discarding its in-progress draft', async () => {
   await user.click(screen.getByRole('button', { name: '展开 Agent' }));
   expect(screen.getByRole('textbox', { name: 'Agent 草稿' })).toHaveValue('保留的分析目标，避开河流');
   expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+});
+
+
+it('resizes the Agent with keyboard, remembers width, and resets on double click', async () => {
+  localStorage.removeItem('paw-earth-agent-width');
+  await showWorkspace();
+  await userEvent.click(screen.getByRole('button',{name:'展开 Agent'}));
+  const handle=screen.getByRole('separator',{name:'调整 Agent 宽度'});
+  fireEvent.keyDown(handle,{key:'ArrowRight',shiftKey:true});
+  expect(handle).toHaveAttribute('aria-valuenow','392');
+  expect(localStorage.getItem('paw-earth-agent-width')).toBe('392');
+  fireEvent.doubleClick(handle);
+  expect(handle).toHaveAttribute('aria-valuenow','360');
+  await userEvent.click(screen.getByRole('button',{name:'收起 Agent'}));
+  expect(screen.queryByRole('separator',{name:'调整 Agent 宽度'})).not.toBeInTheDocument();
+  localStorage.removeItem('paw-earth-agent-width');
 });
