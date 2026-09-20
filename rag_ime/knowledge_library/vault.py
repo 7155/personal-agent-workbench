@@ -55,6 +55,7 @@ class MarkdownVault:
         self.store = store
         self.lock = threading.RLock()
         self._metadata_cache = {}
+        self.activity_provider = None
         with store.connection() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS knowledge_vaults (
@@ -492,7 +493,7 @@ class MarkdownVault:
             ).fetchall()
         for proposal in applied:
             for source in json.loads(proposal["sources_json"]):
-                if source["noteId"] in by_id and proposal["note_id"] in by_id:
+                if source.get("noteId") in by_id and proposal["note_id"] in by_id:
                     current = (
                         by_id[source["noteId"]]["revision"] == source["revision"]
                         and by_id[proposal["note_id"]]["revision"]

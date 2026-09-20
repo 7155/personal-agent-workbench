@@ -57,6 +57,7 @@ class KnowledgeWorkerServer(ThreadingHTTPServer):
         self.vault_management_token = management_token(Path(service.config.root_dir))
         self.agent_client = LocalKnowledgeClient(service)
         self.last_activity = time.monotonic()
+        self._next_vault_capture = 0.0
         self.worker_root = normalized_knowledge_root(service.config.root_dir)
         self.worker_owner = owner or f"standalone:{os.getpid()}"
         self.parent_pid = max(0, int(parent_pid))
@@ -90,6 +91,13 @@ class KnowledgeWorkerServer(ThreadingHTTPServer):
             ),
             reranker_profile_sha256=knowledge_reranker_profile_sha256(),
         )
+
+    def service_actions(self):
+        current = time.monotonic()
+        if current >= self._next_vault_capture:
+            self._next_vault_capture = current + 30
+            if self.service.schedule_vault_capture():
+                self.last_activity = current
 
 
 class KnowledgeWorkerHandler(BaseHTTPRequestHandler):
@@ -514,6 +522,13 @@ def main(argv: list[str] | None = None) -> int:
         reranker=knowledge_reranker_from_env(config.root_dir),
         background_jobs=True,
     )
+    if args.intake_db:
+        from ..memory_lifecycle.common import connect as lifecycle_connect
+        from ..memory_lifecycle.daily import snapshot as daily_snapshot
+        def activity_provider(project, day, timezone):
+            with lifecycle_connect(args.intake_db) as conn:
+                return daily_snapshot(conn, project=project, day=day, timezone=timezone, include_timeline=False)
+        service.vault.activity_provider = activity_provider
     server = KnowledgeWorkerServer(
         (args.host, args.port),
         service,
@@ -526,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while True:
             server.handle_request()
+            server.service_actions()
             if args.parent_pid and os.getppid() != args.parent_pid:
                 break
             if args.idle_seconds > 0 and time.monotonic() - server.last_activity >= args.idle_seconds:

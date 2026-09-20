@@ -55,6 +55,25 @@ class KnowledgeWorkerTests(unittest.TestCase):
             intake_content_hash=hashlib.sha256(data).hexdigest(),
         )
 
+    def test_background_vault_capture_uses_current_scope_without_frontend_poll(self):
+        service = KnowledgeLibraryService(KnowledgeLibraryConfig(Path(self.temporary.name) / "Background"),background_jobs=True)
+        self.addCleanup(service.close)
+        root = Path(self.temporary.name) / "capture-notes"
+        (root / "materials").mkdir(parents=True)
+        (root / "materials" / "one.md").write_text("Observed original source")
+        vid = service.vault.dispatch({"action":"connect","root":str(root)})["space"]["id"]
+        def call(action,**kw):return service.vault.dispatch({"action":action,"vaultId":vid,**kw})
+        call("configure",captureFolder="materials",captureProject="demo")
+        self.assertTrue(service.schedule_vault_capture())
+        service._vault_capture_future.result(timeout=5)
+        with service.store.connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM knowledge_vault_materials").fetchone()[0],1)
+        call("pause",paused=True)
+        (root / "materials" / "two.md").write_text("not captured")
+        self.assertFalse(service.schedule_vault_capture())
+        with service.store.connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM knowledge_vault_materials").fetchone()[0],1)
+
     def test_vault_http_requires_management_capability_and_reads_real_file(self):
         root = Path(self.temporary.name) / 'notes'
         root.mkdir(); (root / 'hello.md').write_text('# Real file\nOriginal body')

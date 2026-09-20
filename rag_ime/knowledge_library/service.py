@@ -109,6 +109,7 @@ class KnowledgeLibraryService:
         self.reranker = reranker
         self._dense_error = ""
         self._ingest_lock = threading.Lock()
+        self._vault_capture_future = None
         self._job_executor = (
             ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-ime-knowledge")
             if background_jobs
@@ -121,6 +122,37 @@ class KnowledgeLibraryService:
         if self._job_executor is not None:
             self._job_executor.shutdown(wait=wait, cancel_futures=not wait)
             self._job_executor = None
+
+    def schedule_vault_capture(self) -> bool:
+        """Use the existing Knowledge worker queue, never a second agent loop."""
+        if self._job_executor is None:
+            return False
+        if self._vault_capture_future is not None and not self._vault_capture_future.done():
+            return True
+        with self.store.connection() as db:
+            configured = [r[0] for r in db.execute(
+                "SELECT v.id FROM knowledge_vaults v JOIN knowledge_vault_policy p ON v.id=p.vault_id "
+                "WHERE v.paused=0 AND (COALESCE(json_extract(p.policy_json,'$.captureFolder'),'')<>'' OR COALESCE(json_extract(p.policy_json,'$.activityProject'),'')<>'')")]
+        if not configured:
+            return False
+        self._vault_capture_future = self._job_executor.submit(self._capture_vaults, configured)
+        return True
+
+    def _capture_vaults(self, identities):
+        for identity in identities:
+            try:
+                # dispatch checks the current pause state and reads current policy;
+                # queued work has no authority from an older settings snapshot.
+                self.vault.dispatch({"action":"snapshot", "vaultId":identity})
+                policy = self.vault.dispatch({"action":"settings", "vaultId":identity})['policy']
+                if policy['activityProject']:
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    zone = policy['activityTimezone']
+                    self.vault.dispatch({"action":"day","vaultId":identity,"project":policy['activityProject'],
+                        "date":datetime.now(ZoneInfo(zone)).date().isoformat(),"timezone":zone})
+            except (OSError, KnowledgeLibraryError):
+                continue
 
     def create_base(
         self,

@@ -59,6 +59,30 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_activity_originals_feed_both_paths_and_revoke_before_apply(self):
+        source={"id":"evidence:one","text":"计划实验，未执行", "occurredAtMs":1789900000000,
+                "origin":{"namespace":"paw:input","id":"one"}}
+        packet={"evidence":[source],"admissionRevisions":{"evidence:one":1}}
+        self.vault.activity_provider=lambda project,day,timezone:packet
+        self.assertEqual(self.call("day",date="2026-09-20",project="demo")["sources"],[])
+        self.call("configure",activityProject="demo",timezone="Asia/Shanghai",remoteProcessing=True)
+        day=self.call("day",date="2026-09-20",project="demo")
+        material=day["sources"][0]
+        self.assertEqual(material["text"],source["text"])
+        refs=[{"activityId":material["activityId"],"revision":material["revision"]}]
+        context=self.call("organize_context",sourceRefs=refs)
+        self.assertEqual(context["sources"][0]["markdown"],source["text"])
+        proposal=self.call("prepare",noteId=self.target["id"],baseRevision=self.target["revision"],
+            sourceRefs=refs,before="旧理解。",after="新理解。",reason="原始来源")
+        self.call("store_diary",sourceRefs=refs,date="2026-09-20",project="demo",markdown="仍是计划。",generator="test")
+        self.call("configure",activityProject="")
+        with self.assertRaises(KnowledgeConflictError):
+            self.call("approve",proposalId=proposal["id"],proposalRevision=proposal["revision"])
+        self.assertFalse(self.call("day",date="2026-09-20",project="demo")["modelDrafts"][0]["sourcesCurrent"])
+        with self.vault.store.connection() as db:
+            row=db.execute("SELECT * FROM knowledge_vault_activity_refs").fetchone()
+            self.assertNotIn(source["text"],str(tuple(row)))
+
     def test_authorized_directory_capture_is_incremental_and_stops(self):
         folder = self.root / "材料"
         folder.mkdir()
@@ -82,10 +106,12 @@ class WorkflowTests(unittest.TestCase):
         args = dict(sourceRefs=[{"noteId":source["noteId"],"revision":source["revision"]}],
                     date="2026-09-20", timezone="Asia/Shanghai", project="demo", markdown="机器回顾", generator="test")
         self.call("configure", remoteProcessing=True)
+        before_day = self.call("day", date="2026-09-20",timezone="Asia/Shanghai",project="demo")
         first = self.call("store_diary", **args)
         self.assertEqual(first, self.call("store_diary", **args))
         self.vault = MarkdownVault(self.vault.store)
         day = self.call("day", date="2026-09-20", timezone="Asia/Shanghai", project="demo")
+        self.assertGreater(day["revision"],before_day["revision"])
         self.assertEqual(day["modelDrafts"][0]["markdown"], "机器回顾")
         self.assertTrue(day["modelDrafts"][0]["sourcesCurrent"])
         (self.root / source["path"]).write_text("changed")

@@ -47,6 +47,10 @@ class VaultWorkflow:
         self.store = vault.store
         with self.store.connection() as db:
             db.executescript("""
+              CREATE TABLE IF NOT EXISTS knowledge_vault_activity_refs (
+                id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, source_id TEXT NOT NULL,
+                revision TEXT NOT NULL, project TEXT NOT NULL, day TEXT NOT NULL,
+                timezone TEXT NOT NULL, occurred_ms INTEGER NOT NULL);
               CREATE TABLE IF NOT EXISTS knowledge_vault_diary_drafts (
                 id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, day TEXT NOT NULL, timezone TEXT NOT NULL,
                 project TEXT NOT NULL, markdown TEXT NOT NULL, sources_json TEXT NOT NULL,
@@ -93,6 +97,8 @@ class VaultWorkflow:
             "personalDiary": "",
             "captureFolder": "",
             "captureProject": "",
+            "activityProject": "",
+            "activityTimezone": "Asia/Shanghai",
             **(json.loads(row[0]) if row else {}),
         }
 
@@ -245,6 +251,11 @@ class VaultWorkflow:
                         "收件箱不在授权范围。", code="scope_mismatch"
                     )
                 policy["inbox"] = inbox
+            if "activityProject" in p:
+                policy["activityProject"] = text(p,"activityProject",240).strip()
+                zone = text(p,"timezone",80) or "Asia/Shanghai"
+                day_bounds("2026-01-01",zone)
+                policy["activityTimezone"] = zone
             if "captureFolder" in p:
                 folder = text(p, "captureFolder", 240)
                 if folder:
@@ -395,6 +406,7 @@ class VaultWorkflow:
                     (v["id"],),
                 )
                 for table in (
+                    "knowledge_vault_activity_refs",
                     "knowledge_vault_diary_drafts",
                     "knowledge_vault_materials",
                     "knowledge_note_proposals",
@@ -404,6 +416,47 @@ class VaultWorkflow:
                     db.execute(f"DELETE FROM {table} WHERE vault_id=?", (v["id"],))
             return {"forgotten": True, "userFilesPreserved": True}
         raise KnowledgeLibraryError("不支持的笔记操作。", code="invalid_argument")
+
+    def activity_materials(self, v, day, timezone, project):
+        policy = self.policy(v)
+        provider = self.vault.activity_provider
+        if not project or project != policy["activityProject"] or provider is None:
+            return []
+        packet = provider(project,day,timezone)
+        result = []
+        with self.store.connection() as db:
+            for source in packet.get("evidence",[])[:100]:
+                if str(source.get("origin",{}).get("namespace","")).startswith("paw-vault:"):
+                    continue  # A note adoption is not another independent original.
+                if source.get("provenance",{}).get("derivedArtifactType"):
+                    continue
+                revision = sha(json.dumps([source,packet.get("admissionRevisions",{}).get(source["id"])],sort_keys=True,ensure_ascii=False))
+                identity = sha(v["id"]+source["id"]+revision)
+                db.execute("INSERT OR IGNORE INTO knowledge_vault_activity_refs VALUES(?,?,?,?,?,?,?,?)",
+                    (identity,v["id"],source["id"],revision,project,day,timezone,source["occurredAtMs"]))
+                result.append({"id":identity,"activityId":identity,"noteId":"activity:"+identity,
+                    "revision":revision,"occurredAtMs":source["occurredAtMs"],"readable":True,
+                    "text":source["text"],"authorship":"mixed_or_unknown","submission":"unknown",
+                    "completeness":"admitted_excerpt"})
+        return result
+
+    def activity_source(self,v,identity,cache=None):
+        with self.store.connection() as db:
+            row=db.execute("SELECT * FROM knowledge_vault_activity_refs WHERE vault_id=? AND id=?",(v["id"],identity)).fetchone()
+        if row is None:
+            raise KnowledgeNotFoundError("活动来源不存在。")
+        key=(row["day"],row["timezone"],row["project"])
+        if cache is not None and key in cache:
+            current=cache[key]
+        else:
+            current=self.activity_materials(v,*key)
+            if cache is not None:
+                cache[key]=current
+        match=next((item for item in current if item["id"]==identity),None)
+        if match is None:
+            raise KnowledgeConflictError("活动来源已变化、撤回或不再获准。")
+        return {"noteId":"activity:"+identity,"revision":row["revision"],"path":"activity/"+identity,
+            "markdown":match["text"]}
 
     def capture_files(self, v, discovered):
         policy = self.policy(v)
@@ -460,7 +513,7 @@ class VaultWorkflow:
             if not note(item['note_id']):
                 continue
             for source in json.loads(item['sources_json']):
-                if note(source['noteId']):
+                if source.get('noteId') and note(source['noteId']):
                     edges.append({'source':source['noteId'],'target':item['note_id'],'label':'用于真实修订','basis':item['application_id']})
         if mode == 'project':
             for item in adopted:
@@ -602,7 +655,7 @@ class VaultWorkflow:
                 "SELECT * FROM knowledge_vault_materials WHERE vault_id=? AND occurred_ms>=? AND occurred_ms<? AND project=? ORDER BY occurred_ms",
                 (v["id"], start, end, project),
             ).fetchall()
-        sources = []
+        sources = self.activity_materials(v, day, timezone, project)
         for row in rows:
             try:
                 note = self.vault.read(v, row["note_id"])
@@ -624,7 +677,10 @@ class VaultWorkflow:
                 }
             )
         identity = sha(json.dumps([v["id"], day, timezone, project]))[:32]
-        digest = sha(json.dumps(sources, ensure_ascii=False))
+        with self.store.connection() as db:
+            latest_model = db.execute("SELECT id FROM knowledge_vault_diary_drafts WHERE vault_id=? AND day=? AND timezone=? AND project=? ORDER BY created_ms DESC,id DESC LIMIT 1",
+                (v["id"],day,timezone,project)).fetchone()
+        digest = sha(json.dumps([sources,latest_model[0] if latest_model else None], ensure_ascii=False))
         with self.store.connection() as db:
             old = db.execute(
                 "SELECT * FROM knowledge_vault_days WHERE id=?", (identity,)
@@ -637,7 +693,7 @@ class VaultWorkflow:
         lines = [
             f"# {day} 工作回顾",
             "",
-            "机器整理 · 仅覆盖在 PAW 主动保存的材料，不代表全天记录或已经完成的工作。",
+            "机器整理 · 仅覆盖获准文件与已准入的来源材料，不代表全天记录或已经完成的工作。",
             "",
         ]
         for source in sources:
@@ -650,7 +706,7 @@ class VaultWorkflow:
                 "",
             ]
         with self.store.connection() as db:
-            drafts = db.execute("SELECT * FROM knowledge_vault_diary_drafts WHERE vault_id=? AND day=? AND timezone=? AND project=? ORDER BY created_ms DESC LIMIT 20",
+            drafts = db.execute("SELECT * FROM knowledge_vault_diary_drafts WHERE vault_id=? AND day=? AND timezone=? AND project=? ORDER BY created_ms DESC,id DESC LIMIT 20",
                 (v["id"], day, timezone, project)).fetchall()
         model_drafts = []
         for draft in drafts:
@@ -695,10 +751,14 @@ class VaultWorkflow:
                 "需要 1–8 个可核对的原始来源。", code="sources_required"
             )
         result = []
+        activity_cache = {}
         for ref in refs:
             if not isinstance(ref, dict):
                 raise KnowledgeLibraryError("来源格式无效。", code="invalid_argument")
-            note = self.vault.read(v, str(ref.get("noteId", "")))
+            if ref.get("activityId"):
+                note = self.activity_source(v, str(ref["activityId"]), activity_cache)
+            else:
+                note = self.vault.read(v, str(ref.get("noteId", "")))
             if ref.get("revision") != note["revision"]:
                 raise KnowledgeConflictError("来源已变化，请重新整理。")
             if note["path"].startswith(self.policy(v)["inbox"] + "/work-"):
