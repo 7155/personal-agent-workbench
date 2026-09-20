@@ -11,6 +11,9 @@ def organize(facade, payload):
     context = facade.worker.management_call(
         "management_vault", {**payload, "action": "organize_context"}
     )
+    previous = facade.worker.management_call("management_vault", {**payload, "action": "organize_lookup"})
+    if isinstance(previous.get("result"), dict):
+        return previous["result"]
     if facade.runtime_provider is None:
         raise KnowledgeLibraryError(
             "生成模型尚未连接；可以手动准备修订。", code="provider_unavailable"
@@ -129,7 +132,7 @@ def organize(facade, payload):
         **payload, "action": "store_diary", "markdown": output["diary"],
         "generator": "openai-codex/gpt-5.6-luna",
     })
-    return {
+    response = {
         "diaryRecord": saved,
         "diary": output["diary"],
         "sourceRefs": payload["sourceRefs"],
@@ -140,3 +143,6 @@ def organize(facade, payload):
         "state": "draft_only",
         "notice": "机器草稿需要核对。日记与提案引用同一批原始材料；尚未改文或采纳 Memory。",
     }
+
+    facade.worker.management_call("management_vault", {**payload, "action": "organize_receipt", "result": response})
+    return response

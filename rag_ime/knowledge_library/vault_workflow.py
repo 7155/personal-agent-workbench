@@ -47,6 +47,9 @@ class VaultWorkflow:
         self.store = vault.store
         with self.store.connection() as db:
             db.executescript("""
+              CREATE TABLE IF NOT EXISTS knowledge_vault_organization_receipts (
+                id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, diary_id TEXT NOT NULL,
+                proposal_id TEXT NOT NULL, result_json TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS knowledge_vault_activity_refs (
                 id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, source_id TEXT NOT NULL,
                 revision TEXT NOT NULL, project TEXT NOT NULL, day TEXT NOT NULL,
@@ -104,6 +107,34 @@ class VaultWorkflow:
 
     def dispatch(self, v, p):
         action = p["action"]
+        if action in {"organize_lookup", "organize_receipt"}:
+            context = self.dispatch(v, {**p, "action": "organize_context"})
+            target = context["target"]
+            refs = sorted(p["sourceRefs"], key=lambda ref: json.dumps(ref, sort_keys=True))
+            identity = sha(json.dumps([v["id"], refs,
+                [target["noteId"], target["revision"]] if target else None,
+                p.get("date") or datetime.now().date().isoformat(), p.get("timezone") or "Asia/Shanghai",
+                p.get("project", ""), "organizer-v1"], sort_keys=True))
+            with self.store.connection() as db:
+                if action == "organize_receipt":
+                    result = p["result"]
+                    diary_id = result["diaryRecord"]["id"]
+                    proposal_id = (result.get("proposal") or {}).get("id", "")
+                    metadata = {key: value for key, value in result.items() if key not in {"diary", "sourceRefs", "proposal"}}
+                    db.execute("INSERT OR IGNORE INTO knowledge_vault_organization_receipts VALUES(?,?,?,?,?)",
+                        (identity, v["id"], diary_id, proposal_id, json.dumps(metadata)))
+                    return {"recorded": True}
+                receipt = db.execute("SELECT * FROM knowledge_vault_organization_receipts WHERE id=? AND vault_id=?", (identity,v["id"])).fetchone()
+                if receipt is None:
+                    return {"result": None}
+                diary = db.execute("SELECT markdown FROM knowledge_vault_diary_drafts WHERE id=? AND vault_id=?", (receipt["diary_id"],v["id"])).fetchone()
+                if diary is None:
+                    return {"result": None}
+            proposal = self.public(v, self.proposal(v, receipt["proposal_id"])) if receipt["proposal_id"] else None
+            result = json.loads(receipt["result_json"])
+            result.update(diary=diary["markdown"], sourceRefs=refs, proposal=proposal, replayed=True,
+                notice="同一材料和目标版本已整理，已读取保存的结果；未再次调用模型。")
+            return {"result": result}
         if action == "suggest_targets":
             return self.suggest_targets(v,p)
         if action == "export_model_diary":
@@ -416,6 +447,7 @@ class VaultWorkflow:
                     (v["id"],),
                 )
                 for table in (
+                    "knowledge_vault_organization_receipts",
                     "knowledge_vault_activity_refs",
                     "knowledge_vault_diary_drafts",
                     "knowledge_vault_materials",

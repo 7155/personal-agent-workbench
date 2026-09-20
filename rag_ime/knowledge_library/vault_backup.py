@@ -19,6 +19,7 @@ TABLES = (
     "knowledge_vault_days",
     "knowledge_vault_activity_refs",
     "knowledge_vault_diary_drafts",
+    "knowledge_vault_organization_receipts",
     "knowledge_vault_memory_links",
 )
 

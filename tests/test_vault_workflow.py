@@ -295,6 +295,51 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["state"], "saved_index_pending")
         self.assertTrue(result["bodySaved"])
 
+    def test_organizer_replays_same_materials_after_restart_without_provider(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from rag_ime.vault_organizer import organize
+        self.call("configure", remoteProcessing=True)
+        saved = self.saved()
+        source = self.call("read", noteId=saved["noteId"])
+        request = {"vaultId":self.space["id"], "sourceRefs":[{"noteId":source["noteId"],"revision":source["revision"]}], "project":"demo", "date":"2026-09-20", "timezone":"Asia/Shanghai"}
+        runtime = Mock()
+        runtime.complete_once.return_value = {"text":'{"diary":"仅覆盖计划，尚未执行。","action":"none","before":"","after":"","reason":"无目标"}'}
+        facade = SimpleNamespace(worker=SimpleNamespace(management_call=lambda method,p:self.vault.dispatch(p)), runtime_provider=lambda:runtime)
+        first = organize(facade, request)
+        self.vault = MarkdownVault(self.vault.store)
+        facade.runtime_provider = None
+        second = organize(facade, request)
+        self.assertEqual(second["diaryRecord"]["id"], first["diaryRecord"]["id"])
+        self.assertTrue(second["replayed"])
+        self.assertEqual(runtime.complete_once.call_count, 1)
+        self.call("configure", remoteProcessing=False)
+        with self.assertRaises(KnowledgeLibraryError):
+            organize(facade, request)
+
+    def test_dismissed_organization_is_not_recreated_but_new_material_runs(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from rag_ime.vault_organizer import organize
+        self.call("configure", remoteProcessing=True)
+        saved = self.saved()
+        source = self.call("read", noteId=saved["noteId"])
+        request = {"vaultId":self.space["id"], "noteId":self.target["id"], "sourceRefs":[{"noteId":source["noteId"],"revision":source["revision"]}], "date":"2026-09-20"}
+        runtime = Mock()
+        runtime.complete_once.return_value = {"text":'{"diary":"仅覆盖计划。","action":"append","before":"","after":"计划实验，还未执行。","reason":"新材料补充"}'}
+        facade = SimpleNamespace(worker=SimpleNamespace(management_call=lambda method,p:self.vault.dispatch(p)), runtime_provider=lambda:runtime)
+        first = organize(facade, request)
+        self.call("dismiss", proposalId=first["proposal"]["id"], proposalRevision=first["proposal"]["revision"])
+        replay = organize(facade, request)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(replay["proposal"]["state"], "dismissed")
+        self.assertEqual(runtime.complete_once.call_count, 1)
+        (self.root / source["path"]).write_text("实验完成，有新结果。")
+        current = self.call("read",noteId=source["noteId"])
+        request["sourceRefs"][0]["revision"] = current["revision"]
+        organize(facade, request)
+        self.assertEqual(runtime.complete_once.call_count, 2)
+
     def test_forget_stops_recapture_and_invalidates_prepared_ime(self):
         from types import SimpleNamespace
         from rag_ime.knowledge_control import KnowledgeControlFacade

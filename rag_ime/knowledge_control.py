@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import threading
 from collections.abc import Mapping
 from typing import Any
 
@@ -27,6 +28,7 @@ class KnowledgeControlFacade:
     ) -> None:
         self._ime_project_provider = ime_project_provider
         self._ime_reference = None
+        self._vault_organize_lock = threading.RLock()
         self.activity_report_provider = activity_report_provider
         self.runtime_provider = runtime_provider
         self.worker = worker
@@ -52,11 +54,12 @@ class KnowledgeControlFacade:
             return {'ready':True,'targetProject':project,'notice':f'已为输入法当前工作区 {project} 准备。5 分钟内在目标输入框触发辅助，核对后点击插入；不会发送，也不改变笔记归属。'}
         if action == 'organize':
             from .vault_organizer import organize
-            return organize(self, dict(payload))
+            with self._vault_organize_lock:
+                return organize(self, dict(payload))
         if action in {'adopt_memory', 'adoptions'}:
             from .vault_memory import adopt, reconcile
             return adopt(self, dict(payload)) if action == 'adopt_memory' else reconcile(self, dict(payload))
-        if action in {'store_diary', 'organize_context', 'memory_prepare', 'memory_receipt', 'memory_links'}:
+        if action in {'organize_lookup', 'organize_receipt', 'store_diary', 'organize_context', 'memory_prepare', 'memory_receipt', 'memory_links'}:
             raise ValueError('internal action')
         if action in {"graph_business", "context"}:
             from .vault_memory import reconcile
