@@ -340,7 +340,7 @@ it.each(['cloud', 'local'] as const)('does not override the initial %s result vi
 
 it('keeps snapping settings discoverable and returns keyboard focus when dismissed', () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
-  render(<EarthMap run={null} selection={[]} workspaceKey="snap-settings" onSelect={vi.fn()} />);
+  render(<EarthMap run={null} selection={[]} workspaceKey="snap-settings" onActivity={vi.fn()} onSelect={vi.fn()} />);
   expect(screen.getByRole('button', {name:'矩形'})).toBeVisible();
   const trigger=screen.getByText('吸附开');
   fireEvent.click(trigger);
