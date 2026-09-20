@@ -3942,3 +3942,10 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
   color: var(--color-collaboration);
   font-weight: 600;
 }
+
+/* Pending questions own the composer space; never crop their submit actions. */
+.agent-user-input-card { display: flex; flex-direction: column; min-height: 0; box-sizing: border-box; }
+.agent-user-input-card__header { flex: none; }
+.agent-user-input-card .agent-user-input-dialog__form { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.agent-user-input-card .agent-user-input-dialog__grouped { display: flex; flex-direction: column; max-block-size: none; overflow: visible; flex: none; }
+.agent-user-input-card .agent-review-dialog__actions { position: sticky; bottom: 0; flex: none; margin-top: auto; padding-block: 10px 0; background: var(--color-surface); z-index: 1; }
