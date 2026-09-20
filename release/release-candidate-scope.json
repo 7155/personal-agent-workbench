@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-19T11:33:03.664701+00:00",
+  "generatedAt": "2026-09-20T04:38:14.831669+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -131,7 +131,7 @@
     },
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 108
+      "pathCount": 115
     },
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
@@ -143,17 +143,17 @@
     }
   },
   "summary": {
-    "pathCount": 1112,
+    "pathCount": 1119,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 913
+      "keep_release": 920
     },
     "groupCounts": {
       "local_docs": 122,
       "product_integration": 57,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "earth_research": 108,
+      "earth_research": 115,
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
@@ -1223,6 +1223,13 @@
       "reason": "Installed app naming and Electron voice control integration."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/App.layout.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/App.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -1235,6 +1242,20 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/CloudTasksPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/CloudTasksPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/EarthDataDock.test.tsx",
@@ -1368,6 +1389,13 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/cloud-tasks.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/drawing-controls.ts",
@@ -1552,6 +1580,13 @@
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
     },
     {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-tasks.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
+    },
+    {
       "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-workflows.d.mts",
       "status": "added",
       "disposition": "keep_release",
@@ -1585,6 +1620,13 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-cartography.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/gis-catalog.json",
@@ -1676,6 +1718,13 @@
       "disposition": "keep_release",
       "group": "earth_research",
       "reason": "Retain the GISclaw-based GIS operators, Earth cloud/local workflows, licensing and focused regressions from this source checkpoint."
+    },
+    {
+      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-postgis.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "earth_research",
+      "reason": "GIS layout, live cloud task monitoring, spatial database reads and cartographic delivery with focused regressions."
     },
     {
       "path": "control-center-web/extension-apps/earth-research/pi-package/gis-project.d.mts",
