@@ -657,6 +657,8 @@ class DebugImeService:
         self.knowledge_control = config.knowledge_control
         if self.knowledge_control is None and isinstance(self.knowledge_worker, KnowledgeWorkerSupervisor):
             self.knowledge_control = KnowledgeControlFacade(
+                runtime_provider=lambda: self.agent.runtime,
+                activity_report_provider=self.memory_lifecycle_report,
                 worker=self.knowledge_worker,
                 work_contract=self.management.work_contract,
             )

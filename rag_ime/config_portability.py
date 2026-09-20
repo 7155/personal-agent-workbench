@@ -207,6 +207,10 @@ def export_portable_backup(
             shutil.copy2(source, destination_path)
             copied_rime_files.append(relative.as_posix())
 
+        from .knowledge_library.vault_backup import export_records
+        vault_records = export_records((support / 'Knowledge' / 'knowledge.sqlite').resolve())
+        if vault_records is not None:
+            _write_json(staging / 'knowledge' / 'vault-control.json', vault_records)
         counts = _database_counts(database_snapshot)
         _remove_sqlite_sidecars(database_snapshot)
         entries = _manifest_entries(staging)
@@ -336,6 +340,11 @@ def restore_portable_backup(
             _validate_archive_members(archive)
             archive.extractall(staging)
         restored_db = staging / "database" / "rag-ime.sqlite"
+        from .knowledge_library.vault_backup import export_records, restore_records
+        knowledge_database = (support / 'Knowledge' / 'knowledge.sqlite').resolve()
+        vault_before = export_records(knowledge_database)
+        vault_backup_path = staging / 'knowledge' / 'vault-control.json'
+        vault_packet = json.loads(vault_backup_path.read_text()) if vault_backup_path.exists() else None
         current_snapshot = staging / "current.sqlite"
         _backup_sqlite(target_db, current_snapshot)
         rime_sources = (
@@ -377,6 +386,17 @@ def restore_portable_backup(
                 provider_metadata,
                 support_directory=support,
             )
+            if vault_packet is not None:
+                restore_records(knowledge_database, vault_packet)
+                # Restored note links never resurrect a prior adoption as an
+                # active constraint without rechecking current Markdown.
+                from .memory_actions import mutate_memory_action
+                with sqlite_connection(target_db) as conn:
+                    conn.row_factory = sqlite3.Row
+                    for link in vault_packet['tables'].get('knowledge_vault_memory_links', []):
+                        atom = conn.execute('SELECT id,scope_project FROM memory_atoms WHERE id=?', (link['atom_id'],)).fetchone()
+                        if atom and atom['scope_project'] == link['project']:
+                            mutate_memory_action(conn, {'memoryId':atom['id'],'itemType':'atom','action':'disable','reason':'恢复的笔记事项需要重新核对原文与授权'})
             if post_restore is not None:
                 # External supervisors use this hook to preserve the durable
                 # approval receipt inside the restored database. Keeping the
@@ -385,6 +405,8 @@ def restore_portable_backup(
                 post_restore(target_db)
         except Exception:
             _restore_sqlite(current_snapshot, target_db)
+            if vault_before is not None and vault_packet is not None:
+                restore_records(knowledge_database, vault_before)
             _restore_optional_files(rime_backups)
             _restore_optional_files(provider_backups)
             raise

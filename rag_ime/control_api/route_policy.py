@@ -268,6 +268,7 @@ class ControlPathId(str, Enum):
     KNOWLEDGE_DATABASE_DRAFT_EDIT = "knowledge.database.draft.edit"
     KNOWLEDGE_DATABASE_APPLY = "knowledge.database.apply"
     KNOWLEDGE_DATABASE_ROLLBACK = "knowledge.database.rollback"
+    KNOWLEDGE_VAULT = "knowledgeVault.manage"
     KNOWLEDGE_BASES_LIST = "knowledgeBases.list"
     KNOWLEDGE_BASES_CREATE = "knowledgeBases.create"
     KNOWLEDGE_BASES_GET = "knowledgeBases.get"
@@ -1041,6 +1042,7 @@ def default_route_policy() -> ControlRoutePolicy:
 
         # Document knowledge is a separate local data plane. Management routes
         # deliberately have no 8768 target; Agents read through knowledge.
+        _route(ControlPathId.KNOWLEDGE_VAULT, ControlMethod.POST, "/api/knowledge/vault", None, body={"action", "root", "excluded", "vaultId", "noteId", "query", "focusId", "graphMode", "link", "paused", "inbox", "remoteProcessing", "jevEnabled", "personalDiary", "markdown", "requestId", "project", "date", "includeActivity", "timezone", "sourceRefs", "baseRevision", "before", "after", "reason", "proposalId", "proposalRevision", "statement", "noteIds", "confirm"}, required_body={"action"}),
         _route(ControlPathId.KNOWLEDGE_BASES_LIST, ControlMethod.GET, "/api/knowledge-bases", None, query={"limit", "cursor", "query", "status"}),
         _route(ControlPathId.KNOWLEDGE_BASES_CREATE, ControlMethod.POST, "/api/knowledge-bases", None, body={"name", "description", "agentEnabled", "parserProvider", "chunkingConfig", "retrievalConfig"}, required_body={"name"}),
         _route(ControlPathId.KNOWLEDGE_BASES_GET, ControlMethod.GET, "/api/knowledge-bases/{kbId}", None, params=_KNOWLEDGE_BASE),

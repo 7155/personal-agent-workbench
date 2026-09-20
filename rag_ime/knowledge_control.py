@@ -21,11 +21,38 @@ class KnowledgeControlFacade:
         *,
         worker: KnowledgeWorkerSupervisor,
         work_contract: ManagementWorkContract,
+        runtime_provider=None,
+        activity_report_provider=None,
     ) -> None:
+        self.activity_report_provider = activity_report_provider
+        self.runtime_provider = runtime_provider
         self.worker = worker
         self.work_contract = work_contract
         self.knowledge_intake = KnowledgePromotionStore(work_contract.db_path)
         self.knowledge_intake.initialize()
+
+    def vault(self, payload: Mapping[str, object]) -> dict[str, object]:
+        action = payload.get('action')
+        if action == 'organize':
+            from .vault_organizer import organize
+            return organize(self, dict(payload))
+        if action in {'adopt_memory', 'adoptions'}:
+            from .vault_memory import adopt, reconcile
+            return adopt(self, dict(payload)) if action == 'adopt_memory' else reconcile(self, dict(payload))
+        if action in {'organize_context', 'memory_prepare', 'memory_receipt', 'memory_links'}:
+            raise ValueError('internal action')
+        if action in {"graph_business", "context"}:
+            from .vault_memory import reconcile
+            reconcile(self, dict(payload))
+        result = self.worker.management_call("management_vault", dict(payload))
+        if action == 'day' and payload.get('includeActivity') is True:
+            if not str(payload.get('project') or '').strip():
+                raise ValueError('请选择明确项目后再读取活动；不会默认归到其他项目。')
+            if self.activity_report_provider is None:
+                result['activityUnavailable'] = True
+            else:
+                result['activityReport'] = self.activity_report_provider({**dict(payload), 'noTimeline': True})
+        return result
 
     def list_bases(self) -> dict[str, object]:
         result = self.worker.management_call("management_list_bases")

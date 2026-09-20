@@ -33,6 +33,7 @@ from .models import (
 from .parsers import ParserRouter
 from .permissions import harden_knowledge_tree, secure_directory, secure_file
 from .rerank import KnowledgeReranker
+from .vault import MarkdownVault
 from .store import KnowledgeStore, decode_metadata, now_ms, rank_retrieval_hits as _rank_retrieval_hits
 
 
@@ -98,6 +99,7 @@ class KnowledgeLibraryService:
         secure_directory(self.config.assets_dir)
         secure_directory(self.config.artifacts_dir)
         self.store = KnowledgeStore(config.database_path)
+        self.vault = MarkdownVault(self.store)
         self.graph = KnowledgeGraph(self.store)
         self.parsers = parser_router or ParserRouter(config)
         self.dense_index = dense_index or dense_index_from_env(

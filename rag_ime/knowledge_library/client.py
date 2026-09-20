@@ -134,6 +134,7 @@ class HttpKnowledgeClient:
         parsed = urllib.parse.urlparse(base_url)
         if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
             raise ValueError("knowledge worker URL must use loopback HTTP")
+        self.vault_management_token = ""
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = max(0.1, float(timeout_seconds))
         # A loopback worker must never traverse the process-wide HTTP/SOCKS
@@ -158,6 +159,9 @@ class HttpKnowledgeClient:
 
     def status(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         return self._request("GET", "/v1/agent/knowledge/status")
+
+    def management_vault(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/knowledge/vault", payload, timeout_seconds=60)
 
     def management_list_bases(self) -> dict[str, Any]:
         return self._request("GET", "/v1/knowledge/bases")
@@ -437,7 +441,7 @@ class HttpKnowledgeClient:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
             data=data,
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            headers={"Content-Type": "application/json", "Accept": "application/json", **({"X-PAW-Vault-Management": self.vault_management_token} if path == "/v1/knowledge/vault" else {})},
             method=method,
         )
         try:

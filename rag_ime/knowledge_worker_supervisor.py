@@ -56,6 +56,8 @@ class KnowledgeWorkerSupervisor:
         )
         self.python_executable, self.python_version = _knowledge_python_runtime()
         self._client = HttpKnowledgeClient(self.base_url)
+        from .knowledge_library.vault_auth import management_token
+        self._client.vault_management_token = management_token(self.root_dir)
         self._loopback_urlopen = urllib.request.build_opener(
             urllib.request.ProxyHandler({}),
         ).open

@@ -69,6 +69,7 @@ class ControlRoutePolicyTests(unittest.TestCase):
                 "knowledge.database.apply",
                 "knowledge.database.rollback",
                 "knowledgeBases.list",
+                "knowledgeVault.manage",
                 "knowledgeBases.create",
                 "knowledgeBases.get",
                 "knowledgeBases.update",

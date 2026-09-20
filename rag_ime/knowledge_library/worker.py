@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import platform
@@ -52,6 +53,8 @@ class KnowledgeWorkerServer(ThreadingHTTPServer):
     ):
         super().__init__(address, KnowledgeWorkerHandler)
         self.service = service
+        from .vault_auth import management_token
+        self.vault_management_token = management_token(Path(service.config.root_dir))
         self.agent_client = LocalKnowledgeClient(service)
         self.last_activity = time.monotonic()
         self.worker_root = normalized_knowledge_root(service.config.root_dir)
@@ -176,6 +179,13 @@ class KnowledgeWorkerHandler(BaseHTTPRequestHandler):
             return service.status(), HTTPStatus.OK
         if method == "GET" and path == "/v1/knowledge/mineru/health":
             return service.mineru_health(), HTTPStatus.OK
+        if method == "POST" and path == "/v1/knowledge/vault":
+            if not hmac.compare_digest(self.headers.get('X-PAW-Vault-Management', ''), self.server.vault_management_token):
+                raise KnowledgeLibraryError('Vault management authentication required', code='unauthorized')
+            return service.vault.dispatch(self._json_body()), HTTPStatus.OK
+        if method == "POST" and path == "/v1/knowledge/vault/editor":
+            token = self.headers.get('Authorization', '').removeprefix('Bearer ')
+            return service.vault.workflow.editor(token, self._json_body()), HTTPStatus.OK
         if method == "GET" and path == "/v1/knowledge/bases":
             return service.list_bases(), HTTPStatus.OK
         if method == "POST" and path == "/v1/knowledge/bases":

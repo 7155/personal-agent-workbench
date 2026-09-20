@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-20T04:38:14.831669+00:00",
+  "generatedAt": "2026-09-20T11:56:05.083842+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -107,7 +107,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 67
+      "pathCount": 68
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -140,13 +140,17 @@
     "jev_integration": {
       "description": "Jev integration and regression coverage.",
       "pathCount": 10
+    },
+    "second_brain": {
+      "description": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately.",
+      "pathCount": 22
     }
   },
   "summary": {
-    "pathCount": 1119,
+    "pathCount": 1142,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 920
+      "keep_release": 943
     },
     "groupCounts": {
       "local_docs": 122,
@@ -163,12 +167,13 @@
       "composition_refactor": 32,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
-      "conversation_controls": 67,
+      "conversation_controls": 68,
       "trace_optimization": 61,
       "scheduled_tasks": 25,
       "session_full_access": 9,
       "jev_integration": 10,
       "lab_frontend": 54,
+      "second_brain": 22,
       "knowledge_runtime": 12,
       "room_frontend": 20,
       "agent_capsule": 3,
@@ -2322,6 +2327,13 @@
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
     },
     {
+      "path": "control-center-web/src/features/agent/agent.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Keep question answer and submit controls accessible."
+    },
+    {
       "path": "control-center-web/src/features/agent/composer/AgentComposer.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3113,6 +3125,34 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/knowledge/VaultActivity.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/VaultMarkdown.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/VaultRelations.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Source-backed local Markdown workflow using existing Knowledge and Memory owners."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/VaultWorkspace.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
       "path": "control-center-web/src/features/knowledge/api.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -3167,6 +3207,20 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/vault-workspace.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/vault-workspace.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
       "path": "control-center-web/src/features/memory/ActivityTimeline.tsx",
@@ -4695,6 +4749,34 @@
       "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
+      "path": "integrations/obsidian/paw-second-brain/README.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "integrations/obsidian/paw-second-brain/main.js",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "integrations/obsidian/paw-second-brain/main.test.cjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "integrations/obsidian/paw-second-brain/manifest.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
       "path": "integrations/pi/rag-ime-control.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -5675,6 +5757,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "rag_ime/config_portability.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
       "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
       "status": "modified",
       "disposition": "keep_release",
@@ -5920,6 +6009,13 @@
       "reason": "Inventory the Knowledge owner documentation already committed in 0e128f50; uncommitted Knowledge work remains outside this candidate."
     },
     {
+      "path": "rag_ime/knowledge_library/client.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
       "path": "rag_ime/knowledge_library/dense.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -5981,6 +6077,34 @@
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/vault.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/knowledge_library/vault_auth.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/knowledge_library/vault_backup.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/knowledge_library/vault_workflow.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
       "path": "rag_ime/knowledge_library/worker.py",
@@ -6079,6 +6203,13 @@
       "group": "memory_lifecycle",
       "reason": "Canonical Memory import/export, ingress privacy, daily reports and owner-scoped resumable refresh.",
       "status": "added"
+    },
+    {
+      "path": "rag_ime/memory_lifecycle/note_adoption.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
       "path": "rag_ime/memory_lifecycle/portability.py",
@@ -6541,6 +6672,20 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "rag_ime/vault_memory.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/vault_organizer.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
       "path": "release/README.md",
@@ -7698,6 +7843,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_markdown_vault.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
       "path": "tests/test_memory_book_compiler.py",
       "disposition": "keep_release",
       "group": "verification",
@@ -8004,6 +8156,20 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "tests/test_vault_organizer.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "tests/test_vault_workflow.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
       "path": "tests/test_work_documents.py",

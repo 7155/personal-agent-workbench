@@ -706,6 +706,7 @@ ACTIVE_RAG_ROUTES: tuple[RouteDescriptor, ...] = (
 # stay in the chain: they parse path segments into several handler arguments,
 # which a descriptor cannot state.
 KNOWLEDGE_ROUTES: tuple[RouteDescriptor, ...] = (
+    _post("/api/knowledge/vault", "knowledge_control.vault"),
     _post("/api/knowledge/start", "knowledge_workbench_start"),
     _post("/api/knowledge/status", "knowledge_workbench_status"),
     _post("/api/knowledge/session", "knowledge_workbench_status"),

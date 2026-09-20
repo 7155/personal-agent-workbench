@@ -1,3 +1,4 @@
+import { VaultWorkspace } from './VaultWorkspace';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -113,6 +114,12 @@ type DetailTab = 'materials' | 'viewer' | 'search' | 'graph' | 'jobs' | 'setting
 const KNOWLEDGE_SEARCH_TIMEOUT_MS = 20_000;
 
 export function KnowledgeFeature() {
+  const [params,setParams]=useSearchParams();
+  const notes=params.get('space')==='notes';
+  return <div className="knowledge-source-workspace"><nav className="knowledge-source-nav" aria-label="知识来源"><button aria-pressed={!notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.delete('space');return next;})}>资料知识库</button><button aria-pressed={notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.set('space','notes');return next;})}>本地笔记</button></nav>{notes?<VaultWorkspace/>:<DocumentKnowledgeFeature/>}</div>;
+}
+
+function DocumentKnowledgeFeature() {
   const appSurface = usePawOsAppIdentity();
   const sidebar = useAppSidebar('knowledge');
   const surfaceActive = usePawOsAppActive();

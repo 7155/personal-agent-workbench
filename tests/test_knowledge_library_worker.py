@@ -55,6 +55,17 @@ class KnowledgeWorkerTests(unittest.TestCase):
             intake_content_hash=hashlib.sha256(data).hexdigest(),
         )
 
+    def test_vault_http_requires_management_capability_and_reads_real_file(self):
+        root = Path(self.temporary.name) / 'notes'
+        root.mkdir(); (root / 'hello.md').write_text('# Real file\nOriginal body')
+        with self.assertRaises(KnowledgeLibraryError):
+            self.client.management_vault({'action': 'connect', 'root': str(root)})
+        self.client.vault_management_token = self.server.vault_management_token
+        space = self.client.management_vault({'action': 'connect', 'root': str(root)})['space']
+        result = self.client.management_vault({'action': 'snapshot', 'vaultId': space['id']})
+        note = self.client.management_vault({'action': 'read', 'vaultId': space['id'], 'noteId': result['notes'][0]['id']})
+        self.assertIn('Original body', note['markdown'])
+
     def test_raw_import_receipt_and_agent_mapping_round_trip(self) -> None:
         data = b"# Worker import\n\nThe calving front advanced during the winter observation window."
         imported = self._import(
