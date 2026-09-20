@@ -143,14 +143,14 @@
     },
     "second_brain": {
       "description": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately.",
-      "pathCount": 22
+      "pathCount": 24
     }
   },
   "summary": {
-    "pathCount": 1142,
+    "pathCount": 1144,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 943
+      "keep_release": 945
     },
     "groupCounts": {
       "local_docs": 122,
@@ -173,7 +173,7 @@
       "session_full_access": 9,
       "jev_integration": 10,
       "lab_frontend": 54,
-      "second_brain": 22,
+      "second_brain": 24,
       "knowledge_runtime": 12,
       "room_frontend": 20,
       "agent_capsule": 3,
@@ -4903,6 +4903,13 @@
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
     },
     {
+      "path": "rag_ime/active_rag_service.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Explicit local note reuse through the existing Active RAG candidate and foreground acceptance owner."
+    },
+    {
       "path": "rag_ime/activity_timeline.py",
       "disposition": "keep_release",
       "group": "composition_refactor",
@@ -7057,6 +7064,13 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_active_rag_service.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "second_brain",
+      "reason": "Explicit local note reuse through the existing Active RAG candidate and foreground acceptance owner."
     },
     {
       "path": "tests/test_agent_app_owned_sessions.py",
