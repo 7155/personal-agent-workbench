@@ -18,7 +18,7 @@ type EarthMapProps = Partial<Omit<EarthDataDockProps,'workspaceRoot'|'selectedFe
   command?:EarthViewCommand; selection:GeoJSON.Feature[];workspaceKey:string;onActivity:()=>void;
   onMapState?:(state:EarthMapState)=>void;
   localResult?:Record<string,any>|null;
-  onUpdateFeatures?:(features:GeoJSON.Feature[])=>Promise<void>;
+  onUpdateFeatures?:(features:GeoJSON.Feature[],removed?:GeoJSON.Feature[])=>Promise<void>;
 };
 export function EarthMap({ run, onSelect, command, selection, workspaceKey, onActivity, onMapState, projectLayers = EMPTY_PROJECT_LAYERS, spatialSources = [], workspaceFiles = [], workspaceFilesIncomplete, workspaceFilesNotice, activeObjectLabel, onSaveLayer, onUpdateFeature, onUpdateFeatures, onCreateBundle, onExportLayer, onToggleLayer, onRemoveLayer, onConnectSource, onRefreshCatalog, onRefreshFiles, onOpenFile, localRuns,localResult,onLoadSourceLayer,onShowRun,onCompareRuns,onOpenLayerRevision }: EarthMapProps) {
   const container = useRef<HTMLDivElement>(null);
@@ -40,6 +40,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   const [drawingVertexCount, setDrawingVertexCount] = useState(0);
   const [imports, setImports] = useState<EditableGeometry[]>([]);
   const [storageError,setStorageError] = useState('');
+  const [pendingRemoved,setPendingRemoved]=useState<string[]>([]);
   const geometryTools=useRef<ReturnType<typeof drawingControls> | undefined>(undefined);
   const activity=useRef(onActivity);activity.current=onActivity;
   const drawingRef = useRef(false); drawingRef.current = drawing;
@@ -100,7 +101,8 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
         // drawing adapter awaited it. Keep the authoritative bound feature.
         callback.current(saved && JSON.stringify(saved.geometry)===JSON.stringify(feature?.geometry) ? saved : feature,mode);
       },
-      change:async features=>{
+      change:async (features,removed=[])=>{
+        const deleted=removed.filter(feature=>(feature as any).pawLayerId);
         const local=features.filter(feature=>!(feature as any).pawLayerId);
         const changed=features.filter(feature=> {
           if(!(feature as any).pawLayerId)return false;
@@ -109,17 +111,19 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
           if(!original)throw new Error('项目要素已经变更，请重新载入后再编辑。');
           return JSON.stringify(original.geometry)!==JSON.stringify(feature.geometry);
         });
-        if(changed.length) {
+        if(changed.length || deleted.length) {
+          if(deleted.length && !updateFeatures.current)throw new Error('当前项目没有可用的删除保存入口。');
           if(!updateFeatures.current&&!updateFeature.current)throw new Error('当前项目没有可用的几何保存入口。');
-          await (updateFeatures.current ? updateFeatures.current(changed) : Promise.all(changed.map(feature=>updateFeature.current!(feature))));
+          await (updateFeatures.current ? updateFeatures.current(changed,...(deleted.length ? [deleted] : [])) : Promise.all(changed.map(feature=>updateFeature.current!(feature))));
         }
         try {localStorage.setItem(storageKey,JSON.stringify(local));setStorageError('');}
         catch {
-          if(!changed.length)throw new Error('本机草稿未保存，请保留当前窗口。');
+          if(!changed.length && !deleted.length)throw new Error('本机草稿未保存，请保留当前窗口。');
           setStorageError('项目几何已保存，但本机草稿未写入，请保留当前窗口。');
         }
         setImports(local);
       },
+      previewRemoved:setPendingRemoved,
       saving:pending=>{setGeometrySaving(pending);if(pending)setStorageError('');},
       error:setStorageError,
     active:(value,kind,vertices)=>{drawingRef.current=value;setDrawing(value);setDrawingKind(value ? kind : undefined);setDrawingVertexCount(value ? vertices ?? 0 : 0);if(value)activity.current();else suppressClick.current=Date.now()+250;},
@@ -128,7 +132,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   },[workspaceKey]);
   useEffect(() => {
     const instance=map.current; if(!instance) return;
-    const collection:GeoJSON.FeatureCollection={type:'FeatureCollection',features:selection};
+    const collection:GeoJSON.FeatureCollection={type:'FeatureCollection',features:selection.filter(feature=>!pendingRemoved.includes(selectionKey(feature)))};
     const halo=selection.length ? L.geoJSON(collection,{interactive:false,style:{color:'#fff',weight:9,fill:false},pointToLayer:(_f,point)=>L.circleMarker(point,{radius:11,color:'#fff',weight:3,fillOpacity:0,interactive:false})}).addTo(instance) : undefined;
     const highlight=selection.length ? L.geoJSON(collection,{interactive:false,style:{color:'#d08a19',weight:4,fillOpacity:0.16},pointToLayer:(_f,point)=>L.circleMarker(point,{radius:8,color:'#d08a19',fillOpacity:0.4,interactive:false})}).addTo(instance) : undefined;
     const timer = setTimeout(() => {
@@ -136,7 +140,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
       stateCallback.current?.({ schemaVersion: 'earth.map-state.v1', center: [center.lng, center.lat], zoom: instance.getZoom(), bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], visibleLayerIds: [...rasterLayers.current.entries()].filter(([, layer]) => instance.hasLayer(layer)).map(([id]) => id), selectedFeatureIds: selection.map(selectionKey), updatedAt: new Date().toISOString() });
     }, 0);
     return()=>{clearTimeout(timer);if (highlight) instance.removeLayer(highlight);if (halo) instance.removeLayer(halo);};
-  },[selection]);
+  },[selection,pendingRemoved]);
   useEffect(() => {
     const instance = map.current; if (!instance || !run) return;
     rasterLayers.current.clear();
@@ -186,7 +190,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
     projectLayerRefs.current.clear();
     for (const projectLayer of projectLayers) {
       if (!projectLayer.features.length) continue;
-      const layer = L.geoJSON({ type: 'FeatureCollection', features: projectLayer.features } as GeoJSON.GeoJsonObject, {
+      const layer = L.geoJSON({ type: 'FeatureCollection', features: projectLayer.features.filter(feature=>!pendingRemoved.includes(selectionKey(feature))) } as GeoJSON.GeoJsonObject, {
         style: { color: '#176b4d', weight: 2, fillColor: '#176b4d', fillOpacity: 0.12 },
         pointToLayer: (_feature, point) => L.circleMarker(point, { radius: 6, color: '#176b4d', fillColor: '#e4f4e8', fillOpacity: 0.95, weight: 2 }),
         onEachFeature: (feature, item) => {
@@ -214,7 +218,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
       }
       projectLayerRefs.current.clear();
     };
-  }, [projectLayers]);
+  }, [projectLayers,pendingRemoved]);
   useEffect(() => {
     const instance = map.current;
     if (!instance || initiallyFocusedWorkspace.current === workspaceKey) return;
@@ -283,11 +287,10 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
     const ownerId = (feature as GeoJSON.Feature & { pawLayerId?: string }).pawLayerId;
     return ownerId !== undefined && (ownerId.startsWith('run:') || !projectLayers.some(layer => layer.id === ownerId));
   });
-  const readOnlySelectionHint = '所选要素需先保存为项目图层，才能编辑或挖洞。请使用“将地图所选保存为新图层”。';
+  const readOnlySelectionHint = '所选要素需先保存为项目图层，才能编辑、删除或挖洞。请使用“将地图所选保存为新图层”。';
   function editSelection(kind: 'edit' | 'cut') {
-    if (selectionNeedsProjectLayer) return;
-    selection.forEach(feature => geometryTools.current?.add(feature as EditableGeometry));
-    geometryTools.current?.start(kind);
+    if (selectionNeedsProjectLayer || !selection.length) return;
+    geometryTools.current?.start(kind,selection as EditableGeometry[]);
   }
   function selectTableFeature(feature: GeoJSON.Feature, layerId: string) {
     const boundFeature = { ...feature, pawLayerId: layerId };
@@ -308,9 +311,9 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'polygon'} onClick={() => geometryTools.current?.start('polygon')}><Pentagon size={16} aria-hidden="true" /><span>面</span></button>
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'rectangle'} onClick={() => geometryTools.current?.start('rectangle')}><Scan size={16} aria-hidden="true" /><span>矩形</span></button>
         <span aria-hidden="true" className="earth-gis-toolbar__divider" />
-        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'edit'} disabled={selectionNeedsProjectLayer} title={selectionNeedsProjectLayer ? readOnlySelectionHint : undefined} onClick={() => editSelection('edit')}><Pencil size={16} aria-hidden="true" /><span>编辑</span></button>
-        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'remove'} onClick={() => geometryTools.current?.start('remove')}><Trash2 size={16} aria-hidden="true" /><span>删除草稿</span></button>
-        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'cut'} disabled={selectionNeedsProjectLayer || !selection.some(feature => ['Polygon', 'MultiPolygon'].includes(feature.geometry.type))} title={selectionNeedsProjectLayer ? readOnlySelectionHint : undefined} onClick={() => editSelection('cut')}><Scissors size={16} aria-hidden="true" /><span>挖洞</span></button>
+        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'edit'} disabled={drawing || !selection.length || selectionNeedsProjectLayer} title={selectionNeedsProjectLayer ? readOnlySelectionHint : undefined} onClick={() => editSelection('edit')}><Pencil size={16} aria-hidden="true" /><span>编辑所选</span></button>
+        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'remove'} disabled={drawing || !selection.length || selectionNeedsProjectLayer} title={selectionNeedsProjectLayer ? readOnlySelectionHint : '暂存删除所选对象，保存后生效；取消可恢复'} onClick={() => geometryTools.current?.removeSelected(selection as EditableGeometry[])}><Trash2 size={16} aria-hidden="true" /><span>删除所选</span></button>
+        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'cut'} disabled={drawing || selectionNeedsProjectLayer || !selection.some(feature => ['Polygon', 'MultiPolygon'].includes(feature.geometry.type))} title={selectionNeedsProjectLayer ? readOnlySelectionHint : undefined} onClick={() => editSelection('cut')}><Scissors size={16} aria-hidden="true" /><span>挖洞</span></button>
         <span aria-hidden="true" className="earth-gis-toolbar__divider" />
         <details className="earth-snap-settings" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))event.currentTarget.open=false;}} onKeyDown={event=>{if(event.key==='Escape'){event.currentTarget.open=false;event.currentTarget.querySelector('summary')?.focus();event.stopPropagation();}}}>
           <summary title="设置顶点吸附与容差"><Magnet size={16} aria-hidden="true"/>吸附{snapping ? '开' : '关'}</summary>
@@ -331,7 +334,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
         </> : null}
       </fieldset>
       <button type="button" className="earth-map-tools__selection" aria-pressed={multiSelect} onClick={() => setMultiSelect(value => !value)}><ListChecks size={16} aria-hidden="true" /><span>多选{multiSelect ? '开' : '关'}</span></button>
-      <span role="status">{geometrySaving ? '正在保存几何，完成后可继续编辑' : drawingKind === 'edit' ? '拖动顶点后点击“保存”更新几何' : drawingKind === 'cut' ? '绘制内部范围，完成后保存；取消可还原' : drawingKind === 'remove' ? '点击要删除的草稿后点击“保存”' : drawingKind === 'polygon' ? `面：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawingKind === 'polyline' ? `线：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawing ? '绘图中 · 完成后更新选择' : selectionNeedsProjectLayer ? readOnlySelectionHint : multiSelect ? '点击选择，再次点击取消' : '点击选中一个对象'}</span>
+      <span role="status">{geometrySaving ? '正在保存几何，完成后可继续编辑' : drawingKind === 'edit' ? '拖动顶点后点击“保存”更新几何' : drawingKind === 'cut' ? '绘制内部范围，完成后保存；取消可还原' : drawingKind === 'remove' ? '所选对象已暂存删除 · 保存后生效，撤销或取消可恢复' : drawingKind === 'polygon' ? `面：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawingKind === 'polyline' ? `线：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawing ? '绘图中 · 完成后更新选择' : selectionNeedsProjectLayer ? readOnlySelectionHint : selection.length ? `已选 ${selection.length} 个 · 可编辑或删除所选` : multiSelect ? '点击选择，再次点击取消选择' : '点击选中一个对象'}</span>
     </div>
     <EarthDataDock run={run} workspaceRoot={workspaceKey} projectLayers={projectLayers} spatialSources={spatialSources} workspaceFiles={workspaceFiles} workspaceFilesIncomplete={workspaceFilesIncomplete} workspaceFilesNotice={workspaceFilesNotice} activeObjectLabel={activeObjectLabel} selectedFeatures={selectedFeatures} onSaveLayer={onSaveLayer} onUpdateFeature={onUpdateFeature} onCreateBundle={onCreateBundle} localRuns={localRuns} onShowRun={onShowRun} onCompareRuns={onCompareRuns} onLoadSourceLayer={onLoadSourceLayer} onOpenLayerRevision={onOpenLayerRevision} onSelectFeature={selectTableFeature} onExportLayer={onExportLayer} onToggleLayer={onToggleLayer} onRemoveLayer={onRemoveLayer} onConnectSource={onConnectSource} onRefreshCatalog={onRefreshCatalog} onRefreshFiles={onRefreshFiles} onOpenFile={onOpenFile} />
     <details className="earth-geometry-imports"><summary>几何与选择 · {selection.length} 已选</summary>

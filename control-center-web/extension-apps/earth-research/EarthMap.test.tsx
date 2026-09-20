@@ -86,7 +86,7 @@ it('keeps edit and cut in a cancellable draft; saved cut retains identity and a 
   render(<EarthMap run={null} selection={[feature]} workspaceKey="cut-test" onActivity={vi.fn()} onSelect={selected}/>);
   const map=factory.mock.results[0].value as L.Map;
   act(()=>{map.setView([30.05,120.05],14);});
-  fireEvent.click(screen.getByRole('button',{name:'编辑'}));
+  fireEvent.click(screen.getByRole('button',{name:'编辑所选'}));
   let owned:L.Polygon|undefined;map.eachLayer(layer=>{if(layer instanceof L.Polygon && (layer as any).feature?.id==='parcel')owned=layer;});
   act(()=>{owned!.setLatLngs([[30,120],[30,120.2],[30.1,120.1],[30.1,120]]);owned!.fire('pm:edit');});
   fireEvent.click(screen.getByRole('button',{name:'取消'}));
@@ -173,10 +173,10 @@ it.each(['run:analysis:result.geojson', 'layer:missing'])('requires a project co
   const props = { run: null, workspaceKey: `readonly-${ownerId}`, projectLayers: [layer], onActivity: vi.fn(), onSelect: vi.fn(), onSaveLayer, onUpdateFeatures };
   // One read-only owner must also block a mixed selection of saved and result features.
   const view = render(<EarthMap {...props} selection={[saved, readOnly]} />);
-  expect(screen.getByRole('button', { name: '编辑' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '编辑所选' })).toBeDisabled();
   expect(screen.getByRole('button', { name: '挖洞' })).toBeDisabled();
   expect(screen.getByRole('status')).toHaveTextContent('需先保存为项目图层');
-  fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+  fireEvent.click(screen.getByRole('button', { name: '编辑所选' }));
   fireEvent.click(screen.getByRole('button', { name: '挖洞' }));
   expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument();
   expect(onUpdateFeatures).not.toHaveBeenCalled();
@@ -189,7 +189,7 @@ it.each(['run:analysis:result.geojson', 'layer:missing'])('requires a project co
   await act(async () => {});
 
   view.rerender(<EarthMap {...props} selection={[saved]} />);
-  expect(screen.getByRole('button', { name: '编辑' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: '编辑所选' })).toBeEnabled();
   expect(screen.getByRole('button', { name: '挖洞' })).toBeEnabled();
   expect(screen.getByRole('status')).not.toHaveTextContent('需先保存为项目图层');
 });
@@ -248,7 +248,7 @@ it('retains a failed project geometry draft and only publishes selection after a
   const selected = vi.fn(), factory = vi.spyOn(L, 'map');
   render(<EarthMap run={null} selection={[feature]} projectLayers={[layer]} workspaceKey="save-recovery" onActivity={vi.fn()} onSelect={selected} onUpdateFeatures={onUpdateFeatures} />);
   const map = factory.mock.results[0].value as L.Map;
-  fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+  fireEvent.click(screen.getByRole('button', { name: '编辑所选' }));
   let draft: L.Polygon | undefined;
   map.eachLayer(item => { if (item instanceof L.Polygon && (item as any).feature?.id === 'parcel' && (item as any).pm?.enabled()) draft = item; });
   expect(draft).toBeDefined();
@@ -348,4 +348,44 @@ it('keeps snapping settings discoverable and returns keyboard focus when dismiss
   fireEvent.keyDown(trigger, {key:'Escape'});
   expect(trigger.closest('details')).not.toHaveAttribute('open');
   expect(trigger).toHaveFocus();
+});
+
+
+it('stages deletion of a saved selection, supports undo and cancel, and persists only on save', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Reflect.set(L.Browser, 'svg', true);
+  const feature = { type:'Feature', id:'parcel', pawLayerId:'parcels', pawRevision:3, properties:{name:'地块'}, geometry:{type:'Point',coordinates:[120,30]} } as GeoJSON.Feature;
+  const layer:ProjectLayer={id:'parcels',name:'地块',path:'parcels.geojson',format:'geojson',featureCount:1,geometryTypes:['Point'],crs:'EPSG:4326',updatedAt:'',revision:3,visible:true,features:[feature]};
+  const save=vi.fn().mockResolvedValue(undefined), selected=vi.fn();
+  render(<EarthMap run={null} selection={[feature]} projectLayers={[layer]} workspaceKey="delete-selection" onActivity={vi.fn()} onSelect={selected} onUpdateFeatures={save}/>);
+  fireEvent.click(screen.getByRole('button',{name:'删除所选'}));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'撤销'}));
+  fireEvent.click(screen.getByRole('button',{name:'保存'}));
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'保存'})).not.toBeInTheDocument());
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'删除所选'}));
+  fireEvent.click(screen.getByRole('button',{name:'取消'}));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'删除所选'}));
+  fireEvent.click(screen.getByRole('button',{name:'保存'}));
+  await waitFor(()=>expect(save).toHaveBeenCalledWith([],[expect.objectContaining({id:'parcel',pawLayerId:'parcels',pawRevision:3})]));
+  expect(selected).toHaveBeenCalledWith(expect.objectContaining({id:'parcel'}),'remove');
+});
+
+it('enables editing only for selected drafts and does not select unrelated drafts on save', async () => {
+  vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});Reflect.set(L.Browser,'svg',true);
+  const features=['selected','unselected'].map((id,index)=>({type:'Feature',id,properties:{source:'user_drawing'},geometry:{type:'Point',coordinates:[120+index,30]}} as GeoJSON.Feature));
+  localStorage.setItem('paw-earth-geometries:targeted-edit',JSON.stringify(features));
+  const factory=vi.spyOn(L,'map'), selected=vi.fn();
+  render(<EarthMap run={null} selection={[features[0]]} workspaceKey="targeted-edit" onActivity={vi.fn()} onSelect={selected}/>);
+  fireEvent.click(screen.getByRole('button',{name:'编辑所选'}));
+  const map=factory.mock.results[0].value as L.Map;
+  const enabled:string[]=[];
+  map.eachLayer(layer=>{if((layer as any).feature && (layer as any).pm?.enabled())enabled.push((layer as any).feature?.id);});
+  expect(enabled).toEqual(['selected']);
+  fireEvent.click(screen.getByRole('button',{name:'保存'}));
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'保存'})).not.toBeInTheDocument());
+  expect(selected).not.toHaveBeenCalledWith(expect.objectContaining({id:'unselected'}),'upsert');
+  expect(JSON.parse(localStorage.getItem('paw-earth-geometries:targeted-edit')!)).toEqual(features);
 });

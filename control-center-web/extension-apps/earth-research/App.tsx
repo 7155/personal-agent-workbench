@@ -1,3 +1,4 @@
+import { WorkspacePaneResizer } from '@/components/layout/WorkspacePaneResizer';
 import type {MapOptions} from './GISDeliveryPanel';
 import { ChevronDown, Rows2, Map as MapIcon, Code2, Maximize2, Minimize2, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
@@ -330,21 +331,23 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
     await commitLayer(name,features);
   },[commitLayer]);
   saveImportedLayer.current=async(name,features,source)=>{await commitLayer(name,features,undefined,undefined,source);};
-  const updateProjectFeatures=useCallback(async(features:GeoJSON.Feature[])=>{
+  const updateProjectFeatures=useCallback(async(features:GeoJSON.Feature[],removed:GeoJSON.Feature[]=[])=>{
+    const removedKeys=new Set(removed.map(selectionKey));
     const groups=new Map<string,GeoJSON.Feature[]>();
-    for(const feature of features) {
+    for(const feature of [...features,...removed]) {
       const identity=feature as GeoJSON.Feature & {pawLayerId?:string;pawRevision?:number};
       const owners=projectLayers.filter(layer=>identity.pawLayerId ? layer.id===identity.pawLayerId : layer.features.some(item=>selectionKey(item)===selectionKey(feature)));
       if(owners.length!==1)throw new Error('请选择已保存项目图层中的对象。');
       const owner=owners[0];
+      if(!owner.features.some(item=>item.id===feature.id))throw new Error('所选对象已变更，请重新载入。');
       if(identity.pawRevision!==undefined && identity.pawRevision!==owner.revision)throw new Error('图层已更新，草稿没有覆盖它，请重新载入。');
       groups.set(owner.id,[...(groups.get(owner.id) ?? []),feature]);
     }
     for(const [id,changes] of groups) {
       const owner=projectLayers.find(layer=>layer.id===id)!;
-      const next=owner.features.map(item=>changes.find(feature=>feature.id===item.id) ?? item);
+      const next=owner.features.filter(item=>!removedKeys.has(selectionKey({...item,pawLayerId:id} as GeoJSON.Feature))).map(item=>changes.find(feature=>feature.id===item.id) ?? item);
       const saved=await commitLayer(owner.name,next,owner,(changes[0] as any).pawRevision ?? owner.revision);
-      setSelection(current=>current ? {...current,features:current.features.map(item=>(item as any).pawLayerId===id ? saved.features.find(feature=>feature.id===item.id) ?? item : item)}:current);
+      setSelection(current=>current ? {...current,features:current.features.filter(item=>!((item as any).pawLayerId===id && removedKeys.has(selectionKey(item)))).map(item=>(item as any).pawLayerId===id ? saved.features.find(feature=>feature.id===item.id) ?? item : item)}:current);
     }
   },[projectLayers,commitLayer]);
   const updateProjectFeature=useCallback(async(feature:GeoJSON.Feature)=>{await updateProjectFeatures([feature]);},[updateProjectFeatures]);
@@ -631,6 +634,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
           <div className="earth-start__submit"><span>当前会话会保留脚本、来源、运行记录和结果文件</span><button aria-label="开始分析" disabled={sending || Boolean(error)} type="submit">生成分析方案 <span aria-hidden="true">↗</span></button></div>
         </form>}
       </section>
+      {(!session || agentVisible) && <WorkspacePaneResizer className="earth-agent-resizer" label="调整 Agent 宽度" defaultSize={360} min={280} max={640} side="rail" storageKey="paw-earth-agent-width" variable="--earth-agent-width" workspaceSelector=".earth-app__body" />}
       <section className="earth-workspace" aria-label="地图与代码工作区">
         <nav className="earth-toolbar" aria-label="工作区视图">
           <div className="earth-toolbar__views" role="group" aria-label="视图布局">

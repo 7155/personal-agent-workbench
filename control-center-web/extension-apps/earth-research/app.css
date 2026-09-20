@@ -689,3 +689,18 @@
 .earth-app ::selection{background:#cce2ff;color:#173a60}
 .earth-snap-settings>div>.earth-gis-toolbar__snap{justify-content:flex-start}
 .earth-snap-settings input[type=number]{min-height:30px;border:1px solid var(--earth-line);border-radius:4px;padding:4px 6px;font:inherit;color:var(--earth-ink);background:var(--earth-surface);box-sizing:border-box}
+
+/* Keep the conversation readable without taking the map's working space. */
+.earth-app__body { grid-template-columns: min(var(--earth-agent-width,360px),55%) minmax(0,1fr); }
+.earth-app--agent-hidden .earth-app__body { grid-template-columns: minmax(0,1fr); }
+.earth-app .earth-agent-resizer { position:absolute; z-index:1600; top:0; bottom:0; left:min(var(--earth-agent-width,360px),55%); width:10px; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; cursor:col-resize; touch-action:none; color:transparent; background:transparent; border:0; }
+.earth-app .earth-agent-resizer::before { content:''; position:absolute; inset:0 4px; background:transparent; }
+.earth-app .earth-agent-resizer:hover,.earth-app .earth-agent-resizer:focus-visible,.earth-app__body[data-resizing] .earth-agent-resizer { color:var(--earth-accent); background:#0066cc12; outline:none; }
+.earth-app .earth-agent-resizer:hover::before,.earth-app .earth-agent-resizer:focus-visible::before,.earth-app__body[data-resizing] .earth-agent-resizer::before { background:var(--earth-accent); }
+.earth-app__body[data-resizing] { cursor:col-resize; user-select:none; }
+.earth-app__body[data-resizing] iframe { pointer-events:none; }
+@container earth-app (max-width:1050px) {
+  .earth-app__body { grid-template-columns:minmax(0,1fr); }
+  .earth-agent { width:min(var(--earth-agent-width,360px),calc(100% - 40px)); }
+  .earth-app .earth-agent-resizer { left:min(var(--earth-agent-width,360px),calc(100% - 40px)); }
+}
