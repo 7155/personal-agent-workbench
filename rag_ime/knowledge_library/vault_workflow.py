@@ -47,6 +47,10 @@ class VaultWorkflow:
         self.store = vault.store
         with self.store.connection() as db:
             db.executescript("""
+              CREATE TABLE IF NOT EXISTS knowledge_vault_diary_drafts (
+                id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, day TEXT NOT NULL, timezone TEXT NOT NULL,
+                project TEXT NOT NULL, markdown TEXT NOT NULL, sources_json TEXT NOT NULL,
+                generator TEXT NOT NULL, created_ms INTEGER NOT NULL);
               CREATE TABLE IF NOT EXISTS knowledge_vault_memory_links (
                 id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, note_id TEXT NOT NULL,
                 revision TEXT NOT NULL, statement TEXT NOT NULL, project TEXT NOT NULL,
@@ -87,11 +91,36 @@ class VaultWorkflow:
             "remoteProcessing": False,
             "jevEnabled": False,
             "personalDiary": "",
+            "captureFolder": "",
+            "captureProject": "",
             **(json.loads(row[0]) if row else {}),
         }
 
     def dispatch(self, v, p):
         action = p["action"]
+        if action == "export_model_diary":
+            with self.store.connection() as db:
+                draft = db.execute("SELECT * FROM knowledge_vault_diary_drafts WHERE vault_id=? AND id=?",
+                    (v["id"], text(p,"diaryId",80))).fetchone()
+            if draft is None:
+                raise KnowledgeNotFoundError("回顾不存在。")
+            self.sources(v,json.loads(draft["sources_json"]))
+            return self.create_new(v,"work-model-"+draft["id"]+".md",
+                "# "+draft["day"]+" 工作回顾草稿\n\n机器生成 · 仅覆盖所选材料\n\n"+draft["markdown"])
+        if action == "store_diary":
+            self.dispatch(v, {**p, "action": "organize_context"})
+            day = text(p, "date", 10) or datetime.now().date().isoformat()
+            zone = text(p, "timezone", 80) or "Asia/Shanghai"
+            day_bounds(day, zone)
+            project = text(p, "project", 240)
+            body = text(p, "markdown", 16000)
+            refs = json.dumps(p["sourceRefs"], sort_keys=True)
+            identity = sha(json.dumps([v["id"], day, zone, project, body, refs]))
+            with self.store.connection() as db:
+                db.execute("INSERT OR IGNORE INTO knowledge_vault_diary_drafts VALUES(?,?,?,?,?,?,?,?,?)",
+                    (identity, v["id"], day, zone, project, body, refs,
+                     text(p, "generator", 120), now_ms()))
+            return {"id": identity, "state": "draft_saved", "date": day}
         if action == "graph_business":
             return self.graph(v, p)
         if action == "memory_prepare":
@@ -216,6 +245,14 @@ class VaultWorkflow:
                         "收件箱不在授权范围。", code="scope_mismatch"
                     )
                 policy["inbox"] = inbox
+            if "captureFolder" in p:
+                folder = text(p, "captureFolder", 240)
+                if folder:
+                    folder = relative(folder)
+                    if not self.vault._allowed(v, folder):
+                        raise KnowledgeLibraryError("采集目录不在授权范围。", code="scope_mismatch")
+                policy["captureFolder"] = folder
+                policy["captureProject"] = text(p, "captureProject", 240)
             if "personalDiary" in p:
                 diary = text(p, "personalDiary", 240)
                 if diary:
@@ -358,6 +395,7 @@ class VaultWorkflow:
                     (v["id"],),
                 )
                 for table in (
+                    "knowledge_vault_diary_drafts",
                     "knowledge_vault_materials",
                     "knowledge_note_proposals",
                     "knowledge_editor_pairings",
@@ -366,6 +404,23 @@ class VaultWorkflow:
                     db.execute(f"DELETE FROM {table} WHERE vault_id=?", (v["id"],))
             return {"forgotten": True, "userFilesPreserved": True}
         raise KnowledgeLibraryError("不支持的笔记操作。", code="invalid_argument")
+
+    def capture_files(self, v, discovered):
+        policy = self.policy(v)
+        folder = policy["captureFolder"]
+        if not folder:
+            return
+        with self.store.connection() as db:
+            for item in discovered:
+                if not item["path"].startswith(folder + "/"):
+                    continue
+                # Generated reports are projections, never independent raw evidence.
+                if (item["path"].startswith(policy["inbox"] + "/") and PurePosixPath(item["path"]).name.startswith(("work-", "idea-", "draft-"))) or item["identityState"] == "duplicate_id":
+                    continue
+                request = "watch:" + sha(item["id"] + item["revision"])
+                identity = sha(v["id"] + request)
+                db.execute("INSERT OR IGNORE INTO knowledge_vault_materials VALUES(?,?,?,?,?,?,?,?)",
+                    (identity,v["id"],request,item["revision"],item["id"],item["revision"],policy["captureProject"],now_ms()))
 
     def graph(self, v, p):
         mode = p.get('graphMode', 'project')
@@ -563,7 +618,7 @@ class VaultWorkflow:
                     "occurredAtMs": row["occurred_ms"],
                     "readable": readable,
                     "text": note.get("markdown", "") if readable else "",
-                    "authorship": "user_saved",
+                    "authorship": "observed_file" if row["request_id"].startswith("watch:") else "user_saved",
                     "submission": "unknown",
                     "completeness": "selected_only",
                 }
@@ -594,6 +649,20 @@ class VaultWorkflow:
                 f"来源：{source['noteId']} · {source['revision'][:8]}",
                 "",
             ]
+        with self.store.connection() as db:
+            drafts = db.execute("SELECT * FROM knowledge_vault_diary_drafts WHERE vault_id=? AND day=? AND timezone=? AND project=? ORDER BY created_ms DESC LIMIT 20",
+                (v["id"], day, timezone, project)).fetchall()
+        model_drafts = []
+        for draft in drafts:
+            refs = json.loads(draft["sources_json"])
+            try:
+                self.sources(v, refs)
+                current = True
+            except (OSError, KnowledgeLibraryError):
+                current = False
+            model_drafts.append({"id": draft["id"], "markdown": draft["markdown"],
+                "sourceRefs": refs, "sourcesCurrent": current, "generator": draft["generator"],
+                "createdAtMs": draft["created_ms"], "state": "draft_saved", "derived": True})
         personal = None
         template = self.policy(v)["personalDiary"]
         if template:
@@ -615,6 +684,7 @@ class VaultWorkflow:
             "project": project,
             "sources": sources,
             "markdown": "\n".join(lines),
+            "modelDrafts": model_drafts,
             "personalDiary": personal,
             "derived": True,
         }

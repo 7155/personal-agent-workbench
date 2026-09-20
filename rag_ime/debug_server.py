@@ -2848,6 +2848,10 @@ class DebugImeService:
                     "remoteModelGates": dict(route_gates),
                 }
             )
+            reference = self.knowledge_control.ime_reference(request.project) if self.knowledge_control is not None and hasattr(self.knowledge_control, 'ime_reference') else None
+            if reference and not request.operation:
+                return self.active_rag.start_reference(request, reference,
+                    lambda: self.knowledge_control.validate_ime_reference(reference['id'], request.project))
             return {
                 **self.active_rag.start(request),
                 "routeStatus": route_status,

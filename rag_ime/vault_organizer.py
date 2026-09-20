@@ -125,7 +125,12 @@ def organize(facade, payload):
                 "generator": "openai-codex/gpt-5.6-luna",
             },
         )
+    saved = facade.worker.management_call("management_vault", {
+        **payload, "action": "store_diary", "markdown": output["diary"],
+        "generator": "openai-codex/gpt-5.6-luna",
+    })
     return {
+        "diaryRecord": saved,
         "diary": output["diary"],
         "sourceRefs": payload["sourceRefs"],
         "proposal": proposal,

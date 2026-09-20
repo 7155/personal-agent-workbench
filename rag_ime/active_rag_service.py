@@ -354,6 +354,28 @@ class ActiveRagService:
             raise
         return self.status(session.session_id)
 
+    def start_reference(self, request, reference, validator):
+        """Explicit local note reuse through the ordinary native candidate/accept path."""
+        if active_rag_sensitive_block_reason(request):
+            return self.start(request)
+        _validate_selected_text_hash(request)
+        from dataclasses import replace
+        request = replace(request, placement="insert", remote_model_allowed=False)
+        candidate = ActiveRagCandidate(candidate_id="vault:"+reference['id'],
+            text=reference['markdown'], insert_text=reference['markdown'],
+            source_type="knowledge", source_lane="local_notes",
+            metadata={"referenceOnly":True})
+        session = ActiveRagSession(session_id="active-rag:"+uuid.uuid4().hex[:16],
+            request=request,status="ready",candidates=(candidate,),
+            diagnostics=_initial_session_diagnostics(request,completion_provider=self.completion_provider))
+        session.reference_validator = validator
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("active RAG service is closed")
+            self._drop_stale_sessions_locked(request)
+            self._sessions[session.session_id]=session
+        return self.status(session.session_id)
+
     def close(self) -> None:
         """Stop accepting work and wait briefly for owned session threads."""
 
@@ -583,6 +605,15 @@ class ActiveRagService:
             candidate = next((item for item in session.candidates if item.candidate_id == candidate_id), None)
             if candidate is None:
                 return {"ok": False, "reason": "missing_candidate"}
+            validator = getattr(session, 'reference_validator', None)
+            if validator is not None:
+                if session.status != 'ready' or panel_session_id != session.request.panel_session_id or front_app_bundle_id != session.request.front_app_bundle_id:
+                    return {"ok":False,"reason":"note_target_changed"}
+                try:
+                    if not validator():
+                        return {"ok":False,"reason":"note_reference_expired"}
+                except Exception:
+                    return {"ok":False,"reason":"note_reference_unavailable"}
             self._record_accept_feedback(session=session, candidate=candidate)
             return {
                 "ok": True,

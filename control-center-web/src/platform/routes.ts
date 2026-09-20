@@ -1641,7 +1641,7 @@ export const CONTROL_ROUTES = {
     body: ['runId', 'confirm', 'receiptId', 'rollbackToken', 'payloadSha256'],
     requiredBody: ['runId', 'confirm', 'receiptId', 'rollbackToken', 'payloadSha256'],
   },
-  'knowledgeVault.manage': { method: 'POST', path: '/api/knowledge/vault', body: ['action','root','excluded','vaultId','noteId','query','focusId','graphMode','link','paused','inbox','remoteProcessing','jevEnabled','personalDiary','markdown','requestId','project','date','includeActivity','timezone','sourceRefs','baseRevision','before','after','reason','proposalId','proposalRevision','statement','noteIds','confirm'], requiredBody: ['action'] },
+  'knowledgeVault.manage': { method: 'POST', path: '/api/knowledge/vault', body: ['action','root','excluded','vaultId','noteId','query','focusId','graphMode','link','paused','inbox','diaryId', 'captureFolder', 'captureProject', 'remoteProcessing','jevEnabled','personalDiary','markdown','requestId','project','date','includeActivity','timezone','sourceRefs','baseRevision','before','after','reason','proposalId','proposalRevision','statement','noteIds','confirm'], requiredBody: ['action'] },
   'knowledgeBases.list': {
     method: 'GET',
     path: '/api/knowledge-bases',

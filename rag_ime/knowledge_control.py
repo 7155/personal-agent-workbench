@@ -24,6 +24,7 @@ class KnowledgeControlFacade:
         runtime_provider=None,
         activity_report_provider=None,
     ) -> None:
+        self._ime_reference = None
         self.activity_report_provider = activity_report_provider
         self.runtime_provider = runtime_provider
         self.worker = worker
@@ -33,13 +34,25 @@ class KnowledgeControlFacade:
 
     def vault(self, payload: Mapping[str, object]) -> dict[str, object]:
         action = payload.get('action')
+        if action == 'ime_prepare':
+            import uuid
+            project = str(payload.get('project') or '').strip()
+            if not project:
+                raise ValueError('请明确选择输入法当前项目。')
+            packet = self.vault({**dict(payload), 'action': 'context'})
+            if not packet['markdown'].strip():
+                raise ValueError('请选择笔记。')
+            self._ime_reference = {'id': uuid.uuid4().hex, 'project':project,
+                'payload':{'action':'context','vaultId':payload['vaultId'],'noteIds':payload['noteIds']},
+                'markdown':packet['markdown'], 'expires':time.monotonic()+300}
+            return {'ready':True,'notice':'已准备。5 分钟内在目标输入框触发输入法辅助，核对后点击插入；不会发送。'}
         if action == 'organize':
             from .vault_organizer import organize
             return organize(self, dict(payload))
         if action in {'adopt_memory', 'adoptions'}:
             from .vault_memory import adopt, reconcile
             return adopt(self, dict(payload)) if action == 'adopt_memory' else reconcile(self, dict(payload))
-        if action in {'organize_context', 'memory_prepare', 'memory_receipt', 'memory_links'}:
+        if action in {'store_diary', 'organize_context', 'memory_prepare', 'memory_receipt', 'memory_links'}:
             raise ValueError('internal action')
         if action in {"graph_business", "context"}:
             from .vault_memory import reconcile
@@ -53,6 +66,23 @@ class KnowledgeControlFacade:
             else:
                 result['activityReport'] = self.activity_report_provider({**dict(payload), 'noTimeline': True})
         return result
+
+    def ime_reference(self, project):
+        pending = self._ime_reference
+        if not pending or pending['project'] != project or pending['expires'] < time.monotonic():
+            return None
+        current = self.vault(pending['payload'])
+        if current['markdown'] != pending['markdown']:
+            self._ime_reference = None
+            raise ValueError('笔记已变化，请回 PAW 重新预览。')
+        return dict(pending)
+
+    def validate_ime_reference(self, identity, project):
+        pending = self.ime_reference(project)
+        valid = bool(pending and pending['id'] == identity)
+        if valid:
+            self._ime_reference = None
+        return valid
 
     def list_bases(self) -> dict[str, object]:
         result = self.worker.management_call("management_list_bases")

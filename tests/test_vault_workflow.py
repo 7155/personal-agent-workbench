@@ -59,6 +59,39 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_authorized_directory_capture_is_incremental_and_stops(self):
+        folder = self.root / "材料"
+        folder.mkdir()
+        (folder / "one.md").write_text("first")
+        self.call("configure", captureFolder="材料", captureProject="demo")
+        self.call("snapshot")
+        self.call("snapshot")
+        with self.vault.store.connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM knowledge_vault_materials").fetchone()[0],1)
+        (folder / "one.md").write_text("second")
+        self.call("snapshot")
+        self.call("configure", captureFolder="")
+        (folder / "two.md").write_text("not authorized")
+        self.call("snapshot")
+        with self.vault.store.connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM knowledge_vault_materials").fetchone()[0],2)
+
+    def test_model_diary_survives_restart_and_flags_stale_sources(self):
+        saved = self.saved()
+        source = self.call("read", noteId=saved["noteId"])
+        args = dict(sourceRefs=[{"noteId":source["noteId"],"revision":source["revision"]}],
+                    date="2026-09-20", timezone="Asia/Shanghai", project="demo", markdown="机器回顾", generator="test")
+        self.call("configure", remoteProcessing=True)
+        first = self.call("store_diary", **args)
+        self.assertEqual(first, self.call("store_diary", **args))
+        self.vault = MarkdownVault(self.vault.store)
+        day = self.call("day", date="2026-09-20", timezone="Asia/Shanghai", project="demo")
+        self.assertEqual(day["modelDrafts"][0]["markdown"], "机器回顾")
+        self.assertTrue(day["modelDrafts"][0]["sourcesCurrent"])
+        (self.root / source["path"]).write_text("changed")
+        day = self.call("day", date="2026-09-20", timezone="Asia/Shanghai", project="demo")
+        self.assertFalse(day["modelDrafts"][0]["sourcesCurrent"])
+
     def test_graph_uses_explicit_project_and_readable_sources(self):
         saved = self.saved()
         graph = self.call("graph_business", graphMode="project", project="demo")

@@ -429,6 +429,7 @@ class MarkdownVault:
                         "UPDATE knowledge_vault_notes SET present=0 WHERE id=?",
                         (row["id"],),
                     )
+        self.workflow.capture_files(vault, discovered)
         # Resolve each link via an index rather than scanning every note.
         lookup = {}
         for n in discovered:

@@ -17,6 +17,7 @@ TABLES = (
     "knowledge_note_proposals",
     "knowledge_note_applications",
     "knowledge_vault_days",
+    "knowledge_vault_diary_drafts",
     "knowledge_vault_memory_links",
 )
 
@@ -76,6 +77,8 @@ def restore_records(database: Path, packet):
                 elif name == "knowledge_vault_policy":
                     policy = json.loads(row["policy_json"])
                     policy.update(
+                        captureFolder="",
+                        captureProject="",
                         remoteProcessing=False,
                         jevEnabled=False,
                         inbox="",

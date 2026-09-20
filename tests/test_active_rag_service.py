@@ -24,6 +24,26 @@ from rag_ime.text_utils import now_ms, stable_text_hash
 
 
 class ActiveRagServiceTests(unittest.TestCase):
+    def test_local_note_reference_reuses_native_guards_without_model(self):
+        provider = FakeActiveRagProvider(("must not run",))
+        service = ActiveRagService(completion_provider=provider)
+        self.addCleanup(service.close)
+        request = ActiveRagStartRequest(selected_text="hello",selected_text_hash=stable_text_hash("hello"),
+            frontend_revision=1,selection_epoch=2,panel_session_id="panel",front_app_bundle_id="test.app")
+        valid = [True]
+        result = service.start_reference(request, {"id":"r","markdown":"current note"}, lambda: valid[0])
+        self.assertEqual(result["status"], "ready")
+        args = dict(session_id=result["sessionId"],candidate_id="vault:r",selected_text_hash=request.selected_text_hash,
+            frontend_revision=1,selection_epoch=2,panel_session_id="panel",front_app_bundle_id="test.app")
+        self.assertFalse(service.accept(**{**args,"front_app_bundle_id":"other"})["ok"])
+        self.assertFalse(service.accept(**{**args,"selection_epoch":3})["ok"])
+        valid[0]=False
+        self.assertFalse(service.accept(**args)["ok"])
+        valid[0]=True
+        accepted=service.accept(**args)
+        self.assertEqual(accepted["insertText"],"current note")
+        self.assertEqual(accepted["placement"],"insert")
+
     def test_recent_input_history_keeps_configured_window_for_generation(self) -> None:
         evidence = tuple(
             ActiveRagEvidence(
