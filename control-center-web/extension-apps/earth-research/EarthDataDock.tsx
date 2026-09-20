@@ -368,7 +368,7 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
           <label className="earth-data-dock__search"><Search size={14} aria-hidden="true" /><input aria-label="筛选 GIS 文件" value={fileFilter} onChange={event => setFileFilter(event.target.value)} placeholder="查找文件、目录或类型" /></label>
           <button type="button" className="earth-files__refresh" aria-label="刷新文件列表" title="重新读取当前项目目录" disabled={Boolean(pending) || !onRefreshFiles} onClick={() => void perform('刷新文件', () => onRefreshFiles?.())}><RefreshCw size={14} aria-hidden="true" /></button>
         </div>
-        {workspaceFilesNotice || workspaceFilesIncomplete ? <p className="earth-files__listing-notice" role="status">{workspaceFilesNotice || '目录尚未完整读取；当前仅显示已读取的文件，可刷新重试。'}</p> : null}
+        {workspaceFilesNotice || workspaceFilesIncomplete ? <details className="earth-files__listing-notice"><summary><span role="status">目录未全部载入 · 查看说明</span></summary><p>{workspaceFilesNotice || '目录尚未完整读取；当前仅显示已读取的文件，可刷新重试。'}</p></details> : null}
         <div className="earth-files__columns" aria-hidden="true"><span>名称</span><span>类型</span><span>大小</span></div>
         <div className="earth-files__tree" role="tree" aria-label="项目文件目录">
           {visibleFileRows.map((row, index) => {

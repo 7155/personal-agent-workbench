@@ -337,3 +337,15 @@ it.each(['cloud', 'local'] as const)('does not override the initial %s result vi
   expect(fitBounds).not.toHaveBeenCalled();
   expect(map.getCenter().lat).toBe(40); expect(map.getCenter().lng).toBe(80);
 });
+
+it('keeps snapping settings discoverable and returns keyboard focus when dismissed', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  render(<EarthMap run={null} selection={[]} workspaceKey="snap-settings" onSelect={vi.fn()} />);
+  expect(screen.getByRole('button', {name:'矩形'})).toBeVisible();
+  const trigger=screen.getByText('吸附开');
+  fireEvent.click(trigger);
+  expect(screen.getByRole('spinbutton', {name:'吸附容差（像素）'})).toBeVisible();
+  fireEvent.keyDown(trigger, {key:'Escape'});
+  expect(trigger.closest('details')).not.toHaveAttribute('open');
+  expect(trigger).toHaveFocus();
+});

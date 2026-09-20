@@ -645,6 +645,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
             <button onClick={event=>{setDrawer('knowledge');event.currentTarget.closest('details')?.removeAttribute('open');}}>GIS 方法库</button>
             <button onClick={event=>{setDrawer('sources');event.currentTarget.closest('details')?.removeAttribute('open');}}>数据与官方资料</button>
           </div></details>
+          <button aria-pressed={drawer==='cloud'} onClick={()=>setDrawer(drawer==='cloud'?null:'cloud')}>云任务</button>
           <button aria-pressed={drawer==='console'} onClick={()=>setDrawer(drawer==='console'?null:'console')}>运行结果</button>
         </nav>
         {selection?.features.length?<div className="earth-task-context"><span>已选 {selection.features.length} 个对象</span><button onClick={()=>setDrawer('tasks')}>对所选开始任务</button><small>任务中再指定研究范围或训练样本</small></div>:null}

@@ -302,18 +302,22 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
   }
   return <div className="earth-map" data-drawing={drawing}><div ref={container} aria-label="地理分析地图" className="earth-map__canvas" />
     <div className="earth-map-tools">
-      <fieldset className="earth-gis-toolbar" aria-label="GEE 几何工具" disabled={geometrySaving}>
+      <fieldset className="earth-gis-toolbar" aria-label="地图绘制工具" disabled={geometrySaving}>
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'point'} onClick={() => geometryTools.current?.start('point')}><MapPin size={16} aria-hidden="true" /><span>点</span></button>
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'polyline'} onClick={() => geometryTools.current?.start('polyline')}><Spline size={16} aria-hidden="true" /><span>线</span></button>
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'polygon'} onClick={() => geometryTools.current?.start('polygon')}><Pentagon size={16} aria-hidden="true" /><span>面</span></button>
-        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'rectangle'} onClick={() => geometryTools.current?.start('rectangle')}><Scan size={16} aria-hidden="true" /><span>框选</span></button>
+        <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'rectangle'} onClick={() => geometryTools.current?.start('rectangle')}><Scan size={16} aria-hidden="true" /><span>矩形</span></button>
         <span aria-hidden="true" className="earth-gis-toolbar__divider" />
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'edit'} disabled={selectionNeedsProjectLayer} title={selectionNeedsProjectLayer ? readOnlySelectionHint : undefined} onClick={() => editSelection('edit')}><Pencil size={16} aria-hidden="true" /><span>编辑</span></button>
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'remove'} onClick={() => geometryTools.current?.start('remove')}><Trash2 size={16} aria-hidden="true" /><span>删除草稿</span></button>
         <button type="button" className="earth-gis-toolbar__tool" aria-pressed={drawingKind === 'cut'} disabled={selectionNeedsProjectLayer || !selection.some(feature => ['Polygon', 'MultiPolygon'].includes(feature.geometry.type))} title={selectionNeedsProjectLayer ? readOnlySelectionHint : undefined} onClick={() => editSelection('cut')}><Scissors size={16} aria-hidden="true" /><span>挖洞</span></button>
         <span aria-hidden="true" className="earth-gis-toolbar__divider" />
-        <label className="earth-gis-toolbar__snap"><input type="checkbox" checked={snapping} onChange={event => { setSnapping(event.target.checked); geometryTools.current?.setSnapping(event.target.checked, snapPixels); }} /><Magnet size={16} aria-hidden="true" /><span>吸附</span></label>
-        <input aria-label="吸附容差（像素）" type="number" min="1" max="80" value={snapPixels} onChange={event => { const pixels = Number(event.target.value); setSnapPixels(pixels); geometryTools.current?.setSnapping(snapping, pixels); }} style={{ width: 48 }} />
+        <details className="earth-snap-settings" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))event.currentTarget.open=false;}} onKeyDown={event=>{if(event.key==='Escape'){event.currentTarget.open=false;event.currentTarget.querySelector('summary')?.focus();event.stopPropagation();}}}>
+          <summary title="设置顶点吸附与容差"><Magnet size={16} aria-hidden="true"/>吸附{snapping ? '开' : '关'}</summary>
+          <div><strong>顶点吸附</strong>
+        <label className="earth-gis-toolbar__snap"><input type="checkbox" checked={snapping} onChange={event => { setSnapping(event.target.checked); geometryTools.current?.setSnapping(event.target.checked, snapPixels); }} /><span>启用吸附</span></label>
+        <label>容差（像素）<input aria-label="吸附容差（像素）" type="number" min="1" max="80" value={snapPixels} onChange={event => { const pixels = Number(event.target.value); setSnapPixels(pixels); geometryTools.current?.setSnapping(snapping, pixels); }} style={{ width: 64 }} /></label><small>在设置距离内，顶点自动对齐附近要素。</small></div>
+        </details>
         {drawingKind === 'edit' || drawingKind === 'remove' || drawingKind === 'cut' ? <>
           <span aria-hidden="true" className="earth-gis-toolbar__divider" />
           <button type="button" className="earth-gis-toolbar__tool" onClick={() => geometryTools.current?.undo()}><Undo2 size={16} aria-hidden="true" /><span>撤销</span></button>
@@ -327,7 +331,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
         </> : null}
       </fieldset>
       <button type="button" className="earth-map-tools__selection" aria-pressed={multiSelect} onClick={() => setMultiSelect(value => !value)}><ListChecks size={16} aria-hidden="true" /><span>多选{multiSelect ? '开' : '关'}</span></button>
-      <span role="status">{geometrySaving ? '正在保存几何，完成后可继续编辑' : drawingKind === 'edit' ? '拖动顶点后点击“保存”更新几何' : drawingKind === 'cut' ? '绘制内部范围，完成后保存；取消可还原' : drawingKind === 'remove' ? '点击要删除的草稿后点击“保存”' : drawingKind === 'polygon' ? `面：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawingKind === 'polyline' ? `线：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawing ? '绘图中 · 完成后更新选择' : selectionNeedsProjectLayer ? readOnlySelectionHint : multiSelect ? '点击可增选或取消 · 可在几何列表批量选择' : '点击选中一个对象'}</span>
+      <span role="status">{geometrySaving ? '正在保存几何，完成后可继续编辑' : drawingKind === 'edit' ? '拖动顶点后点击“保存”更新几何' : drawingKind === 'cut' ? '绘制内部范围，完成后保存；取消可还原' : drawingKind === 'remove' ? '点击要删除的草稿后点击“保存”' : drawingKind === 'polygon' ? `面：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawingKind === 'polyline' ? `线：已添加 ${drawingVertexCount} 个点 · 继续点击添加，双击或“完成”结束` : drawing ? '绘图中 · 完成后更新选择' : selectionNeedsProjectLayer ? readOnlySelectionHint : multiSelect ? '点击选择，再次点击取消' : '点击选中一个对象'}</span>
     </div>
     <EarthDataDock run={run} workspaceRoot={workspaceKey} projectLayers={projectLayers} spatialSources={spatialSources} workspaceFiles={workspaceFiles} workspaceFilesIncomplete={workspaceFilesIncomplete} workspaceFilesNotice={workspaceFilesNotice} activeObjectLabel={activeObjectLabel} selectedFeatures={selectedFeatures} onSaveLayer={onSaveLayer} onUpdateFeature={onUpdateFeature} onCreateBundle={onCreateBundle} localRuns={localRuns} onShowRun={onShowRun} onCompareRuns={onCompareRuns} onLoadSourceLayer={onLoadSourceLayer} onOpenLayerRevision={onOpenLayerRevision} onSelectFeature={selectTableFeature} onExportLayer={onExportLayer} onToggleLayer={onToggleLayer} onRemoveLayer={onRemoveLayer} onConnectSource={onConnectSource} onRefreshCatalog={onRefreshCatalog} onRefreshFiles={onRefreshFiles} onOpenFile={onOpenFile} />
     <details className="earth-geometry-imports"><summary>几何与选择 · {selection.length} 已选</summary>
