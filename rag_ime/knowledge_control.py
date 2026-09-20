@@ -62,6 +62,10 @@ class KnowledgeControlFacade:
             from .vault_memory import reconcile
             reconcile(self, dict(payload))
         result = self.worker.management_call("management_vault", dict(payload))
+        if (action == 'forget' or (action == 'pause' and payload.get('paused') is True)):
+            pending = self._ime_reference
+            if pending and pending['payload']['vaultId'] == payload.get('vaultId'):
+                self._ime_reference = None
         if action == 'day' and payload.get('includeActivity') is True:
             if not str(payload.get('project') or '').strip():
                 raise ValueError('请选择明确项目后再读取活动；不会默认归到其他项目。')

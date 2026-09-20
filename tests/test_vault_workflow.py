@@ -295,6 +295,32 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["state"], "saved_index_pending")
         self.assertTrue(result["bodySaved"])
 
+    def test_forget_stops_recapture_and_invalidates_prepared_ime(self):
+        from types import SimpleNamespace
+        from rag_ime.knowledge_control import KnowledgeControlFacade
+        self.call("configure", captureFolder="captured", captureProject="demo", activityProject="demo")
+        (self.root / "captured").mkdir()
+        (self.root / "captured/source.md").write_text("Original input")
+        self.call("snapshot")
+        facade = object.__new__(KnowledgeControlFacade)
+        facade.worker = SimpleNamespace(management_call=lambda method,payload:self.vault.dispatch(payload))
+        facade._ime_reference = None
+        facade._ime_project_provider = lambda:"demo"
+        facade.vault({"action":"ime_prepare","vaultId":self.space["id"],"noteIds":[self.target["id"]]})
+        facade.vault({"action":"pause","vaultId":self.space["id"],"paused":True})
+        facade.vault({"action":"pause","vaultId":self.space["id"],"paused":False})
+        self.assertIsNone(facade.ime_reference("demo"))
+        facade.vault({"action":"ime_prepare","vaultId":self.space["id"],"noteIds":[self.target["id"]]})
+        facade.vault({"action":"forget","vaultId":self.space["id"],"confirm":True})
+        self.assertIsNone(facade.ime_reference("demo"))
+        self.call("snapshot")
+        with self.vault.store.connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM knowledge_vault_materials").fetchone()[0], 0)
+        policy = self.call("settings")["policy"]
+        self.assertEqual(policy["captureFolder"], "")
+        self.assertEqual(policy["activityProject"], "")
+        self.assertTrue((self.root / "captured/source.md").exists())
+
     def test_forget_preserves_markdown_and_revokes_pending(self):
         p = self.proposal()
         token = self.call("pair")["pairingToken"]

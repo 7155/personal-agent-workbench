@@ -399,14 +399,18 @@ class VaultWorkflow:
             return {
                 "proposals": count,
                 "preservesMarkdown": True,
-                "notice": "删除本文件夹的整理记录、配对与派生状态；保留所有用户 Markdown。",
+                "notice": "删除本文件夹的整理记录、配对与派生状态，并停止材料采集；保留用户 Markdown 和独立采纳的 Memory。",
             }
         if action == "forget":
             if p.get("confirm") is not True:
                 raise KnowledgeLibraryError(
                     "请先确认清理范围。", code="confirmation_required"
                 )
+            policy = self.policy(v)
+            policy.update(captureFolder="", captureProject="", activityProject="")
             with self.store.connection() as db:
+                db.execute("INSERT OR REPLACE INTO knowledge_vault_policy VALUES(?,?)",
+                           (v["id"], json.dumps(policy)))
                 db.execute(
                     "DELETE FROM knowledge_note_applications WHERE proposal_id IN (SELECT id FROM knowledge_note_proposals WHERE vault_id=?)",
                     (v["id"],),
