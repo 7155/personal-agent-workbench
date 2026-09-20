@@ -104,6 +104,8 @@ class VaultWorkflow:
 
     def dispatch(self, v, p):
         action = p["action"]
+        if action == "suggest_targets":
+            return self.suggest_targets(v,p)
         if action == "export_model_diary":
             with self.store.connection() as db:
                 draft = db.execute("SELECT * FROM knowledge_vault_diary_drafts WHERE vault_id=? AND id=?",
@@ -416,6 +418,42 @@ class VaultWorkflow:
                     db.execute(f"DELETE FROM {table} WHERE vault_id=?", (v["id"],))
             return {"forgotten": True, "userFilesPreserved": True}
         raise KnowledgeLibraryError("不支持的笔记操作。", code="invalid_argument")
+
+    def suggest_targets(self, v, p):
+        from ..text_utils import token_terms
+        originals = self.sources(v,p.get("sourceRefs",[]))
+        query = "\n".join(item["markdown"] for item in originals)[:24000]
+        terms=token_terms(query,max_terms=32)
+        def overlap(value):
+            lowered=value.lower()
+            return [term for term in terms if term.lower() in lowered]
+        excluded = {item["noteId"] for item in originals}
+        snapshot = self.vault.snapshot(v)
+        policy = self.policy(v)
+        with self.store.connection() as db:
+            rows = db.execute("SELECT id,path,revision FROM knowledge_vault_notes WHERE vault_id=? AND present=1 AND identity_state!='duplicate_id'",(v["id"],)).fetchall()
+        candidates=[]
+        for row in rows:
+            if row["id"] in excluded or row["path"].startswith(policy["inbox"]+"/work-"):
+                continue
+            cached=self.vault._metadata_cache.get((v["id"],row["path"]))
+            if not cached or cached[1]["revision"]!=row["revision"]:
+                continue
+            note=cached[1]
+            heading=note["title"]+" "+" ".join(note["aliases"])
+            title_hits=overlap(heading)
+            hits=overlap(note["body"])
+            if not title_hits and len(hits)<2:
+                continue
+            score=len(hits)+3*len(title_hits)
+            lines=[line.strip() for line in note["body"].splitlines() if overlap(line)]
+            candidates.append({"id":row["id"],"path":row["path"],"revision":row["revision"],
+                "title":note["title"],"score":score,"matchedTerms":sorted(set(title_hits+hits)),
+                "snippet":" ".join(lines)[:400],"relation":"possibly_related"})
+        candidates.sort(key=lambda item:(-item["score"],item["path"]))
+        return {"candidates":candidates[:8],"total":len(candidates),"remoteProcessing":False,
+            "scanIncomplete":snapshot["unreadableCount"]>0,
+            "notice":"本地匹配只表示可能相关，不代表证据支持。请选择要核对的旧笔记；也可以不匹配任何笔记。"}
 
     def activity_materials(self, v, day, timezone, project):
         policy = self.policy(v)

@@ -59,6 +59,19 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_target_discovery_searches_beyond_page_limit_without_private_or_self(self):
+        for index in range(205):(self.root/f"a{index:03d}.md").write_text("# Unrelated topic")
+        (self.root/"z-target.md").write_text("---\naliases: [GraphRAG]\n---\n# 图检索\n关系查询的旧笔记")
+        (self.root/"private").mkdir()
+        (self.root/"private/secret.md").write_text("GraphRAG private must stay excluded")
+        saved=self.saved("GraphRAG 关系查询发现新方法")
+        source=self.call("read",noteId=saved["noteId"])
+        result=self.call("suggest_targets",sourceRefs=[{"noteId":source["noteId"],"revision":source["revision"]}])
+        self.assertEqual(result["candidates"][0]["path"],"z-target.md")
+        self.assertFalse(result["remoteProcessing"])
+        self.assertNotIn(source["noteId"],[n["id"] for n in result["candidates"]])
+        self.assertFalse(any(n["path"].startswith("private/") for n in result["candidates"]))
+
     def test_ime_preparation_binds_actual_target_and_expires_after_accept(self):
         from types import SimpleNamespace
         from rag_ime.knowledge_control import KnowledgeControlFacade

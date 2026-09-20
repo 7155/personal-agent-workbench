@@ -19,6 +19,8 @@ function setup() {
       case 'read': return {noteId:p.noteId,path:'a.md',revision:'v1',markdown:p.noteId==='a'?'# 缓存\n全文不是摘要 [[索引]]':'# 索引\n引用目标全文',obsidianUri:'obsidian://open?path=a.md'};
       case 'resolve': return {noteId:'b',locatorValid:true};
       case 'settings': return {policy:{inbox:'收件箱',remoteProcessing:false,jevEnabled:false,personalDiary:''}};
+      case 'ime_target': return {project:'demo'};
+      case 'suggest_targets': return {candidates:[{id:'z',title:'旧设计',path:'z.md',revision:'v3',snippet:'缓存过期设计',matchedTerms:['缓存'],score:4}],notice:'仅表示可能相关',scanIncomplete:false};
       case 'adoptions': return {items:[]};
       case 'proposals': return {items:[{id:'p',revision:1,path:'a.md',reason:'新材料补充',diff:'-旧\n+新',state,readable:true,conflict:false}]};
       case 'approve': state='waiting_editor';return {state};
@@ -52,4 +54,16 @@ it('pause removes visible content and graph',async()=>{
   await user.click(screen.getByRole('button',{name:'暂停读取'}));
   expect(await screen.findByText(/已暂停读取，正文/)).toBeVisible();
   expect(screen.queryByText(/全文不是摘要/)).not.toBeInTheDocument();
+});
+
+it('finds and selects a target outside the initial note page without enabling remote processing',async()=>{
+  const transport=setup();const user=userEvent.setup();
+  await user.click(await screen.findByRole('button',{name:'待审核'}));
+  await user.selectOptions(screen.getByLabelText('原始材料'),'a');
+  await user.click(screen.getByRole('button',{name:'查找可能更新的旧笔记'}));
+  expect(await screen.findByText('缓存过期设计')).toBeVisible();
+  await user.click(screen.getByRole('button',{name:'选择作为修订目标'}));
+  expect(screen.getByLabelText('目标笔记')).toHaveValue('z');
+  expect(screen.getByRole('button',{name:'整理回顾与修订'})).toBeDisabled();
+  expect(transport.requests.some(r=>(r.request.body as Record<string,unknown>)?.action==='organize')).toBe(false);
 });
