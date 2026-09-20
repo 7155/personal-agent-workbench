@@ -62,9 +62,7 @@ zip), GeoPackage (`.gpkg` with an explicit layer name), GeoJSON or KML.
 `earth_spatial_connect` and `earth_spatial_catalog` register project-owned
 GeoPackage/SpatiaLite sources and secret-referenced PostGIS sources. Database
 URLs and passwords never enter the workspace or receipts. Local database layer
-listing is immediate; PostGIS remains `configured_pending` until its
-secret-backed driver is installed. This is a source catalog, not a claim that a
-cloud database was queried.
+listing is immediate. PostGIS probes the configured connection with psycopg, lists accessible spatial tables, and loads a bounded read-only snapshot. The connection is ready only after a successful query; missing credentials, drivers and failed connections remain distinct states.
 
 ## Workbench 0.9
 
@@ -74,9 +72,9 @@ Open a local project without a Google project or a model request. Human controls
 - **Identity and edits:** immutable GeoJSON snapshots, stable project/layer/feature IDs, typed property drafts and expected-revision checks. Cancel preserves the original. Historical snapshots remain accessible. Visibility changes preserve project identity.
 - **Drawing:** [Leaflet-Geoman Free](https://geoman.io/docs/leaflet) replaces the drawing adapter. Multi-vertex geometry, snap tolerance in pixels, edit/cut drafts, undo/redo and explicit save/cancel retain properties and IDs. A cut operates on selected editable copies, not every visible polygon.
 - **Export:** choose whole layer or selected features. A selected export with no IDs is rejected; GPKG readback validates canonical IDs, including numeric versus string identifiers. Export never resaves the source.
-- **Databases and rasters:** Chinese display names; real named GPKG/SpatiaLite layer loading with source lineage and WGS84 display; point queries and bounded polygon-window statistics including holes, NoData and outside coverage. PostGIS remains a pending configuration, not a verified connection.
+- **Databases and rasters:** Chinese display names; real named GPKG/SpatiaLite layer loading with source lineage and WGS84 display; point queries and bounded polygon-window statistics including holes, NoData and outside coverage. PostGIS uses an environment-variable credential reference, a read-only transaction, a 15-second statement timeout and a 10,000-feature limit; oversized reads fail instead of silently truncating.
 - **QGIS:** optional `qgis_process` JSON list/help/run adapter, following the [official command interface](https://docs.qgis.org/3.44/en/docs/user_manual/processing/standalone.html). A detected executable remains unverified until an actual algorithm succeeds. Native QGIS is not required for the local GeoPandas path.
-- **Plans and delivery:** the avoidance form runs buffer → difference in one metric CRS, keeping canonical GPKG and a WGS84 preview. Each run binds input bytes, parameters and step IDs. Compare two recorded runs; repeated delivery allocates a new version. Bundles include input snapshots, GPKG when applicable, statistics CSV/JSON, map PDF/SVG, HTML, quality checks and a checksummed manifest. The report and map refer to that run, not latest workspace data.
+- **Plans and delivery:** the avoidance form runs buffer → difference in one metric CRS, keeping canonical GPKG and a WGS84 preview. Each run binds input bytes, parameters and step IDs. Compare two recorded runs; repeated delivery allocates a new version. Bundles include input snapshots, GPKG when applicable, statistics CSV/JSON, map PDF/SVG/PNG, HTML, quality checks and a checksummed manifest. The report and map refer to that run, not latest workspace data.
 
 ## Remote sensing
 
@@ -88,7 +86,7 @@ Cloud NDVI/time series, before/after change and animated GIF workflows currently
 
 ## Runtime and limits
 
-Run `scripts/install_earth_gis_runtime.sh` with Python 3.12/3.13 and uv available. It creates the existing isolated PAW GIS environment and installs GeoPandas, Fiona, Rasterio, Shapely, PyProj, NumPy, pandas, scikit-learn and matplotlib. No model key is needed for local file operations or analysis. GEE authorization and QGIS are optional, separate dependencies.
+Run `scripts/install_earth_gis_runtime.sh` with Python 3.12/3.13 and uv available. It creates the existing isolated PAW GIS environment and installs GeoPandas, Fiona, Rasterio, Shapely, PyProj, NumPy, pandas, scikit-learn, matplotlib and psycopg. No model key is needed for local file operations or analysis. GEE authorization and QGIS are optional, separate dependencies.
 
 Current bounds: raster range/local learning windows up to 4 million pixels; local learning band data up to 256 MiB, 2,000 sample features and 200,000 sampled pixels; inline vector previews up to 2 MB. Exceeding a bound reports an error rather than pretending a partial result is complete. Very large dataset editing, multi-user collaboration, generic interrupted-program continuation and full ArcGIS/QGIS desktop parity are not claimed. Original inputs and prior installed packages are retained during updates.
 
@@ -128,3 +126,13 @@ or a visible button is not evidence that a particular dataset ran successfully.
 A short local acceptance task: **选择两块地并导出；把避让距离从 200 米改成
 300 米，对比结果，再生成两版报告。** The supplied automated fixtures are
 synthetic and must not be represented as real land parcels or engineering data.
+
+### Layout and live tasks (0.9.2)
+
+The map is the default work surface. Open code or a report below the map, expand it for reading, or close it to return the space. The Agent and data dock collapse independently; narrow windows move the data view below the map.
+
+Run results → live cloud tasks queries Earth Engine directly through the Session command route, without a model. The visible panel refreshes every 10 seconds and supports cancellation of an explicitly chosen task. Network failures retain the previous timestamped snapshot; completion is not proof of local download. SDK authentication and proxy state run in a bounded child per request to isolate projects.
+
+Map delivery offers A4/A3/Letter, orientation, title, legend, geodesic scale bar and north arrow. Full atlas/layout-designer parity with desktop GIS is outside this release.
+
+For PostGIS, configure a private runtime environment variable such as `PAW_POSTGIS_URL`, then enter only its name in the database connection form. Do not paste the URL/password into the Agent conversation or project files. Install the GIS runtime for the psycopg driver. Reconnect after configuring the service. Optional live acceptance uses `PAW_POSTGIS_TEST_URL` and creates an isolated test schema; it is never run against an unspecified production database.

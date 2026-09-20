@@ -78,15 +78,30 @@ export function readGISRun({ root, runId }) {
 function statistics(run) {
   return { runId: run.runId, op: run.op, params: run.params ?? {}, inputVersions: run.inputVersions ?? [], outputs: (run.outputs ?? []).map(item => ({ path: item.relativePath, ...item.summary })) };
 }
-function report(run, stats) {
+function report(run, stats, cartography, hasGeoPackage) {
   const rows = stats.outputs.map(item => `<tr><td>${escape(item.path)}</td><td>${escape(item.featureCount ?? '—')}</td><td>${escape(item.areaM2 ?? '—')}</td><td>${escape(item.crs ?? '—')}</td></tr>`).join('');
-  return `<!doctype html><html lang="zh"><meta charset="utf-8"><title>GIS 运行报告</title><style>body{font:16px system-ui;max-width:960px;margin:40px auto;padding:24px;color:#213b34}table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd6d1;padding:10px;text-align:left}code,pre{overflow:auto;background:#f2f6f3;padding:12px;display:block}</style><h1>GIS 分析成果</h1><p>运行 <code>${escape(run.runId)}</code></p><p>算子：${escape(run.op)} · 本地计算</p><h2>参数</h2><pre>${escape(JSON.stringify(stats.params,null,2))}</pre><p><a href="result.gpkg">GeoPackage</a> · <a href="map.pdf">地图 PDF</a> · <a href="statistics.csv">统计 CSV</a></p><h2>成果统计</h2><table><tr><th>文件</th><th>要素数</th><th>面积 m²</th><th>坐标系</th></tr>${rows}</table><p>面积采用输出图层适用的投影坐标系计算，测量坐标系见 statistics.json。没有统计值时显示 —。</p><h2>输入版本</h2><pre>${escape(JSON.stringify(stats.inputVersions,null,2))}</pre><p>这是软件计算结果，不能替代工程审批。</p></html>`;
+  const rasterLinks = run.outputs.filter(item => item.kind === 'raster').map(item => `<a href="${escape(`run/${item.relativePath || path.basename(item.path)}`)}">${escape(item.name || path.basename(item.path))}</a>`);
+  const downloads = [hasGeoPackage ? '<a href="result.gpkg">GeoPackage</a>' : '', '<a href="map.pdf">地图 PDF</a>', '<a href="map.svg">矢量版 SVG</a>', '<a href="statistics.csv">统计 CSV</a>', ...rasterLinks].filter(Boolean).join(' · ');
+  return `<!doctype html><html lang="zh"><meta charset="utf-8"><title>${escape(cartography.title)}</title><style>body{font:16px system-ui;max-width:960px;margin:40px auto;padding:24px;color:#213b34}table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd6d1;padding:10px;text-align:left}code,pre{overflow:auto;background:#f2f6f3;padding:12px;display:block}img{width:100%;height:auto;border:1px solid #cbd6d1}a{color:#24634b}</style><h1>${escape(cartography.title)}</h1><p>${escape(cartography.subtitle)}</p><p>运行 <code>${escape(run.runId)}</code></p><p>算子：${escape(run.op)} · 本地计算</p><p>${downloads}</p><a href="map.pdf"><img src="map.png" alt="成果地图预览"></a><p>${escape(cartography.paperSize)} · ${escape(cartography.orientation)} · ${escape(cartography.crs)}。图例、北向、比例尺与投影详情见 <a href="quality.json">制图检查</a>；栅格预览经过降采样，原始输出保存在 run/。</p><h2>参数</h2><pre>${escape(JSON.stringify(stats.params,null,2))}</pre><h2>成果统计</h2><table><tr><th>文件</th><th>要素数</th><th>面积 m²</th><th>坐标系</th></tr>${rows}</table><p>面积采用输出图层适用的投影坐标系计算，测量坐标系见 statistics.json。没有统计值时显示 —。</p><h2>输入版本</h2><pre>${escape(JSON.stringify(stats.inputVersions,null,2))}</pre><p>这是软件计算结果，不能替代工程审批。</p></html>`;
 }
 
-export function createGISBundle({ root, runId, name = 'earth-analysis', version, include = [] }) {
+function mapConfiguration(value, run) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('mapOptions must be an object.');
+  const options = { title: `GIS analysis / ${run.op}`, subtitle: run.runId, paperSize: 'A4', orientation: 'landscape', legend: true, scaleBar: true, northArrow: true, ...value };
+  for (const [key, limit] of [['title', 200], ['subtitle', 400], ['crs', 2048]]) {
+    if (options[key] !== undefined && (typeof options[key] !== 'string' || options[key].length > limit || options[key].includes('\0'))) throw new TypeError(`mapOptions.${key} must be text of at most ${limit} characters.`);
+  }
+  if (!['A4', 'A3', 'Letter'].includes(options.paperSize)) throw new TypeError('mapOptions.paperSize must be A4, A3 or Letter.');
+  if (!['landscape', 'portrait'].includes(options.orientation)) throw new TypeError('mapOptions.orientation must be landscape or portrait.');
+  for (const key of ['legend', 'scaleBar', 'northArrow']) if (typeof options[key] !== 'boolean') throw new TypeError(`mapOptions.${key} must be a boolean.`);
+  return options;
+}
+
+export function createGISBundle({ root, runId, name = 'earth-analysis', version, include = [], mapOptions = {} }) {
   root = fs.realpathSync(root);
   const { run, directory } = completedRun(root, runId);
   if (!run.outputs?.length) throw new Error('Run has no recorded outputs.');
+  const layout = mapConfiguration(mapOptions, run);
   const safeName = String(name).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0,64) || 'earth-analysis';
   const parent = inside(root, '.earth/deliverables'); fs.mkdirSync(parent, { recursive: true });
   if (version !== undefined && (!Number.isInteger(version) || version < 1)) throw new Error('Version must be a positive integer.');
@@ -130,12 +145,10 @@ export function createGISBundle({ root, runId, name = 'earth-analysis', version,
       if(fs.existsSync(directory)&&fs.lstatSync(directory).isSymbolicLink())throw new Error('GIS font cache must be a regular directory.');
       fs.mkdirSync(directory,{recursive:true,mode:0o700});
     }
-    const rendered=spawnSync(python,[fileURLToPath(new URL('./gis-deliver.py',import.meta.url))],{input:JSON.stringify({root,run,target:staging}),encoding:'utf8',timeout:120000,maxBuffer:4000000,env:{...process.env,MPLCONFIGDIR:fontCache,MPLBACKEND:'Agg',MPL_IGNORE_SYSTEM_FONTS:'1'}});
+    const rendered=spawnSync(python,[fileURLToPath(new URL('./gis-deliver.py',import.meta.url))],{input:JSON.stringify({root,run,target:staging,mapOptions:layout}),encoding:'utf8',timeout:120000,maxBuffer:4000000,env:{...process.env,MPLCONFIGDIR:fontCache,MPLBACKEND:'Agg',MPL_IGNORE_SYSTEM_FONTS:'1'}});
     if(rendered.status!==0)throw new Error(`GIS 制图失败：${rendered.stderr || rendered.error?.message || '请安装 GIS 运行环境中的 matplotlib'}`);
-
-    fs.writeFileSync(path.join(staging,'report.html'),report(run,stats));
-    const map = { type:'FeatureCollection',features:run.outputs.flatMap(output => output.geojson?.type === 'FeatureCollection' ? output.geojson.features : []) };
-    write(path.join(staging,'map.geojson'),map);
+    const { cartography } = json(path.join(staging, 'quality.json'));
+    fs.writeFileSync(path.join(staging,'report.html'),report(run,stats,cartography,fs.existsSync(path.join(staging,'result.gpkg'))));
     const walk = dir => {
       for (const name of fs.readdirSync(dir)) {
         const full = path.join(dir,name);
@@ -144,7 +157,7 @@ export function createGISBundle({ root, runId, name = 'earth-analysis', version,
       }
     };
     walk(staging);
-    const manifest = { schemaVersion:'earth.gis-deliverable.v2', name:safeName, version:nextVersion, runId, op:run.op, params:run.params ?? {}, inputVersions:run.inputVersions ?? [], createdAt:new Date().toISOString(), files:entries.sort((a,b)=>a.path.localeCompare(b.path)), report:'report.html',statistics:'statistics.json',map:'map.geojson' };
+    const manifest = { schemaVersion:'earth.gis-deliverable.v2', name:safeName, version:nextVersion, runId, op:run.op, params:run.params ?? {}, inputVersions:run.inputVersions ?? [], createdAt:new Date().toISOString(), files:entries.sort((a,b)=>a.path.localeCompare(b.path)), report:'report.html',statistics:'statistics.json',map:'map.geojson',preview:'map.png',cartography };
     write(path.join(staging,'run-manifest.json'),manifest);
     // Exclusive mkdir reserves a version before moving its content; never overwrite another delivery.
     fs.mkdirSync(target);

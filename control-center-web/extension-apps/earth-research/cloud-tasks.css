@@ -1,0 +1,6 @@
+.earth-cloud-tasks{padding:16px;color:var(--earth-ink);font-size:13px;line-height:1.6}
+.earth-cloud-tasks header,.earth-cloud-tasks li>div{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.earth-cloud-tasks h2{margin:0;font-size:16px}.earth-cloud-tasks p{margin:8px 0;color:var(--earth-muted)}
+.earth-cloud-tasks label{display:flex;align-items:center;gap:8px}.earth-cloud-tasks ul{list-style:none;padding:0;margin:16px 0}
+.earth-cloud-tasks li{padding:12px 0;border-block-start:1px solid var(--earth-line)}.earth-cloud-tasks li strong{overflow-wrap:anywhere;min-width:0}.earth-cloud-tasks li span{white-space:nowrap}
+.earth-cloud-tasks code{overflow-wrap:anywhere}.earth-cloud-tasks [role=alert]{color:#a33124}.earth-cloud-tasks__stamp{font-variant-numeric:tabular-nums;font-size:12px}

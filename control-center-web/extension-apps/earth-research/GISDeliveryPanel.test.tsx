@@ -8,6 +8,6 @@ it('delivers the explicitly selected run and opens that immutable report',async(
  expect(screen.getByRole('button',{name:'生成成果包'})).toBeDisabled();
  fireEvent.change(screen.getByRole('combobox',{name:'交付分析结果'}),{target:{value:'second'}});
  fireEvent.click(screen.getByRole('button',{name:'生成成果包'}));
- await screen.findByText('第 2 版已保存');expect(generate).toHaveBeenCalledWith('second');
+ await screen.findByText('第 2 版已保存');expect(generate).toHaveBeenCalledWith('second',expect.objectContaining({paperSize:'A4',orientation:'landscape',legend:true}));
  fireEvent.click(screen.getByRole('button',{name:'打开报告'}));await waitFor(()=>expect(open).toHaveBeenCalledWith('.earth/deliverables/earth-v2/report.html'));
 });

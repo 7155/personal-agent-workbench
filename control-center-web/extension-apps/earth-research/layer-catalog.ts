@@ -15,6 +15,8 @@ export type ProjectLayer = {
 };
 
 export type SpatialSourceSummary = {
+  error?: string;
+  secretReference?: string;
   id: string;
   name: string;
   kind: 'geopackage' | 'spatialite' | 'postgis';
@@ -81,6 +83,8 @@ export function parseSpatialCatalog(value: unknown): SpatialSourceSummary[] {
     kind: item.kind === 'postgis' || item.kind === 'spatialite' ? item.kind : 'geopackage',
     path: typeof item.path === 'string' ? item.path : '',
     status: typeof item.status === 'string' ? item.status : 'unknown',
+    error: typeof item.error === 'string' ? item.error : undefined,
+    secretReference: typeof item.secretReference === 'string' ? item.secretReference : undefined,
     layers: Array.isArray(item.layers) ? item.layers.filter((layer): layer is string => typeof layer === 'string') : [],
     schema: typeof item.schema === 'string' ? item.schema : '',
     table: typeof item.table === 'string' ? item.table : '',

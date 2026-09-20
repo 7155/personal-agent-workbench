@@ -32,7 +32,7 @@ if [[ ! -x "$VENV/bin/python" ]]; then
   uv venv --python "$PYTHON_EXECUTABLE" "$VENV"
 fi
 uv pip install --python "$VENV/bin/python" \
-  geopandas rasterio fiona shapely pyproj pandas numpy scikit-learn 'matplotlib>=3.11'
+  geopandas rasterio fiona shapely pyproj pandas numpy scikit-learn 'matplotlib>=3.11' 'psycopg[binary]>=3.2,<4'
 fi
 
 if [[ ! -x "$VENV/bin/python" ]]; then
@@ -66,5 +66,5 @@ cat <<EOF
 Earth GIS runtime installed.
 workspace: $ROOT
 python: $VENV/bin/python
-packages: geopandas rasterio fiona shapely pyproj pandas numpy scikit-learn matplotlib
+packages: geopandas rasterio fiona shapely pyproj pandas numpy scikit-learn matplotlib psycopg
 EOF

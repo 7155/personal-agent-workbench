@@ -15,7 +15,7 @@
 .earth-files__columns { display: grid; grid-template-columns: minmax(0, 1fr) 70px 57px; flex: none; gap: 4px; padding: 5px 8px; border-block: 1px solid var(--earth-dock-line, #e1e4e6); color: var(--earth-dock-muted, #747b82); background: var(--earth-surface-subtle, #f6f7f7); font-size: 10px; }
 .earth-files__columns > :last-child { text-align: right; }
 .earth-files__tree { flex: 1 1 180px; min-height: 70px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.earth-files__row { display: grid; grid-template-columns: 16px 16px minmax(0, 1fr) 70px 57px; align-items: center; gap: 4px; min-height: 31px; padding: 4px 8px; border-bottom: 1px solid #f0f1f2; color: var(--earth-dock-ink, #30383e); font-size: 11px; cursor: default; }
+.earth-files__row { display: grid; grid-template-columns: 16px 16px minmax(0, 1fr) 70px 57px; align-items: center; gap: 4px; min-height: 32px; padding: 4px 8px; border-bottom: 1px solid #f0f1f2; color: var(--earth-dock-ink, #30383e); font-size: 12px; cursor: default; }
 .earth-files__row:hover { background: var(--earth-surface-subtle, #f6f7f7); }
 .earth-files__row[aria-selected=true] { background: var(--earth-selection, #e9f2ed); box-shadow: inset 2px 0 var(--earth-dock-accent, #287458); }
 .earth-files__row:focus-visible { outline-offset: -2px; }
@@ -28,8 +28,8 @@
 .earth-files__icon--geopackage, .earth-files__icon--database { color: #796293; }
 .earth-files__name { display: grid; min-width: 0; gap: 1px; }
 .earth-files__name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.earth-files__type { overflow: hidden; color: var(--earth-dock-muted, #747b82); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.earth-files__size { color: var(--earth-dock-muted, #747b82); font-size: 9px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.earth-files__type { overflow: hidden; color: var(--earth-dock-muted, #747b82); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.earth-files__size { color: var(--earth-dock-muted, #747b82); font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .earth-files__warning { display: flex; align-items: center; gap: 4px; min-width: 0; color: #966520; font-size: 9px; line-height: 1.5; }
 .earth-files__warning > svg { flex: none; }
 .earth-files__warning > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -46,7 +46,8 @@
 .earth-files__hint { flex: none; margin: 0; padding: 8px 11px; border-top: 1px solid var(--earth-dock-line, #e1e4e6); }
 .earth-data-dock .earth-files__empty { margin: 0; padding: 14px 11px; }
 
-@container (max-width: 460px) {
-  .earth-files__row { grid-template-columns: 16px 16px minmax(0, 1fr) 59px 48px; gap: 3px; }
-  .earth-files__columns { grid-template-columns: minmax(0, 1fr) 59px 48px; gap: 3px; }
+@container earth-data (max-width: 380px) {
+  .earth-files__row { grid-template-columns: 16px 16px minmax(0, 1fr) 52px; }
+  .earth-files__columns { grid-template-columns: minmax(0, 1fr) 52px; }
+  .earth-files__type, .earth-files__columns > :nth-child(2) { display: none; }
 }

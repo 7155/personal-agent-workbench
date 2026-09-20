@@ -1,4 +1,5 @@
-import { ChevronDown, Columns2, Map as MapIcon, Code2, Plus, X } from 'lucide-react';
+import type {MapOptions} from './GISDeliveryPanel';
+import { ChevronDown, Rows2, Map as MapIcon, Code2, Maximize2, Minimize2, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { PawSessionWorkspace, sessionWorkspaceProjectionSlice } from '@/paw-os/apps/PawSessionWorkspace';
@@ -18,6 +19,7 @@ import { GISOperationPanel } from './GISOperationPanel';
 import { GISDeliveryPanel } from './GISDeliveryPanel';
 import { MapTaskLauncher, type MapTaskAction } from './MapTaskLauncher';
 import { ProjectWorkspacePicker, normalizeWorkspaceRoot } from './ProjectWorkspacePicker';
+import { CloudTasksPanel, type CloudTaskSnapshot } from './CloudTasksPanel';
 import { EarthResults } from './EarthResults';
 import { selectionDetail, selectionKey, updateSelection, type MapSelection, type SelectionMode } from './map-selection';
 import { messageWithWorkspaceContext } from '@/paw-os/apps/workspace-draft';
@@ -77,7 +79,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   const [scriptFile, setScriptFile] = useState<EditableWorkspacePreview | null>(null);
   const [activeFile, setActiveFile] = useState<EditableWorkspacePreview | null>(null);
   const [view, setView] = useState<View>('map');
-  const [drawer, setDrawer] = useState<'tasks' | 'delivery' | 'console' | 'sources' | 'gis' | 'knowledge' | 'remote' | 'raster' | null>(null);
+  const [drawer, setDrawer] = useState<'tasks' | 'delivery' | 'cloud' | 'console' | 'sources' | 'gis' | 'knowledge' | 'remote' | 'raster' | null>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState('');
   const [remoteKind,setRemoteKind]=useState<RemoteSensingWorkflowPlan['kind']>('ndvi');
   const [selection, setSelection] = useState<MapSelection | null>(null);
@@ -305,7 +307,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
       const snapshot = await readCompleteFile(transport, { sessionId: session.id, path: entry.path, name: entry.name });
       if (workspaceBinding.current !== binding) return;
       setActiveFile(snapshot);
-      setView('code');
+      setView(current => current === 'code' ? 'code' : 'split');
       setLayerMessage(`已打开文件：${entry.path}`);
       setReadError('');
     } catch (reason) { if (workspaceBinding.current === binding) setReadError(`无法打开 ${entry.name}：${message(reason)}`); }
@@ -381,7 +383,8 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
     if(!session)throw new Error('请先打开项目会话。');
     const result=await invokeGISCommand(session.id,`/earth-spatial-connect ${JSON.stringify(source)}`);
     await refreshProjectLayers();
-    setLayerMessage(`已登记“${source.name}” · ${result.status} · ${result.layers?.length ?? 0} 个图层`);
+    if(result.status!=='ready'){setLayerMessage(`“${source.name}”连接尚未就绪，请查看数据库提示。`);throw new Error(result.error || '数据库连接尚未就绪。');}
+    setLayerMessage(`已连接“${source.name}” · ${result.layers?.length ?? 0} 个图层`);
   },[invokeGISCommand,refreshProjectLayers,session?.id]);
   const loadSourceLayer=useCallback(async(source:SpatialSourceSummary,layer:string)=>{
     if(!session)throw new Error('请先打开项目会话。');
@@ -389,9 +392,9 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
     const data=result.geojson ?? JSON.parse((await readCompleteFile(transport,{sessionId:session.id,path:`${workspaceRoot}/${result.path}`,name:layer})).content);
     await commitLayer(`${source.name} · ${layer}`,parseGeoJsonFeatures(data),undefined,undefined,result.sourceLineage);
   },[commitLayer,invokeGISCommand,session?.id,transport,workspaceRoot]);
-  const createGISBundle=useCallback(async(runId:string)=>{
+  const createGISBundle=useCallback(async(runId:string,mapOptions?:MapOptions)=>{
     if(!session)throw new Error('请先打开项目会话。');
-    const result=await invokeGISCommand(session.id,`/earth-gis-bundle ${JSON.stringify({runId,name:'earth-analysis'})}`);
+    const result=await invokeGISCommand(session.id,`/earth-gis-bundle ${JSON.stringify({runId,name:'earth-analysis',mapOptions})}`);
     await refreshWorkspaceFiles();
     setLayerMessage(`已生成第 ${result.manifest.version} 版成果 · ${result.verification.verifiedFiles} 个文件读回通过 · ${result.path}`);
     return {path:result.path as string,version:result.manifest.version as number,runId,verifiedFiles:result.verification.verifiedFiles as number};
@@ -579,7 +582,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
     if(action==='delivery'){setDrawer('delivery');return;}
     setRemoteKind(action==='change'?'ndvi':action);setDrawer('remote');
   }
-  function mapActivity() { if (!editor.editing) setView('map'); setDrawer(null); }
+  function mapActivity() { if (!editor.editing) setView(current => current === 'code' ? 'map' : current); setDrawer(null); }
   function selectMapFeature(feature: GeoJSON.Feature | null,mode:SelectionMode='replace') {
     mapActivity();
     setSelection(current=>updateSelection(current,feature,mode,mapRun?.runId ?? null));
@@ -605,11 +608,11 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
     <header className="earth-app__header">
       <ProjectWorkspacePicker sessions={sessions} session={session} draftRoot={root} open={projectPickerOpen} loading={loading} disabled={sending || Boolean(pending)} onOpenChange={setProjectPickerOpen} onDraftRootChange={setRoot} onSelectSession={next => { newSession(next); setAgentVisible(true); }} onCreateSession={createProjectAgent} onPickDirectory={transport.pickFiles || directoryHost?.pickWorkspaceDirectory ? pickProjectDirectory : undefined} />
       <span role="status">{run ? runStatus[run.status] : session ? '项目就绪' : '打开项目'}</span>
-      <button onClick={()=>setAgentVisible(value=>!value)} disabled={!session}>{agentVisible?'收起 Agent':'展开 Agent'}</button>
+      <button aria-expanded={Boolean(session) && agentVisible} aria-controls="earth-agent-panel" onClick={()=>setAgentVisible(value=>!value)} disabled={!session}>{agentVisible?'收起 Agent':'展开 Agent'}</button>
       <button onClick={() => setRefresh(x => x + 1)} disabled={!session}>刷新结果</button>
     </header>
     <div className="earth-app__body">
-      <section className="earth-agent" data-earth-surface="agent" aria-label="Agent 工作栏">
+      <section className="earth-agent" id="earth-agent-panel" data-earth-surface="agent" aria-label="Agent 工作栏" hidden={Boolean(session) && !agentVisible}>
 
         {error ? <div className="earth-error" role="alert"><p>{error}</p>{!session ? <button onClick={() => setHistoryRevision(x => x + 1)}>重新读取</button> : null}</div> : null}
         {pending ? <div className="earth-error" role="status"><p>这条请求尚未确认接纳，已保留原消息标识。</p><button disabled={sending} onClick={() => void retry()}>核对并重试原请求</button></div> : null}
@@ -631,7 +634,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
       <section className="earth-workspace" aria-label="地图与代码工作区">
         <nav className="earth-toolbar" aria-label="工作区视图">
           <div className="earth-toolbar__views" role="group" aria-label="视图布局">
-            {([['split', '地图＋代码', Columns2], ['map', '地图', MapIcon], ['code', '代码', Code2]] as const).map(([key,label,Icon])=><button key={key} aria-pressed={view===key} onClick={()=>setView(key)}><Icon size={14} aria-hidden="true"/>{label}</button>)}
+            {([['map', '地图', MapIcon], ['split', '地图＋代码', Rows2], ['code', '代码', Code2]] as const).map(([key,label,Icon])=><button key={key} aria-pressed={view===key} title={key === 'split' ? '在地图下方查看代码或文件' : key === 'code' ? '专注查看代码或文件' : '展开地图工作区'} onClick={()=>setView(key)}><Icon size={14} aria-hidden="true"/>{label}</button>)}
           </div>
           <button className="earth-toolbar__primary" aria-pressed={drawer==='tasks'} onClick={()=>setDrawer(drawer==='tasks'?null:'tasks')}><Plus size={14} aria-hidden="true"/>开始任务</button>
           <div className="earth-toolbar__spacer"/>
@@ -648,7 +651,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
         <div className="earth-panels" data-view={view}>
           <div className="earth-map-panel" hidden={view === 'code'}><EarthMap key={workspaceRoot} workspaceKey={workspaceRoot} onActivity={mapActivity} onMapState={persistMapState} run={mapRun} command={viewCommand} selection={selection?.features ?? []} onSelect={selectMapFeature} projectLayers={projectLayers} spatialSources={spatialSources} workspaceFiles={workspaceFiles} workspaceFilesIncomplete={workspaceFilesIncomplete} workspaceFilesNotice={workspaceFilesNotice} activeObjectLabel={activeObjectLabel} onSaveLayer={saveProjectLayer} onUpdateFeature={updateProjectFeature} onUpdateFeatures={updateProjectFeatures} onCreateBundle={async(id)=>{await createGISBundle(id);}} localRuns={localRuns} localResult={localResult} onShowRun={showLocalRun} onCompareRuns={compareLocalRuns} onLoadSourceLayer={loadSourceLayer} onOpenLayerRevision={openLayerRevision} onExportLayer={exportProjectLayer} onToggleLayer={toggleProjectLayer} onRemoveLayer={removeProjectLayer} onConnectSource={connectSpatialSource} onRefreshCatalog={refreshProjectLayers} onRefreshFiles={refreshWorkspaceFiles} onOpenFile={openWorkspaceFile} />{mapRun && mapRun.runId !== run?.runId ? <span className="earth-map-retained" role="status">显示上次完成的结果 · {mapRun.runId.slice(0,8)}</span> : null}{layerMessage ? <span className="earth-layer-toast" role="status">{layerMessage}</span> : null}</div>
           <section className="earth-code" hidden={view === 'map'} aria-label="Earth Engine JavaScript">
-            <header><strong>{activeKind === 'html' ? 'HTML 报告' : activeKind === 'markdown' ? 'Markdown 文档' : activeKind === 'binary' ? 'GIS 文件' : 'Earth Engine · JavaScript'}</strong><button disabled={activeKind !== 'script' || !session || !scriptFile || busy || sending || Boolean(pending) || scriptDirty} onClick={() => void runSaved()}>运行已保存代码</button></header>
+            <header><div className="earth-code__identity"><strong>{activeKind === 'html' ? 'HTML 报告' : activeKind === 'markdown' ? 'Markdown 文档' : activeKind === 'binary' ? 'GIS 文件' : 'Earth Engine · JavaScript'}</strong>{activeFile ? <span title={activeFile.path}>{activeFile.path.split('/').pop()}</span> : null}</div><button disabled={activeKind !== 'script' || !session || !scriptFile || busy || sending || Boolean(pending) || scriptDirty} onClick={() => void runSaved()}>运行已保存代码</button><button className="earth-code__view-action" aria-label={view === 'code' ? '恢复地图与文件分屏' : '最大化文件预览'} title={view === 'code' ? '恢复地图与文件分屏' : '最大化文件预览'} onClick={() => setView(view === 'code' ? 'split' : 'code')}>{view === 'code' ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}</button><button className="earth-code__view-action" aria-label="关闭文件预览" title="关闭文件预览" onClick={() => setView('map')}><X size={15} aria-hidden="true" /></button></header>
             {run ? <small className="earth-version">运行 {run.runId.slice(0, 8)} · {scriptFile && scriptFile.content !== run.code ? '脚本已修改，结果属于上次代码' : '代码与该次运行对应'}</small> : null}
             {editor.panel}
             {!editor.editing && activeKind === 'html' && activeFile ? <iframe className="earth-html-preview" title={activeFile.path.split('/').pop() || 'HTML 报告'} sandbox="" srcDoc={activeFile.content} /> : null}
@@ -656,7 +659,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
           </section>
         </div>
         {readError ? <details className="earth-read-error"><summary>尚未读到最新结果 · 已保留当前内容</summary><p>{readError}</p><button onClick={() => setRefresh(x => x + 1)}>重新读取</button></details> : null}
-        {drawer ? <div className="earth-drawer"><header className="earth-drawer__header"><strong>{({tasks:'开始一项地理工作',delivery:'制图与交付',remote:'遥感与区域研究',raster:'查询栅格数据',gis:'空间分析',knowledge:'方法资料',sources:'数据来源',console:'运行结果'} as const)[drawer]}</strong><button aria-label="关闭任务面板" onClick={()=>setDrawer(null)}><X size={16} aria-hidden="true"/></button></header>{drawer==='tasks'?<MapTaskLauncher selectedFeatures={selection?.features ?? []} workspaceReady={Boolean(session)} onChoose={chooseMapTask}/>:drawer==='delivery'?<GISDeliveryPanel runs={localRuns} onGenerate={createGISBundle} onOpenReport={async(path)=>{await openWorkspaceFile({path:`${workspaceRoot}/${path}`,name:'report.html',kind:'file'});setDrawer(null);}}/>:drawer === 'raster' ? <RasterQueryPanel key={rasterPath} initialPath={rasterPath} workspaceRoot={workspaceRoot} files={workspaceFiles.filter(file=>file.kind==='file')} selection={selection?.features ?? []} onQuery={queryRaster}/> : drawer === 'remote' ? <RemoteSensingPanel initialKind={remoteKind} imageFiles={workspaceFiles.filter(file=>file.kind==='file' && /\.tiff?$/i.test(file.path)).map(file=>({name:file.name,path:file.path.replace(`${workspaceRoot}/`,'')}))} onOpenResult={async(path)=>{await openWorkspaceFile({path:`${workspaceRoot}/${path}`,name:path.split('/').pop() || path,kind:'file'});if(/\.(html?|md|csv|json)$/i.test(path))setDrawer(null);}} projectLayers={projectLayers} selectedFeatures={selection?.features ?? []} onPrepareWorkflow={prepareRemote} onRunWorkflow={runRemote} onSaveSamples={saveSamples} onResearch={researchWithAgent}/> : drawer === 'console' ? <EarthResults run={run} /> : drawer === 'gis' ? <section className="earth-sources earth-gis-catalog"><GISOperationPanel layers={projectLayers} onRun={runSitingPlan} onPlan={requestSpatialPlan}/><details><summary>高级：查看 GIS 算子</summary><p>Agent 可在当前 Session 工作区读取真实矢量/栅格数据，先检查 CRS 和字段，再运行确定性算子。结果保存在 <code>.earth/gis/runs/</code>，不会伪装成 Earth Engine 结果。</p>{gisCatalog.map(group => <details key={group.category} open><summary>{group.category} · {group.ops.length} 个算子</summary>{group.ops.map(operation => <div className="earth-gis-op" key={operation.op}><strong>{operation.op}</strong><span>{operation.desc}</span><small>{operation.inputs.map(input => `${input.role}:${input.kind}`).join(' · ') || '无输入'}{operation.args.length ? ` · 参数：${operation.args.map(arg => arg.name).join(', ')}` : ''}</small></div>)}</details>)}</details></section> : drawer === 'knowledge' ? <section className="earth-sources earth-gis-knowledge"><h2>GIS 方法库</h2><p>版本化的 CRS、scale、云端/本地边界、路线和机器学习规则。Agent 可通过 <code>earth_gis_search</code> 检索，再决定工具和脚本。</p><input aria-label="搜索 GIS 知识" value={knowledgeQuery} onChange={event => setKnowledgeQuery(event.target.value)} placeholder="搜索 buffer、scale、随机森林…" />{gisKnowledge.filter(item => !knowledgeQuery.trim() || `${item.title} ${item.text} ${item.tags.join(' ')}`.toLowerCase().includes(knowledgeQuery.toLowerCase())).map(item => <article className="earth-knowledge-card" key={item.id}><strong>{item.title}</strong><p>{item.text}</p><small>{item.tags.join(' · ')}</small></article>)}</section> : <section className="earth-sources"><h2>本次运行的资料</h2>{run?.sourceRefs?.length ? run.sourceRefs.filter(item => item.url.startsWith('https://developers.google.com/earth-engine/')).map(item => <p key={item.url}><a href={item.url} target="_blank" rel="noreferrer">{item.title} ↗</a><small>读取于 {item.retrievedAt}</small></p>) : <p>尚未记录官方资料读取回执。实际工具过程保留在左侧。</p>}<h2>Google 官方参考入口</h2>{SOURCES.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer">{label} ↗</a>)}</section>}</div> : null}
+        {drawer ? <div className="earth-drawer"><header className="earth-drawer__header"><strong>{({tasks:'开始一项地理工作',delivery:'制图与交付',remote:'遥感与区域研究',raster:'查询栅格数据',gis:'空间分析',knowledge:'方法资料',sources:'数据来源',console:'运行结果',cloud:'云端任务'} as const)[drawer]}</strong><button aria-label="关闭任务面板" onClick={()=>setDrawer(null)}><X size={16} aria-hidden="true"/></button></header>{drawer==='cloud'?<CloudTasksPanel key={session?.id} onRefresh={async()=>{if(!session)throw new Error('请先打开项目会话。');return await invokeGISCommand(session.id,'/earth-cloud-status {}') as CloudTaskSnapshot;}} onCancel={async(id)=>{if(!session)throw new Error('请先打开项目会话。');return invokeGISCommand(session.id,`/earth-cloud-cancel ${JSON.stringify({taskIds:[id]})}`);}}/>:drawer==='tasks'?<MapTaskLauncher selectedFeatures={selection?.features ?? []} workspaceReady={Boolean(session)} onChoose={chooseMapTask}/>:drawer==='delivery'?<GISDeliveryPanel runs={localRuns} onGenerate={createGISBundle} onOpenReport={async(path)=>{await openWorkspaceFile({path:`${workspaceRoot}/${path}`,name:'report.html',kind:'file'});setDrawer(null);}}/>:drawer === 'raster' ? <RasterQueryPanel key={rasterPath} initialPath={rasterPath} workspaceRoot={workspaceRoot} files={workspaceFiles.filter(file=>file.kind==='file')} selection={selection?.features ?? []} onQuery={queryRaster}/> : drawer === 'remote' ? <RemoteSensingPanel initialKind={remoteKind} imageFiles={workspaceFiles.filter(file=>file.kind==='file' && /\.tiff?$/i.test(file.path)).map(file=>({name:file.name,path:file.path.replace(`${workspaceRoot}/`,'')}))} onOpenResult={async(path)=>{await openWorkspaceFile({path:`${workspaceRoot}/${path}`,name:path.split('/').pop() || path,kind:'file'});if(/\.(html?|md|csv|json)$/i.test(path))setDrawer(null);}} projectLayers={projectLayers} selectedFeatures={selection?.features ?? []} onPrepareWorkflow={prepareRemote} onRunWorkflow={runRemote} onSaveSamples={saveSamples} onResearch={researchWithAgent}/> : drawer === 'console' ? <><button onClick={()=>setDrawer('cloud')}>查看实时云端任务</button><EarthResults run={run} /></> : drawer === 'gis' ? <section className="earth-sources earth-gis-catalog"><GISOperationPanel layers={projectLayers} onRun={runSitingPlan} onPlan={requestSpatialPlan}/><details><summary>高级：查看 GIS 算子</summary><p>Agent 可在当前 Session 工作区读取真实矢量/栅格数据，先检查 CRS 和字段，再运行确定性算子。结果保存在 <code>.earth/gis/runs/</code>，不会伪装成 Earth Engine 结果。</p>{gisCatalog.map(group => <details key={group.category} open><summary>{group.category} · {group.ops.length} 个算子</summary>{group.ops.map(operation => <div className="earth-gis-op" key={operation.op}><strong>{operation.op}</strong><span>{operation.desc}</span><small>{operation.inputs.map(input => `${input.role}:${input.kind}`).join(' · ') || '无输入'}{operation.args.length ? ` · 参数：${operation.args.map(arg => arg.name).join(', ')}` : ''}</small></div>)}</details>)}</details></section> : drawer === 'knowledge' ? <section className="earth-sources earth-gis-knowledge"><h2>GIS 方法库</h2><p>版本化的 CRS、scale、云端/本地边界、路线和机器学习规则。Agent 可通过 <code>earth_gis_search</code> 检索，再决定工具和脚本。</p><input aria-label="搜索 GIS 知识" value={knowledgeQuery} onChange={event => setKnowledgeQuery(event.target.value)} placeholder="搜索 buffer、scale、随机森林…" />{gisKnowledge.filter(item => !knowledgeQuery.trim() || `${item.title} ${item.text} ${item.tags.join(' ')}`.toLowerCase().includes(knowledgeQuery.toLowerCase())).map(item => <article className="earth-knowledge-card" key={item.id}><strong>{item.title}</strong><p>{item.text}</p><small>{item.tags.join(' · ')}</small></article>)}</section> : <section className="earth-sources"><h2>本次运行的资料</h2>{run?.sourceRefs?.length ? run.sourceRefs.filter(item => item.url.startsWith('https://developers.google.com/earth-engine/')).map(item => <p key={item.url}><a href={item.url} target="_blank" rel="noreferrer">{item.title} ↗</a><small>读取于 {item.retrievedAt}</small></p>) : <p>尚未记录官方资料读取回执。实际工具过程保留在左侧。</p>}<h2>Google 官方参考入口</h2>{SOURCES.map(([label, url]) => <a key={url} href={url} target="_blank" rel="noreferrer">{label} ↗</a>)}</section>}</div> : null}
       </section>
     </div>
   </main>;
