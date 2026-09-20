@@ -19,7 +19,15 @@ import { usePiProviderCatalog } from './api';
 type ProviderAction = 'set_api_key' | 'logout' | 'oauth_browser' | 'oauth_device_code';
 
 export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string } = {}) {
+  return onlyProvider ? <ProviderCredentials onlyProvider={onlyProvider} /> : <RoutedProviderCredentials />;
+}
+
+function RoutedProviderCredentials() {
   const navigate = useNavigate();
+  return <ProviderCredentials navigate={navigate} />;
+}
+
+function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string; navigate?: (path: string) => void }) {
   const {
     authChangesSupported,
     capabilities,
@@ -231,7 +239,7 @@ export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string 
       没有读到这台 Mac 的账号管理能力。请重新检查；如果仍然失败，可打开问题排查查看本机服务状态。
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={capabilities.isFetching} onClick={() => void capabilities.refetch()} size="small">重新检查</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -240,7 +248,7 @@ export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string 
       当前本机服务未提供模型账号管理。已保存的模型连接不会因此丢失；重新检查后仍不可用时，可前往问题排查。
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={capabilities.isFetching} onClick={() => void capabilities.refetch()} size="small">重新检查</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -252,7 +260,7 @@ export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string 
       {errorText(catalog.error ?? envelope.error)}
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={catalog.isFetching} onClick={() => void catalog.refetch()} size="small">重新读取</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -261,7 +269,7 @@ export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string 
       {catalogUnavailableText(envelope.unavailableReason)}
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={catalog.isFetching} onClick={() => void catalog.refetch()} size="small">重新检查</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }

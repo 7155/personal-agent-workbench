@@ -381,16 +381,13 @@ describe('Pi provider credential UI', () => {
 
 });
 
-function renderProvider(transport: MockControlTransport, content: ReactNode = <PiProviderCredentials />): void {
+function renderProvider(transport: MockControlTransport, content: ReactNode = <PiProviderCredentials />, routed = true): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <TooltipProvider delayDuration={0}>
       <ControlTransportProvider transport={transport}>
         <QueryClientProvider client={client}>
-          <MemoryRouter initialEntries={['/configuration']}>
-            {content}
-            <RouteProbe />
-          </MemoryRouter>
+          {routed ? <MemoryRouter initialEntries={['/configuration']}>{content}<RouteProbe /></MemoryRouter> : content}
         </QueryClientProvider>
       </ControlTransportProvider>
     </TooltipProvider>,
@@ -462,7 +459,7 @@ it('opens Jev configuration from conversation permissions without changing permi
   const transport=new MockControlTransport({capabilities:{features:{piProviderCredentials:true}},routes:{
     'agent.providers.get':{...providerCatalog(),providers:[...providerCatalog().providers,{id:'typesafe',name:'TypeSafe / Jev',auth:{configured:true},scenarios:[{id:'compression',name:'压缩前内容筛选',status:'candidate',description:'标准压缩保持不变'}]}]}
   }});
-  renderProvider(transport,<PermissionPicker session={previewSessions[0]} tools={[]} disabled={false} requestOpen={0} onChange={onChange} onWorkspaceRootsChange={vi.fn()}/>);
+  renderProvider(transport,<PermissionPicker session={previewSessions[0]} tools={[]} disabled={false} requestOpen={0} onChange={onChange} onWorkspaceRootsChange={vi.fn()}/>,false);
   await user.click(screen.getByRole('button',{name:/对话权限：/}));
   await user.click(screen.getByRole('button',{name:'Jev 设置'}));
   expect(await screen.findByRole('dialog',{name:'Jev 设置'})).toBeVisible();
