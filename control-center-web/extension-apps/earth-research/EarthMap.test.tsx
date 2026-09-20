@@ -405,9 +405,9 @@ it('browses without creating points and cancels explicit drawing with Escape',()
   act(()=>{map.fire('click',{latlng:L.latLng(30,120),originalEvent:new MouseEvent('click')});});
   expect(selected).toHaveBeenCalledWith(null,'replace');
   expect(selected.mock.calls.some(call=>call[0]?.geometry?.type==='Point')).toBe(false);
-  fireEvent.click(screen.getByRole('button',{name:'点',exact:true}));
-  expect(map.pm.Draw.Marker.enabled()).toBe(true);
+  fireEvent.click(screen.getByRole('button',{name:'点'}));
+  expect((map.pm.Draw.Marker as any).enabled()).toBe(true);
   fireEvent.keyDown(screen.getByLabelText('地理分析地图'),{key:'Escape'});
-  expect(map.pm.Draw.Marker.enabled()).toBe(false);
-  expect(screen.getByRole('button',{name:'选择',exact:true})).toHaveAttribute('aria-pressed','true');
+  expect((map.pm.Draw.Marker as any).enabled()).toBe(false);
+  expect(screen.getByRole('button',{name:'选择'})).toHaveAttribute('aria-pressed','true');
 });

@@ -172,7 +172,7 @@ export function EarthMap({ run, onSelect, command, selection, workspaceKey, onAc
             const element = item instanceof L.Path ? item.getElement() : undefined;
             if (!element) return;
             element.setAttribute('tabindex', '0'); element.setAttribute('role', 'button'); element.setAttribute('aria-label', label.textContent || output.label);
-            element.addEventListener('keydown', event => { if (event instanceof KeyboardEvent && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); callback.current(feature,event.originalEvent?.shiftKey ? 'toggle' : 'select'); } });
+            element.addEventListener('keydown', event => { if (event instanceof KeyboardEvent && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); callback.current(feature,event.shiftKey ? 'toggle' : 'select'); } });
           });
         },
       }).addTo(instance);
