@@ -23,7 +23,9 @@ class KnowledgeControlFacade:
         work_contract: ManagementWorkContract,
         runtime_provider=None,
         activity_report_provider=None,
+        ime_project_provider=None,
     ) -> None:
+        self._ime_project_provider = ime_project_provider
         self._ime_reference = None
         self.activity_report_provider = activity_report_provider
         self.runtime_provider = runtime_provider
@@ -34,18 +36,20 @@ class KnowledgeControlFacade:
 
     def vault(self, payload: Mapping[str, object]) -> dict[str, object]:
         action = payload.get('action')
+        if action == 'ime_target':
+            return {'project':str(self._ime_project_provider() if self._ime_project_provider else '')}
         if action == 'ime_prepare':
             import uuid
-            project = str(payload.get('project') or '').strip()
+            project = str(self._ime_project_provider() if self._ime_project_provider else payload.get('project') or '').strip()
             if not project:
-                raise ValueError('请明确选择输入法当前项目。')
+                raise ValueError('输入法当前工作区不可用，请先在 Input Studio 配置。')
             packet = self.vault({**dict(payload), 'action': 'context'})
             if not packet['markdown'].strip():
                 raise ValueError('请选择笔记。')
             self._ime_reference = {'id': uuid.uuid4().hex, 'project':project,
                 'payload':{'action':'context','vaultId':payload['vaultId'],'noteIds':payload['noteIds']},
                 'markdown':packet['markdown'], 'expires':time.monotonic()+300}
-            return {'ready':True,'notice':'已准备。5 分钟内在目标输入框触发输入法辅助，核对后点击插入；不会发送。'}
+            return {'ready':True,'targetProject':project,'notice':f'已为输入法当前工作区 {project} 准备。5 分钟内在目标输入框触发辅助，核对后点击插入；不会发送，也不改变笔记归属。'}
         if action == 'organize':
             from .vault_organizer import organize
             return organize(self, dict(payload))

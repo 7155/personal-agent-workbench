@@ -59,6 +59,23 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_ime_preparation_binds_actual_target_and_expires_after_accept(self):
+        from types import SimpleNamespace
+        from rag_ime.knowledge_control import KnowledgeControlFacade
+        facade=object.__new__(KnowledgeControlFacade)
+        facade.worker=SimpleNamespace(management_call=lambda method,payload:self.vault.dispatch(payload))
+        facade._ime_reference=None
+        facade._ime_project_provider=lambda:"actual-input-workspace"
+        result=facade.vault({"action":"ime_prepare","vaultId":self.space["id"],"noteIds":[self.target["id"]],"project":"note-origin-project"})
+        self.assertEqual(result["targetProject"],"actual-input-workspace")
+        self.assertIsNone(facade.ime_reference("note-origin-project"))
+        reference=facade.ime_reference("actual-input-workspace")
+        self.assertTrue(facade.validate_ime_reference(reference["id"],"actual-input-workspace"))
+        self.assertFalse(facade.validate_ime_reference(reference["id"],"actual-input-workspace"))
+        facade.vault({"action":"ime_prepare","vaultId":self.space["id"],"noteIds":[self.target["id"]]})
+        (self.root/"concept.md").write_text("Changed original")
+        with self.assertRaises(ValueError):facade.ime_reference("actual-input-workspace")
+
     def test_activity_originals_feed_both_paths_and_revoke_before_apply(self):
         source={"id":"evidence:one","text":"计划实验，未执行", "occurredAtMs":1789900000000,
                 "origin":{"namespace":"paw:input","id":"one"}}

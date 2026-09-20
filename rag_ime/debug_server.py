@@ -659,6 +659,7 @@ class DebugImeService:
             self.knowledge_control = KnowledgeControlFacade(
                 runtime_provider=lambda: self.agent.runtime,
                 activity_report_provider=self.memory_lifecycle_report,
+                ime_project_provider=lambda: self.config.project,
                 worker=self.knowledge_worker,
                 work_contract=self.management.work_contract,
             )
