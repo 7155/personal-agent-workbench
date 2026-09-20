@@ -472,6 +472,8 @@ function handleAssistantIntent(intent) {
 }
 
 app.on('activate', () => {
+  // Startup owns the first window, including cold-launch activation.
+  if (!primaryInstance || !app.isReady() || !hostServer) return;
   if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
 });
 app.on('before-quit', () => {

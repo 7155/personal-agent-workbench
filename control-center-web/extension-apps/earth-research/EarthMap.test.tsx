@@ -35,7 +35,7 @@ it.each((['project', 'cloud', 'local', 'draft'] as const).flatMap(source => (['p
   clickLayer([30.05, 120.05]);
   expect(layerClicks).toHaveBeenCalledWith(expect.objectContaining({ originalEvent: expect.any(MouseEvent) }));
   expect(selected).toHaveBeenCalledTimes(1);
-  expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'existing', geometry: feature.geometry }), 'toggle');
+  expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'existing', geometry: feature.geometry }), 'replace');
   expect(mapClicks).not.toHaveBeenCalled();
   selected.mockClear(); layerClicks.mockClear();
   const positions: L.LatLngTuple[] = [[30.02, 120.02], [30.02, 120.08], [30.06, 120.09], [30.08, 120.05], [30.06, 120.02]];
@@ -45,6 +45,9 @@ it.each((['project', 'cloud', 'local', 'draft'] as const).flatMap(source => (['p
   expect(layerClicks).toHaveBeenCalledTimes(5);
   expect(mapClicks).toHaveBeenCalledTimes(5);
   expect(screen.getByRole('status')).toHaveTextContent('5 个点');
+  fireEvent.click(screen.getByRole('button',{name:'撤销顶点'}));
+  expect(screen.getByRole('status')).toHaveTextContent('4 个点');
+  act(()=>{map.fire('mousemove',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('click')});});
   expect(selected).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '完成' }));
   expect(selected).toHaveBeenCalledTimes(1);
@@ -72,6 +75,9 @@ it('draws more than three vertices using the real Geoman handler and persists th
     act(()=>{map.fire('mousemove',{latlng:L.latLng(lat,lng),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(lat,lng),originalEvent:new MouseEvent('click')});});
   }
   expect(screen.getByRole('status')).toHaveTextContent('5 个点');
+  fireEvent.click(screen.getByRole('button',{name:'撤销顶点'}));
+  expect(screen.getByRole('status')).toHaveTextContent('4 个点');
+  act(()=>{map.fire('mousemove',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('click')});});
   fireEvent.click(screen.getByRole('button',{name:'完成'}));
   expect(screen.getByRole('button',{name:'面'})).toHaveAttribute('aria-pressed','false');
   const feature=selected.mock.lastCall?.[0];
@@ -212,7 +218,7 @@ it('multi-selects table rows by typed ID and layer and does not move the map whe
   const map = factory.mock.results[0].value as L.Map;
   const fitBounds = vi.spyOn(map, 'fitBounds');
   // The table's checkboxes retain multi-selection even in single-click map mode.
-  fireEvent.click(screen.getByRole('button', { name: '多选开' }));
+  expect(screen.getByRole('button', { name: '多选关' })).toHaveAttribute('aria-pressed','false');
   fireEvent.click(screen.getByRole('tab', { name: '属性表' }));
   const numericCheckbox = () => within(screen.getByRole('row', { name: /数字 ID 样本/ })).getByRole('checkbox');
   const textCheckbox = () => within(screen.getByRole('row', { name: /文本 ID 样本/ })).getByRole('checkbox');
@@ -388,4 +394,20 @@ it('enables editing only for selected drafts and does not select unrelated draft
   await waitFor(()=>expect(screen.queryByRole('button',{name:'保存'})).not.toBeInTheDocument());
   expect(selected).not.toHaveBeenCalledWith(expect.objectContaining({id:'unselected'}),'upsert');
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:targeted-edit')!)).toEqual(features);
+});
+
+
+it('browses without creating points and cancels explicit drawing with Escape',()=>{
+  vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});Reflect.set(L.Browser,'svg',true);
+  const factory=vi.spyOn(L,'map'),selected=vi.fn();
+  render(<EarthMap run={null} selection={[]} workspaceKey="browse-not-draw" onActivity={vi.fn()} onSelect={selected}/>);
+  const map=factory.mock.results[0].value as L.Map;
+  act(()=>{map.fire('click',{latlng:L.latLng(30,120),originalEvent:new MouseEvent('click')});});
+  expect(selected).toHaveBeenCalledWith(null,'replace');
+  expect(selected.mock.calls.some(call=>call[0]?.geometry?.type==='Point')).toBe(false);
+  fireEvent.click(screen.getByRole('button',{name:'点',exact:true}));
+  expect(map.pm.Draw.Marker.enabled()).toBe(true);
+  fireEvent.keyDown(screen.getByLabelText('地理分析地图'),{key:'Escape'});
+  expect(map.pm.Draw.Marker.enabled()).toBe(false);
+  expect(screen.getByRole('button',{name:'选择',exact:true})).toHaveAttribute('aria-pressed','true');
 });
