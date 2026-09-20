@@ -1,7 +1,7 @@
 {
   "name": "@paw/earth-research",
   "displayName": "Google Earth Agent",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Agent 驱动的地图、代码与选址分析工作区",
   "private": true,
   "type": "module",
@@ -16,13 +16,13 @@
   "paw": {
     "capabilities": [
       "pawos.extension.earth-research",
-      "pawos.extension.binding.bd44bd94fa1e39b235ccb18b66e6a16b9a2eaea9"
+      "pawos.extension.binding.e9745883a35caeb3676f9092e37de246dc6edf45"
     ],
     "extensionApp": {
       "id": "extension:earth-research",
       "packageId": "@paw/earth-research",
-      "version": "0.9.1",
-      "bindingSha256": "bd44bd94fa1e39b235ccb18b66e6a16b9a2eaea957c16929b90890b703f35476",
+      "version": "0.9.2",
+      "bindingSha256": "e9745883a35caeb3676f9092e37de246dc6edf45c7e1421c26eb739c5538ce18",
       "skillRef": "earth-research",
       "skillSha256": "ff242812197decdd764fba18f7b12b78dd7071276aec2a56f7f469da9742e00f",
       "verticalSuiteId": "earth-research",
@@ -30,7 +30,7 @@
       "manifest": {
         "schemaVersion": "pawos.extension-app.v1",
         "id": "extension:earth-research",
-        "version": "0.9.1",
+        "version": "0.9.2",
         "packageId": "@paw/earth-research",
         "label": "Google Earth Agent",
         "shortLabel": "Earth",
@@ -46,7 +46,7 @@
         "skillSha256": "ff242812197decdd764fba18f7b12b78dd7071276aec2a56f7f469da9742e00f",
         "verticalSuiteId": "earth-research",
         "verticalSuiteRevision": "source-grounding-v1",
-        "bindingSha256": "bd44bd94fa1e39b235ccb18b66e6a16b9a2eaea957c16929b90890b703f35476"
+        "bindingSha256": "e9745883a35caeb3676f9092e37de246dc6edf45c7e1421c26eb739c5538ce18"
       }
     }
   }

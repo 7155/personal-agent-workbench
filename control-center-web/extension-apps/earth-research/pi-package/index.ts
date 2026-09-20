@@ -65,6 +65,8 @@ export default function registerEarthResearchPackage(pi: any) {
     },
   });
   const directServices: Record<string, (input: any) => unknown> = {
+    'earth-cloud-status': earthTaskStatus,
+    'earth-cloud-cancel': earthTaskCancel,
     'earth-layer-save': saveProjectLayer,
     'earth-layer-metadata':updateProjectLayerMetadata,
     'earth-spatial-load': loadSpatialLayer,
@@ -266,7 +268,7 @@ export default function registerEarthResearchPackage(pi: any) {
   pi.registerTool({
     name: 'earth_gis_bundle', label: '打包 GIS 成果', executionMode: 'sequential',
     description: 'Create a versioned, workspace-local deliverable directory containing one completed GIS run, its run manifest, and explicitly named report/layer files. It never claims a cloud task is complete without the saved run receipt.',
-    parameters: schema({ runId: string, name: string, version: { type: 'number' }, include: { type: 'array', items: string } }, ['runId']),
+    parameters: schema({ runId: string, name: string, version: { type: 'number' }, include: { type: 'array', items: string }, mapOptions: schema({title:string,subtitle:string,paperSize:{type:'string',enum:['A4','A3','Letter']},orientation:{type:'string',enum:['landscape','portrait']},crs:string,legend:{type:'boolean'},scaleBar:{type:'boolean'},northArrow:{type:'boolean'}}) }, ['runId']),
     async execute(_id: string, input: { runId: string; name?: string; version?: number; include?: string[] }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = createGISBundle({ ...input, root: workspace(ctx) });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };

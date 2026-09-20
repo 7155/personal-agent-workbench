@@ -7,8 +7,6 @@ const DEFAULT_CANDIDATES = [
   '/opt/homebrew/bin/qgis_process',
   '/usr/local/bin/qgis_process',
   '/usr/bin/qgis_process',
-  '/Applications/QGIS.app/Contents/MacOS/bin/qgis_process',
-  path.join(os.homedir(), 'Applications/QGIS.app/Contents/MacOS/bin/qgis_process'),
 ].filter(Boolean);
 
 const MAX_JSON_BYTES = 256_000;
@@ -24,10 +22,46 @@ function executableFile(value) {
   }
 }
 
-export function findQGISProcess({ candidates } = {}) {
-  const discovered = candidates ?? [process.env.PAW_QGIS_PROCESS, ...DEFAULT_CANDIDATES, ...(process.env.PATH || '').split(path.delimiter).filter(Boolean).map(directory => path.join(directory, 'qgis_process'))];
+function applicationCandidates(directories) {
+  if (directories === undefined) {
+    directories = ['/Applications', path.join(os.homedir(), 'Applications')];
+    // An external Applications folder is a normal installation location on macOS.
+    // Inspect only that bounded folder on each mounted volume, never the whole disk.
+    if (process.platform === 'darwin') {
+      try { directories.push(...fs.readdirSync('/Volumes').map(name => path.join('/Volumes', name, 'Applications'))); } catch { /* Volumes can be absent or unavailable. */ }
+    }
+  }
+  return directories.flatMap(directory => {
+    try {
+      return fs.readdirSync(directory).filter(name => /^QGIS.*\.app$/i.test(name)).sort().flatMap(name => [
+        path.join(directory, name, 'Contents/MacOS/qgis_process'),
+        path.join(directory, name, 'Contents/MacOS/bin/qgis_process'),
+      ]);
+    } catch { return []; }
+  });
+}
+
+export function findQGISProcess({ candidates, applicationDirectories } = {}) {
+  const discovered = candidates ?? [process.env.PAW_QGIS_PROCESS, ...applicationCandidates(applicationDirectories), ...DEFAULT_CANDIDATES, ...(process.env.PATH || '').split(path.delimiter).filter(Boolean).map(directory => path.join(directory, 'qgis_process'))];
   const values = Array.isArray(discovered) ? discovered : [discovered];
   return values.find(executableFile) || null;
+}
+
+function qgisEnvironment(executable) {
+  const env = { ...process.env, QT_QPA_PLATFORM: process.env.QT_QPA_PLATFORM || 'offscreen', PYTHONDONTWRITEBYTECODE: '1' };
+  const normalized = fs.realpathSync(executable);
+  const marker = `.app${path.sep}Contents${path.sep}`;
+  const index = normalized.lastIndexOf(marker);
+  if (index >= 0) {
+    const resources = path.join(normalized.slice(0, index + marker.length), 'Resources/qgis');
+    const proj = path.join(resources, 'proj');
+    if (fs.existsSync(path.join(proj, 'proj.db'))) {
+      env.PROJ_DATA = proj;
+      env.PROJ_LIB = proj;
+    }
+    if (fs.existsSync(path.join(resources, 'gdal'))) env.GDAL_DATA = path.join(resources, 'gdal');
+  }
+  return env;
 }
 
 function qgisExecutable(executable) {
@@ -80,7 +114,7 @@ function runQGISProcess(executable, args, { input, root, timeoutMs = DEFAULT_TIM
   return new Promise((resolve, reject) => {
     const child = execFile(executable, args, {
       cwd,
-      env: { ...process.env, QT_QPA_PLATFORM: process.env.QT_QPA_PLATFORM || 'offscreen' },
+      env: qgisEnvironment(executable),
       timeout: Math.min(Math.max(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, 1_000), 120_000),
       maxBuffer: 8 * 1024 * 1024,
       windowsHide: true,
@@ -100,7 +134,7 @@ function runQGISProcess(executable, args, { input, root, timeoutMs = DEFAULT_TIM
         reject(failure);
         return;
       }
-      resolve(result);
+      resolve({ result, nativeTested: true, qgisVersion: result.qgis_version || null, warnings: String(stderr || '').trim().split(/\r?\n/).filter(Boolean) });
     });
     child.stdin.on('error', () => {});
     child.stdin.end(serialized);
@@ -110,8 +144,8 @@ function runQGISProcess(executable, args, { input, root, timeoutMs = DEFAULT_TIM
 export async function listQGISAlgorithms({ executable, root, timeoutMs } = {}) {
   const selected = qgisExecutable(executable);
   const command = ['--json', 'list'];
-  const result = await runQGISProcess(selected, command, { root, timeoutMs });
-  return { status: 'completed', backend: 'qgis', executable: selected, command, result };
+  const receipt = await runQGISProcess(selected, command, { root, timeoutMs });
+  return { status: 'completed', backend: 'qgis', executable: selected, command, ...receipt };
 }
 
 export async function helpQGISAlgorithm({ executable, root, algorithm, timeoutMs } = {}) {
@@ -122,8 +156,8 @@ export async function helpQGISAlgorithm({ executable, root, algorithm, timeoutMs
   }
   const selected = qgisExecutable(executable);
   const command = ['--json', 'help', algorithm];
-  const result = await runQGISProcess(selected, command, { root, timeoutMs });
-  return { status: 'completed', backend: 'qgis', executable: selected, command, algorithm, result };
+  const receipt = await runQGISProcess(selected, command, { root, timeoutMs });
+  return { status: 'completed', backend: 'qgis', executable: selected, command, algorithm, ...receipt };
 }
 
 export async function runQGISAlgorithm({ executable, root, algorithm, inputs = {}, timeoutMs } = {}) {
@@ -139,8 +173,8 @@ export async function runQGISAlgorithm({ executable, root, algorithm, inputs = {
   }
   const selected = qgisExecutable(executable);
   const command = ['--json', 'run', algorithm, '-'];
-  const result = await runQGISProcess(selected, command, { input: { inputs }, root, timeoutMs });
-  return { status: 'completed', backend: 'qgis', executable: selected, command, algorithm, inputs, result };
+  const receipt = await runQGISProcess(selected, command, { input: { inputs }, root, timeoutMs });
+  return { status: 'completed', backend: 'qgis', executable: selected, command, algorithm, inputs, ...receipt };
 }
 
 export function qgisBackendStatus(options = {}) {
@@ -151,6 +185,6 @@ export function qgisBackendStatus(options = {}) {
     executable,
     nativeTested: false,
     status: executable ? 'installed_unverified' : 'unavailable',
-    role: 'optional QGIS Processing provider; configure PAW_QGIS_PROCESS before enabling',
+    role: 'optional QGIS Processing provider; discovers installed QGIS apps or PAW_QGIS_PROCESS',
   };
 }

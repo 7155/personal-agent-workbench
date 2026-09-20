@@ -98,9 +98,9 @@ function parseRunnerOutput(stdout) {
   throw new Error('GIS runner returned no JSON receipt');
 }
 
-function executeRunner(python, runner, request, cwd) {
+function executeRunner(python, runner, request, cwd, { timeout = 300_000 } = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile(python, [runner], { cwd, timeout: 300_000, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+    const child = execFile(python, [runner], { cwd, timeout, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } }, (error, stdout, stderr) => {
       let parsed;
       try { parsed = parseRunnerOutput(stdout); } catch (parseError) {
         reject(error ?? parseError);
@@ -226,6 +226,53 @@ function requestedSourceId(source) {
   return id;
 }
 
+const postgisFailureStatuses = {
+  postgis_secret_missing: 'missing_secret', postgis_dependency_missing: 'dependency_missing',
+  postgis_connection_failed: 'connection_failed', postgis_authentication_failed: 'authentication_failed',
+  postgis_permission_denied: 'permission_denied', postgis_extension_missing: 'postgis_missing',
+  postgis_database_missing: 'database_missing', postgis_query_timeout: 'query_timeout',
+  postgis_runner_failed: 'runtime_unavailable',
+};
+
+const postgisErrors = {
+  postgis_secret_missing: 'The PostGIS connection environment variable is not configured in this runtime.',
+  postgis_dependency_missing: 'PostGIS requires psycopg[binary] or psycopg2 in the configured Earth GIS Python runtime.',
+  postgis_connection_failed: 'PostGIS connection failed. Check the referenced configuration and server availability.',
+  postgis_authentication_failed: 'PostGIS authentication failed. Check the referenced connection credentials.',
+  postgis_permission_denied: 'The PostGIS account cannot read the selected resource.',
+  postgis_extension_missing: 'The selected database does not have the PostGIS extension enabled.',
+  postgis_database_missing: 'The referenced PostgreSQL database does not exist.',
+  postgis_query_timeout: 'PostGIS read exceeded the query time limit. Select a smaller table or view.',
+  postgis_runner_failed: 'PostGIS runtime could not complete the read. Check the configured Python runtime and retry.',
+  postgis_query_failed: 'PostGIS could not read the selected spatial resource. Check its geometry, CRS and read permissions.',
+  postgis_invalid_identifier: 'PostGIS schema/table identifier is invalid.',
+  postgis_invalid_secret_reference: 'PostGIS requires an environment secret reference.',
+  postgis_feature_limit: 'PostGIS layer exceeds the 10,000 feature read limit. Select a smaller table or view.',
+  postgis_byte_limit: 'PostGIS layer exceeds the 32 MiB read limit. Select a smaller table or view.',
+  postgis_feature_byte_limit: 'A PostGIS feature exceeds the 2 MiB read limit. Select a view with fewer attributes or simpler geometry.',
+  postgis_invalid_geometry: 'PostGIS returned geometry that cannot be represented as finite WGS84 GeoJSON.',
+  postgis_mixed_srid: 'The PostGIS layer contains mixed SRIDs; use a view with one explicit CRS.',
+  postgis_read_only_violation: 'The selected PostGIS resource attempted a write. Only read-only tables and views are supported.',
+  layer_not_found: 'The selected PostGIS layer is absent or is not readable; reconnect to refresh its catalog.',
+  unknown_crs: 'The PostGIS layer has no known source SRID.',
+  invalid_output: 'Loaded PostGIS output must be a GeoJSON path.',
+};
+
+async function executePostGIS(prepared, request) {
+  try {
+    const result = await executeRunner(prepared.python, prepared.runner, { ...request, root: prepared.root }, prepared.root, { timeout: 60_000 });
+    if (result.status === 'failed') {
+      const code = Object.hasOwn(postgisErrors, result.code) ? result.code : 'postgis_runner_failed';
+      return { status: 'failed', code, error: postgisErrors[code] };
+    }
+    return result;
+  } catch {
+    // Driver/child-process errors may embed a DSN, username or server address.
+    // Only the runner's bounded, redacted receipt may cross this boundary.
+    return { status: 'failed', code: 'postgis_runner_failed', error: postgisErrors.postgis_runner_failed };
+  }
+}
+
 export async function connectSpatialSource({ root, python, source }) {
   const resolvedRoot = safeRoot(root);
   if (!source || typeof source !== 'object') throw new TypeError('Spatial source must be an object.');
@@ -233,8 +280,9 @@ export async function connectSpatialSource({ root, python, source }) {
   const kind = String(source.kind || '').trim().toLowerCase();
   if (!spatialKinds.has(kind)) throw new TypeError(`Unsupported spatial source kind: ${kind}`);
   const now = new Date().toISOString();
-  let status = 'configured_pending';
+  let status = 'ready';
   let layers = [];
+  let probe = {};
   let relativePath = '';
   const schema = String(source.schema || '').trim();
   const table = String(source.table || '').trim();
@@ -251,7 +299,20 @@ export async function connectSpatialSource({ root, python, source }) {
     status = 'ready';
   } else {
     if (!/^[A-Z][A-Z0-9_]{2,127}$/.test(secretReference)) throw new TypeError('PostGIS requires an environment secret reference such as PAW_POSTGIS_URL.');
-    if (source.url || source.connectionString) throw new Error('PostGIS credentials must stay in the referenced secret; do not send a URL or password in the workspace request.');
+    if (['url', 'connectionString', 'password', 'dsn', 'username', 'user', 'host', 'port', 'database'].some(key => source[key] !== undefined)) throw new Error('PostGIS credentials must stay in the referenced secret; do not send connection values in the workspace request.');
+    if (source.readOnly === false) throw new Error('PostGIS connections support read-only access.');
+    for (const identifier of [schema, table]) {
+      if (identifier.includes('\0') || Buffer.byteLength(identifier, 'utf8') > 63) throw new TypeError('PostGIS schema/table identifier is invalid.');
+    }
+    const prepared = prepareGISWorkspace(resolvedRoot, { python });
+    const result = await executePostGIS(prepared, { operation: 'catalog_postgis', secretReference, schema, table });
+    if (result.status === 'failed') {
+      status = postgisFailureStatuses[result.code] || 'query_failed';
+      probe = { code: result.code, error: result.error };
+    } else {
+      layers = result.layers || [];
+      probe = { layerDetails: result.layerDetails, postgisVersion: result.postgisVersion, catalogTruncated: result.catalogTruncated, featureLimit: result.featureLimit };
+    }
   }
   const catalog = readSpatialCatalog(resolvedRoot);
   const identity = sourceIdentity({ kind, path: relativePath, schema, table, secretReference });
@@ -269,6 +330,7 @@ export async function connectSpatialSource({ root, python, source }) {
     readOnly: source.readOnly !== false,
     status,
     layers,
+    ...probe,
     updatedAt: now,
   };
   const next = { schemaVersion: 'earth.spatial-catalog.v1', updatedAt: now, sources: [...catalog.sources.filter(item => item.id !== record.id), record] };
@@ -289,7 +351,7 @@ export async function loadSpatialLayer({ root, python, sourceId, layer }) {
   const catalog = readSpatialCatalog(resolvedRoot);
   const source = catalog.sources.find(item => item.id === id);
   if (!source) throw new Error(`Spatial source not found: ${id}`);
-  if (source.kind === 'postgis' || source.status !== 'ready') throw new Error(`Spatial source is not ready for local layer loading: ${id}`);
+  if (source.status !== 'ready') throw Object.assign(new Error(source.error || 'Spatial source is not ready; reconnect it before loading a layer.'), { code: source.code || 'source_not_ready' });
   const output = layerOutputPath(source, layer);
   const lineage = {
     sourceId: source.id,
@@ -299,7 +361,10 @@ export async function loadSpatialLayer({ root, python, sourceId, layer }) {
     layer,
   };
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
-  const result = await executeRunner(prepared.python, prepared.runner, {
+  const result = source.kind === 'postgis' ? await executePostGIS(prepared, {
+    operation: 'load_postgis', secretReference: source.secretReference,
+    schema: source.schema, table: source.table, layer, output, sourceLineage: lineage,
+  }) : await executeRunner(prepared.python, prepared.runner, {
     operation: 'load_source',
     root: resolvedRoot,
     path: source.path,

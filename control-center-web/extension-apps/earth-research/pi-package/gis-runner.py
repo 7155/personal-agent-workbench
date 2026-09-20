@@ -600,6 +600,288 @@ def catalog_source(root: Path, request: dict[str, Any]) -> dict[str, Any]:
     return {"status": "completed", "path": str(source.relative_to(root)), "kind": "geopackage" if source.suffix.lower() == ".gpkg" else "spatialite", "layers": layers}
 
 
+POSTGIS_CATALOG_LIMIT = 500
+POSTGIS_FEATURE_LIMIT = 10_000
+POSTGIS_BYTE_LIMIT = 32 * 1024 * 1024
+
+
+class PostGISFailure(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def postgis_identifier(value: Any) -> str:
+    if not isinstance(value, str) or "\x00" in value or len(value.encode("utf-8")) > 63:
+        raise PostGISFailure("postgis_invalid_identifier", "PostGIS schema/table identifier is invalid.")
+    return value
+
+
+def postgis_layer_name(parts: list[str]) -> str:
+    # This is a display/selection key, never parsed back into SQL. Quoting each
+    # component makes names containing dots, quotes and Unicode unambiguous.
+    return ".".join(part if re.fullmatch(r"[a-z_][a-z0-9_]*", part) else '"' + part.replace('"', '""') + '"' for part in parts)
+
+
+def postgis_catalog(cursor: Any, sql: Any, extension: tuple, request: dict[str, Any]) -> dict[str, Any]:
+    namespace, namespace_oid, version = extension
+    schema = postgis_identifier(request.get("schema", ""))
+    table = postgis_identifier(request.get("table", ""))
+    cursor.execute(sql.SQL("""
+        SELECT n.nspname, c.relname, a.attname, t.typname,
+               {srid}(a.atttypmod), {kind}(a.atttypmod), c.oid
+        FROM pg_catalog.pg_attribute AS a
+        JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_type AS t ON t.oid = a.atttypid
+        WHERE a.attnum > 0 AND NOT a.attisdropped
+          AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+          AND t.typnamespace = %s AND t.typname IN ('geometry', 'geography')
+          AND pg_catalog.has_schema_privilege(n.oid, 'USAGE')
+          AND pg_catalog.has_table_privilege(c.oid, 'SELECT')
+          AND (%s = '' OR n.nspname = %s) AND (%s = '' OR c.relname = %s)
+        ORDER BY n.nspname, c.relname, a.attname LIMIT %s
+    """).format(srid=sql.Identifier(namespace, "postgis_typmod_srid"), kind=sql.Identifier(namespace, "postgis_typmod_type")),
+        (namespace_oid, schema, schema, table, table, POSTGIS_CATALOG_LIMIT + 1))
+    rows = cursor.fetchall()
+    details = [{
+        "name": postgis_layer_name([row[0], row[1], row[2]]),
+        "schema": row[0], "table": row[1], "geometryColumn": row[2],
+        "geometryStorage": row[3], "srid": int(row[4]), "geometryType": row[5],
+        "relationOid": int(row[6]),
+    } for row in rows[:POSTGIS_CATALOG_LIMIT]]
+    return {"status": "completed", "kind": "postgis", "layers": [item["name"] for item in details],
+            "layerDetails": details, "postgisVersion": version,
+            "catalogTruncated": len(rows) > POSTGIS_CATALOG_LIMIT, "featureLimit": POSTGIS_FEATURE_LIMIT}
+
+
+def postgis_geometry_bounds(geometry: Any) -> tuple[list[float] | None, set[str]]:
+    if geometry is None:
+        return None, set()
+    if not isinstance(geometry, dict) or not isinstance(geometry.get("type"), str):
+        raise PostGISFailure("postgis_invalid_geometry", "PostGIS returned an invalid GeoJSON geometry.")
+    bounds = None
+    types = {geometry["type"]}
+
+    def visit(value: Any) -> None:
+        nonlocal bounds
+        if not isinstance(value, list):
+            raise PostGISFailure("postgis_invalid_geometry", "PostGIS returned invalid geometry coordinates.")
+        if value and isinstance(value[0], (int, float)):
+            if len(value) < 2 or any(isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(item) for item in value):
+                raise PostGISFailure("postgis_invalid_geometry", "PostGIS returned non-finite geometry coordinates.")
+            x, y = value[:2]
+            if abs(x) > 180 or abs(y) > 90:
+                raise PostGISFailure("postgis_invalid_geometry", "PostGIS geometry could not be transformed into WGS84.")
+            bounds = [x, y, x, y] if bounds is None else [min(bounds[0], x), min(bounds[1], y), max(bounds[2], x), max(bounds[3], y)]
+        else:
+            for item in value:
+                visit(item)
+
+    if geometry["type"] == "GeometryCollection":
+        for child in geometry.get("geometries", []):
+            child_bounds, child_types = postgis_geometry_bounds(child)
+            types.update(child_types)
+            if child_bounds is not None:
+                visit([child_bounds[:2], child_bounds[2:]])
+    else:
+        visit(geometry.get("coordinates"))
+    return bounds, types
+
+
+def postgis_load(root: Path, request: dict[str, Any], connection: Any, cursor: Any, sql: Any, extension: tuple, catalog: dict[str, Any]) -> dict[str, Any]:
+    import hashlib
+    import uuid
+    from datetime import datetime, timezone
+
+    selected = next((item for item in catalog["layerDetails"] if item["name"] == request.get("layer")), None)
+    if selected is None:
+        raise PostGISFailure("layer_not_found", "The selected PostGIS layer is absent or is not readable; reconnect to refresh its catalog.")
+    namespace, namespace_oid, _version = extension
+    cursor.execute("""
+        SELECT a.attname, t.typname, t.typnamespace FROM pg_catalog.pg_attribute AS a
+        JOIN pg_catalog.pg_type AS t ON t.oid = a.atttypid
+        WHERE a.attrelid = %s AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum
+    """, (selected["relationOid"],))
+    columns = [row[0] for row in cursor.fetchall() if not (row[1] in ("geometry", "geography") and row[2] == namespace_oid)]
+    cursor.execute("""
+        SELECT a.attname FROM pg_catalog.pg_index AS i
+        JOIN pg_catalog.pg_attribute AS a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = %s AND i.indisprimary AND i.indisvalid ORDER BY a.attnum
+    """, (selected["relationOid"],))
+    primary_key = [row[0] for row in cursor.fetchall() if row[0] in columns]
+    geometry = sql.SQL("{}::{}").format(sql.Identifier("src", selected["geometryColumn"]), sql.Identifier(namespace, "geometry"))
+    attributes = sql.SQL("(SELECT pg_catalog.to_jsonb(attrs)::text FROM (SELECT {}) AS attrs)").format(
+        sql.SQL(", ").join(sql.Identifier("src", column) for column in columns)
+    ) if columns else sql.SQL("'{}'::text")
+    order = sql.SQL(" ORDER BY {}").format(sql.SQL(", ").join(sql.Identifier("src", column) for column in primary_key)) if primary_key else sql.SQL("")
+    query = sql.SQL("""
+        SELECT CASE WHEN {geometry} IS NULL THEN NULL ELSE {srid}({geometry}) END AS source_srid,
+               CASE WHEN {geometry} IS NOT NULL AND {srid}({geometry}) > 0
+                    THEN {asjson}({transform}({geometry}, 4326), 9, 0) ELSE NULL END AS geometry_text,
+               {attributes} AS properties_text
+        FROM {table} AS src {order} LIMIT %s
+    """).format(geometry=geometry, srid=sql.Identifier(namespace, "st_srid"),
+                 asjson=sql.Identifier(namespace, "st_asgeojson"), transform=sql.Identifier(namespace, "st_transform"),
+                 attributes=attributes, table=sql.Identifier(selected["schema"], selected["table"]), order=order)
+    # Bound each wire row before the driver receives it. Fetching 16 rows can
+    # transfer at most 32 MiB, even when a source has a huge geometry/text cell.
+    query = sql.SQL("""
+        SELECT source_srid,
+               CASE WHEN payload_bytes <= 2097152 THEN geometry_text END,
+               CASE WHEN payload_bytes <= 2097152 THEN properties_text END,
+               payload_bytes > 2097152
+        FROM (
+            SELECT bounded_read.*, COALESCE(pg_catalog.octet_length(geometry_text), 0)
+                   + pg_catalog.octet_length(properties_text) AS payload_bytes
+            FROM ({read}) AS bounded_read
+        ) AS sized_read
+    """).format(read=query)
+    features, geometry_types, srids = [], set(), set()
+    bounds, byte_count = None, 0
+    # A server cursor keeps a large result out of client memory until bounded
+    # chunks have passed the row and byte checks. No COUNT/whole-table extent.
+    with connection.cursor(name="paw_postgis_layer") as rows:
+        rows.itersize = 16
+        rows.execute(query, (POSTGIS_FEATURE_LIMIT + 1,))
+        while True:
+            batch = rows.fetchmany(16)
+            if not batch:
+                break
+            for srid, geometry_text, properties_text, oversized in batch:
+                if len(features) >= POSTGIS_FEATURE_LIMIT:
+                    raise PostGISFailure("postgis_feature_limit", "PostGIS layer exceeds the 10,000 feature read limit. Select a smaller table or view.")
+                if oversized:
+                    raise PostGISFailure("postgis_feature_byte_limit", "A PostGIS feature exceeds the 2 MiB read limit. Select a view with fewer attributes or simpler geometry.")
+                byte_count += len((geometry_text or "").encode("utf-8")) + len(properties_text.encode("utf-8"))
+                if byte_count > POSTGIS_BYTE_LIMIT:
+                    raise PostGISFailure("postgis_byte_limit", "PostGIS layer exceeds the 32 MiB read limit. Select a smaller table or view.")
+                if srid is not None:
+                    if srid <= 0:
+                        raise PostGISFailure("unknown_crs", "The PostGIS layer contains geometry without a known SRID.")
+                    srids.add(srid)
+                geometry_value = json.loads(geometry_text) if geometry_text else None
+                properties = json.loads(properties_text)
+                feature = {"type": "Feature", "properties": properties, "geometry": geometry_value}
+                if primary_key:
+                    values = [properties[column] for column in primary_key]
+                    identity = values[0] if len(values) == 1 else json.dumps(values, ensure_ascii=False, separators=(",", ":"))
+                    if isinstance(identity, int) and abs(identity) > 2**53 - 1:
+                        identity = str(identity)
+                    if isinstance(identity, str) or isinstance(identity, (int, float)) and not isinstance(identity, bool) and math.isfinite(identity):
+                        feature["id"] = identity
+                feature_bounds, types = postgis_geometry_bounds(geometry_value)
+                if feature_bounds is not None:
+                    bounds = feature_bounds if bounds is None else [min(bounds[0], feature_bounds[0]), min(bounds[1], feature_bounds[1]), max(bounds[2], feature_bounds[2]), max(bounds[3], feature_bounds[3])]
+                geometry_types.update(types)
+                features.append(feature)
+    if len(srids) > 1 or srids and selected["srid"] > 0 and srids != {selected["srid"]}:
+        raise PostGISFailure("postgis_mixed_srid", "The PostGIS layer contains mixed SRIDs; use a view with one explicit CRS.")
+    srid = next(iter(srids), selected["srid"])
+    if srid <= 0:
+        raise PostGISFailure("unknown_crs", "The PostGIS layer has no known source SRID.")
+    cursor.execute(sql.SQL("SELECT auth_name, auth_srid, srtext FROM {} WHERE srid = %s").format(sql.Identifier(namespace, "spatial_ref_sys")), (srid,))
+    crs_row = cursor.fetchone()
+    source_crs = f"{crs_row[0]}:{crs_row[1]}" if crs_row and crs_row[0] and crs_row[1] else crs_row[2] if crs_row and crs_row[2] else f"POSTGIS:{srid}"
+    data = {"type": "FeatureCollection", "features": features}
+    snapshot_sha256 = hashlib.sha256(json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    supplied = request.get("sourceLineage") or {}
+    lineage = {key: supplied[key] for key in ("sourceId", "sourceName") if key in supplied}
+    lineage.update(sourceKind="postgis", sourcePath="", layer=selected["name"], sourceCrs=source_crs,
+                   sourceSha256="", snapshotSha256=snapshot_sha256, schema=selected["schema"], table=selected["table"],
+                   geometryColumn=selected["geometryColumn"], sourceSrid=srid,
+                   identityBasis="primary-key" if primary_key else "none", loadedAt=datetime.now(timezone.utc).isoformat())
+    data.update(sourceId=lineage.get("sourceId"), sourceLineage=lineage)
+    encoded = json.dumps(data, ensure_ascii=False, allow_nan=False)
+    if len(encoded.encode("utf-8")) > POSTGIS_BYTE_LIMIT:
+        raise PostGISFailure("postgis_byte_limit", "PostGIS GeoJSON exceeds the 32 MiB read limit. Select a smaller table or view.")
+    target = inside(root, request.get("output"), allow_missing=True)
+    if target.suffix.lower() != ".geojson":
+        raise PostGISFailure("invalid_output", "Loaded PostGIS output must be a GeoJSON path.")
+    lineage_path = target.with_suffix(".lineage.json")
+    receipt = {"schemaVersion": "earth.spatial-layer-load.v1", "status": "completed", "path": str(target.relative_to(root)),
+               "lineagePath": str(lineage_path.relative_to(root)), "sourceId": lineage.get("sourceId"), "sourceLineage": lineage,
+               "layer": selected["name"], "sourceCrs": source_crs, "crs": "EPSG:4326", "featureCount": len(features),
+               "bounds": bounds, "geometryTypes": sorted(geometry_types), "featureLimit": POSTGIS_FEATURE_LIMIT,
+               "readOnly": True, "truncated": False, "snapshotSha256": snapshot_sha256}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    for destination, content in [(target, encoded), (lineage_path, json.dumps(receipt, ensure_ascii=False, allow_nan=False))]:
+        temporary = destination.with_name(f"{destination.name}.{uuid.uuid4()}.tmp")
+        try:
+            with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:
+                handle.write(content)
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+    if len(encoded.encode("utf-8")) <= 2_000_000:
+        receipt["geojson"] = data
+    return receipt
+
+
+def run_postgis(root: Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Use only a live environment reference; never return driver exception text."""
+    connection = None
+    try:
+        reference = request.get("secretReference", "")
+        if not isinstance(reference, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", reference):
+            raise PostGISFailure("postgis_invalid_secret_reference", "PostGIS requires an environment secret reference.")
+        secret = os.environ.get(reference, "")
+        if not secret.strip():
+            raise PostGISFailure("postgis_secret_missing", "The PostGIS connection environment variable is not configured in this runtime.")
+        if len(secret) > 16_384:
+            raise PostGISFailure("postgis_connection_failed", "The PostGIS connection configuration is invalid.")
+        postgis_identifier(request.get("schema", ""))
+        postgis_identifier(request.get("table", ""))
+        try:
+            import psycopg as driver
+            from psycopg import sql
+        except ImportError:
+            try:
+                import psycopg2 as driver
+                from psycopg2 import sql
+            except ImportError:
+                raise PostGISFailure("postgis_dependency_missing", "PostGIS requires psycopg[binary] or psycopg2 in the configured Earth GIS Python runtime.") from None
+        connection = driver.connect(secret, connect_timeout=5, application_name="paw-earth-readonly",
+                                    options="-c default_transaction_read_only=on -c statement_timeout=15000 -c lock_timeout=3000")
+        connection.autocommit = False
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            cursor.execute("SET LOCAL search_path TO pg_catalog")
+            cursor.execute("SELECT n.nspname, n.oid, e.extversion FROM pg_catalog.pg_extension AS e JOIN pg_catalog.pg_namespace AS n ON n.oid = e.extnamespace WHERE e.extname = 'postgis'")
+            extension = cursor.fetchone()
+            if extension is None:
+                raise PostGISFailure("postgis_extension_missing", "The selected database does not have the PostGIS extension enabled.")
+            catalog = postgis_catalog(cursor, sql, extension, request)
+            if request.get("operation") == "catalog_postgis":
+                return catalog
+            return postgis_load(root, request, connection, cursor, sql, extension, catalog)
+    except PostGISFailure as exc:
+        return {"status": "failed", "code": exc.code, "error": str(exc)}
+    except Exception as exc:
+        state = str(getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None) or "")
+        if state.startswith("28"):
+            code, message = "postgis_authentication_failed", "PostGIS authentication failed. Check the referenced connection credentials."
+        elif state == "42501":
+            code, message = "postgis_permission_denied", "The PostGIS account cannot read the selected resource."
+        elif state == "3D000":
+            code, message = "postgis_database_missing", "The referenced PostgreSQL database does not exist."
+        elif state == "57014":
+            code, message = "postgis_query_timeout", "PostGIS read exceeded the query time limit. Select a smaller table or view."
+        elif state == "25006":
+            code, message = "postgis_read_only_violation", "The selected PostGIS resource attempted a write. Only read-only tables and views are supported."
+        elif connection is None or state.startswith("08"):
+            code, message = "postgis_connection_failed", "PostGIS connection failed. Check the referenced configuration and server availability."
+        else:
+            code, message = "postgis_query_failed", "PostGIS could not read the selected spatial resource. Check its geometry, CRS and read permissions."
+        return {"status": "failed", "code": code, "error": message}
+    finally:
+        if connection is not None:
+            try:
+                connection.close()  # No commit; the read-only snapshot ends here.
+            except Exception:
+                pass
+
+
 def load_source(root: Path, request: dict[str, Any]) -> dict[str, Any]:
     """Materialize the explicitly selected database layer for project editing."""
     import hashlib
@@ -778,6 +1060,9 @@ def main() -> None:
         return
     if operation == "catalog_source":
         print(json.dumps(catalog_source(root, request), ensure_ascii=False, default=str))
+        return
+    if operation in ("catalog_postgis", "load_postgis"):
+        print(json.dumps(run_postgis(root, request), ensure_ascii=False, allow_nan=False))
         return
     if operation == "load_source":
         print(json.dumps(load_source(root, request), ensure_ascii=False, default=str))

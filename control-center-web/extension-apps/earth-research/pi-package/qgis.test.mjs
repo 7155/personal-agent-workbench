@@ -15,11 +15,34 @@ process.stdin.on('end', () => {
   const args = process.argv.slice(2);
   if (args.includes('native:fail')) { process.stderr.write('algorithm failed'); process.exitCode = 1; }
   process.stdout.write('provider initialization\\n');
-  process.stdout.write(JSON.stringify({ args, input: input ? JSON.parse(input) : null, cwd: process.cwd(), platform: process.env.QT_QPA_PLATFORM, results: { OUTPUT: 'result.geojson' } }, null, 2));
+  process.stderr.write('optional provider unavailable\\n');
+  process.stdout.write(JSON.stringify({ args, input: input ? JSON.parse(input) : null, cwd: process.cwd(), platform: process.env.QT_QPA_PLATFORM, noBytecode: process.env.PYTHONDONTWRITEBYTECODE, projData: process.env.PROJ_DATA, qgis_version: '3.44.11-Test', results: { OUTPUT: 'result.geojson' } }, null, 2));
 });
+
 `, { mode: 0o755 });
   return executable;
 }
+
+test('discovers current macOS LTR bundles and uses their bundled PROJ database', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-qgis-bundle-'));
+  try {
+    const contents = path.join(root, 'QGIS-LTR.app/Contents');
+    fs.mkdirSync(path.join(contents, 'MacOS'), { recursive: true });
+    const generated = fakeProcess(path.join(contents, 'MacOS'));
+    const executable = path.join(contents, 'MacOS/qgis_process');
+    fs.renameSync(generated, executable);
+    const projData = path.join(contents, 'Resources/qgis/proj');
+    fs.mkdirSync(projData, { recursive: true });
+    fs.writeFileSync(path.join(projData, 'proj.db'), 'fixture');
+    assert.equal(findQGISProcess({ applicationDirectories: [root] }), executable);
+    const receipt = await listQGISAlgorithms({ executable });
+    assert.equal(receipt.result.projData, fs.realpathSync(projData));
+    assert.equal(receipt.result.noBytecode, '1');
+    assert.equal(receipt.qgisVersion, '3.44.11-Test');
+    assert.equal(receipt.nativeTested, true);
+    assert.deepEqual(receipt.warnings, ['optional provider unavailable']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 test('QGIS discovery distinguishes an executable from a directory or nonexecutable file', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-qgis-discovery-'));

@@ -39,7 +39,7 @@ it('returns a deterministic spatial connection receipt through the package comma
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'earth-package-command-test-')); roots.push(root); const entries: unknown[] = []; const commands = new Map<string, any>();
   register({ registerTool: () => {}, registerCommand: (name: string, command: any) => commands.set(name, command), appendEntry: (_type: string, data: unknown) => entries.push(data) });
   await commands.get('earth-spatial-connect').handler(JSON.stringify({ name: 'PostGIS-Test', kind: 'postgis', secretReference: 'PAW_POSTGIS_URL' }), { cwd: root });
-  expect(entries[0]).toMatchObject({ schemaVersion: 'rag-ime.pi-package-command-result.v1', command: 'earth-spatial-connect', result: { status: 'configured_pending', secretReference: 'PAW_POSTGIS_URL' } });
+  expect(entries[0]).toMatchObject({ schemaVersion: 'rag-ime.pi-package-command-result.v1', command: 'earth-spatial-connect', result: { status: 'missing_secret', secretReference: 'PAW_POSTGIS_URL' } });
 });
 
 it('reads a trusted published map state from the bound workspace', async () => {
