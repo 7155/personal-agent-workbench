@@ -18,7 +18,7 @@ import { usePiProviderCatalog } from './api';
 
 type ProviderAction = 'set_api_key' | 'logout' | 'oauth_browser' | 'oauth_device_code';
 
-export function PiProviderCredentials() {
+export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string } = {}) {
   const navigate = useNavigate();
   const {
     authChangesSupported,
@@ -30,8 +30,8 @@ export function PiProviderCredentials() {
     transport,
   } = usePiProviderCatalog();
   const envelope = asRecord(catalog.data);
-  const providers = useMemo(() => arrayRecords(envelope.providers).sort(providerOrder), [envelope.providers]);
-  const [providerId, setProviderId] = useState('');
+  const providers = useMemo(() => arrayRecords(envelope.providers).filter(item => !onlyProvider || stringValue(item.id) === onlyProvider).sort(providerOrder), [envelope.providers, onlyProvider]);
+  const [providerId, setProviderId] = useState(onlyProvider ?? '');
   const [apiKey, setApiKey] = useState('');
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [previewAction, setPreviewAction] = useState<ProviderAction>('set_api_key');
@@ -291,7 +291,7 @@ export function PiProviderCredentials() {
             <StatusBadge label={providerId === 'typesafe' ? (auth.configured === true ? '已配置' : '未配置') : (auth.configured === true ? '已连接' : '未连接')} tone={auth.configured === true ? 'success' : 'neutral'} />
             {stringValue(auth.type) ? <StatusBadge label={stringValue(auth.type) === 'oauth' ? 'ChatGPT 登录' : 'API 密钥'} tone="info" /> : null}
           </div>
-          {providerId === 'typesafe' ? <InlineNotice title="Jev 工具审批" tone="info">输入 TypeSafe API Key 后，下一次工具审批会优先使用 Jev，无需重启。未配置时使用 Luna Max。密钥保存在 macOS 钥匙串中。</InlineNotice> : null}
+          {providerId === 'typesafe' ? <InlineNotice title="Jev 工具审批" tone="info">配置密钥后，需要模型判断的工具审批优先使用 Jev；服务失败回退 Luna Max。当前权限模式仍决定是否需要审批。密钥保存在 macOS 钥匙串中，全局生效。</InlineNotice> : null}
           <Field description="输入内容只会在保存时交给本机安全存储；页面不会读回现有密钥。" htmlFor="pi-api-key" label="API 密钥">
             <Input autoComplete="new-password" disabled={!authChangesSupported || loginWaiting} id="pi-api-key" onChange={(event) => setApiKey(event.target.value)} placeholder={authChangesSupported ? '输入新的 API 密钥' : '当前版本仅支持查看状态'} type="password" value={apiKey} />
           </Field>
@@ -311,7 +311,7 @@ export function PiProviderCredentials() {
               {arrayRecords(selected.scenarios).map((scenario) => (
                 <div className="configuration-jev-scenario" key={stringValue(scenario.id)}>
                   <div className="mgmt-toolbar"><strong>{stringValue(scenario.name)}</strong><StatusBadge
-                    label={scenario.status === 'configured' ? '已配置' : scenario.status === 'needs_key' ? '待配置密钥' : scenario.status === 'available' ? '可接入' : '候选场景'}
+                    label={scenario.status === 'configured' ? '已配置' : scenario.status === 'needs_key' ? '待配置密钥' : scenario.status === 'available' ? '可接入' : '尚未接通'}
                     tone={scenario.status === 'configured' ? 'success' : 'neutral'} /></div>
                   <p className="mgmt-muted">{stringValue(scenario.description)}</p>
                 </div>
