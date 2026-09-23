@@ -1,6 +1,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { pawApps } from '../runtime/app-registry';
+import { pawOsAppRegistry } from '@/features/paw-os/model/app-registry';
 import { PawAppIcon, PawBrandMark, type PawIdentityIconId } from './PawAppIcon';
 
 afterEach(cleanup);
@@ -27,7 +28,7 @@ describe('PAWOS approved App identity icons', () => {
     const { container } = render(<>{approvedAssets.map(({ appId }) => <PawAppIcon appId={appId} key={appId} />)}</>);
     const icons = [...container.querySelectorAll<SVGElement>('[data-paw-app-icon]')];
 
-    expect(pawApps).toHaveLength(16);
+    expect(pawOsAppRegistry).toHaveLength(15);
     expect(pawApps.map((app) => app.id)).not.toContain('room');
     expect(icons).toHaveLength(14);
     for (const asset of approvedAssets) {

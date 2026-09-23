@@ -282,6 +282,7 @@ const canonicalPathIds = [
   'knowledgeBases.rebuild',
   'knowledgeBases.graph.get',
   'knowledgeBases.graph.rebuild',
+  'knowledgeVault.manage',
   'knowledgeWorker.health',
   'knowledgeParsers.list',
   'knowledgeEmbedding.profile',
