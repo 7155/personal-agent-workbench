@@ -31,6 +31,19 @@ export type RoomFocusState =
   | 'stopped'
   | 'disconnected';
 
+/** Some older Room receipts contain only an event type as their summary.
+ * Keep that event in history, but show a readable action in the compact UI. */
+export function roomFocusActionLabel(summary: string): string {
+  const labels: Record<string, string> = {
+    participant_activity: '最近有执行记录',
+    turn_completed: '本轮执行结束',
+    turn_failed: '本轮执行失败',
+    tool_started: '正在执行工具',
+    tool_finished: '工具已返回',
+  };
+  return labels[summary] ?? summary;
+}
+
 export interface RoomFocusEvidence {
   ref: string;
   kind: 'artifact' | 'evidence';
@@ -234,14 +247,16 @@ export function buildRoomFocusProjection(
         collaborationRole: participant.collaborationRole,
         state,
         ownedWorkItemIds: owned.map((item) => item.id),
-        currentAction: stringValue(latestActivity?.payload.task)
-          || latestActivity?.summary.trim()
+        currentAction: ['turn_completed', 'turn_failed'].includes(latestActivity?.summary.trim() ?? '')
+          ? roomFocusActionLabel(latestActivity?.summary.trim() ?? '')
+          : stringValue(latestActivity?.payload.task)
+          || roomFocusActionLabel(latestActivity?.summary.trim() ?? '')
           || owned.find((item) => ['running', 'review', 'blocked', 'waiting'].includes(item.state))?.objective
           || owned.at(0)?.objective
           || '等待新的工作项',
         latestReceipt: latestMessage?.text.trim()
           || owned.find((item) => item.latestResult)?.latestResult
-          || (latestActivity?.status === 'completed' ? latestActivity.summary.trim() : undefined),
+          || (latestActivity?.status === 'completed' ? roomFocusActionLabel(latestActivity.summary.trim()) : undefined),
         unread: false,
       } satisfies RoomFocusPartner;
     });
@@ -402,7 +417,7 @@ function explicitFocusWork(
     accountableParticipantId: item.accountableParticipantId || undefined,
     verifierParticipantId: review?.reviewerParticipantId,
     state: workState(item.state),
-    currentAction: latestActivity?.summary.trim() || undefined,
+    currentAction: latestActivity ? roomFocusActionLabel(latestActivity.summary.trim()) : undefined,
     blocker,
     reviewRequired: item.state === 'review',
     ...(review ? { review } : {}),
@@ -467,7 +482,7 @@ function runtimeFocusWork(
         : previous?.acceptanceCriteria ?? [],
       ownerParticipantId: owner ?? previous?.ownerParticipantId,
       state: activityState(activity.status),
-      currentAction: activity.summary.trim() || previous?.currentAction,
+      currentAction: roomFocusActionLabel(activity.summary.trim()) || previous?.currentAction,
       reviewRequired: stringValue(activity.payload.requestKind) === 'plan_review' || activity.status === 'waiting',
       ...(wave ? { wave } : previous?.wave ? { wave: previous.wave } : {}),
       latestResult: activity.status === 'completed' ? activity.summary.trim() : previous?.latestResult,
@@ -781,6 +796,13 @@ function participantTurnState(
   turn: RoomProjectionState['turnsById'][string],
   participantId: string,
 ): RoomFocusState {
+  // A participant may finish one dispatch and then be woken for another under
+  // the same Root. The earlier terminal receipt remains historical evidence;
+  // an unfinished current dispatch is the execution state shown to the user.
+  if (turn.status === 'running' && (turn.dispatchIds ?? []).some((dispatchId) => (
+    turn.dispatchParticipantIds?.[dispatchId] === participantId
+    && !turn.terminalDispatchIds?.includes(dispatchId)
+  ))) return 'running';
   if (turn.failedParticipantIds?.includes(participantId)) return 'failed';
   if (turn.abortedParticipantIds?.includes(participantId)) return 'stopped';
   if (turn.terminalParticipantIds?.includes(participantId)) return 'completed';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createRoomProjection, type RoomProjectionState } from '@/contracts/room-reducer';
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import { buildRoomFocusProjection } from './room-focus-projection';
+import { buildRoomWorkStatus } from './room-work-status';
 import { buildRoomFocusMesh } from './room-focus-mesh';
 
 function participant(id: string, ordinal: number, displayName = `Agent ${ordinal + 1}`) {
@@ -123,6 +124,44 @@ function projectionWithParallelRuntime(): RoomProjectionState {
 }
 
 describe('buildRoomFocusProjection', () => {
+  it('shows a woken partner as executing after an earlier dispatch ended', () => {
+    const projection = createRoomProjection('room-sol');
+    projection.turnOrder = ['turn-root'];
+    projection.turnsById = {
+      'turn-root': {
+        id: 'turn-root', rootId: 'turn-root', status: 'running',
+        messageIds: [], activityIds: [], participantIds: ['p-earth', 'p-mars'],
+        dispatchIds: ['first', 'wake'], terminalDispatchIds: ['first'],
+        dispatchParticipantIds: { first: 'p-mars', wake: 'p-mars' },
+        terminalParticipantIds: ['p-mars'], createdAtMs: 10, updatedAtMs: 20,
+      },
+    };
+    const focus = buildRoomFocusProjection(room([work({
+      id: 'wake-work', objective: '继续核对结果', currentOwnerParticipantId: 'p-mars', state: 'done',
+    })]), projection);
+
+    expect(focus.partners.find((partner) => partner.participantId === 'p-mars')?.state).toBe('running');
+    const status = buildRoomWorkStatus({ focus, projection, recoveryState: 'synced', visible: true });
+    expect(status.executingParticipantIds).toContain('p-mars');
+    expect(status.animate).toBe(true);
+  });
+
+  it('keeps a failed execution visible without exposing its raw event code', () => {
+    const projection = projectionWithParallelRuntime();
+    const activity = projection.activitiesById['activity-mars'];
+    projection.activitiesById['activity-mars'] = {
+      ...activity,
+      status: 'failed',
+      summary: 'turn_failed',
+    };
+    const focus = buildRoomFocusProjection(room([work({
+      id: 'work-review', objective: '核对实际失败回执', currentOwnerParticipantId: 'p-mars',
+    })]), projection);
+
+    expect(focus.workItems.find((item) => item.id === 'work-review')?.currentAction).toBe('本轮执行失败');
+    expect(focus.partners.find((partner) => partner.participantId === 'p-mars')?.currentAction).toBe('本轮执行失败');
+  });
+
   it('reads production nested intercom endpoints and updates one message across delivery receipts', () => {
     const projection = createRoomProjection('room-sol');
     const message = { id: 'peer-ask', kind: 'ask', sourceParticipantId: 'p-earth', targetParticipantId: 'p-mars', content: '请核对接口', replyTo: '' };

@@ -1,6 +1,6 @@
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import { roomCollaborationRoleLabel } from '@/features/rooms/room-copy';
-import type { RoomFocusProjection, RoomFocusState, RoomFocusWorkItem } from './room-focus-projection';
+import { roomFocusActionLabel, type RoomFocusProjection, type RoomFocusState, type RoomFocusWorkItem } from './room-focus-projection';
 
 export type RoomWorkStatusState = 'syncing' | 'offline' | 'paused-view' | 'needs-input'
   | 'running' | 'waiting-partners' | 'review' | 'blocked' | 'failed' | 'stopping'
@@ -60,12 +60,17 @@ export function buildRoomWorkStatus(input: RoomWorkStatusInput): RoomWorkStatus 
     ...(turn?.terminalParticipantIds ?? []), ...(turn?.failedParticipantIds ?? []),
     ...(turn?.abortedParticipantIds ?? []),
   ]);
+  const activeDispatchParticipantIds = new Set((turn?.dispatchIds ?? [])
+    .filter((dispatchId) => !turn?.terminalDispatchIds?.includes(dispatchId))
+    .map((dispatchId) => turn?.dispatchParticipantIds?.[dispatchId])
+    .filter((participantId): participantId is string => Boolean(participantId)));
   const running = turn?.status === 'running' ? focus.partners.filter((partner) =>
     turn.participantIds.includes(partner.participantId)
-    && !terminalIds.has(partner.participantId) && partner.state === 'running') : [];
+    && (!terminalIds.has(partner.participantId) || activeDispatchParticipantIds.has(partner.participantId))
+    && partner.state === 'running') : [];
   const latest = [...activities].sort((a, b) =>
     (b.sequence ?? b.createdAtMs) - (a.sequence ?? a.createdAtMs))[0];
-  const publicAction = latest?.summary.trim() || '';
+  const publicAction = roomFocusActionLabel(latest?.summary.trim() || '');
   const updatedAtMs = Math.max(0, turn?.updatedAtMs ?? 0,
     ...activities.map((item) => item.updatedAtMs ?? item.createdAtMs),
     ...focus.workItems.map((item) => item.updatedAtMs));
@@ -95,6 +100,7 @@ export function buildRoomWorkStatus(input: RoomWorkStatusInput): RoomWorkStatus 
   if (running.length) {
     const coordinator = focus.partners.find((partner) => partner.collaborationRole === 'coordinator');
     const waitingForPartners = Boolean(coordinator && terminalIds.has(coordinator.participantId)
+      && !activeDispatchParticipantIds.has(coordinator.participantId)
       && running.every((partner) => partner.participantId !== coordinator.participantId));
     return status(waitingForPartners ? 'waiting-partners' : 'running', waitingForPartners
       ? `等待伙伴结果 · ${running.length} 位执行中` : `${running.length} 位伙伴正在执行`, detail, 'inspect', true);

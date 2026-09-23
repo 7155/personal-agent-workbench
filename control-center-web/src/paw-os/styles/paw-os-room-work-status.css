@@ -31,7 +31,7 @@
 .paw-room-work-status[data-state="offline"], .paw-room-work-status[data-state="blocked"], .paw-room-work-status[data-state="failed"], .paw-room-work-status[data-state="needs-input"] { border-color: #9a754b; }
 .paw-room-work-status__spin { animation: paw-room-status-spin 1.2s linear infinite; }
 @keyframes paw-room-status-spin { to { transform: rotate(360deg); } }
-.paw-assignment__action { font-size: 11px; line-height: 1.45; opacity: .75; overflow-wrap: anywhere; }
+.paw-assignment__action { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 11px; line-height: 1.45; opacity: .75; overflow-wrap: anywhere; }
 .paw-assignment__task-route[data-executing="true"] .paw-assignment__task { border-inline-start: 3px solid #79a9d8; }
 .paw-assignment[data-live="false"] *, .paw-room-focus-participants[data-live="false"] * { animation: none !important; }
 /* Scope to the dock: the existing expanded overview retains its own layout. */
