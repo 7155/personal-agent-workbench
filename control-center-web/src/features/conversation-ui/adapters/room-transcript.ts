@@ -279,7 +279,7 @@ function activityBlock(
   options: RoomTranscriptOptions,
 ): AssistantBlock {
   const eventType = text(activity.payload.sourceEventType, activity.kind);
-  if (roomApprovalDecision(activity) || text(activity.payload.approvalId)) {
+  if (roomApprovalDecision(activity) || (text(activity.payload.approvalId) && !(eventType === 'tool' || eventType.startsWith('tool_')))) {
     return {
       id: `approval:${activity.id}`,
       kind: 'tool',

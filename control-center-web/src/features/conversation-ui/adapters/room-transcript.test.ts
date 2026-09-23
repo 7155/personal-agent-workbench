@@ -107,6 +107,18 @@ describe('roomTranscript', () => {
     });
   });
 
+  it('keeps an approved execution failure as a tool with its real cause', () => {
+    const projection = roomProjection();
+    const activity = projection.activitiesById['tool-a']!;
+    activity.status = 'failed';
+    activity.summary = 'bash';
+    activity.payload = { sourceEventType: 'tool_finished', toolName: 'bash', approvalId: 'already-approved', error: 'Tool gateway request timed out after 30000ms', result: { outputPreview: 'Tool gateway request timed out after 30000ms' } };
+    const transcript = roomTranscript(projection, options);
+    const block = transcript.messages.flatMap((message) => message.role === 'assistant' ? message.blocks : []).find((item) => item.id === 'tool:tool-a');
+    expect(block).toMatchObject({ kind: 'tool', name: '终端命令', status: 'error', summary: 'Tool gateway request timed out after 30000ms' });
+    expect(block?.kind === 'tool' && block.output).toContain('失败原因');
+  });
+
   it('projects returned and reassigned WorkItem events as compact public receipts', () => {
     const projection = roomProjection();
     projection.activityOrder.push('work-returned', 'work-reassigned');

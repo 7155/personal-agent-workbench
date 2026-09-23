@@ -8,6 +8,7 @@ import {
 } from '@/platform/recovery-policy';
 import type { ControlTransport } from '@/platform/transport';
 import { agentProjection, useAgentLiveStore } from '../state/live-store';
+import { createSnapshotRequestQueue } from './snapshot-request-queue';
 
 export type AgentSnapshotView = 'recent' | 'full';
 export type AgentRecoveryState = 'recovering' | 'failed' | 'synced';
@@ -34,6 +35,7 @@ export interface AgentLiveSessionCallbacks {
   onRecoveryState?(state: AgentRecoveryState): void;
   onSnapshot?(snapshot: AgentLiveSnapshot): void;
   onSnapshotError?(failure: AgentLiveSnapshotError): void;
+  /** Called only after this event is committed to the shared projection. */
   onEvent?(event: UiAgentEvent): void;
   onEvents?(events: readonly UiAgentEvent[]): void;
   onConnectionRestored?(sessionId: string): void;
@@ -94,22 +96,10 @@ export function useAgentLiveSession({
   ...callbacks
 }: AgentLiveSessionOptions): AgentLiveSnapshotLoader {
   const callbacksRef = useRef<AgentLiveSessionCallbacks>(callbacks);
-  const listenerRef = useRef<AgentLiveSessionCallbacks | undefined>(undefined);
+  const scopeRef = useRef({ sessionId, transport, surfaceActive });
   const leaseRef = useRef<AgentLiveSessionLease | undefined>(undefined);
   callbacksRef.current = callbacks;
-
-  if (!listenerRef.current) {
-    listenerRef.current = {
-      onLoadingChange: (loading) => callbacksRef.current.onLoadingChange?.(loading),
-      onRecoveryState: (state) => callbacksRef.current.onRecoveryState?.(state),
-      onSnapshot: (snapshot) => callbacksRef.current.onSnapshot?.(snapshot),
-      onSnapshotError: (failure) => callbacksRef.current.onSnapshotError?.(failure),
-      onEvent: (event) => callbacksRef.current.onEvent?.(event),
-      onEvents: (events) => callbacksRef.current.onEvents?.(events),
-      onConnectionRestored: (activeSessionId) => callbacksRef.current.onConnectionRestored?.(activeSessionId),
-      onConnectionError: (activeSessionId, error) => callbacksRef.current.onConnectionError?.(activeSessionId, error),
-    };
-  }
+  scopeRef.current = { sessionId, transport, surfaceActive };
 
   useEffect(() => {
     if (!sessionId || !surfaceActive) {
@@ -118,8 +108,25 @@ export function useAgentLiveSession({
       callbacksRef.current.onLoadingChange?.(false);
       return;
     }
+    const notify = (call: (current: AgentLiveSessionCallbacks) => void) => {
+      const scope = scopeRef.current;
+      // A render can select another Session before the old effect cleans up.
+      // Never forward that old owner's event into the new window callbacks.
+      if (scope.sessionId !== sessionId || scope.transport !== transport || !scope.surfaceActive) return;
+      call(callbacksRef.current);
+    };
+    const listener: AgentLiveSessionCallbacks = {
+      onLoadingChange: (value) => notify((current) => current.onLoadingChange?.(value)),
+      onRecoveryState: (value) => notify((current) => current.onRecoveryState?.(value)),
+      onSnapshot: (value) => notify((current) => current.onSnapshot?.(value)),
+      onSnapshotError: (value) => notify((current) => current.onSnapshotError?.(value)),
+      onEvent: (value) => notify((current) => current.onEvent?.(value)),
+      onEvents: (value) => notify((current) => current.onEvents?.(value)),
+      onConnectionRestored: (id) => notify((current) => current.onConnectionRestored?.(id)),
+      onConnectionError: (id, error) => notify((current) => current.onConnectionError?.(id, error)),
+    };
     const lease = getSharedAgentLiveSession(transport, sessionId).attach(
-      listenerRef.current!,
+      listener,
       { live: liveSurface, snapshotView },
     );
     leaseRef.current = lease;
@@ -175,13 +182,11 @@ function createSharedAgentLiveSession(
   let latestSnapshot: AgentLiveSnapshot | undefined;
   let lastConnectionError: unknown;
   let connected = false;
-  let snapshotTask: Promise<boolean> | undefined;
   let snapshotController: AbortController | undefined;
   let snapshotGeneration = 0;
   let streamGeneration = 0;
   let unsubscribe: (() => void) | undefined;
-  let reloadQueued = false;
-  let snapshotReloadPending: AgentLiveSnapshotRequest | undefined;
+  let snapshotNeedsRepair = false;
   let recoveryAttempt = 0;
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -215,6 +220,9 @@ function createSharedAgentLiveSession(
     clearRecoveryTimer();
   };
   const markConnectionStable = () => {
+    // A heartbeat proves connectivity, not that a failed/gapped snapshot was
+    // repaired. Do not cancel its recovery timer or show a false "synced".
+    if (snapshotNeedsRepair || agentProjection(sessionId).needsSnapshot) return;
     resetRecoveryBackoff();
     if (connected && recoveryState === 'synced') return;
     connected = true;
@@ -282,35 +290,38 @@ function createSharedAgentLiveSession(
           }
     ),
   });
+  const snapshotQueue = createSnapshotRequestQueue<AgentLiveSnapshotRequest>({
+    merge: mergeSnapshotRequests,
+    run: startSnapshot,
+  });
   const scheduleSnapshotReload = (request: AgentLiveSnapshotRequest = {}) => {
-    if (!active) return;
-    snapshotReloadPending = mergeSnapshotRequests(snapshotReloadPending, {
-      ...request,
-      view: request.view ?? preferredSnapshotView(),
-    });
-    if (snapshotTask || reloadQueued) return;
-    reloadQueued = true;
-    queueMicrotask(() => {
-      reloadQueued = false;
-      const pending = snapshotReloadPending;
-      snapshotReloadPending = undefined;
-      if (active) void loadSnapshot(pending);
-    });
+    void loadSnapshot(request);
   };
   const batcher = createAgentDeltaBatcher((events) => {
     if (!active) return;
-    // Preserve the last cursor that the reducer had actually committed. The
-    // final event in this batch may be the future event that exposed the gap;
-    // using that sequence would reject a valid intermediate repair snapshot.
-    const preserveAfterSequence = agentProjection(sessionId).lastSequence;
+    const before = agentProjection(sessionId);
     const needsSnapshot = useAgentLiveStore.getState().applyEvents(sessionId, events);
+    const after = agentProjection(sessionId);
+    // A batch is text deltas or one non-delta event. Only its committed prefix
+    // may notify views; duplicates, foreign events and the gap-causing suffix
+    // must not open tool windows or schedule terminal refreshes.
+    let notifiedSequence = before.lastSequence;
+    const committed = events.filter((event) => {
+      if (event.sessionId !== sessionId
+        || (before.needsSnapshot && event.eventType !== 'snapshot')
+        || event.sequence <= notifiedSequence
+        || event.sequence > after.lastSequence) return false;
+      notifiedSequence = event.sequence;
+      return true;
+    });
     if (needsSnapshot) {
-      scheduleSnapshotReload({
-        preserveAfterSequence,
-      });
-    } else {
-      broadcast((listener) => listener.onEvents?.(events));
+      setRecoveryState('recovering');
+      scheduleSnapshotReload({ preserveAfterSequence: after.lastSequence });
     }
+    for (const event of committed) {
+      broadcast((listener) => listener.onEvent?.(event));
+    }
+    if (committed.length) broadcast((listener) => listener.onEvents?.(committed));
   });
 
   function requestSnapshotValue(
@@ -386,7 +397,8 @@ function createSharedAgentLiveSession(
           || equalCursorIsQuiescent
           || equalCursorRepairsGap
         );
-      if (shouldHydrate) useAgentLiveStore.getState().hydrate(sessionId, value);
+      const hydrated = shouldHydrate
+        && useAgentLiveStore.getState().hydrate(sessionId, value);
       const repairedWithoutRegression = retainNewerTerminal
         && clearEqualCursorGap(sessionId, sequence, resumeToken);
       const snapshot = {
@@ -394,21 +406,28 @@ function createSharedAgentLiveSession(
         value,
         view: actualView,
         presentable,
-        hydrated: shouldHydrate || repairedWithoutRegression,
+        hydrated: hydrated || repairedWithoutRegression,
         sequence,
         resumeToken,
       };
       snapshotAttempted = true;
-      loadedView = actualView;
-      latestSnapshot = snapshot;
+      snapshotNeedsRepair = !presentable || agentProjection(sessionId).needsSnapshot;
+      if (snapshot.hydrated) {
+        loadedView = actualView;
+        latestSnapshot = snapshot;
+      }
       setLoading(false);
-      broadcast((listener) => listener.onSnapshot?.(snapshot));
+      // A transport success is not a store commit. Rejected stale/partial
+      // responses cannot mark the view loaded or overwrite its metadata.
+      if (snapshot.hydrated) broadcast((listener) => listener.onSnapshot?.(snapshot));
       if (shouldStream()) maybeSubscribe();
-      else setRecoveryState('synced');
-      return true;
+      else if (!snapshotNeedsRepair) setRecoveryState('synced');
+      if (snapshotNeedsRepair) scheduleAutomaticRecovery();
+      return snapshot.hydrated;
     } catch (error) {
       if (!isCurrentSnapshot(requestId, controller) || isAbortError(error)) return false;
       snapshotAttempted = true;
+      snapshotNeedsRepair = true;
       const recoverable = requestedView === 'recent' && preferredSnapshotView() !== 'full';
       const failure = {
         sessionId,
@@ -422,7 +441,7 @@ function createSharedAgentLiveSession(
       const resumeStream = recoverable && shouldStream();
       if (resumeStream) maybeSubscribe();
       if (shouldStream()) scheduleAutomaticRecovery(error);
-      return resumeStream;
+      return false;
     }
   }
 
@@ -430,55 +449,32 @@ function createSharedAgentLiveSession(
     return active && requestId === snapshotGeneration && !controller.signal.aborted;
   }
 
-  function shouldRunPendingRequest(request: AgentLiveSnapshotRequest): boolean {
-    if (!active) return false;
-    const projection = agentProjection(sessionId);
-    return projection.needsSnapshot
-      || (
-        request.view === 'full'
-        && loadedView !== 'full'
-      )
-      || (
-        request.preserveAfterSequence !== undefined
-        && projection.lastSequence < request.preserveAfterSequence
-      );
-  }
-
   function startSnapshot(request: AgentLiveSnapshotRequest): Promise<boolean> {
+    if (!active) return Promise.resolve(false);
     clearRecoveryTimer();
+    // Commit the already-received delta tail before cutting over to a read.
+    // Otherwise a snapshot that the store rejects can silently lose this tail.
+    batcher.flush();
+    if (!active) return Promise.resolve(false);
     clearStream();
-    batcher.clear();
     const requestId = ++snapshotGeneration;
     const controller = new AbortController();
     snapshotController = controller;
     setRecoveryState('recovering');
     setLoading(true);
-    let task: Promise<boolean>;
-    task = performSnapshot(request, requestId, controller).finally(() => {
-      if (snapshotTask === task) snapshotTask = undefined;
+    return performSnapshot(request, requestId, controller).finally(() => {
       if (snapshotController === controller) snapshotController = undefined;
-      const pending = snapshotReloadPending;
-      snapshotReloadPending = undefined;
-      if (active && pending && shouldRunPendingRequest(pending)) scheduleSnapshotReload(pending);
     });
-    snapshotTask = task;
-    return task;
   }
+
   function loadSnapshot(request: AgentLiveSnapshotRequest = {}): Promise<boolean> {
     if (!active) return Promise.resolve(false);
-    const normalized = {
+    // Calls made during a read are invalidations, not subscribers to the old
+    // answer. Merge them into one trailing read and resolve after THAT read.
+    return snapshotQueue.request({
       ...request,
       view: request.view ?? preferredSnapshotView(),
-    };
-    if (snapshotTask) {
-      snapshotReloadPending = mergeSnapshotRequests(snapshotReloadPending, normalized);
-      return snapshotTask;
-    }
-    if (reloadQueued) {
-      snapshotReloadPending = mergeSnapshotRequests(snapshotReloadPending, normalized);
-      return Promise.resolve(true);
-    }
-    return startSnapshot(normalized);
+    });
   }
 
   function maybeSubscribe(): void {
@@ -486,7 +482,7 @@ function createSharedAgentLiveSession(
     const subscriptionGeneration = ++streamGeneration;
     if (!connected) setRecoveryState('recovering');
     try {
-      unsubscribe = transport.subscribe<UiAgentEvent>(
+      const cancel = transport.subscribe<UiAgentEvent>(
         {
           pathId: 'agent.session.events',
           params: { sessionId },
@@ -498,7 +494,7 @@ function createSharedAgentLiveSession(
             markConnectionStable();
           },
           next: (event) => {
-            if (!active || subscriptionGeneration !== streamGeneration) return;
+            if (!active || subscriptionGeneration !== streamGeneration || event.sessionId !== sessionId) return;
             if (event.eventType === 'snapshot_required') {
               batcher.flush();
               // `snapshot_required` is a transient recovery control. The
@@ -512,15 +508,14 @@ function createSharedAgentLiveSession(
               const needsSnapshot = useAgentLiveStore.getState().applyEvents(sessionId, [event]);
               broadcast((listener) => listener.onEvent?.(event));
               if (needsSnapshot) {
+                setRecoveryState('recovering');
                 scheduleSnapshotReload({ preserveAfterSequence });
               }
               return;
             }
             batcher.push(event);
-            broadcast((listener) => listener.onEvent?.(event));
-            // A schema-validated durable event is also sufficient evidence for
-            // transports that predate the optional stable callback.
-            markConnectionStable();
+            // A listener can release the last lease while handling a terminal.
+            if (active && subscriptionGeneration === streamGeneration) markConnectionStable();
           },
           error: (error) => {
             if (!active || subscriptionGeneration !== streamGeneration) return;
@@ -535,6 +530,8 @@ function createSharedAgentLiveSession(
           },
         },
       );
+      if (active && subscriptionGeneration === streamGeneration) unsubscribe = cancel;
+      else cancel();
     } catch (error) {
       if (!active || subscriptionGeneration !== streamGeneration) return;
       connected = false;
@@ -552,7 +549,7 @@ function createSharedAgentLiveSession(
     } else if (snapshotAttempted) {
       maybeSubscribe();
     }
-    if (preferredSnapshotView() === 'full' && loadedView !== 'full') {
+    if (preferredSnapshotView() === 'full' && loadedView !== 'full' && !snapshotQueue.busy) {
       void loadSnapshot({ view: 'full' });
     }
   }
@@ -565,8 +562,8 @@ function createSharedAgentLiveSession(
     snapshotController = undefined;
     clearStream();
     batcher.clear();
-    snapshotReloadPending = undefined;
-    reloadQueued = false;
+    snapshotQueue.close();
+    snapshotNeedsRepair = false;
     loading = false;
     snapshotAttempted = false;
     loadedView = undefined;
@@ -583,10 +580,14 @@ function createSharedAgentLiveSession(
         useAgentLiveStore.getState().ensure(sessionId);
         void loadSnapshot({ view: preferredSnapshotView() });
       } else {
-        listener.onLoadingChange?.(loading);
-        listener.onRecoveryState?.(recoveryState);
-        if (lastConnectionError !== undefined) listener.onConnectionError?.(sessionId, lastConnectionError);
-        else if (connected) listener.onConnectionRestored?.(sessionId);
+        // A second window needs the accepted snapshot notification, not a
+        // second fetch/stream or a replay that rehydrates the shared store.
+        const notify = (call: () => void) => { try { call(); } catch { /* view only */ } };
+        notify(() => listener.onLoadingChange?.(loading));
+        notify(() => listener.onRecoveryState?.(recoveryState));
+        if (latestSnapshot) notify(() => listener.onSnapshot?.(latestSnapshot!));
+        if (lastConnectionError !== undefined) notify(() => listener.onConnectionError?.(sessionId, lastConnectionError));
+        else if (connected) notify(() => listener.onConnectionRestored?.(sessionId));
         reconcileOptions();
       }
       let released = false;

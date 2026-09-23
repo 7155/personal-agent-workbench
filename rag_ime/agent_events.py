@@ -173,15 +173,20 @@ class AgentEventHub:
                 )
             subscribers = tuple(self._subscribers.get(session_id, ()))
             observers = tuple(self._observers)
-        for subscriber in subscribers:
-            try:
-                subscriber.put_nowait(envelope)
-            except queue.Full:
+            # Sequence allocation, durable recording, replay insertion and
+            # live enqueue are one ordered publication. Releasing the lock
+            # before enqueue lets another publisher deliver N+1 before N, or
+            # append an old event after invalidate_projection cleared the queue.
+            # Queue operations are nonblocking; observers remain outside.
+            for subscriber in subscribers:
                 try:
-                    subscriber.get_nowait()
                     subscriber.put_nowait(envelope)
-                except (queue.Empty, queue.Full):
-                    pass
+                except queue.Full:
+                    try:
+                        subscriber.get_nowait()
+                        subscriber.put_nowait(envelope)
+                    except (queue.Empty, queue.Full):
+                        pass
         self._project(envelope, observers)
         return envelope
 

@@ -240,6 +240,10 @@ export function roomToolEvidence(payload: Record<string, unknown>): RoomToolEvid
   const result = recordValue(payload.result);
   const op = stringValue(args.op);
   const facts: RoomToolFact[] = [];
+  const error = stringValue(payload.error || result.error);
+  if (error) facts.push({ label: '失败原因', value: compactText(error) });
+  const output = stringValue(result.outputPreview);
+  if (output && output !== error) facts.push({ label: '执行输出', value: output.slice(0, 2000) });
   if (op) facts.push({ label: '操作', value: roomToolOpLabel(toolName, op) });
   for (const [key, value] of Object.entries(args)) {
     if (key === 'op' || value == null) continue;
@@ -290,8 +294,11 @@ export function roomToolActivityLine(
   payload: Record<string, unknown>,
   status: string,
 ): string {
+  const result = recordValue(payload.result);
+  const error = stringValue(payload.error || result.error);
   const source = summary.trim();
   if (source && !roomToolSummaryIsMachine(source, payload)) return source;
+  if (status === 'failed' && error) return compactText(error);
   const headline = stringValue(payload.displayName)
     || roomToolEvidence(payload)?.headline
     || roomGravityToolLabel(stringValue(payload.toolName) || stringValue(payload.toolId));

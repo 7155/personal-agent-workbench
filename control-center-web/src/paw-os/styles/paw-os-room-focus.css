@@ -819,3 +819,57 @@
 :root[data-reduce-motion='true'] .paw-room-focus-overview__route-track > i::before { animation: none !important; left: 50%; }
 
 .paw-desktop-root .paw-room-focus-overview__history-label { padding: 10px 14px 5px; border-top: 1px solid var(--focus-line); color: var(--focus-muted); font-size: 12px; }
+
+/* Relationship view shares the retained Room projection with participant windows. */
+.paw-desktop-root .paw-room-focus-assignments.paw-room-focus-traffic { width: min(1120px, calc(100% - 20px)); }
+.paw-desktop-root .paw-room-focus-participants__traffic[aria-expanded="true"] { color: var(--paw-stellar-accent); background: var(--paw-stellar-surface); }
+.paw-desktop-root .paw-assignment { color: var(--focus-ink); }
+.paw-desktop-root .paw-assignment__summary { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; padding: 18px 0; border-bottom: 1px solid var(--focus-line); }
+.paw-desktop-root .paw-assignment__summary > span,
+.paw-desktop-root .paw-assignment__hint { color: var(--focus-muted); font-size: 12px; }
+.paw-desktop-root .paw-assignment__layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; }
+.paw-desktop-root .paw-assignment__network { min-width: 0; }
+.paw-desktop-root .paw-assignment__hint { margin: 14px 0; line-height: 1.6; }
+.paw-desktop-root .paw-assignment__viewport { overflow: auto; max-height: 460px; background: var(--focus-process); border-radius: 10px; border: 1px solid var(--focus-line); }
+.paw-desktop-root .paw-assignment__canvas { position: relative; width: 680px; margin: auto; }
+.paw-desktop-root .paw-assignment__canvas svg { position: absolute; inset: 0; }
+.paw-desktop-root .paw-assignment__canvas svg g > path { stroke: var(--focus-blue); stroke-width: 2; opacity: .65; }
+.paw-desktop-root .paw-assignment__canvas svg marker path { fill: var(--focus-blue); }
+.paw-desktop-root .paw-assignment__canvas svg rect { fill: var(--focus-surface); stroke: var(--focus-blue); }
+.paw-desktop-root .paw-assignment__canvas svg text { fill: var(--focus-blue); font: 11px system-ui; }
+.paw-desktop-root .paw-assignment__canvas svg g[data-selected="true"] > path { stroke-width: 4; opacity: 1; }
+.paw-desktop-root .paw-assignment__node { position: absolute; transform: translate(-50%, -50%); width: 192px; height: 96px; padding: 12px; border: 1px solid var(--focus-line); border-radius: 10px; background: var(--focus-surface); text-align: left; color: var(--focus-ink); cursor: pointer; }
+.paw-desktop-root .paw-assignment__node[aria-pressed="true"] { border: 2px solid var(--focus-blue); }
+.paw-desktop-root .paw-assignment__node > span:first-child { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+.paw-desktop-root .paw-assignment__node small { color: var(--focus-muted); font-size: 11px; }
+.paw-desktop-root .paw-assignment__node small[data-state="running"] { color: var(--focus-blue); }
+.paw-desktop-root .paw-assignment__node small[data-state="completed"] { color: var(--focus-green); }
+.paw-desktop-root .paw-assignment__node small[data-state="failed"],
+.paw-desktop-root .paw-assignment__node small[data-state="blocked"] { color: var(--focus-red); }
+.paw-desktop-root .paw-assignment__responsibility { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 9px; line-height: 1.5; font-size: 12px; }
+.paw-desktop-root .paw-assignment__relations { display: grid; gap: 4px; padding: 12px 0; }
+.paw-desktop-root .paw-assignment__relations button { display: flex; gap: 10px; align-items: center; padding: 9px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--focus-ink); text-align: left; cursor: pointer; }
+.paw-desktop-root .paw-assignment__relations button[aria-pressed="true"] { background: var(--focus-process); }
+.paw-desktop-root .paw-assignment__relations button > b { color: var(--focus-blue); font-size: 12px; }
+.paw-desktop-root .paw-assignment__relations button > span { display: flex; align-items: center; gap: 8px; }
+.paw-desktop-root .paw-assignment__relations button > strong { margin-left: auto; font-size: 12px; }
+.paw-desktop-root .paw-assignment__detail { min-width: 0; padding: 18px 0 18px 18px; border-left: 1px solid var(--focus-line); font-size: 13px; overflow-wrap: anywhere; }
+.paw-desktop-root .paw-assignment__detail h3 { font-size: 19px; margin: 8px 0; }
+.paw-desktop-root .paw-assignment__detail h3 small { font-size: 12px; font-weight: 400; color: var(--focus-muted); }
+.paw-desktop-root .paw-assignment__detail p,
+.paw-desktop-root .paw-assignment__detail li { line-height: 1.7; }
+.paw-desktop-root .paw-assignment__detail h4 { margin: 20px 0 10px; }
+.paw-desktop-root .paw-assignment__detail article { border-top: 1px solid var(--focus-line); padding-top: 14px; margin-top: 14px; }
+.paw-desktop-root .paw-assignment__detail article h4 { margin-top: 8px; }
+.paw-desktop-root .paw-assignment__eyebrow { color: var(--focus-muted); font-size: 12px; }
+.paw-desktop-root .paw-assignment__open { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--focus-blue); padding: 8px 0; cursor: pointer; }
+.paw-desktop-root .paw-assignment__pending { padding: 12px 0; border-top: 1px solid var(--focus-line); font-size: 12px; }
+.paw-desktop-root .paw-assignment summary { cursor: pointer; }
+.paw-desktop-root .paw-assignment__pending button { display: block; width: 100%; text-align: left; background: transparent; color: var(--focus-ink); border: 0; padding: 10px 0; cursor: pointer; }
+.paw-desktop-root .paw-assignment__pending small { display: block; color: var(--focus-muted); margin-top: 4px; }
+.paw-desktop-root .paw-assignment button:focus-visible,
+.paw-desktop-root .paw-assignment__viewport:focus-visible { outline: 2px solid var(--focus-blue); outline-offset: 3px; }
+@container room-focus (max-width: 860px) {
+  .paw-desktop-root .paw-assignment__layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .paw-desktop-root .paw-assignment__detail { border-left: 0; border-top: 1px solid var(--focus-line); padding-left: 0; }
+}

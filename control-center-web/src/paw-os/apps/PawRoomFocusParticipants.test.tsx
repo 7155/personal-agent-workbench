@@ -68,7 +68,7 @@ describe('compact Room participants', () => {
   it('starts with one action per partner and a separate message route, without repeating reports or empty windows', () => {
     mount();
     const nav = screen.getByRole('navigation', { name: 'Room 伙伴' });
-    expect(within(nav).getAllByRole('button')).toHaveLength(4);
+    expect(within(nav).getAllByRole('button')).toHaveLength(5);
     expect(within(nav).getByRole('button', { name: 'Earth，已完成，卫星 0' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(nav).getByRole('button', { name: 'Mars，待命，卫星暂不可用' })).toBeInTheDocument();
     expect(within(nav).getByRole('button', { name: 'Venus，已停止，卫星读取中' })).toBeInTheDocument();
@@ -109,6 +109,37 @@ describe('compact Room participants', () => {
     fireEvent.keyDown(panel, { key: 'Escape' });
     expect(screen.queryByRole('region', { name: 'Room 消息流' })).not.toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+});
+
+describe('Room assignment map', () => {
+  it('shows actual assignment and criteria, and opens the owner session', async () => {
+    const user = userEvent.setup();
+    const assigned: RoomFocusProjection = { ...focus, handoffs: [{ id: 'handoff-1', sourceParticipantId: 'earth', targetParticipantId: 'mars', task: '核对构建版本', state: 'completed', createdAtMs: 30 }], workItems: [{ id: 'task-1', source: 'work-item', objective: '核对构建版本', ownerParticipantId: 'mars', verifierParticipantId: 'earth', state: 'running', reviewRequired: true, acceptanceCriteria: ['安装版本与源码哈希一致'], expectedOutput: '验收记录', evidence: [], updatedAtMs: 30 }] };
+    const view = mount({ focus: assigned });
+    await user.click(screen.getByRole('button', { name: '任务关系' }));
+    const graph = screen.getByRole('region', { name: 'Room 任务关系' });
+    expect(within(graph).getByLabelText('已确认协作关系')).toHaveTextContent('Earth');
+    await user.click(within(graph).getByRole('button', { name: /Mars.*待命/ }));
+    expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('安装版本与源码哈希一致');
+    expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('复核：Earth');
+    await user.click(within(graph).getByRole('button', { name: '查看实际会话与调用' }));
+    expect(view.props.onSelect).toHaveBeenCalledWith('mars');
+    expect(screen.queryByRole('region', { name: 'Room 任务关系' })).not.toBeInTheDocument();
+  });
+  it('keeps failed relations separate and restores keyboard focus on escape', async () => {
+    const user = userEvent.setup();
+    mount({ focus: { ...focus, handoffs: [{ id: 'failed', sourceParticipantId: 'earth', targetParticipantId: 'mars', task: '失败交接', state: 'failed', createdAtMs: 40 }] } });
+    const trigger = screen.getByRole('button', { name: '任务关系' });
+    await user.click(trigger);
+    const graph = screen.getByRole('region', { name: 'Room 任务关系' });
+    expect(within(graph).getByLabelText('已确认协作关系')).not.toHaveTextContent('失败交接');
+    await user.click(within(graph).getByText(/其他关系 \/ 待确认/));
+    await user.click(within(graph).getByRole('button', { name: /Earth → Mars.*交接/ }));
+    expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('失败交接');
+    expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('失败');
+    await user.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
   });
 });

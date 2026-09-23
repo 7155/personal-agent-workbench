@@ -218,3 +218,9 @@ describe('roomToolActivityLine', () => {
     expect(roomToolActivityLine('browser', { toolName: 'browser' }, 'aborted')).toBe('浏览器操作 已停止');
   });
 });
+
+it('preserves gateway failure evidence instead of presenting bash as the failure reason', () => {
+  const payload = { toolName: 'bash', approvalId: 'approved-command', error: 'Tool gateway request timed out after 30000ms', result: { outputPreview: 'Tool gateway request timed out after 30000ms' }, arguments: { command: 'pnpm typecheck', timeout: 180 } };
+  expect(roomToolActivityLine('bash', payload, 'failed')).toBe(payload.error);
+  expect(roomToolEvidence(payload)?.facts).toContainEqual({ label: '失败原因', value: payload.error });
+});

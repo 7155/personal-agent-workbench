@@ -67,8 +67,11 @@ describe('useAgentLiveSession shared ownership', () => {
     act(() => {
       expect(transport.emit('agent.session.events', rawEvent)).toBe(1);
     });
-    expect(firstEvent).toHaveBeenCalledTimes(1);
-    expect(secondEvent).toHaveBeenCalledTimes(1);
+    // Text deltas notify views after the shared batched projection commits.
+    await waitFor(() => {
+      expect(firstEvent).toHaveBeenCalledTimes(1);
+      expect(secondEvent).toHaveBeenCalledTimes(1);
+    });
     expect(firstEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventId: `${SESSION_ID}:1`,
       sessionId: SESSION_ID,
