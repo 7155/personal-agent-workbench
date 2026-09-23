@@ -54,6 +54,22 @@ export function LabAppPreview({ app, version, calls, selectedCallId = '', onActi
   // A cross-origin workspace keeps its own service identity and API cookies.
   // Never allow an App-authored URL to mount this control surface as a sibling.
   const workspaceUrl = destination && new URL(destination).origin !== window.location.origin ? destination : null;
+  const localWorkspace = workspaceUrl ? ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(workspaceUrl).hostname) : false;
+  const [workspaceConnection, setWorkspaceConnection] = useState<'checking' | 'ready' | 'unavailable'>('checking');
+  const [workspaceRetry, setWorkspaceRetry] = useState(0);
+  useEffect(() => {
+    if (!workspaceUrl || (!workspaceOpened && !split) || !localWorkspace) return;
+    const controller = new AbortController();
+    let active = true;
+    const timeout = window.setTimeout(() => controller.abort(), 3000);
+    setWorkspaceConnection('checking');
+    void fetch(workspaceUrl, { method: 'HEAD', mode: 'no-cors', credentials: 'omit', cache: 'no-store', signal: controller.signal })
+      .then(() => { if (active) setWorkspaceConnection('ready'); })
+      .catch(() => { if (active) setWorkspaceConnection('unavailable'); })
+      .finally(() => window.clearTimeout(timeout));
+    return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
+  }, [workspaceUrl, workspaceOpened, split, localWorkspace, workspaceRetry]);
+  const workspaceReady = !localWorkspace || workspaceConnection === 'ready';
   const [error, setError] = useState('');
   const [pending, setPending] = useState<LabAppCommand[]>(() => pendingLabAppCommands(transport, app.appId)
     .filter((command) => command.action === 'invoke' ? command.input.version === version.version : ['cancel', 'resume'].includes(command.action)));
@@ -190,8 +206,8 @@ export function LabAppPreview({ app, version, calls, selectedCallId = '', onActi
   return <div className={`lab-app-preview${split ? ' lab-app-preview--split' : ''}`} data-workspace-view={workspaceVisible ? 'workspace' : 'chat'}>
     {external ? <nav className="lab-app-preview__workspaces" aria-label="应用工作区">
       <button type="button" aria-pressed={!workspaceVisible} onClick={() => setWorkspaceVisible(false)}>资料问答</button>
-      <button type="button" aria-pressed={workspaceVisible} onClick={() => { setWorkspaceOpened(true); setWorkspaceVisible(true); }}>{external.title}</button>
-      {workspaceUrl ? <a href={workspaceUrl} target="_blank" rel="noopener noreferrer">在浏览器打开 ↗</a> : null}
+      <button type="button" aria-pressed={workspaceVisible} onClick={() => { if (!split) setWorkspaceOpened(true); setWorkspaceVisible(true); }}>{external.title}</button>
+      {workspaceUrl && workspaceReady ? <a href={workspaceUrl} target="_blank" rel="noopener noreferrer">在浏览器打开 ↗</a> : null}
     </nav> : null}
     {error || pending.length ? <div className="lab-project-error" role="alert"><p>{error || '有尚未确认的应用操作，已保留原请求。'}</p>{pending.map((command) => <Button key={command.clientRequestId} onClick={() => void send(command, command.action === 'invoke' ? command.clientRequestId.split(':').at(-1) : undefined)}>核对原操作</Button>)}</div> : null}
     {active.length ? <div className="lab-app-preview__activity" role="status">{active.map((call) => <span key={call.callId}>
@@ -204,7 +220,13 @@ export function LabAppPreview({ app, version, calls, selectedCallId = '', onActi
     <div className="lab-app-preview__panes">
     <iframe ref={frame} data-pane="chat" title={`${version.spec.title} · 应用预览`} hidden={!split && workspaceVisible} sandbox="allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" src={previewUrl} />
     {external && (workspaceOpened || split) ? workspaceUrl
-      ? <iframe data-pane="workspace" title={external.title} hidden={!split && !workspaceVisible} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" src={workspaceUrl} />
+      ? workspaceReady
+        ? <iframe data-pane="workspace" title={external.title} hidden={!split && !workspaceVisible} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" src={workspaceUrl} />
+        : <div data-pane="workspace" hidden={!split && !workspaceVisible} className="lab-app-preview__workspace-state" role={workspaceConnection === 'unavailable' ? 'alert' : 'status'}>
+          <strong>{workspaceConnection === 'unavailable' ? '工作台服务未连接' : '正在检查工作台连接…'}</strong>
+          <p>{workspaceConnection === 'unavailable' ? '请先启动本机工作台服务，再重新连接。资料问答仍可使用。' : '正在确认本机工作台是否可用。'}</p>
+          {workspaceConnection === 'unavailable' ? <Button size="small" onClick={() => setWorkspaceRetry((value) => value + 1)}>重新连接</Button> : null}
+        </div>
       : <p hidden={!split && !workspaceVisible} className="lab-project-error" role="alert">工作台地址不可用。请检查应用声明的 HTTPS 或本机服务地址；不能嵌入当前控制服务。</p> : null}
     </div>
     {receipts}

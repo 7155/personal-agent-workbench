@@ -200,6 +200,11 @@ class AgentSessionPolicyService:
             if str(skill_ref).strip() and str(owner_app_id).strip()
         }
 
+    def extension_app_skill_owners(self) -> dict[str, str]:
+        """Return only enabled App Skills validated by the Package inventory."""
+
+        return self._extension_app_skill_owners()
+
     @staticmethod
     def _command_allowed_for_session(
         command: Mapping[str, object],

@@ -1161,6 +1161,7 @@ class AgentService:
             configuration,
             session,
             room_participant=isinstance(participant, Mapping),
+            extension_app_skill_owners=self.session_policy.extension_app_skill_owners(),
         )
 
 

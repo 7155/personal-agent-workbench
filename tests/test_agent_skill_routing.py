@@ -121,3 +121,20 @@ class AgentSkillRoutingTests(unittest.TestCase):
                 )
                 self.assertTrue(expected.issubset(selected))
                 self.assertTrue(selected.isdisjoint(forbidden))
+
+    def test_verified_extension_app_skill_is_available_only_to_its_owner(self) -> None:
+        configuration = {"skillRouting": default_skill_routing()}
+        owners = {"zhanggui-wenshu": "extension:zhanggui-wenshu"}
+        for session, expected in (
+            ({"surfaceKind": "extension_app", "ownerAppId": "extension:zhanggui-wenshu"}, True),
+            ({"surfaceKind": "extension_app", "ownerAppId": "extension:other-app"}, False),
+            ({"surfaceKind": "agent", "ownerAppId": "extension:zhanggui-wenshu"}, False),
+        ):
+            with self.subTest(session=session):
+                selected = skill_allowlist_for_session(
+                    configuration,
+                    session,
+                    room_participant=False,
+                    extension_app_skill_owners=owners,
+                )
+                self.assertEqual("zhanggui-wenshu" in selected, expected)

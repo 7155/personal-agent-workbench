@@ -29,7 +29,7 @@ describe('Frozen App configuration', () => {
     value.spec.evaluationSelection = { suiteId: 'suite', jobId: 'job', variant: 'candidate', snapshotId: 'snapshot', configurationSha256: 'd'.repeat(64), applicationMethod: { title: '论文方法与证据核对', sha256: 'e'.repeat(64) } };
     const open = vi.fn(); render(<LabAppConfiguration version={value} onOpenEvaluation={open} />);
     expect(screen.getByText('209 篇文档 · 20,017 个切片')).toBeVisible();
-    expect(screen.getByText('hybrid · Top-K 8 · 24,000 字符预算')).toBeVisible();
+    expect(screen.getByText('hybrid · 取前 8 段 · 最多带 24,000 字')).toBeVisible();
     expect(screen.getByText('论文方法与证据核对')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '查看原评测' })); expect(open).toHaveBeenCalledWith('suite', 'job');
   });
@@ -39,7 +39,7 @@ describe('Frozen App configuration', () => {
     expect(screen.queryByRole('button', { name: '查看原评测' })).not.toBeInTheDocument();
   });
 });
-afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); sessionStorage.clear(); registerLabExtensionApps({ ok: true, items: [] }); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); sessionStorage.clear(); registerLabExtensionApps({ ok: true, items: [] }); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function mount(transport: MockControlTransport, body = <LabAppDelivery projectId="project-1" />) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
   return render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}>{body}</ControlTransportProvider></QueryClientProvider>);
@@ -137,6 +137,7 @@ describe('Lab application delivery', () => {
     expect(guide).toHaveBeenCalledOnce();
   });
   it('preserves the conversation while opening a declared workspace and denies its messages the App bridge', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({}));
     const current = app(); const item = version();
     item.spec.externalWorkspace = { title: '空间工作台', url: 'http://127.0.0.1:5173/' };
     const received: unknown[] = [];
@@ -145,7 +146,7 @@ describe('Lab application delivery', () => {
     const conversation = screen.getByTitle('售后助手 · 应用预览');
     expect(screen.queryByTitle('空间工作台')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '空间工作台' }));
-    const workspace = screen.getByTitle('空间工作台') as HTMLIFrameElement;
+    const workspace = await screen.findByTitle('空间工作台') as HTMLIFrameElement;
     expect(workspace).toHaveAttribute('src', 'http://127.0.0.1:5173/');
     expect(workspace).toHaveAttribute('sandbox', expect.stringContaining('allow-same-origin'));
     expect(conversation).toHaveAttribute('hidden');
@@ -159,11 +160,24 @@ describe('Lab application delivery', () => {
     expect(workspace).toHaveAttribute('hidden');
   });
 
-  it('mounts both split panes immediately and retains the conversation across mobile view selection', () => {
+  it('shows a retryable explanation when a local workspace service is unavailable', async () => {
+    const item = version(); item.spec.externalWorkspace = { title: '地图与研判', url: 'http://127.0.0.1:18875/embedded' };
+    const probe = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', probe);
+    mount(new MockControlTransport(), <LabAppPreview app={app()} version={item} calls={[]} onActivity={() => undefined} />);
+    fireEvent.click(screen.getByRole('button', { name: '地图与研判' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('工作台服务未连接');
+    expect(screen.queryByTitle('地图与研判')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }));
+    await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
+  });
+
+  it('mounts both split panes when the workspace is reachable and retains the conversation across mobile view selection', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({}));
     const item = version(); item.spec.externalWorkspace = { title: '地图与故事', url: 'http://127.0.0.1:5173/embedded', presentation: 'split' };
     mount(new MockControlTransport(), <LabAppPreview app={app()} version={item} calls={[]} onActivity={() => undefined} />);
     const conversation = screen.getByTitle('售后助手 · 应用预览');
-    const workspace = screen.getByTitle('地图与故事');
+    const workspace = await screen.findByTitle('地图与故事');
     expect(conversation).not.toHaveAttribute('hidden'); expect(workspace).not.toHaveAttribute('hidden');
     fireEvent.click(screen.getByRole('button', { name: '地图与故事' }));
     expect(screen.getByTitle('售后助手 · 应用预览')).toBe(conversation);
