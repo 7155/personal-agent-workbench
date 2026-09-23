@@ -96,8 +96,8 @@ if [[ "$EXPECTED_TRANSPORT" == "native" ]]; then
     echo "production control-center dist contains a preview fixture sentinel" >&2
     exit 1
   fi
-  grep -q "connect-src 'self';" "$DIST/index.html" || {
-    echo "native control-center CSP still permits a browser transport" >&2
+  grep -q "connect-src 'self' http://127.0.0.1:18875;" "$DIST/index.html" || {
+    echo "native control-center CSP differs from approved workspace probe origin" >&2
     exit 1
   }
 elif [[ "$EXPECTED_TRANSPORT" == "http" ]]; then
@@ -115,8 +115,8 @@ elif [[ "$EXPECTED_TRANSPORT" == "http" ]]; then
     echo "production http control-center dist contains a preview fixture sentinel" >&2
     exit 1
   fi
-  grep -q "connect-src 'self';" "$DIST/index.html" || {
-    echo "http control-center CSP permits a cross-origin control transport" >&2
+  grep -q "connect-src 'self' http://127.0.0.1:18875;" "$DIST/index.html" || {
+    echo "http control-center CSP differs from approved workspace probe origin" >&2
     exit 1
   }
 fi

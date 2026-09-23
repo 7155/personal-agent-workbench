@@ -54,11 +54,12 @@ export function LabAppPreview({ app, version, calls, selectedCallId = '', onActi
   // A cross-origin workspace keeps its own service identity and API cookies.
   // Never allow an App-authored URL to mount this control surface as a sibling.
   const workspaceUrl = destination && new URL(destination).origin !== window.location.origin ? destination : null;
-  const localWorkspace = workspaceUrl ? ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(workspaceUrl).hostname) : false;
+  // The control shell permits a credentialless liveness probe only for this local service.
+  const probedWorkspace = workspaceUrl ? new URL(workspaceUrl).origin === 'http://127.0.0.1:18875' : false;
   const [workspaceConnection, setWorkspaceConnection] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [workspaceRetry, setWorkspaceRetry] = useState(0);
   useEffect(() => {
-    if (!workspaceUrl || (!workspaceOpened && !split) || !localWorkspace) return;
+    if (!workspaceUrl || (!workspaceOpened && !split) || !probedWorkspace) return;
     const controller = new AbortController();
     let active = true;
     const timeout = window.setTimeout(() => controller.abort(), 3000);
@@ -68,8 +69,8 @@ export function LabAppPreview({ app, version, calls, selectedCallId = '', onActi
       .catch(() => { if (active) setWorkspaceConnection('unavailable'); })
       .finally(() => window.clearTimeout(timeout));
     return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
-  }, [workspaceUrl, workspaceOpened, split, localWorkspace, workspaceRetry]);
-  const workspaceReady = !localWorkspace || workspaceConnection === 'ready';
+  }, [workspaceUrl, workspaceOpened, split, probedWorkspace, workspaceRetry]);
+  const workspaceReady = !probedWorkspace || workspaceConnection === 'ready';
   const [error, setError] = useState('');
   const [pending, setPending] = useState<LabAppCommand[]>(() => pendingLabAppCommands(transport, app.appId)
     .filter((command) => command.action === 'invoke' ? command.input.version === version.version : ['cancel', 'resume'].includes(command.action)));

@@ -179,6 +179,7 @@ describe('Lab application delivery', () => {
     const conversation = screen.getByTitle('售后助手 · 应用预览');
     const workspace = await screen.findByTitle('地图与故事');
     expect(conversation).not.toHaveAttribute('hidden'); expect(workspace).not.toHaveAttribute('hidden');
+    expect(fetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '地图与故事' }));
     expect(screen.getByTitle('售后助手 · 应用预览')).toBe(conversation);
     expect(screen.getByTitle('地图与故事')).toBe(workspace);
