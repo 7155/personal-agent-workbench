@@ -548,6 +548,8 @@ class AgentRoomStore:
             {
                 "schemaVersion": "rag-ime.agent-room-directory-entry.v1",
                 "id": str(row["id"]),
+                "title": str(row["title"]),
+                "status": str(row["status"]),
                 "routingPolicy": str(row["routing_mode"] or row["routing_policy"]),
                 "executionMode": str(row["execution_mode"] or ""),
                 "permissionPolicy": room_permission_policy_from_row(row),

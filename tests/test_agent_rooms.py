@@ -103,6 +103,8 @@ class AgentRoomTests(unittest.TestCase):
         item = self.store.list_directory_page(limit=100)["items"][0]
 
         self.assertEqual(item["id"], room["id"])
+        self.assertEqual(item["title"], "快速 Room 目录")
+        self.assertEqual(item["status"], "active")
         self.assertEqual(item["workspaceRoots"], [str(self.root.resolve())])
         self.assertEqual([value["displayName"] for value in item["participants"]], ["Agent A", "Agent B"])
         self.assertNotIn("scenarioPrompt", item)

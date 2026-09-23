@@ -127,7 +127,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(transport.requests.filter((request) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
   });
 
-  it('clears connection recovery when the stream stabilizes even if the repair snapshot failed', async () => {
+  it('keeps recovery visible after a heartbeat until the failed snapshot is repaired', async () => {
     const sessionId = 'session-stream-restores-without-snapshot';
     let failSnapshot = false;
     const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
@@ -145,7 +145,9 @@ describe('PAWOS Agent Session structural migration', () => {
     await waitFor(() => expect(observers.length).toBeGreaterThan(1), { timeout: 6000 });
     act(() => observers.at(-1)!.stable?.(''));
     expect(screen.queryByText('Session 操作没有完成，请重新同步后重试。')).not.toBeInTheDocument();
-    expect(screen.queryByText('正在恢复连接')).not.toBeInTheDocument();
+    expect(screen.getByText('正在恢复连接')).toBeVisible();
+    failSnapshot = false;
+    await waitFor(() => expect(screen.queryByText('正在恢复连接')).not.toBeInTheDocument(), { timeout: 6000 });
     expect(screen.queryByRole('button', { name: '立即重连' })).not.toBeInTheDocument();
     expect(transport.requests.filter((request) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
   });

@@ -420,6 +420,12 @@ function createSharedAgentLiveSession(
       // A transport success is not a store commit. Rejected stale/partial
       // responses cannot mark the view loaded or overwrite its metadata.
       if (snapshot.hydrated) broadcast((listener) => listener.onSnapshot?.(snapshot));
+      else if (!presentable) broadcast((listener) => listener.onSnapshotError?.({
+        sessionId,
+        view: actualView,
+        error: new Error('返回的记录不完整，请加载完整记录。'),
+        recoverable: actualView === 'recent',
+      }));
       if (shouldStream()) maybeSubscribe();
       else if (!snapshotNeedsRepair) setRecoveryState('synced');
       if (snapshotNeedsRepair) scheduleAutomaticRecovery();
