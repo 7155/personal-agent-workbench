@@ -35,7 +35,7 @@ const satellites: RoomSatelliteSnapshots = {
 };
 
 function mount(overrides: Partial<Parameters<typeof PawRoomFocusParticipantBar>[0]> = {}) {
-  const props = { focus, satellitesByParticipant: satellites, onSelect: vi.fn(), onCloseInspector: vi.fn(), intercomStatus: 'ready' as const, ...overrides };
+  const props = { focus, satellitesByParticipant: satellites, onSelect: vi.fn(), onCloseInspector: vi.fn(), intercomStatus: 'ready' as const, live: true, recoveryState: 'synced' as const, ...overrides };
   return { ...render(<PawRoomFocusParticipantBar {...props} />), props };
 }
 
@@ -57,7 +57,7 @@ describe('compact Room participants', () => {
         collaborationRole: partner.collaborationRole,
       })),
     };
-    act(() => live.callbacks!.onSnapshot('room-1', { room } as Parameters<NonNullable<typeof live.callbacks>['onSnapshot']>[1]));
+    act(() => { useRoomLiveStore.getState().ensure('room-1'); live.callbacks!.onSnapshot('room-1', { room } as Parameters<NonNullable<typeof live.callbacks>['onSnapshot']>[1]); live.callbacks!.onRecoveryState('room-1', 'synced'); });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Earth，待命，卫星 0' })).toBeInTheDocument());
     expect(useRoomLiveStore.getState().snapshotsByRoomId['room-1']).toBeUndefined();
     act(() => live.callbacks!.onMetadata('room-1', { ok: true, room: { ...room, participants: room.participants.slice(0, 1) } }));
@@ -69,7 +69,7 @@ describe('compact Room participants', () => {
     mount();
     const nav = screen.getByRole('navigation', { name: 'Room 伙伴' });
     expect(within(nav).getAllByRole('button')).toHaveLength(5);
-    expect(within(nav).getByRole('button', { name: 'Earth，已完成，卫星 0' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(nav).getByRole('button', { name: 'Earth，本轮执行结束，卫星 0' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(nav).getByRole('button', { name: 'Mars，待命，卫星暂不可用' })).toBeInTheDocument();
     expect(within(nav).getByRole('button', { name: 'Venus，已停止，卫星读取中' })).toBeInTheDocument();
     expect(screen.queryByText('完整主持报告只属于主对话。')).not.toBeInTheDocument();
@@ -86,7 +86,7 @@ describe('compact Room participants', () => {
     view.rerender(<PawRoomFocusParticipantBar {...view.props} focus={next} selectedParticipantId="mars" />);
     const selected = screen.getByRole('button', { name: 'Mars，待命，卫星暂不可用' });
     expect(selected).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Earth，进行中，卫星 0' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Earth，执行中，卫星 0' })).toHaveAttribute('aria-pressed', 'false');
     await user.click(selected);
     expect(view.props.onCloseInspector).not.toHaveBeenCalled();
     expect(view.props.onSelect).toHaveBeenCalledTimes(2);
@@ -118,6 +118,8 @@ describe('Room assignment map', () => {
     const user = userEvent.setup();
     const assigned: RoomFocusProjection = { ...focus, handoffs: [{ id: 'handoff-1', sourceParticipantId: 'earth', targetParticipantId: 'mars', task: '核对构建版本', state: 'completed', createdAtMs: 30 }], workItems: [{ id: 'task-1', source: 'work-item', objective: '核对构建版本', ownerParticipantId: 'mars', verifierParticipantId: 'earth', state: 'running', reviewRequired: true, acceptanceCriteria: ['安装版本与源码哈希一致'], expectedOutput: '验收记录', evidence: [], updatedAtMs: 30 }] };
     const view = mount({ focus: assigned });
+    expect(screen.getByRole('button', { name: '任务关系' })).toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('button', { name: '任务关系' }));
     const graph = screen.getByRole('region', { name: 'Room 任务关系' });
     expect(screen.getByRole('button', { name: '任务关系' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(graph).getByLabelText('任务分派图')).toHaveTextContent('核对构建版本');
@@ -131,6 +133,7 @@ describe('Room assignment map', () => {
     const user = userEvent.setup();
     mount({ focus: { ...focus, handoffs: [{ id: 'failed', sourceParticipantId: 'earth', targetParticipantId: 'mars', task: '失败交接', state: 'failed', createdAtMs: 40 }] } });
     const trigger = screen.getByRole('button', { name: '任务关系' });
+    await user.click(trigger);
     const graph = screen.getByRole('region', { name: 'Room 任务关系' });
     await user.click(within(graph).getByRole('button', { name: /协作往来/ }));
     expect(within(graph).getByLabelText('已确认协作关系')).not.toHaveTextContent('失败交接');
@@ -150,6 +153,7 @@ describe('Room assignment map', () => {
       id: 'unassigned', source: 'work-item', objective: '未分派的地图检查',
       state: 'waiting', reviewRequired: false, acceptanceCriteria: [], evidence: [], updatedAtMs: 2,
     }] } });
+    fireEvent.click(screen.getByRole('button', { name: '任务关系' }));
     const map = screen.getByLabelText('任务分派图');
     expect(map).toHaveTextContent('待接收');
     expect(map).toHaveTextContent('等待分派');
@@ -162,6 +166,7 @@ describe('Room assignment map', () => {
   it('keeps a dismissed graph closed across progress updates and lets the user reopen it', async () => {
     const user = userEvent.setup();
     const view = mount();
+    await user.click(screen.getByRole('button', { name: '任务关系' }));
     await user.click(screen.getByRole('button', { name: '关闭任务关系' }));
     view.rerender(<PawRoomFocusParticipantBar {...view.props} focus={{ ...focus, goal: { ...focus.goal, state: 'running' } }} />);
     expect(screen.queryByRole('region', { name: 'Room 任务关系' })).not.toBeInTheDocument();

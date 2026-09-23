@@ -211,7 +211,7 @@ export default defineConfig({
     css: true,
     testTimeout: 15_000,
     include: [
-      'src/**/*.test.{ts,tsx}',
+      'src/**/*.test.{ts,tsx,js}',
       'extension-apps/**/*.test.{ts,tsx}',
       '../integrations/pi/skills/pawos-app-builder/assets/frontend-template/**/*.test.{ts,tsx}',
     ],

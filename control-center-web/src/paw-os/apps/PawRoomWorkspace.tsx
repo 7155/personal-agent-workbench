@@ -64,6 +64,8 @@ import {
 import { PawRoomConversation, roomProcessWindowRequest } from './PawRoomConversation';
 import { PawRoomLiveFocusOverview } from './PawRoomLiveFocusOverview';
 import { PawRoomRoundSheet } from './PawRoomRoundSheet';
+import { PawRoomWorkStatus } from './PawRoomWorkStatus';
+import { buildRoomWorkStatus } from './room-work-status';
 import type { RoomRoundTaskRow } from './room-round-task-sheet';
 /* 星空按钮按下之前，星空代码不进入 Room 默认对话的 bundle 路径。 */
 import { LazyPawRoomStarfield } from './PawStarfieldLazy';
@@ -155,6 +157,7 @@ export function PawRoomWorkspace({
   // controls interaction/animation; document visibility owns network pause.
   const liveActive = pageVisible;
   const timelineRef = useRef<HTMLDivElement>(null);
+  const composerRegionRef = useRef<HTMLDivElement>(null);
   const runtimeWarmupSessionIdsRef = useRef(new Set<string>());
   const [draft, setDraft] = useState(initialDraft ?? '');
   const [attachments, setAttachments] = useState<RoomAttachmentReceipt[]>([]);
@@ -803,8 +806,8 @@ export function PawRoomWorkspace({
     ['active', focusProjection?.counts.active ?? 0, '进行'],
     ['review', focusProjection?.counts.review ?? 0, '复核'],
     ['blocked', focusProjection?.counts.blocked ?? 0, '受阻'],
-    ['submitted', submittedPartnerCount, '伙伴已提交结果'],
-    ['complete', focusProjection?.counts.completed ?? 0, '项已交付'],
+    ['submitted', submittedPartnerCount, '伙伴执行结束'],
+    ['complete', focusProjection?.workItems.filter((item) => item.source === 'work-item' && item.state === 'completed').length ?? 0, '工作项完成'],
   ] as const).filter(([, count]) => count > 0);
   /* 没有主持就没有 Sol：signal chrome 只有在真的有伙伴担任 coordinator 时
      才用 Sol 命名这个 Room 的原点，否则统一叫「主 Room」。 */
@@ -833,31 +836,17 @@ export function PawRoomWorkspace({
   ) : (
     <div aria-label="正在恢复 Room 协作现场" className="paw-room-workspace__loading" role="status"><LoaderCircle aria-hidden="true" className="ui-spin" size={18} />正在恢复 Room 协作现场</div>
   );
-  const runtimeBusy = visibleRecoveryState !== 'failed' && Boolean(activeTurn);
-  const awaitingRoot = visibleRecoveryState !== 'failed'
-    && latestTurn?.status === 'running'
-    && !activeTurn
-    && submittedPartnerCount > 0;
-  const runtimeStatusLabel = abortingActiveTurn
-    ? '正在停止'
-    : syncOffline || recoveryState === 'failed'
-      ? '同步离线 · 历史已保留'
-      : sending && runtimeBusy
-        ? '正在干预'
-        : runtimeBusy
-          ? '协作中'
-          : awaitingRoot
-            ? '伙伴已提交，等待 Root'
-            : latestTurn?.status === 'completed'
-              ? 'Room 已完成'
-              : latestTurn?.status === 'aborted'
-                ? '本轮已停止'
-                : latestTurn?.status === 'failed'
-                  ? '本轮失败'
-                  : recoveryState === 'synced'
-                    ? '已同步'
-                    : '连接中';
-  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={abortingActiveTurn ? 'stopping' : runtimeBusy ? 'busy' : visibleRecoveryState}>
+  const workStatus = focusProjection ? buildRoomWorkStatus({
+    focus: focusProjection, projection, recoveryState: visibleRecoveryState,
+    visible: pageVisible, stopping: abortingActiveTurn,
+    pendingInput: Boolean(pendingGroupedInput && pendingGroupedInput.turnId === focusProjection.goal.rootId),
+  }) : undefined;
+  // Stop remains owned by the actual active Root, independently of whether a
+  // status animation is appropriate (for example, while waiting for input).
+  const runtimeBusy = visibleRecoveryState === 'synced' && Boolean(activeTurn);
+  const runtimeStatusLabel = workStatus?.headline ?? '连接中';
+  const chromeStatus = abortingActiveTurn ? 'stopping' : workStatus?.animate && active ? 'busy' : visibleRecoveryState;
+  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
     {coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
     {!externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
       <button aria-label="对话与结果" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>对话与结果</span></button>
@@ -866,7 +855,7 @@ export function PawRoomWorkspace({
       <button aria-label="完整记录" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'conversation'} data-room-view="conversation" onClick={() => { setView('conversation'); exitCollaborationFocus(); }} type="button"><MessageCircle size={14} /><span>完整记录</span></button>
       <button aria-label="星空" aria-pressed={view === 'starfield'} data-room-view="starfield" onClick={() => { setView('starfield'); exitCollaborationFocus(); }} type="button"><Orbit size={14} /><span>星空</span></button>
     </nav> : null}
-    <div className="paw-room-workspace__runtime"><span data-terminal={runtimeStatusLabel === '本轮已停止' ? 'aborted' : runtimeStatusLabel === '本轮失败' ? 'failed' : undefined} data-compact-status={externalCollaborationFocus ? undefined : runtimeStatusLabel === '本轮已停止' ? '已停止' : runtimeStatusLabel === '本轮失败' ? '失败' : undefined}><i />{runtimeStatusLabel}</span>{runtimeBusy ? <button aria-label="停止整轮协作" disabled={abortingActiveTurn} onClick={() => void abortTurn(activeRootId)} type="button"><StopCircle size={16} /></button> : null}</div>
+    <div className="paw-room-workspace__runtime"><span data-terminal={workStatus?.state === 'stopped' ? 'aborted' : workStatus?.state === 'failed' ? 'failed' : undefined} data-compact-status={externalCollaborationFocus ? undefined : workStatus?.state === 'stopped' ? '已停止' : workStatus?.state === 'failed' ? '失败' : undefined}><i />{runtimeStatusLabel}</span>{runtimeBusy ? <button aria-label="停止整轮协作" disabled={abortingActiveTurn} onClick={() => void abortTurn(activeRootId)} type="button"><StopCircle size={16} /></button> : null}</div>
   </div>;
   return (
     <section
@@ -878,7 +867,7 @@ export function PawRoomWorkspace({
       data-view={visibleView}
       data-window-chrome={windowChromeTarget ? 'portal' : 'fallback'}
       data-room-id={recordId}
-      data-status={abortingActiveTurn ? 'stopping' : runtimeBusy ? 'busy' : visibleRecoveryState}
+      data-status={chromeStatus}
     >
       {windowChromeTarget ? <PawWindowChromePortal>{roomChromeControls}</PawWindowChromePortal> : <header className="paw-room-workspace__header">{roomChromeControls}</header>}
 
@@ -963,7 +952,17 @@ export function PawRoomWorkspace({
               /> : roomRecoverySurface}
           </div>}
 
-          <div className="paw-room-workspace__composer">
+          <div className="paw-room-workspace__composer" ref={composerRegionRef}>
+              {focusProjection && workStatus ? <PawRoomWorkStatus
+                key={recordId}
+                focus={focusProjection}
+                status={{ ...workStatus, animate: workStatus.animate && active }}
+                onOpenParticipant={selectAndOpenParticipant}
+                onRetrySync={() => retrySnapshot()}
+                onAnswer={() => composerRegionRef.current?.querySelector<HTMLElement>(
+                  '[data-pending-room-input] input, [data-pending-room-input] select, [data-pending-room-input] button, textarea[aria-label="协作消息"]',
+                )?.focus({ preventScroll: false })}
+              /> : null}
               {collaborationOpenFailures.size ? <div className="paw-room-workspace__planet-open-error" role="alert">
                 <CircleAlert size={14} />
                 <div>
@@ -1014,7 +1013,7 @@ export function PawRoomWorkspace({
                   />
                 </div>
               ) : null}
-              {pendingGroupedInput ? <GenericUserInputCard activity={pendingGroupedInput} sessionId={pendingGroupedInput.sourceSessionId} onError={setError} /> : (
+              {pendingGroupedInput ? <div data-pending-room-input><GenericUserInputCard activity={pendingGroupedInput} sessionId={pendingGroupedInput.sourceSessionId} onError={setError} /></div> : (
                 <>
                   <QueueTray busy={sending} controller={queue} />
                   <RoomComposer

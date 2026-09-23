@@ -178,9 +178,9 @@ describe('PAWOS Room collaboration tools', () => {
 
     await screen.findByRole('textbox', { name: '协作消息' });
     await waitFor(() => expect(useRoomLiveStore.getState().projections[source.room.id]?.lastSequence).toBe(13));
-    expect(document.querySelector('.paw-room-workspace__runtime')).toHaveTextContent('伙伴已提交，等待 Root');
-    expect(screen.getByRole('region', { name: 'Room 当前协作' })).toHaveTextContent('2 伙伴已提交结果');
-    expect(screen.queryByText('Room 已完成')).not.toBeInTheDocument();
+    expect(document.querySelector('.paw-room-workspace__runtime')).toHaveTextContent('1 个工作项等待复核');
+    expect(screen.getByRole('region', { name: 'Room 当前协作' })).toHaveTextContent('2 伙伴执行结束');
+    expect(screen.queryByText('本轮执行已结束')).not.toBeInTheDocument();
     const rounds = screen.getByRole('region', { name: 'Room 行星任务表' });
     expect(within(rounds).getByRole('region', { name: 'Earth 主控回复' })).toHaveTextContent(
       '我已把实时进展收拢在同一条消息里',
@@ -205,7 +205,7 @@ describe('PAWOS Room collaboration tools', () => {
       true,
     );
 
-    await waitFor(() => expect(document.querySelector('.paw-room-workspace__runtime')).toHaveTextContent('同步离线 · 历史已保留'));
+    await waitFor(() => expect(document.querySelector('.paw-room-workspace__runtime')).toHaveTextContent('连接中断 · 显示上次状态'));
     expect(document.querySelector('.paw-room-workspace')).toHaveAttribute('data-status', 'failed');
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Room 当前协作' })).toHaveTextContent('任务图依赖验证');
@@ -458,7 +458,7 @@ describe('PAWOS Room collaboration tools', () => {
     const composer = await screen.findByRole('textbox', { name: '协作消息' });
     await user.type(composer, '保留正在写的补充');
     const runtime = rendered.container.querySelector('.paw-room-workspace__runtime');
-    await waitFor(() => expect(runtime).toHaveTextContent('Room 已完成'));
+    await waitFor(() => expect(runtime).toHaveTextContent('1 个工作项等待复核'));
     expect(screen.queryByRole('navigation', { name: 'Room 工作台视图' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Room 当前协作' })).not.toBeInTheDocument();
     expect(rendered.container.querySelector('.paw-window-title')).not.toBeInTheDocument();
@@ -472,7 +472,7 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(composer);
     expect(composer).toHaveValue('保留正在写的补充');
     expect(composer).toHaveFocus();
-    expect(runtime).toHaveTextContent('Room 已完成');
+    expect(runtime).toHaveTextContent('1 个工作项等待复核');
   });
 
   it('replaces a stale embedded inspector on external focus and restores ordinary views after exit', async () => {

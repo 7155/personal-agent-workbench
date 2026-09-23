@@ -2170,6 +2170,51 @@ class AgentRoomStore:
             ).fetchall()
         return [_room_event_payload(row) for row in rows]
 
+    def control_events_for_turn(
+        self, room_id: str, turn_id: str,
+    ) -> list[dict[str, object]]:
+        """Resolve control identity independently of the retained display tail.
+
+        Accepted command receipts own the original user/route anchors even
+        after streaming activity has evicted those events from the timeline.
+        They are control evidence only; never republish them into live history.
+        """
+        events: list[dict[str, object]] = []
+        cursor = 0
+        while True:
+            page = self.list_events_for_turn(
+                room_id, turn_id,
+                event_types=("user_message", "route_decision", "turn_completed", "turn_failed"),
+                after_sequence=cursor, limit=2000,
+            )
+            events.extend(page)
+            if len(page) < 2000:
+                break
+            cursor = int(page[-1]["sequence"])
+        with self._connect() as conn:
+            receipts = conn.execute(
+                """
+                SELECT response_json FROM agent_command_receipts
+                WHERE command_scope = 'room_message' AND scope_id = ?
+                  AND state = 'accepted'
+                  AND json_extract(response_json, '$.roomTurnId') = ?
+                """,
+                (room_id, turn_id),
+            ).fetchall()
+        by_id = {str(event["eventId"]): event for event in events}
+        for row in receipts:
+            receipt = json.loads(str(row["response_json"]))
+            for event in receipt.get("timelineEvents", []):
+                if (
+                    isinstance(event, dict)
+                    and event.get("roomId") == room_id
+                    and event.get("turnId") == turn_id
+                    and event.get("eventType") in {"user_message", "route_decision"}
+                    and event.get("eventId")
+                ):
+                    by_id.setdefault(str(event["eventId"]), event)
+        return sorted(by_id.values(), key=lambda event: int(event["sequence"]))
+
     def list_events_for_turn(
         self,
         room_id: str,
@@ -2470,32 +2515,35 @@ class AgentRoomStore:
             # Partner messages.  A fresh UI would then misclassify those
             # messages as unrouted and lose a final result that was visible
             # before refresh.  Keep the normal bounded tail, but expand it to
-            # the start of the earliest turn already represented by that tail.
+            # the start of every turn represented by that tail. A late tool
+            # recovery receipt can refer to an older completed turn; restoring
+            # just the leading turn would resurrect the older one as running.
             if event_rows and not conversation_only:
-                leading_turn_id = str(event_rows[0]["turn_id"] or "")
-                if leading_turn_id:
-                    boundary_row = conn.execute(
+                turn_bounds = conn.execute(
+                    """
+                    SELECT MIN(sequence) AS first_sequence, MAX(sequence) AS last_sequence
+                    FROM agent_room_events
+                    WHERE room_id = ? AND turn_id <> '' GROUP BY turn_id
+                    """,
+                    (room_id,),
+                ).fetchall()
+                boundary = int(event_rows[0]["sequence"])
+                while True:
+                    expanded = min([boundary, *(
+                        int(row["first_sequence"]) for row in turn_bounds
+                        if int(row["last_sequence"]) >= boundary
+                    )])
+                    if expanded == boundary:
+                        break
+                    boundary = expanded
+                if boundary < int(event_rows[0]["sequence"]):
+                    event_rows = conn.execute(
                         """
-                        SELECT COALESCE(MIN(sequence), 0) AS first_sequence
-                        FROM agent_room_events
-                        WHERE room_id = ? AND turn_id = ?
+                        SELECT * FROM agent_room_events
+                        WHERE room_id = ? AND sequence >= ? ORDER BY sequence ASC
                         """,
-                        (room_id, leading_turn_id),
-                    ).fetchone()
-                    turn_first_sequence = (
-                        int(boundary_row["first_sequence"])
-                        if boundary_row is not None
-                        else 0
-                    )
-                    if turn_first_sequence < int(event_rows[0]["sequence"]):
-                        event_rows = conn.execute(
-                            """
-                            SELECT * FROM agent_room_events
-                            WHERE room_id = ? AND sequence >= ?
-                            ORDER BY sequence ASC
-                            """,
-                            (room_id, turn_first_sequence),
-                        ).fetchall()
+                        (room_id, boundary),
+                    ).fetchall()
             start_gate_row = conn.execute(
                 "SELECT room_id, status, objective_text, work_item_id, client_message_id, root_id, confirmed_at_ms FROM agent_room_start_gates WHERE room_id = ?",
                 (room_id,),
@@ -2741,13 +2789,25 @@ class AgentRoomEventHub:
         subscriber: queue.Queue[dict[str, object]] = queue.Queue(maxsize=128)
         with self._lock:
             first_sequence, last_sequence = self.store.event_bounds(room_id)
-            gap = bool(
-                after_sequence
-                and (
-                    after_sequence > last_sequence
-                    or (first_sequence > 0 and after_sequence < first_sequence - 1)
-                )
+            cursor = after_sequence or 0
+            gap = (
+                cursor > last_sequence
+                or (first_sequence > 0 and cursor < first_sequence - 1)
             )
+            replay = [] if gap else self.store.list_events(
+                room_id, after_sequence=cursor, limit=2000
+            )
+            # A bounded replay is not necessarily the whole catch-up window.
+            # Never enter heartbeat-only mode with an undisclosed missing tail,
+            # or admit a retained window that contains an internal sequence gap.
+            if not gap:
+                expected = cursor + 1
+                for event in replay:
+                    if int(event["sequence"]) != expected:
+                        gap = True
+                        break
+                    expected += 1
+                gap = gap or expected - 1 != last_sequence
             if gap:
                 replay = [
                     _room_replay_gap_event(
@@ -2756,8 +2816,6 @@ class AgentRoomEventHub:
                         last_sequence=last_sequence,
                     )
                 ]
-            else:
-                replay = self.store.list_events(room_id, after_sequence=after_sequence or 0, limit=2000)
             self._subscribers.setdefault(room_id, set()).add(subscriber)
         # A replay-gap control is subscriber-local and therefore cannot advance
         # the durable Room cursor. Anchor live delivery at the shared high-water
@@ -2772,9 +2830,25 @@ class AgentRoomEventHub:
             while True:
                 try:
                     event = subscriber.get(timeout=heartbeat_seconds)
-                    if int(event["sequence"]) <= delivered_sequence:
+                    sequence = int(event["sequence"])
+                    if sequence <= delivered_sequence:
                         continue
-                    delivered_sequence = int(event["sequence"])
+                    if sequence != delivered_sequence + 1:
+                        # Queue overflow or racing publishers can omit/reorder
+                        # delivery. Use the existing subscriber-local recovery
+                        # control, never fabricate a terminal event or silently
+                        # advance the client's durable cursor over the hole.
+                        with self._lock:
+                            _, high_water = self.store.event_bounds(room_id)
+                        control = _room_replay_gap_event(
+                            room_id=room_id,
+                            after_event_id=f"{room_id}:{delivered_sequence}",
+                            last_sequence=high_water,
+                        )
+                        delivered_sequence = high_water
+                        yield _room_event_sse(control)
+                        continue
+                    delivered_sequence = sequence
                     yield _room_event_sse(event)
                 except queue.Empty:
                     yield b": heartbeat\n\n"
@@ -3061,7 +3135,8 @@ def _room_event_sequence(room_id: str, event_id: str) -> int | None:
     if not event_id.startswith(prefix):
         return None
     try:
-        return int(event_id[len(prefix) :])
+        sequence = int(event_id[len(prefix) :])
+        return sequence if sequence >= 0 else None
     except ValueError:
         return None
 

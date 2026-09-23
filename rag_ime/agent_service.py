@@ -3483,11 +3483,7 @@ class AgentService:
                 f"Room message must not exceed {ROOM_MESSAGE_CHAR_LIMIT} characters"
             )
         room = self.rooms.get(room_id)
-        events = [
-            event
-            for event in self.rooms.list_events(room_id, after_sequence=0, limit=2000)
-            if str(event.get("turnId") or "") == root_id
-        ]
+        events = self.rooms.control_events_for_turn(room_id, root_id)
         if not any(str(event.get("eventType") or "") == "user_message" for event in events):
             raise ValueError("Room turn does not belong to this Room")
         routed_participant_ids = {
@@ -3515,6 +3511,9 @@ class AgentService:
         ):
             raise ValueError("participant steer target is no longer active")
         session_id = str(participant.get("sessionId") or "")
+        active_root_id, _ = self.room_turns.active_turn(session_id)
+        if active_root_id != root_id or self.room_turns.is_cancelled(session_id, root_id):
+            raise ValueError("伙伴的当前执行轮次已变化，请刷新协作后重新发送消息")
         topic_id = str(room.get("activeTopicId") or "")
         room_event = self.room_events.publish(
             room_id=room_id,

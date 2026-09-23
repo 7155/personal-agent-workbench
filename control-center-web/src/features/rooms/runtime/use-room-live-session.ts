@@ -183,6 +183,7 @@ function createSharedRoomLiveSession(
     clearRecoveryTimer();
   };
   const markConnectionStable = () => {
+    if (useRoomLiveStore.getState().projections[roomId]?.needsSnapshot) return;
     resetRecoveryBackoff();
     if (connected && recoveryState === 'synced') return;
     connected = true;
@@ -241,6 +242,7 @@ function createSharedRoomLiveSession(
     if (!active) return;
     const snapshotRequired = useRoomLiveStore.getState().applyEvents(roomId, events);
     if (snapshotRequired) {
+      setRecoveryState('recovering');
       fullSnapshotRequired = true;
       scheduleSnapshotReload();
     } else {
@@ -387,6 +389,9 @@ function createSharedRoomLiveSession(
       const snapshotApplied = conversationSnapshot
         ? store.replayConversationSnapshot(roomId, snapshot)
         : store.replaySnapshot(roomId, snapshot);
+      if (!snapshotApplied && useRoomLiveStore.getState().projections[roomId]?.needsSnapshot) {
+        throw new Error('Room snapshot has not reached the recovery cursor');
+      }
       const resumeToken = useRoomLiveStore.getState().projections[roomId]?.resumeToken
         || snapshot.resumeToken;
       setLoading(false);
@@ -408,7 +413,9 @@ function createSharedRoomLiveSession(
           },
           next: (event) => {
             if (!active || subscriptionGeneration !== generation) return;
-            liveTail.push(event);
+            // Only a cold conversation projection needs the enrichment tail.
+            // The full live store already retains events after enrichment.
+            if (!useRoomLiveStore.getState().snapshotsByRoomId[roomId]) liveTail.push(event);
             batcher.push(event);
             if (
               ['room_config_changed', 'topic_changed', 'artifact_changed'].includes(

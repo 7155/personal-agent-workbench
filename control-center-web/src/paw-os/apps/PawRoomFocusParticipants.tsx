@@ -10,9 +10,11 @@ import type { PawWindowNode } from '../runtime/desktop-store';
 import { PawRoomAssignmentMap } from './PawRoomAssignmentMap';
 import { FocusFlowLedger } from './PawRoomFocusOverview';
 import { useRoomLiveFocusData } from './PawRoomLiveFocusOverview';
-import { buildRoomFocusProjection, roomFocusHasCoordinator, roomFocusOriginLabel, roomFocusStateLabel, type RoomFocusProjection } from './room-focus-projection';
+import { buildRoomFocusProjection, roomFocusHasCoordinator, roomFocusOriginLabel, type RoomFocusProjection } from './room-focus-projection';
 import { roomPlanetObserverWindowRequest } from './room-satellite-auto-open';
 import type { RoomSatelliteSnapshots } from './room-message-flow';
+import { roomPartnerStatusLabel } from './room-work-status';
+import '../styles/paw-os-room-work-status.css';
 import '../styles/paw-os-room-focus.css';
 
 type ParticipantsProps = {
@@ -28,6 +30,7 @@ type ParticipantsProps = {
 export default function PawRoomFocusParticipants(props: ParticipantsProps) {
   const transport = useControlTransport();
   const pageVisible = usePageVisibility();
+  const [recoveryState, setRecoveryState] = useState<'recovering' | 'failed' | 'synced'>('recovering');
   const [room, setRoom] = useState(() => focusRoomRecord(useRoomLiveStore.getState().snapshotsByRoomId[props.roomId]?.room));
   const projection = useRoomLiveStore((state) => state.projections[props.roomId]);
   // A cold-open conversation snapshot is not kept in snapshotsByRoomId. Join
@@ -46,11 +49,11 @@ export default function PawRoomFocusParticipants(props: ParticipantsProps) {
     onLoadingChange: () => undefined,
     onConnectionRestored: () => undefined,
     onConnectionError: () => undefined,
-    onRecoveryState: () => undefined,
+    onRecoveryState: (_roomId, state) => setRecoveryState(state),
     onEvents: () => undefined,
   });
   const focus = useMemo(() => room ? buildRoomFocusProjection(room, projection) : null, [room, projection]);
-  if (!room || !focus) return <nav aria-label="Room 伙伴" className="paw-room-focus-participants">
+  if (!room || room.id !== props.roomId || !focus) return <nav aria-label="Room 伙伴" className="paw-room-focus-participants">
     <div className="paw-room-focus-participants__track">
       {props.windows.map((node) => <button
         aria-pressed={node.target?.id === props.selectedParticipantId}
@@ -62,7 +65,7 @@ export default function PawRoomFocusParticipants(props: ParticipantsProps) {
       {!props.windows.length ? <span className="paw-room-focus-participants__empty">正在恢复伙伴状态…</span> : null}
     </div>
   </nav>;
-  return <LiveParticipants {...props} focus={focus} onSelect={(participantId) => {
+  return <LiveParticipants {...props} live={Boolean(pageVisible && recoveryState === 'synced' && projection && !projection.needsSnapshot)} recoveryState={recoveryState} focus={focus} onSelect={(participantId) => {
     const participant = room.participants.find((item) => item.id === participantId);
     if (participant) props.onInspect(roomPlanetObserverWindowRequest(participant, props.roomId));
   }} />;
@@ -77,16 +80,20 @@ function focusRoomRecord(value: unknown): RoomSummary | undefined {
     ? record as RoomSummary : undefined;
 }
 
-function LiveParticipants({ focus, onSelect, ...props }: ParticipantsProps & {
+function LiveParticipants({ focus, onSelect, live, recoveryState, ...props }: ParticipantsProps & {
+  live: boolean;
+  recoveryState: 'recovering' | 'failed' | 'synced';
   focus: RoomFocusProjection;
   onSelect: (participantId: string) => void;
 }) {
   const data = useRoomLiveFocusData(props.roomId, focus);
-  return <PawRoomFocusParticipantBar {...data} selectedParticipantId={props.selectedParticipantId} onSelect={onSelect} onCloseInspector={props.onCloseInspector} />;
+  return <PawRoomFocusParticipantBar {...data} live={live} recoveryState={recoveryState} selectedParticipantId={props.selectedParticipantId} onSelect={onSelect} onCloseInspector={props.onCloseInspector} />;
 }
 
 /** One action per participant. The full report stays in the main conversation. */
-export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, selectedParticipantId, onSelect, onCloseInspector, intercomStatus, onRefreshTraffic }: {
+export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, selectedParticipantId, onSelect, onCloseInspector, intercomStatus, onRefreshTraffic, live = false, recoveryState = 'recovering' }: {
+  live?: boolean;
+  recoveryState?: 'recovering' | 'failed' | 'synced';
   focus: RoomFocusProjection;
   satellitesByParticipant: RoomSatelliteSnapshots;
   selectedParticipantId?: string;
@@ -96,9 +103,9 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
   onRefreshTraffic?: () => void;
 }) {
   const [trafficOpen, setTrafficOpen] = useState(false);
-  // The collaboration surface opens on actual assignments, not an empty
-  // arrangement of observer windows. Closing it is respected for this visit.
-  const [graphOpen, setGraphOpen] = useState(true);
+  // The composer dock owns the primary task view. This header map remains an
+  // explicit overview, rather than consuming the conversation on every open.
+  const [graphOpen, setGraphOpen] = useState(false);
   const graphTrigger = useRef<HTMLButtonElement>(null);
   const graphId = `room-focus-assignments-${focus.goal.rootId}`;
   const closeGraph = () => { setGraphOpen(false); graphTrigger.current?.focus({ preventScroll: true }); };
@@ -114,13 +121,14 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
     onSelect(participantId);
   };
   return <>
-    <nav aria-label="Room 伙伴" className="paw-room-focus-participants">
+    <nav aria-label="Room 伙伴" className="paw-room-focus-participants" data-live={live}>
       <div className="paw-room-focus-participants__track">
         {focus.partners.map((partner) => {
           const snapshot = satellitesByParticipant[partner.participantId];
           const satelliteLabel = snapshot?.status === 'ready' ? `卫星 ${snapshot.satellites.length}`
             : snapshot?.status === 'error' ? '卫星暂不可用' : '卫星读取中';
-          const stateLabel = roomFocusStateLabel(partner.state);
+          const baseLabel = roomPartnerStatusLabel(partner.state);
+          const stateLabel = live ? baseLabel : `${recoveryState === 'failed' ? '离线' : '同步暂停'} · 上次${baseLabel}`;
           return <button
             aria-label={`${partner.celestialName}，${stateLabel}，${satelliteLabel}`}
             aria-pressed={selectedParticipantId === partner.participantId}
@@ -149,7 +157,7 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
     </nav>
     {graphOpen ? <section aria-label="Room 任务关系" className="paw-room-focus-traffic paw-room-focus-overview paw-room-focus-assignments" id={graphId} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); closeGraph(); }
-    }}><header className="paw-room-focus-traffic__header"><strong>任务分派与协作关系</strong><button type="button" aria-label="关闭任务关系" onClick={closeGraph}><X size={16} aria-hidden="true" /></button></header><PawRoomAssignmentMap focus={focus} onOpenParticipant={inspect} /></section> : null}
+    }}><header className="paw-room-focus-traffic__header"><strong>任务分派与协作关系</strong><button type="button" aria-label="关闭任务关系" onClick={closeGraph}><X size={16} aria-hidden="true" /></button></header><PawRoomAssignmentMap focus={focus} live={live} onOpenParticipant={inspect} /></section> : null}
     {trafficOpen ? <section aria-label="Room 消息流" className="paw-room-focus-traffic paw-room-focus-overview" id={trafficId} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); closeTraffic(); }
     }}>

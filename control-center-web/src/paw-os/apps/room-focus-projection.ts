@@ -196,7 +196,7 @@ export function buildRoomFocusProjection(
     if (plan.dispatchId) wavesByDispatch.set(plan.dispatchId, slot);
   }
   const orderedScopedWorkItems = orderedWorkItems(roomWorkItems);
-  const explicit = orderedScopedWorkItems.map((item) => explicitFocusWork(item, activities, wavesByWorkItem));
+  const explicit = orderedScopedWorkItems.map((item) => explicitFocusWork(item, activities, wavesByWorkItem, scope.turnId));
   const rootByTurn = new Map<string, RoomFocusWorkItem>();
   for (const item of roomWorkItems) {
     if (item.parentWorkId) continue;
@@ -317,15 +317,26 @@ function currentRoomFocusScope(
 
   const activityIds = new Set(turn.activityIds);
   const messageIds = new Set(turn.messageIds);
-  const scopedWorkItems = (room.workItems ?? []).filter((item) => item.rootTurnId === turnId);
+  // Retried attempts may retain a WorkItem bound to an earlier explicit Root.
+  // Follow only recorded lineage, never all history when a new Root is empty.
+  const workRootIds = new Set<string>();
+  const visited = new Set<string>();
+  let cursor: string | undefined = turnId;
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor);
+    workRootIds.add(cursor);
+    const attempt: RoomProjectionState['turnsById'][string] | undefined = projection.turnsById[cursor];
+    if (attempt?.logicalRootId) workRootIds.add(attempt.logicalRootId);
+    cursor = attempt?.retryOfRootId;
+  }
+  const scopedWorkItems = (room.workItems ?? []).filter((item) => workRootIds.has(item.rootTurnId));
   return {
     activities: activities.filter((activity) => activityIds.has(activity.id)),
     messages: messages.filter((message) => messageIds.has(message.id)),
-    /* A metadata refresh can publish the latest public turn before its
-       WorkItem's rootTurnId is attached to the Room snapshot. Keep the
-       authoritative roster visible during that short skew; otherwise the
-       collaboration graph silently loses each planet's actual assignment. */
-    workItems: scopedWorkItems.length ? scopedWorkItems : room.workItems ?? [],
+    // Keep genuinely unbound assignments during metadata skew, never another
+    // Root's tasks. An empty new round must not inherit yesterday's failures.
+    workItems: scopedWorkItems.length ? scopedWorkItems
+      : (room.workItems ?? []).filter((item) => !item.rootTurnId),
     turnId,
     turn,
   };
@@ -368,11 +379,13 @@ function explicitFocusWork(
   item: RoomWorkItem,
   activities: RoomActivityProjection[],
   wavesByWorkItem?: Map<string, RoomFocusWaveSlot>,
+  activeTurnId?: string,
 ): RoomFocusWorkItem {
-  const ownerId = item.currentOwnerParticipantId || item.offeredToParticipantId || item.accountableParticipantId || undefined;
+  const ownerId = item.currentOwnerParticipantId || undefined;
   const latestActivity = [...activities].reverse().find((activity) => (
-    activity.turnId === item.rootTurnId
-    && (!ownerId || activity.participantId === ownerId)
+    activity.turnId === (activeTurnId || item.rootTurnId)
+    && Boolean(ownerId) && activity.participantId === ownerId
+    && (!stringValue(activity.payload.workItemId) || activity.payload.workItemId === item.id)
   ));
   const blocker = focusBlocker(item.blocker);
   const review = focusReview(item);

@@ -17,6 +17,7 @@ import {
 import type { UiRoomEvent } from '@/contracts/ui-events';
 import { mergeAcceptedRoomTimeline } from '../runtime/accepted-room-timeline';
 import { publishRoomProjectionSnapshot } from './projection-bridge';
+import { acceptedRoomEvents, appendRoomEventWindow, canApplyRoomSnapshot } from './room-event-window';
 
 export interface RoomHistoryWindow {
   events: readonly UiRoomEvent[];
@@ -75,8 +76,9 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
   },
   replaySnapshot(roomId, snapshot) {
     const current = roomProjection(roomId);
-    if (snapshot.lastSequence < current.lastSequence) return false;
-    const merged = mergeSnapshotWindow(snapshot, get().historyByRoomId[roomId]);
+    if (!canApplyRoomSnapshot(current, snapshot.lastSequence)) return false;
+    const rewound = snapshot.lastSequence < current.lastSequence;
+    const merged = mergeSnapshotWindow(snapshot, rewound ? undefined : get().historyByRoomId[roomId]);
     const next = replayRoomEventSnapshot(current, merged.snapshot);
     set((state) => ({
       historyByRoomId: {
@@ -93,13 +95,14 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
   },
   replaySnapshotWithTail(roomId, snapshot, liveTail) {
     const current = roomProjection(roomId);
-    const latestTailSequence = liveTail.at(-1)?.sequence ?? snapshot.lastSequence;
-    if (
-      snapshot.lastSequence < current.lastSequence
-      && latestTailSequence < current.lastSequence
-    ) return false;
+    // A deferred enrichment is not the recovery owner. Wait for the fresh
+    // authoritative snapshot rather than mixing pre-gap or pre-restore tails.
+    if (current.needsSnapshot) return false;
+    const tail = appendRoomEventWindow(roomId, snapshot.events, liveTail);
+    const latestTailSequence = tail.at(-1)?.sequence ?? snapshot.lastSequence;
+    if (latestTailSequence < current.lastSequence) return false;
     const merged = mergeSnapshotWindow(snapshot, get().historyByRoomId[roomId]);
-    const events = appendLiveEvents(merged.window.events, liveTail);
+    const events = appendRoomEventWindow(roomId, merged.window.events, liveTail);
     const latest = events.at(-1);
     const replaySnapshot: RoomEventSnapshot = {
       ...merged.snapshot,
@@ -144,14 +147,15 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
   applyEvents(roomId, events) {
     const current = roomProjection(roomId);
     const projection = reduceRoomEvents(current, events);
+    const accepted = acceptedRoomEvents(current, projection, events);
     const changedTurnIds = new Set<string>();
     for (const event of events) {
       if (event.turnId) changedTurnIds.add(event.turnId);
     }
     const baseSnapshot = get().snapshotsByRoomId[roomId];
     const currentWindow = get().historyByRoomId[roomId];
-    if (baseSnapshot && currentWindow && events.length) {
-      const mergedEvents = appendLiveEvents(currentWindow.events, events);
+    if (baseSnapshot && currentWindow && accepted.length) {
+      const mergedEvents = appendRoomEventWindow(roomId, currentWindow.events, accepted);
       const firstSequence = mergedEvents[0]?.sequence ?? 0;
       const latest = mergedEvents.at(-1);
       const updatedSnapshot: RoomEventSnapshot = {
@@ -345,16 +349,6 @@ function mergeSnapshotWindow(
       retainedPrefixTruncated,
     },
   };
-}
-
-function appendLiveEvents(
-  current: readonly UiRoomEvent[],
-  incoming: readonly UiRoomEvent[],
-): UiRoomEvent[] {
-  const lastSequence = current.at(-1)?.sequence ?? 0;
-  const additions = incoming.filter((event) => event.sequence > lastSequence);
-  if (!additions.length) return [...current];
-  return [...current, ...additions];
 }
 
 export function roomProjection(roomId: string): RoomProjectionState {

@@ -148,6 +148,9 @@ export interface RoomProjectionState {
   lastEventId: string;
   resumeToken: string;
   needsSnapshot: boolean;
+  /** Subscriber-local recovery control's durable high-water mark. Not a new
+   * event cursor: it permits a fresh snapshot after server history restoration. */
+  recoveryCursor?: number;
   gap?: ProjectionGap;
   messagesById: Record<string, RoomMessageProjection>;
   messageOrder: string[];
@@ -233,6 +236,27 @@ export function reduceRoomEvent(
   options: RoomEventReductionOptions = {},
 ): ProjectionReduction<RoomProjectionState> {
   if (event.roomId !== state.roomId) return { state, disposition: 'ignored-foreign' };
+  // Recovery controls are subscriber-local, not durable domain events. Their
+  // synthetic sequence may be equal to or behind our cursor after a restore.
+  // Recognize them before duplicate/gap guards, without advancing that cursor.
+  if (event.eventType === 'snapshot_required' && !options.snapshotReplay) {
+    const prefix = `${state.roomId}:`;
+    const suffix = event.resumeToken.startsWith(prefix) ? event.resumeToken.slice(prefix.length) : '';
+    const cursor = /^\d+$/.test(suffix) ? Number(suffix) : NaN;
+    return {
+      state: {
+        ...state,
+        needsSnapshot: true,
+        recoveryCursor: Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : undefined,
+        gap: {
+          expectedSequence: state.lastSequence + 1,
+          receivedSequence: event.sequence,
+          receivedEventId: event.eventId,
+        },
+      },
+      disposition: 'snapshot-required',
+    };
+  }
   if (event.sequence <= state.lastSequence) {
     return { state, disposition: 'ignored-duplicate' };
   }
@@ -392,13 +416,7 @@ export function reduceRoomEvent(
         });
         break;
       }
-      next.needsSnapshot = true;
-      next.gap = {
-        expectedSequence: state.lastSequence + 1,
-        receivedSequence: event.sequence,
-        receivedEventId: event.eventId,
-      };
-      return { state: next, disposition: 'snapshot-required' };
+      break;
     case 'unknown':
       appendDiagnostic(next, {
         id: event.eventId,
