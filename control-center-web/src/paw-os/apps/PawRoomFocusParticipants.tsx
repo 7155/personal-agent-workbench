@@ -96,7 +96,9 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
   onRefreshTraffic?: () => void;
 }) {
   const [trafficOpen, setTrafficOpen] = useState(false);
-  const [graphOpen, setGraphOpen] = useState(false);
+  // The collaboration surface opens on actual assignments, not an empty
+  // arrangement of observer windows. Closing it is respected for this visit.
+  const [graphOpen, setGraphOpen] = useState(true);
   const graphTrigger = useRef<HTMLButtonElement>(null);
   const graphId = `room-focus-assignments-${focus.goal.rootId}`;
   const closeGraph = () => { setGraphOpen(false); graphTrigger.current?.focus({ preventScroll: true }); };

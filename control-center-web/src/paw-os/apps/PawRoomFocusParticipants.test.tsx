@@ -118,12 +118,11 @@ describe('Room assignment map', () => {
     const user = userEvent.setup();
     const assigned: RoomFocusProjection = { ...focus, handoffs: [{ id: 'handoff-1', sourceParticipantId: 'earth', targetParticipantId: 'mars', task: '核对构建版本', state: 'completed', createdAtMs: 30 }], workItems: [{ id: 'task-1', source: 'work-item', objective: '核对构建版本', ownerParticipantId: 'mars', verifierParticipantId: 'earth', state: 'running', reviewRequired: true, acceptanceCriteria: ['安装版本与源码哈希一致'], expectedOutput: '验收记录', evidence: [], updatedAtMs: 30 }] };
     const view = mount({ focus: assigned });
-    await user.click(screen.getByRole('button', { name: '任务关系' }));
     const graph = screen.getByRole('region', { name: 'Room 任务关系' });
-    expect(within(graph).getByLabelText('已确认协作关系')).toHaveTextContent('Earth');
-    await user.click(within(graph).getByRole('button', { name: /Mars.*待命/ }));
+    expect(screen.getByRole('button', { name: '任务关系' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(graph).getByLabelText('任务分派图')).toHaveTextContent('核对构建版本');
     expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('安装版本与源码哈希一致');
-    expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('复核：Earth');
+    expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('复核Earth');
     await user.click(within(graph).getByRole('button', { name: '查看实际会话与调用' }));
     expect(view.props.onSelect).toHaveBeenCalledWith('mars');
     expect(screen.queryByRole('region', { name: 'Room 任务关系' })).not.toBeInTheDocument();
@@ -132,14 +131,42 @@ describe('Room assignment map', () => {
     const user = userEvent.setup();
     mount({ focus: { ...focus, handoffs: [{ id: 'failed', sourceParticipantId: 'earth', targetParticipantId: 'mars', task: '失败交接', state: 'failed', createdAtMs: 40 }] } });
     const trigger = screen.getByRole('button', { name: '任务关系' });
-    await user.click(trigger);
     const graph = screen.getByRole('region', { name: 'Room 任务关系' });
+    await user.click(within(graph).getByRole('button', { name: /协作往来/ }));
     expect(within(graph).getByLabelText('已确认协作关系')).not.toHaveTextContent('失败交接');
-    await user.click(within(graph).getByText(/其他关系 \/ 待确认/));
     await user.click(within(graph).getByRole('button', { name: /Earth → Mars.*交接/ }));
     expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('失败交接');
     expect(within(graph).getByLabelText('分工详情')).toHaveTextContent('失败');
     await user.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
   });
+
+  it('shows offered and unassigned work without inventing owners, reviews or completed traffic', () => {
+    mount({ focus: { ...focus, workItems: [{
+      id: 'offered', source: 'work-item', objective: '等待接手的数据整理',
+      offeredToParticipantId: 'mars', accountableParticipantId: 'earth',
+      state: 'waiting', reviewRequired: true, acceptanceCriteria: [], evidence: [], updatedAtMs: 1,
+    }, {
+      id: 'unassigned', source: 'work-item', objective: '未分派的地图检查',
+      state: 'waiting', reviewRequired: false, acceptanceCriteria: [], evidence: [], updatedAtMs: 2,
+    }] } });
+    const map = screen.getByLabelText('任务分派图');
+    expect(map).toHaveTextContent('待接收');
+    expect(map).toHaveTextContent('等待分派');
+    expect(map).toHaveTextContent('待指定');
+    expect(map).toHaveTextContent('未要求');
+    expect(map.querySelectorAll('[data-pending]')).toHaveLength(1);
+    expect(within(map).getAllByRole('button', { name: '未指定' })[0]).toBeDisabled();
+  });
+
+  it('keeps a dismissed graph closed across progress updates and lets the user reopen it', async () => {
+    const user = userEvent.setup();
+    const view = mount();
+    await user.click(screen.getByRole('button', { name: '关闭任务关系' }));
+    view.rerender(<PawRoomFocusParticipantBar {...view.props} focus={{ ...focus, goal: { ...focus.goal, state: 'running' } }} />);
+    expect(screen.queryByRole('region', { name: 'Room 任务关系' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '任务关系' }));
+    expect(screen.getByRole('region', { name: 'Room 任务关系' })).toBeInTheDocument();
+  });
+
 });
