@@ -1,0 +1,15 @@
+{
+  "name": "Personal Agent Workbench",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "agent-gateway",
+      "command": ".venv/bin/python -m rag_ime.cli agent-gateway --host 127.0.0.1 --port 8768"
+    },
+    {
+      "name": "control-center-dev",
+      "command": "pnpm --dir control-center-web dev"
+    }
+  ],
+  "ports": [8768, 5173]
+}
