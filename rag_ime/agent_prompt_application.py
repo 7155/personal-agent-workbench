@@ -612,6 +612,7 @@ class AgentPromptApplicationService:
                         delivery=delivery,
                     )
                 ),
+                room_id=media_owner_room_id,
             )
         )
         if not media_owner_room_id:

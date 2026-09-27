@@ -104,7 +104,6 @@ def _project_work_summary(project: Mapping[str, Any], artifacts: list[Mapping[st
     bindings = project.get("bindings") if isinstance(project.get("bindings"), list) else []
     history = project.get("historyOrigin") if isinstance(project.get("historyOrigin"), Mapping) else None
     intake_state = str(intake.get("state") or "needs_materials")
-    issues = intake.get("issues") if isinstance(intake.get("issues"), list) else []
     partial = bool(intake.get("partial"))
     missing: list[str] = []
     if intake_state == "unavailable" or partial:

@@ -7,11 +7,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.build_managed_pi_runtime_v2 import _prepare_sdk_prompt_overlay, _SDK_PROMPT_OVERLAYS
+from scripts.build_managed_pi_runtime_v2 import _prepare_sdk_prompt_overlay, _SDK_PROMPT_OVERLAYS, _SDK_PROMPT_OVERLAYS_V087
 
 
 class PiPromptSettingsOverlayTests(unittest.TestCase):
     def test_native_summary_entry_preserves_lifecycle_arguments_and_combines_instructions(self) -> None:
+        self._check_summary_entry(_SDK_PROMPT_OVERLAYS)
+
+    def test_v087_summary_entry_preserves_lifecycle_arguments_and_combines_instructions(self) -> None:
+        self._check_summary_entry(_SDK_PROMPT_OVERLAYS_V087)
+
+    def _check_summary_entry(self, overlays) -> None:
         node = shutil.which("node")
         if node is None:
             self.skipTest("Node is unavailable")
@@ -21,7 +27,7 @@ class PiPromptSettingsOverlayTests(unittest.TestCase):
             (root / "pi" / "node_modules").mkdir(parents=True)
             sdk.mkdir(parents=True)
             (sdk / "package.json").write_text('{"type":"module"}')
-            for name, replacements in _SDK_PROMPT_OVERLAYS.items():
+            for name, replacements in overlays.items():
                 target = sdk / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("\n".join(before for before, _ in replacements))

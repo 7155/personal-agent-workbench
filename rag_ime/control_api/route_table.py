@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any
 from ..desktop_files import file_error_response
+from ..space_organization import organization_error
 
 from .lab_errors import (
     lab_golden_error_response,
@@ -125,6 +126,27 @@ def _tag_phonetic_correction(payload: dict[str, Any]) -> dict[str, Any]:
 # Vocabulary is the first migrated family: seven routes, entirely local, each a
 # straight payload-to-service call, so the descriptor shape can be proven
 # against a family whose behaviour is unambiguous.
+SPACE_CONTINUITY_ROUTES: tuple[RouteDescriptor, ...] = (
+    RouteDescriptor(method="POST", path="/api/agent/continuity/analyze", handler="space_continuity.analyze", error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/continuity/read", handler="space_continuity.read", error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/continuity/suggest", handler="space_continuity.suggest", error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/continuity/decision", handler="space_continuity.decision", error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/continuity/resume", handler="space_continuity.resume", error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/continuity/media", handler="space_continuity.media", error_response=organization_error),
+)
+
+SPACE_ORGANIZATION_ROUTES: tuple[RouteDescriptor, ...] = (
+    RouteDescriptor(method="POST", path="/api/agent/organization/read", handler="space_organization.read",
+                    error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/organization/suggest", handler="space_organization.suggest",
+                    error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/organization/command", handler="space_organization.command",
+                    contract="space-organization-command.v1.json",
+                    error_response=organization_error),
+    RouteDescriptor(method="POST", path="/api/agent/organization/undo", handler="space_organization.undo",
+                    error_response=organization_error),
+)
+
 FILES_ROUTES: tuple[RouteDescriptor, ...] = (
     RouteDescriptor(method="GET", path="/api/files/list", handler="desktop_files.list",
                     query_args=("path", "offset", "limit"), error_response=file_error_response),
@@ -810,6 +832,8 @@ WORK_DOCUMENT_ROUTES: tuple[RouteDescriptor, ...] = (
 
 MIGRATED_ROUTES: tuple[RouteDescriptor, ...] = (
     *FILES_ROUTES,
+    *SPACE_ORGANIZATION_ROUTES,
+    *SPACE_CONTINUITY_ROUTES,
     *EXTENSION_SANDBOX_EXPERIMENT_ROUTES,
     *SYSTEM_TERMINAL_ROUTES,
     *WORK_DOCUMENT_ROUTES,

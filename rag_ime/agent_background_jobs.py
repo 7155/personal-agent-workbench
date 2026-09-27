@@ -684,6 +684,24 @@ class AgentBackgroundJobService:
             room_owner=False,
         )
 
+    def cancel_room_dispatch_owned(
+        self, session_id: str, job_id: str, *, context: Mapping[str, object],
+        reason: object = "dispatch_requested",
+    ) -> dict[str, object]:
+        """Stop only the immutable job lineage authorized by the JEV owner."""
+        session = _required_text(session_id, field="sessionId", maximum=240)
+        normalized_job_id = _job_id(job_id)
+        row = self._row(session, normalized_job_id)
+        fields = {"roomId": "causal_room_id", "rootId": "causal_root_id",
+                  "dispatchId": "causal_dispatch_id", "turnId": "causal_turn_id"}
+        if (not bool(row["room_bound"])
+                or any(not context.get(key) or row[column] != context[key]
+                       for key, column in fields.items())
+                or not context.get("generation")
+                or row["causal_generation"] != context["generation"]):
+            raise AgentBackgroundJobError("background job belongs to another Room dispatch or turn")
+        return self._cancel_owned(session, normalized_job_id, reason=reason, room_owner=True)
+
     def cancel_room_owned(
         self,
         session_id: str,
@@ -704,7 +722,8 @@ class AgentBackgroundJobService:
             raise AgentBackgroundJobError(
                 "background job is not owned by a Room root"
             )
-        if str(row["causal_turn_id"] or "") != root_id:
+        # Legacy Room jobs stored the Root in turn_id before explicit lineage.
+        if str(row["causal_root_id"] or row["causal_turn_id"] or "") != root_id:
             raise AgentBackgroundJobError(
                 "background job belongs to another Room root"
             )
@@ -735,7 +754,7 @@ class AgentBackgroundJobService:
                 FROM agent_background_jobs
                 WHERE session_id = ?
                   AND room_bound = 1
-                  AND causal_turn_id = ?
+                  AND COALESCE(NULLIF(causal_root_id, ''), causal_turn_id) = ?
                   AND status IN ('queued', 'running', 'cancelling')
                 ORDER BY created_at_ms, job_id
                 """,
@@ -770,7 +789,7 @@ class AgentBackgroundJobService:
                 SELECT session_id, job_id
                 FROM agent_background_jobs
                 WHERE room_bound = 1
-                  AND causal_turn_id = ?
+                  AND COALESCE(NULLIF(causal_root_id, ''), causal_turn_id) = ?
                   AND status IN ('queued', 'running', 'cancelling')
                 ORDER BY created_at_ms, job_id
                 """,

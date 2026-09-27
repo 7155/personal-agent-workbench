@@ -656,19 +656,16 @@ function memoryViewStatus(
   // Preferences never claims a persistence state here; the panel itself
   // reports read-only, pending, and synced from the real write contract.
   if (view === 'preferences') return '影响整理与联想';
+  // The workbench owns live backlog and job receipts. A separately refreshed
+  // catalog summary must not contradict those counts in the page heading.
+  if (view === 'organize') return '核对来源、继续整理和查看本批结果';
   if (summaryState === 'pending') return '正在读取记忆状态';
   if (summaryState === 'error') return '记忆状态暂不可用';
   if (view === 'catalog') return `${visibleRows} 条当前结果`;
   if (view === 'roleBooks') return `${numberValue(summary.roleBookCount, numberValue(summary.roleBookRevisionCount))} 个伙伴记忆`;
   if (view === 'timeline') return `${numberValue(summary.activityTimelineCount, numberValue(summary.timelineCount))} 条活动记录`;
   if (view === 'relations') return `${numberValue(summary.memoryTagCount)} 个关系标签`;
-  return `${numberValue(
-    summary.ownerCurationPendingSourceCount,
-    numberValue(
-      summary.pendingGovernedEvidenceCount,
-      numberValue(asRecord(summary.ownerCuration).pendingSourceCount, numberValue(summary.pendingCompileEvents)),
-    ),
-  )} 条待整理`;
+  return '';
 }
 
 function normalizeMemoryRow(item: Record<string, unknown>): Record<string, unknown> {

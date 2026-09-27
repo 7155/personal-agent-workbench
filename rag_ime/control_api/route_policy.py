@@ -80,6 +80,16 @@ class ControlPathId(str, Enum):
     AGENT_EVAL_LAB_TRIALS_CANCEL = "agent.eval-lab.trials.cancel"
     AGENT_EVAL_LAB_SCENE_RECIPES_APPLY = "agent.eval-lab.scene-recipes.apply"
     AGENT_EVAL_LAB_SCENE_RECIPES_ROLLBACK = "agent.eval-lab.scene-recipes.rollback"
+    AGENT_CONTINUITY_ANALYZE = "agent.continuity.analyze"
+    AGENT_CONTINUITY_READ = "agent.continuity.read"
+    AGENT_CONTINUITY_SUGGEST = "agent.continuity.suggest"
+    AGENT_CONTINUITY_DECISION = "agent.continuity.decision"
+    AGENT_CONTINUITY_RESUME = "agent.continuity.resume"
+    AGENT_CONTINUITY_MEDIA = "agent.continuity.media"
+    AGENT_ORGANIZATION_READ = "agent.organization.read"
+    AGENT_ORGANIZATION_SUGGEST = "agent.organization.suggest"
+    AGENT_ORGANIZATION_COMMAND = "agent.organization.command"
+    AGENT_ORGANIZATION_UNDO = "agent.organization.undo"
     AGENT_SESSIONS_LIST = "agent.sessions.list"
     AGENT_SESSIONS_CREATE = "agent.sessions.create"
     AGENT_SESSIONS_SURFACE_ENSURE = "agent.sessions.surface.ensure"
@@ -127,6 +137,8 @@ class ControlPathId(str, Enum):
     AGENT_DEEP_SEARCH = "agent.deep-search"
     AGENT_ROOMS_LIST = "agent.rooms.list"
     AGENT_ROOMS_CREATE = "agent.rooms.create"
+    AGENT_JEV_GET = "agent.jev.get"
+    AGENT_JEV_COMMAND = "agent.jev.command"
     AGENT_ROOM_GET = "agent.room.get"
     AGENT_ROOM_SNAPSHOT = "agent.room.snapshot"
     AGENT_ROOM_CONVERSATION_SNAPSHOT = "agent.room.conversationSnapshot"
@@ -849,6 +861,16 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_EVAL_LAB_TRIALS_CANCEL, ControlMethod.POST, "/api/agent/eval-lab/trials/cancel", None, body={"jobId"}, required_body={"jobId"}),
         _route(ControlPathId.AGENT_EVAL_LAB_SCENE_RECIPES_APPLY, ControlMethod.POST, "/api/agent/eval-lab/scene-recipes/apply", None, body={"sceneId", "experimentId", "expectedRevision", "clientRequestId"}, required_body={"sceneId", "experimentId", "expectedRevision", "clientRequestId"}),
         _route(ControlPathId.AGENT_EVAL_LAB_SCENE_RECIPES_ROLLBACK, ControlMethod.POST, "/api/agent/eval-lab/scene-recipes/rollback", None, body={"sceneId", "expectedRevision", "clientRequestId"}, required_body={"sceneId", "expectedRevision", "clientRequestId"}),
+        _route(ControlPathId.AGENT_CONTINUITY_ANALYZE, ControlMethod.POST, "/api/agent/continuity/analyze", None, body={'spaceKey', 'expectedRevision'}, required_body={'spaceKey', 'expectedRevision'}),
+        _route(ControlPathId.AGENT_CONTINUITY_READ, ControlMethod.POST, "/api/agent/continuity/read", None, body={'keys'}, required_body={'keys'}),
+        _route(ControlPathId.AGENT_CONTINUITY_SUGGEST, ControlMethod.POST, "/api/agent/continuity/suggest", None, body={'spaceKey', 'expectedRevision', 'candidateId'}, required_body={'spaceKey', 'expectedRevision'}),
+        _route(ControlPathId.AGENT_CONTINUITY_DECISION, ControlMethod.POST, "/api/agent/continuity/decision", None, body={'spaceKey', 'id', 'text', 'supersedesId', 'expectedRevision'}, required_body={'spaceKey', 'id', 'text', 'supersedesId', 'expectedRevision'}),
+        _route(ControlPathId.AGENT_CONTINUITY_RESUME, ControlMethod.POST, "/api/agent/continuity/resume", None, body={'spaceKey', 'proposalId', 'commandId'}, required_body={'spaceKey', 'proposalId', 'commandId'}),
+        _route(ControlPathId.AGENT_CONTINUITY_MEDIA, ControlMethod.POST, "/api/agent/continuity/media", None, body={'spaceKey', 'attachments'}, required_body={'spaceKey', 'attachments'}),
+        _route(ControlPathId.AGENT_ORGANIZATION_READ, ControlMethod.POST, "/api/agent/organization/read", None, body={"keys"}, required_body={"keys"}),
+        _route(ControlPathId.AGENT_ORGANIZATION_SUGGEST, ControlMethod.POST, "/api/agent/organization/suggest", None, body={"spaceKey"}, required_body={"spaceKey"}),
+        _route(ControlPathId.AGENT_ORGANIZATION_COMMAND, ControlMethod.POST, "/api/agent/organization/command", None, body={"commandId", "spaceKey", "expectedRevision", "operation", "value"}, required_body={"commandId", "spaceKey", "expectedRevision", "operation", "value"}),
+        _route(ControlPathId.AGENT_ORGANIZATION_UNDO, ControlMethod.POST, "/api/agent/organization/undo", None, body={"receiptId"}, required_body={"receiptId"}),
         _route(ControlPathId.AGENT_SESSIONS_LIST, ControlMethod.GET, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "includeInternal", "limit", "beforeUpdatedAtMs", "beforeId", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId"}),
         _route(ControlPathId.AGENT_SESSIONS_CREATE, ControlMethod.POST, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, body={"title", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "toolAllowlistMode", "allowedTools", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_body={"title", "mode", "roleId", "roleVersion", "modelProfile", "toolProfileVersion"}, remote_body_values={"mode": {"assistant"}}),
         _route(ControlPathId.AGENT_SESSIONS_SURFACE_ENSURE, ControlMethod.POST, "/api/agent/sessions/surface/ensure", None, body={"title", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, required_body={"title", "mode", "toolProfileVersion", "executionMode", "workspaceRoots", "surfaceKind", "ownerAppId", "surfaceKey"}),
@@ -897,6 +919,8 @@ def default_route_policy() -> ControlRoutePolicy:
 
         _route(ControlPathId.AGENT_ROOMS_LIST, ControlMethod.GET, "/api/agent/rooms", "/control/v1/agent/rooms", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId", "ownerAppId", "surfaceKey"}),
         _route(ControlPathId.AGENT_ROOMS_CREATE, ControlMethod.POST, "/api/agent/rooms", "/control/v1/agent/rooms", body={"title", "roomKind", "avatar", "description", "scenarioPrompt", "participants", "routingPolicy", "routingConfig", "moderatorRoleId", "workspaceRoots", "executionMode", "permissionPolicy", "workspaceScopeConfirmation", "dangerousModeConfirmation", "ownerAppId", "surfaceKey"}, required_body={"participants"}),
+        _route(ControlPathId.AGENT_JEV_GET, ControlMethod.GET, "/api/agent/rooms/{roomId}/jev", "/control/v1/agent/rooms/{roomId}/jev", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_ROOM, query={"graphId"}),
+        _route(ControlPathId.AGENT_JEV_COMMAND, ControlMethod.POST, "/api/agent/rooms/{roomId}/jev", "/control/v1/agent/rooms/{roomId}/jev", params=_ROOM, body={"action", "clientMessageId", "graphId", "rootId", "planHash", "executionApproval", "message", "controllerParticipantId", "objective", "rootObjective", "expectedOutput", "acceptanceCriteria", "expectedTopologyRevision", "expectedRequirementsRevision", "effectId", "taskId", "taskHash", "targetParticipantId", "reason", "evidenceRefs", "operabilityVerdict", "requirementVerdict", "add", "remove", "strategy", "externalAllowed", "previousRootId", "attachmentIds", "modelRouting", "toolApprovalMode", "verificationMode"}),
         _route(ControlPathId.AGENT_ROOM_GET, ControlMethod.GET, "/api/agent/rooms/{roomId}", "/control/v1/agent/rooms/{roomId}", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_ROOM),
         _route(ControlPathId.AGENT_ROOM_SNAPSHOT, ControlMethod.GET, "/api/agent/rooms/{roomId}/snapshot", "/control/v1/agent/rooms/{roomId}/snapshot", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_ROOM),
         _route(ControlPathId.AGENT_ROOM_CONVERSATION_SNAPSHOT, ControlMethod.GET, "/api/agent/rooms/{roomId}/conversation", "/control/v1/agent/rooms/{roomId}/conversation", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_ROOM),
@@ -918,7 +942,7 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.WORK_DOCUMENT_ERASE, ControlMethod.POST, "/api/agent/work-documents/{documentId}/erase", None, params=_WORK_DOCUMENT, body={"sessionId", "approvalId", "payloadSha256"}, required_body={"sessionId", "approvalId", "payloadSha256"}),
         _route(ControlPathId.AGENT_ROOM_ARCHIVE, ControlMethod.PATCH, "/api/agent/rooms/{roomId}", "/control/v1/agent/rooms/{roomId}", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_ROOM, body={"archived", "title", "roomKind", "avatar", "description", "scenarioPrompt", "routingPolicy", "routingConfig", "moderatorParticipantId", "executionMode", "permissionPolicy", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation"}, remote_body={"archived", "title", "roomKind", "avatar", "description", "scenarioPrompt", "routingPolicy", "routingConfig", "moderatorParticipantId"}),
         _route(ControlPathId.AGENT_ROOM_PARTICIPANT_ADD, ControlMethod.POST, "/api/agent/rooms/{roomId}/participants", "/control/v1/agent/rooms/{roomId}/participants", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_ROOM, body={"roleId", "roleVersion", "collaborationRole"}, required_body={"roleId"}, remote_body={"roleId", "roleVersion", "collaborationRole"}, remote_required_body={"roleId"}),
-        _route(ControlPathId.AGENT_ROOM_PARTICIPANT_REMOVE, ControlMethod.PATCH, "/api/agent/rooms/{roomId}/participants", "/control/v1/agent/rooms/{roomId}/participants", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_ROOM, body={"participantId"}, required_body={"participantId"}, remote_body={"participantId"}, remote_required_body={"participantId"}),
+        _route(ControlPathId.AGENT_ROOM_PARTICIPANT_REMOVE, ControlMethod.PATCH, "/api/agent/rooms/{roomId}/participants", "/control/v1/agent/rooms/{roomId}/participants", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_ROOM, body={"participantId", "clientMessageId", "replacementParticipantId", "reason", "stopRoot"}, required_body={"participantId"}, remote_body={"participantId", "clientMessageId", "replacementParticipantId", "reason", "stopRoot"}, remote_required_body={"participantId"}),
         _route(ControlPathId.AGENT_ROOM_PARTICIPANT_UPDATE, ControlMethod.PATCH, "/api/agent/rooms/{roomId}/participants", "/control/v1/agent/rooms/{roomId}/participants", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_ROOM, body={"participantId", "collaborationRole"}, required_body={"participantId", "collaborationRole"}, remote_body={"participantId", "collaborationRole"}, remote_required_body={"participantId", "collaborationRole"}),
         _route(ControlPathId.AGENT_ROOM_DELETE, ControlMethod.DELETE, "/api/agent/rooms/{roomId}", None, params=_ROOM, body={"confirmTitle"}, required_body={"confirmTitle"}),
         _route(ControlPathId.AGENT_ROOM_MESSAGE, ControlMethod.POST, "/api/agent/rooms/{roomId}/messages", "/control/v1/agent/rooms/{roomId}/messages", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_ROOM, body={"message", "clientMessageId", "retryOfRootId", "participantIds", "workItemId", "attachmentIds", "answerToPostId", "answerToRootId"}, required_body={"message"}, remote_body={"message", "clientMessageId", "retryOfRootId", "participantIds", "workItemId", "attachmentIds", "answerToPostId", "answerToRootId"}, remote_required_body={"message", "clientMessageId"}),

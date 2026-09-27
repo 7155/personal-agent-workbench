@@ -80,3 +80,8 @@ control-center-web/test-results/
 /eval/trace-agent/*.md
 /squirrel-patches/GENERATION_EXPERIENCE.md
 /squirrel-patches/SCENARIO_INTEGRATION.md
+
+# Local Earth UI recovery snapshots; preserve locally, never publish.
+/.earth-report-backups/
+/.earth-simple-ui-backups/
+/.earth-upgrade-backups/

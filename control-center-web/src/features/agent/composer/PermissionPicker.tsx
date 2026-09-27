@@ -1,12 +1,14 @@
 import {
   Check,
+  Settings2,
   FolderOpen,
   LockKeyhole,
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react';
 import * as RadioGroup from '@radix-ui/react-radio-group';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+const JevCredentials = lazy(() => import('@/features/configuration/PiProviderCredentials').then(module => ({ default: module.PiProviderCredentials })));
 
 import {
   Button,
@@ -53,6 +55,7 @@ export function PermissionPicker({
   onChange: (selection: AgentPermissionSelection) => void;
   onWorkspaceRootsChange: () => void;
 }) {
+  const [jevOpen, setJevOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [dangerousOpen, setDangerousOpen] = useState(false);
   const profile = session?.toolProfileVersion ?? 'control-center-v1';
@@ -178,6 +181,11 @@ export function PermissionPicker({
               </Button>
             </section>
           ) : null}
+          <section className="agent-picker-popover__workspace" aria-label="Jev 设置入口">
+            <Settings2 size={16} />
+            <span><strong>Jev 辅助判断</strong><small>密钥、审批与可用功能 · PAW 全局设置</small></span>
+            <Button size="small" variant="quiet" onClick={() => { setOpen(false); setJevOpen(true); }}>Jev 设置</Button>
+          </section>
           {!PERMISSION_PRESETS.some((preset) => preset.id === current.id) ? (
             <p className="agent-picker-popover__note">
               当前 Session 使用旧版权限策略；选择上方任一模式后会切换到对应的新合同。
@@ -190,6 +198,16 @@ export function PermissionPicker({
           ) : null}
         </PopoverContent>
       </Popover>
+      <Dialog open={jevOpen} onOpenChange={setJevOpen}>
+        <DialogContent style={{ width: 'min(800px, calc(100vw - 32px))', maxWidth: 800, maxHeight: '85vh', overflowY: 'auto' }}>
+          <DialogHeader>
+            <DialogTitle>Jev 设置</DialogTitle>
+            <DialogDescription>配置供所有对话共用的 Jev 服务，不改变当前对话权限。标准压缩继续由 Pi 执行。</DialogDescription>
+          </DialogHeader>
+          {jevOpen ? <Suspense fallback={<p role="status">正在读取 Jev 设置…</p>}><section data-route-id="configuration"><JevCredentials onlyProvider="typesafe" /></section></Suspense> : null}
+          <DialogFooter><Button variant="quiet" onClick={() => setJevOpen(false)}>完成</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={dangerousOpen}
         onOpenChange={setDangerousOpen}

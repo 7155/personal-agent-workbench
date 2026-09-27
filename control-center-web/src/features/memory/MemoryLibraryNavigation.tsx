@@ -65,6 +65,8 @@ export function MemoryLibraryNavigation({
             </li>
           ))}
         </ul>
+        <div className="memory-library__actions">
+        <Button leadingIcon={<RefreshCw size={14} />} onClick={onOpenOrganize} size="small" variant="quiet">整理记忆</Button>
         <button
           aria-controls="memory-library-status"
           aria-expanded={expanded}
@@ -75,7 +77,13 @@ export function MemoryLibraryNavigation({
         >
           整理状态 <ChevronDown aria-hidden="true" size={14} />
         </button>
+        </div>
       </div>
+      <p className="memory-library__layer-note">{activeLayer === 'evidence'
+        ? '来源是原始记录，不代表已经保存为记忆。'
+        : activeLayer === 'atoms'
+          ? '这里是整理后的记忆；打开详情可核对来源、修正或查看历史。'
+          : '主题把相关记忆放在一起，方便继续查找和使用。'}</p>
       {summaryState === 'error' && !expanded ? (
         <div className="memory-library__pending" role="status">
           <span>整理状态读取失败，计数暂不可用。</span>

@@ -21,10 +21,12 @@ class AgentLabProjectApplication:
                  command_golden: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None,
                  knowledge: Any = None, start_knowledge: Callable | None = None,
                  cancel_knowledge: Callable | None = None, read_experiments: Callable | None = None,
-                 read_trials: Callable | None = None, command_app: Callable | None = None) -> None:
+                 read_trials: Callable | None = None, command_app: Callable | None = None,
+                 app_model: Callable[[], dict[str, str]] | None = None) -> None:
         self.db_path = Path(db_path)
         self.sessions = session_application
         self.current_model = current_model
+        self.app_model = app_model or current_model
         self.read_golden = read_golden
         self.command_golden = command_golden
         self.knowledge, self.start_knowledge, self.cancel_knowledge = knowledge, start_knowledge, cancel_knowledge
@@ -35,7 +37,7 @@ class AgentLabProjectApplication:
         self.directory = ProjectDirectoryProjection(self.db_path, scope_id=scope_id)
         self.store = AgentLabProjectStore(self.db_path, scope_id=scope_id,
                                          bind_execution=self._bind, create_guide=self._guide,
-                                         prepare_app=lambda conn,project,value:self.apps.prepare(conn,project,value,self.current_model()))
+                                         prepare_app=lambda conn,project,value:self.apps.prepare(conn,project,value,self.app_model()))
 
     def read(self, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
         payload = payload or {}

@@ -9,6 +9,7 @@ import {
   roomFlowRefs,
   roomWorkReviewFlow,
 } from '@/features/rooms/room-flow-projection';
+import { projectRoomRoutes, type RoomRouteVisibility } from './room-route-visibility';
 import { roomPlanetName } from '@/features/rooms/room-copy';
 import type { RoomCollaborationRole, RoomSummary, RoomWorkItem, RoomWorkState } from '@/features/rooms/room-types';
 import { selectPublicRoomTurnOrder } from '@/features/rooms/runtime/room-execution-lanes';
@@ -30,6 +31,19 @@ export type RoomFocusState =
   | 'failed'
   | 'stopped'
   | 'disconnected';
+
+/** Some older Room receipts contain only an event type as their summary.
+ * Keep that event in history, but show a readable action in the compact UI. */
+export function roomFocusActionLabel(summary: string): string {
+  const labels: Record<string, string> = {
+    participant_activity: '公开执行记录已更新',
+    turn_completed: '本轮执行结束',
+    turn_failed: '本轮执行失败',
+    tool_started: '正在执行工具',
+    tool_finished: '工具已返回',
+  };
+  return labels[summary] ?? summary;
+}
 
 export interface RoomFocusEvidence {
   ref: string;
@@ -161,6 +175,8 @@ export interface RoomFocusProjection {
   handoffs: RoomFocusHandoff[];
   flow: RoomFocusPacket[];
   rootEvidence: RoomFocusEvidence[];
+  /** Existing route receipts only; Jev is optional and never invoked here. */
+  routes?: RoomRouteVisibility[];
   counts: {
     active: number;
     review: number;
@@ -196,7 +212,7 @@ export function buildRoomFocusProjection(
     if (plan.dispatchId) wavesByDispatch.set(plan.dispatchId, slot);
   }
   const orderedScopedWorkItems = orderedWorkItems(roomWorkItems);
-  const explicit = orderedScopedWorkItems.map((item) => explicitFocusWork(item, activities, wavesByWorkItem));
+  const explicit = orderedScopedWorkItems.map((item) => explicitFocusWork(item, activities, wavesByWorkItem, scope.turnId));
   const rootByTurn = new Map<string, RoomFocusWorkItem>();
   for (const item of roomWorkItems) {
     if (item.parentWorkId) continue;
@@ -234,14 +250,16 @@ export function buildRoomFocusProjection(
         collaborationRole: participant.collaborationRole,
         state,
         ownedWorkItemIds: owned.map((item) => item.id),
-        currentAction: stringValue(latestActivity?.payload.task)
-          || latestActivity?.summary.trim()
+        currentAction: ['turn_completed', 'turn_failed'].includes(latestActivity?.summary.trim() ?? '')
+          ? roomFocusActionLabel(latestActivity?.summary.trim() ?? '')
+          : stringValue(latestActivity?.payload.task)
+          || roomFocusActionLabel(latestActivity?.summary.trim() ?? '')
           || owned.find((item) => ['running', 'review', 'blocked', 'waiting'].includes(item.state))?.objective
           || owned.at(0)?.objective
           || '等待新的工作项',
         latestReceipt: latestMessage?.text.trim()
           || owned.find((item) => item.latestResult)?.latestResult
-          || (latestActivity?.status === 'completed' ? latestActivity.summary.trim() : undefined),
+          || (latestActivity?.status === 'completed' ? roomFocusActionLabel(latestActivity.summary.trim()) : undefined),
         unread: false,
       } satisfies RoomFocusPartner;
     });
@@ -282,6 +300,7 @@ export function buildRoomFocusProjection(
     handoffs,
     flow,
     rootEvidence,
+    routes: projectRoomRoutes(activities, room, scope.turn),
     counts: {
       active: workItems.filter((item) => item.state === 'running' || item.state === 'waiting').length,
       review: workItems.filter((item) => item.state === 'review').length,
@@ -317,15 +336,27 @@ function currentRoomFocusScope(
 
   const activityIds = new Set(turn.activityIds);
   const messageIds = new Set(turn.messageIds);
-  const scopedWorkItems = (room.workItems ?? []).filter((item) => item.rootTurnId === turnId);
+  // Retried attempts may retain a WorkItem bound to an earlier explicit Root.
+  // Follow only recorded lineage, never all history when a new Root is empty.
+  const workRootIds = new Set<string>();
+  const visited = new Set<string>();
+  let cursor: string | undefined = turnId;
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor);
+    workRootIds.add(cursor);
+    const attempt: RoomProjectionState['turnsById'][string] | undefined = projection.turnsById[cursor];
+    if (attempt?.logicalRootId) workRootIds.add(attempt.logicalRootId);
+    cursor = attempt?.retryOfRootId;
+  }
+  // Keep genuinely unbound assignments during metadata skew, plus tasks on
+  // the recorded retry lineage; never inherit another Root's bound tasks.
+  const scopedWorkItems = (room.workItems ?? []).filter((item) => (
+    workRootIds.has(item.rootTurnId) || !item.rootTurnId
+  ));
   return {
     activities: activities.filter((activity) => activityIds.has(activity.id)),
     messages: messages.filter((message) => messageIds.has(message.id)),
-    /* A metadata refresh can publish the latest public turn before its
-       WorkItem's rootTurnId is attached to the Room snapshot. Keep the
-       authoritative roster visible during that short skew; otherwise the
-       collaboration graph silently loses each planet's actual assignment. */
-    workItems: scopedWorkItems.length ? scopedWorkItems : room.workItems ?? [],
+    workItems: scopedWorkItems,
     turnId,
     turn,
   };
@@ -368,11 +399,13 @@ function explicitFocusWork(
   item: RoomWorkItem,
   activities: RoomActivityProjection[],
   wavesByWorkItem?: Map<string, RoomFocusWaveSlot>,
+  activeTurnId?: string,
 ): RoomFocusWorkItem {
-  const ownerId = item.currentOwnerParticipantId || item.offeredToParticipantId || item.accountableParticipantId || undefined;
+  const ownerId = item.currentOwnerParticipantId || undefined;
   const latestActivity = [...activities].reverse().find((activity) => (
-    activity.turnId === item.rootTurnId
-    && (!ownerId || activity.participantId === ownerId)
+    activity.turnId === (activeTurnId || item.rootTurnId)
+    && Boolean(ownerId) && activity.participantId === ownerId
+    && (!stringValue(activity.payload.workItemId) || activity.payload.workItemId === item.id)
   ));
   const blocker = focusBlocker(item.blocker);
   const review = focusReview(item);
@@ -389,7 +422,7 @@ function explicitFocusWork(
     accountableParticipantId: item.accountableParticipantId || undefined,
     verifierParticipantId: review?.reviewerParticipantId,
     state: workState(item.state),
-    currentAction: latestActivity?.summary.trim() || undefined,
+    currentAction: latestActivity ? roomFocusActionLabel(latestActivity.summary.trim()) : undefined,
     blocker,
     reviewRequired: item.state === 'review',
     ...(review ? { review } : {}),
@@ -454,7 +487,7 @@ function runtimeFocusWork(
         : previous?.acceptanceCriteria ?? [],
       ownerParticipantId: owner ?? previous?.ownerParticipantId,
       state: activityState(activity.status),
-      currentAction: activity.summary.trim() || previous?.currentAction,
+      currentAction: roomFocusActionLabel(activity.summary.trim()) || previous?.currentAction,
       reviewRequired: stringValue(activity.payload.requestKind) === 'plan_review' || activity.status === 'waiting',
       ...(wave ? { wave } : previous?.wave ? { wave: previous.wave } : {}),
       latestResult: activity.status === 'completed' ? activity.summary.trim() : previous?.latestResult,
@@ -768,6 +801,13 @@ function participantTurnState(
   turn: RoomProjectionState['turnsById'][string],
   participantId: string,
 ): RoomFocusState {
+  // A participant may finish one dispatch and then be woken for another under
+  // the same Root. The earlier terminal receipt remains historical evidence;
+  // an unfinished current dispatch is the execution state shown to the user.
+  if (turn.status === 'running' && (turn.dispatchIds ?? []).some((dispatchId) => (
+    turn.dispatchParticipantIds?.[dispatchId] === participantId
+    && !turn.terminalDispatchIds?.includes(dispatchId)
+  ))) return 'running';
   if (turn.failedParticipantIds?.includes(participantId)) return 'failed';
   if (turn.abortedParticipantIds?.includes(participantId)) return 'stopped';
   if (turn.terminalParticipantIds?.includes(participantId)) return 'completed';

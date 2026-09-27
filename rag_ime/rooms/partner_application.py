@@ -112,6 +112,7 @@ class RoomPartnerApplicationService:
         ]
         | None = None,
         recover_faulted_session: Callable[[str], None] | None = None,
+        pending_removal: Callable[[str, str], bool] | None = None,
     ) -> None:
         self.rooms = rooms
         self.room_turns = room_turns
@@ -140,6 +141,7 @@ class RoomPartnerApplicationService:
         self.add_room_participant = add_room_participant
         self.remove_room_participant = remove_room_participant
         self.recover_faulted_session = recover_faulted_session
+        self.pending_removal = pending_removal or (lambda _room_id, _participant_id: False)
 
     def execute(
         self,
@@ -501,6 +503,13 @@ class RoomPartnerApplicationService:
         proposed_operability: str = "",
         proposed_requirement: str = "",
     ) -> Mapping[str, object]:
+        jev = getattr(self, "jev_application", None)
+        if jev is not None:
+            handled = jev.settle_dispatch(record, phase=phase, result=result,
+                completion_source=completion_source, post_id=post_id,
+                proposed_operability=proposed_operability, proposed_requirement=proposed_requirement)
+            if handled is not None:
+                return handled
         source = self.rooms.participant(str(record["sourceParticipantId"]))
         target = self.rooms.participant(str(record["targetParticipantId"]))
         work_item = (
@@ -541,6 +550,8 @@ class RoomPartnerApplicationService:
         self,
         record: Mapping[str, object],
     ) -> None:
+        if getattr(self, "jev_application", None) is not None and self.jev_application.lifecycle.effect_for_dispatch(str(record.get("childDispatchId") or "")) is not None:
+            return  # The committed WorkItem event advances the Jev controller.
         if self.wake_schedules is None:
             return
         wake = record.get("wake")
@@ -1570,6 +1581,8 @@ class RoomPartnerApplicationService:
         """Repair the Room projection from Pi's durable prompt/turn ledger."""
 
         child_dispatch_id = str(record["childDispatchId"])
+        if getattr(self, "jev_application", None) is not None and self.jev_application.lifecycle.effect_for_dispatch(child_dispatch_id) is not None:
+            return  # Jev reconciles exact effect receipts; missing is unknown.
         target_session_id = str(record["targetSessionId"])
         target_turn_id = str(record.get("targetSessionTurnId") or "")
         if not target_turn_id:
@@ -1893,6 +1906,8 @@ class RoomPartnerApplicationService:
                 root_id,
                 f"{tool_call_id}:{index}",
             )
+            if self.pending_removal(room_id, target_id) and not existing_dispatch_id:
+                raise ValueError("target Partner is pending Room removal")
             if target_session_id in existing_session_ids and not existing_dispatch_id:
                 raise ValueError(
                     "target Partner is already active in this Room turn"
@@ -1926,8 +1941,9 @@ class RoomPartnerApplicationService:
                 session_id,
                 active_only=True,
             )
-            if latest is None or str(latest.get("id") or "") != str(target["id"]):
-                raise ValueError("target Partner changed before batch dispatch")
+            if (latest is None or str(latest.get("id") or "") != str(target["id"])
+                or self.pending_removal(room_id, str(target["id"]))):
+                raise ValueError("target Partner changed or is pending removal before batch dispatch")
 
         try:
             if reserved_session_ids:
@@ -2099,6 +2115,7 @@ class RoomPartnerApplicationService:
                 not isinstance(value, Mapping)
                 or str(value.get("status") or "") != "active"
                 or str(value.get("id") or "") == str(source["id"])
+                or self.pending_removal(str(room["id"]), str(value.get("id") or ""))
             ):
                 continue
             partner_session_id = str(value.get("sessionId") or "")
@@ -2272,6 +2289,8 @@ class RoomPartnerApplicationService:
                 )
             return result
 
+        if self.pending_removal(room_id, target_id):
+            raise ValueError("target Partner is pending Room removal")
         if any(
             session_id == target_session_id
             for _participant, session_id, _turn_id in self.room_turns.turn_targets(
@@ -2289,8 +2308,9 @@ class RoomPartnerApplicationService:
                 session_id,
                 active_only=True,
             )
-            if latest is None or str(latest.get("id") or "") != target_id:
-                raise ValueError("target Partner changed before dispatch")
+            if (latest is None or str(latest.get("id") or "") != target_id
+                or self.pending_removal(room_id, target_id)):
+                raise ValueError("target Partner changed or is pending removal before dispatch")
 
         if not priority_reserved:
             try:

@@ -32,7 +32,7 @@ it('groups Agents by directory and keeps the active binding visible until an exp
   expect(within(projects).getByRole('option', { name: 'shared · 2 个 Agent · /gis/shared' })).toBeInTheDocument();
   expect(within(screen.getByRole('combobox', { name: '项目 Agent' })).getAllByRole('option')).toHaveLength(2);
   await userEvent.selectOptions(projects, '/archive/shared');
-  expect(screen.getByLabelText('当前项目文件夹')).toHaveTextContent('/gis/shared');
+  expect(screen.getByLabelText('当前项目文件夹')).toHaveAttribute('data-path', '/gis/shared');
   expect(screen.getByText('待打开的项目；当前 Agent 仍在原文件夹工作。')).toBeVisible();
   expect(within(screen.getByRole('combobox', { name: '项目 Agent' })).getAllByRole('option')).toHaveLength(1);
   expect(onSelectSession).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ it('keeps folder browsing and cancellation separate from opening or creating a S
   expect(screen.getByRole('textbox', { name: '项目文件夹' })).toHaveValue('/gis/shared');
   await userEvent.click(screen.getByRole('button', { name: '浏览…' }));
   await waitFor(() => expect(screen.getByRole('textbox', { name: '项目文件夹' })).toHaveValue('/gis/new-project'));
-  expect(screen.getByLabelText('当前项目文件夹')).toHaveTextContent('/gis/shared');
+  expect(screen.getByLabelText('当前项目文件夹')).toHaveAttribute('data-path', '/gis/shared');
   expect(screen.getByRole('button', { name: '新建项目 Agent' })).toBeEnabled();
   expect(onSelectSession).not.toHaveBeenCalled();
   expect(onCreateSession).not.toHaveBeenCalled();
@@ -78,7 +78,7 @@ it('keeps the selected directory and original Agent when creation fails, then pe
   await userEvent.click(screen.getByRole('button', { name: '新建项目 Agent' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('目录不可读取');
   expect(screen.getByRole('textbox', { name: '项目文件夹' })).toHaveValue('/gis/new-project');
-  expect(screen.getByLabelText('当前项目文件夹')).toHaveTextContent('/gis/shared');
+  expect(screen.getByLabelText('当前项目文件夹')).toHaveAttribute('data-path', '/gis/shared');
   await userEvent.click(screen.getByRole('button', { name: '新建项目 Agent' }));
   await waitFor(() => expect(onCreateSession).toHaveBeenCalledTimes(2));
 });

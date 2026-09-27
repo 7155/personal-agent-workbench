@@ -451,6 +451,22 @@ class AgentCommandReceiptStore:
             str(row["response_json"] or "")
         )
 
+    def accepted_response_for_exact_command(
+        self, *, command_scope: str, scope_id: str, client_message_id: str,
+    ) -> dict[str, object] | None:
+        """Read an accepted receipt without re-admitting a turn or its payload.
+
+        The caller must already own/authorize this scope. This also supports
+        Room receipts whose execution identity is a root rather than a turn.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT state,response_json FROM agent_command_receipts "
+                "WHERE command_scope=? AND scope_id=? AND client_message_id=?",
+                (command_scope, scope_id, client_message_id),
+            ).fetchone()
+        return _accepted_response(row) if row and row['state'] == 'accepted' else None
+
     def acceptance_evidence_for_exact_command(
         self,
         *,

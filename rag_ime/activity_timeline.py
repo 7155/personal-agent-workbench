@@ -1368,6 +1368,8 @@ def _public_activity_organization_receipt(
         ),
         "contractRepaired": value.get("contractRepaired") is True,
         "semanticRepaired": value.get("semanticRepaired") is True,
+        "semanticRepairRounds": max(0, int(value.get("semanticRepairRounds") or 0)),
+        "semanticContractRepaired": value.get("semanticContractRepaired") is True,
         "organizedAtMs": max(0, int(organized_at_ms)),
     }
 

@@ -52,5 +52,5 @@ export interface RemoteSensingRun {
   statistics?: Record<string, unknown>;
   classMapping?: Array<{ code: number; value: string | number; valueType: 'string' | 'number'; samplePixels: number; groupCount: number }>;
 }
-export function prepareRemoteSensingWorkflow(input: { root: string; plan: RemoteSensingPlan }): Promise<PreparedRemoteSensingWorkflow>;
-export function runRemoteSensingWorkflow(input: { root: string; planId: string; python?: string }): Promise<RemoteSensingRun>;
+export function prepareRemoteSensingWorkflow(input: { root: string; signal?: AbortSignal; plan: RemoteSensingPlan }): Promise<PreparedRemoteSensingWorkflow>;
+export function runRemoteSensingWorkflow(input: { root: string; signal?: AbortSignal; planId: string; python?: string }): Promise<RemoteSensingRun>;

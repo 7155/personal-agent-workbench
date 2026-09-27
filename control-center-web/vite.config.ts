@@ -112,7 +112,23 @@ function browserDependencyBoundary(): Plugin {
     name: 'rag-ime-browser-dependency-boundary',
     enforce: 'pre',
     transform(code, id) {
-      if (id.replaceAll('\\', '/').endsWith('/@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.js')) {
+      const moduleId = id.replaceAll('\\', '/');
+      if (moduleId.endsWith('/framer-motion/dist/es/render/dom/utils/filter-props.mjs')) {
+        // Motion's ESM entry probes an optional Node peer inside try/catch.
+        // Browsers use its existing fallback; explicit prop-validator injection
+        // remains available through loadExternalIsValidProp/MotionConfig.
+        const optionalPackage = 'const emotionPkg = "@emotion/is-prop-" + "valid";';
+        const optionalLoader = 'loadExternalIsValidProp(require(emotionPkg).default);';
+        if (code.split(optionalPackage).length !== 2 || code.split(optionalLoader).length !== 2) {
+          this.error('Motion browser dependency shape changed; review its optional prop validator before upgrading.');
+        }
+        return {
+          code: code.replace(optionalPackage, '')
+            .replace(optionalLoader, 'loadExternalIsValidProp(undefined);'),
+          map: null,
+        };
+      }
+      if (moduleId.endsWith('/@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.js')) {
         // Geoman ships an already bundled Lodash, so the individual _nodeUtil
         // transform below cannot see it. Use its browser paths explicitly;
         // never carry Node's util loader or the dynamic global fallback into CSP.
@@ -125,7 +141,7 @@ function browserDependencyBoundary(): Plugin {
           map: null,
         };
       }
-      if (!id.replaceAll('\\', '/').endsWith('/lodash/_nodeUtil.js')) return null;
+      if (!moduleId.endsWith('/lodash/_nodeUtil.js')) return null;
       const browserCode = code.replace(
         /freeModule\.require\((['"])util\1\)\.types/g,
         'undefined',
@@ -211,7 +227,7 @@ export default defineConfig({
     css: true,
     testTimeout: 15_000,
     include: [
-      'src/**/*.test.{ts,tsx}',
+      'src/**/*.test.{js,ts,tsx}',
       'extension-apps/**/*.test.{ts,tsx}',
       '../integrations/pi/skills/pawos-app-builder/assets/frontend-template/**/*.test.{ts,tsx}',
     ],

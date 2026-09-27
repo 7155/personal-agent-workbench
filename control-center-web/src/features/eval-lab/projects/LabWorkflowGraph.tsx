@@ -15,7 +15,7 @@ function StatusIcon({ status, size = 15 }: { status: LabWorkflowStatus; size?: n
 }
 export function workflowDecisionName(decision?: string) {
   if (!decision) return '效果尚未判定';
-  return ({ keep: '保留候选', reject: '不保留候选', no_improvement: '无提升 · 沿用基线', inconclusive: '结论不足 · 沿用基线', unknown: '效果尚未判定', blocked: '判定受阻' } as Record<string, string>)[decision.toLowerCase()] ?? decision;
+  return ({ keep: '保留候选', improved: '候选有改善', reject: '不保留候选', no_improvement: '无提升 · 沿用基线', inconclusive: '结论不足 · 沿用基线', unknown: '效果尚未判定', blocked: '判定受阻' } as Record<string, string>)[decision.toLowerCase()] ?? decision;
 }
 export function workflowNodeStatus(node: LabWorkflowNode): string {
   if (node.source === 'artifact' && node.kind === 'step') return ({ running: '计划进行中', completed: '计划已记录完成', pending: '计划待准备', unavailable: '计划待补齐' } as Record<string, string>)[node.status] ?? `计划：${statusNames[node.status]}`;

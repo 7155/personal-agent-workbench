@@ -43,6 +43,8 @@ export const memoryQueryKeys = {
   curationStatus: () => [...memoryQueryKeys.root, 'curation-status'] as const,
   curationRun: (runId: string) => [...memoryQueryKeys.root, 'curation-run', runId] as const,
   curationJob: (jobId: string) => [...memoryQueryKeys.root, 'curation-job', jobId] as const,
+  curationLatestJob: () => [...memoryQueryKeys.root, 'curation-latest-job'] as const,
+  curationTrackedJob: () => [...memoryQueryKeys.root, 'curation-tracked-job'] as const,
   lifecycleStatus: (project: string) => [...memoryQueryKeys.root, 'lifecycle-status', project] as const,
   capabilities: () => [...memoryQueryKeys.root, 'capabilities'] as const,
   activityTimeline: (date: string) => [...memoryQueryKeys.root, 'activity-timeline', date] as const,
@@ -212,6 +214,7 @@ export function useActivityTimeline(date: string, enabled: boolean, catchUpTarge
       query: { month },
       signal,
     }),
+    refetchInterval: 10_000,
   });
   const calendarPayload = useMemo(() => asRecord(calendar.data), [calendar.data]);
   const calendarJob = useMemo(
@@ -221,7 +224,6 @@ export function useActivityTimeline(date: string, enabled: boolean, catchUpTarge
   const discoveredBuildJobId = activityTimelineJobMatchesDate(calendarJob, date, catchUpTargetDate)
     ? stringValue(calendarJob.jobId)
     : '';
-  const trackedBuildJobId = buildJobId || discoveredBuildJobId;
   const settle = async (payload: unknown) => {
     const response = asRecord(payload);
     const nextTimeline = asRecord(response.timeline);
@@ -278,6 +280,13 @@ export function useActivityTimeline(date: string, enabled: boolean, catchUpTarge
     },
     onSuccess: (payload) => setBuildJobId(stringValue(asRecord(payload).jobId)),
   });
+  const submittedJobCreatedAtMs = Number(asRecord(build.data).createdAtMs) || 0;
+  const discoveredJobCreatedAtMs = Number(calendarJob.createdAtMs) || 0;
+  const trackedBuildJobId = discoveredBuildJobId && (
+    !buildJobId || discoveredJobCreatedAtMs > submittedJobCreatedAtMs
+  )
+    ? discoveredBuildJobId
+    : buildJobId;
   const buildJob = useQuery({
     enabled: enabled && Boolean(trackedBuildJobId),
     queryKey: memoryQueryKeys.curationJob(trackedBuildJobId),
@@ -387,7 +396,14 @@ function activityTimelineJobMatchesDate(
   // so mode + identity are the most truthful recovery evidence available.
   if (!target) return true;
   if (mode === 'single_day') return target === date;
-  if (mode === 'manual_catch_up') return target === catchUpTargetDate;
+  if (mode === 'manual_catch_up') {
+    if (target === catchUpTargetDate) return true;
+    const currentDate = stringValue(progress.currentDate);
+    return ['queued', 'running'].includes(stringValue(job.state))
+      && Boolean(currentDate)
+      && currentDate <= catchUpTargetDate
+      && target >= `${date.slice(0, 7)}-01`;
+  }
   return ['queued', 'running'].includes(stringValue(job.state));
 }
 
@@ -450,7 +466,20 @@ export function useMemoryGraphQueries(
 export function useMemoryCurationQueries(enabled: boolean) {
   const transport = useControlTransport();
   const queryClient = useQueryClient();
-  const [jobId, setJobId] = useState('');
+  const [jobId, setJobId] = useState(() => queryClient.getQueryData<string>(memoryQueryKeys.curationTrackedJob()) ?? '');
+  const selectedJobAt = useRef(0);
+  const latestJob = useQuery({
+    enabled,
+    queryKey: memoryQueryKeys.curationLatestJob(),
+    queryFn: ({ signal }) => transport.request({
+      pathId: 'agent.memoryMaintenance.run', query: { projectionOnly: true }, signal,
+    }),
+    refetchInterval: enabled ? 15_000 : false,
+  });
+  const recoveredJob = asRecord(asRecord(latestJob.data).job);
+  const recoveredJobId = ['queued', 'running'].includes(stringValue(recoveredJob.state))
+    ? stringValue(recoveredJob.jobId) : '';
+  const trackedJobId = jobId || recoveredJobId;
   // The detailed maintenance report can include model-run and projection
   // state, so it is intentionally allowed to be slower than the shared
   // memory summary. Subscribe to the summary here as well as in the parent
@@ -525,14 +554,19 @@ export function useMemoryCurationQueries(enabled: boolean) {
       }
       return payload;
     },
-    onSuccess: (payload) => setJobId(stringValue(asRecord(payload).jobId)),
+    onSuccess: (payload) => {
+      const nextId = stringValue(asRecord(payload).jobId);
+      selectedJobAt.current = Date.now();
+      queryClient.setQueryData(memoryQueryKeys.curationTrackedJob(), nextId);
+      setJobId(nextId);
+    },
   });
   const job = useQuery({
-    enabled: enabled && Boolean(jobId),
-    queryKey: memoryQueryKeys.curationJob(jobId),
+    enabled: enabled && Boolean(trackedJobId),
+    queryKey: memoryQueryKeys.curationJob(trackedJobId),
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.memoryMaintenance.run',
-      query: { jobId },
+      query: { jobId: trackedJobId },
       signal,
     }),
     refetchInterval: (query) => {
@@ -540,12 +574,26 @@ export function useMemoryCurationQueries(enabled: boolean) {
       return state === 'completed' || state === 'failed' || state === 'expired' ? false : 1_200;
     },
   });
-  const jobState = stringValue(asRecord(job.data).state);
+  // A projection and a trigger receipt are fallback evidence only for the
+  // exact tracked job; a previous trigger must never label its successor.
+  const fallbackJob = [recoveredJob, asRecord(trigger.data)].find((item) => (
+    Boolean(trackedJobId) && stringValue(item.jobId) === trackedJobId
+  ));
+  const jobData = job.data ?? fallbackJob;
+  const jobState = stringValue(asRecord(jobData).state);
+  useEffect(() => {
+    if (!recoveredJobId || recoveredJobId === jobId || trigger.isPending) return;
+    const terminal = ['completed', 'failed', 'expired'].includes(jobState);
+    if ((!jobId || terminal) && latestJob.dataUpdatedAt >= selectedJobAt.current) {
+      queryClient.setQueryData(memoryQueryKeys.curationTrackedJob(), recoveredJobId);
+      setJobId(recoveredJobId);
+    }
+  }, [jobId, jobState, recoveredJobId, latestJob.dataUpdatedAt, trigger.isPending, queryClient]);
   useEffect(() => {
     if (jobState !== 'completed' && jobState !== 'failed' && jobState !== 'expired') return;
     void queryClient.invalidateQueries({ queryKey: memoryQueryKeys.root });
   }, [jobState, queryClient]);
-  return { job, jobId, jobState, run, runId, status: statusForRender, trigger };
+  return { job: { ...job, data: jobData }, jobId: trackedJobId, jobState, latestJob, run, runId, status: statusForRender, trigger };
 }
 
 function memoryMaintenanceStatusPlaceholder(value: unknown): Record<string, unknown> | undefined {

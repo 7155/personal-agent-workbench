@@ -18,8 +18,16 @@ import { usePiProviderCatalog } from './api';
 
 type ProviderAction = 'set_api_key' | 'logout' | 'oauth_browser' | 'oauth_device_code';
 
-export function PiProviderCredentials() {
+export function PiProviderCredentials({ onlyProvider }: { onlyProvider?: string } = {}) {
+  return onlyProvider ? <ProviderCredentials onlyProvider={onlyProvider} /> : <RoutedProviderCredentials />;
+}
+
+function RoutedProviderCredentials() {
   const navigate = useNavigate();
+  return <ProviderCredentials navigate={navigate} />;
+}
+
+function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string; navigate?: (path: string) => void }) {
   const {
     authChangesSupported,
     capabilities,
@@ -30,8 +38,8 @@ export function PiProviderCredentials() {
     transport,
   } = usePiProviderCatalog();
   const envelope = asRecord(catalog.data);
-  const providers = useMemo(() => arrayRecords(envelope.providers).sort(providerOrder), [envelope.providers]);
-  const [providerId, setProviderId] = useState('');
+  const providers = useMemo(() => arrayRecords(envelope.providers).filter(item => !onlyProvider || stringValue(item.id) === onlyProvider).sort(providerOrder), [envelope.providers, onlyProvider]);
+  const [providerId, setProviderId] = useState(onlyProvider ?? '');
   const [apiKey, setApiKey] = useState('');
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [previewAction, setPreviewAction] = useState<ProviderAction>('set_api_key');
@@ -231,7 +239,7 @@ export function PiProviderCredentials() {
       没有读到这台 Mac 的账号管理能力。请重新检查；如果仍然失败，可打开问题排查查看本机服务状态。
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={capabilities.isFetching} onClick={() => void capabilities.refetch()} size="small">重新检查</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -240,7 +248,7 @@ export function PiProviderCredentials() {
       当前本机服务未提供模型账号管理。已保存的模型连接不会因此丢失；重新检查后仍不可用时，可前往问题排查。
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={capabilities.isFetching} onClick={() => void capabilities.refetch()} size="small">重新检查</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -252,7 +260,7 @@ export function PiProviderCredentials() {
       {errorText(catalog.error ?? envelope.error)}
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={catalog.isFetching} onClick={() => void catalog.refetch()} size="small">重新读取</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -261,7 +269,7 @@ export function PiProviderCredentials() {
       {catalogUnavailableText(envelope.unavailableReason)}
       <div className="mgmt-toolbar configuration-provider-recovery-actions">
         <Button leadingIcon={<RefreshCw size={15} />} loading={catalog.isFetching} onClick={() => void catalog.refetch()} size="small">重新检查</Button>
-        <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button>
+        {navigate ? <Button onClick={() => navigate('/diagnostics')} size="small" variant="quiet">打开问题排查</Button> : null}
       </div>
     </InlineNotice></ManagementSection>;
   }
@@ -288,9 +296,10 @@ export function PiProviderCredentials() {
             />
           </Field>
           <div className="mgmt-toolbar">
-            <StatusBadge label={auth.configured === true ? '已连接' : '未连接'} tone={auth.configured === true ? 'success' : 'neutral'} />
+            <StatusBadge label={providerId === 'typesafe' ? (auth.configured === true ? '已配置' : '未配置') : (auth.configured === true ? '已连接' : '未连接')} tone={auth.configured === true ? 'success' : 'neutral'} />
             {stringValue(auth.type) ? <StatusBadge label={stringValue(auth.type) === 'oauth' ? 'ChatGPT 登录' : 'API 密钥'} tone="info" /> : null}
           </div>
+          {providerId === 'typesafe' ? <InlineNotice title="Jev 工具审批" tone="info">配置密钥后，需要模型判断的工具审批优先使用 Jev；服务失败回退 Luna Max。当前权限模式仍决定是否需要审批。密钥保存在 macOS 钥匙串中，全局生效。</InlineNotice> : null}
           <Field description="输入内容只会在保存时交给本机安全存储；页面不会读回现有密钥。" htmlFor="pi-api-key" label="API 密钥">
             <Input autoComplete="new-password" disabled={!authChangesSupported || loginWaiting} id="pi-api-key" onChange={(event) => setApiKey(event.target.value)} placeholder={authChangesSupported ? '输入新的 API 密钥' : '当前版本仅支持查看状态'} type="password" value={apiKey} />
           </Field>
@@ -303,6 +312,22 @@ export function PiProviderCredentials() {
           </div>
           {!authChangesSupported ? <InlineNotice title="当前仅能查看" tone="warning">安全保存与退出功能尚未接入，所以不会发送凭据。</InlineNotice> : null}
         </div>
+        {providerId === 'typesafe' ? (
+          <section aria-label="Jev 应用场景" className="mgmt-stack configuration-jev-scenarios">
+            <div><strong>Jev 在 OS 中做什么</strong><p className="mgmt-muted">结构化判断与排序。配置密钥不会自动开启所有场景。</p></div>
+            <div className="mgmt-list">
+              {arrayRecords(selected.scenarios).map((scenario) => (
+                <div className="configuration-jev-scenario" key={stringValue(scenario.id)}>
+                  <div className="mgmt-toolbar"><strong>{stringValue(scenario.name)}</strong><StatusBadge
+                    label={scenario.status === 'configured' ? '已配置' : scenario.status === 'needs_key' ? '待配置密钥' : scenario.status === 'available' ? '可接入' : '尚未接通'}
+                    tone={scenario.status === 'configured' ? 'success' : 'neutral'} /></div>
+                  <p className="mgmt-muted">{stringValue(scenario.description)}</p>
+                </div>
+              ))}
+            </div>
+            <span className="mgmt-muted">已配置表示本机有密钥。每次实际调用与回退，以审批回执和知识库召回诊断为准。</span>
+          </section>
+        ) : (
         <div className="mgmt-stack">
           <div className="mgmt-toolbar">
             <strong>{providerDisplayName(selected)}</strong>
@@ -336,6 +361,7 @@ export function PiProviderCredentials() {
           ) : null}
           {modelCatalogTruncated ? <span className="mgmt-muted">当前目录已加载 {models.length} 项；服务报告共 {modelTotal} 项，刷新后可检查是否有新增可用模型。</span> : null}
         </div>
+        )}
       </div>
       {error ? <InlineNotice title="操作没有完成" tone="danger">{error}</InlineNotice> : null}
       {receiptNotice ? (
@@ -425,6 +451,13 @@ function providerReceiptNotice(
 ): { title: string; body: string; tone: 'success' | 'info' } | null {
   if (!receipt) return null;
   const action = stringValue(receipt.action);
+  if (stringValue(receipt.provider) === 'typesafe') {
+    return {
+      title: action === 'logout' ? 'Jev 密钥已移除' : 'Jev 密钥已保存',
+      body: action === 'logout' ? '下一次工具审批将回退 Luna Max。' : '密钥已存入 macOS 钥匙串，下一次工具审批生效，无需重启。',
+      tone: 'success',
+    };
+  }
   if (isOAuthAction(action)) {
     if (!isPendingLoginState(loginState)) return null;
     return {

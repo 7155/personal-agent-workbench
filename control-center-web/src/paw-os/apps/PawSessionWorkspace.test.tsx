@@ -59,6 +59,45 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it('keeps the complete-history control visible after the full snapshot has loaded', async () => {
+    const sessionId = 'session-history-control';
+    const transport = new StubControlTransport('mock', {
+      'agent.session.snapshot': (request: ControlRequest) => request.query?.view === 'full'
+        ? { messages: [], liveEvents: [], lastSequence: 2, resumeToken: `${sessionId}:2`, status: 'idle', snapshotScope: 'full', partial: false }
+        : { messages: [], liveEvents: [], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'idle', snapshotScope: 'recent', partial: true },
+      'agent.session.models': {}, 'agent.session.commands': {}, 'agent.tools.list': {}, 'agent.runtime.get': {},
+    });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{...liveSession(), id: sessionId}} recordId={sessionId}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>);
+    const button = await screen.findByRole('button', {name:'加载完整记录'});
+    await userEvent.setup().click(button);
+    await waitFor(() => expect(screen.getByRole('button', {name:'加载完整记录'})).toBeEnabled());
+  });
+  it('keeps the draft and retries an attachment failure without resyncing the Session', async () => {
+    const transport = idleSessionTransport();
+    const pickFiles = vi.fn().mockRejectedValueOnce(new Error('unsupported agent media MIME type')).mockResolvedValueOnce([
+      {id:'media_geojson', name:'region.geojson', mimeType:'text/plain', byteSize:40},
+    ]);
+    Object.assign(transport, {pickFiles});
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={liveSession()} recordId="session-attachment-retry"
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>);
+    const user = userEvent.setup();
+    const composer = await screen.findByRole('textbox', {name:'消息'});
+    await user.type(composer, '分析植被面积并生成报告');
+    await user.click(screen.getByRole('button', {name:'添加内容'}));
+    await user.click(screen.getByRole('menuitem', {name:/选择附件/}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('附件未导入');
+    expect(screen.queryByRole('button', {name:'重新同步'})).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name:'重新选择'}));
+    expect(await screen.findByText('region.geojson')).toBeVisible();
+    expect(screen.queryByText(/附件未导入/)).not.toBeInTheDocument();
+    expect(composer).toHaveValue('分析植被面积并生成报告');
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.prompt')).toHaveLength(0);
+  });
   it('shows map context separately from the draft and includes it only when the user sends', async () => {
     const transport=idleSessionTransport();
     const context={label:'选中区域',detail:'多边形 · 4 个顶点 · WGS84',text:'{"type":"Polygon","coordinates":[]}',onClear:vi.fn()};
@@ -127,7 +166,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(transport.requests.filter((request) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
   });
 
-  it('clears connection recovery when the stream stabilizes even if the repair snapshot failed', async () => {
+  it('keeps recovery visible after a heartbeat until the failed snapshot is repaired', async () => {
     const sessionId = 'session-stream-restores-without-snapshot';
     let failSnapshot = false;
     const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
@@ -145,7 +184,9 @@ describe('PAWOS Agent Session structural migration', () => {
     await waitFor(() => expect(observers.length).toBeGreaterThan(1), { timeout: 6000 });
     act(() => observers.at(-1)!.stable?.(''));
     expect(screen.queryByText('Session 操作没有完成，请重新同步后重试。')).not.toBeInTheDocument();
-    expect(screen.queryByText('正在恢复连接')).not.toBeInTheDocument();
+    expect(screen.getByText('正在恢复连接')).toBeVisible();
+    failSnapshot = false;
+    await waitFor(() => expect(screen.queryByText('正在恢复连接')).not.toBeInTheDocument(), { timeout: 6000 });
     expect(screen.queryByRole('button', { name: '立即重连' })).not.toBeInTheDocument();
     expect(transport.requests.filter((request) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
   });
@@ -466,8 +507,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(within(titlebar).getByRole('button', { name: 'Agent 轨迹' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: '星空' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: 'Session 工具' })).toBeInTheDocument();
-    const sessionHeader = titlebar.querySelector('.paw-session-workspace__header') as HTMLElement;
-    expect(within(sessionHeader).getAllByRole('button')).toHaveLength(4);
+    expect(within(titlebar).getByRole('button', { name: '加载完整记录' })).toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 文件' })).not.toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开子 Agent 工作台' })).not.toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 任务中心' })).not.toBeInTheDocument();

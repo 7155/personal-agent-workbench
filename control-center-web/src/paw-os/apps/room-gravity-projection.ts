@@ -184,6 +184,13 @@ const roomToolLabels: Record<string, string> = {
   skill_search: '检索 Skill',
   tool_search: '检索工具',
   tool_load: '加载工具',
+  workspace_shell: '终端命令',
+  workspace_read: '读取文件',
+  workspace_write: '写入文件',
+  workspace_edit: '编辑文件',
+  workspace_patch: '应用补丁',
+  workspace_list: '浏览目录',
+  workspace_search: '搜索内容',
   bash: '终端命令',
   read: '读取文件',
   write: '写入文件',
@@ -206,6 +213,10 @@ const roomToolOpLabels: Record<string, Record<string, string>> = {
     delegate_batch: '批量并行委派',
     message: '给伙伴留言',
     status: '查看伙伴状态',
+    plan_submit: '提交执行方案',
+    result_submit: '提交任务结果',
+    final_submit: '提交最终答复',
+    verification_submit: '提交复核结果',
   },
 };
 
@@ -240,6 +251,10 @@ export function roomToolEvidence(payload: Record<string, unknown>): RoomToolEvid
   const result = recordValue(payload.result);
   const op = stringValue(args.op);
   const facts: RoomToolFact[] = [];
+  const error = stringValue(payload.error || result.error);
+  if (error) facts.push({ label: '失败原因', value: compactText(error) });
+  const output = stringValue(result.outputPreview);
+  if (output && output !== error) facts.push({ label: '执行输出', value: output.slice(0, 2000) });
   if (op) facts.push({ label: '操作', value: roomToolOpLabel(toolName, op) });
   for (const [key, value] of Object.entries(args)) {
     if (key === 'op' || value == null) continue;
@@ -290,8 +305,11 @@ export function roomToolActivityLine(
   payload: Record<string, unknown>,
   status: string,
 ): string {
+  const result = recordValue(payload.result);
+  const error = stringValue(payload.error || result.error);
   const source = summary.trim();
   if (source && !roomToolSummaryIsMachine(source, payload)) return source;
+  if (status === 'failed' && error) return compactText(error);
   const headline = stringValue(payload.displayName)
     || roomToolEvidence(payload)?.headline
     || roomGravityToolLabel(stringValue(payload.toolName) || stringValue(payload.toolId));

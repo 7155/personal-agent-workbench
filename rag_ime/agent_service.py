@@ -17,6 +17,7 @@ from pathlib import Path
 from threading import RLock
 
 from .db import sqlite_connection
+from .pi.values import PiRuntimeCommandRejected
 from .agent_capability_catalog import capability_disclosure_enabled, session_resource_disclosure_policy
 from .agent_composition import build_room_stores, build_session_applications
 from .agent_configuration import (
@@ -88,6 +89,7 @@ from rag_ime.rooms.intercom_application import (
     RoomIntercomApplicationService,
 )
 from rag_ime.rooms.session_dispatch import RoomSessionDispatchService
+from rag_ime.jev_tasks.application import JevRoomApplication
 from rag_ime.rooms.session_cancellation import RoomSessionCancellationService
 from rag_ime.rooms.management import RoomManagementService
 from rag_ime.rooms.partner_application import (
@@ -333,6 +335,10 @@ class AgentService:
         self._context_source_token = object()
         self.session_mode_gate = AgentSessionModeGate()
         self.room_turns = RoomTurnRegistry()
+        # Serializes durable removal insertion with the final room Pi admission.
+        # It is separate from the Room registry lock and is never held for
+        # Skill catalog or artifact preparation.
+        self._jev_removal_admission_lock = RLock()
         self.runtime_factory.apply_policy(
             runtime_policy_from_configuration(
                 self.configuration_store.snapshot()["configuration"]
@@ -547,6 +553,7 @@ class AgentService:
                 room_public_recovery_context=(
                     self._room_public_recovery_context_for_session
                 ),
+                room_admission_gate=self._room_prompt_admission_gate,
                 execution_policy_context=(
                     self._execution_policy_prompt_for_session
                 ),
@@ -701,7 +708,7 @@ class AgentService:
             enabled=wake_scheduler_enabled,
             poll_seconds=wake_scheduler_poll_seconds,
             max_parallel=2,
-            on_tick=self._run_eval_schedules_once,
+            on_tick=self._run_scheduled_work_once,
         )
         self.wake_application.bind_scheduler(self.wake_scheduler)
         self._remove_wake_observer = self.events.add_observer(
@@ -721,6 +728,7 @@ class AgentService:
             prompt=lambda session_id, payload: self.prompt(session_id, payload),
             build_participant_prompt=self._room_participant_prompt_with_documents,
             resolve_attachments=self._resolve_room_attachments,
+            pending_removal=self._room_participant_removal_pending,
         )
         self.room_cancellation = RoomSessionCancellationService(
             rooms=self.rooms, room_events=self.room_events,
@@ -785,6 +793,7 @@ class AgentService:
             add_room_participant=self.add_room_participant,
             remove_room_participant=self.remove_room_participant,
             recover_faulted_session=self._recover_faulted_room_session,
+            pending_removal=self._room_participant_removal_pending,
         )
         self.room_work_application = RoomWorkApplicationService(
             rooms=self.rooms,
@@ -793,6 +802,8 @@ class AgentService:
             room_events=self.room_events,
             guard_session_route=self._guard_room_session_route,
         )
+        self.jev_application = JevRoomApplication(self)
+        self.room_partner_application.jev_application = self.jev_application
         self._remove_room_partner_observer = self.room_events.add_observer(
             self.room_partner_application.observe_room_event
         )
@@ -920,6 +931,7 @@ class AgentService:
                 self.delegation.reconcile_startup()
                 self.room_work.reconcile_intercom_outcomes()
                 self.room_partner_application.reconcile()
+                self.jev_application.recover()
             except Exception as exc:
                 with self._startup_recovery_status_lock:
                     self._startup_recovery_report = {
@@ -1011,6 +1023,17 @@ class AgentService:
 
     def _eval_run_exists(self, eval_run_id: str) -> bool:
         return self.eval_runs.get(eval_run_id) is not None
+
+    def _run_scheduled_work_once(self, now_ms: int | None = None) -> int:
+        application = getattr(self, "jev_application", None)
+        count = application.tick() if application is not None else 0
+        return count + self._run_eval_schedules_once(now_ms)
+
+    def jev_workspace(self, room_id: str, graph_id: str = "") -> dict[str, object]:
+        return self.jev_application.projection(room_id, graph_id)
+
+    def jev_command(self, room_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        return self.jev_application.command(room_id, payload)
 
     def _run_eval_schedules_once(self, now_ms: int | None = None) -> int:
         """Advance due Eval schedules from the existing wake scheduler tick."""
@@ -1161,6 +1184,7 @@ class AgentService:
             configuration,
             session,
             room_participant=isinstance(participant, Mapping),
+            extension_app_skill_owners=self.session_policy.extension_app_skill_owners(),
         )
 
 
@@ -1738,6 +1762,7 @@ class AgentService:
                 self._eval_lab_project_application = AgentLabProjectApplication(
                     self.sessions.db_path, session_application=self.session_application,
                     current_model=self._golden_current_model,
+                    app_model=lambda: self._golden_current_model("toolAgent"),
                     read_golden=self.eval_lab_golden, command_golden=self.eval_lab_golden_command,
                     knowledge=self._knowledge_resource(),
                     start_knowledge=lambda request_id, spec: self.eval_lab_trial_start({"clientRequestId": request_id, "sceneId": "knowledge-resource", "spec": spec}),
@@ -1801,9 +1826,9 @@ class AgentService:
                 self._eval_lab_golden_store = AgentLabGoldenStore(self.sessions.db_path)
             return self._eval_lab_golden_store
 
-    def _golden_current_model(self) -> dict[str, str]:
+    def _golden_current_model(self, route_id: str = "primary") -> dict[str, str]:
         configuration = self.configuration_store.snapshot()["configuration"]
-        primary = configuration.get("modelRouting", {}).get("primary", {})
+        primary = configuration.get("modelRouting", {}).get(route_id, {})
         profile = str(primary.get("modelProfile") or "inherit")
         if profile == "inherit":
             profile = str(configuration["sessionDefaults"]["modelProfile"])
@@ -2800,6 +2825,7 @@ class AgentService:
         room_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(payload=payload, task_id="")
         return self.room_work_application.create_room_work_item(
             room_id,
             payload,
@@ -2811,6 +2837,7 @@ class AgentService:
         work_item_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(payload=payload, task_id=work_item_id)
         return self.room_work_application.reassign_room_work_item(
             room_id,
             work_item_id,
@@ -2823,6 +2850,7 @@ class AgentService:
         work_item_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(payload=payload, task_id=work_item_id)
         actor_participant_id = str(payload.get("actorParticipantId") or "").strip()
         if not actor_participant_id:
             raise ValueError("actorParticipantId must not be empty")
@@ -2918,6 +2946,8 @@ class AgentService:
     ) -> dict[str, object]:
         response = self.room_management.add_participant(room_id, payload)
         self._activate_room_unrestricted_execution(room_id)
+        if self.jev_application.removal.projection(room_id):
+            self.wake_scheduler.wake()
         return response
 
     def remove_room_participant(
@@ -2925,6 +2955,9 @@ class AgentService:
         room_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        managed = self.jev_application.removal.request(room_id, payload)
+        if managed is not None:
+            return managed
         return self.room_management.remove_participant(room_id, payload)
 
     def update_room_participant_role(
@@ -3256,6 +3289,9 @@ class AgentService:
         tool_call_id: str,
         source_loop_id: str = "",
     ) -> dict[str, object]:
+        controlled = self.jev_application.tool_operation(session_id, args, tool_call_id=tool_call_id)
+        if controlled is not None:
+            return controlled
         return self.room_partner_application.execute(
             session_id,
             args,
@@ -3482,78 +3518,84 @@ class AgentService:
                 f"Room message must not exceed {ROOM_MESSAGE_CHAR_LIMIT} characters"
             )
         room = self.rooms.get(room_id)
-        events = [
-            event
-            for event in self.rooms.list_events(room_id, after_sequence=0, limit=2000)
-            if str(event.get("turnId") or "") == root_id
-        ]
-        if not any(str(event.get("eventType") or "") == "user_message" for event in events):
-            raise ValueError("Room turn does not belong to this Room")
-        routed_participant_ids = {
-            str(
-                event.get("participantId")
-                or (
-                    event.get("payload", {}).get("targetParticipantId")
-                    if isinstance(event.get("payload"), Mapping)
-                    else ""
-                )
-                or ""
+        with self.jev_application.participant_steer_context(
+            room_id, root_id, str(payload.get("participantId") or "").strip(),
+        ) as jev_context:
+            if jev_context is None:
+                events = self.rooms.control_events_for_turn(room_id, root_id)
+                if not any(str(event.get("eventType") or "") == "user_message" for event in events):
+                    raise ValueError("Room turn does not belong to this Room")
+                routed_participant_ids = {
+                    str(
+                        event.get("participantId")
+                        or (
+                            event.get("payload", {}).get("targetParticipantId")
+                            if isinstance(event.get("payload"), Mapping)
+                            else ""
+                        )
+                        or ""
+                    )
+                    for event in events
+                    if str(event.get("eventType") or "") == "route_decision"
+                }
+                routed_participant_ids.discard("")
+                requested_participant_id = str(payload.get("participantId") or "").strip()
+                participant_id = requested_participant_id or next(iter(routed_participant_ids), "")
+                if not participant_id or participant_id not in routed_participant_ids:
+                    raise ValueError("participant steer target is not part of this Room turn")
+            else:
+                participant_id = jev_context["participantId"]
+            participant = self.rooms.participant(participant_id)
+            if (
+                str(participant.get("roomId") or "") != room_id
+                or str(participant.get("status") or "") != "active"
+            ):
+                raise ValueError("participant steer target is no longer active")
+            session_id = str(participant.get("sessionId") or "")
+            active_root_id, _ = self.room_turns.active_turn(session_id)
+            if active_root_id != root_id or self.room_turns.is_cancelled(session_id, root_id):
+                raise ValueError("伙伴的当前执行轮次已变化，请刷新协作后重新发送消息")
+            topic_id = str(room.get("activeTopicId") or "")
+            room_event = self.room_events.publish(
+                room_id=room_id,
+                event_type="user_message",
+                payload={
+                    "text": message,
+                    "delivery": "steer",
+                    "rootId": root_id,
+                    "targetParticipantIds": [participant_id],
+                    "clientActionId": client_action_id,
+                },
+                turn_id=root_id,
+                participant_id=participant_id,
+                source_session_id=session_id,
+                topic_id=topic_id,
             )
-            for event in events
-            if str(event.get("eventType") or "") == "route_decision"
-        }
-        routed_participant_ids.discard("")
-        requested_participant_id = str(payload.get("participantId") or "").strip()
-        participant_id = requested_participant_id or next(iter(routed_participant_ids), "")
-        if not participant_id or participant_id not in routed_participant_ids:
-            raise ValueError("participant steer target is not part of this Room turn")
-        participant = self.rooms.participant(participant_id)
-        if (
-            str(participant.get("roomId") or "") != room_id
-            or str(participant.get("status") or "") != "active"
-        ):
-            raise ValueError("participant steer target is no longer active")
-        session_id = str(participant.get("sessionId") or "")
-        topic_id = str(room.get("activeTopicId") or "")
-        room_event = self.room_events.publish(
-            room_id=room_id,
-            event_type="user_message",
-            payload={
-                "text": message,
-                "delivery": "steer",
+            accepted = self.prompt(
+                session_id,
+                {
+                    "message": message,
+                    "clientMessageId": client_action_id,
+                    "delivery": "steer",
+                    "_contextSourceToken": self._context_source_token,
+                    "_contextSource": "room",
+                    "_mediaOwnerRoomId": room_id,
+                    "_checkpointText": message,
+                },
+            )
+            return {
+                "schemaVersion": "rag-ime.agent-room-steer.v1",
+                "ok": True,
+                "accepted": True,
+                "roomId": room_id,
                 "rootId": root_id,
-                "targetParticipantIds": [participant_id],
-                "clientActionId": client_action_id,
-            },
-            turn_id=root_id,
-            participant_id=participant_id,
-            source_session_id=session_id,
-            topic_id=topic_id,
-        )
-        accepted = self.prompt(
-            session_id,
-            {
-                "message": message,
-                "clientMessageId": client_action_id,
+                "participantId": participant_id,
+                "sessionId": session_id,
                 "delivery": "steer",
-                "_contextSourceToken": self._context_source_token,
-                "_contextSource": "room",
-                "_checkpointText": message,
-            },
-        )
-        return {
-            "schemaVersion": "rag-ime.agent-room-steer.v1",
-            "ok": True,
-            "accepted": True,
-            "roomId": room_id,
-            "rootId": root_id,
-            "participantId": participant_id,
-            "sessionId": session_id,
-            "delivery": "steer",
-            "turnId": str(accepted.get("turnId") or ""),
-            "event": room_event,
-            "sessionReceipt": accepted,
-        }
+                "turnId": str(accepted.get("turnId") or ""),
+                "event": room_event,
+                "sessionReceipt": accepted,
+            }
 
     def _resolve_room_attachments(
         self,
@@ -3643,6 +3685,9 @@ class AgentService:
         *,
         room_turn_id: str,
     ) -> dict[str, object]:
+        jev_result = self.jev_application.stop(room_id, room_turn_id)
+        if jev_result is not None:
+            return jev_result
         return self.room_cancellation.abort_turn(
             room_id,
             room_turn_id=room_turn_id,
@@ -3698,6 +3743,7 @@ class AgentService:
         session_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(session_id=session_id, payload=payload)
         return self.room_work_application.assign_room_work(
             session_id,
             payload,
@@ -3708,6 +3754,7 @@ class AgentService:
         session_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(session_id=session_id, payload=payload)
         return self.room_work_application.submit_room_work(
             session_id,
             payload,
@@ -3718,6 +3765,7 @@ class AgentService:
         session_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(session_id=session_id, payload=payload)
         return self.room_work_application.accept_room_work(
             session_id,
             payload,
@@ -3728,6 +3776,7 @@ class AgentService:
         session_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(session_id=session_id, payload=payload)
         return self.room_work_application.return_room_work(
             session_id,
             payload,
@@ -3738,6 +3787,7 @@ class AgentService:
         session_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(session_id=session_id, payload=payload)
         return self.room_work_application.block_room_work(
             session_id,
             payload,
@@ -3748,6 +3798,7 @@ class AgentService:
         session_id: str,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
+        self.jev_application.guard_legacy_work(session_id=session_id, payload=payload)
         return self.room_work_application.escalate_room_work(
             session_id,
             payload,
@@ -4065,6 +4116,31 @@ class AgentService:
             session_id,
             payload,
         )
+
+    def _room_participant_removal_pending(self, room_id: str, participant_id: str) -> bool:
+        application = getattr(self, "jev_application", None)
+        return bool(application and participant_id in application.removal.pending_ids(room_id))
+
+    @contextmanager
+    def _room_prompt_admission_gate(self, session_id: str, room_id: str) -> Iterator[None]:
+        # Prompt materialization, Tool/Skill catalog lookups, and attachment
+        # reads have already finished. Only the exact Pi hand-off runs here.
+        with self._jev_removal_admission_lock:
+            with self.jev_application.ledger.connection() as conn:
+                available = conn.execute(
+                    "SELECT 1 FROM agent_room_participants p WHERE p.room_id=? "
+                    "AND p.session_id=? AND p.participant_status='active' "
+                    "AND NOT EXISTS (SELECT 1 FROM agent_jev_participant_removals r "
+                    "WHERE r.room_id=p.room_id AND r.participant_id=p.id "
+                    "AND r.status='pending') LIMIT 1",
+                    (room_id, session_id)
+                ).fetchone()
+            if available is None:
+                raise PiRuntimeCommandRejected(
+                    "Room participant is removed or pending removal",
+                    host_error_code="ROOM_PARTICIPANT_REMOVING",
+                )
+            yield
 
     def deep_search(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.prompt_application.deep_search(payload)
@@ -6411,6 +6487,7 @@ class AgentService:
                         "clientMessageId": run_id,
                         "_contextSourceToken": self._context_source_token,
                         "_contextSource": "room",
+                        "_mediaOwnerRoomId": str(room["id"]),
                         "_checkpointText": "伙伴交付已到达，请检查并完成双轴验收。",
                     },
                 )

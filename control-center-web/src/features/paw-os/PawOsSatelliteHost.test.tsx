@@ -454,7 +454,7 @@ describe('PawOsSatelliteHost', () => {
     expect(statusline).toHaveClass('paw-participant-chat__statusline');
     expect(statusline.closest('.paw-os-satellite--participant-chat')).toHaveAttribute('data-presentation', 'planet-observer');
     expect(statusline).toHaveAttribute('data-state', 'running');
-    expect(statusline).toHaveTextContent('进行中');
+    expect(statusline).toHaveTextContent('执行中');
     expect(statusline).toHaveTextContent('正在读取 PawWindowLayer.tsx');
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '批准并继续' })).not.toBeInTheDocument();
@@ -531,7 +531,9 @@ describe('PawOsSatelliteHost', () => {
 
     const statusline = await screen.findByLabelText('当前工作与状态');
     expect(statusline).toHaveAttribute('data-state', 'completed');
-    expect(statusline).toHaveTextContent('活动已完成');
+    expect(statusline).toHaveTextContent('本轮执行结束');
+    expect(statusline).toHaveTextContent('公开执行记录已更新');
+    expect(statusline).not.toHaveTextContent('participant_activity');
     expect(statusline).not.toHaveTextContent('participantactivity');
   });
 
@@ -779,11 +781,15 @@ describe('PawOsSatelliteHost', () => {
     });
 
     const timeline = await screen.findByRole('log', { name: '行星公开对话时间线' });
-    /* Virtualization replaced the 48-entry page: the oldest activity is part
-       of the transcript from the first paint, with no 「加载更早」 gate. */
-    expect(within(timeline).getByText(/活动 0$/)).toBeInTheDocument();
-    expect(within(timeline).getByText(/活动 48$/)).toBeInTheDocument();
-    expect(timeline.querySelectorAll('.ccui-tool-card')).toHaveLength(49);
+    // All records remain available through a single group, rather than 49
+    // repeated rows obscuring the current task. History is an explicit scope.
+    await userEvent.setup().click(screen.getByRole('button', { name: /^全部历史$/ }));
+    const currentTimeline = screen.getByRole('log', { name: '行星公开对话时间线' });
+    await userEvent.setup().click(within(currentTimeline).getByRole('button', { name: /工具记录 · 49 项/ }));
+    const records = screen.getByRole('dialog');
+    expect(within(records).getByText(/活动 0$/)).toBeInTheDocument();
+    expect(within(records).getByText(/活动 48$/)).toBeInTheDocument();
+    expect(records.querySelectorAll('.ccui-tool-card')).toHaveLength(49);
     expect(screen.queryByRole('button', { name: /加载更早的/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/最近 \d+ \/ 共 \d+ 条/)).not.toBeInTheDocument();
   });
@@ -857,7 +863,7 @@ describe('PawOsSatelliteHost', () => {
   });
 
   it('keeps the statusline one text row that never squeezes the dialogue at 280 width', () => {
-    expect(satelliteCss).toContain('.paw-os-satellite--participant-chat {\n  display: grid;\n  grid-template-rows: minmax(0, 1fr) auto;');
+    expect(satelliteCss).toContain('.paw-os-satellite--participant-chat {\n  display: flex;\n  flex-direction: column;');
     expect(satelliteCss).toContain('.paw-participant-chat__statusline > p { min-width: 0; flex: 1; margin: 0; overflow: hidden; color: var(--paw-ink); text-overflow: ellipsis; white-space: nowrap; }');
     expect(satelliteCss).toContain(".paw-participant-chat__statusline[data-state='running'] { --paw-satellite-state: var(--paw-accent); }");
     expect(satelliteCss).toContain(".paw-participant-chat__statusline[data-state='blocked'],\n.paw-participant-chat__statusline[data-state='failed'] { --paw-satellite-state: var(--paw-danger); }");
@@ -880,7 +886,7 @@ describe('PawOsSatelliteHost', () => {
     // summaries yield with ellipsis; a resize must never turn a one-line
     // activity into the stacked/vertical layout seen in the regression.
     expect(satelliteCss).toContain(".paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-head");
-    expect(satelliteCss).toContain('grid-template-columns: 8px minmax(0, 1fr) auto;');
+    expect(satelliteCss).toContain('grid-template-columns: 18px minmax(0, 1fr) auto;');
     expect(satelliteCss).toContain(".paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-main strong");
     expect(satelliteCss).toContain(".paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-main strong {\n  min-width: 0;\n  flex: 0 1 auto;");
     expect(satelliteCss).toContain('max-width: 42%;');

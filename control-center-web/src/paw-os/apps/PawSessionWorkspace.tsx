@@ -1,3 +1,4 @@
+import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import {
   CircleAlert,
   FolderTree,
@@ -26,6 +27,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { applyWorkspaceDraft, messageWithWorkspaceContext, type WorkspaceDraftRequest, type WorkspaceComposerContext } from './workspace-draft';
 import { WorkspaceProjectContext } from './WorkspaceProjectContext';
 import { useControlTransport } from '@/app/control-transport';
+import { attachmentImportErrorText } from '@/platform/attachment-import';
 import { useComposerClearance } from '@/components/layout/use-composer-clearance';
 import {
   agentMessageDelivery,
@@ -160,6 +162,7 @@ export function PawSessionWorkspace({
   appearance = 'full',
   showComposerControls = appearance !== 'embedded',
   composerPlaceholder,
+  fullHistoryOnOpen = false,
 }: {
   active?: boolean;
   persona?: AgentPersonaV1;
@@ -181,6 +184,9 @@ export function PawSessionWorkspace({
   appearance?: 'full' | 'embedded';
   showComposerControls?: boolean;
   composerPlaceholder?: string;
+  /** Earth and other audit-heavy surfaces can opt into the complete turn log
+   * on first paint; ordinary Agent keeps its bounded recent snapshot. */
+  fullHistoryOnOpen?: boolean;
 }) {
   const transport = useControlTransport();
   const electronHost = pawBrowserHost();
@@ -203,8 +209,8 @@ export function PawSessionWorkspace({
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalog>();
   const [capabilityCatalogError, setCapabilityCatalogError] = useState('');
   const [capabilityMutation, setCapabilityMutation] = useState<CapabilityMutationOutcome>();
-  const [draft, setDraft] = useState(initialDraft);
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>(initialAttachments);
+  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialDraft ?? '', initialAttachments);
+  const { draft, setDraft, attachments, setAttachments } = recovery;
   useEffect(() => {
     if (draftRequest) setDraft(current => applyWorkspaceDraft(current, draftRequest));
   }, [draftRequest]);
@@ -217,6 +223,10 @@ export function PawSessionWorkspace({
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<SessionWorkspaceView>(embedded ? 'conversation' : traceFocusNodeId ? 'trace' : 'conversation');
   const [error, setError] = useState('');
+  const [attachmentError, setAttachmentError] = useState('');
+  const attachmentOwner = useRef(recordId);
+  attachmentOwner.current = recordId;
+  useEffect(() => { setAttachmentError(''); }, [recordId]);
   const [syncError, setSyncError] = useState('');
   const [syncState, setSyncState] = useState<AgentRecoveryState>('recovering');
   const [hasSnapshot, setHasSnapshot] = useState(false);
@@ -347,7 +357,7 @@ export function PawSessionWorkspace({
     transport,
     active: liveActive,
     live: liveActive && !evaluationSnapshot,
-    snapshotView: evaluationSnapshot ? 'full' : 'recent',
+    snapshotView: evaluationSnapshot || fullHistoryOnOpen ? 'full' : 'recent',
     onLoadingChange: setLoading,
     onRecoveryState: setSyncState,
     onSnapshot: (snapshot) => {
@@ -531,6 +541,7 @@ export function PawSessionWorkspace({
   }
 
   async function send(delivery: AgentMessageDelivery, rawDraft: string): Promise<void> {
+    if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
     const value = rawDraft.trim();
     if (editState) {
@@ -990,7 +1001,9 @@ export function PawSessionWorkspace({
   }
 
   async function pickAttachments(): Promise<void> {
-    if (!transport.pickFiles) { setError('当前环境不能选择附件。'); return; }
+    if (!transport.pickFiles) { setAttachmentError('当前环境不能选择附件，请将文件放入项目后告诉 Agent 文件名。'); return; }
+    if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return; }
+    const owner = recordId;
     try {
       const imported = await transport.pickFiles({
         multiple: true,
@@ -998,14 +1011,19 @@ export function PawSessionWorkspace({
         sessionId: recordId,
         maxFiles: Math.max(1, 8 - attachments.length),
       });
+      if (attachmentOwner.current !== owner) return;
       setAttachments((current) => mergeAttachments(current, imported.map((item) => ({ ...item, source: 'picker' as const }))));
-    } catch (reason) { setError(errorText(reason)); }
+      if (imported.length) setAttachmentError('');
+    } catch (reason) { if (attachmentOwner.current === owner) setAttachmentError(attachmentImportErrorText(reason)); }
   }
 
   async function pasteFiles(files?: File[]): Promise<boolean> {
-    if (!transport.pasteImages) { setError('当前环境不能导入剪贴板文件。'); return false; }
+    if (!transport.pasteImages) { setAttachmentError('未能读取剪贴板文件，请改用选择附件。'); return false; }
+    if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return false; }
+    const owner = recordId;
     try {
       const imported = await transport.pasteImages({ sessionId: recordId, ...(files?.length ? { files } : {}), maxFiles: Math.max(1, 8 - attachments.length) });
+      if (attachmentOwner.current !== owner) return false;
       // Browser transports echo the pasted bytes back as receipts; reusing the
       // local File gives image chips an instant thumbnail before upload settles.
       setAttachments((current) => mergeAttachments(current, imported.map((item, index) => {
@@ -1018,8 +1036,9 @@ export function PawSessionWorkspace({
           : {};
         return { ...item, source: 'clipboard' as const, ...previewFile };
       })));
+      if (imported.length) setAttachmentError('');
       return imported.length > 0;
-    } catch (reason) { setError(errorText(reason)); return false; }
+    } catch (reason) { if (attachmentOwner.current === owner) setAttachmentError(attachmentImportErrorText(reason)); return false; }
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
@@ -1296,12 +1315,12 @@ export function PawSessionWorkspace({
               : contextSnapshotState === 'partial'
                 ? '最近上下文'
                 : '已同步'}</span>
-          {!evaluationSnapshot && contextSnapshotState ? (
+          {!evaluationSnapshot ? (
             <button
               aria-label="加载完整记录"
               disabled={contextSnapshotState === 'restoring'}
               onClick={() => void loadFullSnapshot()}
-              title="加载完整记录"
+              title={contextSnapshotState === 'restoring' ? '正在加载完整记录' : '加载完整记录'}
               type="button"
             >
               {contextSnapshotState === 'restoring'
@@ -1337,6 +1356,7 @@ export function PawSessionWorkspace({
             <button data-active={panel === 'status' || undefined} onClick={() => openToolPanel('status')} role="menuitem" type="button"><ListChecks size={15} /><span>任务与状态</span></button>
             <button data-active={panel === 'subagents' || undefined} onClick={() => openToolPanel('subagents')} role="menuitem" type="button"><Network size={15} /><span>子 Agent</span></button>
             <button data-active={panel === 'files' || undefined} onClick={() => openToolPanel('files')} role="menuitem" type="button"><FolderTree size={15} /><span>文件</span></button>
+            {contextSnapshotState ? <button disabled={contextSnapshotState === 'restoring'} onClick={() => { closeToolMenu(true); void loadFullSnapshot(); }} role="menuitem" type="button"><History size={15} /><span>{contextSnapshotState === 'restoring' ? '正在恢复完整对话' : '恢复完整对话与待办'}</span></button> : null}
           </nav> : null}
         </div> : null}
       </div>
@@ -1352,6 +1372,7 @@ export function PawSessionWorkspace({
         data-status={stopping ? 'stopping' : busy ? 'busy' : 'idle'}
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
+      <WorkspaceRecoveryNotice recovery={recovery} />
 
       <div className="paw-session-workspace__body">
         <div className="paw-session-workspace__primary" ref={primaryRef}>
@@ -1445,6 +1466,12 @@ export function PawSessionWorkspace({
           </div>
 
           <div className="paw-session-workspace__composer" data-read-only={evaluationSnapshot || undefined}>
+            {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
+              <CircleAlert size={14} aria-hidden="true" />
+              <span>{attachmentError}</span>
+              <button type="button" onClick={() => void pickAttachments()}>重新选择</button>
+              <button type="button" aria-label="关闭附件提示" onClick={() => setAttachmentError('')}><X size={14} /></button>
+            </div> : null}
             {visibleError ? (
               <div className="paw-session-workspace__error" role="alert">
                 <CircleAlert size={14} />
@@ -1503,6 +1530,7 @@ export function PawSessionWorkspace({
                 permissionPickerRequest={permissionPickerRequest}
                 persona={persona}
                 sending={sending}
+                submissionBlocked={recovery.checking || recovery.issues.length > 0}
                 session={workspaceRecord}
                 sessionMetadataKnown={recordMetadataKnown && record?.id === recordId}
                 stopping={stopping}

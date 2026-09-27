@@ -45,6 +45,17 @@ MAX_DENSE_SNAPSHOT_FILE_BYTES = 80 * 1024 * 1024
 MAX_DENSE_SNAPSHOT_RAW_BYTES = 256 * 1024 * 1024
 
 
+def _canonical_knowledge_tables_available(connection: sqlite3.Connection) -> bool:
+    names = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('knowledge_bases', 'knowledge_documents', 'knowledge_chunks')"
+        ).fetchall()
+    }
+    return names == {"knowledge_bases", "knowledge_documents", "knowledge_chunks"}
+
+
 def _float32_bytes(values: Sequence[float]) -> bytes:
     converted = array("f", [float(value) for value in values])
     if sys.byteorder != "little":
@@ -503,10 +514,31 @@ class SqliteDenseIndex:
             filter_sql += f" AND document_id IN ({', '.join('?' for _ in document_ids)})"
             params.extend(document_ids)
         with self._connection() as connection:
-            rows = connection.execute(
-                f"SELECT chunk_id, vector_json FROM knowledge_dense_chunks WHERE fingerprint=?{filter_sql}",
-                params,
-            ).fetchall()
+            if _canonical_knowledge_tables_available(connection):
+                canonical_filter_sql = filter_sql.replace("base_id", "v.base_id").replace(
+                    "document_id", "v.document_id"
+                )
+                rows = connection.execute(
+                    "SELECT v.chunk_id, v.vector_json "
+                    "FROM knowledge_dense_chunks v "
+                    "JOIN knowledge_chunks c ON c.id=v.chunk_id "
+                    "AND c.document_id=v.document_id AND c.base_id=v.base_id "
+                    "JOIN knowledge_documents d ON d.id=v.document_id "
+                    "AND d.base_id=v.base_id "
+                    "JOIN knowledge_bases b ON b.id=v.base_id "
+                    "WHERE v.fingerprint=? AND d.status='ready' "
+                    "AND d.indexed_config_revision=b.config_revision"
+                    f"{canonical_filter_sql}",
+                    params,
+                ).fetchall()
+            else:
+                # Portable/low-level projection users may not carry the
+                # canonical Knowledge tables. Keep that standalone contract;
+                # worker-backed databases take the ready/current-index path.
+                rows = connection.execute(
+                    f"SELECT chunk_id, vector_json FROM knowledge_dense_chunks WHERE fingerprint=?{filter_sql}",
+                    params,
+                ).fetchall()
         scored: list[tuple[str, float]] = []
         for row in rows:
             try:
@@ -572,6 +604,7 @@ class USearchDenseIndex(SqliteDenseIndex):
         self._index_factory = index_factory
         self._array_factory = array_factory
         self._ann_lock = threading.RLock()
+        self._ready_filter_fallbacks = 0
         self.index_root = Path(database_path).parent / "ann"
         self.index_root.mkdir(parents=True, exist_ok=True)
         super().__init__(database_path, provider, batch_size=batch_size)
@@ -748,10 +781,23 @@ class USearchDenseIndex(SqliteDenseIndex):
                 limit=limit,
                 document_ids=document_ids,
             )
+        selected_bases = list(base_ids) or self._indexed_bases()
+        if self._requires_ready_filter(selected_bases):
+            # HNSW cannot express the worker's document status and index
+            # revision predicates. During reindex/retry, stale vectors can
+            # occupy ANN top-k before hydration drops them. Use the canonical
+            # exact scan until the projection is current. Check this before
+            # embedding so fallback does not encode the same query twice.
+            self._ready_filter_fallbacks += 1
+            return super().search(
+                query,
+                base_ids=selected_bases,
+                limit=limit,
+                document_ids=document_ids,
+            )
         vector = embed_query(self.provider, query)
         if not vector:
             return ()
-        selected_bases = list(base_ids) or self._indexed_bases()
         index_factory, array_factory = self._dependencies()
         scored: list[tuple[str, float]] = []
         with self._ann_lock:
@@ -780,6 +826,32 @@ class USearchDenseIndex(SqliteDenseIndex):
                 )
         scored.sort(key=lambda item: (-item[1], item[0]))
         return scored[: max(1, min(100, int(limit)))]
+
+    def _requires_ready_filter(self, base_ids: Sequence[str]) -> bool:
+        """Return whether ANN rows need canonical ready/current-index filtering."""
+        if not base_ids:
+            return False
+        with self._connection() as connection:
+            if not _canonical_knowledge_tables_available(connection):
+                return False
+            values = tuple(dict.fromkeys(str(item) for item in base_ids if str(item)))
+            if not values:
+                return False
+            placeholders = ", ".join("?" for _ in values)
+            row = connection.execute(
+                "SELECT 1 "
+                "FROM knowledge_ann_keys a "
+                "JOIN knowledge_bases b ON b.id=a.base_id "
+                "LEFT JOIN knowledge_chunks c ON c.id=a.chunk_id "
+                "AND c.document_id=a.document_id AND c.base_id=a.base_id "
+                "LEFT JOIN knowledge_documents d ON d.id=a.document_id "
+                "AND d.base_id=a.base_id "
+                "WHERE a.fingerprint=? AND a.base_id IN (" + placeholders + ") "
+                "AND (c.id IS NULL OR d.id IS NULL OR d.status<>'ready' "
+                "OR d.indexed_config_revision<>b.config_revision) LIMIT 1",
+                (str(self.provider.fingerprint), *values),
+            ).fetchone()
+            return row is not None
 
     def status(self) -> dict[str, Any]:
         base = super().status()
@@ -821,6 +893,7 @@ class USearchDenseIndex(SqliteDenseIndex):
                 "projectionConsistent": mapped_count == vector_count and stale_count == 0,
                 "staleIndexCount": stale_count,
                 "startupRebuiltIndexCount": self._startup_rebuilt,
+                "readyFilterFallbackCount": self._ready_filter_fallbacks,
             }
         )
         if dependency_error or self._startup_error:

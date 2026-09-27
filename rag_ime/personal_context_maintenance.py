@@ -449,16 +449,17 @@ class PersonalContextMaintenanceRunner:
             )
         for index, timeline_date in enumerate(dates):
             if callback is not None:
+                completed_so_far = sum(item.get("ok") is True for item in results)
                 callback(
                     {
                         "phase": phase,
                         "throughDate": through_date,
                         "totalDayCount": len(dates),
                         "backlogDayCount": len(pending_dates),
-                        "completedDayCount": len(results),
+                        "completedDayCount": completed_so_far,
                         "remainingDayCount": max(
                             0,
-                            len(pending_dates) - len(results),
+                            len(pending_dates) - completed_so_far,
                         ),
                         "currentDate": timeline_date,
                     }
@@ -478,9 +479,15 @@ class PersonalContextMaintenanceRunner:
                 if isinstance(result.get("semanticOrganization"), Mapping)
                 else {}
             )
+            # A review warning keeps the draft unorganized. It must remain in
+            # the backlog rather than being counted as a completed catch-up day.
+            day_completed = (
+                result.get("ok") is True
+                and str(semantic.get("status") or "") != "warning"
+            )
             results.append(
                 {
-                    "ok": result.get("ok") is True,
+                    "ok": day_completed,
                     "date": timeline_date,
                     "status": str(result.get("status") or ""),
                     "timelineId": str(timeline.get("timelineId") or ""),
@@ -493,6 +500,8 @@ class PersonalContextMaintenanceRunner:
                     "error": str(result.get("error") or semantic.get("error") or ""),
                 }
             )
+            # A review warning is still pending, but another date can be
+            # organized independently. Stop only for an execution failure.
             if result.get("ok") is not True:
                 break
         completed = sum(item.get("ok") is True for item in results)

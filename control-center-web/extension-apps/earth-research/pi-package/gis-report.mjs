@@ -1,0 +1,27 @@
+const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const number = value => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : '未记录';
+/** A portable, script-free report of a completed run; it never invents observations. */
+export function renderGISReport({ run, stats, cartography, mapPng, hasGeoPackage = false }) {
+  if (run.status !== 'completed') throw new Error('Only a completed run can produce a result report.');
+  if (!Buffer.isBuffer(mapPng) || mapPng.length < 8 || mapPng.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('Report requires a verified PNG map.');
+  const siting = run.op === 'site-selection';
+  const title = cartography.title || (siting ? '地块避让分析报告' : 'GIS 分析报告');
+  const description = siting
+    ? `按 ${number(run.params?.distance)} 米距离生成避让区，投影候选地块后做几何差集，保存剩余范围。剩余范围不等于已满足全部建设条件。`
+    : `本报告整理已完成的 ${escape(run.op)} 运算及其实际输出。统计缺失处保留为“未记录”，不推算研究结论。`;
+  const rows = stats.outputs.map(item => `<tr><th scope="row">${escape(item.path)}</th><td>${number(item.featureCount)}</td><td>${number(item.areaM2)}</td><td>${escape(item.crs || '未记录')}</td></tr>`).join('');
+  const parameters = Object.entries(stats.params).map(([key, value]) => `<tr><th scope="row">${escape(key)}</th><td>${escape(typeof value === 'object' ? JSON.stringify(value) : value)}</td></tr>`).join('');
+  const versions = stats.inputVersions?.length ? `<pre>${escape(JSON.stringify(stats.inputVersions, null, 2))}</pre>` : '<p>运行回执未记录输入版本；本报告不补写不存在的哈希。</p>';
+  const steps = run.steps?.length ? `<ol>${run.steps.map(step => `<li>${escape(step.name)} · ${escape(step.status)} <code>${escape(step.runId)}</code></li>`).join('')}</ol>` : '<p>步骤详情见随成果保留的 run/run.json。</p>';
+  const linkedFiles = ['map.pdf', 'map.svg', 'map.png', 'statistics.csv', 'statistics.json', 'quality.json', ...(hasGeoPackage ? ['result.gpkg'] : []), ...(run.outputs ?? []).filter(item => item.kind === 'raster').map(item => `run/${item.relativePath || String(item.path).split('/').pop()}`)];
+  const links = linkedFiles.map(file => `<li><a href="${escape(file)}">${escape(file)}</a></li>`).join('');
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#223247;font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}main{max-width:1040px;margin:32px auto;padding:48px;background:#fff}header{padding-bottom:24px;border-bottom:1px solid #dce4ee}h1{font-size:30px;line-height:1.3;margin:0 0 16px}h2{font-size:19px;margin:32px 0 12px;color:#244d78}p{margin:10px 0}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px;margin:20px 0 0}dt{font-size:12px;color:#5c6d81}dd{margin:0;overflow-wrap:anywhere}code{font-size:12px;overflow-wrap:anywhere}figure{margin:16px 0}img{display:block;width:100%;height:auto}figcaption{font-size:12px;color:#5c6d81;margin-top:10px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px;text-align:left;border-bottom:1px solid #dce4ee;overflow-wrap:anywhere}thead{background:#f3f6fa}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;background:#f4f7fb}.limits{padding:18px;background:#fff8e8;color:#64451c}footer{margin-top:32px;padding-top:16px;border-top:1px solid #dce4ee;font-size:12px;color:#5c6d81}@media(max-width:600px){main{margin:0;padding:24px}h1{font-size:24px}dl{grid-template-columns:1fr}}@media print{@page{size:A4;margin:16mm}body{background:#fff;font-size:11pt}main{margin:0;padding:0;max-width:none}h2{break-after:avoid}figure,tr,.limits{break-inside:avoid}header{break-after:avoid}a{color:inherit}}
+</style></head><body><main><header><h1>${escape(title)}</h1><p>${description}</p><dl><div><dt>运行状态</dt><dd>已完成 · 本地 GIS</dd></div><div><dt>完成时间</dt><dd>${escape(run.updatedAt || '未记录')}</dd></div><div><dt>运行编号</dt><dd><code>${escape(run.runId)}</code></dd></div><div><dt>测量坐标系</dt><dd>${escape(run.params?.measurementCrs || cartography.crs || '未记录')}</dd></div></dl></header>
+<section><h2>成果地图</h2><figure><img src="data:image/png;base64,${mapPng.toString('base64')}" alt="本次已完成分析的成果地图"><figcaption>${escape(cartography.paperSize)} · ${escape(cartography.orientation)} · ${escape(cartography.crs)}。图像已内嵌，单独保存本 HTML 仍可查看。栅格预览可能降采样，原始数据保留在成果目录。</figcaption></figure></section>
+<section><h2>成果统计</h2><div class="table"><table><thead><tr><th>输出文件</th><th>要素数</th><th>面积（平方米）</th><th>坐标系</th></tr></thead><tbody>${rows}</tbody></table></div><p>每一行对应一个实际输出，不将可能重叠的图层面积相加。精确值见 statistics.json / statistics.csv。</p></section>
+<section><h2>分析方法与参数</h2>${steps}<div class="table"><table>${parameters || '<tr><td>没有额外参数</td></tr>'}</table></div></section>
+<section><h2>输入来源与版本</h2>${versions}</section>
+<section class="limits"><h2>适用范围与未验证条件</h2><p>${siting ? '本次仅计算几何避让距离。坡度、权属、道路通行、设施容量及建设审批未纳入判断。' : '本报告只解释当前运算及记录的输出；没有观测数据支持的趋势、因果和适用性判断均未验证。'}</p><p>本地地块分析不能直接证明耕地面积变化。时序耕地研究还需要明确日期、土地覆盖分类、有效观测与误差评估；NDVI 变化不等于耕地面积变化。</p></section>
+<section><h2>配套文件</h2><p>以下链接需保留完整成果目录；单独下载的 HTML 已包含上方地图与文字。</p><ul>${links}</ul></section><footer>配套成果：地图 PDF / SVG / PNG、统计 CSV / JSON、原始运行与文件校验清单。地图 PDF 仅为制图页面；完整文字报告可在浏览器中打印为 PDF。本报告不替代专业审核或工程审批。</footer></main></body></html>`;
+}

@@ -7,6 +7,7 @@ contents never cross this projection into the project Guide.
 from __future__ import annotations
 
 import math
+import re
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -48,6 +49,43 @@ def _job_summary(job: Mapping[str, Any]) -> str:
     # progress artifact. Terminal state still comes only from the owner state.
     progress = job.get('progress')
     return progress[:500] if job.get('state') in {'queued', 'running'} and isinstance(progress, str) else ''
+
+
+def _test_progress(job: Mapping[str, Any], suite: Mapping[str, Any]) -> dict[str, Any]:
+    """Compact receipt counts only; do not expose answers or infer success."""
+    result = _mapping(job.get('result'))
+    snapshot = _mapping(suite.get('snapshot'))
+    same_snapshot = bool(result.get('snapshotId')) and result.get('snapshotId') == snapshot.get('snapshotId')
+    groups: dict[tuple[str, str, int], dict[str, Mapping[str, Any]]] = {}
+    for row in _rows(result.get('caseRuns')):
+        split, variant, index = row.get('split'), row.get('variant'), row.get('candidateIndex')
+        if split not in {'development', 'holdout'} or variant not in {'baseline', 'candidate'} or type(index) is not int or index < 0 or not _id(row.get('caseId')):
+            continue
+        groups.setdefault((split, variant, index), {})[row['caseId']] = row
+    phases = []
+    for (split, variant, index), rows in groups.items():
+        counts = {'passed': 0, 'failed': 0, 'uncertain': 0, 'errors': 0}
+        for row in rows.values():
+            if row.get('status') == 'runtime_error': counts['errors'] += 1
+            elif row.get('status') == 'graded':
+                verdict = _mapping(row.get('judgment')).get('verdict')
+                counts[{'pass': 'passed', 'fail': 'failed'}.get(verdict, 'uncertain')] += 1
+        total = _count(snapshot.get('developmentCount' if split == 'development' else 'holdoutCount')) if same_snapshot else None
+        completed = sum(counts.values())
+        phases.append({'split': split, 'variant': variant, 'candidateIndex': index, 'completed': completed,
+                       'total': total if total is not None and total >= completed else None, **counts})
+    usage = _mapping(result.get('usage'))
+    cost, basis = None, 'unavailable'
+    if usage.get('costComplete') is True and _number(usage.get('costUsd')) is not None:
+        cost, basis = usage['costUsd'], 'actual'
+    elif usage.get('estimateComplete') is True and _number(usage.get('estimatedCostUsd')) is not None:
+        cost, basis = usage['estimatedCostUsd'], 'estimate'
+    created, updated = _number(job.get('createdAtMs')), _number(job.get('updatedAtMs'))
+    counter = re.match(r'^已(?:核对|校准) (\d+) / (\d+) (题|个示例)', str(job.get('progress') or ''))
+    return {'stage': str(job.get('progress') or '')[:500], 'phases': phases,
+            **({'counter': {'completed': int(counter[1]), 'total': int(counter[2]), 'unit': counter[3]}} if counter and int(counter[1]) <= int(counter[2]) else {}),
+            'costUsd': cost, 'costBasis': basis, 'costScope': 'all_job_calls',
+            'elapsedMs': max(0, updated - created) if created is not None and updated is not None else None}
 
 
 def _metrics(result: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -236,6 +274,8 @@ def project_workflow(project: Mapping[str, Any], *, knowledge: Any = None,
                        title='Agent 核对题集' if golden and job.get('kind') == 'review' else '')
             if not node:
                 continue
+            if golden:
+                node['testProgress'] = _test_progress(job, suite)
             if golden and job.get('kind') == 'review' and node['status'] == 'completed':
                 reviewed, approved = _count(result.get('reviewedCount')), _count(result.get('approvedCount'))
                 node['summary'] = (f'Agent 已核对 {reviewed} 题' if reviewed is not None else 'Agent 核对任务已完成')

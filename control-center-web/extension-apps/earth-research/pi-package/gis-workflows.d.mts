@@ -1,1 +1,1 @@
-export function runSitingWorkflow(input:{root:string;python?:string;parcels:string;avoidance:string;distance:number;commandId?:string}):Promise<Record<string,any>>;
+export function runSitingWorkflow(input:{root:string;signal?:AbortSignal;python?:string;parcels:string;avoidance:string;distance:number;expectedInputs?:Array<{role:string;path:string;sha256:string;files:Array<{name:string;sha256:string}>}>;commandId?:string}):Promise<Record<string,any>>;

@@ -42,7 +42,7 @@ export function drawingControls(map:L.Map,initial:EditableGeometry[],events:Even
         if((layer.feature as EditableGeometry & {pawLayerId?:string})?.pawLayerId){events.error?.('不能删除已保存的项目要素；“删除草稿”只用于本机草稿。');return;}
         group.removeLayer(layer);checkpoint();return;
       }
-      if(!kind)events.select(featureOf(layer),'select');
+      if(!kind)events.select(featureOf(layer),event.originalEvent?.shiftKey ? 'toggle' : 'select');
     });
     layer.on('pm:edit pm:dragend',()=>{if(kind==='edit')checkpoint();});
     group.addLayer(layer);
@@ -104,7 +104,7 @@ export function drawingControls(map:L.Map,initial:EditableGeometry[],events:Even
     attach(layer,feature);
     try {Promise.resolve(events.change(all())).catch(reason=>{if(!disposed)events.error?.(`本机草稿未保存：${reason instanceof Error?reason.message:String(reason)}。新绘制对象仍保留在地图上。`);});}
     catch(reason){events.error?.(`本机草稿未保存：${reason instanceof Error?reason.message:String(reason)}。新绘制对象仍保留在地图上。`);}
-    events.select(feature,'upsert');end();
+    events.select(feature,'select');end();
   }
   function cut(event:any){
     if(saving||kind!=='cut'||!group.hasLayer(event.originalLayer))return;
@@ -127,7 +127,7 @@ export function drawingControls(map:L.Map,initial:EditableGeometry[],events:Even
   });}
   initial.forEach(add);pm.setGlobalOptions(options());
   map.on('pm:create',created).on('pm:cut',cut).on('pm:drawstart',drawStart);
-  return {add,start,save,cancel,removeSelected(features:EditableGeometry[]){
+  return {add,start,save,cancel,undoVertex(){if(!saving&&(kind==='polygon'||kind==='polyline'))(pm.Draw as any)[shapeNames[kind]]?._removeLastVertex();},removeSelected(features:EditableGeometry[]){
     if(saving||disposed||!features.length)return;
     start('remove',features);
     group.getLayers().filter(layer=>targeted(layer as DataLayer)).forEach(layer=>group.removeLayer(layer));

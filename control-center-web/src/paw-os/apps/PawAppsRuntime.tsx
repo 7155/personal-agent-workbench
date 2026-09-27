@@ -81,10 +81,13 @@ export function PawAppBody({
 }
 
 function renderApp(appId: PawAppId, entityId?: string, initialRoute?: string, target?: PawOsWindowTarget) {
+  // Result windows are a shell surface, even when the originating artifact
+  // belongs to an extension App. Otherwise the extension host mounts its main
+  // workspace inside the report window and silently hides the HTML artifact.
+  if (target?.kind === 'result') return <PawResultWindow target={target} />;
   if (isPawExtensionAppId(appId)) {
     return <PawExtensionAppHost appId={appId} entityId={entityId} initialRoute={initialRoute} target={target} />;
   }
-  if (target?.kind === 'result') return <PawResultWindow target={target} />;
   if (target?.kind === 'process-terminal') return <PawOsSatelliteHost target={target} />;
   if (target?.kind === 'browser-target' && target.backgroundObserver) return <PawOsSatelliteHost target={target} />;
   /* A Room participant is a planet observation window, not its full Session

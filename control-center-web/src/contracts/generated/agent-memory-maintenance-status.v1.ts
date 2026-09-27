@@ -111,7 +111,7 @@ export interface AgentMemoryMaintenanceStatusV1 {
     schemaVersion: 'rag-ime.memory-curation-model-status.v1';
     ok: true;
     profile: 'MEMORY_CURATION';
-    requiredModel: 'openai-codex/gpt-5.6-luna';
+    requiredModel: string;
     requiredThinkingLevel: 'max';
     minimumContextTokens: number;
     stateCounts: {

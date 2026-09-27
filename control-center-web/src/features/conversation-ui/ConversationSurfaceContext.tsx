@@ -46,6 +46,11 @@ export interface ConversationSurfaceController {
   renderBlockAction?(block: AssistantBlock, message: AssistantMessage): ReactNode | undefined;
   /** Host slot below an assistant card (terminal receipts, session links). */
   renderMessageFooter?(message: AssistantMessage): ReactNode | undefined;
+  renderMessageAvatar?(message: AssistantMessage): ReactNode | undefined;
+  /** Optional host-owned identity link; ordinary Session headings stay unchanged. */
+  renderMessageIdentity?(message: AssistantMessage): ReactNode | undefined;
+  /** Host-validated workspace binding for file references in public prose. */
+  resolveMessageSessionId?(message: AssistantMessage): string;
   formatTimestamp(timestamp: number): string;
 }
 

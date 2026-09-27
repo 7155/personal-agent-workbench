@@ -16,7 +16,7 @@ export interface AgentRoomV1 {
   ownerAppId?: string;
   surfaceKey?: string;
   routingPolicy:
-    'manual_mentions' | 'moderator' | 'sequential' | 'natural' | 'parallel' | 'invite_only';
+    'manual_mentions' | 'moderator' | 'sequential' | 'natural' | 'parallel' | 'invite_only' | 'jev';
   routingConfig?: {
     maxResponders: 1;
     naturalJitter: number;

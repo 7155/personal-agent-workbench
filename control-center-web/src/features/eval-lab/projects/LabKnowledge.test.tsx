@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { MockControlTransport } from '@/test/mock-transport';
-import { LabKnowledge } from './LabKnowledge';
-import { parseKnowledgeState, type KnowledgeState } from './knowledge-types';
+import { LabKnowledge, retrievalProfileError } from './LabKnowledge';
+import { defaultRetrieval, parseKnowledgeState, type KnowledgeState } from './knowledge-types';
 import type { JsonValue, LabProject, ProjectReceipt } from './types';
 
 const clients: QueryClient[] = [];
@@ -28,6 +28,26 @@ function mount(read: () => unknown, onCommand = vi.fn(async (_input: Record<stri
 }
 
 describe('Knowledge resource frontend', () => {
+  it('blocks invalid or unsupported retrieval settings before issuing a job', () => {
+    expect(retrievalProfileError({ ...defaultRetrieval, topK: 0 }, false, false)).toContain('Top K');
+    expect(retrievalProfileError({ ...defaultRetrieval, mode: 'dense' }, false, false)).toContain('语义向量');
+    expect(retrievalProfileError({ ...defaultRetrieval, rerank: true }, false, false)).toContain('重排模型');
+    expect(retrievalProfileError({ ...defaultRetrieval, candidateDepth: 2 }, false, false)).toContain('候选数');
+    expect(retrievalProfileError({ ...defaultRetrieval, contextChars: 0 }, false, false)).toContain('预算');
+    expect(retrievalProfileError(defaultRetrieval, false, false)).toBe('');
+  });
+  it('shows unavailable embedding and rejects fractional overlap without building an index', async () => {
+    const { onCommand } = mount(ready);
+    fireEvent.click(await screen.findByRole('button', { name: '索引与检索' }));
+    expect(screen.getByRole('option', { name: '沿用知识库的语义 Embedding 配置' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('重叠字符'), { target: { value: '1.5' } });
+    expect(screen.getByRole('button', { name: '建立新索引' })).toBeDisabled();
+    expect(screen.getByLabelText('重排候选数')).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Top K'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('检索问题'), { target: { value: '测试问题' } });
+    expect(screen.getByRole('button', { name: '试检索' })).toBeDisabled();
+    expect(onCommand).not.toHaveBeenCalled();
+  });
   it('shows the completed recall run parameters and ranks independently of the editable draft', async () => {
     const source = ready();
     source.jobs.push({ jobId: 'search-1', state: 'completed', progress: '', error: '', createdAtMs: 1, updatedAtMs: 2,

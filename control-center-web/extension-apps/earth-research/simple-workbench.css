@@ -1,0 +1,235 @@
+/* Compact shell only. Engine, editor, host conversation and GIS contracts are unchanged. */
+.earth-app--simple {
+  --earth-task-width: 400px;
+  --earth-agent-width: 420px;
+  --earth-surface: #ffffff;
+  --earth-surface-subtle: #f4f7fb;
+  --earth-ink: #223247;
+  --earth-muted: #5c6d81;
+  --earth-line: #dce4ee;
+  --earth-accent: #244d78;
+  --earth-accent-pressed: #183958;
+  --earth-selection: #eaf1fa;
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--earth-surface); color: var(--earth-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+}
+.earth-app--simple [hidden] { display: none !important; }
+.earth-app--simple :is(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--earth-accent); outline-offset: 2px;
+}
+.earth-app--simple .earth-app__header {
+  position: relative; z-index: 2000; display: flex; flex: none; align-items: center;
+  min-height: 56px; padding: 8px 16px; gap: 16px; border-bottom: 1px solid var(--earth-line);
+  background: var(--earth-surface); box-shadow: none;
+}
+.earth-app--simple .earth-project-picker { flex: 1 1 auto; min-width: 0; max-width: none; }
+.earth-app--simple .earth-project-picker__trigger { display: inline-flex; flex: 0 1 auto; width: fit-content; max-width: 100%; min-height: 36px; border: 0; padding: 6px 0; background: transparent; gap: 8px; }
+.earth-app--simple .earth-project-picker__current { display: block; min-width: 0; }
+.earth-app--simple .earth-project-picker__current strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.earth-app--simple .earth-project-picker__panel { width: min(440px, calc(100vw - 24px)); }
+.earth-app--simple .earth-simple-toolbar { display: flex; align-items: center; flex: 0 0 auto; gap: 4px; }
+.earth-app--simple .earth-simple-toolbar button,
+.earth-app--simple .earth-simple-drawing button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 7px 10px; border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: var(--earth-ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.earth-app--simple .earth-simple-toolbar button:hover:not(:disabled),
+.earth-app--simple .earth-simple-drawing button:hover:not(:disabled) { background: var(--earth-surface-subtle); }
+.earth-app--simple .earth-simple-toolbar button[aria-expanded=true],
+.earth-app--simple .earth-simple-toolbar button[aria-pressed=true] { background: var(--earth-selection); color: var(--earth-accent); }
+.earth-app--simple .earth-simple-toolbar .earth-simple-toolbar__analyze { background: var(--earth-accent); color: white; margin-right: 4px; padding-inline: 12px; }
+.earth-app--simple .earth-simple-toolbar .earth-simple-toolbar__analyze:hover { background: var(--earth-accent-pressed); color: white; }
+.earth-disclosure { position: relative; display: inline-block; }
+.earth-disclosure__body {
+  position: absolute; z-index: 2300; top: calc(100% + 7px); left: 0;
+  display: grid; width: 188px; max-height: min(560px, 70vh); overflow: auto;
+  padding: 5px; border: 1px solid var(--earth-line); border-radius: 6px;
+  background: var(--earth-surface); box-shadow: 0 8px 30px #16283e1f;
+}
+.earth-simple-toolbar__more > .earth-disclosure__body { left: auto; right: 0; }
+.earth-app--simple .earth-disclosure__body button { width: 100%; justify-content: flex-start; font-size: 13px; text-align: left; }
+.earth-disclosure__group { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--earth-line); }
+.earth-disclosure__body label { display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 13px; font-weight: 400; }
+.earth-disclosure__body input[type=number] { width: 60px; min-width: 0; }
+.earth-app--simple .earth-app__body { position: relative; flex: 1 1 auto; min-height: 0; }
+.earth-app--simple .earth-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.earth-app--simple .earth-panels { flex: 1 1 auto; min-height: 0; height: auto; margin: 0; }
+.earth-app--simple .earth-map-panel { min-height: 0; height: 100%; }
+.earth-app--simple .earth-map { --earth-dock-width: 0px; display: block; height: 100%; min-height: 0; }
+.earth-app--simple .earth-map > .earth-map__canvas { position: absolute; inset: 0; width: auto; height: auto; }
+.earth-app--simple .earth-task-context { flex: none; min-height: 34px; padding: 4px 14px; gap: 12px; font-size: 12px; }
+.earth-app--simple .earth-task-context button { border: 0; background: transparent; color: var(--earth-accent); }
+.earth-app--simple .earth-map-tools { top: 16px; left: 60px; right: auto; z-index: 1300; max-width: calc(100% - 80px); display: flex; flex-wrap: wrap; gap: 6px; padding: 0; background: transparent; border: 0; box-shadow: none; }
+.earth-app--simple .earth-simple-drawing { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0; padding: 3px; min-width: 0; border: 1px solid var(--earth-line); border-radius: 6px; background: var(--earth-surface); box-shadow: 0 2px 8px #16283e18; overflow: visible; }
+.earth-app--simple .earth-simple-drawing button { font-size: 12px; padding: 6px 8px; min-height: 34px; }
+.earth-simple-drawing__mode { padding-inline: 8px; font-size: 12px; color: var(--earth-muted); }
+.earth-app--simple .earth-map-tools > [role=status] { flex-basis: 100%; max-width: 420px; margin: 0; padding: 6px 9px; background: var(--earth-surface); border-radius: 4px; font-size: 12px; }
+.earth-app--simple .earth-gis-toolbar__commit { background: var(--earth-accent) !important; color: white !important; }
+.earth-app--simple .earth-task-drawer { top: 0; width: min(var(--earth-task-width), calc(100% - 48px)); }
+.earth-app--simple .earth-task-drawer > .earth-drawer__header { min-height: 56px; padding: 12px 18px; }
+.earth-drawer__heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.earth-app--simple .earth-drawer__heading h2 { font-size: 16px; margin: 0; }
+.earth-app--simple .earth-task-drawer .earth-drawer__header button { border: 0; }
+.earth-app--simple .earth-task-drawer__body > div > :is(.earth-sources, .earth-task-launcher, .earth-cloud-tasks, .earth-remote-panel, .earth-delivery-panel) { padding: 18px; }
+.earth-app--simple .earth-analysis-form { gap: 16px; }
+.earth-app--simple .earth-analysis-form :is(input, select, textarea) { font-size: 14px; min-height: 42px; }
+.earth-app--simple .earth-analysis-form .earth-secondary-action { border: 0; min-height: 30px; background: transparent; color: var(--earth-muted); font-size: 12px; }
+.earth-app--simple .earth-preflight--quiet { padding: 0; border: 0; background: transparent; }
+.earth-preflight--quiet > p[role=status] { display: flex; gap: 6px; color: var(--earth-accent); }
+.earth-preflight--quiet summary { font-size: 12px; min-height: 28px; cursor: pointer; color: var(--earth-muted); }
+.earth-app--simple .earth-method-boundary { border-top: 1px solid var(--earth-line); padding-top: 8px; }
+.earth-app--simple .earth-method-boundary > summary { display: list-item; font-size: 12px; }
+.earth-app--simple .earth-task-launcher__list { gap: 0; border-top: 1px solid var(--earth-line); }
+.earth-app--simple .earth-task-launcher__action { min-height: 72px; padding: 12px 2px; border: 0; border-bottom: 1px solid var(--earth-line); border-radius: 0; background: transparent; }
+.earth-app--simple .earth-task-launcher__context { padding: 0; border: 0; margin: 0 0 16px; background: transparent; font-size: 13px; color: var(--earth-muted); }
+.earth-task-launcher__selection { font-size: 12px; color: var(--earth-muted); line-height: 1.6; }
+.earth-app--simple .earth-data-dock[data-compact=true] {
+  position: absolute; inset: 0 0 0 auto; z-index: 1400; display: flex; flex-direction: column;
+  width: min(var(--earth-task-width), calc(100% - 48px)); height: auto; max-height: none; min-height: 0;
+  border: 0; border-left: 1px solid var(--earth-line); border-radius: 0;
+  background: var(--earth-surface); box-shadow: -8px 0 24px #16283e0d;
+}
+.earth-app--simple .earth-data-dock--table[data-compact=true] { width: min(680px, calc(100% - 48px)); }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__header { flex: none; min-height: 56px; padding: 12px 18px; background: transparent; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__body { flex: 1; min-height: 0; max-height: none; overflow: auto; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__header strong { font-size: 16px; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__binding { padding: 7px 16px; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__tabs { display: flex; justify-content: flex-start; gap: 12px; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__tabs button { flex: none; min-height: 36px; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__content { padding: 16px; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__layer { padding: 12px 10px; border: 0; border-bottom: 1px solid var(--earth-line); border-radius: 0; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__layer.is-active { background: var(--earth-selection); }
+.earth-app--simple .earth-data-dock__secondary-link { min-height: 36px; text-align: left; border: 0; padding-inline: 16px; background: transparent; color: var(--earth-accent); }
+.earth-simple-export { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--earth-line); }
+.earth-simple-export > summary { font-size: 13px; min-height: 30px; cursor: pointer; }
+.earth-app--simple .earth-simple-export .earth-data-dock__export-panel { padding: 10px 0; border: 0; background: transparent; }
+.earth-app--simple .earth-geometry-imports { left: 16px; right: auto; bottom: 58px; max-width: min(300px, calc(100% - 32px)); max-height: 40%; font-size: 12px; }
+.earth-app--simple .earth-statusbar { min-height: 26px; flex: none; padding: 2px 14px; border-top: 1px solid var(--earth-line); font-size: 11px; }
+.earth-app--simple .earth-statusbar > span:nth-child(2) { color: #92400e; font-weight: 600; }
+.earth-app--simple .earth-layer-toast { left: 50%; bottom: 34px; top: auto; right: auto; transform: translateX(-50%); border: 1px solid var(--earth-line); border-radius: 5px; background: var(--earth-surface); }
+.earth-simple-alert { display: flex; align-items: center; gap: 12px; flex: none; padding: 8px 16px; font-size: 12px; background: #fff4e8; }
+.earth-simple-alert span { overflow-wrap: anywhere; }
+.earth-map-welcome { position: absolute; z-index: 900; left: 50%; bottom: 48px; transform: translateX(-50%); width: min(350px, calc(100% - 32px)); padding: 18px; background: var(--earth-surface); border: 1px solid var(--earth-line); border-radius: 6px; box-shadow: 0 5px 24px #23362a1c; }
+.earth-map-welcome h1 { font-size: 18px; margin: 0 0 8px; }
+.earth-map-welcome p { font-size: 13px; color: var(--earth-muted); margin: 0 0 14px; line-height: 1.6; }
+.earth-map-welcome button { min-height: 36px; padding: 7px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--earth-accent); }
+.earth-map-welcome button:first-of-type { background: var(--earth-accent); color: white; }
+@container earth-workspace (min-width: 1000px) {
+  .earth-app--simple .earth-workspace[data-task-open=true] .earth-panels { margin-right: var(--earth-task-width); }
+  .earth-app--simple .earth-map[data-dock-open=true] { --earth-dock-width: 352px; }
+  .earth-app--simple .earth-map[data-dock-open=true]:has(.earth-data-dock--table:not([hidden])) { --earth-dock-width: min(680px, calc(100% - 48px)); }
+  .earth-app--simple .earth-map[data-dock-open=true] > .earth-map__canvas { right: var(--earth-dock-width); }
+  .earth-app--simple .earth-data-dock[data-compact=true], .earth-app--simple .earth-task-drawer { box-shadow: none; }
+}
+@container earth-app (max-width: 700px) {
+  .earth-app--simple .earth-app__header { padding: 7px 10px; gap: 8px; }
+  .earth-app--simple .earth-simple-toolbar button { min-height: 36px; padding-inline: 7px; }
+  .earth-app--simple .earth-simple-toolbar > button > svg { display: none; }
+  .earth-app--simple .earth-agent { position: absolute; z-index: 1500; top: 0; left: auto; right: 0; bottom: 0; width: min(360px, calc(100% - 40px)); background: var(--earth-surface); border-left: 1px solid var(--earth-line); }
+  .earth-app--simple .earth-agent-resizer { display: none; }
+  .earth-app--simple .earth-app__body { display: flex; }
+  .earth-app--simple .earth-workspace { width: 100%; flex: 1; }
+}
+@container earth-workspace (max-width: 600px) {
+  .earth-app--simple .earth-task-drawer,
+  .earth-app--simple .earth-data-dock[data-compact=true] { top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: 64%; max-height: calc(100% - 64px); border: 0; border-top: 1px solid var(--earth-line); border-radius: 10px 10px 0 0; box-shadow: 0 -4px 20px #25372c18; }
+  .earth-app--simple .earth-map-tools { left: 54px; top: 12px; max-width: calc(100% - 64px); }
+  .earth-app--simple .earth-map-welcome { bottom: 30px; }
+}
+@media (prefers-reduced-motion: reduce) { .earth-app--simple * { scroll-behavior: auto; } }
+
+/* Explicit control states outrank the legacy shell's broad hover selectors. */
+.earth-app.earth-app--simple .earth-app__header .earth-simple-toolbar > button { font-weight: 550; border-radius: 7px; }
+.earth-app.earth-app--simple .earth-app__header .earth-simple-toolbar > button:hover:not(:disabled) { color: var(--earth-accent); background: var(--earth-selection); }
+.earth-app.earth-app--simple .earth-app__header .earth-simple-toolbar > .earth-simple-toolbar__analyze,
+.earth-app.earth-app--simple .earth-app__header .earth-simple-toolbar > .earth-simple-toolbar__analyze[aria-expanded=true] { color: #fff; background: var(--earth-accent); border-color: var(--earth-accent); }
+.earth-app.earth-app--simple .earth-app__header .earth-simple-toolbar > .earth-simple-toolbar__analyze:hover:not(:disabled) { color: #fff; background: var(--earth-accent-pressed); border-color: var(--earth-accent-pressed); }
+.earth-app--simple .earth-app__header .earth-simple-toolbar button span { color: inherit; }
+.earth-app.earth-app--simple .earth-simple-drawing button[aria-pressed=true] { color: var(--earth-accent); border-color: transparent; background: var(--earth-selection); }
+.earth-app.earth-app--simple .earth-simple-drawing button:hover:not(:disabled) { background: var(--earth-selection) !important; color: var(--earth-accent); }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__header { background: #f8fafc; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__binding { background: #fff; padding-block: 9px; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__tabs { padding-inline: 18px; gap: 20px; }
+.earth-app--simple .earth-data-dock__layer-select strong { font-size: 13px; line-height: 1.5; }
+.earth-app--simple .earth-data-dock__layer-select span { font-size: 11px; line-height: 1.5; }
+.earth-app--simple .earth-data-dock__layer-list { border-top: 0; }
+.earth-app--simple .earth-data-dock[data-compact=true] .earth-data-dock__layer { border-radius: 7px; border-bottom: 0; margin-bottom: 4px; }
+.earth-app--simple .earth-data-dock__layer:hover { background: var(--earth-surface-subtle); }
+.earth-app--simple .earth-data-dock .earth-data-dock__layer-select:hover:not(:disabled) { background: transparent; }
+.earth-layer-symbol { display: inline-block; flex: none; width: 15px; height: 15px; border: 1.5px solid; border-radius: 3px; }
+.earth-layer-symbol[data-shape=line] { height: 3px; border-radius: 2px; transform: rotate(-25deg); }
+.earth-layer-symbol[data-shape=point] { width: 12px; height: 12px; margin-inline: 1.5px; border-radius: 50%; }
+.earth-app--simple .earth-map__canvas { background: #dce5ed; }
+.earth-app--simple .earth-vector { filter: drop-shadow(0 1px 1px #102335cc); }
+.earth-map-legend { position: absolute; z-index: 620; left: 16px; bottom: 14px; display: flex; flex-wrap: wrap; gap: 12px; max-width: calc(100% - 90px); padding: 7px 10px; border-radius: 5px; background: #fff; color: #34465c; box-shadow: 0 2px 8px #16283e24; font-size: 11px; pointer-events: none; }
+.earth-map-legend > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.earth-map-legend i { display: inline-block; width: 12px; height: 12px; border: 1px solid; border-radius: 2px; }
+.earth-map-legend i[data-shape=line] { height: 3px; }
+.earth-map-legend i[data-shape=point] { border-radius: 50%; }
+.earth-app--simple .leaflet-bar { border: 1px solid #dce4ee; border-radius: 6px; box-shadow: 0 2px 8px #16283e24; overflow: hidden; }
+.earth-app--simple .leaflet-bar a { color: #34465c; background: #fff; border-color: #dce4ee; }
+.earth-app--simple .leaflet-bar a:hover { background: #eaf1fa; }
+.earth-app--simple .earth-statusbar { min-height: 30px; color: var(--earth-muted); background: #f8fafc; font-variant-numeric: tabular-nums; }
+.earth-app--simple ::selection { background: #cfe0f6; color: #183958; }
+.earth-app--simple :is(input, textarea) { caret-color: var(--earth-accent); }
+.earth-app--simple :is(.earth-data-dock__content, .earth-task-drawer__body) { scrollbar-color: #b8c6d7 #f4f7fb; }
+@container earth-workspace (max-width: 600px) {
+  .earth-app--simple .earth-map[data-dock-open=true] .earth-map-legend,
+  .earth-app--simple .earth-workspace[data-task-open=true] .earth-map-legend { display: none; }
+  .earth-app--simple .earth-geometry-imports { bottom: 55px; }
+}
+
+/* An embedded Agent column must not use viewport-wide failure-card layout. */
+.earth-app--simple .earth-agent .agent-turn__failure { display: grid; width: 100%; max-width: 100%; box-sizing: border-box; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 8px; padding: 12px; border: 1px solid #f0cbd0; border-radius: 8px; background: #fff6f7; }
+.earth-app--simple .earth-agent .agent-turn__failure > span { min-width: 0; width: auto; }
+.earth-app--simple .earth-agent .agent-turn__failure strong { line-height: 1.5; }
+.earth-app--simple .earth-agent .agent-turn__failure small { display: block; line-height: 1.6; overflow-wrap: anywhere; }
+.earth-app--simple .earth-agent .agent-turn__failure-actions { grid-column: 2; display: flex; flex-wrap: wrap; justify-content: flex-start; min-width: 0; width: 100%; gap: 8px; }
+.earth-app--simple .earth-agent .agent-turn__failure-actions button { max-width: 100%; white-space: normal; }
+.earth-app--simple .earth-delivery-panel { display: grid; gap: 18px; }
+.earth-app--simple .earth-delivery-panel h2 { margin: 0; font-size: 17px; }
+.earth-app--simple .earth-delivery-panel h3 { margin: 0 0 10px; font-size: 14px; }
+.earth-app--simple .earth-delivery-panel p { margin: 0; color: var(--earth-muted); line-height: 1.65; }
+.earth-app--simple .earth-delivery-panel label { display: grid; gap: 7px; font-size: 13px; }
+.earth-app--simple .earth-delivery-panel :is(input:not([type=checkbox]), select) { width: 100%; max-width: none; min-height: 40px; box-sizing: border-box; color: var(--earth-ink); background: #fff; border: 1px solid var(--earth-line); border-radius: 6px; padding: 8px; }
+.earth-app--simple .earth-delivery-panel fieldset { min-width: 0; border: 0; padding: 12px 0; display: grid; gap: 12px; }
+.earth-app--simple .earth-delivery-panel .earth-report-option { display: flex; align-items: center; }
+.earth-app--simple .earth-delivery-panel > .earth-report-generate { color: #fff; background: var(--earth-accent); min-height: 42px; font-weight: 600; }
+.earth-app--simple .earth-delivery-panel > .earth-report-generate:hover:not(:disabled) { background: var(--earth-accent-pressed); }
+.earth-report-success { display: grid; gap: 12px; padding: 14px; background: var(--earth-selection); border-radius: 8px; }
+.earth-report-library { display: grid; gap: 8px; border-top: 1px solid var(--earth-line); padding-top: 18px; }
+.earth-report-library button { min-width: 0; display: grid !important; text-align: left; justify-content: stretch !important; gap: 4px; }
+.earth-report-library button span { overflow-wrap: anywhere; color: var(--earth-muted); font-size: 11px; }
+.earth-app--simple .earth-code__identity { min-width: 0; flex: 1; }
+.earth-app--simple .earth-code > header { flex-wrap: wrap; gap: 8px; }
+.earth-app--simple .earth-cloud-progress { position: sticky; top: 0; z-index: 2; padding: 14px 16px; background: #f0f5fb; border-block: 1px solid var(--earth-line); }
+.earth-cloud-progress__heading { display:flex; align-items:center; gap:8px; color:var(--earth-accent); }
+.earth-cloud-progress__heading strong {flex:1; font-size:14px;}
+.earth-cloud-progress time {font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.earth-cloud-progress ul {display:grid;gap:5px;list-style:none;margin:10px 0;padding:0;}
+.earth-cloud-progress li {display:flex;align-items:center;gap:7px;font-size:12px;color:var(--earth-muted);}
+.earth-cloud-progress li span {margin-left:auto;}
+.earth-cloud-progress li[data-done=true] {color:#246048;}
+.earth-cloud-progress p {display:flex;align-items:flex-start;gap:6px;font-size:12px;line-height:1.5;color:var(--earth-muted);margin:8px 0 0;}
+.earth-cloud-progress__spinner {flex:none;animation:earth-progress-spin 1s linear infinite;}
+.earth-live-run { position:absolute; bottom:72px; right:16px; z-index:600; width:min(310px,calc(100% - 32px)); color:var(--earth-ink); background:white; border:1px solid var(--earth-line); border-radius:10px; box-shadow:0 4px 20px #172d4820; overflow:hidden; }
+.earth-live-run>summary { padding:10px 14px; font-size:12px; font-weight:600; cursor:pointer; color:var(--earth-accent); }
+.earth-live-run>button { margin:10px 14px; padding:8px 12px; border-radius:6px; background:var(--earth-accent); color:white; }
+.earth-live-run>p { padding:0 14px; font-size:12px; }
+.earth-workspace[data-task-open=true] .earth-live-run { right:calc(var(--earth-task-width, 400px) + 16px); }
+@media(max-width:1100px){.earth-workspace[data-task-open=true] .earth-live-run {display:none;}}
+.earth-cloud-progress[data-status=failed] {background:#fff4f3;}
+.earth-app--simple .earth-report-create {border-top:1px solid var(--earth-line);padding-top:14px;}
+.earth-app--simple .earth-report-create>summary {font-weight:600;margin-bottom:14px;cursor:pointer;}
+@keyframes earth-progress-spin {to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.earth-cloud-progress__spinner{animation:none;}}
+
+/* Keep input, errors and recovery actions within the resizable Agent column. */
+.earth-app--simple .earth-agent .paw-session-workspace__composer { min-width:0; padding-inline:12px; }
+.earth-app--simple .earth-agent .paw-session-workspace__composer .paw-session-workspace__error { display:flex; flex-wrap:wrap; align-items:center; gap:8px; width:100%; max-width:100%; min-width:0; border-radius:8px; box-shadow:none; }
+.earth-app--simple .earth-agent .paw-session-workspace__error>span { flex:1 1 calc(100% - 28px); min-width:0; overflow-wrap:anywhere; }
+.earth-app--simple .earth-agent .paw-session-workspace__error button { max-width:100%; font-size:12px; }
+.earth-app--simple .earth-agent .agent-composer__toolbar { display:flex; flex-wrap:wrap; gap:5px; min-width:0; }
+.earth-app--simple .earth-agent .agent-composer { width:100%; min-width:0; }

@@ -39,6 +39,6 @@ describe('Memory curation loading', () => {
     expect(client.getQueryData(memoryQueryKeys.summary())).toMatchObject({ pendingGovernedEvidenceCount: 777 });
     expect(await screen.findByText('777 条待整理')).toBeInTheDocument();
     expect(await screen.findByText('777 条来源待整理，正在读取日期和应用分布。')).toBeInTheDocument();
-    expect(await screen.findByRole('progressbar', { name: '记忆来源整理进度 0%' })).toBeInTheDocument();
+    expect(await screen.findByRole('progressbar', { name: '记忆来源整理进度待确认' })).not.toHaveAttribute('aria-valuenow');
   });
 });

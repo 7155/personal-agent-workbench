@@ -10,6 +10,10 @@ export function publicKnowledgeText(value: string): string {
     .replace(/\bAgent\b/giu, '伙伴');
 }
 
+export function knowledgeBlockKindLabel(kind: string): string {
+  return ({ paragraph: '正文', text: '正文', heading: '标题', title: '标题', table: '表格', chart: '图表数据', formula: '公式', equation: '公式', image: '图片', figure: '图片', caption: '图注', reference: '参考文献', list: '列表', notes: '演讲备注', speaker_notes: '演讲备注' } as Record<string, string>)[kind] ?? '文档内容';
+}
+
 export function publicKnowledgeRelationKind(value: string): string {
   return ({
     contains: '包含',

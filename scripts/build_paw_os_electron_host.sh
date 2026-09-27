@@ -32,6 +32,22 @@ case "$ACTION" in
     ;;
 esac
 
+DEVELOPMENT_INSTALL="false"
+case "${RAG_IME_ALLOW_DEVELOPMENT_INSTALL:-0}" in
+  0) ;;
+  1)
+    [[ "$CHANNEL" == "release" ]] || {
+      echo "RAG_IME_ALLOW_DEVELOPMENT_INSTALL=1 supports build-release or install-release only" >&2
+      exit 2
+    }
+    DEVELOPMENT_INSTALL="true"
+    ;;
+  *)
+    echo "RAG_IME_ALLOW_DEVELOPMENT_INSTALL must be 0 or 1" >&2
+    exit 2
+    ;;
+esac
+
 hydrate_electron_runtime() {
   [[ -d "$ELECTRON_APP" ]] && return 0
   [[ -f "$ELECTRON_INSTALLER" ]] || {
@@ -48,12 +64,14 @@ hydrate_electron_runtime() {
 
 source "$ROOT/scripts/support/prebuilt_product.sh"
 if paw_prebuilt_identity; then
+  [[ "$DEVELOPMENT_INSTALL" == "false" ]] || {
+    echo "RAG_IME_ALLOW_DEVELOPMENT_INSTALL is for local source builds, not prebuilt payloads" >&2
+    exit 2
+  }
   [[ "$ACTION" == "install-release" ]] || { echo "prebuilt payload supports install-release only" >&2; exit 2; }
   APP="$PAW_BINARY_PAYLOAD/apps/RagImeControlElectron.app"
   codesign --verify --deep --strict "$APP"
 else
-
-hydrate_electron_runtime
 
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 SOURCE_BRANCH="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
@@ -61,11 +79,15 @@ SOURCE_DIRTY="false"
 if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
   SOURCE_DIRTY="true"
 fi
-PACKAGE_VERSION="$(cd "$ROOT" && node -p "require('./control-center-web/package.json').version")"
-PRODUCT_VERSION="${RAG_IME_PRODUCT_VERSION:-$PACKAGE_VERSION}"
-BUILD_NUMBER="${RAG_IME_BUILD_NUMBER:-$(git -C "$ROOT" rev-list --count "$SOURCE_COMMIT" 2>/dev/null || echo 0)}"
+if [[ "$CHANNEL" == "release" && "$DEVELOPMENT_INSTALL" != "true" ]]; then
+  if [[ "$SOURCE_BRANCH" != "main" ]]; then
+    echo "refusing formal Electron release from non-main source: ${SOURCE_BRANCH:-detached HEAD}" >&2
+    exit 1
+  fi
+fi
 if [[ "$CHANNEL" == "release" \
   && "$SOURCE_DIRTY" == "true" \
+  && "$DEVELOPMENT_INSTALL" != "true" \
   && ! ( "$ACTION" == "install-release" \
     && "${RAG_IME_ALLOW_DIRTY_INSTALL:-0}" == "1" ) ]]; then
   echo "refusing formal Electron release build from dirty source" >&2
@@ -73,17 +95,23 @@ if [[ "$CHANNEL" == "release" \
 fi
 
 if [[ "$ACTION" == "install-release" ]]; then
-  if [[ "$SOURCE_BRANCH" != "main" ]]; then
-    echo "refusing formal app installation from non-main source: ${SOURCE_BRANCH:-detached HEAD}" >&2
-    exit 1
-  fi
   if [[ "$SOURCE_DIRTY" == "true" ]]; then
-    if [[ "${RAG_IME_ALLOW_DIRTY_INSTALL:-0}" != "1" ]]; then
-      echo "refusing formal app installation from dirty main source" >&2
-      exit 1
-    fi
-    echo "Development install: allowing explicitly requested dirty main source." >&2
+    # The legacy dirty-main opt-in passed the same guards above. Mark it just
+    # as honestly as the explicit development-source path.
+    DEVELOPMENT_INSTALL="true"
   fi
+fi
+if [[ "$DEVELOPMENT_INSTALL" == "true" ]]; then
+  echo "Development build/install: explicitly selected ${SOURCE_BRANCH:-detached HEAD} source (dirty=$SOURCE_DIRTY)." >&2
+fi
+
+# Source/opt-in rejection must precede runtime hydration and build side effects.
+hydrate_electron_runtime
+PACKAGE_VERSION="$(cd "$ROOT" && node -p "require('./control-center-web/package.json').version")"
+PRODUCT_VERSION="${RAG_IME_PRODUCT_VERSION:-$PACKAGE_VERSION}"
+BUILD_NUMBER="${RAG_IME_BUILD_NUMBER:-$(git -C "$ROOT" rev-list --count "$SOURCE_COMMIT" 2>/dev/null || echo 0)}"
+
+if [[ "$ACTION" == "install-release" ]]; then
   curl --silent --show-error --fail --max-time 5 \
     -H 'Origin: http://127.0.0.1:8766' \
     -H 'Content-Type: application/json' \
@@ -161,13 +189,13 @@ Path(sys.argv[1]).write_text(json.dumps({
 }, indent=2) + "\n", encoding="utf-8")
 PY
 
-python3 - "$RESOURCES/rag-ime-control-web-build-marker.json" "$BUNDLE_ID" "$CHANNEL" "$FRONTEND_CHANNEL" "$SOURCE_COMMIT" "$SOURCE_DIRTY" "$DIST_TREE_DIGEST" "$PRODUCT_VERSION" "$BUILD_NUMBER" <<'PY'
+python3 - "$RESOURCES/rag-ime-control-web-build-marker.json" "$BUNDLE_ID" "$CHANNEL" "$FRONTEND_CHANNEL" "$SOURCE_COMMIT" "$SOURCE_DIRTY" "$DIST_TREE_DIGEST" "$PRODUCT_VERSION" "$BUILD_NUMBER" "$SOURCE_BRANCH" "$DEVELOPMENT_INSTALL" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-target, bundle_id, channel, frontend_channel, commit, dirty, dist_digest, product_version, build_number = sys.argv[1:]
+target, bundle_id, channel, frontend_channel, commit, dirty, dist_digest, product_version, build_number, branch, development = sys.argv[1:]
 provenance = {
     "sourceCommit": commit,
     "sourceDirty": dirty == "true",
@@ -188,6 +216,8 @@ Path(target).write_text(json.dumps({
     "gitDirty": dirty == "true",
     "sourceCommit": commit,
     "sourceDirty": dirty == "true",
+    "sourceBranch": branch,
+    "developmentInstall": development == "true",
     "builtAt": datetime.now(timezone.utc).isoformat(),
     "ui": "control-center-web",
     "channel": channel,
@@ -229,9 +259,16 @@ fi
 
 verify_release_provenance() {
   local candidate="$1"
+  # The existing checker interprets this legacy flag as the expected actual
+  # dirty value, not as permission to falsify the bundle's source identity.
+  local expected_dirty="0"
+  if [[ "$SOURCE_DIRTY" == "true" ]]; then
+    expected_dirty="1"
+  fi
   RAG_IME_CONTROL_APP="$candidate" \
   RAG_IME_CONTROL_EXPECTED_COMMIT="$SOURCE_COMMIT" \
   RAG_IME_CONTROL_SKIP_LIVE=1 \
+  RAG_IME_ALLOW_DIRTY_INSTALL="$expected_dirty" \
     "$ROOT/scripts/check_control_center_footprint.sh" >/dev/null
 }
 
@@ -249,7 +286,11 @@ if [[ "$ACTION" == install-* ]]; then
     done
   fi
   LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+  # A hung old app must not hold the installer in Apple Events' two-minute
+  # default timeout. The bounded process-exit fallback below still owns cutover.
+  osascript -e 'with timeout of 5 seconds' \
+    -e "tell application id \"$BUNDLE_ID\" to quit" \
+    -e 'end timeout' >/dev/null 2>&1 || true
   INSTALLED_EXECUTABLE="$INSTALL_DEST/Contents/MacOS/$EXECUTABLE"
   INSTALLED_PID="$(pgrep -f "^${INSTALLED_EXECUTABLE}$" | head -n 1 || true)"
   [[ -z "$INSTALLED_PID" ]] || kill -TERM "$INSTALLED_PID" 2>/dev/null || true

@@ -5,7 +5,7 @@ import { MockControlTransport } from '@/test/mock-transport';
 import { HttpControlTransport } from '@/platform/http-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { useAgentLiveStore } from '../state/live-store';
-import { useAgentLiveSession } from './use-agent-live-session';
+import { recentAgentSnapshotIsPresentable, useAgentLiveSession } from './use-agent-live-session';
 
 const SESSION_ID = 'session-shared';
 
@@ -67,8 +67,11 @@ describe('useAgentLiveSession shared ownership', () => {
     act(() => {
       expect(transport.emit('agent.session.events', rawEvent)).toBe(1);
     });
-    expect(firstEvent).toHaveBeenCalledTimes(1);
-    expect(secondEvent).toHaveBeenCalledTimes(1);
+    // Text deltas notify views after the shared batched projection commits.
+    await waitFor(() => {
+      expect(firstEvent).toHaveBeenCalledTimes(1);
+      expect(secondEvent).toHaveBeenCalledTimes(1);
+    });
     expect(firstEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventId: `${SESSION_ID}:1`,
       sessionId: SESSION_ID,
@@ -699,4 +702,10 @@ describe('useAgentLiveSession shared ownership', () => {
     expect(restored).toHaveBeenLastCalledWith(SESSION_ID);
     window.unmount();
   });
+});
+
+it('does not present a truncated post-restart status tail as an empty conversation', () => {
+  expect(recentAgentSnapshotIsPresentable({ status: 'idle', snapshotScope: 'recent', partial: true, items: [], recentFromSequence: 4454 })).toBe(false);
+  expect(recentAgentSnapshotIsPresentable({ status: 'idle', snapshotScope: 'recent', partial: true, items: [], recentFromSequence: 0 })).toBe(true);
+  expect(recentAgentSnapshotIsPresentable({ status: 'idle', snapshotScope: 'recent', partial: true, items: [{ role: 'assistant' }], recentFromSequence: 4454 })).toBe(true);
 });

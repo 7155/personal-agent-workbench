@@ -85,9 +85,10 @@ test('rejects invalid dates, geographic coordinates, bands and writable paths be
 
 function evaluated(value) { return { evaluate: callback => queueMicrotask(() => callback(value)) }; }
 
-function fakeEarthEngine(rows, sceneCount = 3) {
+function fakeEarthEngine(rows, sceneCount = 3, thumbError = null) {
   const calls = [];
   const chain = new Proxy({}, { get(_target, method) {
+    if (method === 'getThumbURL') return (_params, callback) => callback(thumbError ? null : 'https://earthengine.googleapis.com/test-preview', thumbError);
     if (method === 'getMap') return (_style, callback) => callback({ urlFormat: 'https://earthengine.googleapis.com/tiles/{z}/{x}/{y}' });
     if (method === 'centroid') return () => evaluated({ coordinates: [120, 30] });
     if (method === 'evaluate') return callback => queueMicrotask(() => callback(sceneCount));
@@ -111,7 +112,7 @@ test('generated NDVI report uses returned reducer values and preserves missing p
     ];
     const { ee } = fakeEarthEngine(rows);
     const output = path.join(root, 'output');
-    const result = await executeScript({ ee, script: fs.readFileSync(path.join(root, prepared.scriptPath), 'utf8'), downloadDir: output });
+    const result = await executeScript({ ee, script: fs.readFileSync(path.join(root, prepared.scriptPath), 'utf8'), downloadDir: output, previewFetcher: async () => new Response(Buffer.from([137,80,78,71,13,10,26,10])) });
     assert.equal(result.status, 'completed', result.error);
     const statistics = JSON.parse(fs.readFileSync(path.join(output, 'statistics.json'), 'utf8'));
     assert.deepEqual(statistics.rows.map(item => item.meanNdvi), [0.25, null, 0.75]);
@@ -120,10 +121,63 @@ test('generated NDVI report uses returned reducer values and preserves missing p
     assert.equal(statistics.planId, prepared.planId);
     const report = fs.readFileSync(path.join(output, 'report.html'), 'utf8');
     assert.match(report, /<svg/);
+    assert.match(report, /data:image\/png;base64,/);
+    assert.match(report, /地理分析报告/);
     assert.match(report, /0\.2500/);
     assert.match(report, /0\.7500/);
     assert.match(report, /No valid pixels/);
     assert.equal(fs.readFileSync(path.join(output, 'statistics.csv'), 'utf8').split('\n')[2], '"2025-02","2025-02-01","2025-03-01","0","","","","0","0"');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('NDVI statistics and report survive optional thumbnail failures without fabricated imagery', async () => {
+  const rows = [
+    { periodStart: '2025-01-15', periodEnd: '2025-02-01', label: '2025-01', imageCount: 2, meanNdvi: 0.25, minNdvi: 0.1, maxNdvi: 0.4, validPixelCount: 20 },
+    { periodStart: '2025-02-01', periodEnd: '2025-03-01', label: '2025-02', imageCount: 0, meanNdvi: null, minNdvi: null, maxNdvi: null, validPixelCount: 0 },
+    { periodStart: '2025-03-01', periodEnd: '2025-04-01', label: '2025-03', imageCount: 1, meanNdvi: 0.75, minNdvi: 0.5, maxNdvi: 1, validPixelCount: 50 },
+  ];
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'earth-cloud-preview-failure-'));
+  try {
+    const prepared = prepareCloudWorkflow({ root, plan });
+    const script = fs.readFileSync(path.join(root, prepared.scriptPath), 'utf8');
+    const failures = [
+      { name: 'getThumbURL', thumbError: 'Thumbnail API unavailable', previewFetcher: async () => { throw Error('must not fetch'); } },
+      { name: 'HTTP', previewFetcher: async () => new Response('failed', { status: 503 }) },
+      { name: 'timeout', previewFetcher: async () => { throw new Error('timeout'); } },
+      { name: 'oversize', previewFetcher: async () => new Response(Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), Buffer.alloc(1024 * 1024)])) },
+    ];
+    for (const failure of failures) {
+      const output = path.join(root, failure.name);
+      const { ee } = fakeEarthEngine(rows, 3, failure.thumbError);
+      const result = await executeScript({ ee, script, downloadDir: output, previewFetcher: failure.previewFetcher });
+      assert.equal(result.status, 'completed', `${failure.name}: ${result.error}`);
+      assert.equal(result.error, null);
+      const statistics = JSON.parse(fs.readFileSync(path.join(output, 'statistics.json'), 'utf8'));
+      assert.equal(statistics.status, 'completed');
+      assert.deepEqual(statistics.rows.map(item => item.meanNdvi), [0.25, null, 0.75]);
+      assert.equal(statistics.preview.status, 'unavailable');
+      assert.equal(result.artifacts.length, 3);
+      assert.match(fs.readFileSync(path.join(output, 'statistics.csv'), 'utf8'), /"0.25"/);
+      const report = fs.readFileSync(path.join(output, 'report.html'), 'utf8');
+      assert.match(report, /静态 NDVI 预览不可用/);
+      assert.match(report, /0\.2500/);
+      assert.doesNotMatch(report, /<img src="data:image\/png|<img src="https:\/\/earthengine/);
+      assert.doesNotMatch(report, /及静态 NDVI 地图可离线查看/);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('invalid analytical observation counts still fail rather than becoming preview warnings', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'earth-cloud-invalid-statistics-'));
+  try {
+    const prepared = prepareCloudWorkflow({ root, plan });
+    const rows = prepared.plan.periods.map(period => ({ periodStart: period.start, periodEnd: period.end, imageCount: 1, meanNdvi: 0.25, minNdvi: 0.1, maxNdvi: 0.4, validPixelCount: 101 }));
+    const { ee } = fakeEarthEngine(rows);
+    const output = path.join(root, 'output');
+    const result = await executeScript({ ee, script: fs.readFileSync(path.join(root, prepared.scriptPath), 'utf8'), downloadDir: output });
+    assert.equal(result.status, 'failed');
+    assert.match(result.error, /invalid observation counts/);
+    assert.equal(fs.existsSync(path.join(output, 'report.html')), false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -133,7 +187,7 @@ test('empty source collections produce a no-data receipt and no fabricated chart
     const prepared = prepareCloudWorkflow({ root, plan });
     const { ee } = fakeEarthEngine([], 0);
     const output = path.join(root, 'output');
-    const result = await executeScript({ ee, script: fs.readFileSync(path.join(root, prepared.scriptPath), 'utf8'), downloadDir: output });
+    const result = await executeScript({ ee, script: fs.readFileSync(path.join(root, prepared.scriptPath), 'utf8'), downloadDir: output, previewFetcher: async () => new Response(Buffer.from([137,80,78,71,13,10,26,10])) });
     assert.equal(result.status, 'completed', result.error);
     const statistics = JSON.parse(fs.readFileSync(path.join(output, 'statistics.json'), 'utf8'));
     assert.equal(statistics.status, 'no_data');

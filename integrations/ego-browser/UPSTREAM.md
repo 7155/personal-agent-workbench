@@ -25,3 +25,17 @@ auditable. PAW supplies its own lifecycle adapter through `BrowserControlService
 
 Do not replace this integration with the upstream app installer or its DMG. The
 closed app is neither required nor shipped by PAW.
+
+Build the vendored helpers with `python3 scripts/build_ego_browser_runtime.py`.
+This calls both upstream package builds and stages a self-contained runtime at
+`build/ego-browser-runtime/upstream`, with a file-hash manifest. Its validation
+uses CLI help and module imports; it does not start a daemon or browser.
+
+The Sidecar installer ships this runtime to
+`app/integrations/ego-browser/upstream`, which is the default path used by
+`BrowserControlService`. The binary installer carries the compiled payload and
+uses its bundled Node without rebuilding or installing npm dependencies.
+For a missing-files repair, the same build entry accepts `--from-built`,
+`--source`, and `--output`; existing output requires explicit `--replace` and
+is replaced only after the staged payload validates. Installing these helper
+files does not require restarting Gateway, Pi, or Sidecar.

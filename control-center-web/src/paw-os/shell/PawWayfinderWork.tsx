@@ -676,7 +676,9 @@ function ProjectFolder({ expanded, expandedBuckets, expandedRepeats, iconPositio
           <div className="paw-wayfinder-work__project-content-scroll">
             {project.buckets.map((bucket) => (
               <WorkBucket
-                bucket={bucket}
+                bucket={project.buckets.length === 1 && bucket.previewCount === 0
+                  ? { ...bucket, previewCount: 5 }
+                  : bucket}
                 expanded={searching || expandedBuckets.has(`${project.id}:${bucket.id}`)}
                 expandedRepeats={expandedRepeats}
                 onDragEnd={onDragEnd}

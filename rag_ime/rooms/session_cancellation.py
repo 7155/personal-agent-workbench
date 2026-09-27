@@ -58,11 +58,7 @@ class RoomSessionCancellationService:
         room_turn_id: str,
     ) -> dict[str, object]:
         room = self.rooms.get(room_id)
-        events = [
-            event
-            for event in self.rooms.list_events(room_id, after_sequence=0, limit=2000)
-            if str(event.get("turnId") or "") == room_turn_id
-        ]
+        events = self.rooms.control_events_for_turn(room_id, room_turn_id)
         if not any(str(event.get("eventType") or "") == "user_message" for event in events):
             raise ValueError("Room turn does not belong to this Room")
 
@@ -129,16 +125,14 @@ class RoomSessionCancellationService:
                 },
             )
 
-        terminal_participant_ids = {
-            str(event.get("participantId") or "")
-            for event in events
-            if str(event.get("eventType") or "") in {"turn_completed", "turn_failed"}
-            and str(event.get("participantId") or "")
-        }
+        # A participant can complete one dispatch and then wake in the same
+        # Root. Conversely, old route receipts must never cancel an unrelated
+        # direct Session turn. Only current registry bindings own execution.
+        active_session_ids = {session_id for _, session_id, _ in turn_targets}
         active_targets = [
             target
             for target in targets.values()
-            if target["participantId"] not in terminal_participant_ids
+            if target["sessionId"] in active_session_ids
         ]
         partner_dispatches = self.cancel_partner_root(
             room_id=room_id,

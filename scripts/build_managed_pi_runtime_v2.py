@@ -417,6 +417,29 @@ _SDK_PROMPT_OVERLAYS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+_SDK_PROMPT_OVERLAYS_V087 = {
+    **_SDK_PROMPT_OVERLAYS,
+    "dist/core/settings-manager.js": tuple(
+        tuple(text.replace("getCompactionSettings()", "getCompactionSettings(model)")
+              .replace("getCompactionReserveTokens()", "getCompactionReserveTokens(model)")
+              .replace("getCompactionKeepRecentTokens()", "getCompactionKeepRecentTokens(model)")
+              for text in replacement)
+        for replacement in _SDK_PROMPT_OVERLAYS["dist/core/settings-manager.js"]
+    ),
+    "dist/core/compaction/compaction.js": (
+        (
+            "await generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn, retry, callbacks, sessionId)",
+            "await generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn, retry, callbacks, sessionId, customInstructions)",
+        ),
+        (
+            "async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn, retry, callbacks, sessionId) {",
+            "async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn, retry, callbacks, sessionId, customInstructions) {\n    const focus = customInstructions ? `\\n\\nAdditional focus: ${customInstructions}` : \"\";",
+        ),
+        ("${TURN_PREFIX_SUMMARIZATION_PROMPT}`;", "${TURN_PREFIX_SUMMARIZATION_PROMPT}${focus}`;"),
+    ),
+}
+
+
 def _prepare_sdk_prompt_overlay(pi_root: Path, destination: Path) -> Path:
     """Copy built SDK resources and keep the pinned Pi checkout untouched."""
     source = pi_root / "packages" / "coding-agent"
@@ -424,7 +447,9 @@ def _prepare_sdk_prompt_overlay(pi_root: Path, destination: Path) -> Path:
     shutil.copy2(source / "package.json", destination / "package.json")
     shutil.copytree(source / "dist", destination / "dist", symlinks=True)
     (destination / "node_modules").symlink_to(pi_root / "node_modules", target_is_directory=True)
-    for relative_path, replacements in _SDK_PROMPT_OVERLAYS.items():
+    settings_source = (source / "dist/core/settings-manager.js").read_text(encoding="utf-8")
+    overlays = _SDK_PROMPT_OVERLAYS_V087 if "getCompactionSettings(model)" in settings_source else _SDK_PROMPT_OVERLAYS
+    for relative_path, replacements in overlays.items():
         path = destination / relative_path
         content = path.read_text(encoding="utf-8")
         for before, after in replacements:
@@ -1833,6 +1858,7 @@ def _runtime_host_banner(
         'const __ragImeRoutingCards = __join(__ragImeRuntimeDir, "skill-routing-cards.json"); '
         'const __ragImeConfiguredSkills = (process.env.RAG_IME_PI_SKILL_PATHS || "").split(__pathDelimiter).filter(Boolean); '
         'const __ragImePiAgentDir = __resolve(process.env.PI_CODING_AGENT_DIR || __join(__homedir(), ".pi", "agent")); '
+        'process.env.JITI_FS_CACHE = __join(__ragImePiAgentDir, "cache", "jiti"); '
         'const __ragImePiInstalledSkills = (process.env.RAG_IME_PI_USER_SKILL_PATHS || __join(__ragImePiAgentDir, "skills")).split(__pathDelimiter).filter(Boolean); '
         'const __ragImeFindSkillFiles = (path) => { if (!__existsSync(path)) return []; const stat = __statSync(path); if (!stat.isDirectory()) return path.endsWith("SKILL.md") ? [path] : []; if (__existsSync(__join(path, "SKILL.md"))) return [__join(path, "SKILL.md")]; return __readdirSync(path, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => entry.isDirectory() ? __ragImeFindSkillFiles(__join(path, entry.name)) : []); }; '
         'const __ragImeSourcePaths = { bundled: __ragImeSkillPaths, configured: __ragImeConfiguredSkills, "pi-installed": __ragImePiInstalledSkills }; '
@@ -2116,6 +2142,9 @@ def main(argv: list[str] | None = None) -> int:
             bin_dir = staging / "bin"
             runtime_dir.mkdir(mode=0o700)
             bin_dir.mkdir(mode=0o700)
+            # Jiti loads its Babel transform relative to its own module URL.
+            # Keep that package intact instead of relocating its dynamic require.
+            shutil.copytree(pi_root / "node_modules" / "jiti", runtime_dir / "node_modules" / "jiti")
             _copy_bundled_pi_packages(
                 package_root / "pi-packages",
                 staging / "pi-packages",
@@ -2148,6 +2177,7 @@ def main(argv: list[str] | None = None) -> int:
                         "--platform=node",
                         "--format=esm",
                         "--target=node22",
+                        "--external:jiti",
                         f"--alias:@earendil-works/pi-coding-agent={sdk_overlay / 'dist' / 'index.js'}",
                         f"--outfile={bundled_entrypoint}",
                         f'--banner:js={_runtime_host_banner(product_skills, routing_catalog["collisionPolicy"])}',
@@ -2175,6 +2205,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--format=esm",
                     "--target=node22",
                     f"--outfile={bundled_pi_cli}",
+                    "--external:jiti",
                     f'--banner:js={_runtime_host_banner(product_skills, routing_catalog["collisionPolicy"])}',
                 ],
                 cwd=pi_root,

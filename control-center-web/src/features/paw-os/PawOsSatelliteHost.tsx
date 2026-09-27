@@ -23,6 +23,8 @@ import { PawRoomConversation } from '@/paw-os/apps/PawRoomConversation';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { SmoothDisclosureReveal } from '@/features/agent/timeline/SmoothDisclosureReveal';
 import { toggleDisclosurePreservingAnchor } from '@/features/agent/timeline/disclosure-anchor';
+import { presentRoomParticipant } from '@/paw-os/apps/room-participant-presentation';
+import '@/paw-os/styles/paw-os-room-progress.css';
 import { buildRoomFocusProjection, roomFocusCelestialName, roomFocusStateLabel, type RoomFocusState } from '@/paw-os/apps/room-focus-projection';
 import { RoomActivityGlyph } from '@/paw-os/apps/room-tool-glyph';
 import { usePageVisibility } from '@/platform/use-page-visibility';
@@ -417,6 +419,8 @@ function RoomPanelSatellite({ target }: { target: Extract<PawOsWindowTarget, { k
 }
 
 function RoomParticipantSatellite({ target }: { target: Extract<PawOsWindowTarget, { kind: 'participant' }> }) {
+  const [showHistory, setShowHistory] = useState(false);
+  useEffect(() => setShowHistory(false), [target.id, target.roomId]);
   const desktop = usePawOsDesktop();
   const transport = useControlTransport();
   const pageVisible = usePageVisibility();
@@ -440,9 +444,11 @@ function RoomParticipantSatellite({ target }: { target: Extract<PawOsWindowTarge
     onRecoveryState: (_roomId, state) => setLiveState(state),
     onEvents: () => undefined,
   });
-  const focusPartner = useMemo(() => (
-    room ? buildRoomFocusProjection(room, projection).partners.find((partner) => partner.participantId === target.id) : undefined
-  ), [projection, room, target.id]);
+  const focus = useMemo(() => room ? buildRoomFocusProjection(room, projection) : undefined, [projection, room]);
+  const focusPartner = focus?.partners.find((partner) => partner.participantId === target.id);
+  const statusLive = Boolean(pageVisible && liveState === 'synced' && projection && !projection.needsSnapshot);
+  const participantView = focus && focusPartner ? presentRoomParticipant(focusPartner, focus,
+    statusLive ? 'live' : !pageVisible ? 'paused' : liveState === 'failed' ? 'offline' : 'recovering') : undefined;
   const retry = () => {
     setLiveError(undefined);
     retryLive();
@@ -472,9 +478,17 @@ function RoomParticipantSatellite({ target }: { target: Extract<PawOsWindowTarge
               the same shared conversation surface the Room reads, scoped to
               this partner's public lane, so a long history stays virtualized
               instead of windowed behind a「加载更早」boundary. */}
+          <div className="paw-participant-chat__scope">
+            <div role="group" aria-label="伙伴记录范围">
+              <button type="button" aria-pressed={!showHistory} onClick={() => setShowHistory(false)}>本轮进展</button>
+              <button type="button" aria-pressed={showHistory} onClick={() => setShowHistory(true)}>全部历史</button>
+            </div>
+            <p>{showHistory ? '正在查看跨轮次历史；下方状态仅属于当前任务。' : focus?.goal.title || '正在同步本轮任务'}</p>
+          </div>
           {projection ? <PawRoomConversation
             empty={<div className="paw-participant-chat__empty"><MessageSquare size={17} /><span>还没有消息或执行轨迹</span></div>}
             participantId={participant.id}
+            rootId={!showHistory && focus?.goal.rootId !== room.id ? focus?.goal.rootId : undefined}
             projection={projection}
             readOnly
             room={room}
@@ -487,7 +501,10 @@ function RoomParticipantSatellite({ target }: { target: Extract<PawOsWindowTarge
               ariaLabel: `在 Agent 中打开 ${focusPartner?.celestialName ?? roomFocusCelestialName(participant.ordinal)} 的完整 Session`,
               route: `${routePath('agent')}?session=${encodeURIComponent(participant.sessionId)}`,
             }}
-            currentWork={conciseParticipantEntry(focusPartner?.currentAction ?? '', satelliteStatuslineFallback(focusPartner?.state ?? 'idle'))}
+            currentWork={participantView ? `${participantView.task} · ${participantView.action}` : '等待伙伴状态同步'}
+            live={statusLive}
+            stateLabel={participantView?.execution ?? '状态待同步'}
+            taskSummary={participantView ? `${participantView.roles.join(' / ')}${participantView.total ? ` · 执行项 ${participantView.completed}/${participantView.total}` : ''}${participantView.review ? ` · 待复核 ${participantView.review}` : ''}` : undefined}
             state={focusPartner?.state ?? 'idle'}
             traceAction={{
               ariaLabel: `查看 ${focusPartner?.celestialName ?? roomFocusCelestialName(participant.ordinal)} 的 Trace`,
@@ -500,7 +517,10 @@ function RoomParticipantSatellite({ target }: { target: Extract<PawOsWindowTarge
   );
 }
 
-function SatelliteStatusline({ action, currentWork, state, traceAction }: {
+function SatelliteStatusline({ action, currentWork, state, traceAction, stateLabel, live = true, taskSummary }: {
+  stateLabel?: string;
+  live?: boolean;
+  taskSummary?: string;
   action?: { ariaLabel: string; label: string; route: string };
   currentWork: string;
   state: RoomFocusState;
@@ -508,9 +528,9 @@ function SatelliteStatusline({ action, currentWork, state, traceAction }: {
 }) {
   const desktop = usePawOsDesktop();
   return (
-    <footer aria-label="当前工作与状态" className="paw-participant-chat__statusline" data-state={state}>
-      <span className="paw-participant-chat__statusline-state"><i aria-hidden="true" />{roomFocusStateLabel(state)}</span>
-      <p title={currentWork}>{currentWork}</p>
+    <footer aria-label="当前工作与状态" className="paw-participant-chat__statusline" data-state={state} data-live={live}>
+      <span className="paw-participant-chat__statusline-state" title={stateLabel ?? roomFocusStateLabel(state)}><i aria-hidden="true" />{stateLabel ?? roomFocusStateLabel(state)}</span>
+      {taskSummary ? <div className="paw-room-observer-status__work"><small>{taskSummary}</small><p title={currentWork}>{currentWork}</p></div> : <p title={currentWork}>{currentWork}</p>}
       {traceAction ? (
         <button
           aria-label={traceAction.ariaLabel}

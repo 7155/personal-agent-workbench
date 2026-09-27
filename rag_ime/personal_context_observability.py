@@ -5,7 +5,6 @@ import json
 import math
 import sqlite3
 import time
-import uuid
 from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager

@@ -1,3 +1,4 @@
+import { renderGISReport } from './gis-report.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -78,16 +79,11 @@ export function readGISRun({ root, runId }) {
 function statistics(run) {
   return { runId: run.runId, op: run.op, params: run.params ?? {}, inputVersions: run.inputVersions ?? [], outputs: (run.outputs ?? []).map(item => ({ path: item.relativePath, ...item.summary })) };
 }
-function report(run, stats, cartography, hasGeoPackage) {
-  const rows = stats.outputs.map(item => `<tr><td>${escape(item.path)}</td><td>${escape(item.featureCount ?? '—')}</td><td>${escape(item.areaM2 ?? '—')}</td><td>${escape(item.crs ?? '—')}</td></tr>`).join('');
-  const rasterLinks = run.outputs.filter(item => item.kind === 'raster').map(item => `<a href="${escape(`run/${item.relativePath || path.basename(item.path)}`)}">${escape(item.name || path.basename(item.path))}</a>`);
-  const downloads = [hasGeoPackage ? '<a href="result.gpkg">GeoPackage</a>' : '', '<a href="map.pdf">地图 PDF</a>', '<a href="map.svg">矢量版 SVG</a>', '<a href="statistics.csv">统计 CSV</a>', ...rasterLinks].filter(Boolean).join(' · ');
-  return `<!doctype html><html lang="zh"><meta charset="utf-8"><title>${escape(cartography.title)}</title><style>body{font:16px system-ui;max-width:960px;margin:40px auto;padding:24px;color:#213b34}table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd6d1;padding:10px;text-align:left}code,pre{overflow:auto;background:#f2f6f3;padding:12px;display:block}img{width:100%;height:auto;border:1px solid #cbd6d1}a{color:#24634b}</style><h1>${escape(cartography.title)}</h1><p>${escape(cartography.subtitle)}</p><p>运行 <code>${escape(run.runId)}</code></p><p>算子：${escape(run.op)} · 本地计算</p><p>${downloads}</p><a href="map.pdf"><img src="map.png" alt="成果地图预览"></a><p>${escape(cartography.paperSize)} · ${escape(cartography.orientation)} · ${escape(cartography.crs)}。图例、北向、比例尺与投影详情见 <a href="quality.json">制图检查</a>；栅格预览经过降采样，原始输出保存在 run/。</p><h2>参数</h2><pre>${escape(JSON.stringify(stats.params,null,2))}</pre><h2>成果统计</h2><table><tr><th>文件</th><th>要素数</th><th>面积 m²</th><th>坐标系</th></tr>${rows}</table><p>面积采用输出图层适用的投影坐标系计算，测量坐标系见 statistics.json。没有统计值时显示 —。</p><h2>输入版本</h2><pre>${escape(JSON.stringify(stats.inputVersions,null,2))}</pre><p>这是软件计算结果，不能替代工程审批。</p></html>`;
-}
 
 function mapConfiguration(value, run) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('mapOptions must be an object.');
-  const options = { title: `GIS analysis / ${run.op}`, subtitle: run.runId, paperSize: 'A4', orientation: 'landscape', legend: true, scaleBar: true, northArrow: true, ...value };
+  const options = { title: run.op === 'site-selection' ? '地块避让分析报告' : `GIS 分析报告 · ${run.op}`, subtitle: run.runId, paperSize: 'A4', orientation: 'landscape', legend: true, scaleBar: true, northArrow: true, ...value };
+  if (typeof options.title === 'string' && !options.title.trim()) options.title = run.op === 'site-selection' ? '地块避让分析报告' : `GIS 分析报告 · ${run.op}`;
   for (const [key, limit] of [['title', 200], ['subtitle', 400], ['crs', 2048]]) {
     if (options[key] !== undefined && (typeof options[key] !== 'string' || options[key].length > limit || options[key].includes('\0'))) throw new TypeError(`mapOptions.${key} must be text of at most ${limit} characters.`);
   }
@@ -148,7 +144,7 @@ export function createGISBundle({ root, runId, name = 'earth-analysis', version,
     const rendered=spawnSync(python,[fileURLToPath(new URL('./gis-deliver.py',import.meta.url))],{input:JSON.stringify({root,run,target:staging,mapOptions:layout}),encoding:'utf8',timeout:120000,maxBuffer:4000000,env:{...process.env,MPLCONFIGDIR:fontCache,MPLBACKEND:'Agg',MPL_IGNORE_SYSTEM_FONTS:'1'}});
     if(rendered.status!==0)throw new Error(`GIS 制图失败：${rendered.stderr || rendered.error?.message || '请安装 GIS 运行环境中的 matplotlib'}`);
     const { cartography } = json(path.join(staging, 'quality.json'));
-    fs.writeFileSync(path.join(staging,'report.html'),report(run,stats,cartography,fs.existsSync(path.join(staging,'result.gpkg'))));
+    fs.writeFileSync(path.join(staging,'report.html'),renderGISReport({run,stats,cartography,mapPng:fs.readFileSync(path.join(staging,'map.png')),hasGeoPackage:fs.existsSync(path.join(staging,'result.gpkg'))}));
     const walk = dir => {
       for (const name of fs.readdirSync(dir)) {
         const full = path.join(dir,name);

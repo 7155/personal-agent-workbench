@@ -1,5 +1,7 @@
 import { approvalNeedsHumanDecision } from '@/contracts/approval-decision';
+import { toolExecutionOutcome } from '../model/tool-receipt';
 import { isModelAuthError, publicAgentErrorText } from '@/features/agent/public-error';
+import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
 import type {
   RoomActivityProjection,
   RoomMessageProjection,
@@ -32,6 +34,10 @@ export interface RoomTranscriptOptions {
   workItemObjective?(workItemId: string): string;
   /** Restrict the transcript to one partner's public lane (satellite view). */
   participantId?: string;
+  /** Exact Room Root scope for a current-round observer. */
+  rootId?: string;
+  /** Current JEV graph, when this is the graph's owning Room conversation. */
+  jevGraph?: JevSnapshot | null;
 }
 
 export interface RoomTranscript {
@@ -39,15 +45,32 @@ export interface RoomTranscript {
   /** Runtime activity behind a block, so a host can keep approvals and
    *  background-process links inside the shared card. */
   activityByBlockId: Record<string, RoomActivityProjection>;
+  /** Exact old-dispatch aborts whose raw Runtime receipts remain available. */
+  reclaimedToolBlockIds: ReadonlySet<string>;
   phase: RunPhase;
 }
 
-const EMPTY_TRANSCRIPT: RoomTranscript = { messages: [], activityByBlockId: {}, phase: 'idle' };
+const EMPTY_TRANSCRIPT: RoomTranscript = { messages: [], activityByBlockId: {}, reclaimedToolBlockIds: new Set(), phase: 'idle' };
 
 const RESOLVED_APPROVAL_STATES = ['approved', 'rejected', 'applied', 'resolved', 'cancelled'];
 
 /** The state words `roomToolActivityLine` appends to a derived tool headline. */
 const TOOL_STATE_WORDS = ['正在执行', '执行失败', '已停止', '已完成'];
+const PROVIDER_FAILURE_PLACEHOLDERS = new Set([
+  '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。',
+  '模型服务未能生成最终回复。已完成的工具与文件结果已保留；请继续当前对话，或切换模型后继续。',
+]);
+const RECLAIM_STOP_RECEIPT = 'This operation was aborted';
+const RECLAIM_HANDOFF = '旧执行已停止，任务已交接';
+
+interface ReclaimedAttempt {
+  dispatchId: string;
+  roomId: string;
+  rootId: string;
+  sessionId: string;
+  participantId: string;
+  sourceTurnId: string;
+}
 
 /**
  * Project the authoritative Room reducer state onto the shared conversation
@@ -65,7 +88,10 @@ export function roomTranscript(
 
   const messages: TranscriptMessage[] = [];
   const activityByBlockId: Record<string, RoomActivityProjection> = {};
+  const reclaimedToolBlockIds = new Set<string>();
+  const reclaimedAttempts = provenReclaimedAttempts(projection, options.jevGraph);
   const cardByKey = new Map<string, AssistantMessage>();
+  const ambiguousSessionCards = new Set<string>();
   let openKey = '';
   /* Every routing decision in the projection, so a child dispatch can still
    * name the planet whose gravity pulled it (its parent's target). */
@@ -78,16 +104,29 @@ export function roomTranscript(
     turnId: string,
     participantId: string | null,
     timestamp: number,
+    sourceSessionId = '',
   ): AssistantMessage => {
     const key = `${turnId || 'room:ungrouped'}|${participantId ?? 'sol'}`;
     const existing = key === openKey ? cardByKey.get(key) : undefined;
-    if (existing) return existing;
+    if (existing) {
+      if (participantId && sourceSessionId && !ambiguousSessionCards.has(existing.id)) {
+        if (existing.actorSessionId && existing.actorSessionId !== sourceSessionId) {
+          delete existing.actorSessionId;
+          ambiguousSessionCards.add(existing.id);
+        } else {
+          existing.actorSessionId = sourceSessionId;
+        }
+      }
+      return existing;
+    }
     const card: AssistantMessage = {
       id: `loop:${key}:${messages.length}`,
       role: 'assistant',
       timestamp,
       blocks: [],
       actor: options.actorName(participantId),
+      ...(participantId ? { actorId: participantId } : {}),
+      ...(participantId && sourceSessionId ? { actorSessionId: sourceSessionId } : {}),
       turnId,
       ...(options.actorRole?.(participantId) ? { actorRole: options.actorRole(participantId) } : {}),
     };
@@ -98,6 +137,10 @@ export function roomTranscript(
   };
 
   for (const entry of roomChronology(projection, options.participantId)) {
+    const entryRoot = entry.kind === 'terminal' ? entry.turn.rootId || entry.turn.id
+      : entry.kind === 'message' ? entry.message.rootId || entry.message.turnId
+      : text(entry.activity.payload.rootId) || entry.activity.turnId;
+    if (options.rootId && entryRoot !== options.rootId) continue;
     if (entry.kind === 'message' && entry.message.role === 'user') {
       openKey = '';
       const steerReceipt = roomSteerReceipt(entry.message, projection);
@@ -112,7 +155,8 @@ export function roomTranscript(
       continue;
     }
     if (entry.kind === 'message') {
-      const card = cardFor(entry.message.turnId, entry.message.participantId, entry.message.createdAtMs);
+      const card = cardFor(entry.message.turnId, entry.message.participantId, entry.message.createdAtMs, entry.message.sourceSessionId);
+      const reclaimedMessage = isReclaimedFailureMessage(entry.message, reclaimedAttempts.get(entry.message.dispatchId ?? ''), projection);
       const authError = entry.message.status === 'failed'
         ? entry.message.message?.blocks.find((block) => block.type === 'error'
           && block.visibility !== 'private_session' && isModelAuthError(block.data.message))
@@ -122,7 +166,7 @@ export function roomTranscript(
       card.blocks.push({
         id: `text:${entry.message.id}`,
         kind: 'text',
-        text: authGuidance && entry.message.text.startsWith('模型服务未能生成最终回复')
+        text: reclaimedMessage ? `${RECLAIM_HANDOFF}。` : authGuidance && entry.message.text.startsWith('模型服务未能生成最终回复')
           ? authGuidance
           : entry.message.text,
         ...(entry.message.status === 'streaming' ? { streaming: true } : {}),
@@ -130,10 +174,12 @@ export function roomTranscript(
       continue;
     }
     if (entry.kind === 'activity') {
-      const card = cardFor(entry.activity.turnId, entry.activity.participantId, entry.activity.createdAtMs);
-      const block = activityBlock(entry.activity, dispatchPlans, options);
+      const card = cardFor(entry.activity.turnId, entry.activity.participantId, entry.activity.createdAtMs, entry.activity.sourceSessionId);
+      const reclaimedTool = isReclaimedToolFailure(entry.activity, reclaimedAttempts.get(text(entry.activity.payload.dispatchId)));
+      const block = activityBlock(entry.activity, dispatchPlans, options, reclaimedTool);
       card.blocks.push(block);
       activityByBlockId[block.id] = entry.activity;
+      if (reclaimedTool) reclaimedToolBlockIds.add(block.id);
       continue;
     }
     const card = cardFor(entry.turn.id, entry.turn.participantIds[0] ?? null, entry.turn.updatedAtMs || entry.turn.createdAtMs);
@@ -143,7 +189,107 @@ export function roomTranscript(
     openKey = '';
   }
 
-  return { messages, activityByBlockId, phase: roomPhase(projection) };
+  return { messages, activityByBlockId, reclaimedToolBlockIds, phase: roomPhase(projection) };
+}
+
+/** Accepted cancel + drained old attempt + accepted same-task new owner are
+ * durable handoff evidence. A timeout, failed dispatch or unrelated Room never
+ * changes the presentation of Runtime failures. */
+function provenReclaimedAttempts(
+  projection: RoomProjectionState,
+  graph?: JevSnapshot | null,
+): Map<string, ReclaimedAttempt> {
+  const attempts = new Map<string, ReclaimedAttempt>();
+  if (!graph?.graphId || !graph.rootId || !projection.roomId) return attempts;
+  const dispatches = graph.effects.filter((effect) => effect.operation === 'dispatch');
+  for (const cancel of graph.effects) {
+    if (cancel.operation !== 'cancel' || cancel.state !== 'accepted') continue;
+    const request = cancel.request;
+    const reclaimId = text(request.reclaimId);
+    const dispatchId = text(request.dispatchId);
+    const taskId = text(request.taskId);
+    const sessionId = text(request.sessionId);
+    if (!reclaimId || !dispatchId || !taskId || !sessionId
+      || cancel.effectId !== `cancel:${reclaimId}`
+      || request.graphId !== graph.graphId || request.rootId !== graph.rootId
+      || cancel.receipt.state !== 'accepted' || !text(cancel.receipt.receiptId)
+      || !sameIdentity(cancel.receipt, request, ['dispatchId', 'taskId', 'sessionId', 'reclaimId'])) continue;
+    const old = dispatches.find((effect) => effect.effectId === dispatchId
+      && effect.state === 'accepted' && effect.executionStatus === 'drained'
+      && effect.request.purpose === 'execute'
+      && effect.request.graphId === graph.graphId
+      && effect.request.roomId === projection.roomId
+      && effect.request.rootId === graph.rootId
+      && sameIdentity(effect.request, request, ['dispatchId', 'taskId', 'sessionId'])
+      && effect.receipt.state === 'accepted' && Boolean(text(effect.receipt.receiptId))
+      && Boolean(text(effect.receipt.turnId))
+      && sameIdentity(effect.receipt, request, ['dispatchId', 'taskId', 'sessionId']));
+    const ownerId = text(old?.request.ownerId);
+    if (!old || !ownerId) continue;
+    const currentTask = graph.tasks.find((task) => task.id === taskId);
+    if (!currentTask) continue;
+    const successor = dispatches.some((effect) => effect.effectId === effect.request.dispatchId
+      && effect.effectId !== dispatchId && effect.state === 'accepted'
+      && effect.request.purpose === 'execute'
+      && effect.request.graphId === graph.graphId
+      && effect.request.roomId === projection.roomId
+      && effect.request.rootId === graph.rootId
+      && effect.request.taskId === taskId
+      && effect.request.taskRevision === currentTask.revision
+      && effect.effectId === currentTask.acceptedTurnId
+      && effect.request.ownerId === currentTask.ownerId
+      && Boolean(text(effect.request.ownerId)) && effect.request.ownerId !== ownerId
+      && Boolean(text(effect.request.sessionId)) && effect.request.sessionId !== sessionId
+      && effect.receipt.state === 'accepted' && Boolean(text(effect.receipt.receiptId))
+      && Boolean(text(effect.receipt.turnId))
+      && sameIdentity(effect.receipt, effect.request, ['dispatchId', 'taskId', 'sessionId']));
+    if (successor) attempts.set(dispatchId, {
+      dispatchId, roomId: projection.roomId, rootId: graph.rootId, sessionId, participantId: ownerId,
+      sourceTurnId: text(old.receipt.turnId),
+    });
+  }
+  return attempts;
+}
+
+function sameIdentity(left: Record<string, unknown>, right: Record<string, unknown>, fields: string[]): boolean {
+  return fields.every((field) => Boolean(text(right[field])) && left[field] === right[field]);
+}
+
+function isReclaimedFailureMessage(
+  message: RoomMessageProjection,
+  attempt: ReclaimedAttempt | undefined,
+  projection: RoomProjectionState,
+): boolean {
+  const publicErrors = message.message?.blocks.filter((block) => block.type === 'error'
+    && block.visibility !== 'private_session') ?? [];
+  const exactChildAbort = Boolean(attempt && message.status === 'aborted'
+    && projection.turnsById[attempt.rootId]?.abortedDispatchIds?.includes(attempt.dispatchId));
+  return Boolean(attempt && (message.status === 'failed' || exactChildAbort)
+    && message.roomId === attempt.roomId
+    && message.turnId === attempt.rootId && message.rootId === attempt.rootId
+    && message.dispatchId === attempt.dispatchId
+    && message.participantId === attempt.participantId
+    && message.sourceSessionId === attempt.sessionId
+    && message.sourceTurnId === attempt.sourceTurnId
+    && PROVIDER_FAILURE_PLACEHOLDERS.has(message.text.trim())
+    && publicErrors.length > 0
+    && publicErrors.every((block) => text(block.data.message) === RECLAIM_STOP_RECEIPT));
+}
+
+function isReclaimedToolFailure(activity: RoomActivityProjection, attempt?: ReclaimedAttempt): boolean {
+  const result = activity.payload.result;
+  const resultError = result && typeof result === 'object' && !Array.isArray(result)
+    ? text((result as Record<string, unknown>).error) : '';
+  const errors = [text(activity.payload.error), resultError].filter(Boolean);
+  return Boolean(attempt && activity.status === 'failed'
+    && activity.turnId === attempt.rootId && activity.payload.rootId === attempt.rootId
+    && activity.payload.dispatchId === attempt.dispatchId
+    && activity.participantId === attempt.participantId
+    && activity.sourceSessionId === attempt.sessionId
+    && activity.payload.sourceTurnId === attempt.sourceTurnId
+    && text(activity.payload.sourceEventType) === 'tool_finished'
+    && !toolExecutionOutcome(activity.payload)
+    && errors.length > 0 && errors.every((error) => error === RECLAIM_STOP_RECEIPT));
 }
 
 /** Which turn a failed/aborted card can safely retry from, if any. */
@@ -223,10 +369,36 @@ function roomChronology(
     for (const turnId of projection.turnOrder) {
       const turn = projection.turnsById[turnId];
       if (!turn || (turn.status !== 'failed' && turn.status !== 'aborted')) continue;
+      // Public messages and activities use Room event sequences. Mixing their
+      // sequence numbers with this synthetic card's wall-clock timestamp puts
+      // an old failure after every later turn in the complete transcript.
+      const turnEventSequences = [
+        ...turn.messageIds.map((id) => projection.messagesById[id]?.sequence),
+        ...turn.activityIds.map((id) => projection.activitiesById[id]?.sequence),
+        ...entries.map((entry) => {
+          if (entry.kind === 'terminal') return undefined;
+          const event = entry.kind === 'message' ? entry.message : entry.activity;
+          return event.turnId === turn.id ? event.sequence : undefined;
+        }),
+      ].filter((sequence): sequence is number => Number.isSafeInteger(sequence));
+      const priorSequence = entries
+        .reduce((latest, entry) => {
+          if (entry.kind === 'terminal') return latest;
+          const event = entry.kind === 'message' ? entry.message : entry.activity;
+          return Number.isSafeInteger(event.sequence)
+            && event.createdAtMs <= (turn.updatedAtMs || turn.createdAtMs)
+            ? Math.max(latest, event.sequence!)
+            : latest;
+        }, Number.NEGATIVE_INFINITY);
+      const terminalSequence = turnEventSequences.length
+        ? Math.max(...turnEventSequences)
+        : priorSequence;
       entries.push({
         kind: 'terminal',
         turn,
-        order: (turn.updatedAtMs || turn.createdAtMs) + 0.75,
+        order: Number.isFinite(terminalSequence)
+          ? terminalSequence + 0.75
+          : (turn.updatedAtMs || turn.createdAtMs) + 0.75,
         id: `terminal:${turn.id}`,
       });
     }
@@ -277,9 +449,10 @@ function activityBlock(
   activity: RoomActivityProjection,
   dispatchPlans: RoomDispatchPlan[],
   options: RoomTranscriptOptions,
+  reclaimedTool = false,
 ): AssistantBlock {
   const eventType = text(activity.payload.sourceEventType, activity.kind);
-  if (roomApprovalDecision(activity) || text(activity.payload.approvalId)) {
+  if (roomApprovalDecision(activity) || (text(activity.payload.approvalId) && !(eventType === 'tool' || eventType.startsWith('tool_')))) {
     return {
       id: `approval:${activity.id}`,
       kind: 'tool',
@@ -300,18 +473,18 @@ function activityBlock(
     const objective = plan.workItemId ? options.workItemObjective?.(plan.workItemId) ?? '' : '';
     const routingDetail = [
       objective ? `任务：${objective}` : '',
-      plan.routingPolicyLabel,
+      plan.routingPolicy === 'jev' ? 'Jev 已选择本轮负责伙伴' : plan.routingPolicyLabel,
       ...plan.candidates.map((candidate) => (
         `${roomPublicPlanetName(options.actorName(candidate.participantId))} · ${candidate.score.toFixed(1)}${candidate.selected ? ' · 已选择' : ''}${candidate.signals.length ? ` · ${candidate.signals.join('、')}` : ''}`
       )),
-      plan.dispatchId ? `分派 ${plan.dispatchId}` : '',
-      plan.workItemId ? `任务 ${plan.workItemId}` : '',
     ].filter(Boolean).join('\n');
     /* Runtime's own line stays first: the derived plan summary explains the
      * routing, it does not replace what the Room actually published. A real
      * WorkItem objective is a paragraph, so it rides in the card body rather
      * than flooding the head. */
-    const dispatchLine = [compact(activity.summary), roomDispatchPlanSummary(plan)]
+    const dispatchLine = [compact(activity.summary), plan.reason === 'jev'
+      ? '由 Jev 选择本轮负责伙伴'
+      : roomDispatchPlanSummary(plan)]
       .filter(Boolean)
       .filter((part, index, parts) => parts.indexOf(part) === index);
     return {
@@ -326,6 +499,17 @@ function activityBlock(
   }
   if (eventType === 'tool' || eventType.startsWith('tool_')) {
     const evidence = roomToolEvidence(activity.payload);
+    if (reclaimedTool) return {
+      id: `tool:${activity.id}`,
+      kind: 'tool',
+      name: evidence?.label || '工具',
+      summary: RECLAIM_HANDOFF,
+      status: 'cancelled',
+      ...(evidence?.facts.length
+        ? { output: evidence.facts.map((fact) => `${fact.label === '失败原因' ? '停止回执' : fact.label}：${fact.value}`).join('\n') }
+        : {}),
+      startedAt: activity.createdAtMs,
+    };
     /* Runtime often echoes a raw argument blob as the summary. A reader line
      * is derived from real evidence instead; the blob stays reachable as the
      * card's input, so folding never costs a trace. */
@@ -342,6 +526,7 @@ function activityBlock(
       id: `tool:${activity.id}`,
       kind: 'tool',
       name,
+      executionOutcome: toolExecutionOutcome(activity.payload),
       summary: duplicate ? '' : line,
       status: toolStatus(activity.status),
       ...(raw ? { input: activity.summary.trim() } : {}),

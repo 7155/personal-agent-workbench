@@ -34,7 +34,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const read = (current: GoldenSuite) => ({ ok: true as const, items: [current], suite: current });
 const receipt = (command: GoldenCommand, current: GoldenSuite, replayed = false) => ({ ok: true, suite: current, job: current.jobs.at(-1) ?? null, clientRequestId: command.clientRequestId, replayed });
 
-function mount(transport: ControlTransport, options: { startNew?: boolean; onClose?: () => void } = {}) {
+function mount(transport: ControlTransport, options: { startNew?: boolean; onClose?: () => void; initialSuiteId?: string; initialJobId?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   clients.push(client);
   return { client, ...render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><GoldenWorkflow {...options} /></ControlTransportProvider></QueryClientProvider>) };
@@ -57,6 +57,13 @@ function experimentResult(): ExperimentResult {
 }
 
 describe('Golden workflow user boundaries', () => {
+  it('opens the review step for a linked review job instead of the experiment step', async () => {
+    const current = suite({ cases: [goldenCase()], jobs: [job('interrupted', 'review')] });
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.golden.get': read(current) } });
+    mount(transport, { initialSuiteId: current.suiteId, initialJobId: 'job-review' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: '审核标准' })).toHaveAttribute('aria-selected', 'true'));
+    expect(screen.getByRole('tabpanel', { name: '审核标准' })).toBeVisible();
+  });
   it('selects a completed frozen variant without submitting another experiment', () => {
     const result = experimentResult();
     const method = { kind: 'application_skill' as const, title: '冻结方法', body: '逐项核对来源', sha256: 'a'.repeat(64), source: { kind: 'inline' as const } };
@@ -764,4 +771,14 @@ describe('Golden command recovery', () => {
     expect(isExperimentResult({ ...experimentResult(), receipts: [{ stage: { message: 'malformed' } }] })).toBe(false);
     expect(isExperimentResult({ partial: true, usage, error: 'interrupted' })).toBe(false);
   });
+});
+
+
+it('dispatches independent Agent review with its model and blocks while case edits are unsaved', () => {
+  const review = vi.fn().mockResolvedValue(true);
+  render(<CaseReview suite={suite({ cases: [goldenCase()] })} disabled={false} onReview={vi.fn()} onNext={vi.fn()} onAgentReview={review} />);
+  fireEvent.click(screen.getByRole('button', { name: '让 Agent 核对待审题目' }));
+  expect(review).toHaveBeenCalledWith({ model });
+  fireEvent.change(screen.getByRole('textbox', { name: '问题' }), { target: { value: '未保存的新问题' } });
+  expect(screen.getByRole('button', { name: '让 Agent 核对待审题目' })).toBeDisabled();
 });

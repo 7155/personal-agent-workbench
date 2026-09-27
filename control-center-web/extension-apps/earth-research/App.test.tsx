@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -28,7 +28,7 @@ it('restores only the owning App Session and reuses the original full conversati
   expect(transport.requests.some(x => x.request.pathId === 'agent.sessions.create')).toBe(false);
   await userEvent.click(screen.getByRole('button',{name:'选择地图地点'}));
   expect(JSON.parse(seen.mock.lastCall?.[0].composerContext.text).features[0].geometry.coordinates).toEqual([120.1,30.2]);
-  expect(screen.getByRole('button',{name:'地图'})).toHaveAttribute('aria-pressed','true');
+  expect(document.querySelector('.earth-panels')).toHaveAttribute('data-view','map');
   expect(transport.requests.some(x=>x.request.pathId==='agent.session.prompt')).toBe(false);
   act(()=>seen.mock.lastCall?.[0].composerContext.onClear());
   expect(seen.mock.lastCall?.[0].composerContext).toBeUndefined();
@@ -43,7 +43,9 @@ it('creates the exact App-owned Session and freezes the task in its first messag
     'agent.session.workspace.read': () => { throw new Error('No run yet'); },
   } });
   show(transport);
+  await user.click(await screen.findByRole('button', { name: '打开项目' }));
   await user.type(await screen.findByRole('textbox', { name: '项目文件夹' }), '/work');
+  fireEvent.click(screen.getByRole('button', { name: '云端分析设置' }));
   await user.type(screen.getByRole('textbox', { name: 'Google Cloud 项目' }), 'test-project');
   await user.type(screen.getByRole('textbox', { name: '分析任务' }), '比较两个候选地块');
   await user.click(screen.getByRole('button', { name: '开始分析' }));
@@ -57,7 +59,8 @@ it('creates the exact App-owned Session and freezes the task in its first messag
 it('offers a short plain-language GIS acceptance task', async () => {
   const transport = new MockControlTransport({ routes: { 'agent.sessions.list': { items: [] } } });
   show(transport);
-  await userEvent.click(await screen.findByRole('button', { name: '填入验收任务' }));
+  await userEvent.click(await screen.findByRole('button', { name: '云端分析设置' }));
+   await userEvent.click(screen.getByRole('button', { name: '填入验收任务' }));
   expect(screen.getByRole('textbox', { name: '分析任务' })).toHaveValue(GIS_ACCEPTANCE_TASK);
   expect(GIS_ACCEPTANCE_TASK).toContain('避开河流 200 米');
 });
@@ -87,9 +90,11 @@ it('disables script execution while a non-script workspace artifact is open', as
   show(transport);
   await screen.findByTestId('original-agent');
   const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: '更多' }));
   await user.click(screen.getByRole('button', { name: '代码' }));
   const runButton = await screen.findByRole('button', { name: '运行已保存代码' });
   await waitFor(() => expect(runButton).not.toBeDisabled());
+  await user.click(screen.getByRole('button', { name: '更多' }));
   await user.click(screen.getByRole('button', { name: '地图' }));
   await user.click(screen.getByRole('button', { name: '打开 HTML 报告' }));
   expect(runButton).toBeDisabled();
@@ -102,6 +107,7 @@ it('disables script execution while a non-script workspace artifact is open', as
 it('opens a local GIS project without Google configuration or a model prompt',async()=>{
  const transport=new MockControlTransport({routes:{'agent.sessions.list':{items:[]},'agent.sessions.create':{session:{id:'local',title:'GIS 项目',mode:'coordinator',updatedAtMs:1,workspaceRoots:['/work']}},'agent.session.workspace.read':()=>{throw new Error('path does not exist in the authorized workspace; nearby entries: .earth/layers');}}});
  show(transport);
+ await userEvent.click(await screen.findByRole('button',{name:'打开项目'}));
  await userEvent.type(await screen.findByRole('textbox',{name:'项目文件夹'}),'/work');
  await userEvent.click(screen.getByRole('button',{name:'新建项目 Agent'}));
  await screen.findByTestId('original-agent');
@@ -113,8 +119,9 @@ it('opens a local GIS project without Google configuration or a model prompt',as
 it('opens the chosen map workflow without starting analysis or sending a model prompt',async()=>{
  const transport=new MockControlTransport({routes:{'agent.sessions.list':{items:[]}}});
  show(transport);
- await screen.findByRole('textbox',{name:'项目文件夹'});
- await userEvent.click(screen.getByRole('button',{name:'开始任务'}));
+ await screen.findByRole('button',{name:'打开项目'});
+ await userEvent.click(screen.getByRole('button',{name:'更多'}));
+ await userEvent.click(screen.getByRole('button',{name:'分析'}));
  await userEvent.click(screen.getByRole('button',{name:/研究变化/}));
  expect(await screen.findByRole('heading',{name:'查看植被状况'})).toBeVisible();
  expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
@@ -137,11 +144,11 @@ it('uses the existing directory bridge, then enters an existing Agent without ch
   await userEvent.click(screen.getByRole('button', { name: '选择 GIS 项目与 Agent' }));
   await userEvent.click(screen.getByRole('button', { name: '浏览…' }));
   expect(transport.filePickCalls).toEqual([{ purpose: 'workspace-root', selection: 'directory', multiple: false, maxFiles: 1 }]);
-  expect(screen.getByLabelText('当前项目文件夹')).toHaveTextContent('/gis/first');
+  expect(screen.getByLabelText('当前项目文件夹')).toHaveAttribute('data-path', '/gis/first');
   expect(screen.getByTestId('original-agent')).toHaveTextContent('first');
   await userEvent.click(screen.getByRole('button', { name: '进入所选 Agent' }));
   expect(screen.getByTestId('original-agent')).toHaveTextContent('second');
-  expect(screen.getByLabelText('当前项目文件夹')).toHaveTextContent('/gis/second');
+  expect(screen.getByLabelText('当前项目文件夹')).toHaveAttribute('data-path', '/gis/second');
   expect(seenMap.mock.lastCall?.[0].workspaceKey).toBe('/gis/second');
   expect(transport.requests.some(item => ['agent.sessions.create', 'agent.session.prompt', 'agent.session.mode.update', 'agent.session.workspace.update'].includes(item.request.pathId))).toBe(false);
 });
@@ -164,7 +171,7 @@ it('creates a second Agent in the same directory without a prompt or rebinding t
   await userEvent.selectOptions(screen.getByRole('combobox', { name: '项目 Agent' }), 'first');
   await userEvent.click(screen.getByRole('button', { name: '进入所选 Agent' }));
   expect(screen.getByTestId('original-agent')).toHaveTextContent('first');
-  expect(screen.getByLabelText('当前项目文件夹')).toHaveTextContent('/gis/shared');
+  expect(screen.getByLabelText('当前项目文件夹')).toHaveAttribute('data-path', '/gis/shared');
 });
 
 it('uses the installed Electron directory picker when transport picking is unavailable', async () => {
@@ -173,6 +180,7 @@ it('uses the installed Electron directory picker when transport picking is unava
   const transport = new MockControlTransport({ routes: { 'agent.sessions.list': { items: [] } } });
   Object.defineProperty(transport, 'pickFiles', { value: undefined });
   show(transport);
+  await userEvent.click(await screen.findByRole('button',{name:'打开项目'}));
   await userEvent.click(await screen.findByRole('button', { name: '浏览…' }));
   await waitFor(() => expect(screen.getByRole('textbox', { name: '项目文件夹' })).toHaveValue('/gis/native'));
   expect(pickWorkspaceDirectory).toHaveBeenCalledOnce();
@@ -269,4 +277,12 @@ it('deletes only selected typed IDs through the versioned layer service without 
   expect(JSON.parse(commands.at(-1)!.slice('/earth-layer-save '.length))).toMatchObject({layerId:'parcels',expectedRevision:1,features:[{id:'1',properties:{note:'保留'}},{id:2,properties:{note:'保留'}}]});
   expect(seenMap.mock.lastCall?.[0].projectLayers[0].revision).toBe(2);
   expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+});
+
+ it('does not open setup forms automatically on a fresh workspace', async () => {
+  show(new MockControlTransport({routes:{'agent.sessions.list':{items:[]}}}));
+  expect(await screen.findByRole('button',{name:'打开项目'})).toBeVisible();
+  expect(screen.queryByRole('textbox',{name:'项目文件夹'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox',{name:'Google Cloud 项目'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'地图＋代码'})).not.toBeInTheDocument();
 });

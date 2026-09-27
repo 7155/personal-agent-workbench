@@ -7,6 +7,7 @@ import { readOfficialDocs } from './official-docs';
 import { parseMapState, parseViewCommand } from './view-contract';
 import { prepareRemoteSensingWorkflow, runRemoteSensingWorkflow } from './remote-sensing.mjs';
 import { prepareCloudWorkflow } from './cloud-workflows.mjs';
+import { preflightSiting } from './gis-preflight.mjs';
 import { runSitingWorkflow } from './gis-workflows.mjs';
 import { listGISRuns, readGISRun, compareGISRuns, verifyGISBundle } from './gis-delivery.mjs';
 import { saveProjectLayer, updateProjectLayerMetadata } from './gis-project.mjs';
@@ -73,6 +74,7 @@ export default function registerEarthResearchPackage(pi: any) {
     'earth-gis-region': queryGISRegion,
     'earth-gis-pixel': queryGISPixel,
     'earth-gis-siting': runSitingWorkflow,
+    'earth-gis-preflight': preflightSiting,
     'earth-remote-prepare': prepareWorkflow,
     'earth-remote-run': runRemoteSensingWorkflow,
     'earth-gis-runs': listGISRuns,
@@ -88,18 +90,19 @@ export default function registerEarthResearchPackage(pi: any) {
     }});
   }
   const serviceTools = [
+    ['earth_gis_preflight','检查选址输入',preflightSiting,schema({parcels:string,avoidance:string,distance:{type:'number'}},['parcels','avoidance','distance'])],
     ['earth_remote_prepare','准备遥感工作流',prepareWorkflow,schema({plan:{type:'object',additionalProperties:true}},['plan'])],
     ['earth_remote_run','运行本地遥感工作流',runRemoteSensingWorkflow,schema({planId:string},['planId'])],
     ['earth_spatial_load','加载数据库图层',loadSpatialLayer,schema({sourceId:string,layer:string},['sourceId','layer'])],
     ['earth_gis_region','查询范围内栅格统计',queryGISRegion,schema({path:string,geometry:{type:'object',additionalProperties:true},band:{type:'number'},allTouched:{type:'boolean'}},['path','geometry'])],
-    ['earth_gis_siting','运行避让选址方案',runSitingWorkflow,schema({parcels:string,avoidance:string,distance:{type:'number'},commandId:string},['parcels','avoidance','distance'])],
+    ['earth_gis_siting','运行避让选址方案',runSitingWorkflow,schema({parcels:string,avoidance:string,distance:{type:'number'},commandId:string,expectedInputs:{type:'array',minItems:2,maxItems:2,items:schema({role:string,path:string,sha256:string,files:{type:'array',minItems:1,items:schema({name:string,sha256:string},['name','sha256'])}},['role','path','sha256','files'])}},['parcels','avoidance','distance'])],
     ['earth_qgis_list','列出 QGIS 算法',listQGISAlgorithms,schema({})],
     ['earth_qgis_help','查询 QGIS 参数',helpQGISAlgorithm,schema({algorithm:string},['algorithm'])],
     ['earth_qgis_run','运行 QGIS 算法',runQGISAlgorithm,schema({algorithm:string,inputs:{type:'object',additionalProperties:true}},['algorithm','inputs'])],
   ] as const;
   for(const [name,label,service,parameters] of serviceTools) pi.registerTool({name,label,parameters,executionMode:'sequential',description:label+'。读取真实数据，保留实际执行回执。',async execute(_id:string,input:any,_signal:AbortSignal,_update:Update,ctx:Context){
-    const result=await (service as (input:any)=>any)({...input,root:workspace(ctx)});
-    return {content:[{type:'text',text:JSON.stringify(result)}],details:result,isError:result.status==='failed'};
+    const result=await (service as (input:any)=>any)({...input,root:workspace(ctx),signal:_signal});
+    return {content:[{type:'text',text:JSON.stringify(result)}],details:result,isError:['failed','cancelled','needs_input'].includes(result.status)};
   }});
   pi.registerTool({
     name:'earth_layer_save', label:'保存项目图层版本', executionMode:'sequential',
@@ -175,7 +178,7 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Export a workspace-owned vector layer as GeoJSON, ESRI Shapefile (including .shp/.shx/.dbf/.prj and a zip), GeoPackage or KML. The receipt records CRS, feature count and every output file; no cloud upload is implied.',
     parameters: schema({ input: string, format: { type: 'string', enum: ['geojson', 'shp', 'gpkg', 'kml'] }, name: string, layer: string, sourceLayer:string,targetCrs: string,scope:{type:'string',enum:['all','selected']},featureIds:{type:'array',items:{type:['string','number']}},layerId:string,revision:{type:'number'} }, ['input', 'format', 'name']),
     async execute(_id: string, input: { input: string; format: 'geojson' | 'shp' | 'gpkg' | 'kml'; name: string; layer?: string; targetCrs?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await exportGISLayer({ root: workspace(ctx), request: input });
+      const result = await exportGISLayer({ root: workspace(ctx), request: input, signal: _signal });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status !== 'completed' };
     },
   });
@@ -184,7 +187,7 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Register a project-owned GeoPackage/SpatiaLite file or a PostGIS secret reference. Credentials never enter the workspace; local database layers are catalogued immediately, while PostGIS stays configured_pending until its secret-backed driver is available.',
     parameters: schema({ name: string, kind: { type: 'string', enum: ['geopackage', 'spatialite', 'postgis'] }, path: string, schema: string, table: string, secretReference: string, readOnly: { type: 'boolean' } }, ['name', 'kind']),
     async execute(_id: string, input: { name: string; kind: 'geopackage' | 'spatialite' | 'postgis'; path?: string; schema?: string; table?: string; secretReference?: string; readOnly?: boolean }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await connectSpatialSource({ root: workspace(ctx), source: input });
+      const result = await connectSpatialSource({ root: workspace(ctx), source: input, signal: _signal });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: result.status, source: result } };
     },
   });
@@ -202,7 +205,7 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Read the actual schema, CRS, extent, feature count and sample attributes of a local vector file, or dimensions/bands/value range of a raster. The path must be relative to the bound workspace.',
     parameters: schema({ path: string }, ['path']),
     async execute(_id: string, input: { path: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await inspectGISPath({ root: workspace(ctx), path: input.path });
+      const result = await inspectGISPath({ root: workspace(ctx), path: input.path, signal: _signal });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: 'completed', result } };
     },
   });
@@ -211,8 +214,8 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Read the actual value of one local raster cell at a WGS84 longitude/latitude. It returns outside/nodata explicitly and never treats an empty value as zero.',
     parameters: schema({ path: string, longitude: { type: 'number' }, latitude: { type: 'number' }, band: { type: 'number' } }, ['path', 'longitude', 'latitude']),
     async execute(_id: string, input: { path: string; longitude: number; latitude: number; band?: number }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await queryGISPixel({ root: workspace(ctx), ...input });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+      const result = await queryGISPixel({ root: workspace(ctx), ...input, signal: _signal });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: ['failed', 'cancelled', 'needs_input'].includes(String(result.status)) };
     },
   });
   pi.registerTool({
@@ -220,7 +223,7 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Run one deterministic local GIS operation from earth_gis_catalog. Inputs map roles to workspace-relative data paths, params follow the catalog, output is a safe layer name. Results and code are persisted under .earth/gis/runs and the workspace receipt; use actual outputs in later steps. Prefer this for buffer, clip, overlay, joins, zonal statistics and terrain, not generated code. It is independent of Earth Engine and requires the configured local GIS Python environment.',
     parameters: schema({ op: { type: 'string', enum: [...GIS_OPERATION_IDS] }, inputs: { type: 'object', additionalProperties: string }, params: { type: 'object', additionalProperties: true }, output: string, saveAs: string }, ['op', 'inputs']),
     async execute(_id: string, input: { op: string; inputs: Record<string, string>; params?: Record<string, unknown>; output?: string; saveAs?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await runGISOperation({ root: workspace(ctx), request: input });
+      const result = await runGISOperation({ root: workspace(ctx), request: input, signal: _signal });
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status !== 'completed' };
     },
   });
@@ -261,8 +264,8 @@ export default function registerEarthResearchPackage(pi: any) {
     description: 'Run bounded deterministic local GIS requests with independent run IDs and an aggregate receipt. Failed items remain visible and are never silently retried.',
     parameters: schema({ requests: { type: 'array', items: { type: 'object', additionalProperties: true } }, concurrency: { type: 'number' } }, ['requests']),
     async execute(_id: string, input: { requests: Array<Record<string, unknown>>; concurrency?: number }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await runGISBatch({ root: workspace(ctx), requests: input.requests as any, concurrency: input.concurrency });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+      const result = await runGISBatch({ root: workspace(ctx), requests: input.requests as any, concurrency: input.concurrency, signal: _signal });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: ['failed', 'cancelled', 'needs_input'].includes(String(result.status)) };
     },
   });
   pi.registerTool({
@@ -280,7 +283,7 @@ export default function registerEarthResearchPackage(pi: any) {
     parameters: schema({ scripts: { type: 'array', items: string }, concurrency: { type: 'number' }, project: string, python: string, dependencies: string }, ['scripts']),
     async execute(_id: string, input: { scripts: string[]; concurrency?: number; project?: string; python?: string; dependencies?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = await runEarthScriptBatch({ root: workspace(ctx), ...input });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: ['failed', 'cancelled', 'needs_input'].includes(String(result.status)) };
     },
   });
   pi.registerTool({
@@ -390,7 +393,7 @@ export default function registerEarthResearchPackage(pi: any) {
     parameters: schema({ path: string, assetId: string, cli: string }, ['path', 'assetId']),
     async execute(_id: string, input: { path: string; assetId: string; cli?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = await uploadTableAsset({ root: workspace(ctx), ...input });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: ['failed', 'cancelled', 'needs_input'].includes(String(result.status)) };
     },
   });
 }

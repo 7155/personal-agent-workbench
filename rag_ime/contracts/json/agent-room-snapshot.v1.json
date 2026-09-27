@@ -118,7 +118,7 @@
         "surfaceKey": {"type": "string", "pattern": "^$|^[a-z0-9][a-z0-9._-]{0,63}$"},
         "routingPolicy": {
           "type": "string",
-          "enum": ["manual_mentions", "moderator", "sequential", "natural", "parallel", "invite_only"]
+          "enum": ["manual_mentions", "moderator", "sequential", "natural", "parallel", "invite_only", "jev"]
         },
         "routingConfig": {"type": "object"},
         "moderatorParticipantId": {"type": "string"},

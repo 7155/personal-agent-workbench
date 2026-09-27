@@ -5,6 +5,77 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Connect Jev Room planning, dependency dispatch, independent verification,
+  repair and synthesis to ordinary Pi Sessions, durable events and exact
+  execution receipts. Add GPT-6 model routing and role cards, optional automatic
+  Jev decisions for dangerous tools, and visible task/Tool progress with
+  reduced-motion support. Preserve read-only projections and historical Rooms.
+- Let users review, adjust or defer a complete Jev plan before execution, with
+  clarification when necessary and version-bound idempotent approval. Keep the
+  central conversation stable as active partner windows change by phase, and
+  use consistent planet avatars across collaboration surfaces.
+- Open approved Jev plans in a separate, scrollable window with visible
+  dependencies, deliverables and acceptance criteria. Keep the heading and
+  close control in view, and preserve the conversation position while new
+  partner activity arrives.
+- Show delivered file evidence when its path includes a SHA-256 annotation,
+  keeping the full original reference available in task details.
+- Preserve complete Jev revision feedback when optional context metadata
+  exceeds the prompt budget. Include the current worker's Browser command
+  receipts in independent verification, and let that dispatch stop its own
+  temporary background jobs without another approval.
+- Allow explicit Jev responsibility reassignment through its existing task
+  owner, with current-version and execution checks. Persist assignment,
+  command receipt and follow-up event together, and replay prior receipts
+  without redispatching work.
+- Keep in-flight Jev partner steering available after old Room messages are
+  trimmed. Validate the current Root and exact execution claim before sending
+  through Pi, preserving duplicate-message protection and legacy Room behavior.
+- Recheck missing Jev verification evidence against the same submitted result
+  before requesting code changes. Bound follow-up verification attempts and
+  report unresolved evidence explicitly when they are exhausted.
+- Let users change a task's responsible partner from its details window.
+  Show eligible partners on demand, reclaim running work through exact Pi
+  cancellation, and retain the old owner until execution has stopped. Preserve
+  uncertain command keys across view reloads and show pending handover progress.
+- State the current task revision and specific review feedback in a returned
+  task's next Pi input, preserving its original scope and retry budget.
+- Follow the first Jev graph arriving in an open Room without losing its draft.
+  Allow the change-partner request through the real frontend transport and
+  distinguish an unsent local rejection from an uncertain execution outcome.
+- Let a simple direct task use its existing partner for a separate verification
+  turn when no other reviewer is available. Keep explicit independent review,
+  planned tasks and previously created roots bound to a different partner.
+- Use a compact composer with one toolbar row across Room and Session, keeping
+  partner settings in a dialog and preserving drafts in expanded editing.
+  Open bound partner identities and dispatch records in their real Sessions;
+  expose task and document destinations without inventing links for raw IDs.
+- Show an exactly confirmed Jev handover as a stopped execution while retaining
+  its original receipt. Keep genuine provider failures and uncertain outcomes
+  visible. Load Room metadata without waiting for the full Session directory,
+  and cancel directory pagination when it is no longer needed.
+- Explain the existing 2,000-character workspace command limit to the model
+  and distinguish overlong commands from invalid control characters.
+
+- Preserve original Knowledge source wording and connect reader tables/images
+  to persisted source blocks. Retain partial chart caches and explicit preview
+  limits; add PDF hit-page navigation and recovery guidance for blank previews.
+
+- Add EPUB spine parsing, Office image/chart evidence and optional local
+  LibreOffice conversion for legacy DOC/XLS/PPT. Keep missing chart data explicit
+  and exclude printed page numbers from standalone Knowledge search evidence.
+- Preserve Memory organization checkpoints across restart and recover active
+  jobs beyond recent history. Refresh observer progress from durable receipts;
+  distinguish unreadable status from execution failure in the organization UI.
+- Preserve MinerU content-list structure, page coordinates and raw JSON through
+  Knowledge ingestion and citations. Add paper chunking with retained references
+  and bounded table splitting; improve DOCX paragraphs/tables, XLSX cells/sheets
+  and PPTX slide/notes parsing. Keep structure available after re-chunking,
+  restart and portable search export, with backward-compatible chunk storage.
+- Add request-only Knowledge retrieval tests with resettable parameters and
+  recorded result settings. Filter stale index candidates before ranking, and
+  apply score thresholds after optional reranking. Fence indexing attempts
+  against newer retries and preserve cancellation when late work completes.
 - Keep long local MinerU parses alive with a configurable per-document deadline,
   distinguish timeout from service-unavailable errors, and restart workers when
   the deadline changes.

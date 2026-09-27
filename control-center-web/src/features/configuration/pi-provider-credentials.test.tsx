@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react';
+import { PermissionPicker } from '@/features/agent/composer/PermissionPicker';
+import { previewSessions } from '@/features/agent/preview-data';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -89,6 +92,59 @@ describe('Pi provider credential UI', () => {
     await user.click(screen.getByRole('button', { name: '保存密钥' }));
 
     expect(await screen.findByText('API 密钥已保存')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const apply = transport.requests.find(({ request }) => request.pathId === 'agent.provider.auth.apply');
+    expect(apply?.request.body).toEqual({
+      previewToken: 'preview-provider-key',
+      confirmText: 'replace',
+      apiKey: secret,
+    });
+    expect(screen.queryByText(secret)).not.toBeInTheDocument();
+    await waitFor(() => expect(
+      transport.requests.filter(({ request }) => request.pathId === 'agent.providers.get').length,
+    ).toBeGreaterThanOrEqual(2));
+  });
+
+  it('saves a Jev key and explains immediate approval activation', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({
+      capabilities: { features: { piProviderCredentials: true } },
+      routes: {
+        'agent.providers.get': { ...providerCatalog(), providers: [{ id: 'typesafe', name: 'TypeSafe / Jev · 工具审批', auth: { configured: false }, scenarios: [{ id: 'approval', name: '工具审批', status: 'needs_key', description: '按授权范围判断' }, { id: 'compression', name: '压缩前内容筛选', status: 'candidate', description: '摘要仍由 Pi 完成' }], models: [{ id: 'jev-latest' }] }] },
+        'agent.provider.auth.preview': {
+          ok: true,
+          previewToken: 'preview-provider-key',
+          provider: 'typesafe',
+          providerName: 'GPT',
+          action: 'set_api_key',
+          requiredConfirm: 'replace',
+          expiresAtMs: Date.now() + 60_000,
+          summary: ['替换 GPT 的 API 密钥。', '现有密钥不会读取或显示。'],
+          secretPolicy: '密钥仅在确认写入时送往本机 Pi。',
+          sessionBoundary: '当前回复不被中断。',
+        },
+        'agent.provider.auth.apply': {
+          ok: true,
+          receiptId: 'pi-auth-receipt-1',
+          provider: 'typesafe',
+          action: 'set_api_key',
+          receiptState: 'applied',
+          requiresAgentRestart: false,
+        },
+      },
+    });
+    renderProvider(transport);
+
+    const secret = 'secret-sentinel-ui';
+    await user.type(await screen.findByLabelText('API 密钥'), secret);
+    await user.click(screen.getByRole('button', { name: '保存密钥' }));
+
+    expect(await screen.findByText('Jev 密钥已保存')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Jev 应用场景' })).toHaveTextContent('尚未接通');
+    expect(screen.getByText('压缩前内容筛选')).toBeInTheDocument();
+    expect(screen.queryByText('还没有可用模型')).not.toBeInTheDocument();
+    expect(screen.getByText('密钥已存入 macOS 钥匙串，下一次工具审批生效，无需重启。')).toBeInTheDocument();
+    expect(screen.getByLabelText('API 密钥')).toHaveValue('');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     const apply = transport.requests.find(({ request }) => request.pathId === 'agent.provider.auth.apply');
     expect(apply?.request.body).toEqual({
@@ -325,16 +381,13 @@ describe('Pi provider credential UI', () => {
 
 });
 
-function renderProvider(transport: MockControlTransport): void {
+function renderProvider(transport: MockControlTransport, content: ReactNode = <PiProviderCredentials />, routed = true): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <TooltipProvider delayDuration={0}>
       <ControlTransportProvider transport={transport}>
         <QueryClientProvider client={client}>
-          <MemoryRouter initialEntries={['/configuration']}>
-            <PiProviderCredentials />
-            <RouteProbe />
-          </MemoryRouter>
+          {routed ? <MemoryRouter initialEntries={['/configuration']}>{content}<RouteProbe /></MemoryRouter> : content}
         </QueryClientProvider>
       </ControlTransportProvider>
     </TooltipProvider>,
@@ -399,3 +452,23 @@ function deferred<T>() {
   });
   return { promise, reject, resolve };
 }
+
+
+it('opens Jev configuration from conversation permissions without changing permissions', async () => {
+  const onChange=vi.fn(),user=userEvent.setup();
+  const transport=new MockControlTransport({capabilities:{features:{piProviderCredentials:true}},routes:{
+    'agent.providers.get':{...providerCatalog(),providers:[...providerCatalog().providers,{id:'typesafe',name:'TypeSafe / Jev',auth:{configured:true},scenarios:[{id:'compression',name:'压缩前内容筛选',status:'candidate',description:'标准压缩保持不变'}]}]}
+  }});
+  renderProvider(transport,<PermissionPicker session={previewSessions[0]} tools={[]} disabled={false} requestOpen={0} onChange={onChange} onWorkspaceRootsChange={vi.fn()}/>,false);
+  await user.click(screen.getByRole('button',{name:/对话权限：/}));
+  await user.click(screen.getByRole('button',{name:'Jev 设置'}));
+  expect(await screen.findByRole('dialog',{name:'Jev 设置'})).toBeVisible();
+  expect(await screen.findByLabelText('API 密钥')).toHaveAttribute('type','password');
+  expect(await screen.findByText('已配置')).toBeVisible();
+  expect(screen.getByRole('region',{name:'Jev 应用场景'})).toHaveTextContent('尚未接通');
+  expect(screen.getByText(/不改变当前对话权限/)).toBeVisible();
+  await user.click(screen.getByRole('button',{name:'完成'}));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(onChange).not.toHaveBeenCalled();
+  expect(transport.requests.some(item=>item.request.pathId==='agent.provider.auth.apply')).toBe(false);
+});

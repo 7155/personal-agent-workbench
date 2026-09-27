@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from rag_ime.deepseek_config import load_deepseek_config
 from rag_ime.deepseek_memory_organizer import (
+    ActivitySemanticVerificationError,
     DEFAULT_MEMORY_ORGANIZATION_INSTRUCTION,
     DeepSeekMemoryOrganizer,
     DeepSeekMemoryOrganizerError,
@@ -122,6 +123,151 @@ class DeepSeekMemoryOrganizerTests(unittest.TestCase):
             "activityId",
             result["organization"]["activities"][0],
         )
+
+    def test_semantic_repair_repairs_missing_ledger_ref_before_reverification(self) -> None:
+        phases: list[str] = []
+
+        class FakeExecutor:
+            provider = "openai-codex"
+            model_id = "gpt-6-luna"
+
+            def complete(self, *, messages, max_tokens=None, phase="model-call", isolated=False):
+                del max_tokens
+                self_test.assertTrue(isolated)
+                phases.append(phase)
+                if phase == "activity-semantic-contract-repair":
+                    self_test.assertIn("missing=['e2']", messages[1]["content"])
+                if phase in {
+                    "activity-verifier",
+                    "activity-repair-verifier",
+                    "activity-repair-verifier-2",
+                }:
+                    passed = phase == "activity-repair-verifier-2"
+                    payload = {
+                        "schemaVersion": ACTIVITY_ORGANIZATION_VERDICT_VERSION,
+                        "verdict": "pass" if passed else "iterate",
+                        "scores": {
+                            field: 5 if passed else 3
+                            for field in ACTIVITY_ORGANIZATION_SCORE_FIELDS
+                        },
+                        "issues": [],
+                        "strengths": [],
+                    }
+                else:
+                    refs = ["e1"] if phase == "activity-semantic-repair" else ["e1", "e2"]
+                    payload = {
+                        "schemaVersion": ACTIVITY_ORGANIZATION_OUTPUT_VERSION,
+                        "activities": [{
+                            "title": "整理日记时间线",
+                            "summary": "核对并整理当天的两条来源。",
+                            "eventRefs": refs,
+                            "confidence": 0.9,
+                            "boundaryBasis": "两条来源描述同一次整理工作。",
+                        }],
+                        "unclassified": [],
+                    }
+                return {
+                    "choices": [{"message": {"content": json.dumps(payload)}}],
+                    "receipt": {"requestId": f"request:{phase}"},
+                }
+
+        self_test = self
+        packet = build_activity_organization_packet(
+            [
+                {
+                    "id": index,
+                    "created_at_ms": 1_786_500_000_000 + index * 60_000,
+                    "source": "voice_final",
+                    "committed_text": f"第 {index} 条整理来源",
+                    "recent_context": "整理当天时间线",
+                    "app": "RagImeControl",
+                    "project": "project-a",
+                    "context_group_id": "session:memory",
+                }
+                for index in (1, 2)
+            ],
+            timeline_id="activity-timeline:semantic-contract-repair",
+            project="project-a",
+            timeline_date="2026-08-12",
+            timezone_name="Asia/Shanghai",
+        )
+
+        result = ManagedPiMemoryOrganizer(FakeExecutor()).organize_activity_timeline(packet=packet)
+
+        self.assertEqual(
+            phases,
+            [
+                "activity-organizer",
+                "activity-verifier",
+                "activity-semantic-repair",
+                "activity-semantic-contract-repair",
+                "activity-repair-verifier",
+                "activity-semantic-repair-2",
+                "activity-repair-verifier-2",
+            ],
+        )
+        self.assertEqual(result["organization"]["activities"][0]["eventRefs"], ["e1", "e2"])
+        self.assertEqual(result["receipt"]["verdict"], "pass")
+        self.assertTrue(result["receipt"]["semanticContractRepaired"])
+        self.assertEqual(result["receipt"]["semanticRepairRounds"], 2)
+
+    def test_activity_semantic_review_has_five_bounded_repair_rounds(self) -> None:
+        phases: list[str] = []
+
+        class AlwaysIterateExecutor:
+            provider = "openai-codex"
+            model_id = "gpt-6-luna"
+
+            def complete(self, *, messages, max_tokens=None, phase="model-call", isolated=False):
+                del messages, max_tokens
+                assert isolated
+                phases.append(phase)
+                if "verifier" in phase:
+                    payload = {
+                        "schemaVersion": ACTIVITY_ORGANIZATION_VERDICT_VERSION,
+                        "verdict": "iterate",
+                        "scores": {field: 3 for field in ACTIVITY_ORGANIZATION_SCORE_FIELDS},
+                        "issues": [],
+                        "strengths": [],
+                    }
+                else:
+                    payload = {
+                        "schemaVersion": ACTIVITY_ORGANIZATION_OUTPUT_VERSION,
+                        "activities": [{
+                            "title": "整理时间线",
+                            "summary": "核对当天来源并整理活动。",
+                            "eventRefs": ["e1"],
+                            "confidence": 0.9,
+                            "boundaryBasis": "来源描述同一次整理工作。",
+                        }],
+                        "unclassified": [],
+                    }
+                return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+        packet = build_activity_organization_packet(
+            [{
+                "id": 1,
+                "created_at_ms": 1_786_500_000_000,
+                "source": "voice_final",
+                "committed_text": "整理时间线",
+                "recent_context": "",
+                "app": "RagImeControl",
+                "project": "project-a",
+                "context_group_id": "session:memory",
+            }],
+            timeline_id="activity-timeline:five-repairs",
+            project="project-a",
+            timeline_date="2026-08-12",
+            timezone_name="Asia/Shanghai",
+        )
+
+        with self.assertRaises(ActivitySemanticVerificationError) as caught:
+            ManagedPiMemoryOrganizer(AlwaysIterateExecutor()).organize_activity_timeline(packet=packet)
+
+        self.assertEqual(caught.exception.receipt["semanticRepairRounds"], 5)
+        self.assertEqual(phases.count("activity-organizer"), 1)
+        self.assertEqual(len([phase for phase in phases if phase.startswith("activity-semantic-repair")]), 5)
+        self.assertEqual(len([phase for phase in phases if "verifier" in phase]), 6)
 
     def test_atom_first_binding_preserves_composite_reconstruction_evidence(self) -> None:
         result = _bind_atom_first_canonical_evidence(

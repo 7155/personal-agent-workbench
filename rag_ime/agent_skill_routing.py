@@ -157,6 +157,7 @@ def skill_allowlist_for_session(
     session: Mapping[str, object],
     *,
     room_participant: bool,
+    extension_app_skill_owners: Mapping[str, str] | None = None,
 ) -> list[str]:
     routing = normalize_skill_routing(configuration.get("skillRouting"))
     scenario = scenario_for_session(
@@ -164,6 +165,13 @@ def skill_allowlist_for_session(
         room_participant=room_participant,
     )
     selected = set(routing[scenario])
+    if str(session.get("surfaceKind") or "") == "extension_app":
+        owner_app_id = str(session.get("ownerAppId") or "").strip()
+        selected.update(
+            skill_ref
+            for skill_ref, verified_owner in (extension_app_skill_owners or {}).items()
+            if verified_owner == owner_app_id and owner_app_id
+        )
     if scenario == "agentLab":
         surface_key = str(session.get("surfaceKey") or "")
         project_guide = surface_key.startswith("project.")

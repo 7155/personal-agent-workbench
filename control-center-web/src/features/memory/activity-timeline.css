@@ -74,9 +74,11 @@
 }
 
 .activity-calendar__organize-status {
-  display: flex;
+  display: grid;
   min-height: 36px;
-  align-items: center;
+  min-width: 0;
+  grid-template-columns: 15px minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
   padding: 8px 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--color-info) 24%, var(--color-border));
@@ -95,11 +97,10 @@
 .activity-calendar__organize-status > span {
   display: grid;
   min-width: 0;
-  flex: 1 1 auto;
   gap: 1px;
 }
 
-.activity-calendar__organize-status > span strong { font-weight: 650; }
+.activity-calendar__organize-status > span strong { font-weight: 650; overflow-wrap: anywhere; }
 .activity-calendar__organize-status > span small {
   overflow: hidden;
   color: var(--color-text-tertiary);
@@ -107,7 +108,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.activity-calendar__organize-status > .ui-button { flex: 0 0 auto; }
+.activity-calendar__organize-actions {
+  display: flex;
+  min-width: 0;
+  grid-column: 2;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.activity-calendar__organize-actions > .ui-button { max-width: 100%; }
 .activity-calendar__organize-status > svg.lucide-check { animation: none; color: var(--color-success); }
 
 .activity-calendar__organize-status[data-tone='danger'] {

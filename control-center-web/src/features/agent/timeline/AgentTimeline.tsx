@@ -1,6 +1,9 @@
+import { CompactActivityContext } from './CompactActivityContext';
+import { useOptionalControlTransport } from '@/app/control-transport';
+import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
 import { AgentRecoveryActions } from '../AgentRecoveryActions';
 import { CircleDashed, GitBranch, PencilLine, TriangleAlert } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, IconButton } from '@/components/primitives';
@@ -347,7 +350,28 @@ function fxClock(atMs: number): string {
    reader is following the end; this owns where they were when they were not.
    Switching to another Session and back landed on the newest turn regardless,
    because Virtuoso remounts on `key={sessionId}` and opened at `LAST`. */
-const timelineAnchorMemory = new Map<string, TranscriptAnchor>();
+class TimelineAnchorMemory extends Map<string, TranscriptAnchor> {
+  override get(key: string) {
+    const cached = super.get(key);
+    if (cached || !key.startsWith('paw.workspace.')) return cached;
+    try {
+      const value = JSON.parse(localStorage.getItem(key + ':anchor') || 'null');
+      if (value && typeof value.rowKey === 'string' && typeof value.conversationId === 'string'
+        && Number.isInteger(value.rowIndex) && Number.isFinite(value.offsetFromViewportTopPx)
+        && Number.isFinite(value.fallbackScrollTop)) { super.set(key, value); return value as TranscriptAnchor; }
+    } catch { /* Keep normal latest-message fallback. */ }
+    return undefined;
+  }
+  override set(key: string, value: TranscriptAnchor) {
+    if (key.startsWith('paw.workspace.')) try { localStorage.setItem(key + ':anchor', JSON.stringify(value)); } catch { /* Session remains readable. */ }
+    return super.set(key, value);
+  }
+  override delete(key: string) {
+    if (key.startsWith('paw.workspace.')) try { localStorage.removeItem(key + ':anchor'); } catch { /* Session remains readable. */ }
+    return super.delete(key);
+  }
+}
+const timelineAnchorMemory = new TimelineAnchorMemory();
 
 /** Test/host escape hatch: forget every remembered Session reading position. */
 export function clearAgentTimelineScrollMemory(): void {
@@ -448,6 +472,8 @@ export function AgentTimeline({
    * first turn. It scrolls with the transcript instead of stealing viewport. */
   leadingContent?: ReactNode;
 }) {
+  const anchorTransport = useOptionalControlTransport();
+  const anchorKey = anchorTransport ? recoveryScope(anchorTransport, `session:${sessionId}`) || sessionId : sessionId;
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const followStateRef = useRef<TranscriptFollowState>(FOLLOWING_TRANSCRIPT);
   const publishedFollowRef = useRef<TranscriptFollowState>(FOLLOWING_TRANSCRIPT);
@@ -566,19 +592,19 @@ export function AgentTimeline({
       rows: renderedTurnGeometry(scroller, turnOrderRef.current),
       scrollTop: scroller.scrollTop,
     });
-    if (anchor) timelineAnchorMemory.set(sessionId, anchor);
-  }, [sessionId]);
+    if (anchor) timelineAnchorMemory.set(anchorKey, anchor);
+  }, [sessionId, anchorKey]);
 
   /* Where this Session was last read. Resolved once per Session: Virtuoso
      reads initialTopMostItemIndex at mount only, and the component renders no
      Virtuoso until there is at least one turn. */
   const restoredStart = useMemo(() => {
-    const anchor = turnOrder.length > 0 ? timelineAnchorMemory.get(sessionId) : undefined;
+    const anchor = turnOrder.length > 0 ? timelineAnchorMemory.get(anchorKey) : undefined;
     return anchor ? resolveAnchorRowIndex({ anchor, rowKeys: turnOrder }) : null;
   // Deliberately not recomputed per append: this is a mount-time seed, not
   // live state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, turnOrder.length > 0]);
+  }, [sessionId, anchorKey, turnOrder.length > 0]);
   const initialTopMostItemIndex = useMemo(
     () => (restoredStart
       ? { index: restoredStart.index, align: 'start' as const, offset: restoredStart.offsetPx }
@@ -601,9 +627,47 @@ export function AgentTimeline({
     // Leaving this Session: remember the reading position unless the reader
     // was at the end, where "latest" is the position worth restoring. Keyed on
     // the Session alone so a mid-Session re-render never discards the memory.
-    if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(sessionId);
+    if (!turnOrderRef.current.length || !scrollerRef.current) return;
+    if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(anchorKey);
     else captureAnchor();
-  }, [captureAnchor, sessionId]);
+  }, [captureAnchor, anchorKey]);
+  useEffect(() => {
+    const save = () => { if (!turnOrderRef.current.length || !scrollerRef.current) return; if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(anchorKey); else captureAnchor(); };
+    window.addEventListener('pagehide', save);
+    return () => window.removeEventListener('pagehide', save);
+  }, [anchorKey, captureAnchor]);
+  const restoredGeometryRef = useRef('');
+  useEffect(() => {
+    if (!timelineScroller || restoredGeometryRef.current === anchorKey) return;
+    const saved = timelineAnchorMemory.get(anchorKey);
+    if (!saved) return;
+    const index = turnOrder.indexOf(saved.rowKey);
+    if (index < 0) return; // The recent snapshot may arrive in several batches.
+    dispatchFollow({ type: 'user-detached', reason: 'user-scroll' });
+    let frame = 0;
+    let attempts = 0;
+    let stopped = false;
+    const stop = () => { stopped = true; restoredGeometryRef.current = anchorKey; window.cancelAnimationFrame(frame); };
+    const restore = () => {
+      if (stopped) return;
+      const row = Array.from(timelineScroller.querySelectorAll<HTMLElement>('[data-agent-turn-id]'))
+        .find(element => element.dataset.agentTurnId === saved.rowKey);
+      if (row) {
+        // Correct after the virtualizer measures the restored row. Its initial
+        // index can have been consumed by a smaller, earlier snapshot window.
+        timelineScroller.scrollTop += row.getBoundingClientRect().top
+          - timelineScroller.getBoundingClientRect().top - saved.offsetFromViewportTopPx;
+      } else virtuosoRef.current?.scrollToIndex({ index, align: 'start', offset: -saved.offsetFromViewportTopPx });
+      if (++attempts < 12) frame = window.requestAnimationFrame(restore);
+      else restoredGeometryRef.current = anchorKey;
+    };
+    for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown']) timelineScroller.addEventListener(event, stop, { passive: true });
+    frame = window.requestAnimationFrame(restore);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown']) timelineScroller.removeEventListener(event, stop);
+    };
+  }, [anchorKey, dispatchFollow, timelineScroller, turnOrder]);
   const handleScrollerRef = useCallback((scroller: HTMLElement | Window | null) => {
     setTimelineScroller(scroller instanceof HTMLElement ? scroller : null);
   }, []);
@@ -1430,6 +1494,9 @@ function AssistantWorkingState({
     return () => window.clearInterval(timer);
   }, []);
   const detail = useMemo(() => workingDetail(activities), [activities]);
+  const compact = useContext(CompactActivityContext);
+  const latest = [...activities].reverse().find((activity) => activity.status === 'running');
+  const phase = latest?.kind === 'context_compaction' ? '正在整理上下文' : latest?.kind === 'reasoning_summary' ? '正在分析' : latest ? '正在执行' : '等待模型响应';
   return (
     <div className="agent-assistant-pending" role="status" aria-live="polite">
       <ConversationPlanetMark size="lg" state={stopping ? 'waiting' : 'thinking'} />
@@ -1437,7 +1504,7 @@ function AssistantWorkingState({
         {/* The elapsed clock ticks once a second. Inside a polite live region
             that made a screen reader read the whole strip every second, so the
             duration stays visual and the phase text carries the spoken update. */}
-        <strong>{stopping ? '正在停止' : '思考中'} <time aria-hidden="true">{formatElapsed(nowMs - startedAtMs)}</time></strong>
+        <strong>{stopping ? '正在停止' : compact ? phase : '思考中'} <time aria-hidden="true">{formatElapsed(nowMs - startedAtMs)}</time></strong>
         <small>{stopping ? '正在取消当前模型与工具执行。' : detail}</small>
       </span>
       <i className="agent-working-dots" aria-hidden="true"><b /><b /><b /></i>
@@ -1747,31 +1814,34 @@ function ActivityGroupView({
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
 }) {
+  const compact = useContext(CompactActivityContext);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const runs = activityDisplayRuns(activities);
-
-  return (
-    <>
-      {runs.map((run) => {
-        if (run.kind === 'compaction') {
-          return <ContextCompactionNotice key={run.activity.id} activity={run.activity} />;
-        }
-        if (run.kind === 'reasoning') {
-          return <ReasoningActivitySummary key={`reasoning:${run.activities[0]?.id}`} activities={run.activities} />;
-        }
-        return (
-          <ActivitySummary
-            key={`ordinary:${run.activities[0]?.id}`}
-            activities={run.activities}
-            sessionId={sessionId}
-            inline
-            onApprovalDecision={onApprovalDecision}
-            onOpenApproval={onOpenApproval}
-            onRequestPermission={onRequestPermission}
-          />
-        );
-      })}
-    </>
-  );
+  const runKey = (run: ActivityDisplayRun) => run.kind === 'compaction' ? run.activity.id : run.activities[0]!.id;
+  const groups: ActivityDisplayRun[][] = [];
+  let completed: ActivityDisplayRun[] = [];
+  const flush = () => { if (completed.length) { groups.push(completed); completed = []; } };
+  runs.forEach((run, index) => {
+    const settled = (run.kind === 'compaction' ? [run.activity] : run.activities).every((activity) => activity.status === 'completed');
+    // Keep current work, failures and the last two groups visible, in order.
+    if (compact && settled && index < runs.length - 2) completed.push(run);
+    else { flush(); groups.push([run]); }
+  });
+  flush();
+  const renderRun = (run: ActivityDisplayRun) => {
+    if (run.kind === 'compaction') return <ContextCompactionNotice key={run.activity.id} activity={run.activity} />;
+    if (run.kind === 'reasoning') return <ReasoningActivitySummary key={`reasoning:${run.activities[0]?.id}`} activities={run.activities} />;
+    return <ActivitySummary key={`ordinary:${run.activities[0]?.id}`} activities={run.activities} sessionId={sessionId} inline
+      onApprovalDecision={onApprovalDecision} onOpenApproval={onOpenApproval} onRequestPermission={onRequestPermission} />;
+  };
+  return <>{groups.map((group) => {
+    if (group.length === 1) return renderRun(group[0]!);
+    const key = runKey(group[0]!); const open = expanded.has(key);
+    return <details key={key} className="agent-compact-history" open={open}>
+      <summary onClick={(event) => { event.preventDefault(); setExpanded((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }}>已完成 {group.length} 组过程<span>{open ? '收起' : '展开查看'}</span></summary>
+      {open ? <div>{group.map(renderRun)}</div> : null}
+    </details>;
+  })}</>;
 }
 
 export type ActivityDisplayRun =

@@ -309,6 +309,14 @@ describe('AgentComposer macOS input methods', () => {
 
     rerender(harness({ draft: '已有内容' }));
     expect(view.getByRole('button', { name: '发送' })).toBeEnabled();
+    const onSend = vi.fn();
+    const onDraftChange = vi.fn();
+    rerender(harness({ draft:'待核实附件的要求', submissionBlocked:true, onSend, onDraftChange }));
+    expect(view.getByRole('button', {name:'发送'})).toBeDisabled();
+    fireEvent.keyDown(view.getByRole('textbox', {name:'消息'}), {key:'Enter'});
+    expect(view.getByRole('textbox', {name:'消息'})).toHaveValue('待核实附件的要求');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onDraftChange).not.toHaveBeenCalled();
   });
 
   it('uses double Escape to request an in-place edit without disturbing IME input', () => {

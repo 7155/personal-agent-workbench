@@ -193,7 +193,7 @@ export function ActivityTimeline({
   const buildAwaitingStatus = buildJob.isFetching && !buildJobState;
   const buildActive = build.isPending || buildAwaitingStatus || buildRunning;
   const busy = buildActive || approve.isPending || reject.isPending;
-  const buildError = build.error ?? buildJobError;
+  const buildError = buildRunning ? buildJobError : build.error ?? buildJobError;
   const error = timeline.error ?? approve.error ?? reject.error;
   const buildProgressMessage = buildError
     ? friendlyTimelineError(buildError)
@@ -856,7 +856,7 @@ function ActivityTimelineCalendar({
             {organizeJobId ? <small>任务 {organizeJobId}</small> : null}
           </span>
           {organizeFailed ? (
-            <>
+            <div className="activity-calendar__organize-actions">
               <Button onClick={() => setOrganizePreviewOpen(true)} size="small" variant="quiet">重新检查范围</Button>
               <TraceAgentHandoffButton
                 handoff={{
@@ -878,7 +878,7 @@ function ActivityTimelineCalendar({
                   },
                 }}
               />
-            </>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1983,6 +1983,10 @@ function sourceLabel(value: string): string {
 
 function friendlyTimelineError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error || '');
+  const modelMismatch = /memory curation requires the canonical live model ([\w.-]+\/[\w.-]+); received ([\w.-]+\/[\w.-]+)/iu.exec(message);
+  if (modelMismatch) {
+    return `整理模型不匹配：本次使用 ${modelMismatch[2].split('/')[1]}，执行器当时仅接受 ${modelMismatch[1].split('/')[1]}。请检查设置并重试。`;
+  }
   if (/session already has an active turn/i.test(message)) {
     return '记忆整理的内部 Session 仍被上一回合占用，因此当天结果没有写入。重新整理时会换用新的 Session。';
   }

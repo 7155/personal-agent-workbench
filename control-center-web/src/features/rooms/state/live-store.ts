@@ -17,6 +17,7 @@ import {
 import type { UiRoomEvent } from '@/contracts/ui-events';
 import { mergeAcceptedRoomTimeline } from '../runtime/accepted-room-timeline';
 import { publishRoomProjectionSnapshot } from './projection-bridge';
+import { acceptedRoomEvents, appendRoomEventWindow, canApplyRoomSnapshot, isRoomCursorReset } from './room-event-window';
 
 export interface RoomHistoryWindow {
   events: readonly UiRoomEvent[];
@@ -75,31 +76,32 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
   },
   replaySnapshot(roomId, snapshot) {
     const current = roomProjection(roomId);
-    if (snapshot.lastSequence < current.lastSequence) return false;
-    const merged = mergeSnapshotWindow(snapshot, get().historyByRoomId[roomId]);
+    if (!canApplyRoomSnapshot(current, snapshot.lastSequence)) return false;
+    const rewound = isRoomCursorReset(current);
+    const merged = mergeSnapshotWindow(snapshot, rewound ? undefined : get().historyByRoomId[roomId]);
     const next = replayRoomEventSnapshot(current, merged.snapshot);
-    set((state) => ({
+    replaceProjection(set, get, roomId, next, allTurnIds(current, next), {
       historyByRoomId: {
-        ...state.historyByRoomId,
+        ...get().historyByRoomId,
         [roomId]: merged.window,
       },
       snapshotsByRoomId: {
-        ...state.snapshotsByRoomId,
+        ...get().snapshotsByRoomId,
         [roomId]: merged.snapshot,
       },
-    }));
-    replaceProjection(set, get, roomId, next, allTurnIds(current, next));
+    });
     return true;
   },
   replaySnapshotWithTail(roomId, snapshot, liveTail) {
     const current = roomProjection(roomId);
-    const latestTailSequence = liveTail.at(-1)?.sequence ?? snapshot.lastSequence;
-    if (
-      snapshot.lastSequence < current.lastSequence
-      && latestTailSequence < current.lastSequence
-    ) return false;
+    // A deferred enrichment is not the recovery owner. Wait for the fresh
+    // authoritative snapshot rather than mixing pre-gap or pre-restore tails.
+    if (current.needsSnapshot) return false;
+    const tail = appendRoomEventWindow(roomId, snapshot.events, liveTail);
+    const latestTailSequence = tail.at(-1)?.sequence ?? snapshot.lastSequence;
+    if (latestTailSequence < current.lastSequence) return false;
     const merged = mergeSnapshotWindow(snapshot, get().historyByRoomId[roomId]);
-    const events = appendLiveEvents(merged.window.events, liveTail);
+    const events = appendRoomEventWindow(roomId, merged.window.events, liveTail);
     const latest = events.at(-1);
     const replaySnapshot: RoomEventSnapshot = {
       ...merged.snapshot,
@@ -114,9 +116,9 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
       truncated: (events[0]?.sequence ?? 0) > 1,
     };
     const next = replayRoomEventSnapshot(current, replaySnapshot);
-    set((state) => ({
+    replaceProjection(set, get, roomId, next, allTurnIds(current, next), {
       historyByRoomId: {
-        ...state.historyByRoomId,
+        ...get().historyByRoomId,
         [roomId]: {
           ...merged.window,
           events,
@@ -124,11 +126,10 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
         },
       },
       snapshotsByRoomId: {
-        ...state.snapshotsByRoomId,
+        ...get().snapshotsByRoomId,
         [roomId]: replaySnapshot,
       },
-    }));
-    replaceProjection(set, get, roomId, next, allTurnIds(current, next));
+    });
     return true;
   },
   replayConversationSnapshot(roomId, snapshot) {
@@ -136,7 +137,7 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
     // Warm projections render immediately and keep their richer Tool history.
     // Their existing cursor can catch up through SSE; the lightweight snapshot
     // is the cold-open path, not permission to erase already loaded evidence.
-    if (current.lastSequence > 0) return false;
+    if (current.lastSequence > 0 || current.needsSnapshot) return false;
     const next = replayRoomConversationSnapshot(current, snapshot);
     replaceProjection(set, get, roomId, next, allTurnIds(current, next));
     return true;
@@ -144,14 +145,16 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
   applyEvents(roomId, events) {
     const current = roomProjection(roomId);
     const projection = reduceRoomEvents(current, events);
+    const accepted = acceptedRoomEvents(current, projection, events);
     const changedTurnIds = new Set<string>();
-    for (const event of events) {
+    for (const event of accepted) {
       if (event.turnId) changedTurnIds.add(event.turnId);
     }
+    let cache: RoomCacheUpdate = {};
     const baseSnapshot = get().snapshotsByRoomId[roomId];
     const currentWindow = get().historyByRoomId[roomId];
-    if (baseSnapshot && currentWindow && events.length) {
-      const mergedEvents = appendLiveEvents(currentWindow.events, events);
+    if (baseSnapshot && currentWindow && accepted.length) {
+      const mergedEvents = appendRoomEventWindow(roomId, currentWindow.events, accepted);
       const firstSequence = mergedEvents[0]?.sequence ?? 0;
       const latest = mergedEvents.at(-1);
       const updatedSnapshot: RoomEventSnapshot = {
@@ -166,9 +169,9 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
         resumeToken: latest?.resumeToken ?? baseSnapshot.resumeToken,
         truncated: firstSequence > 1,
       };
-      set((state) => ({
+      cache = {
         historyByRoomId: {
-          ...state.historyByRoomId,
+          ...get().historyByRoomId,
           [roomId]: {
             ...currentWindow,
             events: mergedEvents,
@@ -177,19 +180,22 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
           },
         },
         snapshotsByRoomId: {
-          ...state.snapshotsByRoomId,
+          ...get().snapshotsByRoomId,
           [roomId]: updatedSnapshot,
         },
-      }));
+      };
     }
     if (projection !== current) {
-      replaceProjection(set, get, roomId, projection, changedTurnIds);
+      replaceProjection(set, get, roomId, projection, changedTurnIds, cache);
     }
     return projection.needsSnapshot;
   },
   prependHistory(roomId, page) {
     if (page.roomId !== roomId) return false;
     const current = roomProjection(roomId);
+    // History reads are not recovery authority. A late page must not replay
+    // an old window and clear an outstanding gap/reset request.
+    if (current.needsSnapshot) return false;
     const window = get().historyByRoomId[roomId];
     const snapshot = get().snapshotsByRoomId[roomId];
     if (!window || !snapshot) return false;
@@ -221,9 +227,9 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
       truncated: (events[0]?.sequence ?? 0) > 1,
     };
     const next = replayRoomEventSnapshot(current, mergedSnapshot);
-    set((state) => ({
+    replaceProjection(set, get, roomId, next, allTurnIds(current, next), {
       historyByRoomId: {
-        ...state.historyByRoomId,
+        ...get().historyByRoomId,
         [roomId]: {
           events,
           firstSequence: mergedSnapshot.firstSequence,
@@ -232,11 +238,10 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
         },
       },
       snapshotsByRoomId: {
-        ...state.snapshotsByRoomId,
+        ...get().snapshotsByRoomId,
         [roomId]: mergedSnapshot,
       },
-    }));
-    replaceProjection(set, get, roomId, next, allTurnIds(current, next));
+    });
     return true;
   },
   appendOptimistic(roomId, input) {
@@ -347,16 +352,6 @@ function mergeSnapshotWindow(
   };
 }
 
-function appendLiveEvents(
-  current: readonly UiRoomEvent[],
-  incoming: readonly UiRoomEvent[],
-): UiRoomEvent[] {
-  const lastSequence = current.at(-1)?.sequence ?? 0;
-  const additions = incoming.filter((event) => event.sequence > lastSequence);
-  if (!additions.length) return [...current];
-  return [...current, ...additions];
-}
-
 export function roomProjection(roomId: string): RoomProjectionState {
   return (
     useRoomLiveStore.getState().projections[roomId]
@@ -394,15 +389,20 @@ export function discardOptimisticRoomMessage(
   return next;
 }
 
+type RoomCacheUpdate = Partial<Pick<RoomLiveStore, 'historyByRoomId' | 'snapshotsByRoomId'>>;
+
+/** Publish cache and projection together: shell/Room subscribers must never see
+ * fresh history alongside an old execution cursor, even for one notification. */
 function replaceProjection(
   set: StoreApi<RoomLiveStore>['setState'],
   get: StoreApi<RoomLiveStore>['getState'],
   roomId: string,
   projection: RoomProjectionState,
   changedTurnIds: Iterable<string>,
+  cache: RoomCacheUpdate = {},
 ): void {
   const current = get().projections[roomId];
-  if (current === projection) return;
+  if (current === projection && !Object.keys(cache).length) return;
   set((state) => {
     const roomTurnRevisions = { ...(state.turnRevisions[roomId] ?? {}) };
     for (const turnId of changedTurnIds) {
@@ -410,6 +410,7 @@ function replaceProjection(
       roomTurnRevisions[turnId] = (roomTurnRevisions[turnId] ?? 0) + 1;
     }
     return {
+      ...cache,
       projections: { ...state.projections, [roomId]: projection },
       roomRevisions: {
         ...state.roomRevisions,

@@ -1571,7 +1571,7 @@
    Session edit banner's placement. */
 .room-composer__task-lock { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: 12px; line-height: 1.45; }
 .room-composer__mention[aria-pressed='true'] { background: var(--color-accent-soft); color: var(--color-accent); }
-.room-mention-menu { position: absolute; z-index: 8; bottom: calc(100% + 7px); left: 0; display: grid; width: min(420px, 100%); overflow: hidden; border: 1px solid var(--color-border-strong); border-radius: 7px; padding: 4px; background: var(--color-surface); box-shadow: var(--shadow-menu); }
+.ui-popover.room-mention-menu { display: grid; min-width: 0; width: min(420px, var(--radix-popover-trigger-width)); max-width: calc(100vw - 16px); max-height: var(--radix-popover-content-available-height); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--color-border-strong); border-radius: 7px; padding: 4px; background: var(--color-surface); box-shadow: var(--shadow-menu); }
 .room-mention-menu > header { display: flex; min-height: 38px; align-items: center; gap: 8px; padding: 5px 8px; color: var(--color-text-tertiary); }
 .room-mention-menu > header > span { display: grid; min-width: 0; gap: 1px; }
 .room-mention-menu > header strong { color: var(--color-text-secondary); font-size: 12px; }

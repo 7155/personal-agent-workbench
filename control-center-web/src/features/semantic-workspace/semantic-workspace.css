@@ -1,0 +1,102 @@
+/* Same Agent process; only surrounding navigation changes between modes. */
+.paw-agent-app.paw-agent-app--dual-mode {
+  grid-template-rows: 42px minmax(0, 1fr);
+}
+.paw-agent-modebar {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 5px 14px 5px 50px;
+  border-bottom: 1px solid var(--paw-line-soft);
+  background: var(--paw-panel-strong);
+  color: var(--paw-ink);
+}
+.agent-mode-switch { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--paw-panel-soft); }
+.agent-mode-switch button, .paw-agent-modebar > button {
+  min-height: 28px; padding: 3px 14px; border: 0; border-radius: 5px;
+  color: var(--paw-muted); background: transparent; font: inherit; font-size: 13px; cursor: pointer;
+}
+.agent-mode-switch button[aria-pressed='true'] { color: var(--paw-ink); background: var(--paw-panel-strong); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); }
+.paw-agent-app--dual-mode .paw-agent-stage { grid-row: 2; display: flex; min-height: 0; }
+.paw-agent-content { flex: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
+.paw-agent-content > :is(.paw-agent-next, .paw-session-workspace, .paw-room-workspace) { height: 100%; }
+.paw-agent-modebar button:focus-visible, .jev-workspace :is(button, input, select):focus-visible {
+  outline: 2px solid var(--paw-accent); outline-offset: 2px;
+}
+.jev-workspace {
+  flex: 0 0 340px; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--paw-line-soft); padding: 18px 16px 10px;
+  background: var(--paw-panel-strong); color: var(--paw-ink); font: var(--text-ui)/1.5 var(--font-ui);
+}
+.jev-workspace ::selection { color: var(--paw-ink); background: var(--paw-accent-soft); }
+.jev-workspace button { font: inherit; color: var(--paw-muted); border: 0; background: transparent; cursor: pointer; border-radius: 5px; min-height: 28px; }
+.jev-workspace button:hover:not(:disabled), .paw-agent-modebar button:hover:not([aria-pressed='true']) { background: var(--paw-panel-soft); color: var(--paw-ink); }
+.jev-workspace button:disabled { opacity: .48; cursor: default; }
+.jev-workspace__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.jev-workspace__heading h2 { font-size: 18px; margin: 0; font-weight: 650; }
+.jev-workspace__heading p { margin: 4px 0 0; font-size: 13px; color: var(--paw-muted); }
+.jev-workspace__search { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: 1px solid var(--paw-line); border-radius: 6px; background: var(--paw-panel-strong); }
+.jev-workspace__search input { background: transparent; color: var(--paw-ink); caret-color: var(--paw-accent); border: 0; min-width: 0; flex: 1; font: inherit; }
+.jev-workspace__search input::placeholder { color: var(--paw-muted); }
+.jev-workspace__tabs { display: flex; gap: 4px; margin: 12px 0 5px; }
+.jev-workspace__tabs button { padding: 4px 8px; }
+.jev-workspace__tabs button:last-child { margin-left: auto; }
+.jev-workspace__tabs button[aria-pressed='true'] { background: var(--paw-accent-soft); color: var(--paw-accent); font-weight: 600; }
+.jev-workspace__scope, .jev-workspace__notice { margin: 4px 0; font-size: 12px; color: var(--paw-muted); }
+.jev-workspace__notice { min-height: 18px; }
+.jev-workspace__error { color: var(--color-danger, #a32638); overflow-wrap: anywhere; font-size: 13px; }
+.jev-workspace__list { flex: 1; overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--paw-line) transparent; }
+.jev-workspace__empty { color: var(--paw-muted); padding: 28px 4px; line-height: 1.8; }
+.jev-space { padding: 14px 0; border-bottom: 1px solid var(--paw-line-soft); }
+.jev-space__title { display: flex; gap: 6px; align-items: flex-start; }
+.jev-space__title button:first-child { flex: 1; min-width: 0; text-align: left; padding: 0 3px; font-weight: 600; color: var(--paw-ink); overflow-wrap: anywhere; }
+.jev-space__title button[aria-current='page'] { color: var(--paw-accent); }
+.jev-space__title button[aria-pressed='true'] { color: var(--paw-accent); background: var(--paw-accent-soft); }
+.jev-space__metadata { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; font-size: 12px; color: var(--paw-muted); }
+.jev-space__metadata select { max-width: 145px; background: var(--paw-panel-strong); color: var(--paw-muted); font: inherit; border: 1px solid var(--paw-line-soft); border-radius: 4px; padding: 3px; }
+.jev-space__actions { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.jev-space__actions button { display: inline-flex; align-items: center; gap: 4px; padding: 2px 5px; }
+.jev-space__proposal { margin-top: 10px; padding: 10px; background: var(--paw-accent-soft); border-radius: 6px; font-size: 12px; }
+.jev-space__proposal p { color: var(--paw-muted); margin: 5px 0; }
+.jev-space__proposal button { margin-right: 12px; color: var(--paw-accent); }
+.jev-workspace__receipts { padding: 10px 0; font-size: 12px; max-height: 120px; overflow: auto; }
+.jev-workspace__receipts summary { cursor: pointer; }
+.jev-workspace__receipts button { display: flex; gap: 6px; text-align: left; align-items: center; padding: 4px 0; }
+.jev-workspace > footer { padding-top: 8px; border-top: 1px solid var(--paw-line-soft); color: var(--paw-muted); font-size: 11px; }
+.jev-workspace > footer > div { display: flex; justify-content: flex-end; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) {
+  .agent-mode-switch button { transition: background-color 140ms ease-out, color 140ms ease-out; }
+}
+
+/* v2.1: scoped panel and native dialog; the main Workspace is never reparented. */
+.paw-agent-app--dual-mode .paw-agent-stage { position: relative; }
+.jev-workspace-slot { flex: 0 0 350px; min-height: 0; min-width: 0; }
+.jev-workspace-slot[data-overlay='true'] { flex-basis: 0; width: 0; }
+.jev-workspace-dialog { position: static; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--paw-panel-strong); color: var(--paw-ink); box-sizing: border-box; }
+.jev-workspace-dialog[open] { display: block; }
+.jev-workspace-dialog[data-overlay='true'] { position: fixed; inset: 0 0 0 auto; width: min(390px, 100vw); height: 100dvh; max-height: 100dvh; box-shadow: -10px 0 30px rgb(0 0 0 / 14%); }
+.jev-workspace-dialog::backdrop { background: rgb(0 0 0 / 28%); }
+.jev-workspace-dialog .jev-workspace { height: 100%; width: 100%; box-sizing: border-box; border: 0; border-left: 1px solid var(--paw-line-soft); }
+.jev-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.jev-workspace__filters { display: flex; gap: 8px; margin: 8px 0; }
+.jev-workspace__filters select { min-height: 30px; max-width: 155px; padding: 3px 6px; color: var(--paw-muted); background: var(--paw-panel-strong); border: 1px solid var(--paw-line-soft); border-radius: 5px; font: inherit; font-size: 12px; }
+.jev-workspace__recovery { padding: 12px; margin: 8px 0; border: 1px solid var(--paw-line); border-radius: 6px; background: var(--paw-panel-soft); font-size: 13px; }
+.jev-workspace__recovery p { margin: 6px 0; }
+.jev-workspace__recovery button { text-decoration: underline; text-underline-offset: 3px; }
+.jev-workspace__list[aria-busy='true'] .jev-space { opacity: .65; }
+.jev-space[data-selected='true'] { border-left: 2px solid var(--paw-accent); padding-left: 8px; }
+.jev-space__group { margin: 6px 0; font-size: 12px; color: var(--paw-muted); }
+.jev-space__group summary { cursor: pointer; overflow-wrap: anywhere; }
+.jev-space__group form { display: flex; gap: 6px; margin-top: 7px; }
+.jev-space__group input { width: 100%; min-width: 0; min-height: 28px; padding: 2px 6px; font: inherit; background: var(--paw-panel-strong); color: var(--paw-ink); border: 1px solid var(--paw-line); border-radius: 4px; }
+.jev-space__group button { white-space: nowrap; }
+.jev-workspace__empty h3 { font-size: 15px; color: var(--paw-ink); margin: 0 0 6px; }
+.jev-workspace__empty p { margin: 0 0 10px; }
+.jev-workspace__empty button { color: var(--paw-accent); text-decoration: underline; }
+.jev-workspace > footer p { margin: 5px 0 0; line-height: 1.5; }
+.jev-workspace > footer nav { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 6px; }
+.jev-workspace__list { scrollbar-gutter: stable; }
+
+.paw-agent-app--dual-mode .paw-agent-modebar > button { background: var(--paw-panel-soft); color: var(--paw-ink); }

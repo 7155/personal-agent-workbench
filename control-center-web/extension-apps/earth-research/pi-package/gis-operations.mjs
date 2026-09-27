@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { runJSONProcess, executionFailure, throwIfAborted } from './runner-process.mjs';
+import { workspacePath } from './workspace-path.mjs';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { snapshotGISInputs } from './gis-delivery.mjs';
@@ -33,13 +34,8 @@ function safeRoot(root) {
   return fs.realpathSync(root);
 }
 
-function safeRelative(root, value, { allowMissing = false } = {}) {
-  if (typeof value !== 'string' || !value || value.includes('\0') || path.isAbsolute(value)) throw new TypeError('GIS path must be relative to the workspace');
-  const target = path.resolve(root, value);
-  const relative = path.relative(root, target);
-  if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..') throw new TypeError('GIS path escapes the workspace');
-  if (!allowMissing && !fs.existsSync(target)) throw new Error(`GIS path does not exist: ${value}`);
-  return target;
+function safeRelative(root, value, options) {
+  return workspacePath(root, value, options);
 }
 
 export function prepareGISWorkspace(root, { version = '0.8.0', python = '' } = {}) {
@@ -73,11 +69,13 @@ export function listGISFiles(root, directory = 'data') {
     for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith('.')) continue;
       const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (supportedExtensions.has(path.extname(entry.name).toLowerCase())) {
+      const info = fs.lstatSync(full);
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) walk(full);
+      else if (info.isFile() && supportedExtensions.has(path.extname(entry.name).toLowerCase())) {
         const relativePath = path.relative(resolvedRoot, full);
         const extension = path.extname(entry.name).toLowerCase();
-        items.push({ path: relativePath, name: entry.name, bytes: fs.statSync(full).size, kind: vectorExtensions.has(extension) ? 'vector' : rasterExtensions.has(extension) ? 'raster' : 'other' });
+        items.push({ path: relativePath, name: entry.name, bytes: info.size, kind: vectorExtensions.has(extension) ? 'vector' : rasterExtensions.has(extension) ? 'raster' : 'other' });
       }
     }
   };
@@ -89,29 +87,10 @@ export function listGISBackends() {
   return { schemaVersion: 'earth.gis-backends.v1', default: 'geopandas', backends: [{ id: 'geopandas', available: true, nativeTested: false, status: 'runtime_unverified', role: 'default deterministic adapter; Python dependencies are checked when invoked' }, qgisBackendStatus()] };
 }
 
-function parseRunnerOutput(stdout) {
-  const lines = String(stdout || '').trim().split(/\r?\n/).reverse();
-  for (const line of lines) {
-    if (!line.trim().startsWith('{')) continue;
-    try { return JSON.parse(line); } catch { /* keep searching */ }
-  }
-  throw new Error('GIS runner returned no JSON receipt');
-}
-
-function executeRunner(python, runner, request, cwd, { timeout = 300_000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = execFile(python, [runner], { cwd, timeout, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } }, (error, stdout, stderr) => {
-      let parsed;
-      try { parsed = parseRunnerOutput(stdout); } catch (parseError) {
-        reject(error ?? parseError);
-        return;
-      }
-      if (error && parsed.status !== 'failed') parsed = { ...parsed, status: 'failed', error: String(stderr || error.message || error) };
-      resolve(parsed);
-    });
-    child.stdin.on('error', () => {});
-    child.stdin.end(JSON.stringify(request));
-  });
+function executeRunner(python, runner, request, cwd, { timeout = 300_000, signal } = {}) {
+  return runJSONProcess({ executable: python, args: [runner], cwd,
+    input: JSON.stringify(request), timeoutMs: timeout, signal,
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
 }
 
 function relativeResultPaths(root, result) {
@@ -131,7 +110,8 @@ function relativeResultPaths(root, result) {
   };
 }
 
-export async function runGISOperation({ root, python, request }) {
+export async function runGISOperation({ signal, root, python, request }) {
+  throwIfAborted(signal);
   const resolvedRoot = safeRoot(root);
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
   const runId = randomUUID();
@@ -145,40 +125,47 @@ export async function runGISOperation({ root, python, request }) {
   try {
     const snapshot = snapshotGISInputs(resolvedRoot, runDir, request.inputs);
     inputVersions = snapshot.versions;
-    result = await executeRunner(prepared.python, prepared.runner, { ...request, inputs: snapshot.bindings, operation: 'process', root: resolvedRoot, runDir }, resolvedRoot);
+    result = await executeRunner(prepared.python, prepared.runner, { ...request, inputs: snapshot.bindings, operation: 'process', root: resolvedRoot, runDir }, resolvedRoot, { signal });
   } catch (error) {
-    result = { status: 'failed', code: 'runner_failed', error: error instanceof Error ? error.message : String(error) };
+    result = executionFailure(error);
   }
-  const normalized = relativeResultPaths(resolvedRoot, { ...result, runId, inputVersions, params: request.params ?? {}, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
-  for (const output of normalized.outputs ?? []) {
-    if (output.path) output.sha256 = createHash('sha256').update(fs.readFileSync(safeRelative(resolvedRoot, output.path))).digest('hex');
-  }
+  const normalized = relativeResultPaths(resolvedRoot, { ...base, ...result, runId, inputVersions, params: request.params ?? {}, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  try {
+    throwIfAborted(signal);
+    for (const output of normalized.outputs ?? []) {
+      if (!output.path) throw new Error('GIS output is missing its workspace path.');
+      output.sha256 = hashOutput(safeRelative(resolvedRoot, output.path));
+    }
+  } catch (error) { Object.assign(normalized, executionFailure(error)); }
   atomicWrite(path.join(runDir, 'run.json'), normalized);
   atomicWrite(path.join(resolvedRoot, '.earth/gis/workspace.json'), normalized);
   return normalized;
 }
 
-export async function inspectGISPath({ root, python, path: inputPath }) {
+export async function inspectGISPath({ signal, root, python, path: inputPath }) {
+  throwIfAborted(signal);
   const resolvedRoot = safeRoot(root);
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
-  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'inspect', root: resolvedRoot, path: inputPath }, resolvedRoot);
+  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'inspect', root: resolvedRoot, path: inputPath }, resolvedRoot, { signal });
   if (result.status === 'failed') throw new Error(result.error || 'GIS inspect failed');
   return result.result;
 }
 
-export async function queryGISPixel({ root, python, path: inputPath, longitude, latitude, band }) {
+export async function queryGISPixel({ signal, root, python, path: inputPath, longitude, latitude, band }) {
+  throwIfAborted(signal);
   if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180 || Math.abs(latitude) > 90) throw new TypeError('Pixel query requires finite WGS84 longitude and latitude.');
   const resolvedRoot = safeRoot(root);
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
-  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'pixel', root: resolvedRoot, path: inputPath, longitude, latitude, band }, resolvedRoot);
+  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'pixel', root: resolvedRoot, path: inputPath, longitude, latitude, band }, resolvedRoot, { signal });
   if (result.status === 'failed') throw Object.assign(new Error(result.error || 'GIS pixel query failed'), { code: result.code });
   return result;
 }
 
-export async function queryGISRegion({ root, python, path: inputPath, geometry, band, allTouched }) {
+export async function queryGISRegion({ signal, root, python, path: inputPath, geometry, band, allTouched }) {
+  throwIfAborted(signal);
   const resolvedRoot = safeRoot(root);
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
-  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'region', root: resolvedRoot, path: inputPath, geometry, band, allTouched }, resolvedRoot);
+  const result = await executeRunner(prepared.python, prepared.runner, { operation: 'region', root: resolvedRoot, path: inputPath, geometry, band, allTouched }, resolvedRoot, { signal });
   if (result.status === 'failed') throw Object.assign(new Error(result.error || 'GIS region query failed'), { code: result.code });
   return result;
 }
@@ -258,22 +245,24 @@ const postgisErrors = {
   invalid_output: 'Loaded PostGIS output must be a GeoJSON path.',
 };
 
-async function executePostGIS(prepared, request) {
+async function executePostGIS(prepared, request, signal) {
   try {
-    const result = await executeRunner(prepared.python, prepared.runner, { ...request, root: prepared.root }, prepared.root, { timeout: 60_000 });
+    const result = await executeRunner(prepared.python, prepared.runner, { ...request, root: prepared.root }, prepared.root, { timeout: 60_000, signal });
     if (result.status === 'failed') {
       const code = Object.hasOwn(postgisErrors, result.code) ? result.code : 'postgis_runner_failed';
       return { status: 'failed', code, error: postgisErrors[code] };
     }
     return result;
-  } catch {
+  } catch (error) {
+    throwIfAborted(signal);
     // Driver/child-process errors may embed a DSN, username or server address.
     // Only the runner's bounded, redacted receipt may cross this boundary.
     return { status: 'failed', code: 'postgis_runner_failed', error: postgisErrors.postgis_runner_failed };
   }
 }
 
-export async function connectSpatialSource({ root, python, source }) {
+export async function connectSpatialSource({ signal, root, python, source }) {
+  throwIfAborted(signal);
   const resolvedRoot = safeRoot(root);
   if (!source || typeof source !== 'object') throw new TypeError('Spatial source must be an object.');
   const name = displayName(source.name);
@@ -293,7 +282,7 @@ export async function connectSpatialSource({ root, python, source }) {
     if (!spatialDatabaseExtensions.has(path.extname(target).toLowerCase())) throw new Error('GeoPackage/SpatiaLite source must be .gpkg, .sqlite or .db.');
     relativePath = path.relative(resolvedRoot, target);
     const prepared = prepareGISWorkspace(resolvedRoot, { python });
-    const result = await executeRunner(prepared.python, prepared.runner, { operation: 'catalog_source', root: resolvedRoot, path: relativePath }, resolvedRoot);
+    const result = await executeRunner(prepared.python, prepared.runner, { operation: 'catalog_source', root: resolvedRoot, path: relativePath }, resolvedRoot, { signal });
     if (result.status === 'failed') throw new Error(result.error || 'Spatial source catalog failed.');
     layers = Array.isArray(result.layers) ? result.layers : [];
     status = 'ready';
@@ -305,7 +294,7 @@ export async function connectSpatialSource({ root, python, source }) {
       if (identifier.includes('\0') || Buffer.byteLength(identifier, 'utf8') > 63) throw new TypeError('PostGIS schema/table identifier is invalid.');
     }
     const prepared = prepareGISWorkspace(resolvedRoot, { python });
-    const result = await executePostGIS(prepared, { operation: 'catalog_postgis', secretReference, schema, table });
+    const result = await executePostGIS(prepared, { operation: 'catalog_postgis', secretReference, schema, table }, signal);
     if (result.status === 'failed') {
       status = postgisFailureStatuses[result.code] || 'query_failed';
       probe = { code: result.code, error: result.error };
@@ -343,7 +332,8 @@ function layerOutputPath(source, layer) {
   return `.earth/gis/layers/${encodeURIComponent(source.id)}/${layerHash}.geojson`;
 }
 
-export async function loadSpatialLayer({ root, python, sourceId, layer }) {
+export async function loadSpatialLayer({ signal, root, python, sourceId, layer }) {
+  throwIfAborted(signal);
   const resolvedRoot = safeRoot(root);
   const id = String(sourceId || '').trim();
   if (!id || !/^[A-Za-z0-9:_-]{1,128}$/.test(id)) throw new TypeError('Spatial source id is invalid.');
@@ -364,14 +354,14 @@ export async function loadSpatialLayer({ root, python, sourceId, layer }) {
   const result = source.kind === 'postgis' ? await executePostGIS(prepared, {
     operation: 'load_postgis', secretReference: source.secretReference,
     schema: source.schema, table: source.table, layer, output, sourceLineage: lineage,
-  }) : await executeRunner(prepared.python, prepared.runner, {
+  }, signal) : await executeRunner(prepared.python, prepared.runner, {
     operation: 'load_source',
     root: resolvedRoot,
     path: source.path,
     layer,
     output,
     sourceLineage: lineage,
-  }, resolvedRoot);
+  }, resolvedRoot, { signal });
   if (result.status === 'failed') throw Object.assign(new Error(result.error || 'Spatial layer load failed.'), { code: result.code });
   const relativePath = typeof result.path === 'string' && path.isAbsolute(result.path) ? path.relative(resolvedRoot, result.path) : result.path || output;
   return {
@@ -387,7 +377,8 @@ export async function loadSpatialLayer({ root, python, sourceId, layer }) {
 
 export { findQGISProcess, listQGISAlgorithms, helpQGISAlgorithm, runQGISAlgorithm };
 
-export async function exportGISLayer({ root, python, request }) {
+export async function exportGISLayer({ signal, root, python, request }) {
+  throwIfAborted(signal);
   const resolvedRoot = safeRoot(root);
   const prepared = prepareGISWorkspace(resolvedRoot, { python });
   const runId = randomUUID();
@@ -404,15 +395,26 @@ export async function exportGISLayer({ root, python, request }) {
   atomicWrite(path.join(runDir, 'run.json'), base);
   let result;
   try {
-    result = await executeRunner(prepared.python, prepared.runner, { ...request, operation: 'export', root: resolvedRoot, runDir }, resolvedRoot);
+    result = await executeRunner(prepared.python, prepared.runner, { ...request, operation: 'export', root: resolvedRoot, runDir }, resolvedRoot, { signal });
   } catch (error) {
-    result = { status: 'failed', code: 'runner_failed', error: error instanceof Error ? error.message : String(error) };
+    result = executionFailure(error);
   }
-  const normalized = relativeResultPaths(resolvedRoot, { ...context, ...result, op: 'export', runId, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
-  for (const output of normalized.outputs ?? []) {
-    if (output.path) output.sha256 = createHash('sha256').update(fs.readFileSync(safeRelative(resolvedRoot, output.path))).digest('hex');
-  }
+  const normalized = relativeResultPaths(resolvedRoot, { ...base, ...context, ...result, op: 'export', runId, startedAt: base.startedAt, updatedAt: new Date().toISOString() });
+  try {
+    throwIfAborted(signal);
+    for (const output of normalized.outputs ?? []) {
+      if (!output.path) throw new Error('GIS output is missing its workspace path.');
+      output.sha256 = hashOutput(safeRelative(resolvedRoot, output.path));
+    }
+  } catch (error) { Object.assign(normalized, executionFailure(error)); }
   atomicWrite(path.join(runDir, 'run.json'), normalized);
   atomicWrite(path.join(resolvedRoot, '.earth/gis/workspace.json'), normalized);
   return normalized;
+}
+
+function hashOutput(file) {
+  const hash = createHash('sha256'), buffer = Buffer.allocUnsafe(1024 * 1024), fd = fs.openSync(file, 'r');
+  try { let count; while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, count));
+    return hash.digest('hex');
+  } finally { fs.closeSync(fd); }
 }

@@ -10,6 +10,42 @@ from scripts import build_paw_backend_web_model_package as package_builder
 
 
 class PawBackendWebModelPackageTests(unittest.TestCase):
+    def test_room_jev_scope_contains_live_seams_and_only_product_skills(self) -> None:
+        paths = package_builder.collect_room_jev_paths(package_builder.PAW_ROOT)
+        selected = {p.relative_to(package_builder.PAW_ROOT).as_posix() for p in paths}
+        self.assertIn("rag_ime/rooms/session_dispatch.py", selected)
+        self.assertIn("rag_ime/jev_tasks/room_driver.py", selected)
+        self.assertIn("rag_ime/jev_tasks/application.py", selected)
+        self.assertIn("rag_ime/db/migrations/0208_jev_host_events.sql", selected)
+        self.assertIn("tests/test_jev_host_application.py", selected)
+        self.assertIn("scripts/canary_jev_room.py", selected)
+        self.assertIn("tests/test_pi_exact_turn_cancellation.py", selected)
+        self.assertIn("rag_ime/browser_control.py", selected)
+        self.assertIn("scripts/build_ego_browser_runtime.py", selected)
+        self.assertIn("integrations/ego-browser/upstream/package/ego-browser/src/run.ts", selected)
+        self.assertFalse(any("/dist/" in p or "/node_modules/" in p for p in selected))
+        self.assertIn("integrations/pi/skills/facilitate-room/references/runtime-operations.md", selected)
+        self.assertFalse(any(p.startswith("control-center-web/") for p in selected))
+        self.assertFalse(any(p.endswith((".sqlite", ".jsonl", ".zip")) for p in selected))
+        self.assertEqual(len(selected), len(paths))
+
+    def test_room_jev_frontend_scope_includes_ui_state_transport_styles_and_imports(self) -> None:
+        paths = package_builder.collect_room_jev_frontend_paths(package_builder.PAW_ROOT)
+        selected = {p.relative_to(package_builder.PAW_ROOT / "control-center-web").as_posix() for p in paths}
+        for expected in (
+            "src/paw-os/apps/PawRoomWorkspace.tsx", "src/paw-os/apps/PawAgentApp.tsx",
+            "src/features/rooms/state/live-store.ts", "src/features/semantic-workspace/AgentModeSwitch.tsx",
+            "src/features/rooms/composer/RoomComposer.test.tsx", "src/platform/http-transport.ts",
+            "src/platform/sse.ts", "src/contracts/room-reducer.ts", "src/paw-os/styles/paw-os-room-progress.css",
+            "package.json", "src/features/agent/public-error.ts",
+            "index.html", "src/main.tsx", "src/app/App.tsx", "src/app/App-loading.test.tsx",
+            "src/paw-os/apps/PawJevWorkspace.test.tsx",
+            "e2e/fixtures/jev-execution.tsx",
+        ):
+            self.assertIn(expected, selected)
+        self.assertFalse(any("node_modules" in p or p.endswith(".jsonl") for p in selected))
+        self.assertEqual(len(paths), len(selected))
+
     def test_source_filter_uses_repository_relative_private_directory(self) -> None:
         with tempfile.TemporaryDirectory() as raw_temp:
             root = Path(raw_temp) / "private" / "pi"

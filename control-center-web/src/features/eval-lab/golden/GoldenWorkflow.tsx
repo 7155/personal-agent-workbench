@@ -49,13 +49,14 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '',
   useEffect(() => {
     if (!suite || suite.suiteId === lastSuite.current) return;
     lastSuite.current = suite.suiteId;
-    setStep(initialJobId ? 3 : suite.snapshot ? 3 : suite.calibration ? 2 : goldenJourney(suite).next);
+    const initialJob = suite.jobs.find((job) => job.jobId === initialJobId);
+    setStep(initialJob ? ({ draft: 0, review: 1, calibrate: 2, experiment: 3 }[initialJob.kind]) : initialJobId ? 3 : suite.snapshot ? 3 : suite.calibration ? 2 : goldenJourney(suite).next);
   }, [suite, initialJobId]);
   const createNew = () => {
     setSelectedSuiteId(null); setStep(0); lastSuite.current = ''; setNewGeneration((value) => value + 1);
   };
   const submit = async (action: GoldenAction, input: GoldenCommand['input'] = {}) => {
-    if (hasUnsaved && ['freeze', 'calibrate', 'draft'].includes(action)) return false;
+    if (hasUnsaved && ['freeze', 'calibrate', 'draft', 'review'].includes(action)) return false;
     return Boolean(await workflow.submit(action, input, suite));
   };
   const resumeJob = async (job: GoldenJob) => {
@@ -103,7 +104,7 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '',
       {suite ? <SourceSummary suite={suite} disabled={disabled || reviewDirty || calibrationDirty} onDirtyChange={reportSourceDirty} onJudge={(input) => submit('judge_config', input)} onDraft={() => void submit('draft').then((accepted) => { if (accepted) setStep(1); })} /> : <SourceForm key={newGeneration} disabled={commandBusy} onCreate={async (input) => { const receipt = await workflow.submit('create', input); if (receipt) setSelectedSuiteId(receipt.suite.suiteId); }} />}
     </div>
     {suite ? <>
-        <div id={`${id}-panel-1`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-1`} hidden={step !== 1}><CaseReview key={suite.suiteId} suite={suite} disabled={disabled} onDirtyChange={reportReviewDirty} onReview={(input) => submit('review_case', input)} onNext={() => setStep(2)} onDraft={() => setStep(0)} /></div>
+        <div id={`${id}-panel-1`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-1`} hidden={step !== 1}><CaseReview key={suite.suiteId} suite={suite} disabled={disabled} onDirtyChange={reportReviewDirty} onReview={(input) => submit('review_case', input)} onAgentReview={(input) => submit('review', input)} onNext={() => setStep(2)} onDraft={() => setStep(0)} /></div>
       <div id={`${id}-panel-2`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-2`} hidden={step !== 2}><CalibrationPanel key={suite.suiteId} suite={suite} disabled={disabled} onDirtyChange={reportCalibrationDirty} reviewDirty={reviewDirty} onLabel={(input) => submit('label_sample', input)} onJudge={(input) => submit('judge_config', input)} onCalibrate={() => void submit('calibrate')} onNext={() => setStep(3)} onReview={() => setStep(1)} /></div>
       <div id={`${id}-panel-3`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-3`} hidden={step !== 3}><GoldenExperiment onSelectDelivery={onSelectDelivery} key={suite.suiteId} initialJobId={initialJobId} suite={suite} disabled={disabled} unsaved={hasUnsaved} onFreeze={() => void submit('freeze')} onExperiment={(input) => submit('experiment', input)} onReview={() => setStep(1)} onCalibrate={() => setStep(2)} /></div>
     </> : null}

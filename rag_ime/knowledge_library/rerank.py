@@ -89,6 +89,10 @@ def knowledge_reranker_from_env(
     provider = str(source.get("RAG_IME_KNOWLEDGE_RERANK_PROVIDER", "none")).strip().lower()
     if provider in {"", "none", "disabled"}:
         return None
+    if provider == "typesafe-jev":
+        from .jev_rerank import JevKnowledgeReranker
+
+        return JevKnowledgeReranker()
     if provider not in {"mlx-qwen3-reranker", "qwen3-reranker"}:
         raise ValueError(f"unsupported Knowledge reranker provider: {provider}")
     raw_model_path = str(source.get("RAG_IME_KNOWLEDGE_RERANK_MODEL_PATH", "")).strip()

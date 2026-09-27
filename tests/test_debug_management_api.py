@@ -1416,6 +1416,21 @@ class DebugManagementApiTests(unittest.TestCase):
         self.assertIn("pollConfigured", route["notion"])
         self.assertFalse(route["notion"]["ready"])
 
+    def test_memory_maintenance_status_reports_the_configured_model(self) -> None:
+        managed = MemoryMaintenanceSettings(
+            automatic_organization_model="openai-codex/gpt-6-luna",
+        )
+        with patch(
+            "rag_ime.debug_server.MemoryMaintenanceSettings.load",
+            return_value=managed,
+        ):
+            status = self.service.agent_memory_maintenance_status(
+                {"project": "wisdom-weasel-rag-ime", "limit": 1}
+            )
+
+        self.assertEqual(status["automation"]["model"], "openai-codex/gpt-6-luna")
+        self.assertEqual(status["modelCuration"]["requiredModel"], "openai-codex/gpt-6-luna")
+
     def test_agent_memory_maintenance_status_auto_applies_governed_runs_and_counts_legacy_drafts(self) -> None:
         event_ref = self.core.record_event(
             InputEvent(
@@ -2665,6 +2680,62 @@ class DebugManagementApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertFalse(payload["runtimeAvailable"])
         self.assertEqual(payload["items"], [])
+
+    def test_tool_receipt_lookup_http_keeps_gateway_auth_and_exact_binding(self) -> None:
+        session_id = str(self.service.agent.sessions.create(title="receipt lookup")["id"])
+        with self.service.agent.sessions.approval_creation_scope(
+            session_id=session_id, tool_call_id="call:http:lost-response",
+        ):
+            approval = self.service.agent.sessions.create_approval(
+                session_id=session_id, tool_name="workspace_write", operation="apply",
+                payload_sha256="a" * 64, preview={}, risk_level="R2",
+            )
+        approval_id = str(approval["approvalId"])
+        self.service.agent.sessions.decide_approval(
+            approval_id, approved=True, payload_sha256="a" * 64,
+        )
+        receipt = {"mutationApplied": True, "summary": "Already applied", "postimageSha256": "b" * 64}
+        self.service.agent.sessions.complete_approval(approval_id, state="applied", receipt=receipt)
+
+        class Handler(DebugRequestHandler):
+            pass
+
+        Handler.service = self.service
+        Handler.static_dir = Path("debug")
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        url = f"http://127.0.0.1:{server.server_port}/api/agent/tool/approval-result"
+        payload = {"sessionId": session_id, "toolCallId": "call:http:lost-response", "tool": "workspace_write"}
+
+        def request(body, *, authenticated=True):
+            headers = {"Content-Type": "application/json"}
+            if authenticated:
+                headers["X-RAG-IME-Agent-Token"] = self.service.agent.tool_token
+            return Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+
+        try:
+            with self.assertRaises(HTTPError) as denied:
+                urlopen(request(payload, authenticated=False), timeout=5)
+            self.assertEqual(denied.exception.code, 403)
+            denied.exception.close()
+            with patch.object(self.service.agent_tools, "execute") as execute:
+                for _ in range(2):
+                    with urlopen(request(payload), timeout=5) as response:
+                        result = json.loads(response.read())
+                    self.assertEqual(result["lookupState"], "applied")
+                    self.assertEqual(result["approval"]["receipt"], receipt)
+                execute.assert_not_called()
+            with self.assertRaises(HTTPError) as mismatch:
+                urlopen(request({**payload, "tool": "workspace_shell"}), timeout=5)
+            self.assertEqual(mismatch.exception.code, 400)
+            mismatch.exception.close()
+            with urlopen(request({"sessionId": session_id, "approvalId": approval_id}), timeout=5) as response:
+                self.assertEqual(json.loads(response.read())["approval"]["receipt"], receipt)
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
 
     def test_agent_session_http_routes_are_operational(self) -> None:
         class Handler(DebugRequestHandler):

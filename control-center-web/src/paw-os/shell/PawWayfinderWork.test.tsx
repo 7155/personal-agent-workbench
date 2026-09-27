@@ -190,6 +190,19 @@ describe('PawWayfinderWork', () => {
     expect(screen.getAllByRole('button', { name: /上个月的工作/ })).toHaveLength(2);
   });
 
+  it('shows a bounded preview when a project contains only older conversations', async () => {
+    renderPanel({ routes: {
+      'agent.sessions.list': { ok: true, items: Array.from({ length: 7 }, (_, i) =>
+        sessionRecord(`old-${i}`, `历史对话 ${i}`, { updatedAtMs: NOW - (30 + i) * 86_400_000 })) },
+      'agent.rooms.list': { ok: true, items: [] },
+    } });
+    const panel = await screen.findByRole('region', { name: '最近工作' });
+    await openProjectFolder(panel);
+    expect(panel.querySelectorAll('[data-dialogue-file]')).toHaveLength(5);
+    fireEvent.click(within(panel).getByRole('button', { name: '显示其余 2 个对话' }));
+    expect(panel.querySelectorAll('[data-dialogue-file]')).toHaveLength(7);
+  });
+
   it('opens a row straight into the Agent window projection', async () => {
     renderPanel({
       routes: {

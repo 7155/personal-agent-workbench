@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { runJSONProcess, executionFailure, throwIfAborted } from './runner-process.mjs';
 import { fileURLToPath } from 'node:url';
 
 const kinds = new Set(['classification', 'ndvi', 'change', 'animation', 'research']);
@@ -128,20 +128,13 @@ export async function prepareRemoteSensingWorkflow({ root, plan }) {
   return record;
 }
 
-function execute(python, request, root) {
-  return new Promise((resolve, reject) => {
-    const child = execFile(python, [runner], { cwd: root, timeout: 300_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
-      let value;
-      try { value = JSON.parse(String(stdout).trim().split(/\r?\n/).at(-1)); } catch { reject(new Error(String(stderr || error?.message || 'Remote-sensing runner returned no receipt.'))); return; }
-      if (error && value.status !== 'failed') reject(new Error(String(stderr || error.message)));
-      else resolve(value);
-    });
-    child.stdin.on('error', () => {});
-    child.stdin.end(JSON.stringify(request));
-  });
+function execute(python, request, root, signal) {
+  return runJSONProcess({ executable: python, args: [runner], cwd: root, input: JSON.stringify(request),
+    signal, maxOutputBytes: 32 * 1024 * 1024, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
 }
 
-export async function runRemoteSensingWorkflow({ root, planId, python }) {
+export async function runRemoteSensingWorkflow({ root, planId, python, signal }) {
+  throwIfAborted(signal);
   root = workspace(root);
   if (!idPattern.test(String(planId))) throw new TypeError('Invalid remote-sensing plan ID.');
   const saved = JSON.parse(fs.readFileSync(inside(root, `.earth/remote-sensing/plans/${planId}/plan.json`), 'utf8'));
@@ -161,7 +154,7 @@ export async function runRemoteSensingWorkflow({ root, planId, python }) {
       const configFile = inside(root, '.earth/gis/runtime.json', true);
       const configured = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')).python : undefined;
       const executable = python || configured || process.env.PAW_EARTH_GIS_PYTHON || (fs.existsSync(managed) ? managed : 'python3');
-      result = await execute(executable, { root, runDir, plan: saved.plan }, root);
+      result = await execute(executable, { root, runDir, plan: saved.plan }, root, signal);
       for (const input of saved.inputVersions) {
         if (hashFile(inside(root, input.path)) !== input.sha256) throw new Error(`Input changed during execution: ${input.path}. No result was accepted.`);
       }
@@ -182,7 +175,7 @@ export async function runRemoteSensingWorkflow({ root, planId, python }) {
         output.bytes = fs.statSync(file).size;
       }
     }
-  } catch (error) { result = { status: 'failed', code: 'workflow_failed', error: error instanceof Error ? error.message : String(error), outputs: [] }; }
+  } catch (error) { result = executionFailure(error); }
   const receipt = { ...base, ...result, updatedAt: new Date().toISOString() };
   write(path.join(runDir, 'run.json'), receipt);
   write(inside(root, '.earth/remote-sensing/workspace.json', true), receipt);

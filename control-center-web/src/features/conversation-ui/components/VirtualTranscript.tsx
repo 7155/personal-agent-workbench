@@ -23,9 +23,10 @@ function estimateMessage(message: TranscriptMessage): number {
   return Math.max(80, size);
 }
 
-export function VirtualTranscript({ empty, label, lead }: {
+export function VirtualTranscript({ empty, label, lead, tail }: {
   label: string;
   lead?: ReactNode;
+  tail?: ReactNode;
   empty?: ReactNode;
 }) {
   const surface = useConversationSurface();
@@ -61,7 +62,7 @@ export function VirtualTranscript({ empty, label, lead }: {
   const { isPinnedRef, scrollToBottom } = pinned;
   useEffect(() => {
     if (isPinnedRef.current) scrollToBottom('auto');
-  }, [isPinnedRef, messages, scrollToBottom]);
+  }, [isPinnedRef, messages, scrollToBottom, tail]);
 
   const messageIndex = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index])),
@@ -100,7 +101,8 @@ export function VirtualTranscript({ empty, label, lead }: {
         tabIndex={0}
       >
         {lead ? <div className="ccui-transcript-lead">{lead}</div> : null}
-        <div className="ccui-transcript-sizer" ref={sizerRef} style={{ height: virtual.totalSize }}>
+        <div className="ccui-transcript-content" ref={sizerRef}>
+        <div className="ccui-transcript-sizer" style={{ height: virtual.totalSize }}>
           {virtual.virtualRows.map((row) => {
             const message = messages[row.index];
             if (!message) return null;
@@ -117,6 +119,8 @@ export function VirtualTranscript({ empty, label, lead }: {
               </div>
             );
           })}
+        </div>
+        {tail ? <div className="ccui-transcript-tail">{tail}</div> : null}
         </div>
         {messages.length === 0 && empty ? <div className="ccui-empty-transcript">{empty}</div> : null}
       </div>

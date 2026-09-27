@@ -68,6 +68,13 @@ Native or input-method changes also require the relevant build and an attended
 foreground test. A backend JSON response is not proof that a candidate was
 visible and selectable in Squirrel.
 
+For Jev Room changes, run `python3 -m unittest discover -s tests -p
+'test_jev*py'` and `python3 -m unittest tests.test_pi_exact_turn_cancellation`,
+then the affected frontend tests. The opt-in [live Jev canary](integrations/jev/README.md#room-api-and-verification)
+uses actual Provider calls and a separately supplied Pi payload; preserve its
+reported evidence boundary and do not count a synthetic UI fixture as live
+multi-Agent acceptance.
+
 ## Extension Contracts
 
 Use the existing owner for each extension. Do not add another plugin registry or

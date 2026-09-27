@@ -9,6 +9,45 @@ import { RoomComposer, roomMentionedParticipants } from './RoomComposer';
 afterEach(cleanup);
 
 describe('RoomComposer macOS input methods', () => {
+  it('keeps add, settings, stop and send on one shared toolbar without changing the draft', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onStop = vi.fn();
+    const { container } = render(<TooltipProvider><RoomComposer
+      room={{ id: 'room-toolbar', status: 'active', participants: [] }}
+      personas={[]}
+      draft=""
+      attachments={[]}
+      sending={false}
+      taskBusyState="running"
+      capabilityControls={<button type="button" aria-label="伙伴设置">伙伴设置</button>}
+      onDraftChange={vi.fn()}
+      onAttachmentsChange={vi.fn()}
+      onPasteImages={vi.fn()}
+      onPasteFromClipboard={vi.fn()}
+      onPickAttachments={vi.fn()}
+      onSend={onSend}
+      onStop={onStop}
+    /></TooltipProvider>);
+    const controls = container.querySelector('.agent-composer__controls');
+    const actions = container.querySelector('.agent-composer__actions');
+    expect(controls?.firstElementChild).toBe(screen.getByRole('button', { name: '添加内容' }));
+    expect(controls).toContainElement(screen.getByRole('button', { name: '伙伴设置' }));
+    expect(actions).toContainElement(screen.getByRole('button', { name: '停止当前协作' }));
+    expect(actions).toContainElement(screen.getByRole('button', { name: '立即干预当前回合' }));
+
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    await user.type(editor, '继续检查当前结果');
+    await user.click(screen.getByRole('button', { name: '伙伴设置' }));
+    expect(editor).toHaveValue('继续检查当前结果');
+    expect(onSend).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '停止当前协作' }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(editor).toHaveValue('继续检查当前结果');
+    await user.click(screen.getByRole('button', { name: '立即干预当前回合' }));
+    expect(onSend).toHaveBeenCalledWith('继续检查当前结果');
+  });
+
   it('shows stable planet aliases and resolves @Earth to the real participant', () => {
     const participant = {
       id: 'participant-earth',
@@ -336,6 +375,27 @@ it('retains an asynchronously rejected message without overwriting the next draf
   expect(onSend).toHaveBeenCalledTimes(1);
 });
 
+it('moves the one JEV draft into a dialog and restores it and focus without sending', async () => {
+  const onSend = vi.fn();
+  function Harness() {
+    const [draft, setDraft] = useState('补充任务');
+    return <TooltipProvider><RoomComposer expandInDialog room={{ id: 'room-editor-dialog', status: 'active', participants: [] }} personas={[]} draft={draft} attachments={[]} sending={false} taskBusyState="running" busySubmitBehavior="queue" onDraftChange={setDraft} onAttachmentsChange={vi.fn()} onPasteImages={vi.fn()} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={onSend} /></TooltipProvider>;
+  }
+  const user = userEvent.setup();
+  render(<Harness />);
+  await user.click(screen.getByRole('button', { name: '展开长文本编辑' }));
+  expect(screen.getByRole('dialog', { name: '编辑任务消息' })).toBeVisible();
+  expect(screen.getAllByRole('textbox', { name: '协作消息' })).toHaveLength(1);
+  const editor = screen.getByRole('textbox', { name: '协作消息' });
+  expect(editor).toHaveFocus();
+  fireEvent.change(editor, { target: { value: '补充任务\n保留这份草稿' } });
+  await user.click(screen.getByRole('button', { name: '关闭' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveValue('补充任务\n保留这份草稿');
+  expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveFocus();
+  expect(onSend).not.toHaveBeenCalled();
+});
+
 it('keeps one add menu, stop and expanded editing and blocks file drops during execution', async () => {
   const onStop = vi.fn(); const onInvite = vi.fn(); const onFiles = vi.fn();
   render(<TooltipProvider><RoomComposer room={{ id: 'room-controls', status: 'active', participants: [] }} personas={[]} draft="长文本" attachments={[]} sending={false} taskBusyState="running" onStop={onStop} onInvitePartners={onInvite} onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()} onPasteImages={onFiles} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={vi.fn()} /></TooltipProvider>);
@@ -367,4 +427,63 @@ it('keeps the mention menu open across the controlled host draft echo', () => {
   fireEvent.click(screen.getByRole('option', { name: /Earth/ }));
   expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveValue('请核对 @Earth ');
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+});
+
+it('places mentions outside the composer scrollport while keeping editor selection and dismissal', async () => {
+  const onSend = vi.fn();
+  function Harness() {
+    const [draft, setDraft] = useState('');
+    return <TooltipProvider><div data-testid="composer-scrollport" style={{ maxHeight: 120, overflowY: 'auto' }}><RoomComposer
+      room={{ id: 'room-scrolling', status: 'active', participants: [
+        { id: 'earth', sessionId: 'earth-session', roleId: 'worker', roleVersion: '1', displayName: 'Earth', ordinal: 0, status: 'active' },
+        { id: 'mars', sessionId: 'mars-session', roleId: 'worker', roleVersion: '1', displayName: 'Mars', ordinal: 1, status: 'active' },
+      ] }}
+      participantAliases={{ earth: 'Earth', mars: 'Mars' }} personas={[]} draft={draft} attachments={[]} sending={false}
+      onDraftChange={setDraft} onAttachmentsChange={vi.fn()} onPasteImages={vi.fn()} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={onSend}
+    /></div><button type="button">Outside composer</button></TooltipProvider>;
+  }
+  render(<Harness />);
+  const user = userEvent.setup();
+  const editor = screen.getByRole('textbox', { name: '协作消息' });
+  await user.type(editor, '@');
+  const menu = screen.getByRole('listbox', { name: '选择要点名的伙伴' });
+  expect(screen.getByTestId('composer-scrollport')).not.toContainElement(menu);
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveAttribute('aria-controls', menu.id);
+  await user.keyboard('{ArrowDown}');
+  expect(screen.getByRole('option', { name: /Mars/ })).toHaveAttribute('aria-selected', 'true');
+  await user.keyboard('{Enter}');
+  expect(editor).toHaveValue('@Mars ');
+  expect(editor).toHaveFocus();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  expect(onSend).not.toHaveBeenCalled();
+
+  await user.clear(editor);
+  await user.type(editor, '@');
+  await user.click(screen.getByRole('option', { name: /Earth/ }));
+  expect(editor).toHaveValue('@Earth ');
+  expect(editor).toHaveFocus();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+  await user.clear(editor);
+  await user.type(editor, '@');
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  expect(editor).toHaveFocus();
+  await user.type(editor, 'E');
+  expect(screen.getByRole('listbox')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Outside composer' }));
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Outside composer' })).toHaveFocus();
+  expect(onSend).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole('button', { name: '添加内容' }));
+  await user.click(screen.getByRole('menuitem', { name: /点名一位伙伴/ }));
+  expect(screen.getByRole('listbox')).toBeInTheDocument();
+  expect(editor).toHaveFocus();
+  await user.keyboard('{Tab}');
+  expect(editor).toHaveValue('@Earth ');
+  expect(editor).toHaveFocus();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  expect(onSend).not.toHaveBeenCalled();
 });

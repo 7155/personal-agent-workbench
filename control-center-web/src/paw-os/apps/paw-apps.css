@@ -1590,3 +1590,7 @@
   .paw-session-workspace__header nav button { font-size: 0; }
 }
 /* UR-102 agent semantic typography end */
+
+:is(.paw-session-workspace__composer,.paw-room-workspace__composer):has(.agent-user-input-card) { max-height: 100%; min-height: 0; overflow-y: auto; }
+:is(.paw-session-workspace__composer,.paw-room-workspace__composer):has(.agent-user-input-card) > :is(.agent-composer-wrap,.paw-workspace-context) { display: none; }
+:is(.paw-session-workspace__composer,.paw-room-workspace__composer) > .agent-user-input-card { width: 100%; margin: 0; max-height: min(680px, 65dvh); }

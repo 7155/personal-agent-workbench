@@ -154,6 +154,9 @@ for line in sys.stdin:
                 "clientMessageId": "client-recovered",
             }
         result(request, {"snapshot": session, "evictedSessionId": None})
+    elif method == "tools.sync":
+        sessions[session_id]["toolManifest"] = params["tools"]
+        result(request, {"tools": params["tools"]})
     elif method == "session.control_state":
         session = sessions[session_id]
         result(request, {
@@ -218,7 +221,11 @@ for line in sys.stdin:
         sessions[session_id]["thinkingLevel"] = params["level"]
         result(request, {"level": params["level"]})
     elif method == "session.prompt":
-        turn_id = "turn-" + session_id
+        # Match Pi's fresh UUID per prompt. Reusing a retired identity causes
+        # later execution events to be correctly fenced as stale replays.
+        prompt_sequence = sessions[session_id].get("promptSequence", 0) + 1
+        sessions[session_id]["promptSequence"] = prompt_sequence
+        turn_id = "turn-" + session_id + ("-" + str(prompt_sequence) if prompt_sequence > 1 else "")
         sessions[session_id]["activeTurnId"] = turn_id
         client_message_id = params.get("clientMessageId", "")
         sessions[session_id]["activeClientMessageId"] = client_message_id
@@ -1379,6 +1386,35 @@ class PiRuntimeV2Tests(unittest.TestCase):
             ],
         )
 
+    def test_warm_ensure_retires_idle_binding_preserved_by_preflight(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.config = replace(self.runtime.config, provider_environment={
+            "TEST_SESSION_OPEN_RECOVERED_TURN": "old-idle-turn",
+        })
+        opened = self.runtime.ensure(session_id, retire_recovered_turn=False)
+        self.assertEqual(opened["state"]["activeTurn"]["turnId"], "old-idle-turn")
+        preserved = self.runtime.ensure(session_id, retire_recovered_turn=False)
+        self.assertEqual(preserved["state"]["activeTurn"]["turnId"], "old-idle-turn")
+        recovered = self.runtime.ensure(session_id)
+        self.assertTrue(recovered["reused"])
+        self.assertTrue(recovered["recoveredTurnRetirement"]["retired"])
+        self.assertIsNone(recovered["state"]["activeTurn"])
+        self.assertTrue(self.runtime.prompt(session_id, "new task")["accepted"])
+
+    def test_warm_ensure_does_not_retire_a_running_turn(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        client = self.runtime._require_client()
+        control = {"schemaVersion": "rag-ime.pi-session-control-state.v1",
+                   "sessionId": session_id, "isIdle": False,
+                   "activeTurn": {"turnId": "running-turn"}}
+        with patch.object(client, "send", return_value=control), patch.object(
+            self.runtime, "retire_recovered_turn"
+        ) as retire:
+            result = self.runtime.ensure(session_id)
+        retire.assert_not_called()
+        self.assertEqual(result["state"]["activeTurn"]["turnId"], "running-turn")
+
     def test_retire_recovered_turn_uses_exact_idle_turn_and_confirms_clear(
         self,
     ) -> None:
@@ -2504,7 +2540,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
         self.assertTrue(returned_while_repair_blocked)
         self.assertFalse(caller.is_alive())
         self.assertEqual(errors, [])
-        self.assertEqual(caller_result, [initial])
+        self.assertEqual(caller_result, [{**initial, "projectionCurrent": False}])
         self.assertNotEqual(full_thread_ids, [caller.ident])
 
         repaired = self.runtime.recent_session_snapshot(session_id)
@@ -2760,6 +2796,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
             else None
         )
         stale_append = self.runtime.recent_session_snapshot(session_id)
+        self.assertFalse(stale_append["projectionCurrent"])
         stale_texts = [
             block["data"]["text"]
             for message in stale_append["messages"]
@@ -2771,6 +2808,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
         remove_observer()
         compacted_append = self.runtime.recent_session_snapshot(session_id)
         compacted_append_repeat = self.runtime.recent_session_snapshot(session_id)
+        self.assertTrue(compacted_append_repeat["projectionCurrent"])
         append_texts = [
             block["data"]["text"]
             for message in compacted_append["messages"]
@@ -2968,7 +3006,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
         )
         self.assertEqual(
             self.runtime.recent_session_snapshot(session_id),
-            {"messages": []},
+            {"messages": [], "projectionCurrent": False},
         )
 
     def test_host_snapshot_failure_recovers_from_durable_history_instead_of_empty_success(self) -> None:
@@ -4697,10 +4735,14 @@ class PiRuntimeV2Tests(unittest.TestCase):
 
     def test_snapshot_uses_durable_entries_to_remove_cross_turn_assistant_replay(self) -> None:
         session_id = str(self.first["id"])
-        self.runtime.prompt(session_id, "first turn")
+        first = self.runtime.prompt(session_id, "first turn")
         _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
-        self.runtime.prompt(session_id, "duplicate-across-native-followup")
+        second = self.runtime.prompt(session_id, "duplicate-across-native-followup")
         _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+        self.assertNotEqual(first["turnId"], second["turnId"])
+        completed = [event.turn_id for event in self.events.replay(session_id)[0]
+                     if event.event_type == "turn_completed"]
+        self.assertEqual(completed, [first["turnId"], second["turnId"]])
 
         messages = self.runtime.messages(session_id)
         assistant_texts = [
@@ -4731,6 +4773,21 @@ class PiRuntimeV2Tests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_v2_skill_catalog_reads_actual_session_commands_without_snapshot_or_turn(self) -> None:
+        session_id = str(self.first["id"])
+        before = (self.root / "agent" / "host-requests.jsonl")
+        original = before.read_text(encoding="utf-8").splitlines() if before.exists() else []
+        self.assertEqual(self.runtime.skill_catalog(session_id), [
+            {"name": "skill:plugin-creator", "source": "skill"},
+        ])
+        self.assertEqual(self.runtime.skill_catalog(session_id), [
+            {"name": "skill:plugin-creator", "source": "skill"},
+        ])
+        requests = [json.loads(line) for line in before.read_text(encoding="utf-8").splitlines()[len(original):]]
+        self.assertEqual(requests[-1]["method"], "session.commands")
+        self.assertNotIn("session.snapshot", [item["method"] for item in requests])
+        self.assertNotIn("session.prompt", [item["method"] for item in requests])
 
     def test_v2_invokes_pi_package_command_without_starting_model_turn(self) -> None:
         session_id = str(self.first["id"])

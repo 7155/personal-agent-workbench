@@ -125,23 +125,34 @@ def vector_summary(path: Path) -> dict[str, Any]:
 
 
 def raster_summary(path: Path) -> dict[str, Any]:
+    """Exact statistics with bounded memory, including striped / un-tiled inputs."""
     require_runtime()
     with rasterio.open(path) as source:
-        values = source.read(masked=True)
-        compressed = values.compressed() if hasattr(values, "compressed") else np.asarray(values).reshape(-1)
-        finite = compressed[np.isfinite(compressed)] if len(compressed) else compressed
+        minimum, maximum, valid_values = None, None, 0
+        # A source block can span an entire raster, so block_windows() alone
+        # does not provide a memory bound. Read independent 512x512 windows.
+        for band in range(1, source.count + 1):
+            for row in range(0, source.height, 512):
+                for col in range(0, source.width, 512):
+                    window = rasterio.windows.Window(col, row, min(512, source.width - col), min(512, source.height - row))
+                    values = source.read(band, window=window, masked=True).compressed()
+                    finite = values[np.isfinite(values)]
+                    if finite.size:
+                        low, high = float(finite.min()), float(finite.max())
+                        minimum = low if minimum is None else min(minimum, low)
+                        maximum = high if maximum is None else max(maximum, high)
+                        valid_values += int(finite.size)
+        nodata = source.nodata
+        if nodata is not None and not np.isfinite(nodata):
+            nodata = None  # Strict JSON cannot represent NaN / Infinity.
         return {
-            "kind": "raster",
-            "path": str(path),
-            "width": int(source.width),
-            "height": int(source.height),
-            "bands": int(source.count),
-            "dtype": str(source.dtypes[0]),
-            "crs": str(source.crs) if source.crs is not None else None,
+            "kind": "raster", "path": str(path), "width": int(source.width),
+            "height": int(source.height), "bands": int(source.count),
+            "dtype": str(source.dtypes[0]), "crs": str(source.crs) if source.crs is not None else None,
             "bounds": [float(value) for value in source.bounds],
-            "min": float(finite.min()) if len(finite) else None,
-            "max": float(finite.max()) if len(finite) else None,
-            "nodata": source.nodata,
+            "min": minimum, "max": maximum, "nodata": nodata,
+            "validValues": valid_values, "statisticsMode": "exact-windowed",
+            "statisticsWindowSize": 512,
         }
 
 

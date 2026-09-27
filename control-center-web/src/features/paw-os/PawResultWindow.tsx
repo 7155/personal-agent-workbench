@@ -14,6 +14,8 @@ const kindLabel: Record<ResultTarget['resultKind'], string> = {
 export function PawResultWindow({ target }: { target: ResultTarget }) {
   const [failedSource, setFailedSource] = useState(false);
   const html = useMemo(() => target.content?.trim() ? richHtmlDocument(target.content) : '', [target.content]);
+  // Every HTML result uses the dedicated preview document: srcDoc inherits the
+  // Control Center CSP, so large reports would lose their authored scripts.
   const htmlUrl = useRichHtmlUrl(html, Boolean(html));
   const source = safeResultSource(target.source);
   const isHtml = target.resultKind === 'html' || target.resultKind === 'web' || target.resultKind === 'game' || target.resultKind === 'music';
@@ -31,7 +33,8 @@ export function PawResultWindow({ target }: { target: ResultTarget }) {
       {target.resultKind === 'image' && source && !failedSource ? <figure className="paw-result-window__media paw-result-window__media--image"><img alt={target.title} onError={() => setFailedSource(true)} src={source} /></figure> : null}
       {target.resultKind === 'audio' && source && !failedSource ? <div className="paw-result-window__media paw-result-window__media--audio"><AudioLines aria-hidden="true" size={28} /><audio controls onError={() => setFailedSource(true)} preload="metadata" src={source} /></div> : null}
       {target.resultKind === 'artifact' && source ? <section className="paw-result-window__artifact"><FileOutput aria-hidden="true" size={28} /><div><strong>{target.title}</strong><p>{target.subtitle || '受控文件回执已准备好。'}</p></div><a href={source} rel="noreferrer" target="_blank"><ExternalLink size={15} />打开文件</a></section> : null}
-      {isHtml && !htmlUrl ? <ResultEmpty detail="这个结果没有可渲染的 HTML 内容。" /> : null}
+      {isHtml && !htmlUrl && html ? <section className="paw-result-window__empty" role="status"><strong>正在准备 HTML 输出</strong><p>正在为报告建立隔离预览。</p></section> : null}
+      {isHtml && !htmlUrl && !html ? <ResultEmpty detail="这个结果没有可渲染的 HTML 内容。" /> : null}
       {(target.resultKind === 'image' || target.resultKind === 'audio') && (!source || failedSource) ? <ResultEmpty detail={source ? '媒体回执暂时无法读取，请重试或打开原始产物。' : '这个结果没有可验证的媒体回执。'} /> : null}
       {target.resultKind === 'artifact' && !source ? <ResultEmpty detail="这个产物没有可验证的文件回执。" /> : null}
     </section>

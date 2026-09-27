@@ -93,3 +93,8 @@
 .lab-report__sources > li > button { flex: none; background: none; border: 1px solid var(--lab-line); border-radius: 5px; padding: 6px 8px; color: var(--lab-accent); font: inherit; cursor: pointer; }
 .lab-report__sources > li > button:focus-visible { outline: 2px solid var(--lab-accent); outline-offset: 2px; }
 @container lab-stage (max-width: 760px) { .lab-report__sources > li { flex-direction: column; } .lab-report__sources > li > button { min-height: 44px; } }
+.lab-report__stage-table { overflow: auto; border: 1px solid var(--lab-line); border-radius: 8px; }
+.lab-report__stage-table table { border-collapse: collapse; width: 100%; min-width: 590px; font-size: 13px; text-align: left; font-variant-numeric: tabular-nums; }
+.lab-report__stage-table :is(th, td) { padding: 15px; border-bottom: 1px solid var(--lab-line); line-height: 1.7; }
+.lab-report__stage-table th { font-weight: 550; }
+.lab-report__stage-table thead { background: var(--lab-surface-subtle); color: var(--lab-muted); }

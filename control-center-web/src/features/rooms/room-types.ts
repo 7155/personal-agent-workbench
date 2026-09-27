@@ -13,7 +13,7 @@ export interface RoomParticipant {
 
 export type RoomKind = 'collaboration' | 'roleplay';
 export type RoomExecutionMode = 'read_only' | 'per_action' | 'workspace_managed' | 'full_trust';
-export type RoomRoutingPolicy = 'moderator' | 'manual_mentions' | 'sequential' | 'natural' | 'parallel' | 'invite_only';
+export type RoomRoutingPolicy = 'moderator' | 'manual_mentions' | 'sequential' | 'natural' | 'parallel' | 'invite_only' | 'jev';
 
 export const ROOM_PERMISSION_POLICY_SCHEMA_VERSION = 'rag-ime.room-permission-policy.v1' as const;
 

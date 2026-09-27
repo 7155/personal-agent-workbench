@@ -88,6 +88,23 @@ class ParsedAsset:
 
 
 @dataclass(frozen=True)
+class ParsedBlock:
+    """A parser-owned evidence unit; pages are one-based, unknown geometry stays None.
+
+    Tuple order is reading order. bbox uses the coordinate system declared in
+    metadata (never silently assumed to be PDF points). text is the retrieval
+    representation; table HTML, captions and source identities may accompany it.
+    """
+
+    kind: str
+    text: str
+    page: int | None = None
+    bbox: tuple[float, float, float, float] | None = None
+    heading_path: tuple[str, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ParsedDocument:
     text: str
     provider: str
@@ -95,6 +112,7 @@ class ParsedDocument:
     title: str = ""
     assets: tuple[ParsedAsset, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
+    blocks: tuple[ParsedBlock, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,6 +140,7 @@ class SearchHit:
     page: int | None = None
     heading: str = ""
     diagnostics: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -134,6 +153,7 @@ class SearchHit:
             "content": self.content,
             "score": self.score,
             "citation": {
+                **self.provenance,
                 "documentId": self.document_id,
                 "documentName": self.document_name,
                 "page": self.page,

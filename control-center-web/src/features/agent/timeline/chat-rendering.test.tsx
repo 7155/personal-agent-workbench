@@ -1,3 +1,4 @@
+import { CompactActivityContext } from './CompactActivityContext';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +37,29 @@ afterEach(() => {
 });
 
 describe('Agent chat rendering', () => {
+  it('folds only completed embedded history, keeps failures visible, and expands the original sequence', () => {
+    useAgentLiveStore.getState().hydrateSnapshot('session-1', { messages: [userMessage('session-1', 'turn-1')], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle' });
+    let sequence = 0;
+    const events = [];
+    for (let i = 0; i < 4; i++) {
+      events.push(agentEventFixture(++sequence, 'reasoning_summary', { requestId: `r${i}`, summary: `分析阶段${i}`, items: [`分析阶段${i}`], source: 'provider_reasoning_summary', state: 'completed' }));
+      events.push(agentEventFixture(++sequence, 'tool_started', { toolCallId: `t${i}`, toolName: 'read', args: { path: `file-${i}` } }));
+      events.push(agentEventFixture(++sequence, 'tool_finished', { toolCallId: `t${i}`, toolName: 'read', isError: i === 1, publicResult: { summary: i === 1 ? '文件读取失败' : `读取完成${i}` } }));
+    }
+    useAgentLiveStore.getState().applyEvents('session-1', events);
+    const view = render(<CompactActivityContext.Provider value><AgentTurn sessionId="session-1" turnId="turn-1" onApprovalDecision={() => {}} /></CompactActivityContext.Provider>);
+    expect(screen.queryByRole('button', { name: '查看 Agent 思考摘要：分析阶段0' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看 Agent 思考摘要：分析阶段3' })).toBeVisible();
+    const disclosures = view.container.querySelectorAll('.agent-compact-history > summary');
+    expect(disclosures.length).toBeGreaterThan(0);
+    fireEvent.click(disclosures[0]!);
+    expect(screen.getByRole('button', { name: '查看 Agent 思考摘要：分析阶段0' })).toBeVisible();
+    // The opt-in does not change the full Session transcript.
+    view.rerender(<AgentTurn sessionId="session-1" turnId="turn-1" onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-compact-history')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看 Agent 思考摘要：分析阶段0' })).toBeVisible();
+  });
+
 
   it('explains an authoritative empty Session and points to the composer', () => {
     render(

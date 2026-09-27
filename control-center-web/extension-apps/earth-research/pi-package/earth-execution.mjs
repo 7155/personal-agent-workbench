@@ -5,9 +5,25 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
+export async function fetchEarthPreview(url, fetcher = fetch) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'earthengine.googleapis.com' || parsed.username || parsed.password) throw new Error('Unexpected Earth Engine preview host.');
+  const response = await fetcher(url, { redirect: 'error', signal: AbortSignal.timeout(60000) });
+  if (!response.ok) throw new Error(`Earth Engine preview failed: HTTP ${response.status}`);
+  const chunks = []; let total = 0;
+  for await (const chunk of response.body) {
+    total += chunk.length;
+    if (total > 1024 * 1024) throw new Error('Report preview exceeds 1 MiB.');
+    chunks.push(Buffer.from(chunk));
+  }
+  const bytes = Buffer.concat(chunks);
+  if (!bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new Error('Report preview is not PNG.');
+  return 'data:image/png;base64,' + bytes.toString('base64');
+}
+
 /** Code Editor compatibility for the supported Map/print operations. This is
  * an execution adapter for authorized workspace scripts, not a security sandbox. */
-export async function executeScript({ ee, script, filename = 'analysis.js', onChange = () => {}, downloadDir = null }) {
+export async function executeScript({ ee, script, filename = 'analysis.js', onChange = () => {}, downloadDir = null, previewFetcher = fetch }) {
   const result = { status: 'running', code: script, filename, layers: [], console: [], view: null, tasks: [], artifacts: [], error: null };
   const jobs = [];
   const publish = () => onChange(structuredClone(result));
@@ -125,6 +141,11 @@ export async function executeScript({ ee, script, filename = 'analysis.js', onCh
     })();
     track(job); return job;
   };
+  const imagePreview = async (image, params = {}) => {
+    if (!image || typeof image.getThumbURL !== 'function') throw new Error('Earth.imagePreview requires an image.');
+    const url = await new Promise((resolve, reject) => image.getThumbURL({ ...params, format: 'png', dimensions: 720 }, (value, error) => error ? reject(new Error(String(error))) : resolve(value)));
+    return fetchEarthPreview(url, previewFetcher);
+  };
   const downloadAnimation = (collection, params = {}, filename = 'earth-animation.gif') => {
     const job = (async () => {
       if (!collection || typeof collection.getVideoThumbURL !== 'function') throw new Error('Earth.downloadAnimation requires an Earth Engine ImageCollection.');
@@ -175,7 +196,7 @@ export async function executeScript({ ee, script, filename = 'analysis.js', onCh
   };
   publish();
   try {
-    await new vm.Script(`(async () => {\n${script}\n})()`, { filename, lineOffset: -1 }).runInNewContext({ ee, Map: map, Export: exportApi, print, Earth: { evaluate, routeGrid, downloadImage, writeArtifact, downloadAnimation }, console: { log: print, warn: print, error: print } }, { timeout: 10000 });
+    await new vm.Script(`(async () => {\n${script}\n})()`, { filename, lineOffset: -1 }).runInNewContext({ ee, Map: map, Export: exportApi, print, Earth: { evaluate, routeGrid, downloadImage, writeArtifact, downloadAnimation, imagePreview }, console: { log: print, warn: print, error: print } }, { timeout: 10000 });
     // A callback may enqueue another visible operation while jobs settle.
     let settled = 0;
     while (settled < jobs.length) {

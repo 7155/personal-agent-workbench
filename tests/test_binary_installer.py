@@ -24,6 +24,9 @@ class BinaryPayloadTests(unittest.TestCase):
             'apps/RagImeVoice.app/Contents/MacOS/RagImeVoice',
             'apps/RagImeDesktopBridge.app/Contents/MacOS/RagImeDesktopBridge',
             'pi-runtime/manifest.json',
+            'source/integrations/ego-browser/upstream/paw-ego-browser-runtime.json',
+            'source/integrations/ego-browser/upstream/package/ego-browser/dist/src/run.js',
+            'source/integrations/ego-browser/upstream/package/ego-linux-host/dist/cli.js',
         ):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +74,14 @@ class BinaryPayloadTests(unittest.TestCase):
             installer.verify(self.root)
             if installer.sys.platform == 'darwin':
                 self.assertEqual(native.call_count, 3)
+
+    def test_missing_browser_runtime_is_not_a_complete_binary_payload(self):
+        (self.root / 'source/integrations/ego-browser/upstream/package/ego-browser/dist/src/run.js').unlink()
+        manifest = json.loads((self.root / 'installer-manifest.json').read_text())
+        manifest['files'] = installer.inventory(self.root)
+        (self.root / 'installer-manifest.json').write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'missing required component.*ego-browser'):
+            installer.verify(self.root)
 
 
 if __name__ == '__main__':

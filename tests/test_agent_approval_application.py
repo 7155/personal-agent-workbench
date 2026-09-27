@@ -16,6 +16,9 @@ class ApprovalApplicationTests(unittest.TestCase):
     tearDown = fixtures.AgentRoomWorkTests.tearDown
 
     def setUp(self):
+        key_patch = patch("rag_ime.agent_approval_model._jev_api_key", return_value="")
+        key_patch.start()
+        self.addCleanup(key_patch.stop)
         fixtures.AgentRoomWorkTests.setUp(self)
         self.runtime = Mock(spec=ApprovalRuntime)
         self.runtime.has_pending_approval.return_value = True
@@ -62,6 +65,64 @@ class ApprovalApplicationTests(unittest.TestCase):
             self.app.external.finalize(str(approval["approvalId"]), {})
         self.assertEqual(self.sessions.get_approval(str(approval["approvalId"]))["state"], "pending")
         self.assertFalse(self.runtime.resolve_approval.called)
+
+    def test_tool_call_result_recovers_existing_applied_receipt_without_executing(self):
+        session_id = str(self.worker["id"])
+        with self.sessions.approval_creation_scope(session_id=session_id, tool_call_id="call:lost-response"):
+            approval = self.sessions.create_approval(
+                session_id=session_id, tool_name="workspace_write", operation="apply",
+                payload_sha256="a" * 64, preview={}, risk_level="R2",
+            )
+        approval_id = str(approval["approvalId"])
+        self.sessions.decide_approval(approval_id, approved=True, payload_sha256="a" * 64)
+        receipt = {"mutationApplied": True, "summary": "Written once", "postimageSha256": "b" * 64}
+        self.sessions.complete_approval(approval_id, state="applied", receipt=receipt)
+
+        with patch.object(self.app, "execute_approved") as execute, patch.object(
+            self.sessions, "get_approval", side_effect=AssertionError("lookup must not expire or mutate approvals")
+        ):
+            result = self.app.approval_result({
+                "sessionId": session_id, "toolCallId": "call:lost-response", "tool": "workspace_write",
+            })
+        self.assertEqual(result["lookupState"], "applied")
+        self.assertEqual(result["approval"]["approvalId"], approval_id)
+        self.assertEqual(result["approval"]["receipt"], receipt)
+        execute.assert_not_called()
+        self.runtime.resolve_approval.assert_not_called()
+
+    def test_tool_call_result_is_exact_and_does_not_guess_missing_or_duplicate_bindings(self):
+        session_id = str(self.worker["id"])
+        payload = {"sessionId": session_id, "toolCallId": "call:exact", "tool": "workspace_write"}
+        self.assertEqual(self.app.approval_result(payload)["lookupState"], "not_found")
+        for index in range(2):
+            with self.sessions.approval_creation_scope(session_id=session_id, tool_call_id="call:exact"):
+                self.sessions.create_approval(
+                    session_id=session_id, tool_name="workspace_write", operation="apply",
+                    payload_sha256="a" * 64, preview={}, risk_level="R2",
+                )
+            if index == 0:
+                self.assertEqual(self.app.approval_result(payload)["lookupState"], "pending")
+                with self.assertRaisesRegex(ValueError, "tool does not match"):
+                    self.app.approval_result({**payload, "tool": "workspace_shell"})
+                other = self.sessions.create(title="other session")
+                foreign = self.app.approval_result({**payload, "sessionId": other["id"]})
+                self.assertEqual(foreign["lookupState"], "not_found")
+                self.assertNotIn("approval", foreign)
+        duplicate = self.app.approval_result(payload)
+        self.assertEqual(duplicate["lookupState"], "ambiguous")
+        self.assertNotIn("approval", duplicate)
+
+    def test_tool_call_result_does_not_expire_pending_approval_or_mix_identity_modes(self):
+        session_id = str(self.worker["id"])
+        with self.sessions.approval_creation_scope(session_id=session_id, tool_call_id="call:old"):
+            approval = self.sessions.create_approval(
+                session_id=session_id, tool_name="workspace_write", operation="apply",
+                payload_sha256="a" * 64, preview={}, risk_level="R2", requested_at_ms=1, ttl_ms=1000,
+            )
+        payload = {"sessionId": session_id, "toolCallId": "call:old", "tool": "workspace_write"}
+        self.assertEqual(self.app.approval_result(payload)["approval"]["state"], "pending")
+        with self.assertRaisesRegex(ValueError, "one lookup identity"):
+            self.app.approval_result({**payload, "approvalId": approval["approvalId"]})
 
     def test_full_access_applies_without_human_or_model_decision(self):
         session_id = str(self.worker["id"])

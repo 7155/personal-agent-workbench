@@ -1502,7 +1502,7 @@ def _tool_parameter_schema() -> dict[str, Any]:
         "properties": {
             "strategy": {
                 "type": "string",
-                "enum": ["general", "markdown", "book", "qa", "laws", "separator", "fixed"],
+                "enum": ["general", "markdown", "paper", "book", "qa", "laws", "separator", "fixed"],
             },
             "preset": {
                 "type": "string",

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import css from './conversation-ui.css?raw';
+import statusCss from './components/tool-status-mark.css?raw';
 import { QueueTray } from './components/QueueTray';
 import { createQueuedDraft } from './model/queue';
 import type { QueuedDraft } from './model/types';
@@ -41,14 +42,12 @@ describe('conversation-ui tool rows', () => {
     expect(css).toContain('.ccui-tool-meta { display: flex; gap: 6px; font-size: 11px; color: var(--ccui-faint); white-space: nowrap; }');
   });
 
-  /* The running state speaks through the words themselves — the same
-     text-level sweep the Session's paw-activity rows use — never a bar or a
-     row background. Reduced motion falls back to static ink. */
-  it('shimmers the running tool words, not the row', () => {
-    expect(css).toContain(".ccui-tool-card.status-running .ccui-tool-main :is(strong, span)");
-    expect(css).toContain('background-clip: text;');
-    expect(css).toContain('@keyframes ccui-text-sweep');
-    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+  it('keeps readable tool text still and provides reduced-motion handling for activity marks', () => {
+    expect(css).not.toContain('@keyframes ccui-text-sweep');
+    expect(statusCss).toContain(".ccui-execution-mark[data-state='running'] svg");
+    expect(statusCss).toContain(".ccui-execution-mark[data-active='false']");
+    expect(statusCss).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(statusCss).toContain('animation: none;');
   });
 });
 

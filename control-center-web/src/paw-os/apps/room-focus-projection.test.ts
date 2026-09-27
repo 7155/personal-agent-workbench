@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createRoomProjection, type RoomProjectionState } from '@/contracts/room-reducer';
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import { buildRoomFocusProjection } from './room-focus-projection';
+import { buildRoomWorkStatus } from './room-work-status';
 import { buildRoomFocusMesh } from './room-focus-mesh';
 
 function participant(id: string, ordinal: number, displayName = `Agent ${ordinal + 1}`) {
@@ -123,6 +124,44 @@ function projectionWithParallelRuntime(): RoomProjectionState {
 }
 
 describe('buildRoomFocusProjection', () => {
+  it('shows a woken partner as executing after an earlier dispatch ended', () => {
+    const projection = createRoomProjection('room-sol');
+    projection.turnOrder = ['turn-root'];
+    projection.turnsById = {
+      'turn-root': {
+        id: 'turn-root', rootId: 'turn-root', status: 'running',
+        messageIds: [], activityIds: [], participantIds: ['p-earth', 'p-mars'],
+        dispatchIds: ['first', 'wake'], terminalDispatchIds: ['first'],
+        dispatchParticipantIds: { first: 'p-mars', wake: 'p-mars' },
+        terminalParticipantIds: ['p-mars'], createdAtMs: 10, updatedAtMs: 20,
+      },
+    };
+    const focus = buildRoomFocusProjection(room([work({
+      id: 'wake-work', objective: '继续核对结果', currentOwnerParticipantId: 'p-mars', state: 'done',
+    })]), projection);
+
+    expect(focus.partners.find((partner) => partner.participantId === 'p-mars')?.state).toBe('running');
+    const status = buildRoomWorkStatus({ focus, projection, recoveryState: 'synced', visible: true });
+    expect(status.executingParticipantIds).toContain('p-mars');
+    expect(status.animate).toBe(true);
+  });
+
+  it('keeps a failed execution visible without exposing its raw event code', () => {
+    const projection = projectionWithParallelRuntime();
+    const activity = projection.activitiesById['activity-mars'];
+    projection.activitiesById['activity-mars'] = {
+      ...activity,
+      status: 'failed',
+      summary: 'turn_failed',
+    };
+    const focus = buildRoomFocusProjection(room([work({
+      id: 'work-review', objective: '核对实际失败回执', currentOwnerParticipantId: 'p-mars',
+    })]), projection);
+
+    expect(focus.workItems.find((item) => item.id === 'work-review')?.currentAction).toBe('本轮执行失败');
+    expect(focus.partners.find((partner) => partner.participantId === 'p-mars')?.currentAction).toBe('本轮执行失败');
+  });
+
   it('reads production nested intercom endpoints and updates one message across delivery receipts', () => {
     const projection = createRoomProjection('room-sol');
     const message = { id: 'peer-ask', kind: 'ask', sourceParticipantId: 'p-earth', targetParticipantId: 'p-mars', content: '请核对接口', replyTo: '' };
@@ -622,6 +661,57 @@ describe('buildRoomFocusProjection', () => {
     expect(focus.handoffs).toEqual([]);
     expect(focus.flow.map((packet) => packet.id)).toEqual([
       'message:message-current',
+    ]);
+  });
+
+  it('keeps unbound assignments with current and retry-lineage work while excluding unrelated Roots', () => {
+    const unrelated = work({
+      id: 'work-unrelated-root',
+      objective: '另一 Root 的任务',
+      rootTurnId: 'turn-unrelated',
+      createdAtMs: 10,
+    });
+    const retryLineage = work({
+      id: 'work-retry-lineage',
+      objective: '重试链上的工作项',
+      rootTurnId: 'turn-previous',
+      createdAtMs: 20,
+    });
+    const unbound = work({
+      id: 'work-unbound',
+      objective: '元数据尚未绑定的工作项',
+      rootTurnId: '',
+      createdAtMs: 30,
+    });
+    const current = work({
+      id: 'work-current-bound',
+      objective: '当前 Root 的工作项',
+      rootTurnId: 'turn-current',
+      createdAtMs: 40,
+    });
+    const projection = createRoomProjection('room-sol');
+    projection.turnOrder = ['turn-unrelated', 'turn-previous', 'turn-current'];
+    projection.turnsById = {
+      'turn-unrelated': {
+        id: 'turn-unrelated', rootId: 'turn-unrelated', status: 'completed',
+        messageIds: [], activityIds: [], participantIds: [], createdAtMs: 1, updatedAtMs: 10,
+      },
+      'turn-previous': {
+        id: 'turn-previous', rootId: 'turn-previous', status: 'failed',
+        messageIds: [], activityIds: [], participantIds: [], createdAtMs: 11, updatedAtMs: 20,
+      },
+      'turn-current': {
+        id: 'turn-current', rootId: 'turn-current', retryOfRootId: 'turn-previous', status: 'running',
+        messageIds: [], activityIds: [], participantIds: [], createdAtMs: 21, updatedAtMs: 40,
+      },
+    };
+
+    const focus = buildRoomFocusProjection(room([unrelated, retryLineage, unbound, current]), projection);
+
+    expect(focus.workItems.map((item) => item.id)).toEqual([
+      'work-retry-lineage',
+      'work-unbound',
+      'work-current-bound',
     ]);
   });
 

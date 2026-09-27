@@ -7451,6 +7451,16 @@ class AgentServiceTests(unittest.TestCase):
             }
         )
 
+        self.assertNotIn(
+            "zhanggui-wenshu", self.service._runtime_skill_allowlist(ordinary)
+        )
+        self.assertIn(
+            "zhanggui-wenshu", self.service._runtime_skill_allowlist(app)
+        )
+        self.assertNotIn(
+            "other-app", self.service._runtime_skill_allowlist(app)
+        )
+
         with patch.object(self.service.runtime, "command_catalog", return_value=commands):
             ordinary_catalog = self.service.command_catalog(str(ordinary["id"]))
             app_catalog = self.service.command_catalog(str(app["id"]))

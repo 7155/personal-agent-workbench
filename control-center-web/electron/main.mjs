@@ -472,6 +472,9 @@ function handleAssistantIntent(intent) {
 }
 
 app.on('activate', () => {
+  // macOS can activate during cold launch, before Electron or the local Host
+  // is ready. Startup owns the initial window; activation only reopens it.
+  if (!primaryInstance || !app.isReady() || !hostServer) return;
   if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
 });
 app.on('before-quit', () => {

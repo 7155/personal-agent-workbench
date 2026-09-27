@@ -110,6 +110,8 @@ export interface RoomParticipantPublicProgressProjection {
 }
 export interface RoomTurnProjection {
   id: string;
+  /** Explicit server marker: purpose dispatches do not own this Root's end. */
+  lifecycleOwner?: 'jev';
   /**
    * UI-only identity for a turn that was first rendered optimistically. The
    * Room event stream remains keyed by `id`; this alias lets projections keep
@@ -148,6 +150,9 @@ export interface RoomProjectionState {
   lastEventId: string;
   resumeToken: string;
   needsSnapshot: boolean;
+  /** Subscriber-local recovery control's durable high-water mark. Not a new
+   * event cursor: it permits a fresh snapshot after server history restoration. */
+  recoveryCursor?: number;
   gap?: ProjectionGap;
   messagesById: Record<string, RoomMessageProjection>;
   messageOrder: string[];
@@ -233,6 +238,27 @@ export function reduceRoomEvent(
   options: RoomEventReductionOptions = {},
 ): ProjectionReduction<RoomProjectionState> {
   if (event.roomId !== state.roomId) return { state, disposition: 'ignored-foreign' };
+  // Recovery controls are subscriber-local, not durable domain events. Their
+  // synthetic sequence may be equal to or behind our cursor after a restore.
+  // Recognize them before duplicate/gap guards, without advancing that cursor.
+  if (event.eventType === 'snapshot_required' && !options.snapshotReplay) {
+    const prefix = `${state.roomId}:`;
+    const suffix = event.resumeToken.startsWith(prefix) ? event.resumeToken.slice(prefix.length) : '';
+    const cursor = /^\d+$/.test(suffix) ? Number(suffix) : NaN;
+    return {
+      state: {
+        ...state,
+        needsSnapshot: true,
+        recoveryCursor: Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : undefined,
+        gap: {
+          expectedSequence: state.lastSequence + 1,
+          receivedSequence: event.sequence,
+          receivedEventId: event.eventId,
+        },
+      },
+      disposition: 'snapshot-required',
+    };
+  }
   if (event.sequence <= state.lastSequence) {
     return { state, disposition: 'ignored-duplicate' };
   }
@@ -392,13 +418,7 @@ export function reduceRoomEvent(
         });
         break;
       }
-      next.needsSnapshot = true;
-      next.gap = {
-        expectedSequence: state.lastSequence + 1,
-        receivedSequence: event.sequence,
-        receivedEventId: event.eventId,
-      };
-      return { state: next, disposition: 'snapshot-required' };
+      break;
     case 'unknown':
       appendDiagnostic(next, {
         id: event.eventId,
@@ -1026,6 +1046,9 @@ function applyUserMessage(
     completedAtMs: event.createdAtMs,
   };
   upsertMessage(state, message, clientMessageId);
+  if (payload.mode === 'jev' && text(payload.graphId)) {
+    ensureTurn(state, message.rootId || event.turnId, event.createdAtMs).lifecycleOwner = 'jev';
+  }
 }
 
 function roomAttachmentReceipts(value: unknown, roomId: string): RoomAttachmentReceipt[] {
@@ -1821,6 +1844,9 @@ function upsertActivity(
   state.activitiesById[id] = activity;
   const turn = ensureTurn(state, event.turnId, event.createdAtMs);
   turn.rootId = text(payload.rootId) || turn.rootId || event.turnId;
+  if (event.eventType === 'participant_status' && payload.status === 'jev_updated' && text(payload.graphId)) {
+    turn.lifecycleOwner = 'jev';
+  }
   const dispatchId = text(payload.dispatchId);
   const introducesDispatch = event.eventType === 'route_decision'
     || (
@@ -2062,7 +2088,8 @@ function completeParticipantTurn(
   if (!participantId && !dispatchId) {
     const turn = ensureTurn(state, event.turnId, nowMs);
     if (
-      status === 'completed'
+      turn.lifecycleOwner !== 'jev'
+      && status === 'completed'
       && hasFormalWorkResultEvidence(state, turn.rootId || turn.id)
       && !formalRootReady(state, turn)
     ) {
@@ -2169,7 +2196,8 @@ function settleRootWhenAllDispatchesTerminal(
   const dispatchIds = turn.dispatchIds ?? [];
   const terminalDispatchIds = new Set(turn.terminalDispatchIds ?? []);
   if (
-    dispatchIds.length === 0
+    turn.lifecycleOwner === 'jev'
+    || dispatchIds.length === 0
     || !dispatchIds.every((dispatchId) => terminalDispatchIds.has(dispatchId))
   ) {
     turn.status = 'running';

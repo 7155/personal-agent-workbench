@@ -1,9 +1,9 @@
 .room-composer-shell { position: relative; }
-.room-composer__hint { display: flex; justify-content: space-between; gap: 12px; padding: 5px 12px 0; color: var(--color-text-tertiary); font-size: 10px; line-height: 1.5; }
+.room-composer__hint { display: flex; justify-content: space-between; gap: 12px; padding: 4px 10px 0; color: var(--color-text-secondary); font-size: 11px; line-height: 1.5; }
 .room-composer__stop { color: var(--color-danger); }
 .room-composer__recovery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 12px; border-radius: 10px; background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: 12px; }
 .room-composer__drop-hint { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; border: 1px dashed var(--color-accent); border-radius: 14px; background: var(--color-surface); color: var(--color-accent); pointer-events: none; animation: room-composer-reveal 180ms ease-out; }
-.room-composer .agent-composer__actions { align-self: end; }
+.room-composer .agent-composer__actions { align-self: center; }
 .room-composer__recovery details { flex-basis: 100%; }
 .room-composer__recovery textarea { width: 100%; height: 120px; resize: vertical; font: inherit; background: var(--color-surface); color: var(--color-text); }
 @keyframes room-composer-reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -15,3 +15,56 @@
 @keyframes room-partner-join { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .paw-room-governance__members > article[data-arriving] { animation: none; } }
 [data-reduce-motion='true'] .paw-room-governance__members > article[data-arriving] { animation: none; }
+.room-composer-dialog.ui-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(840px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.room-composer-dialog > .room-composer-shell { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.room-composer-dialog .agent-composer.paw-unified-composer { border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface-subtle); }
+.room-composer-dialog .agent-composer.paw-unified-composer[data-expanded] .agent-composer__editor > textarea {
+  width: 100%;
+  min-height: min(220px, max(80px, calc(100dvh - 250px)));
+  max-height: min(360px, calc(100dvh - 250px));
+  padding: 12px 44px 12px 14px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 24px;
+}
+.room-composer-dialog .agent-composer__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; }
+.room-composer-dialog .agent-composer__controls { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.room-composer-dialog .agent-composer__actions { display: flex; flex: none; gap: 6px; }
+.room-composer-dialog .room-composer__task-lock { font-size: 12px; color: var(--color-text-secondary); }
+.room-composer-dialog .room-composer__hint { display: flex; justify-content: space-between; gap: 8px; color: var(--color-text-secondary); font-size: 11px; }
+.room-composer__editing { width: 100%; padding: 14px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface-subtle); color: var(--color-text-secondary); text-align: left; cursor: pointer; }
+@container paw-composer-toolbar (max-width: 460px) {
+  .room-composer .paw-room-observer-toggle { width: 32px; min-width: 32px; min-height: 32px; justify-content: center; padding: 0; }
+  .room-composer .paw-room-observer-toggle > :is(span, small) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+.room-composer__task-lock { display: flex; align-items: center; gap: 8px; }
+.room-composer__task-lock > svg { flex: none; color: var(--color-accent); }
+.room-composer__task-lock[data-running] > .room-composer__status-icon { animation: room-composer-running 1s linear infinite; }
+.room-composer__hint > span { display: inline-flex; align-items: center; gap: 5px; }
+.room-composer__hint svg { flex: none; opacity: .55; transition: opacity 160ms ease; }
+.room-composer-shell:focus-within .room-composer__hint svg { opacity: 1; }
+.room-composer .agent-composer__controls button > svg {
+  transition: transform 160ms var(--paw-ease-out, cubic-bezier(.23,1,.32,1));
+}
+.room-composer .jev-policy-control[data-state='open'] > svg:last-child { transform: rotate(180deg); }
+.room-composer .paw-room-observer-toggle[data-state='open'] > svg { transform: rotate(12deg); }
+@media (hover: hover) and (pointer: fine) {
+  .room-composer .agent-composer__controls button:not(:disabled):hover > svg:first-child { transform: translateY(-2px); }
+  .room-composer .agent-composer__controls button:not(:disabled):active > svg:first-child { transform: scale(.92); }
+}
+@keyframes room-composer-running { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .room-composer__status-icon { animation: none !important; }
+  .room-composer .agent-composer__controls button > svg { transition: none; transform: none !important; }
+}
+[data-reduce-motion='true'] .room-composer__status-icon { animation: none !important; }
+[data-reduce-motion='true'] .room-composer .agent-composer__controls button > svg { transition: none; transform: none !important; }

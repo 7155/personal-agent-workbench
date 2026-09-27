@@ -53,6 +53,10 @@ def room_participant_prompt(
         for item in participants
     }
     role = _text(target.get("collaborationRole"), 40) or "implementer"
+    # Set only on the prepared-dispatch copy, never persisted Room metadata.
+    purpose = room.get("_jevExecutionPurpose")
+    if purpose not in {"plan", "execute", "verify", "synthesize"}:
+        purpose = None
     try:
         role_label = collaboration_role(role).display_name
     except ValueError:
@@ -85,7 +89,7 @@ def room_participant_prompt(
     for item in related[:4]:
         feedback = item.get("blocker")
         feedback = feedback if isinstance(feedback, Mapping) else {}
-        if role == "coordinator" and str(item.get("state") or "") == "active" and _text(
+        if not purpose and role == "coordinator" and str(item.get("state") or "") == "active" and _text(
             feedback.get("reviewFeedback"), 500
         ):
             opening.append(
@@ -126,7 +130,7 @@ def room_participant_prompt(
             f"预期产物：{_text(work_item.get('expectedOutput'), 1_000)}",
             f"验收条件：{_acceptance(work_item.get('acceptanceCriteria'))}",
         ]
-        hint = _operation_hint(work_item)
+        hint = "" if purpose else _operation_hint(work_item)
         if hint:
             rows.append(f"Runtime 操作提示：{hint}")
         authority = (work_document_authorities or {}).get(f"room_work_item:{work_id}", {})
@@ -143,7 +147,7 @@ def room_participant_prompt(
     if related:
         rows = ["", "与你有关的未完成工作："]
         for item in related[:6]:
-            hint = _operation_hint(item)
+            hint = "" if purpose else _operation_hint(item)
             rows.append(
                 f"- WorkItem {_text(item.get('id'), 240)} · {_relation(item, target_id)} · "
                 f"{_work_state(item.get('state'))} · revision={_integer(item.get('revision'))}："
@@ -175,7 +179,22 @@ def room_participant_prompt(
     work_item_id = _text(work_item.get("id"), 240) if work_item is not None else ""
     tail: list[str] = []
     if (_text(room.get("roomKind"), 40) or "collaboration") == "collaboration":
-        if role == "coordinator":
+        if purpose:
+            responsibility, submission_op = {
+                "plan": ("与用户澄清目标、范围和验收条件，形成待审阅方案；不要执行方案中的工作", "plan_submit"),
+                "execute": ("推进本次已分派的责任，读取实际材料并提供成果与检查证据", "result_submit"),
+                "verify": ("独立核验 ExecutionPack 中绑定的固定成果，检查真实产物；不改写成果、不接管原负责人", "verification_submit"),
+                "synthesize": ("综合已有验收成果与未解决项，形成一次用户交付；不扩展执行范围", "final_submit"),
+            }[purpose]
+            tail.append("\n".join([
+                "", f"当前 Jev 执行目的：{purpose}。{responsibility}。",
+                "所有伙伴执行地位相同，历史协作角色只提供背景；主要对话和规划者也可承担已分派任务。",
+                "以当前 ExecutionPack 的目的、任务版本、材料和已披露 Tool schema 为准；图状态与调度由宿主负责。",
+                f"本回合只用 room_partner op={submission_op} 提交对应结构化结果，成功后结束。",
+                "不要调用旧 delegate/retry/accept/return，不自行启动其他伙伴、增加批准或发布其他 Root 终态。",
+                "提交回执不等于正式验收，也不等于 Runtime 已停止。所有成功结论必须有真实工具/产物证据。",
+            ]))
+        elif role == "coordinator":
             tail.append(
                 "\n".join(
                     [
@@ -243,7 +262,7 @@ def room_participant_prompt(
                     "",
                     (
                         "当前工作卡片已在上文给出；不要扩大其范围。"
-                        if work_item is not None
+                        if work_item is not None or purpose
                         else (
                             "当前没有结构化 WorkItem；先判断这是普通对话、Facilitator "
                             "直做，还是确有协调需要。"

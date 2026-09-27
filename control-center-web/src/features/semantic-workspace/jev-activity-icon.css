@@ -1,0 +1,20 @@
+.jev-activity-icon { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; vertical-align: middle; }
+.jev-activity-icon > svg { flex: none; }
+.jev-activity-icon__orbit { position: absolute; inset: -5px; width: calc(100% + 10px); height: calc(100% + 10px); fill: none; stroke: currentColor; stroke-width: 1.3; stroke-dasharray: 12 64; opacity: 0; }
+.jev-activity-icon[data-animated] > .jev-activity-icon__orbit { opacity: .55; animation: jev-activity-orbit 1.8s linear infinite; }
+.jev-activity-icon[data-state='dispatching'][data-animated] > svg:first-child { animation: jev-activity-handoff 1.2s var(--paw-ease-out, cubic-bezier(.23,1,.32,1)) infinite; }
+.jev-activity-icon:is([data-state='planning'],[data-state='synthesizing'])[data-animated] > svg:first-child { animation: jev-activity-think 1.8s ease-in-out infinite; }
+.jev-activity-icon:is([data-state='revising'],[data-state='reclaiming'])[data-animated] > svg:first-child { animation: jev-activity-orbit 1.2s linear infinite; }
+.jev-activity-icon[data-state='done'] { color: var(--paw-success, #23825f); }
+.jev-activity-icon[data-state='failed'] { color: var(--paw-danger, #c53d54); }
+@keyframes jev-activity-orbit { to { transform: rotate(360deg); } }
+@keyframes jev-activity-handoff { 0%,100% { transform: translateX(0); opacity: 1; } 45% { transform: translateX(2px); opacity: .5; } }
+@keyframes jev-activity-think { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.jev-companion[data-motion='paused'] .jev-activity-icon > svg { animation-play-state: paused; }
+.jev-companion[data-motion='paused'] .jev-activity-icon__orbit { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .jev-activity-icon[data-animated] > svg { animation: none !important; }
+  .jev-activity-icon__orbit { display: none; }
+}
+[data-reduce-motion='true'] .jev-activity-icon[data-animated] > svg { animation: none !important; }
+[data-reduce-motion='true'] .jev-activity-icon__orbit { display: none; }

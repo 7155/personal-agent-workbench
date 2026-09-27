@@ -580,6 +580,7 @@ class AgentLabGoldenApplication:
                                                    "excerpt": source["text"][:500]} for source in answer_sources]}
             values[case["caseId"]] = value
             run.partial.setdefault("caseRuns", []).append({"caseId": case["caseId"], "split": split, "variant": variant, "candidateIndex": index, **value})
+            self.store.update_job(run.job_id, {"result": self._partial(run)})
         return values
 
 

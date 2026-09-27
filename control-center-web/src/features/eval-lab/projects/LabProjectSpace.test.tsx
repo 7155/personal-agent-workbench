@@ -19,19 +19,24 @@ const project: LabProject = {
 function mount() { const openFile = vi.fn(); const openNode = vi.fn(); render(<LabProjectSpace project={project} artifactId="report" artifactContent={<article>已有真实研究结果</article>} onSelectArtifact={vi.fn()} onOpenNode={openNode} onOpenGraph={vi.fn()} onOpenRuns={vi.fn()} onOpenApps={vi.fn()} onOpenChat={vi.fn()} onOpenFile={openFile} />); return { openFile, openNode }; }
 describe('Lab result-first project surface', () => {
   it('shows the saved result first and all concurrent work on demand', () => {
-    mount(); expect(screen.getByText('已有真实研究结果')).toBeVisible();
+    mount(); expect(screen.getByRole('region', { name: '优化轮次对照表' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('查看项目内容'), { target: { value: 'artifact:report' } }); expect(screen.getByText('已有真实研究结果')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('查看项目内容'), { target: { value: 'compare' } });
     fireEvent.click(screen.getByRole('button', { name: /1 项后台工作正在运行/ }));
     expect(screen.getByRole('region', { name: '全部后台工作' })).toBeVisible(); expect(screen.getByText('正在读取论文')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: '改动、结果与来源' }));
-    expect(screen.getByRole('region', { name: '所选节点详情' })).toBeVisible();
-    expect(screen.getByText('无提升 · 沿用基线')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Skill 模型 Tool 全部优化' }));
+    expect(screen.getByRole('region', { name: '单轮优化对比' })).toBeVisible();
+    expect(screen.getAllByText('无提升 · 沿用基线')[0]).toBeVisible();
   });
   it('does not infer tested dimensions from an optimistic experiment title', () => {
     expect(testedDimensions(experiment)).toEqual(['Prompt']); mount();
-    expect(screen.getByRole('button', { name: 'Skill 未记录测试' })).toBeDisabled();
-    const prompt = screen.getByRole('button', { name: 'Prompt 1 次已有对照' });
-    expect(prompt).toBeEnabled(); expect(prompt).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByText('实现手段与已测覆盖 · 模型、Embedding、检索、Prompt 等'));
+    expect(screen.getByRole('button', { name: /Skill.*未记录测试/ })).toBeEnabled();
+    const prompt = screen.getByRole('button', { name: /Prompt.*1 轮记录/ });
+    expect(prompt).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(prompt); expect(prompt).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /Skill.*未记录测试/ }));
+    expect(screen.getByRole('heading', { name: '没有匹配的实验' })).toBeVisible();
   });
   it('opens the durable folder without starting a task', () => {
     const { openFile, openNode } = mount(); fireEvent.click(screen.getByRole('button', { name: '项目文件夹' }));

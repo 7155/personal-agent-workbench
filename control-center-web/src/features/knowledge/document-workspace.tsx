@@ -29,6 +29,7 @@ import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
 import type { ControlTransport } from '@/platform/transport';
 import type {
   KnowledgeAsset,
+  KnowledgeChunk,
   KnowledgeDocument,
   KnowledgeDocumentDetail,
   KnowledgeIndexJob,
@@ -36,8 +37,9 @@ import type {
   KnowledgeSearchHit,
   KnowledgeTableArtifact,
 } from './api';
-import { publicKnowledgeText } from './public-copy';
+import { knowledgeBlockKindLabel } from './public-copy';
 import { extractMarkdownOutline, type MarkdownOutlineItem } from './reading-outline';
+import { chunkAssets, chunkTables, localMarkdownAsset, readableTableMarkdown } from './structured-reading';
 
 export interface KnowledgeUploadItem {
   id: string;
@@ -280,7 +282,7 @@ function DocumentSummary({ detail, document, error, loading, onReparse, onRetry,
       {error ? <InlineNotice title="详情暂不可用" tone="warning"><p>{publicErrorText(error, '可以重新读取材料详情。')}</p><Button onClick={onRetry} size="small" variant="quiet">重新读取详情</Button></InlineNotice> : null}
       <dl>
         <div><dt>解析方式</dt><dd>{parserLabel(document.parser)}</dd></div>
-        <div><dt>页数</dt><dd>{document.pageCount || detail?.pages.length || '未提供'}</dd></div>
+        <div><dt>页数</dt><dd>{document.pageCount || '未提供'}</dd></div>
         <div><dt>段落</dt><dd>{detail?.chunkTotal || document.chunkCount || 0}</dd></div>
         <div><dt>文件大小</dt><dd>{formatBytes(document.byteSize)}</dd></div>
         <div><dt>更新时间</dt><dd>{formatTime(document.updatedAtMs)}</dd></div>
@@ -399,7 +401,7 @@ function pipelineNote(document: KnowledgeDocument): string {
     case 'ready':
       return '解析与索引已完成，这份材料可以检索。';
     case 'stale':
-      return '内容已解析；切分或检索配置已更新，重建完成前检索仍使用现有索引。';
+      return '内容已解析；切分或检索配置已更新，重建完成后才会重新参与检索。';
     case 'failed':
       return (document.stage || '').toLowerCase().includes('index') || document.chunkCount > 0
         ? '索引没有完成；重新解析会重新生成段落与索引。'
@@ -455,7 +457,7 @@ export function KnowledgeDocumentViewer({
   onLoadMoreContent: () => void;
 }) {
   const [view, setView] = useState<'source' | 'markdown' | 'chunks' | 'artifacts'>('markdown');
-  const pageCount = detail ? detail.pages.length || detail.document.pageCount : 0;
+  const pageCount = detail && Number.isSafeInteger(detail.document.pageCount) && detail.document.pageCount > 0 ? detail.document.pageCount : 0;
   const readableDocuments = detail?.document.id === selectedDocumentId && !documents.some((document) => document.id === selectedDocumentId)
     ? [detail.document, ...documents]
     : documents;
@@ -481,7 +483,7 @@ export function KnowledgeDocumentViewer({
         <label className="knowledge-viewer__document"><span>材料</span><Select aria-label="材料" disabled={!readableDocuments.length} onValueChange={onSelectDocument} options={readableDocuments.map((item) => ({ value: item.id, label: item.name }))} value={selectedDocumentId || readableDocuments[0]?.id} /></label>
         <div aria-label="材料状态与内容统计" className="knowledge-viewer__meta" role="group">
           {selectedDocument ? <StatusBadge label={documentStatusLabel(selectedDocument.status)} tone={documentTone(selectedDocument.status)} /> : null}
-          {detail ? <><span>{detail.chunkTotal} 个段落</span><span>{pageCount ? `${pageCount} 页` : '页码未提供'}</span><span>{detail.assets.length} 个产物</span></> : null}
+          {detail ? <><span>{detail.chunkTotal} 个段落</span><span>{pageCount ? `${pageCount} 页` : detail.pages.length ? `已定位 ${detail.pages.length} 个页码 · 总页数未提供` : '页码未提供'}</span><span>{detail.assets.length} 个产物</span></> : null}
         </div>
       </div>
       {loading && !detail ? <KnowledgeReadingLoading label="正在读取解析结果" /> : null}
@@ -494,9 +496,9 @@ export function KnowledgeDocumentViewer({
             <TabsTrigger value="chunks"><Grid3X3 size={13} />段落</TabsTrigger>
             <TabsTrigger value="artifacts"><GalleryHorizontalEnd size={13} />解析产物</TabsTrigger>
           </TabsList>
-          <TabsContent value="source"><DocumentSource detail={detail} transport={transport} /></TabsContent>
-          <TabsContent value="markdown"><DocumentContent detail={detail} hasMore={hasMoreContent} loadingMore={loadingMoreContent} onLoadMore={onLoadMoreContent} /></TabsContent>
-          <TabsContent value="chunks"><ChunkGallery detail={detail} focusHit={focusHit?.documentId === selectedDocumentId ? focusHit : null} hasMore={hasMoreChunks} loadFailed={loadMoreChunksFailed} loadingMore={loadingMoreChunks} onLoadMore={onLoadMoreChunks} /></TabsContent>
+          <TabsContent value="source"><DocumentSource detail={detail} focusHit={focusHit?.documentId === selectedDocumentId ? focusHit : null} transport={transport} /></TabsContent>
+          <TabsContent value="markdown"><DocumentContent detail={detail} hasMore={hasMoreContent} loadingMore={loadingMoreContent} onLoadMore={onLoadMoreContent} transport={transport} /></TabsContent>
+          <TabsContent value="chunks"><ChunkGallery detail={detail} focusHit={focusHit?.documentId === selectedDocumentId ? focusHit : null} hasMore={hasMoreChunks} loadFailed={loadMoreChunksFailed} loadingMore={loadingMoreChunks} onLoadMore={onLoadMoreChunks} transport={transport} /></TabsContent>
           <TabsContent value="artifacts"><ArtifactGallery assets={detail.assets} document={detail.document} tables={detail.tables} transport={transport} /></TabsContent>
         </Tabs>
       ) : null}
@@ -513,16 +515,16 @@ function KnowledgeReadingLoading({ label }: { label: string }) {
   return <div aria-label={label} className="knowledge-reading-loading" role="status"><p>{label}…</p><Skeleton /><Skeleton /><Skeleton /></div>;
 }
 
-function DocumentContent({ detail, hasMore, loadingMore, onLoadMore }: { detail: KnowledgeDocumentDetail; hasMore: boolean; loadingMore: boolean; onLoadMore: () => void }) {
+function DocumentContent({ detail, hasMore, loadingMore, onLoadMore, transport }: { detail: KnowledgeDocumentDetail; hasMore: boolean; loadingMore: boolean; onLoadMore: () => void; transport: ControlTransport }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [activeHeadingId, setActiveHeadingId] = useState('');
   const publicLines = useMemo(() => (
-    detail.contentWindow.map((line) => ({ lineNumber: line.lineNumber, content: publicKnowledgeText(line.content) }))
+    detail.contentWindow.map((line) => ({ lineNumber: line.lineNumber, content: line.content }))
   ), [detail.contentWindow]);
   const outline = useMemo(() => extractMarkdownOutline(publicLines), [publicLines]);
   useEffect(() => setActiveHeadingId(''), [detail.document.id]);
   if (publicLines.length) {
-    const markdown = publicLines.map((line) => line.content).join('\n');
+    const markdown = readableTableMarkdown(publicLines.map((line) => line.content).join('\n'), detail.tables);
     return (
       <div className="knowledge-reading-desk" data-has-outline={outline.length > 0 || undefined}>
         {outline.length ? (
@@ -546,10 +548,14 @@ function DocumentContent({ detail, hasMore, loadingMore, onLoadMore }: { detail:
         ) : null}
         <div className="knowledge-markdown-preview">
           <header><span>解析正文</span><b>{detail.contentWindow.length} / {detail.contentLineTotal || detail.contentWindow.length} 行 · {formatBytes(detail.artifact.byteSize)}</b></header>
+          {/<table\b/iu.test(markdown) ? <p className="knowledge-table-limit">部分表格尚未完整加载或无法唯一关联，暂保留原文。可在“解析产物”查看已提取的表格，或下载源文件核对。</p> : null}
           <div className="knowledge-markdown-body" ref={bodyRef}>
             <ReactMarkdown
               components={{
-                img: ({ alt }) => <span className="knowledge-markdown-blocked-image">图片引用已隔离：{alt || '未命名图片'}</span>,
+                img: ({ alt, src }) => {
+                  const asset = localMarkdownAsset(typeof src === 'string' ? src : undefined, detail.assets);
+                  return asset ? <InlineKnowledgeImage asset={asset} document={detail.document} transport={transport} /> : <span className="knowledge-markdown-blocked-image">图片引用未关联本地产物：{alt || '未命名图片'}</span>;
+                },
                 a: ({ children, href }) => { const safe = safeMarkdownLink(href); return safe ? <a href={safe} rel="noreferrer" target="_blank">{children}</a> : <span>{children}</span>; },
               }}
               remarkPlugins={[remarkGfm]}
@@ -566,7 +572,7 @@ function DocumentContent({ detail, hasMore, loadingMore, onLoadMore }: { detail:
       {pages.map((page) => (
         <section key={page.key}>
           <header><span>{page.page ? `第 ${page.page} 页` : '无页码内容'}</span><b>{page.chunks.length} 个段落</b></header>
-          {page.chunks.map((chunk) => <article key={chunk.id}>{chunk.heading ? <h4>{publicKnowledgeText(chunk.heading)}</h4> : null}<p>{publicKnowledgeText(chunk.content)}</p></article>)}
+          {page.chunks.map((chunk) => <article key={chunk.id}>{chunk.heading ? <h4>{chunk.heading}</h4> : null}<p>{chunk.content}</p></article>)}
         </section>
       ))}
     </div>
@@ -593,8 +599,27 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function DocumentSource({ detail, transport }: { detail: KnowledgeDocumentDetail; transport: ControlTransport }) {
+export function DocumentSource({ detail, transport, focusHit = null }: { detail: KnowledgeDocumentDetail; transport: ControlTransport; focusHit?: KnowledgeSearchHit | null }) {
   const source = useKnowledgeDocumentSource(detail, transport);
+  const pageCount = Number.isSafeInteger(detail.document.pageCount) && detail.document.pageCount > 0 ? detail.document.pageCount : null;
+  const validPage = (value: number | null): value is number => value !== null && Number.isSafeInteger(value) && value > 0 && (pageCount === null || value <= pageCount);
+  const matchingHit = focusHit?.documentId === detail.document.id ? focusHit : null;
+  const hitPage = matchingHit && validPage(matchingHit.page) ? matchingHit.page : null;
+  const knownPages = [...new Set([
+    ...detail.pages.map((page) => page.page),
+    ...detail.chunks.map((chunk) => chunk.page),
+    hitPage,
+  ].filter(validPage))].sort((left, right) => left - right);
+  const initialPage = hitPage ?? (pageCount ? 1 : knownPages[0] ?? null);
+  // Keep manual navigation within one document/hit; new evidence must not inherit an old page.
+  const context = JSON.stringify([detail.document.baseId, detail.document.id, detail.document.sourceReadPath, detail.document.revision, matchingHit?.id, hitPage, pageCount]);
+  const [navigation, setNavigation] = useState<{ context: string; page: number | null; input: string } | null>(null);
+  useEffect(() => {
+    setNavigation({ context, page: initialPage, input: initialPage === null ? '' : String(initialPage) });
+  }, [context, initialPage]);
+  const current = navigation?.context === context ? navigation : { context, page: initialPage, input: initialPage === null ? '' : String(initialPage) };
+  const requestedPage = Number(current.input);
+  const canNavigate = current.input.trim() !== '' && validPage(requestedPage);
   if (!detail.document.sourceReadPath || !transport.readKnowledgeDocumentSource) {
     return <EmptyState description="当前运行环境未提供可安全读取的源文件；请回到“资料”页重新解析。" icon={FileText} title="源文件预览不可用" />;
   }
@@ -603,7 +628,25 @@ function DocumentSource({ detail, transport }: { detail: KnowledgeDocumentDetail
     return <InlineNotice title="源文件暂不可用" tone="warning"><p>{publicErrorText(source.error, '可以重新读取源文件。')}</p><Button leadingIcon={<RotateCcw size={13} />} onClick={source.retry} size="small" variant="quiet">重新读取源文件</Button></InlineNotice>;
   }
   if (source.mimeType === 'application/pdf') {
-    return <iframe className="knowledge-source-frame" src={source.url} title={`${detail.document.name} 源文件`} />;
+    return <div className="knowledge-pdf-source">
+      <div aria-label="PDF 页面导航" className="knowledge-pdf-controls" role="group">
+        {pageCount ? <form onSubmit={(event) => { event.preventDefault(); if (canNavigate) setNavigation({ context, page: requestedPage, input: String(requestedPage) }); }}>
+          <Input aria-label="PDF 页码" inputMode="numeric" max={pageCount} min={1} onChange={(event) => setNavigation({ ...current, input: event.target.value })} step={1} type="number" value={current.input} />
+          <span>共 {pageCount} 页</span>
+          <Button disabled={!canNavigate} size="small" type="submit">跳转</Button>
+        </form> : <>
+          {knownPages.length ? <Select aria-label="PDF 已知页码" onValueChange={(value) => { const page = Number(value); if (knownPages.includes(page)) setNavigation({ context, page, input: value }); }} options={knownPages.map((page) => ({ value: String(page), label: `第 ${page} 页` }))} value={current.page === null ? undefined : String(current.page)} /> : null}
+          <span>总页数未提供</span>
+        </>}
+        <a download={detail.document.name} href={source.url}>下载源文件</a>
+      </div>
+      <div aria-live="polite" className="knowledge-pdf-location">
+        {hitPage ? <span>检索命中：第 {hitPage} 页</span> : matchingHit ? <span>命中未提供有效页码</span> : null}
+        {current.page !== null ? <span>打开位置：第 {current.page} 页</span> : null}
+      </div>
+      <p className="knowledge-pdf-location">若 PDF 预览空白或未跳页，请下载源文件查看；也可切换到正文阅读解析内容。</p>
+      <iframe className="knowledge-source-frame" src={current.page === null ? source.url : `${source.url}#page=${current.page}`} title={`${detail.document.name} 源文件`} />
+    </div>;
   }
   if (source.mimeType.startsWith('image/')) {
     return <div className="knowledge-source-image"><img alt={detail.document.name} src={source.url} /></div>;
@@ -611,7 +654,7 @@ function DocumentSource({ detail, transport }: { detail: KnowledgeDocumentDetail
   return <div className="knowledge-source-fallback"><FileText size={24} /><strong>{detail.document.name}</strong><a href={source.url} rel="noreferrer" target="_blank">打开源文件</a></div>;
 }
 
-function ChunkGallery({ detail, focusHit, hasMore, loadFailed, loadingMore, onLoadMore }: { detail: KnowledgeDocumentDetail; focusHit: KnowledgeSearchHit | null; hasMore: boolean; loadFailed: boolean; loadingMore: boolean; onLoadMore: () => void }) {
+function ChunkGallery({ detail, focusHit, hasMore, loadFailed, loadingMore, onLoadMore, transport }: { detail: KnowledgeDocumentDetail; focusHit: KnowledgeSearchHit | null; hasMore: boolean; loadFailed: boolean; loadingMore: boolean; onLoadMore: () => void; transport: ControlTransport }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const focusedLoaded = Boolean(focusHit && detail.chunks.some((chunk) => chunk.id === focusHit.id));
   useEffect(() => {
@@ -624,18 +667,47 @@ function ChunkGallery({ detail, focusHit, hasMore, loadFailed, loadingMore, onLo
   }, [focusHit, focusedLoaded, detail.chunks.length]);
   return detail.chunks.length ? (
     <div className="knowledge-chunk-grid" ref={containerRef}>
-      {focusHit ? <div className="knowledge-focus-banner"><FileSearch size={14} /><span>{focusedLoaded ? `已定位检索命中：${publicKnowledgeText(focusHit.title)}` : loadFailed ? `命中段落未能加载：${publicKnowledgeText(focusHit.title)}；已读段落已保留，可重试继续定位。` : hasMore ? `正在加载命中段落：${publicKnowledgeText(focusHit.title)}` : `命中来自较早索引：${publicKnowledgeText(focusHit.title)}；重新处理材料后可更新。`}</span></div> : null}
+      {focusHit ? <div className="knowledge-focus-banner"><FileSearch size={14} /><span>{focusedLoaded ? `已定位检索命中：${focusHit.title}` : loadFailed ? `命中段落未能加载：${focusHit.title}；已读段落已保留，可重试继续定位。` : hasMore ? `正在加载命中段落：${focusHit.title}` : `命中来自较早索引：${focusHit.title}；重新处理材料后可更新。`}</span></div> : null}
       {detail.chunks.map((chunk) => (
         <article data-focused={focusHit?.id === chunk.id || undefined} key={chunk.id}>
-          <header><b>#{chunk.ordinal + 1}{focusHit?.id === chunk.id ? ' · 检索命中' : ''}</b><span>{chunk.page ? `第 ${chunk.page} 页` : chunk.lineStart ? `第 ${chunk.lineStart} 行` : '无页码'}</span></header>
-          {chunk.heading ? <h4>{publicKnowledgeText(chunk.heading)}</h4> : null}
-          <p>{focusHit?.id === chunk.id ? <HighlightedChunkText content={publicKnowledgeText(chunk.content)} excerpt={publicKnowledgeText(focusHit.excerpt)} /> : publicKnowledgeText(chunk.content)}</p>
+          <header><b>#{chunk.ordinal + 1}{chunk.provenance ? ` · ${knowledgeBlockKindLabel(chunk.provenance.kind)}` : ''}{focusHit?.id === chunk.id ? ' · 检索命中' : ''}</b><span>{chunk.page ? `第 ${chunk.page} 页` : chunk.lineStart ? `第 ${chunk.lineStart} 行` : '无页码'}</span></header>
+          {chunk.heading ? <h4>{chunk.heading}</h4> : null}
+          <StructuredChunkContent chunk={chunk} detail={detail} focusHit={focusHit} transport={transport} />
           <footer><span>文档段落</span><Disclosure className="knowledge-chunk-detail" contentClassName="knowledge-chunk-detail__content" summary="高级：段落详情"><span>{chunk.tokenCount ? `${chunk.tokenCount} Token` : 'Token 未统计'}</span><span>{chunk.id}</span></Disclosure></footer>
         </article>
       ))}
       {hasMore ? <div className="knowledge-more-note"><span>已显示 {detail.chunks.length} / {detail.chunkTotal} 个段落</span><Button loading={loadingMore} onClick={onLoadMore} size="small">{loadFailed ? focusHit && !focusedLoaded ? '重试加载命中段落' : '重试加载更多' : '加载更多'}</Button></div> : <p className="knowledge-more-note">已加载全部 {detail.chunkTotal} 个段落。</p>}
     </div>
   ) : <EmptyState description="当前文件还没有可展示的段落；完成解析后可在此查看检索命中。" icon={Grid3X3} title="暂无段落" />;
+}
+
+function StructuredChunkContent({ chunk, detail, focusHit, transport }: { chunk: KnowledgeChunk; detail: KnowledgeDocumentDetail; focusHit: KnowledgeSearchHit | null; transport: ControlTransport }) {
+  const tables = chunkTables(chunk, detail.tables);
+  const assets = chunkAssets(chunk, detail.assets);
+  const sources = chunk.provenance?.sourceBlocks ?? [];
+  const original = <p>{focusHit?.id === chunk.id ? <HighlightedChunkText content={chunk.content} excerpt={focusHit.excerpt} /> : chunk.content}</p>;
+  return <div className="knowledge-structured-chunk">
+    {tables.length ? <>
+      {chunk.provenance?.split ? <><p>此命中是表格的一部分。下方展开的是来源表格，检索片段保留在原文中。</p><Disclosure summary="查看来源表格">{tables.map((table) => <ParsedTable key={table.id} table={table} />)}</Disclosure></> : tables.map((table) => <ParsedTable key={table.id} table={table} />)}
+      <Disclosure summary="检索片段原文">{original}</Disclosure>
+    </> : original}
+    {assets.map((asset) => <InlineKnowledgeImage asset={asset} document={detail.document} key={asset.id} transport={transport} />)}
+    {['image', 'figure'].includes(chunk.provenance?.kind ?? '') && sources.some((source) => source.ocrApplied === false) ? <small>图片按原文件提取，本次未进行图片 OCR。</small> : null}
+    {sources.some((source) => source.chartDataAvailable === false) ? <small>原文件未提供图表缓存数据，请查看源文件核对。</small> : null}
+  </div>;
+}
+
+function InlineKnowledgeImage({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => setExpanded(false), [asset.id, document.id]);
+  return <span className="knowledge-inline-image"><Button aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} size="small" variant="quiet">{expanded ? '收起图片' : '查看图片'}：{asset.caption || asset.name}</Button>{expanded ? <InlineImageContent asset={asset} document={document} transport={transport} /> : null}</span>;
+}
+
+function InlineImageContent({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
+  const binary = useKnowledgeAsset(document, asset, transport);
+  if (binary.loading) return <span role="status">正在读取图片…</span>;
+  if (binary.error || !binary.url) return <span role="alert">图片暂不可用。<Button onClick={binary.retry} size="small" variant="quiet">重新读取图片</Button></span>;
+  return <span><img alt={asset.caption || asset.name} src={binary.url} /><a download={asset.name} href={binary.url}>下载图片</a></span>;
 }
 
 function HighlightedChunkText({ content, excerpt }: { content: string; excerpt: string }) {
@@ -758,7 +830,9 @@ function ParsedTable({ table }: { table: KnowledgeTableArtifact }) {
   return (
     <article>
       <header><strong>{table.title}</strong><span>{table.page ? `第 ${table.page} 页` : ''}</span></header>
-      {table.columns.length && table.rows.length ? <><div className="knowledge-table-scroll"><table><thead><tr>{table.columns.map((column, index) => <th key={`${index}:${column}`}>{column}</th>)}</tr></thead><tbody>{table.rows.slice(0, visibleRows).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>{visibleRows < table.rows.length ? <div className="knowledge-table-more"><span>{visibleRows} / {table.rows.length} 行</span><Button onClick={() => setVisibleRows((value) => Math.min(table.rows.length, value + 20))} size="small">加载更多</Button></div> : null}</> : <pre>{table.markdown || '表格内容未结构化'}</pre>}
+      {table.dataAvailable === false ? <p>{table.rows.length ? '以下保留已有类别与数据；数值缓存不完整，空白不代表零。' : `原文件未提供可读取的${table.kind === 'chart' ? '图表缓存数据' : '表格数据'}，请查看源文件。`}</p> : null}
+      {table.columns.length ? <><div className="knowledge-table-scroll"><table aria-label={table.title}><thead><tr>{table.columns.map((column, index) => <th key={`${index}:${column}`}>{column}</th>)}</tr></thead><tbody>{table.rows.slice(0, visibleRows).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>{visibleRows < table.rows.length ? <div className="knowledge-table-more"><span>{visibleRows} / {table.rows.length} 行</span><Button onClick={() => setVisibleRows((value) => Math.min(table.rows.length, value + 20))} size="small">加载更多</Button></div> : null}</> : <pre>{table.markdown || '表格内容未结构化'}</pre>}
+      {table.truncated ? <p className="knowledge-table-limit">表格预览已截断；{typeof table.totalRowCount === 'number' ? `来源共 ${table.totalRowCount} 行。` : ''}完整内容请查看源文件。</p> : null}
     </article>
   );
 }

@@ -1,4 +1,6 @@
 export type ProjectLayer = {
+  /** A read failure is not an empty layer; retained geometry keeps its old revision. */
+  loadError?: string;
   id: string;
   name: string;
   path: string;

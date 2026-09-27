@@ -21,6 +21,25 @@ the maintenance journal with `memory-refresh:` identities; the model curation
 owner resumes only its separate `memory-maintenance:` jobs. The Gateway starts
 the refresh worker only in the process that owns execution.
 
+## Organization and recovery in Memory
+
+The Memory catalog separates source records, saved memories and topic books.
+Use **整理记忆** to open organization; the primary panel shows the known pending
+sources and the current batch before the optional daily-report/index details.
+Missing counts stay unknown. A status-read failure offers a read-only retry and
+does not imply that the background model job failed or start a second job.
+
+Leaving and returning to organization recovers the active job from the Gateway.
+A later automatic job can replace a completed tracked job. The Gateway retains
+the last source checkpoint across restart and recovers active receipts even
+when they are older than the recent terminal history. Observer processes read
+fresh progress but never take over execution. A completed batch is distinct from
+an empty backlog; accepted counts do not establish semantic memory quality.
+
+Routine publication continues to follow the configured curation policy and
+existing evidence checks. UI refinements do not approve raw sources, rewrite
+personal facts, or merge document Knowledge into personal Memory.
+
 Verify the package with:
 
 ```bash

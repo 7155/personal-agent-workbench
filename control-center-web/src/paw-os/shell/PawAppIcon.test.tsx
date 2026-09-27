@@ -27,9 +27,17 @@ describe('PAWOS approved App identity icons', () => {
     const { container } = render(<>{approvedAssets.map(({ appId }) => <PawAppIcon appId={appId} key={appId} />)}</>);
     const icons = [...container.querySelectorAll<SVGElement>('[data-paw-app-icon]')];
 
-    expect(pawApps).toHaveLength(16);
-    expect(pawApps.map((app) => app.id)).not.toContain('room');
-    expect(icons).toHaveLength(14);
+    const appIds = pawApps.map((app) => app.id);
+    expect(new Set(appIds).size).toBe(appIds.length);
+    expect(appIds).toEqual(expect.arrayContaining(
+      approvedAssets.filter((asset) => asset.appId !== 'room').map((asset) => asset.appId),
+    ));
+    expect(pawApps.find((app) => app.id === 'agent')).toMatchObject({ route: '/agent', kind: 'agent' });
+    // Room has its approved collaboration artwork inside Agent; Extension
+    // registrations can grow without changing that product identity.
+    expect(appIds).not.toContain('room');
+    expect(appIds).not.toContain('jev');
+    expect(icons).toHaveLength(approvedAssets.length);
     for (const asset of approvedAssets) {
       const icon = container.querySelector(`[data-paw-app-icon="${asset.appId}"]`);
       expect(icon).toHaveAttribute('data-paw-approved-symbol', asset.symbol);

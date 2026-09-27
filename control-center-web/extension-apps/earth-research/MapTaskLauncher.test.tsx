@@ -26,9 +26,10 @@ it('offers six outcome-based entries and only dispatches the chosen action', () 
 
 it('explains missing workspace and selection without inventing an analysis result', () => {
   render(<MapTaskLauncher selectedFeatures={[]} workspaceReady={false} onChoose={vi.fn()} />);
-  expect(screen.getByText(/还没有地图选择/)).toHaveTextContent('请先关联工作区');
+  expect(screen.getByText(/还没有地图选择/)).toHaveTextContent('请先打开项目');
   expect(screen.getByRole('button', { name: '区域调研' })).toBeEnabled();
-  expect(screen.getByText(/路线、设施容量与服务覆盖需先确认/)).toHaveTextContent('不代表这些计算已经完成');
+  fireEvent.click(screen.getByText('使用说明'));
+  expect(screen.getByText(/路线、设施容量与服务覆盖还需要/)).toHaveTextContent('选择任务不代表分析已完成');
 });
 
 it('does not describe a point selection as an analysis region', () => {

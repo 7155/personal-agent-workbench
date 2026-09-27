@@ -102,7 +102,7 @@ import {
 } from './api';
 import { KnowledgeDocumentViewer, KnowledgeJobsPanel, KnowledgeMaterialsPanel, type KnowledgeUploadItem } from './document-workspace';
 import { KnowledgeGraphPanel } from './knowledge-graph';
-import { publicKnowledgeText } from './public-copy';
+import { knowledgeBlockKindLabel, publicKnowledgeText } from './public-copy';
 import { useKnowledgeReadingContext, type KnowledgeReadingController } from './reading-context';
 import { usePawOsAppActive, usePawOsAppCompact, usePawOsAppIdentity } from '@/features/paw-os/surface-context';
 import { usePageVisibility } from '@/platform/use-page-visibility';
@@ -832,6 +832,17 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   const hits = snapshot.hits;
   const selected = hits.find((item) => item.id === snapshot.selectedId) ?? hits[0] ?? null;
   const config = snapshot.config ?? base.retrievalConfig;
+  const testConfig = { ...base.retrievalConfig, ...snapshot.overrides };
+  const testConfigError = !Number.isInteger(testConfig.topK) || testConfig.topK < 1 || testConfig.topK > (testConfig.rerankEnabled ? 20 : 100)
+    ? `返回数量须为 1–${testConfig.rerankEnabled ? 20 : 100} 的整数。`
+    : !Number.isFinite(testConfig.threshold) || testConfig.threshold < 0 || testConfig.threshold > 1
+      ? '最低相关度须在 0 到 1 之间。'
+      : testConfig.rerankEnabled && (!Number.isInteger(testConfig.rerankCandidateDepth) || testConfig.rerankCandidateDepth < testConfig.topK || testConfig.rerankCandidateDepth > 100)
+        ? '重排候选数须为整数，至少等于返回数量，且不超过 100。'
+        : '';
+  const updateTestConfig = (patch: NonNullable<typeof snapshot.overrides>) => reading.update((current) => ({
+    ...current, search: { ...current.search, overrides: { ...current.search.overrides, ...patch } },
+  }));
   const retrieval = snapshot.retrieval;
   const displayedConfig = retrieval?.config ?? config;
   function clearSearchObservation(): void {
@@ -893,10 +904,10 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!draft.trim() || searchAbortRef.current || snapshot.status === 'pending') return;
+    if (!draft.trim() || testConfigError || searchAbortRef.current || snapshot.status === 'pending') return;
     setDetailOpen(false);
     setSearchNotice('');
-    const config = { ...base.retrievalConfig };
+    const config = { ...testConfig };
     const next = reading.update((current) => ({ ...current, search: {
       ...current.search, query: draft.trim(), config, hits: [], retrieval: null, selectedId: '', status: 'pending', error: '', request: current.search.request + 1,
     } }));
@@ -911,15 +922,24 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   return (
     <div className="knowledge-panel knowledge-search">
       <form className="knowledge-search__form" onSubmit={submit}>
-        <Field htmlFor="knowledge-library-search" label="搜索知识库" description={`在「${publicKnowledgeText(base.name)}」的资料中查找。`}>
+        <Field htmlFor="knowledge-library-search" label="搜索知识库" description={`在「${base.name}」的资料中查找。`}>
           <Input id="knowledge-library-search" onChange={(event) => setDraft(event.target.value)} placeholder="输入一个问题或关键词" value={draft} />
         </Field>
-        <Button disabled={!draft.trim() || snapshot.status === 'pending'} leadingIcon={<Search size={15} />} loading={snapshot.status === 'pending'} type="submit" variant="primary">搜索</Button>
+        <Button disabled={!draft.trim() || Boolean(testConfigError) || snapshot.status === 'pending'} leadingIcon={<Search size={15} />} loading={snapshot.status === 'pending'} type="submit" variant="primary">搜索</Button>
       </form>
       <Disclosure className="knowledge-search__config" summary="搜索范围与方式">
-        <p>只查询当前知识库，不读取个人记忆。{snapshot.config ? '下列配置对应当前结果。' : ''}</p>
-        <KnowledgeRetrievalParameters config={displayedConfig} />
-        <p>可在「更多 → 设置」中调整；修改后重新搜索生效。</p>
+        <p>只查询当前知识库。这里的参数仅用于本次测试；知识库和伙伴的默认设置保持不变。</p>
+        <div className="knowledge-search__test-fields">
+          <Field htmlFor="knowledge-test-mode" label="测试检索方式"><Select disabled={snapshot.status === 'pending'} id="knowledge-test-mode" onValueChange={(value) => updateTestConfig({ mode: asRetrievalMode(value) })} options={[{ value: 'hybrid', label: '混合' }, { value: 'dense', label: '向量' }, { value: 'lexical', label: '关键词' }]} value={testConfig.mode} /></Field>
+          <Field htmlFor="knowledge-test-topk" label="测试返回数量"><Input disabled={snapshot.status === 'pending'} id="knowledge-test-topk" max={testConfig.rerankEnabled ? 20 : 100} min={1} onChange={(event) => updateTestConfig({ topK: event.target.valueAsNumber })} type="number" value={Number.isFinite(testConfig.topK) ? testConfig.topK : ''} /></Field>
+          <Field htmlFor="knowledge-test-threshold" label="测试最低相关度"><Input disabled={snapshot.status === 'pending'} id="knowledge-test-threshold" max={1} min={0} onChange={(event) => updateTestConfig({ threshold: event.target.valueAsNumber })} step={0.05} type="number" value={Number.isFinite(testConfig.threshold) ? testConfig.threshold : ''} /></Field>
+          <Switch checked={testConfig.rerankEnabled} disabled={snapshot.status === 'pending'} label="测试时启用重排" onCheckedChange={(rerankEnabled) => updateTestConfig({ rerankEnabled })} />
+          {testConfig.rerankEnabled ? <Field htmlFor="knowledge-test-rerank-depth" label="测试重排候选数"><Input disabled={snapshot.status === 'pending'} id="knowledge-test-rerank-depth" max={100} min={testConfig.topK} onChange={(event) => updateTestConfig({ rerankCandidateDepth: event.target.valueAsNumber })} type="number" value={Number.isFinite(testConfig.rerankCandidateDepth) ? testConfig.rerankCandidateDepth : ''} /></Field> : null}
+        </div>
+        {testConfigError ? <p className="knowledge-inline-error" role="alert">{testConfigError}</p> : null}
+        {snapshot.overrides ? <Button disabled={snapshot.status === 'pending'} onClick={() => reading.update((current) => ({ ...current, search: { ...current.search, overrides: null } }))} size="small" variant="quiet">恢复知识库默认参数</Button> : null}
+        {snapshot.status === 'success' ? <><p>当前结果使用的参数：</p><KnowledgeRetrievalParameters config={displayedConfig} /></> : null}
+        <p>正式默认参数可在「更多 → 设置」中保存。</p>
       </Disclosure>
       {snapshot.error ? <InlineNotice title="检索失败" tone="warning">{snapshot.error}</InlineNotice> : null}
       {searchNotice ? <p className="knowledge-search__notice" role="status">{searchNotice}</p> : null}
@@ -945,7 +965,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
           }}>
             {hits.map((hit, index) => (
               <button aria-selected={selected?.id === hit.id} data-selected={selected?.id === hit.id || undefined} key={hit.id} onClick={() => { reading.update((current) => ({ ...current, search: { ...current.search, selectedId: hit.id } })); setDetailOpen(true); }} ref={(node) => { resultRefs.current[index] = node; }} role="option" tabIndex={selected?.id === hit.id ? 0 : -1} type="button">
-                <span><strong>{publicKnowledgeText(hit.documentName)}</strong><small>{hitRankLabel(hit, index)} · {publicKnowledgeText(hit.title)} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{publicKnowledgeText(hit.excerpt) || '没有可显示的摘录'}</small></span>
+                <span><strong>{hit.documentName}</strong><small>{hitRankLabel(hit, index)} · {hit.title} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{hit.excerpt || '没有可显示的摘录'}</small></span>
                 <b data-level={relevanceLevel(hit.score)}>{relevanceLabel(hit.score)}</b>
               </button>
             ))}
@@ -998,17 +1018,18 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
   const visibleGraphPaths = graphPaths.slice(0, 2);
   return (
     <article className="knowledge-search__detail">
-      <span>{publicKnowledgeText(hit.documentName)}</span>
-      <h3>{publicKnowledgeText(hit.title)}</h3>
-      <p>{publicKnowledgeText(hit.excerpt) || '这个段落没有可显示的摘录。'}</p>
+      <span>{hit.documentName}</span>
+      <h3>{hit.title}</h3>
+      <p>{hit.excerpt || '这个段落没有可显示的摘录。'}</p>
       <dl>
         <div><dt>位置</dt><dd>{citationLabel(hit)}</dd></div>
         <div><dt>最终排名</dt><dd>第 {rank} 条</dd></div>
         <div><dt>相关程度</dt><dd>{relevanceLabel(hit.score, false)}</dd></div>
-        <div><dt>标题路径</dt><dd>{publicKnowledgeText(hit.heading) || '未提供'}</dd></div>
+        <div><dt>标题路径</dt><dd>{hit.heading || '未提供'}</dd></div>
       </dl>
       <Disclosure className="knowledge-search__advanced" summary="高级：检索详情">
         <dl>
+          {hit.provenance ? <><div><dt>解析结构</dt><dd>{knowledgeBlockKindLabel(hit.provenance.kind)}{hit.provenance.split ? ' · 超长内容已分段' : ''}</dd></div><div><dt>来源位置</dt><dd>{hit.provenance.sourceBlocks.slice(0, 8).map((block, index) => <p key={index}>{block.page === null ? '页码未提供' : `第 ${block.page} 页`}{block.bbox ? ` · 区域 ${block.bbox.join(', ')}（${block.coordinateSystem === 'normalized-1000' ? '归一化坐标 0–1000' : '坐标单位未统一'}）` : ' · 无页内坐标'}</p>)}{hit.provenance.sourceBlocks.length > 8 ? <p>共 {hit.provenance.sourceBlocks.length} 个来源块，显示前 8 个</p> : null}</dd></div></> : null}
           <div><dt>相关度分数</dt><dd>{scorePoints(hit.score)} / 100</dd></div>
           <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit)}</dd></div>
           {(['lexical', 'dense', 'graph'] as const).map((channel) => hit.diagnostics[`${channel}Rank`] !== null ? <div key={channel}><dt>{{ lexical: '关键词', dense: '向量', graph: '图谱' }[channel]}召回</dt><dd>第 {hit.diagnostics[`${channel}Rank`]} 条 · 原始分数 {hit.diagnostics[`${channel}Score`] ?? '未报告'}</dd></div> : null)}
@@ -1247,6 +1268,7 @@ function KnowledgeSettingsPanel({
             <Select disabled={pending} id="knowledge-parser" onValueChange={(value) => onParser(asParserMode(value))} options={[{ value: 'auto', label: '自动选择' }, { value: 'builtin', label: '内置解析' }, { value: 'mineru', label: 'MinerU' }]} value={base.parser} />
           </Field>
           <div className="knowledge-parser-health"><div><span>解析服务</span><StatusBadge label={worker.label} tone={worker.tone} /></div><div><span>MinerU</span><StatusBadge label={mineru.label} tone={mineru.tone} /></div><IconButton icon={<RefreshCw size={14} />} label="检查解析服务" onClick={refreshParser} size="small" tooltip /></div>
+          <p>支持 PDF、EPUB、Office、文本与图片。旧版 DOC、XLS、PPT 需本机 LibreOffice；扫描件与图片识别需 MinerU。</p>
           {base.parser === 'mineru' && !mineru.ready ? <InlineNotice title="MinerU 未连接" tone="warning">本机服务不可用。</InlineNotice> : null}
         </section>
       </div>
@@ -1254,6 +1276,7 @@ function KnowledgeSettingsPanel({
         <div className="knowledge-settings__heading"><Settings2 size={16} /><div><strong>切分</strong><span>修改后材料进入待重建状态</span></div></div>
         <div className="knowledge-settings-fields knowledge-settings-fields--chunking">
           <Field htmlFor="knowledge-chunk-strategy" label="策略"><Select id="knowledge-chunk-strategy" onValueChange={(value) => setChunking({ ...chunking, strategy: asChunkingStrategy(value) })} options={[...chunkingStrategyOptions]} value={chunking.strategy} /></Field>
+          {chunking.strategy === 'paper' ? <p>论文按章节保留摘要、正文和参考文献。自动解析在 MinerU 已启用时使用版面解析；现有材料需重建后生效。</p> : null}
           <Field htmlFor="knowledge-chunk-size" label="大小"><Input id="knowledge-chunk-size" max={8_000} min={200} onChange={(event) => setChunking({ ...chunking, size: Number(event.target.value) })} step={100} type="number" value={chunking.size} /></Field>
           <Field htmlFor="knowledge-chunk-overlap" label="重叠"><Input id="knowledge-chunk-overlap" max={2_000} min={0} onChange={(event) => setChunking({ ...chunking, overlap: Number(event.target.value) })} step={20} type="number" value={chunking.overlap} /></Field>
           {chunking.strategy === 'separator' ? <Field htmlFor="knowledge-chunk-separator" label="分隔符"><Input id="knowledge-chunk-separator" maxLength={100} onChange={(event) => setChunking({ ...chunking, separator: event.target.value })} value={chunking.separator} /></Field> : null}
@@ -1266,7 +1289,7 @@ function KnowledgeSettingsPanel({
           <Button disabled={!previewDocumentId || Boolean(chunkingError)} loading={chunkPreviewing} onClick={() => onPreviewChunking(previewDocumentId, chunking)} size="small">预览切分</Button>
         </div>
         {chunkPreviewError ? <InlineNotice title="切分预览失败" tone="warning">{publicErrorText(chunkPreviewError, '请确认材料已经完成解析。')}</InlineNotice> : null}
-        {visibleChunkPreview ? <div className="knowledge-chunk-preview"><header><strong>{visibleChunkPreview.total} 个段落</strong><span>显示前 {visibleChunkPreview.chunks.length} 个</span></header><div>{visibleChunkPreview.chunks.map((chunk) => <article key={chunk.id}><b>#{chunk.ordinal + 1}{chunk.page ? ` · 第 ${chunk.page} 页` : ''}</b><p>{publicKnowledgeText(chunk.content)}</p></article>)}</div></div> : null}
+        {visibleChunkPreview ? <div className="knowledge-chunk-preview"><header><strong>{visibleChunkPreview.total} 个段落</strong><span>显示前 {visibleChunkPreview.chunks.length} 个</span></header><div>{visibleChunkPreview.chunks.map((chunk) => <article key={chunk.id}><b>#{chunk.ordinal + 1}{chunk.page ? ` · 第 ${chunk.page} 页` : ''}</b><p>{chunk.content}</p></article>)}</div></div> : null}
         <SettingsDraftDiff changes={chunkingChanges} effect="保存后，新导入的材料按新切分处理；已有材料进入待重建，重建完成前检索仍使用现有段落。" />
         <div className="knowledge-settings__actions">
           {chunkingChanges.length ? <Button aria-label="放弃切分更改" disabled={pending} onClick={() => setChunking(base.chunkingConfig)} size="small" variant="quiet">放弃更改</Button> : null}
@@ -1707,10 +1730,11 @@ function object(value: unknown): Record<string, unknown> {
 
 function asDetailTab(value: string): DetailTab { return ['viewer', 'search', 'graph', 'jobs', 'settings'].includes(value) ? value as DetailTab : 'materials'; }
 function asParserMode(value: string): KnowledgeParserMode { return value === 'builtin' ? value : value === 'mineru' || value === 'mineru_local_http' ? 'mineru' : 'auto'; }
-function asChunkingStrategy(value: string): KnowledgeChunkingConfig['strategy'] { return ['general', 'markdown', 'book', 'qa', 'laws', 'separator', 'fixed'].includes(value) ? value as KnowledgeChunkingConfig['strategy'] : 'markdown'; }
+function asChunkingStrategy(value: string): KnowledgeChunkingConfig['strategy'] { return ['general', 'markdown', 'paper', 'book', 'qa', 'laws', 'separator', 'fixed'].includes(value) ? value as KnowledgeChunkingConfig['strategy'] : 'markdown'; }
 const chunkingStrategyOptions: readonly { value: KnowledgeChunkingConfig['strategy']; label: string }[] = [
   { value: 'general', label: '通用段落' },
   { value: 'markdown', label: 'Markdown 标题' },
+  { value: 'paper', label: '论文（保留章节与参考文献）' },
   { value: 'book', label: '书籍章节' },
   { value: 'qa', label: '问答' },
   { value: 'laws', label: '法律条款' },

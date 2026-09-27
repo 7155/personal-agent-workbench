@@ -435,6 +435,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pi-root", type=Path, default=DEFAULT_PI_ROOT)
     parser.add_argument("--skills-root", type=Path, default=DEFAULT_SKILLS_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--scope", choices=("backend", "room-jev", "room-jev-fullstack"), default="backend")
+    parser.add_argument("--room-pi-source", type=Path, help="Include selected Pi source needed by the Room/Jev integration")
     parser.add_argument("--check", action="store_true")
     return parser.parse_args()
 
@@ -1420,7 +1422,227 @@ def deterministic_zip(staging: Path, output: Path, package_name: str) -> None:
     temporary.replace(output)
 
 
+ROOM_JEV_SKILLS = (
+    "alignment-and-decision", "implementation-planning", "orchestrate-session",
+    "facilitate-room", "independent-review", "organize-work-documents",
+    "bootstrap-project-context", "systematic-debugging", "test-driven-implementation",
+    "trace-agent-diagnostics",
+)
+ROOM_JEV_GUIDE = "docs/project/jev-backend-20260926/HANDOFF.md"
+ROOM_JEV_FULLSTACK_GUIDE = "docs/project/jev-backend-20260926/FULLSTACK_HANDOFF.md"
+
+
+def collect_room_jev_paths(root: Path) -> list[Path]:
+    """Bounded Room/Jev review slice; never read other repositories or live data."""
+    paths: set[Path] = set()
+    for directory in ("rag_ime/rooms", "rag_ime/jev_tasks", "rag_ime/pi", "rag_ime/control_api", "rag_ime/db"):
+        paths.update((root / directory).rglob("*.py"))
+        if directory == "rag_ime/db":
+            # All append-only schemas are needed to understand canonical DB
+            # evolution; no database contents are included.
+            paths.update((root / directory / "migrations").glob("*.sql"))
+    for pattern in ("rag_ime/agent_*.py", "rag_ime/jev*.py", "tests/test_*room*.py",
+                    "tests/test_jev*.py", "tests/test_pi*runtime*.py",
+                    "rag_ime/contracts/json/*room*.json", "rag_ime/contracts/json/*work-item*.json",
+                    "integrations/pi/*runtime*contract*.json", "integrations/pi/*room*.json"):
+        paths.update(root.glob(pattern))
+    for relative in ("AGENTS.md", "README.md", "CONTRIBUTING.md", "LICENSE", "THIRD_PARTY_NOTICES.md",
+                     "pyproject.toml", "rag_ime/__init__.py", "rag_ime/debug_server.py",
+                     "rag_ime/contracts/json_schema.py", "rag_ime/contracts/__init__.py",
+                     "tests/test_agent_service.py", "tests/test_agent_tools.py", "tests/test_agent_routes.py",
+                     "tests/test_agent_background_jobs.py",
+                     "tests/test_debug_management_api.py", "tests/test_database_migrations.py",
+                     "tests/test_pi_exact_turn_cancellation.py", "scripts/canary_jev_room.py",
+                     "tests/test_pi_prompt_tool_sync.py", "tests/test_pi_prompt_settings_overlay.py",
+                     "scripts/pi_canary_support.py", "integrations/jev/README.md",
+                     "integrations/pi/rag-ime-control.ts", "integrations/pi/README.md",
+                     "rag_ime/browser_control.py", "rag_ime/paw_browser_runtime.py",
+                     "scripts/build_ego_browser_runtime.py", "scripts/build_macos_installer.py",
+                     "scripts/install_binary_payload.py", "tests/test_binary_installer.py",
+                     "scripts/install_sidecar_launch_agent.sh", "scripts/install_agent_gateway_launch_agent.sh",
+                     "tests/test_browser_control.py", "tests/test_paw_browser_runtime.py",
+                     "tests/test_ego_browser_runtime_build.py", "integrations/ego-browser/UPSTREAM.md",
+                     "integrations/ego-browser/upstream/LICENSE",
+                     "scripts/build_paw_backend_web_model_package.py",
+                     "tests/test_build_paw_backend_web_model_package.py", ROOM_JEV_GUIDE):
+        paths.add(root / relative)
+    browser_source = root / "integrations/ego-browser/upstream"
+    for package in ("ego-browser", "ego-linux-host"):
+        base = browser_source / "package" / package
+        for directory in ("src", "bin"):
+            paths.update((base / directory).rglob("*"))
+        paths.update(base.glob("*.json"))
+        paths.update(base.glob("*.md"))
+    paths.update((browser_source / "skills/ego-browser").rglob("*"))
+    for skill in ROOM_JEV_SKILLS:
+        directory = root / "integrations/pi/skills" / skill
+        if not (directory / "SKILL.md").is_file():
+            raise ValueError(f"missing Room Skill: {skill}")
+        paths.update(directory.rglob("*"))
+    return sorted((p for p in paths if eligible(p, root=root)), key=lambda p: p.relative_to(root).as_posix())
+
+
+def collect_room_jev_frontend_paths(root: Path) -> list[Path]:
+    """Include the Room/Jev surfaces and their local source imports, not all apps."""
+    web = root / "control-center-web"
+    paths: set[Path] = set()
+    for directory in ("src/features/rooms", "src/features/semantic-workspace",
+                      "src/features/conversation-ui", "src/features/composer",
+                      "src/platform", "src/contracts", "src/paw-os/styles"):
+        paths.update(p for p in (web / directory).rglob("*") if eligible(p, root=root))
+    for pattern in ("src/paw-os/apps/PawRoom*", "src/paw-os/apps/room-*",
+                    "src/paw-os/apps/paw-room*", "src/paw-os/apps/PawAgent*",
+                    "src/paw-os/apps/entries/PawAgent*", "src/app/*control-transport*",
+                    "src/app/preview-room*", "src/test/*transport*", "src/test/fixtures/room*",
+                    "src/paw-os/apps/PawJev*", "e2e/fixtures/jev-execution.*", "e2e/fixtures/jev-live.*",
+                    "tsconfig*.json", "vite*.ts", "vitest*.ts"):
+        paths.update(p for p in web.glob(pattern) if eligible(p, root=root))
+    for relative in ("package.json", "pnpm-lock.yaml", "README.md", "CLOUD_MODEL.md",
+                     "src/paw-os/shell/PawRoomProjectionKeeper.tsx", "src/index.css", "src/test/setup.ts"):
+        if eligible(web / relative, root=root):
+            paths.add(web / relative)
+    # Static imports/reexports, side-effect imports, literal dynamic imports and
+    # CSS imports. External dependencies are described by package.json/lockfile.
+    imports = re.compile(r"(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|@import\s*)[\"']([^\"']+)[\"']")
+    queue = list(paths)
+    while queue:
+        source = queue.pop()
+        if source.suffix not in {".ts", ".tsx", ".js", ".jsx", ".css"}:
+            continue
+        for spec in imports.findall(source.read_text(encoding="utf-8")):
+            if spec.startswith("@/"):
+                base = web / "src" / spec[2:]
+            elif spec.startswith("."):
+                base = source.parent / spec
+            else:
+                continue
+            base = base.resolve()
+            if not base.is_relative_to(web.resolve()):
+                continue
+            candidates = [base] + [Path(str(base) + suffix) for suffix in (".ts", ".tsx", ".js", ".jsx", ".css", ".json")]
+            candidates += [base / ("index" + suffix) for suffix in (".ts", ".tsx", ".js", ".jsx")]
+            resolved = next((p for p in candidates if eligible(p, root=root)), None)
+            if resolved is not None and resolved not in paths:
+                paths.add(resolved)
+                queue.append(resolved)
+    # Include the loading boundary for review without recursively bundling all
+    # unrelated apps selected by the top-level lazy router. This remains a
+    # source review slice, not an independently buildable frontend checkout.
+    for relative in ("index.html", "src/main.tsx", "src/app/App.tsx", "src/app/App-loading.test.tsx"):
+        if eligible(web / relative, root=root):
+            paths.add(web / relative)
+    return sorted(paths, key=lambda p: p.relative_to(root).as_posix())
+
+
+def build_room_jev(output: Path, *, include_frontend: bool = False, pi_root: Path | None = None) -> dict[str, object]:
+    paths = collect_room_jev_paths(PAW_ROOT)
+    scope = "room-jev-fullstack" if include_frontend else "room-jev"
+    guide = ROOM_JEV_FULLSTACK_GUIDE if include_frontend else ROOM_JEV_GUIDE
+    frontend_paths = collect_room_jev_frontend_paths(PAW_ROOT) if include_frontend else []
+    if include_frontend:
+        paths = [p for p in paths if p.relative_to(PAW_ROOT).as_posix() != ROOM_JEV_GUIDE]
+        paths = sorted(set(paths + frontend_paths + [PAW_ROOT / guide]))
+    tracked, statuses = git_file_status(PAW_ROOT)
+    source_snapshot = snapshot(PAW_ROOT, "PAW Room/Jev working tree")
+    pi_sources = []
+    pi_snapshot = None
+    if pi_root is not None:
+        pi_root = pi_root.expanduser().resolve()
+        pi_builder = load_module("room_jev_pi_sources", PAW_ROOT / "scripts/build_paw_pi_runtime_model_bundle.py")
+        pi_snapshot = snapshot(pi_root, "Pi Room/Jev Runtime source")
+        pi_sources = [source for source in pi_builder.collect_sources(
+            pi_builder.git_snapshot(PAW_ROOT, "PAW"), pi_builder.git_snapshot(pi_root, "Pi")
+        ) if source.root == pi_root and source.repository != "installed-runtime"]
+    with tempfile.TemporaryDirectory(prefix="paw-room-jev-review-") as directory:
+        staging = Path(directory)
+        receipts: list[SourceReceipt] = []
+        for path in paths:
+            relative = path.relative_to(PAW_ROOT).as_posix()
+            if relative == guide:
+                target, category = "00_READ_ME_FIRST_ROOM_JEV.md", "handoff"
+            elif relative.startswith("control-center-web/"):
+                target, category = "code/pawos/" + relative.removeprefix("control-center-web/"), "room-jev-frontend"
+            elif relative.startswith("integrations/pi/skills/"):
+                target = "skills/" + relative.removeprefix("integrations/pi/skills/")
+                category = "current-paw-skill"
+            elif relative in {"LICENSE", "THIRD_PARTY_NOTICES.md"}:
+                target, category = "licenses/" + relative, "license"
+            else:
+                target, category = "code/paw/" + relative, "room-jev-source"
+            add_text_source(staging, receipts, repository="paw", category=category,
+                root=PAW_ROOT, path=path, target=target,
+                git_status=status_for(relative, tracked, statuses), roots=(PAW_ROOT,))
+        for source in pi_sources:
+            add_text_source(staging, receipts, repository="pi", category=source.group,
+                root=pi_root, path=source.path, target="code/pi/" + source.relative,
+                git_status=source.status, roots=(PAW_ROOT, pi_root))
+        if pi_root is not None:
+            tracked_pi, statuses_pi = git_file_status(pi_root)
+            add_text_source(staging, receipts, repository="pi", category="license",
+                root=pi_root, path=pi_root / "LICENSE", target="licenses/PI_MIT.txt",
+                git_status=status_for("LICENSE", tracked_pi, statuses_pi), roots=(PAW_ROOT, pi_root))
+        if include_frontend:
+            # Explicit product assets, not a traversal of user media. Preserve
+            # alpha and source bytes; PNGs contain no textual package redaction.
+            for filename in ("planet-avatars-v1.png", "planet-bodies-v1.png"):
+                relative = "control-center-web/src/features/rooms/assets/" + filename
+                raw = (PAW_ROOT / relative).read_bytes()
+                if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise ValueError("Room planet atlas is not a PNG")
+                target = "code/pawos/" + relative.removeprefix("control-center-web/")
+                destination = staging / target
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+                receipts.append(SourceReceipt("paw", "room-jev-avatar-asset", relative, target,
+                    status_for(relative, tracked, statuses), len(raw), sha256(raw), len(raw), sha256(raw), {}))
+        bundle = ["# Room / Jev " + ("前后端" if include_frontend else "后端") + "及 Skills 源码", "",
+                  "源码审阅快照。先阅读 00_READ_ME_FIRST_ROOM_JEV.md；非安装包，打包成功不代表运行验收。", ""]
+        for receipt in sorted(receipts, key=lambda r: r.target):
+            if receipt.category == "room-jev-avatar-asset":
+                bundle.extend([f"## {receipt.source_relative}", "",
+                    f"PNG asset: `{receipt.target}`; SHA-256: `{receipt.package_sha256}`", ""])
+                continue
+            content = (staging / receipt.target).read_text(encoding="utf-8")
+            fence = fence_for(content)
+            bundle.extend([f"## {receipt.source_relative}", "",
+                           f"SHA-256 (package): `{receipt.package_sha256}`; status: `{receipt.git_status}`", "",
+                           fence + LANGUAGE_BY_SUFFIX.get(Path(receipt.source_relative).suffix, "text"),
+                           content.rstrip(), fence, ""])
+        bundle_name = "ROOM_JEV_FULLSTACK_AND_SKILLS.md" if include_frontend else "ROOM_JEV_BACKEND_AND_SKILLS.md"
+        bundle_path = staging / "single-file-bundles" / bundle_name
+        bundle_path.parent.mkdir(parents=True)
+        bundle_path.write_text("\n".join(bundle), encoding="utf-8")
+        manifest_dir = staging / "manifest"
+        manifest_dir.mkdir()
+        manifest = {
+            "schemaVersion": "paw-room-jev-review/1", "scope": scope, "sourceSnapshot": asdict(source_snapshot),
+            "sourceReceiptCount": len(receipts), "skills": list(ROOM_JEV_SKILLS),
+            "frontendSourceCount": len(frontend_paths),
+            "piSourceSnapshot": asdict(pi_snapshot) if pi_snapshot else None,
+            "piSourceCount": len(pi_sources),
+            "sourceRedactions": sum(sum(r.redactions.values()) for r in receipts),
+            "exclusions": ([] if include_frontend else ["frontend"]) + ([] if pi_root else ["external Pi repository"]) + ["unrelated product modules", "Tutti", "global Skills",
+                           "credentials", "machine configuration", "databases", "production conversations", "logs",
+                           "weights", "node_modules", "caches", "build output"],
+            "evidenceBoundary": "source review only; see handoff for independently recorded checks; no installation or deployment",
+            "sourceFiles": [asdict(r) for r in receipts],
+        }
+        (manifest_dir / "package-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        checksums = [f"{sha256(p.read_bytes())}  {p.relative_to(staging).as_posix()}"
+                     for p in sorted(staging.rglob("*")) if p.is_file()]
+        (manifest_dir / "SHA256SUMS.txt").write_text("\n".join(checksums) + "\n", encoding="utf-8")
+        for receipt in receipts:
+            if sha256((staging / receipt.target).read_bytes()) != receipt.package_sha256:
+                raise ValueError("source receipt mismatch")
+        deterministic_zip(staging, output, output.stem)
+    return {"ok": True, "scope": scope, "frontendSourceCount": len(frontend_paths), "output": str(output), "outputBytes": output.stat().st_size,
+            "outputSha256": sha256(output.read_bytes()), "sourceReceiptCount": len(receipts),
+            "currentPawSkillCount": len(ROOM_JEV_SKILLS), "sourceRedactions": manifest["sourceRedactions"]}
+
+
 def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
+    if getattr(args, "scope", "backend") in {"room-jev", "room-jev-fullstack"}:
+        return build_room_jev(output, include_frontend=args.scope == "room-jev-fullstack", pi_root=getattr(args, "room_pi_source", None))
     tutti_root = args.tutti_root.expanduser().resolve()
     pi_root = args.pi_root.expanduser().resolve()
     skills_root = args.skills_root.expanduser().resolve()

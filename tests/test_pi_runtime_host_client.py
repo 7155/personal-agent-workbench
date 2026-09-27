@@ -17,6 +17,11 @@ import json,sys
 for line in sys.stdin:
     request=json.loads(line)
     method=request['method']
+    if method=='fatal':
+        print('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory sk-secret123456 /Users/example/private ' + 'x'*700, file=sys.stderr, flush=True)
+        for i in range(50):
+            print(str(i)+': native stack frame [/usr/lib/dyld]', file=sys.stderr, flush=True)
+        break
     if method=='drop':
         break
     if method=='timeout':
@@ -100,6 +105,21 @@ class PiRuntimeHostClientTests(unittest.TestCase):
             self.client.send("invalid")
         self.assertIn("invalid Pi Runtime Host JSONL", self.exits[-1][1])
         self.assertFalse(self.client._pending)
+
+    def test_fatal_summary_survives_long_native_stack_and_is_redacted_and_bounded(self):
+        with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+            self.client.send("fatal")
+        error = self.exits[-1][1]
+        self.assertIn("FATAL ERROR: Reached heap limit", error)
+        self.assertIn("JavaScript heap out of memory", error)
+        self.assertNotIn("sk-secret123456", error)
+        self.assertNotIn("/Users/example/private", error)
+        self.assertLessEqual(len(error), 500)
+        self.assertEqual(len(self.client._stderr), 32)
+        self.client.stop()
+        self.client.host_identity = "pi-host:test-restarted-generation"
+        self.client.start()
+        self.assertEqual(self.client.diagnostic_error(), "")
 
     def test_registry_failure_closes_new_process_and_streams(self):
         self.client.stop()

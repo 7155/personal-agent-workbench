@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import math
 import mimetypes
 import re
 import socket
@@ -11,13 +12,15 @@ import urllib.request
 import uuid
 import zipfile
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Protocol
-from xml.etree import ElementTree
 
-from .models import DocumentParseError, KnowledgeLibraryConfig, ParsedAsset, ParsedDocument
+from .models import DocumentParseError, KnowledgeLibraryConfig, ParsedAsset, ParsedBlock, ParsedDocument
+from .mineru_structure import MAX_STRUCTURE_BYTES, parse_content_list
+from .office import parse_office_archive
+from .epub import parse_epub_archive
 
 
 class DocumentParser(Protocol):
@@ -28,6 +31,7 @@ class DocumentParser(Protocol):
 _TEXT_EXTENSIONS = frozenset({".txt", ".md", ".markdown", ".rst", ".csv", ".tsv", ".json", ".html", ".htm"})
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
 _OFFICE_EXTENSIONS = frozenset({".docx", ".pptx", ".xlsx"})
+_LEGACY_OFFICE_EXTENSIONS = frozenset({".doc", ".ppt", ".xls"})
 
 
 class BuiltinDocumentParser:
@@ -36,11 +40,11 @@ class BuiltinDocumentParser:
     provider = "builtin"
 
     def supports(self, path: Path) -> bool:
-        return path.suffix.lower() in _TEXT_EXTENSIONS | _OFFICE_EXTENSIONS | {".pdf"}
+        return path.suffix.lower() in _TEXT_EXTENSIONS | _OFFICE_EXTENSIONS | _LEGACY_OFFICE_EXTENSIONS | {".pdf", ".epub"}
 
     def parse(self, path: Path) -> ParsedDocument:
         suffix = path.suffix.lower()
-        if suffix not in _TEXT_EXTENSIONS | _OFFICE_EXTENSIONS | {".pdf"}:
+        if not self.supports(path):
             raise DocumentParseError(f"unsupported built-in document type: {suffix or '<none>'}", code="unsupported_type")
         if suffix == ".pdf":
             text, engine, page_count = _extract_pdf_text(path)
@@ -52,14 +56,12 @@ class BuiltinDocumentParser:
                 metadata={"pageSeparator": "\f", "pageCount": page_count},
             )
         if suffix in _OFFICE_EXTENSIONS:
-            text, engine = _extract_office_text(path, suffix=suffix)
-            return ParsedDocument(
-                text=text,
-                title=path.stem,
-                provider=self.provider,
-                provider_version=f"{engine}-v1",
-                metadata={"pageSeparator": "\\f"},
-            )
+            return _extract_office_document(path, suffix=suffix)
+        if suffix == ".epub":
+            return _extract_office_document(path, suffix=suffix)
+        if suffix in _LEGACY_OFFICE_EXTENSIONS:
+            from .legacy_office import convert_legacy_office
+            return convert_legacy_office(path, parse_converted=_extract_office_document)
         raw = path.read_bytes()
         text = _decode_text(raw)
         if suffix == ".json":
@@ -146,6 +148,7 @@ class MinerULocalParser:
                 "start_page_id": "0",
                 "end_page_id": "99999",
                 "return_md": "true",
+                "return_content_list": "true",
                 "response_format_zip": "true",
                 "return_images": "true",
             },
@@ -199,17 +202,18 @@ class MinerULocalParser:
             raise DocumentParseError(f"MinerU is unavailable: {exc}", code="mineru_unavailable") from exc
         if len(payload) > self.zip_limits.max_zip_bytes:
             raise DocumentParseError("MinerU ZIP response exceeds the compressed size limit", code="unsafe_archive")
-        text, assets, archive_hash = inspect_mineru_zip(payload, limits=self.zip_limits)
-        metadata: dict[str, Any] = {"archiveSha256": archive_hash, "port": self.port}
+        text, assets, archive_hash, blocks, structure_metadata = _inspect_mineru_zip(payload, limits=self.zip_limits)
+        metadata: dict[str, Any] = {"archiveSha256": archive_hash, "port": self.port, **structure_metadata}
         if path.suffix.lower() == ".pdf":
             metadata["pageCount"] = _pdf_page_count(path)
         return ParsedDocument(
             text=text,
             title=path.stem,
             provider=self.provider,
-            provider_version="file-parse-v1",
+            provider_version="file-parse-v2",
             assets=assets,
             metadata=metadata,
+            blocks=blocks,
         )
 
 
@@ -233,13 +237,13 @@ class ParserRouter:
         if normalized not in {"auto", "builtin", "mineru"}:
             raise DocumentParseError(f"unknown parser mode: {mode}", code="invalid_parser_mode")
         if normalized == "builtin":
-            return self.builtin.parse(path)
+            return self.validate_output(self.builtin.parse(path), path)
         if normalized == "mineru":
             self._require_mineru()
-            return self.mineru.parse(path)
+            return self.validate_output(self.mineru.parse(path), path)
         if self.builtin.supports(path):
             try:
-                parsed = self.builtin.parse(path)
+                parsed = self.validate_output(self.builtin.parse(path), path)
             except DocumentParseError:
                 if path.suffix.lower() != ".pdf" or not self.config.mineru_enabled:
                     raise
@@ -249,7 +253,72 @@ class ParserRouter:
                 if not self.config.mineru_enabled:
                     return parsed
         self._require_mineru()
-        return self.mineru.parse(path)
+        return self.validate_output(self.mineru.parse(path), path)
+
+    @staticmethod
+    def validate_output(parsed: ParsedDocument, path: Path) -> ParsedDocument:
+        """Validate parser output before it can become an indexed document.
+
+        Parser adapters are extension points, so the worker must reject an
+        invalid or whitespace-only result at the intake boundary.  The parsed
+        body itself remains byte/line stable because provenance consumers may
+        refer to its original offsets.
+        """
+
+        if not isinstance(parsed, ParsedDocument):
+            raise DocumentParseError(
+                f"parser returned an invalid result for {path.name}",
+                code="parser_invalid_result",
+            )
+        if not isinstance(parsed.text, str):
+            raise DocumentParseError(
+                f"parser returned non-text content for {path.name}",
+                code="parser_invalid_result",
+            )
+        if not isinstance(parsed.metadata, dict):
+            raise DocumentParseError(
+                f"parser returned invalid metadata for {path.name}",
+                code="parser_invalid_result",
+            )
+        if not isinstance(parsed.blocks, (tuple, list)):
+            raise DocumentParseError("parser returned invalid blocks", code="parser_invalid_result")
+        for block in parsed.blocks:
+            if (not isinstance(block, ParsedBlock) or not isinstance(block.kind, str) or not block.kind
+                    or not isinstance(block.text, str) or not isinstance(block.metadata, dict)
+                    or not isinstance(block.heading_path, (tuple, list))
+                    or any(not isinstance(heading, str) for heading in block.heading_path)
+                    or (block.page is not None and (type(block.page) is not int or block.page < 1))):
+                raise DocumentParseError("parser returned an invalid block", code="parser_invalid_result")
+            if block.bbox is not None:
+                try:
+                    valid_bbox = (
+                        isinstance(block.bbox, (tuple, list)) and len(block.bbox) == 4
+                        and all(type(value) in (int, float) and math.isfinite(value) for value in block.bbox)
+                        and block.bbox[2] >= block.bbox[0] and block.bbox[3] >= block.bbox[1]
+                    )
+                except OverflowError:
+                    valid_bbox = False
+                if not valid_bbox:
+                    raise DocumentParseError("parser returned an invalid block bbox", code="parser_invalid_result")
+        # Normalize sequence envelopes only; never infer page or coordinate units.
+        if isinstance(parsed.blocks, list) or any(
+            isinstance(block.heading_path, list) or isinstance(block.bbox, list) for block in parsed.blocks
+        ):
+            parsed = replace(parsed, blocks=tuple(
+                replace(block, heading_path=tuple(block.heading_path),
+                        bbox=tuple(block.bbox) if block.bbox is not None else None)
+                for block in parsed.blocks
+            ))
+        # Validate a normalized view, but preserve the parser's exact body.
+        # Page/line provenance belongs to that body and must not be shifted by
+        # an intake cleanup pass.
+        normalized = _normalize_text(parsed.text)
+        if not normalized:
+            raise DocumentParseError(
+                "parser produced no indexable text",
+                code="empty_document",
+            )
+        return parsed
 
     def _require_mineru(self) -> None:
         if not self.config.mineru_enabled:
@@ -260,6 +329,14 @@ class ParserRouter:
 
 
 def inspect_mineru_zip(payload: bytes, *, limits: ZipSafetyLimits | None = None) -> tuple[str, tuple[ParsedAsset, ...], str]:
+    """Legacy three-value interface, with the same structural/archive validation."""
+    text, assets, digest, _, _ = _inspect_mineru_zip(payload, limits=limits)
+    return text, assets, digest
+
+
+def _inspect_mineru_zip(
+    payload: bytes, *, limits: ZipSafetyLimits | None = None,
+) -> tuple[str, tuple[ParsedAsset, ...], str, tuple[ParsedBlock, ...], dict[str, Any]]:
     limits = limits or ZipSafetyLimits()
     if len(payload) > limits.max_zip_bytes:
         raise DocumentParseError("archive exceeds compressed size limit", code="unsafe_archive")
@@ -286,6 +363,28 @@ def inspect_mineru_zip(payload: bytes, *, limits: ZipSafetyLimits | None = None)
         if not text:
             raise DocumentParseError("MinerU returned empty Markdown", code="empty_document")
         assets: list[ParsedAsset] = []
+        blocks: tuple[ParsedBlock, ...] = ()
+        structure_metadata: dict[str, Any] = {
+            "structureStatus": "fallback", "structureFallbackReason": "content_list_missing",
+        }
+        structure_infos = [item for item in infos if not item.is_dir() and
+                           (PurePosixPath(item.filename).name.lower() == "content_list.json"
+                            or item.filename.lower().endswith("_content_list.json"))]
+        if structure_infos:
+            siblings = [item for item in structure_infos
+                        if PurePosixPath(item.filename).parent == PurePosixPath(selected.filename).parent]
+            candidates = siblings or structure_infos
+            if len(candidates) != 1:
+                raise DocumentParseError("MinerU archive has ambiguous content lists", code="mineru_invalid_structure")
+            structure_info = candidates[0]
+            if structure_info.file_size > MAX_STRUCTURE_BYTES:
+                raise DocumentParseError("MinerU content list exceeds size limit", code="mineru_invalid_structure")
+            raw_structure = archive.read(structure_info)
+            blocks, structure_metadata = parse_content_list(raw_structure)
+            structure_hash = hashlib.sha256(raw_structure).hexdigest()
+            structure_metadata.update({"structureSha256": structure_hash, "structureSource": structure_info.filename})
+            assets.append(ParsedAsset(name=PurePosixPath(structure_info.filename).name,
+                                      media_type="application/json", sha256=structure_hash, data=raw_structure))
         allowed_assets = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
         for info in infos:
             suffix = PurePosixPath(info.filename).suffix.lower()
@@ -301,10 +400,16 @@ def inspect_mineru_zip(payload: bytes, *, limits: ZipSafetyLimits | None = None)
                     data=data,
                 )
             )
-    return text, tuple(assets), hashlib.sha256(payload).hexdigest()
+    return text, tuple(assets), hashlib.sha256(payload).hexdigest(), blocks, structure_metadata
 
 
 def _extract_office_text(path: Path, *, suffix: str) -> tuple[str, str]:
+    """Compatibility adapter for callers that only need the extracted body."""
+    parsed = _extract_office_document(path, suffix=suffix)
+    return parsed.text, f"{suffix[1:]}-xml"
+
+
+def _extract_office_document(path: Path, *, suffix: str) -> ParsedDocument:
     limits = ZipSafetyLimits(max_zip_bytes=200 * 1024 * 1024)
     if path.stat().st_size > limits.max_zip_bytes:
         raise DocumentParseError("Office document exceeds compressed size limit", code="unsafe_archive")
@@ -314,28 +419,9 @@ def _extract_office_text(path: Path, *, suffix: str) -> tuple[str, str]:
         raise DocumentParseError("Office document is not a valid package", code="unsafe_archive") from exc
     with archive:
         entries = _safe_office_entries(archive, limits=limits)
-        if suffix == ".docx":
-            names = sorted(
-                name
-                for name in entries
-                if re.fullmatch(r"word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml", name)
-            )
-            pages = [_xml_text(_read_office_xml(archive, name)) for name in names]
-            engine = "docx-xml"
-        elif suffix == ".pptx":
-            names = sorted(
-                (name for name in entries if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)),
-                key=_numeric_archive_name,
-            )
-            pages = [_xml_text(_read_office_xml(archive, name)) for name in names]
-            engine = "pptx-xml"
-        else:
-            pages = _xlsx_pages(archive, entries)
-            engine = "xlsx-xml"
-    text = _normalize_text("\f".join(page for page in pages if page.strip()))
-    if not text:
-        raise DocumentParseError("Office document contains no readable text", code="empty_document")
-    return text, engine
+        if suffix == ".epub":
+            return parse_epub_archive(archive, entries, title=path.stem)
+        return parse_office_archive(archive, entries, suffix=suffix, title=path.stem)
 
 
 def _safe_office_entries(archive: zipfile.ZipFile, *, limits: ZipSafetyLimits) -> set[str]:
@@ -352,6 +438,8 @@ def _safe_office_entries(archive: zipfile.ZipFile, *, limits: ZipSafetyLimits) -
             raise DocumentParseError("Office package contains an unsafe path", code="unsafe_archive")
         if mode == 0o120000:
             raise DocumentParseError("Office package symlinks are not allowed", code="unsafe_archive")
+        if raw_name in names or info.flag_bits & 1:
+            raise DocumentParseError("Package contains duplicate or encrypted ZIP entries", code="unsafe_archive")
         if info.file_size > limits.max_entry_bytes:
             raise DocumentParseError("Office package entry exceeds size limit", code="unsafe_archive")
         if info.compress_size > 0 and info.file_size / info.compress_size > limits.max_compression_ratio:
@@ -361,73 +449,6 @@ def _safe_office_entries(archive: zipfile.ZipFile, *, limits: ZipSafetyLimits) -
             raise DocumentParseError("Office package expanded size exceeds limit", code="unsafe_archive")
         names.add(raw_name)
     return names
-
-
-def _read_office_xml(archive: zipfile.ZipFile, name: str) -> bytes:
-    raw = archive.read(name)
-    upper = raw.upper()
-    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
-        raise DocumentParseError("Office XML declarations are not allowed", code="unsafe_archive")
-    return raw
-
-
-def _xml_text(raw: bytes) -> str:
-    try:
-        root = ElementTree.fromstring(raw)
-    except ElementTree.ParseError as exc:
-        raise DocumentParseError("Office XML is malformed", code="parse_failed") from exc
-    values = [str(node.text or "").strip() for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "t"]
-    return "\n".join(value for value in values if value)
-
-
-def _xlsx_pages(archive: zipfile.ZipFile, entries: set[str]) -> list[str]:
-    shared: list[str] = []
-    if "xl/sharedStrings.xml" in entries:
-        raw = _read_office_xml(archive, "xl/sharedStrings.xml")
-        try:
-            root = ElementTree.fromstring(raw)
-        except ElementTree.ParseError as exc:
-            raise DocumentParseError("XLSX shared strings are malformed", code="parse_failed") from exc
-        for item in root:
-            shared.append(
-                "".join(
-                    str(node.text or "")
-                    for node in item.iter()
-                    if node.tag.rsplit("}", 1)[-1] == "t"
-                )
-            )
-    sheet_names = sorted(
-        (name for name in entries if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name)),
-        key=_numeric_archive_name,
-    )
-    pages: list[str] = []
-    for name in sheet_names:
-        raw = _read_office_xml(archive, name)
-        try:
-            root = ElementTree.fromstring(raw)
-        except ElementTree.ParseError as exc:
-            raise DocumentParseError("XLSX worksheet is malformed", code="parse_failed") from exc
-        rows: list[str] = []
-        for row in (node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "row"):
-            cells: list[str] = []
-            for cell in (node for node in row if node.tag.rsplit("}", 1)[-1] == "c"):
-                value_node = next(
-                    (node for node in cell.iter() if node.tag.rsplit("}", 1)[-1] in {"v", "t"}),
-                    None,
-                )
-                value = str(value_node.text or "") if value_node is not None else ""
-                if cell.attrib.get("t") == "s" and value.isdigit() and int(value) < len(shared):
-                    value = shared[int(value)]
-                cells.append(value.strip())
-            if any(cells):
-                rows.append("\t".join(cells))
-        pages.append("\n".join(rows))
-    return pages
-
-
-def _numeric_archive_name(value: str) -> tuple[int, str]:
-    match = re.search(r"(\d+)(?=\.xml$)", value)
-    return (int(match.group(1)) if match else 0, value)
 
 
 def _validate_zip_entry(info: zipfile.ZipInfo, *, limits: ZipSafetyLimits) -> None:

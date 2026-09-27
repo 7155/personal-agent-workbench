@@ -1,3 +1,5 @@
+import { pickBrowserAttachments } from './browser-attachment-picker';
+import { prepareHttpAttachment } from './attachment-import';
 import {
   MAX_COMPOSER_ATTACHMENT_BYTES,
   normalizeComposerAttachmentMimeType,
@@ -38,6 +40,7 @@ import {
   type KnowledgeDocumentSourcePayload,
   type KnowledgeDocumentSourceReadInput,
   type PickedFile,
+  type FilePickOptions,
 } from './transport';
 
 export interface HttpControlTransportOptions {
@@ -85,18 +88,23 @@ export class HttpControlTransport implements ControlTransport {
   private readonly reconnectBaseDelayMs: number;
   private readonly reconnectMaxDelayMs: number;
   private readonly random: () => number;
+  private readonly pickWorkspaceDirectory?: () => Promise<{ name: string; path: string } | null>;
   private readonly subscriptions = new Set<AbortController>();
 
   constructor(options: HttpControlTransportOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     // Only the installed preload supplies this bridge. A URL flag is not a capability.
-    const voice = typeof window !== 'undefined' && window.location.origin === this.baseUrl.origin
-      ? window.pawVoiceHost : undefined;
+    const sameOrigin = typeof window !== 'undefined' && window.location.origin === this.baseUrl.origin;
+    const voice = sameOrigin ? window.pawVoiceHost : undefined;
     if (voice) {
       this.voiceStatus = () => voice.status();
       this.voiceCredentialStatus = (provider) => voice.credentialStatus(provider);
       this.saveVoiceCredentials = (request) => voice.saveCredentials(request);
       this.runVoiceAction = (action) => voice.action(action);
+    }
+    const workspaceHost = sameOrigin ? window.pawBrowserHost : undefined;
+    if (workspaceHost?.kind === 'electron-webview' && workspaceHost.pickWorkspaceDirectory) {
+      this.pickWorkspaceDirectory = () => workspaceHost.pickWorkspaceDirectory!();
     }
     this.connectionIdentity = `http:${this.baseUrl.href}`;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
@@ -176,12 +184,32 @@ export class HttpControlTransport implements ControlTransport {
     return new URL(managedPath, this.baseUrl).toString();
   }
 
+  async pickFiles(options: FilePickOptions): Promise<PickedFile[]> {
+    if (options.purpose === 'workspace-root') {
+      options.signal?.throwIfAborted();
+      if (!this.pickWorkspaceDirectory) {
+        throw new Error('当前浏览器不能选择本机目录，请使用桌面版或选择已登记的项目。');
+      }
+      // A directory selection is a local project binding, never an attachment
+      // upload. Session, Room and Lab callers share this transport boundary.
+      const directory = await this.pickWorkspaceDirectory();
+      options.signal?.throwIfAborted();
+      return directory ? [{
+        id: `workspace:${directory.path}`, name: directory.name, path: directory.path,
+        mimeType: 'inode/directory', byteSize: 0,
+      }] : [];
+    }
+    const files = await pickBrowserAttachments(options);
+    if (!files.length) return [];
+    return this.pasteImages({ files, maxFiles: options.maxFiles, ...(options.roomId ? {roomId:options.roomId} : {sessionId:options.sessionId!}) });
+  }
+
   async pasteImages(options: AgentImagePasteOptions): Promise<PickedFile[]> {
     const { files, maxFiles, ownerKey, ownerId } = assertHttpFilePasteOptions(options);
     const receipts: PickedFile[] = [];
-    for (const file of files.slice(0, maxFiles)) {
-      // Pasted code/text/archive files often carry no browser MIME type;
-      // they import as octet-stream instead of being refused.
+    // Validate the whole selection before importing any of it.
+    const prepared = await Promise.all(files.slice(0, maxFiles).map(prepareHttpAttachment));
+    for (const file of prepared) {
       const mimeType = normalizeComposerAttachmentMimeType(file.type);
       const url = new URL('/api/agent/media/import', this.baseUrl);
       url.searchParams.set(ownerKey, ownerId);

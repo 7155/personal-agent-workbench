@@ -1,3 +1,13 @@
+import { useRoomReadingRecovery, useRoomViewRecovery } from '@/features/semantic-workspace/reading-recovery';
+import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
+import { JevCompanion } from '@/features/semantic-workspace/JevCompanion';
+import { JevPolicyControls } from '@/features/semantic-workspace/JevPolicyControls';
+import { JevPlanReview } from '@/features/semantic-workspace/JevPlanReview';
+import { PawRoomRemovalProgress, useRoomRemovals } from './PawRoomRemovalProgress';
+import { PawJevTeamPanels } from './PawJevTeamPanels';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
+import { useJevExecution } from '@/features/semantic-workspace/use-jev-execution';
+import { jevAbstention, jevStatusLabel, jevTaskCountLabel, pendingJevInput } from '@/features/semantic-workspace/jev-execution';
 import {
   Archive,
   CircleAlert,
@@ -8,6 +18,7 @@ import {
   LoaderCircle,
   MessageCircle,
   Orbit,
+  PanelsTopLeft,
   Plus,
   Settings2,
   StopCircle,
@@ -19,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
-import { Select } from '@/components/primitives';
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger, Select } from '@/components/primitives';
 import { isComposerAttachmentMimeType } from '@/contracts/attachment-policy';
 import type { RoomActivityProjection, RoomAttachmentReceipt } from '@/contracts/room-reducer';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
@@ -64,6 +75,9 @@ import {
 import { PawRoomConversation, roomProcessWindowRequest } from './PawRoomConversation';
 import { PawRoomLiveFocusOverview } from './PawRoomLiveFocusOverview';
 import { PawRoomRoundSheet } from './PawRoomRoundSheet';
+import { useRoomObserverAutoOpen, useRoomWorkStatusVisible } from './room-observer-preference';
+import { PawRoomWorkStatus } from './PawRoomWorkStatus';
+import { buildRoomWorkStatus } from './room-work-status';
 import type { RoomRoundTaskRow } from './room-round-task-sheet';
 /* 星空按钮按下之前，星空代码不进入 Room 默认对话的 bundle 路径。 */
 import { LazyPawRoomStarfield } from './PawStarfieldLazy';
@@ -78,6 +92,8 @@ import {
  * window having loaded them first. */
 import '@/features/agent/agent.css';
 import '@/features/rooms/rooms.css';
+import './paw-jev-conversation.css';
+import './paw-jev-visual.css';
 
 export { PawRoomConversation } from './PawRoomConversation';
 
@@ -129,6 +145,7 @@ export function followRoomTimelineIfReaderAtEnd(
 
 export function PawRoomWorkspace({
   active = true,
+  interfaceMode = 'traditional',
   initialDraft,
   initialError,
   participantProcessLocation = 'session-window',
@@ -136,8 +153,10 @@ export function PawRoomWorkspace({
   record,
   recordId,
   onRoomUpdated,
+  onJevEvents,
 }: {
   active?: boolean;
+  interfaceMode?: 'traditional' | 'jev';
   initialDraft?: string;
   initialError?: string;
   /** Extension Apps can keep public Room inspection inside their own surface. */
@@ -146,18 +165,24 @@ export function PawRoomWorkspace({
   record?: RoomSummary;
   recordId: string;
   onRoomUpdated: (room: RoomSummary) => void;
+  onJevEvents?: (events: readonly unknown[]) => void;
 }) {
   const transport = useControlTransport();
   const desktop = usePawOsDesktop();
   const windowChromeTarget = usePawWindowChromeTarget();
   const pageVisible = usePageVisibility();
+  const jevEnabled = interfaceMode === 'jev' && record?.roomKind !== 'roleplay';
+  const jev = useJevExecution({ roomId: recordId, transport, enabled: jevEnabled, active: pageVisible });
+  const [observerAutoOpen, setObserverAutoOpen] = useRoomObserverAutoOpen();
+  const [workStatusVisible, setWorkStatusVisible] = useRoomWorkStatusVisible();
   // A covered-but-open PAW window is still a live conversation. Focus only
   // controls interaction/animation; document visibility owns network pause.
   const liveActive = pageVisible;
   const timelineRef = useRef<HTMLDivElement>(null);
+  const composerRegionRef = useRef<HTMLDivElement>(null);
   const runtimeWarmupSessionIdsRef = useRef(new Set<string>());
-  const [draft, setDraft] = useState(initialDraft ?? '');
-  const [attachments, setAttachments] = useState<RoomAttachmentReceipt[]>([]);
+  const recovery = useWorkspaceRecovery<RoomAttachmentReceipt>(`room:${recordId}`, initialDraft ?? '');
+  const { draft, setDraft, attachments, setAttachments } = recovery;
   const [sending, setSending] = useState(false);
   const [optimisticSteer, setOptimisticSteer] = useState<OptimisticSteerReceipt | null>(null);
   const optimisticSteerRef = useRef<OptimisticSteerReceipt | null>(null);
@@ -165,20 +190,21 @@ export function PawRoomWorkspace({
   const [error, setError] = useState(initialError ?? '');
   const [connectionError, setConnectionError] = useState('');
   const [panel, setPanel] = useState<RoomToolPanel | 'none'>('none');
+  const [partnerSettingsOpen, setPartnerSettingsOpen] = useState(false);
   const [embeddedFocusActive, setEmbeddedFocusActive] = useState(false);
   const roomFocusGroup = `room:${recordId}`;
   const desktopFocusGroup = desktop?.collaborationFocusGroup;
   const hasDesktopFocusSource = desktopFocusGroup !== undefined;
-  const collaborationFocusActive = hasDesktopFocusSource
+  const collaborationFocusActive = !jevEnabled && (hasDesktopFocusSource
     ? desktopFocusGroup === roomFocusGroup
-    : embeddedFocusActive;
-  const externalCollaborationFocus = hasDesktopFocusSource && collaborationFocusActive;
+    : embeddedFocusActive);
+  const externalCollaborationFocus = !jevEnabled && hasDesktopFocusSource && collaborationFocusActive;
   const previousFocusRef = useRef(collaborationFocusActive);
-  const [view, setView] = useState<'rounds' | 'conversation' | 'messages' | 'starfield'>('rounds');
+  const [view, setView] = useRoomViewRecovery(`room:${recordId}`);
   // The desktop roster and selected partner own details in external focus.
   // Derive this immediately so a restored inline inspector never claims space.
-  const visiblePanel = externalCollaborationFocus ? 'none' : panel;
-  const visibleView = externalCollaborationFocus ? 'rounds' : view;
+  const visiblePanel = externalCollaborationFocus || jevEnabled && panel === 'focus' ? 'none' : panel;
+  const visibleView = jevEnabled ? 'conversation' : externalCollaborationFocus ? 'rounds' : view;
   const [selectedParticipantId, setSelectedParticipantId] = useState('');
   const collaborationTriggerRef = useRef<HTMLButtonElement>(null);
   const [abortingTurnIds, setAbortingTurnIds] = useState<Set<string>>(() => new Set());
@@ -186,6 +212,12 @@ export function PawRoomWorkspace({
   const [resumeErrorByRow, setResumeErrorByRow] = useState<Record<string, string>>({});
   const [resumingWorkItemId, setResumingWorkItemId] = useState('');
   const [recoveryState, setRecoveryState] = useState<'recovering' | 'failed' | 'synced'>('recovering');
+  function settleJevComposer(input: NonNullable<ReturnType<typeof pendingJevInput>>) {
+    setDraft(value => value.trim() === input.message ? '' : value);
+    setAttachments(items => items.filter(item => !input.attachmentIds?.includes(item.mediaId)));
+    setError('');
+  }
+  useEffect(() => { if (jev.recoveredAdmission) settleJevComposer(jev.recoveredAdmission); }, [jev.recoveredAdmission]);
 
   useEffect(() => {
     if (initialDraft !== undefined) setDraft(initialDraft);
@@ -193,7 +225,6 @@ export function PawRoomWorkspace({
   }, [initialDraft, initialError]);
 
   useEffect(() => {
-    setView('rounds');
     setConnectionError('');
     setPanel('none');
     setEmbeddedFocusActive(false);
@@ -318,7 +349,7 @@ export function PawRoomWorkspace({
    * Runtime send path, until this turn settles — so it can still be reordered,
    * edited, or pulled back into the composer on stop. */
   const queue = useConversationQueue({
-    busy: Boolean(activeTurn) || sending,
+    busy: (jevEnabled ? jev.busy || jev.awaitingPlan || jev.loading || jev.creating || Boolean(jev.pendingInput || jev.pendingPlan || jev.planSending || jev.error) || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)) || sending,
     conversationId: recordId,
     send: (value) => { void send(value); },
   });
@@ -331,6 +362,7 @@ export function PawRoomWorkspace({
     onLoadingChange: setLoading,
     onSnapshot: (_roomId, snapshot) => {
       acknowledgeOptimisticSteer(snapshot.events);
+      onJevEvents?.(snapshot.events);
       const room = asRoom(snapshot.room);
       if (room) onRoomUpdated(room);
     },
@@ -338,11 +370,13 @@ export function PawRoomWorkspace({
       const room = roomFromResponse(value);
       if (room) onRoomUpdated(room);
     },
-    onConnectionRestored: () => setConnectionError(''),
+    onConnectionRestored: () => { setConnectionError(''); if (jevEnabled) jev.refresh(); },
     onRecoveryState: (_roomId, state) => setRecoveryState(state),
     onConnectionError: (_roomId, reason, fallback) => setConnectionError(roomErrorText(reason, fallback)),
     onEvents: (_roomId, events) => {
       acknowledgeOptimisticSteer(events);
+      onJevEvents?.(events);
+      if (jevEnabled) jev.onEvents(events);
     },
   });
 
@@ -351,6 +385,7 @@ export function PawRoomWorkspace({
     options: { question?: PendingRoomQuestion; retryOfRootId?: string; preserveDraft?: boolean } = {},
   ): Promise<boolean> {
     if (!record || record.status !== 'active' || sending) return false;
+    if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return false; }
     const authoritativeQuestion = roomProjection(recordId).pendingUserQuestion;
     const answersQuestion = Boolean(
       options.question
@@ -360,6 +395,33 @@ export function PawRoomWorkspace({
     );
     const message = rawValue.trim() || (attachments.length ? '请查看附件。' : '');
     if (!message) return false;
+    if (jevEnabled && !answersQuestion) {
+      if (jev.loading && !jev.liveSnapshot || jev.error) {
+        setError('正在核实当前 Jev 任务，请同步状态后再发送。');
+        jev.refresh();
+        return false;
+      }
+      if ((jev.busy || activeTurn && !jev.liveSnapshot) && !pendingJevInput(transport, recordId)) {
+        if (attachments.length) { setError('附件已保留，当前任务结束后可以发送。'); return false; }
+        const queued = queue.enqueue(rawValue);
+        if (queued && !options.preserveDraft) setDraft('');
+        return queued;
+      }
+      const selectedAttachments = attachments;
+      setSending(true); setError('');
+      try {
+        const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
+        if (!accepted) return false;
+        if (!options.preserveDraft) setDraft(current => current === rawValue ? '' : current);
+        setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
+        retrySnapshot();
+        followRoomTimelineIfReaderAtEnd(timelineRef.current);
+        return true;
+      } catch (reason) {
+        setError(roomErrorText(reason, 'Jev 发送尚未确认。重试将核实同一次请求。'));
+        return false;
+      } finally { setSending(false); }
+    }
     const steering = Boolean(activeTurn && !answersQuestion);
     if (steering && attachments.length) {
       setError('当前回合执行中只能发送文字干预；图片会保留到下一轮。');
@@ -481,6 +543,26 @@ export function PawRoomWorkspace({
     } finally {
       setSending(false);
     }
+  }
+
+  async function retryJevAdmission() {
+    const input = jev.pendingInput;
+    if (!input || sending || jev.creating || record?.status !== 'active') return;
+    setSending(true); setError('');
+    try {
+      if (await jev.retryPending()) { settleJevComposer(input); retrySnapshot(); }
+    } catch (reason) { setError(roomErrorText(reason, 'Jev 发送尚未确认，可重试同一次发送。')); }
+    finally { setSending(false); }
+  }
+
+  async function retryJevPlan() {
+    const input = jev.pendingPlan;
+    if (!input || sending || jev.planSending || record?.status !== 'active') return;
+    setSending(true); setError('');
+    try {
+      if (await jev.retryPendingPlan()) { if (input.message) settleJevComposer({ message: input.message, attachmentIds: input.attachmentIds }); retrySnapshot(); }
+    } catch (reason) { setError(roomErrorText(reason, '方案操作尚未确认，可核实同一次操作。')); }
+    finally { setSending(false); }
   }
 
   async function abortTurn(rootId: string): Promise<void> {
@@ -624,6 +706,11 @@ export function PawRoomWorkspace({
     if (!participant) return;
     openParticipantObserver(participant, background);
   }, [openParticipantObserver, record?.participants]);
+  const openJevFile = useCallback((sessionId: string, path: string) => {
+    const route = `/files?session=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`;
+    if (desktop?.openRoute) desktop.openRoute(route);
+    else desktop?.openApp?.('files', route);
+  }, [desktop]);
   const selectAndOpenParticipant = useCallback((participantId: string) => {
     setSelectedParticipantId(participantId);
     if (participantProcessLocation === 'room-transcript') {
@@ -743,8 +830,8 @@ export function PawRoomWorkspace({
   /* Restore this round's admitted observers even after they have submitted.
    * Progress and terminal updates do not reopen a window the user collapsed. */
   useEffect(() => {
-    if (!collaborationFocusActive || !desktop || !record) {
-      if (!collaborationFocusActive) {
+    if (!observerAutoOpen || !collaborationFocusActive || !desktop || !record) {
+      if (!observerAutoOpen || !collaborationFocusActive) {
         collaborationSyncKeyRef.current = '';
         collaborationParticipantIds.current.clear();
       }
@@ -771,6 +858,7 @@ export function PawRoomWorkspace({
       ...[...current].filter((id) => desired.has(id) && previous.has(id)), ...failures,
     ]));
   }, [
+    observerAutoOpen,
     collaborationParticipantRequests,
     collaborationParticipantSignature,
     collaborationFocusActive,
@@ -803,20 +891,21 @@ export function PawRoomWorkspace({
     ['active', focusProjection?.counts.active ?? 0, '进行'],
     ['review', focusProjection?.counts.review ?? 0, '复核'],
     ['blocked', focusProjection?.counts.blocked ?? 0, '受阻'],
-    ['submitted', submittedPartnerCount, '伙伴已提交结果'],
-    ['complete', focusProjection?.counts.completed ?? 0, '项已交付'],
+    ['submitted', submittedPartnerCount, '伙伴执行结束'],
+    ['complete', focusProjection?.workItems.filter((item) => item.source === 'work-item' && item.state === 'completed').length ?? 0, '工作项完成'],
   ] as const).filter(([, count]) => count > 0);
   /* 没有主持就没有 Sol：signal chrome 只有在真的有伙伴担任 coordinator 时
      才用 Sol 命名这个 Room 的原点，否则统一叫「主 Room」。 */
   const coordinatorActive = focusProjection ? roomFocusHasCoordinator(focusProjection.partners) : false;
   const originLabel = roomFocusOriginLabel(coordinatorActive);
-  const visibleError = error || connectionError;
+  const visibleError = error || connectionError || (jevEnabled && jev.pendingInput ? '上次发送尚未确认，原内容与附件仍保留。' : jevEnabled && jev.pendingPlan ? '上次方案操作尚未确认。' : '');
   const syncOffline = Boolean(connectionError) && connectionError !== ROOM_WORKSPACE_MISSING_TEXT;
   const visibleRecoveryState = syncOffline ? 'failed' : recoveryState;
   const hasRoomHistory = Boolean(projection?.turnOrder.length);
   const roomContentReady = Boolean(record && projection && (
     hasRoomHistory || (!loading && recoveryState === 'synced' && !connectionError)
   ));
+  useRoomReadingRecovery(timelineRef, `room:${recordId}`, roomContentReady, visibleView);
   const roomRecoverySurface = connectionError || recoveryState === 'failed' ? (
     <section aria-label="Room 记录暂时不可用" className="paw-room-workspace__recovery" role="region">
       <CircleAlert aria-hidden="true" size={24} />
@@ -833,68 +922,82 @@ export function PawRoomWorkspace({
   ) : (
     <div aria-label="正在恢复 Room 协作现场" className="paw-room-workspace__loading" role="status"><LoaderCircle aria-hidden="true" className="ui-spin" size={18} />正在恢复 Room 协作现场</div>
   );
-  const runtimeBusy = visibleRecoveryState !== 'failed' && Boolean(activeTurn);
-  const awaitingRoot = visibleRecoveryState !== 'failed'
-    && latestTurn?.status === 'running'
-    && !activeTurn
-    && submittedPartnerCount > 0;
-  const runtimeStatusLabel = abortingActiveTurn
-    ? '正在停止'
-    : syncOffline || recoveryState === 'failed'
-      ? '同步离线 · 历史已保留'
-      : sending && runtimeBusy
-        ? '正在干预'
-        : runtimeBusy
-          ? '协作中'
-          : awaitingRoot
-            ? '伙伴已提交，等待 Root'
-            : latestTurn?.status === 'completed'
-              ? 'Room 已完成'
-              : latestTurn?.status === 'aborted'
-                ? '本轮已停止'
-                : latestTurn?.status === 'failed'
-                  ? '本轮失败'
-                  : recoveryState === 'synced'
-                    ? '已同步'
-                    : '连接中';
-  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={abortingActiveTurn ? 'stopping' : runtimeBusy ? 'busy' : visibleRecoveryState}>
-    {coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
-    {!externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
+  const workStatus = focusProjection ? buildRoomWorkStatus({
+    focus: focusProjection, projection, recoveryState: visibleRecoveryState,
+    visible: pageVisible, stopping: abortingActiveTurn,
+    pendingInput: Boolean(pendingGroupedInput && pendingGroupedInput.turnId === focusProjection.goal.rootId),
+  }) : undefined;
+  // Stop remains owned by the actual active Root, independently of whether a
+  // status animation is appropriate (for example, while waiting for input).
+  const runtimeBusy = visibleRecoveryState === 'synced' && (jevEnabled ? jev.busy : Boolean(activeTurn));
+  const runtimeStatusLabel = jevEnabled ? jevStatusLabel(jev.liveSnapshot, jev.loading) : workStatus?.headline ?? '连接中';
+  const chromeStatus = (jevEnabled ? jev.stopping : abortingActiveTurn) ? 'stopping' : (jevEnabled ? jev.busy && !jevAbstention(jev.liveSnapshot) : workStatus?.animate) && active ? 'busy' : visibleRecoveryState;
+  const stopCurrentWork = () => {
+    if (queue.queue.length) setDraft(queue.restoreToDraft(draft));
+    if (jevEnabled && jev.liveSnapshot) void jev.stop(); else void abortTurn(activeRootId);
+  };
+  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
+    {jevEnabled ? <span aria-label="Agent 中的 Jev 任务模式" className="paw-room-workspace__mode">Jev</span> : coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
+    {jevEnabled ? <nav aria-label="Jev 工作台视图"><button type="button" aria-pressed={visiblePanel === 'none'} onClick={() => setPanel('none')}><MessageCircle size={14} /><span>对话与进展</span></button><button type="button" aria-pressed={visiblePanel === 'governance'} onClick={() => setPanel('governance')}><Users size={14} /><span>伙伴与设置</span></button></nav> : !externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
       <button aria-label="对话与结果" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>对话与结果</span></button>
       <button aria-label="消息流" aria-pressed={view === 'messages'} data-room-view="messages" onClick={() => { setView('messages'); exitCollaborationFocus(); }} type="button"><GitBranch size={14} /><span>消息流</span></button>
       <button aria-label="协同模式" aria-pressed={collaborationFocusActive} data-room-view="collaboration" onClick={enterCollaborationMode} ref={collaborationTriggerRef} type="button"><Focus size={14} /><span>协同模式</span></button>
       <button aria-label="完整记录" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'conversation'} data-room-view="conversation" onClick={() => { setView('conversation'); exitCollaborationFocus(); }} type="button"><MessageCircle size={14} /><span>完整记录</span></button>
       <button aria-label="星空" aria-pressed={view === 'starfield'} data-room-view="starfield" onClick={() => { setView('starfield'); exitCollaborationFocus(); }} type="button"><Orbit size={14} /><span>星空</span></button>
     </nav> : null}
-    <div className="paw-room-workspace__runtime"><span data-terminal={runtimeStatusLabel === '本轮已停止' ? 'aborted' : runtimeStatusLabel === '本轮失败' ? 'failed' : undefined} data-compact-status={externalCollaborationFocus ? undefined : runtimeStatusLabel === '本轮已停止' ? '已停止' : runtimeStatusLabel === '本轮失败' ? '失败' : undefined}><i />{runtimeStatusLabel}</span>{runtimeBusy ? <button aria-label="停止整轮协作" disabled={abortingActiveTurn} onClick={() => void abortTurn(activeRootId)} type="button"><StopCircle size={16} /></button> : null}</div>
+    <div className="paw-room-workspace__runtime"><span data-terminal={!jevEnabled && workStatus?.state === 'stopped' ? 'aborted' : !jevEnabled && workStatus?.state === 'failed' ? 'failed' : undefined} data-compact-status={jevEnabled || externalCollaborationFocus ? undefined : workStatus?.state === 'stopped' ? '已停止' : workStatus?.state === 'failed' ? '失败' : undefined}><i />{runtimeStatusLabel}</span>{runtimeBusy ? <button aria-label={jevEnabled ? '停止 Jev 执行' : '停止整轮协作'} disabled={jevEnabled ? jev.stopping : abortingActiveTurn} onClick={stopCurrentWork} type="button"><StopCircle size={16} /></button> : null}</div>
   </div>;
+  const partnerControls = record ? <RoomCapabilityControls
+    participants={record.participants}
+    aliases={participantAliases}
+    room={record}
+    onRoomUpdated={onRoomUpdated}
+    showSessionSettings={jevEnabled}
+    automaticModels={jevEnabled && jev.modelRouting === 'balanced'}
+    modelSyncKey={jevEnabled ? jev.liveSnapshot?.version : undefined}
+    busy={(jevEnabled ? jev.busy : Boolean(activeTurn)) || sending}
+    showModelControls
+    disabled={record.status !== 'active'}
+    onSelectTool={(name) => {
+      setDraft((current) => `${current}${current.trim() ? '\n' : ''}${name}：`);
+      setPartnerSettingsOpen(false);
+    }}
+  /> : null;
+  const jevObjective = jev.liveSnapshot?.currentRootObjective || jev.liveSnapshot?.tasks.find(task => !task.parentId)?.objective || record?.description || record?.title || 'Jev 当前目标';
+
   return (
     <section
-      className="paw-room-workspace paw-room-workspace--migrated-v1"
-      data-agent-mode="room"
-      data-collaboration-mode={collaborationFocusActive}
+      className={`paw-room-workspace paw-room-workspace--migrated-v1${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
+      data-agent-mode={jevEnabled ? 'jev' : 'room'}
+      data-collaboration-mode={!jevEnabled && collaborationFocusActive}
       data-external-focus={externalCollaborationFocus || undefined}
       data-panel={visiblePanel}
       data-view={visibleView}
       data-window-chrome={windowChromeTarget ? 'portal' : 'fallback'}
       data-room-id={recordId}
-      data-status={abortingActiveTurn ? 'stopping' : runtimeBusy ? 'busy' : visibleRecoveryState}
+      data-status={chromeStatus}
     >
       {windowChromeTarget ? <PawWindowChromePortal>{roomChromeControls}</PawWindowChromePortal> : <header className="paw-room-workspace__header">{roomChromeControls}</header>}
 
+      <WorkspaceRecoveryNotice recovery={recovery} />
       {!externalCollaborationFocus ? <section aria-label="Room 当前协作" className="paw-room-workspace__signal">
         <div className="paw-room-workspace__objective">
-          <div><strong>{(focusProjection?.goal.title !== '主话题' && focusProjection?.goal.title) || (activeTopic?.title !== '主话题' && activeTopic?.title) || record?.description || record?.title || activeWork?.objective || '当前协作'}</strong></div>
-          <span>{activeParticipants.length} 颗行星 · {focusProjection?.workItems.length ?? 0} 项任务{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
+          <div>{jevEnabled ? <Dialog>
+            <DialogTrigger asChild><button className="paw-jev-objective-trigger" type="button" aria-label="查看完整任务要求"><strong>{jevObjective.trim().split('\n')[0].slice(0, 100)}</strong><ExternalLink size={13} aria-hidden="true" /></button></DialogTrigger>
+            <DialogContent className="paw-jev-objective-detail"><DialogTitle>任务要求</DialogTitle><DialogDescription>本轮任务的原始目标，分工和验收围绕这些要求推进。</DialogDescription><div>{jevObjective}</div></DialogContent>
+          </Dialog> : <strong>{(focusProjection?.goal.title !== '主话题' && focusProjection?.goal.title) || (activeTopic?.title !== '主话题' && activeTopic?.title) || record?.description || record?.title || activeWork?.objective || '当前协作'}</strong>}</div>
+          <span>{jevEnabled ? !record ? '正在恢复 Room 协作现场' : `${activeParticipants.length} 位伙伴 · ${jev.liveSnapshot ? jevTaskCountLabel(jev.liveSnapshot) : '正在同步任务进度'}` : `${activeParticipants.length} 颗行星 · ${focusProjection?.workItems.length ?? 0} 项任务`}{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
         </div>
-        {focusProjection ? <div aria-label={`${originLabel} 当前状态`} className="paw-room-workspace__signal-status">
+        {!jevEnabled && focusProjection ? <div aria-label={`${originLabel} 当前状态`} className="paw-room-workspace__signal-status">
           {signalChips.length
             ? signalChips.map(([tone, count, label]) => <span data-tone={tone} key={tone}><i />{count} {label}</span>)
             : <span data-tone="idle"><i />待命</span>}
         </div> : null}
       </section> : null}
 
-      <div className="paw-room-workspace__body">
+      <div className="paw-room-workspace__body" data-jev-layout={jevEnabled && visiblePanel === 'none' ? 'team' : undefined}>
+        {jevEnabled && visiblePanel === 'none' ? <JevCompanion presentation="stage" execution={jev} room={record} active={active && pageVisible} connected={!connectionError} onStop={stopCurrentWork} /> : null}
+        {jevEnabled && visiblePanel === 'none' ? <PawJevTeamPanels graph={jev.snapshot} taskControls={jev.taskControls} room={record} projection={projection} active={active && pageVisible && !connectionError && !jev.error} observeCompletions={Boolean(jev.liveSnapshot && jev.snapshot?.graphId === jev.liveSnapshot.graphId)} onOpenParticipant={openParticipantById} onOpenFile={desktop?.openRoute || desktop?.openApp ? openJevFile : undefined} /> : null}
         <section aria-label={`${title} 主 Room`} className="paw-room-workspace__main" role="region">
           {visibleView === 'starfield' && focusProjection ? (
             <LazyPawRoomStarfield
@@ -932,6 +1035,8 @@ export function PawRoomWorkspace({
             </div>
           ) : <div className="paw-room-timeline" ref={timelineRef}>
               {roomContentReady && projection && record ? <PawRoomConversation
+                collaborationMode={jevEnabled ? 'jev' : 'room'}
+                graph={jevEnabled ? jev.snapshot : null}
                 empty={loading
                   ? <div className="paw-room-workspace__loading"><LoaderCircle className="ui-spin" size={18} />正在恢复 Room 协作现场</div>
                   : <div className="paw-room-workspace__empty"><Users size={24} /><strong>Room 已准备好</strong><p>发送目标，伙伴会分工、执行并汇合结果。</p></div>}
@@ -958,12 +1063,26 @@ export function PawRoomWorkspace({
                 onRetryTurn={(message, retryOfRootId) => void send(message, { retryOfRootId, preserveDraft: true })}
                 onContinueTurn={(rootId) => void send('继续。请基于当前 Room 已保留的上下文、工具结果和伙伴进展接着完成，不要重复已经完成的操作。', { preserveDraft: true })}
                 projection={projection}
+                tail={jevEnabled ? <JevPlanReview execution={jev} room={record} onAdjust={() => {
+                  setDraft(value => value || '我想调整方案：');
+                  composerRegionRef.current?.querySelector<HTMLTextAreaElement>('textarea[aria-label="协作消息"]')?.focus();
+                }} /> : undefined}
                 retryingTurn={sending}
                 room={record}
               /> : roomRecoverySurface}
           </div>}
 
-          <div className="paw-room-workspace__composer">
+          <div className="paw-room-workspace__composer" ref={composerRegionRef}>
+              {!jevEnabled && workStatusVisible && focusProjection && workStatus ? <PawRoomWorkStatus
+                key={recordId}
+                focus={focusProjection}
+                status={{ ...workStatus, animate: workStatus.animate && active }}
+                onOpenParticipant={selectAndOpenParticipant}
+                onRetrySync={() => retrySnapshot()}
+                onAnswer={() => composerRegionRef.current?.querySelector<HTMLElement>(
+                  '[data-pending-room-input] input, [data-pending-room-input] select, [data-pending-room-input] button, textarea[aria-label="协作消息"]',
+                )?.focus({ preventScroll: false })}
+              /> : null}
               {collaborationOpenFailures.size ? <div className="paw-room-workspace__planet-open-error" role="alert">
                 <CircleAlert size={14} />
                 <div>
@@ -993,8 +1112,12 @@ export function PawRoomWorkspace({
               {visibleError ? (
                 <div className="paw-room-workspace__error" role="alert">
                   <CircleAlert size={14} />
-                  <span>{visibleError}</span>
-                  {visibleError === ROOM_WORKSPACE_MISSING_TEXT ? (
+                  <span>{visibleError}{jevEnabled && jev.pendingInput ? ` · 原请求含 ${jev.pendingInput.attachmentIds?.length ?? 0} 项附件` : ''}</span>
+                  {jevEnabled && jev.pendingInput ? (
+                    <button disabled={sending || jev.creating} onClick={() => void retryJevAdmission()} type="button">重试上次发送</button>
+                  ) : jevEnabled && jev.pendingPlan ? (
+                    <button disabled={sending || Boolean(jev.planSending)} onClick={() => void retryJevPlan()} type="button">核实上次方案操作</button>
+                  ) : visibleError === ROOM_WORKSPACE_MISSING_TEXT ? (
                     <button onClick={() => void manageWorkspaceRoots()} type="button">选择工作目录</button>
                   ) : !error && connectionError ? (
                     <button onClick={() => retrySnapshot()} type="button">重新同步</button>
@@ -1014,26 +1137,47 @@ export function PawRoomWorkspace({
                   />
                 </div>
               ) : null}
-              {pendingGroupedInput ? <GenericUserInputCard activity={pendingGroupedInput} sessionId={pendingGroupedInput.sourceSessionId} onError={setError} /> : (
+              {pendingGroupedInput ? <div data-pending-room-input><GenericUserInputCard activity={pendingGroupedInput} sessionId={pendingGroupedInput.sourceSessionId} onError={setError} /></div> : (
                 <>
                   <QueueTray busy={sending} controller={queue} />
                   <RoomComposer
-                    capabilityControls={record ? <RoomCapabilityControls
-                      participants={record.participants}
-                      aliases={participantAliases}
-                      busy={Boolean(activeTurn) || sending}
-                      disabled={record.status !== 'active'}
-                      onSelectTool={(name) => setDraft((current) => `${current}${current.trim() ? '\n' : ''}${name}：`)}
-                    /> : undefined}
+                    expandInDialog={jevEnabled}
+                    capabilityControls={record ? <>
+                      <Dialog open={partnerSettingsOpen} onOpenChange={setPartnerSettingsOpen}>
+                        <DialogTrigger asChild><button type="button" className="paw-room-observer-toggle" aria-label="伙伴工具与记忆" title="伙伴工具、记忆与模型设置">
+                          <Settings2 size={15} aria-hidden="true" /><span>伙伴设置</span>
+                        </button></DialogTrigger>
+                        <DialogContent className="paw-jev-partner-settings">
+                          <DialogTitle>伙伴设置</DialogTitle>
+                          <DialogDescription>选择伙伴，查看模型、工具和记忆设置。{jevEnabled ? '任务执行期间，修改选项会暂时锁定。' : ''}</DialogDescription>
+                          <div className="paw-jev-partner-settings__controls">{partnerControls}</div>
+                        </DialogContent>
+                      </Dialog>
+                      {jevEnabled ? <JevPolicyControls modelRouting={jev.modelRouting} toolApprovalMode={jev.toolApprovalMode} verificationMode={jev.verificationMode} onModelRouting={jev.setModelRouting} onToolApprovalMode={jev.setToolApprovalMode} onVerificationMode={jev.setVerificationMode} /> : null}
+                      {!jevEnabled ? <button type="button" role="switch" aria-label="显示任务状态栏" aria-checked={workStatusVisible}
+                        className="paw-room-observer-toggle"
+                        title={workStatusVisible ? '隐藏输入框上方的任务状态栏' : '显示输入框上方的任务状态栏'}
+                        onClick={() => setWorkStatusVisible(!workStatusVisible)}>
+                        <ListChecks size={15} aria-hidden="true" /><span>任务状态</span><small>{workStatusVisible ? '开' : '关'}</small>
+                      </button> : null}
+                      {!jevEnabled ? <button type="button" role="switch" aria-label="伙伴窗口自动弹出" aria-checked={observerAutoOpen}
+                        className="paw-room-observer-toggle"
+                        title={observerAutoOpen ? '协同模式下自动弹出伙伴窗口；点击关闭。' : '协同模式下不自动弹窗；仍可手动打开伙伴。点击开启。'}
+                        onClick={() => setObserverAutoOpen(!observerAutoOpen)}>
+                        <PanelsTopLeft size={15} aria-hidden="true" /><span>自动弹窗</span><small>{observerAutoOpen ? '开' : '关'}</small>
+                      </button> : null}
+                    </> : undefined}
                     room={record}
                     participantAliases={participantAliases}
                     personas={personas}
                     draft={draft}
                     attachments={attachments}
                     sending={sending}
-                    taskBusyState={taskBusyState}
-                    onStop={() => void abortTurn(activeRootId)}
-                    stopping={abortingActiveTurn}
+                    uncertainSubmission={jevEnabled && Boolean(jev.pendingInput)}
+                    taskBusyState={jevEnabled ? jev.busy || activeTurn && !jev.liveSnapshot ? 'running' : undefined : taskBusyState}
+                    busySubmitBehavior={jevEnabled ? 'queue' : 'steer'}
+                    onStop={stopCurrentWork}
+                    stopping={jevEnabled ? jev.stopping : abortingActiveTurn}
                     onInvitePartners={() => setPanel('governance')}
                     pendingUserAnswer={pendingQuestion?.roomId === recordId}
                     queueDepth={queue.queue.length}
@@ -1208,6 +1352,7 @@ function PawRoomGovernanceInner({
 }) {
   const transport = useControlTransport();
   const [busyKey, setBusyKey] = useState('');
+  const removals = useRoomRemovals(room, onRefresh);
   const [joinedIds, setJoinedIds] = useState<string[]>([]);
   const previousMemberIds = useRef(new Set(room.participants.filter((item) => item.status === 'active').map((item) => item.id)));
   useEffect(() => {
@@ -1256,11 +1401,17 @@ function PawRoomGovernanceInner({
     onError('');
     try {
       const response = await transport.request<Record<string, unknown>>(request);
+      removals.receive(response.removal);
       const updated = roomFromResponse(response);
       if (updated) onRoomUpdated(updated);
       else await onRefresh();
     } catch (reason) { onError(publicErrorText(reason, 'Room 设置没有更新。')); }
     finally { setBusyKey(''); }
+  }
+
+  function removeParticipant(participantId: string, extra: { replacementParticipantId?: string; stopRoot?: boolean } = {}) {
+    void mutate(`remove:${participantId}`, { pathId: 'agent.room.participant.remove', params: { roomId: room.id },
+      body: { participantId, clientMessageId: `remove-${crypto.randomUUID()}`, ...extra } });
   }
 
   async function createTopic(): Promise<void> {
@@ -1297,11 +1448,12 @@ function PawRoomGovernanceInner({
       <header><span><Users size={15} /><strong>伙伴与分工</strong></span><small>{activeParticipants.length}/{ROOM_PARTICIPANT_LIMIT}</small></header>
       {busyKey.startsWith('add:') ? <p className="paw-room-governance__arrival" role="status"><LoaderCircle className="ui-spin" size={16} />正在邀请 {nextPlanetName} 加入…</p> : joinedIds.length ? <p className="paw-room-governance__arrival" role="status"><UserPlus size={16} />{activeParticipants.filter((item) => joinedIds.includes(item.id)).map((item) => roomPlanetName(item.ordinal)).join('、')} 已加入，可以在对话中 @ 点名接手</p> : null}
       <div className="paw-room-governance__members">{activeParticipants.map((participant) => <article key={participant.id} data-arriving={joinedIds.includes(participant.id) || undefined}>
-        <span aria-hidden="true" className="paw-room-governance__member-mark" data-planet={participant.ordinal}><Orbit size={15} /></span>
+        <RoomPlanetAvatar ordinal={participant.ordinal} size={30} decorative />
         <span><strong>{roomPlanetName(participant.ordinal)}</strong>{room.roomKind === 'roleplay' ? <small>{roomCollaborationRoleLabel(participant.collaborationRole)}</small> : null}</span>
         {room.roomKind !== 'roleplay' ? <Select aria-label={`${roomPlanetName(participant.ordinal)} 的分工`} disabled={Boolean(busyKey)} onValueChange={(collaborationRole) => void mutate(`role:${participant.id}`, { pathId: 'agent.room.participant.update', params: { roomId: room.id }, body: { participantId: participant.id, collaborationRole } })} options={roomCollaborationRoleOptions(participant.collaborationRole)} value={participant.collaborationRole ?? 'implementer'} /> : null}
-        <button aria-label={`移出 ${roomPlanetName(participant.ordinal)}`} disabled={Boolean(busyKey) || activeParticipants.length <= 2 || participant.id === room.moderatorParticipantId} onClick={() => void mutate(`remove:${participant.id}`, { pathId: 'agent.room.participant.remove', params: { roomId: room.id }, body: { participantId: participant.id } })} type="button">{busyKey === `remove:${participant.id}` ? <LoaderCircle className="ui-spin" size={14} /> : <UserMinus size={14} />}</button>
+        <button aria-label={`移出 ${roomPlanetName(participant.ordinal)}`} disabled={Boolean(busyKey) || removals.items.some(item => item.participantId === participant.id && item.status === 'pending') || activeParticipants.length <= 2 || (room.routingPolicy === 'moderator' && participant.id === room.moderatorParticipantId)} onClick={() => removeParticipant(participant.id)} type="button">{busyKey === `remove:${participant.id}` ? <LoaderCircle className="ui-spin" size={14} /> : <UserMinus size={14} />}</button>
       </article>)}</div>
+      <PawRoomRemovalProgress room={room} items={removals.items} error={removals.error} busy={Boolean(busyKey)} onRemove={removeParticipant} />
       {availablePersonas.length ? <div className="paw-room-governance__invite"><span aria-hidden="true"><UserPlus size={14} />邀请伙伴</span><Select aria-label="邀请伙伴" disabled={Boolean(busyKey) || participantLimitReached} onValueChange={(key) => { if (participantLimitReached) return; const persona = personas.find((item) => `${item.roleId}:${item.version}` === key); if (persona) void mutate(`add:${persona.roleId}`, { pathId: 'agent.room.participant.add', params: { roomId: room.id }, body: { roleId: persona.roleId, roleVersion: persona.version, collaborationRole: 'implementer' } }); }} options={participantLimitReached ? [{ value: '', label: `已达 ${ROOM_PARTICIPANT_LIMIT} 人上限` }] : availablePersonas.map((persona) => ({ value: `${persona.roleId}:${persona.version}`, label: `${nextPlanetName} · ${persona.tagline || '协作伙伴'}` }))} placeholder={participantLimitReached ? `已达 ${ROOM_PARTICIPANT_LIMIT} 人上限` : `选择 ${nextPlanetName} 的分工…`} value="" /></div> : null}
     </section>
 
@@ -1319,6 +1471,12 @@ function PawRoomGovernanceInner({
 
     <section>
       <header><span><Settings2 size={15} /><strong>空间设置</strong></span><small>{permissionDisplayLabel}</small></header>
+      <label className="paw-room-jev-control">Room 路由中控<Select aria-label="Room 路由中控" disabled={Boolean(busyKey)} value={room.routingPolicy} options={[
+        { value: 'jev', label: 'Jev 中控' }, { value: 'natural', label: '传统主控' },
+        ...(!['jev', 'natural'].includes(room.routingPolicy) ? [{ value: room.routingPolicy, label: '当前路由策略' }] : []),
+      ]} onValueChange={routingPolicy => void mutate('routing', { pathId: 'agent.room.archive', params: { roomId: room.id }, body: { routingPolicy } })} /></label>
+      {room.routingPolicy === 'jev' ? <p>未指定负责人的新消息由 Jev 按公开责任选择伙伴。消息正文和伙伴责任会发送给 Jev；@ 指定与已有任务负责人优先，无法判断时保留原主控。</p> : null}
+
       <div className="paw-room-governance__form">
         <input aria-label="Room 名称" maxLength={120} onChange={(event) => setTitle(event.target.value)} value={title} />
         <input aria-label="Room 简介" maxLength={500} onChange={(event) => setDescription(event.target.value)} placeholder="简介" value={description} />

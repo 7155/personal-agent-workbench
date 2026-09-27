@@ -109,11 +109,19 @@
 .paw-os-satellite__feedback { margin: 10px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--paw-danger) 36%, var(--paw-line-soft)); color: var(--paw-danger); background: color-mix(in srgb, var(--paw-danger) 8%, var(--paw-panel)); font-size: 12px; }
 
 .paw-os-satellite--participant-chat {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--paw-panel-strong);
   color: var(--paw-ink);
+}
+
+/* Scope and recovery notices must never consume the transcript's flexible
+   row. Their number varies as live connection state changes. */
+.paw-os-satellite--participant-chat > * { flex: 0 0 auto; }
+.paw-os-satellite--participant-chat > .ccui-conversation-surface {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 /* Planet observer: the compact window is a read-only linear trace, not a
@@ -122,7 +130,8 @@
    shared clean-room card treatment. Dots identify message lanes; indentation
    and hairline separators carry the hierarchy when the window is small. */
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-conversation-surface {
-  --ccui-reading-width: 100%;
+  --ccui-reading-width: 720px;
+  --ccui-faint: var(--paw-muted);
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-transcript-lead {
   width: 100%;
@@ -130,8 +139,8 @@
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-turn {
   position: relative;
-  width: 100%;
-  padding: 7px 10px 8px 28px;
+  width: min(var(--ccui-reading-width), calc(100% - 32px));
+  padding: 20px 0;
   border-top: 1px solid var(--ccui-border);
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-virtual-row:first-child .ccui-turn {
@@ -139,8 +148,8 @@
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-turn::before {
   position: absolute;
-  top: 15px;
-  left: 12px;
+  top: 26px;
+  left: -12px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -168,12 +177,12 @@
   margin-top: 3px;
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-assistant-turn {
-  padding-bottom: 9px;
+  padding-bottom: 20px;
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-assistant-head {
   min-width: 0;
   flex-wrap: nowrap;
-  margin-bottom: 3px;
+  margin-bottom: 12px;
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-assistant-head > :is(strong, small) {
   min-width: 0;
@@ -187,7 +196,7 @@
   white-space: nowrap;
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-assistant-body > * + * {
-  margin-top: 4px;
+  margin-top: 12px;
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-thinking {
   margin: 2px 0 4px;
@@ -205,10 +214,10 @@
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-head {
   min-width: 0;
-  min-height: 24px;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  gap: 6px;
-  padding: 3px 0 3px 10px;
+  min-height: 38px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 8px 10px;
 }
 .paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-action {
   min-width: 0;
@@ -532,3 +541,29 @@
 .paw-background-browser__url { overflow-wrap: anywhere; font-size: 12px; color: var(--text-secondary); }
 .paw-background-browser > p { white-space: pre-wrap; }
 .paw-background-browser > small { color: var(--text-secondary); }
+
+.paw-participant-chat__scope { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border-bottom: 1px solid var(--color-border); }
+.paw-participant-chat__scope > div { display: inline-flex; flex: none; gap: 3px; padding: 3px; border-radius: 9px; background: var(--color-surface-subtle); }
+.paw-participant-chat__scope button { border: 0; padding: 5px 10px; border-radius: 6px; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.paw-participant-chat__scope button[aria-pressed='true'] { background: var(--color-surface); color: var(--color-text); box-shadow: 0 1px 3px #00000014; }
+.paw-participant-chat__scope button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.paw-participant-chat__scope p { flex: 1; min-width: 160px; margin: 0; font-size: 12px; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The observer is a reading surface, including when its window is maximized.
+   Keep text and activity labels on one scale without changing transcript rows. */
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] :is(.ccui-assistant-body, .ccui-user-text) { font-size: 15px; line-height: 1.75; letter-spacing: 0; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-assistant-head { align-items: center; gap: 8px; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-assistant-head strong { font-size: 14px; font-weight: 600; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] :is(.ccui-assistant-head small, .ccui-assistant-head time, .ccui-tool-meta) { font-size: 12px; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-kind { width: 18px; height: 18px; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-main { gap: 8px; flex-wrap: wrap; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-main strong { font-size: 13px; font-weight: 600; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-main > span { font-size: 12px; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-tool-action { padding-left: 38px; font-size: 12px; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .paw-jev-tool-records__trigger { margin-block: 8px; padding: 12px; background: var(--paw-panel-soft); border-color: transparent; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] .ccui-transcript-scroll { scrollbar-width: thin; scrollbar-color: var(--paw-line) transparent; }
+.paw-os-satellite--participant-chat[data-presentation='planet-observer'] ::selection { background: color-mix(in srgb, var(--paw-accent) 20%, var(--paw-panel)); color: var(--paw-ink); }

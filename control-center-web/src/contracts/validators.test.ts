@@ -71,6 +71,18 @@ describe('generated JSON contracts', () => {
     expect(parseContract('agent-session.v1', sessionFixture).id).toBe('agent-session-1');
   });
 
+  it('accepts the configured Memory model in the maintenance status', () => {
+    const status = {
+      ...maintenanceFixture,
+      modelCuration: {
+        ...maintenanceFixture.modelCuration,
+        requiredModel: 'openai-codex/gpt-6-luna',
+      },
+    };
+    expect(parseContract('agent-memory-maintenance-status.v1', status).modelCuration.requiredModel)
+      .toBe('openai-codex/gpt-6-luna');
+  });
+
   it('builds a stable schema index for every source contract', () => {
     expect(Object.keys(contractSchemas)).toHaveLength(170);
     expect(contractSchemas['trace-optimization.v1'].$id).toBe(

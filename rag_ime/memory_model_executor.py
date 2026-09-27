@@ -23,7 +23,7 @@ from rag_ime.pi.values import (
 
 
 MEMORY_CURATION_PROFILE = "MEMORY_CURATION"
-REQUIRED_MEMORY_MODEL_REFERENCE = "openai-codex/gpt-5.6-luna"
+DEFAULT_MEMORY_MODEL_REFERENCE = "openai-codex/gpt-5.6-luna"
 REQUIRED_MEMORY_THINKING_LEVEL = "max"
 MINIMUM_MEMORY_CONTEXT_TOKENS = 272_000
 MAXIMUM_MEMORY_PROMPT_CHARS = 1_000_000
@@ -40,6 +40,10 @@ class MemoryModelUnavailable(RuntimeError):
 
 class MemoryModelTimeout(MemoryModelUnavailable):
     """A resumable Memory Session did not settle inside its bounded lease."""
+
+
+class _ConfirmedMemoryTimeoutAbort(MemoryModelUnavailable):
+    """The exact timed-out model turn settled as our own drained abort."""
 
 
 class MemorySessionRuntime(Protocol):
@@ -110,11 +114,6 @@ class GovernedMemoryModelExecutor:
         self.provider = _model_part(self.provider, field="provider", maximum=80)
         self.model_id = _model_part(self.model_id, field="modelId", maximum=160)
         self.thinking_level = str(self.thinking_level or "").strip().lower()
-        if self.reference != REQUIRED_MEMORY_MODEL_REFERENCE:
-            raise MemoryModelUnavailable(
-                "memory curation requires the canonical live model "
-                f"{REQUIRED_MEMORY_MODEL_REFERENCE}; received {self.reference}"
-            )
         if self.thinking_level != REQUIRED_MEMORY_THINKING_LEVEL:
             raise MemoryModelUnavailable(
                 "memory curation requires thinking=max"
@@ -213,6 +212,15 @@ class GovernedMemoryModelExecutor:
                     ).fetchone()
                 assert row is not None
                 return candidate_run_id, row
+            if not self._run_row_matches_model_profile(row):
+                if str(row["state"]) == "running":
+                    raise MemoryModelUnavailable(
+                        "existing Memory run is active under a different frozen model profile"
+                    )
+                # Keep the old model's accepted requests and receipts frozen.
+                # A new configured model starts at the next stable attempt id.
+                attempt += 1
+                continue
             self._validate_run_row(row, frozen_hash=frozen_hash)
             if str(row["state"]) not in {"failed", "cancelled"}:
                 return candidate_run_id, row
@@ -838,6 +846,13 @@ class GovernedMemoryModelExecutor:
                 f"the request was not replayed ({_public_error(exc)})"
             ) from exc
         if terminal["state"] != "completed":
+            if (
+                str(terminal.get("error") or "").strip().lower() == "aborted"
+                and _own_timeout_abort_confirmed(row)
+            ):
+                raise _ConfirmedMemoryTimeoutAbort(
+                    "the timed-out Memory turn settled as our own abort"
+                )
             raise MemoryModelUnavailable(
                 "previously accepted Memory Session turn failed; "
                 "the request was not replayed: "
@@ -1163,10 +1178,17 @@ class GovernedMemoryModelExecutor:
                         reason_code=reason_code,
                     )
                 else:
-                    return self._recover_resumable_request(
-                        row,
-                        max_tokens=max_tokens,
-                    )
+                    try:
+                        return self._recover_resumable_request(
+                            row,
+                            max_tokens=max_tokens,
+                        )
+                    except _ConfirmedMemoryTimeoutAbort:
+                        row = self._reprepare_unrecoverable_accepted_request(
+                            row,
+                            isolated=isolated,
+                            reason_code="own_timeout_abort",
+                        )
             if str(row["state"]) == "resumable":
                 previous_session_id = str(row["session_id"] or "")
                 self._retire_existing_internal_session(previous_session_id)
@@ -1473,12 +1495,7 @@ class GovernedMemoryModelExecutor:
         *,
         frozen_hash: str,
     ) -> None:
-        if (
-            str(row["profile"]) != MEMORY_CURATION_PROFILE
-            or str(row["provider"]) != self.provider
-            or str(row["model_id"]) != self.model_id
-            or str(row["thinking_level"]) != self.thinking_level
-        ):
+        if not self._run_row_matches_model_profile(row):
             raise MemoryModelUnavailable(
                 "existing Memory run uses a different frozen model profile"
             )
@@ -1487,6 +1504,14 @@ class GovernedMemoryModelExecutor:
             raise MemoryModelUnavailable(
                 "existing Memory run input hash does not match the frozen batch"
             )
+
+    def _run_row_matches_model_profile(self, row: sqlite3.Row) -> bool:
+        return (
+            str(row["profile"]) == MEMORY_CURATION_PROFILE
+            and str(row["provider"]) == self.provider
+            and str(row["model_id"]) == self.model_id
+            and str(row["thinking_level"]) == self.thinking_level
+        )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -1583,7 +1608,7 @@ def reconcile_stale_memory_runtime_sessions(
 def split_memory_model_reference(value: object) -> tuple[str, str]:
     reference = " ".join(str(value or "").strip().split())
     if reference == "gpt/gpt-5.6-luna":
-        reference = REQUIRED_MEMORY_MODEL_REFERENCE
+        reference = DEFAULT_MEMORY_MODEL_REFERENCE
     provider, separator, model_id = reference.partition("/")
     if not separator:
         raise ValueError("memory model must be a provider/model reference")
@@ -1631,6 +1656,7 @@ def memory_curation_model_status(
     conn: sqlite3.Connection,
     *,
     limit: int = 8,
+    required_model: str = DEFAULT_MEMORY_MODEL_REFERENCE,
 ) -> dict[str, object]:
     """Expose persisted run/phase receipts without prompt or response contents."""
 
@@ -1675,7 +1701,7 @@ def memory_curation_model_status(
         "schemaVersion": "rag-ime.memory-curation-model-status.v1",
         "ok": True,
         "profile": MEMORY_CURATION_PROFILE,
-        "requiredModel": REQUIRED_MEMORY_MODEL_REFERENCE,
+        "requiredModel": required_model,
         "requiredThinkingLevel": REQUIRED_MEMORY_THINKING_LEVEL,
         "minimumContextTokens": MINIMUM_MEMORY_CONTEXT_TOKENS,
         "stateCounts": state_counts,
@@ -1890,6 +1916,37 @@ def _request_has_admission_evidence(row: sqlite3.Row) -> bool:
         return True
     admission = _json_object(row["receipt_json"]).get("admission")
     return isinstance(admission, Mapping) and admission.get("accepted") is True
+
+
+def _own_timeout_abort_confirmed(row: sqlite3.Row) -> bool:
+    if (
+        str(row["state"] or "") != "resumable"
+        or str(row["last_error"] or "") != "memory_curation_timeout"
+    ):
+        return False
+    receipt = _json_object(row["receipt_json"])
+    admission = receipt.get("admission")
+    cancellation = receipt.get("cancellation")
+    if not isinstance(admission, Mapping) or not isinstance(cancellation, Mapping):
+        return False
+    lifecycle = cancellation.get("lifecycle")
+    session_id = str(row["session_id"] or "")
+    turn_id = str(row["turn_id"] or "")
+    return bool(
+        session_id
+        and turn_id
+        and admission.get("accepted") is True
+        and admission.get("sessionId") == session_id
+        and admission.get("turnId") == turn_id
+        and admission.get("clientMessageId") == str(row["request_id"])
+        and cancellation.get("schemaVersion")
+        == "rag-ime.pi-session-abort-receipt.v1"
+        and cancellation.get("sessionId") == session_id
+        and cancellation.get("turnId") == turn_id
+        and isinstance(lifecycle, Mapping)
+        and lifecycle.get("drained") is True
+        and lifecycle.get("idle") is True
+    )
 
 
 def _request_has_explicit_pre_admission_rejection(row: sqlite3.Row) -> bool:

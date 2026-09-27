@@ -29,7 +29,12 @@ from rag_ime.knowledge_library import (
 )
 from rag_ime.knowledge_library.dense import dense_index_from_env
 from rag_ime.knowledge_library.models import DocumentParseError
-from rag_ime.knowledge_library.parsers import BuiltinDocumentParser, MinerULocalParser, ZipSafetyLimits, inspect_mineru_zip
+from rag_ime.knowledge_library.parsers import (
+    BuiltinDocumentParser,
+    MinerULocalParser,
+    ZipSafetyLimits,
+    inspect_mineru_zip,
+)
 from rag_ime.knowledge_library.service import _chunk_block_heading, _chunk_strategy_blocks
 
 
@@ -228,6 +233,29 @@ class KnowledgeLibraryServiceTests(unittest.TestCase):
         self.assertEqual("mineru_disabled", document["error"]["code"])
         self.assertEqual("failed", self.service.list_jobs(base_id=base["id"])["jobs"][0]["status"])
 
+    def test_parser_noise_is_rejected_before_chunking(self) -> None:
+        class NoiseParser:
+            def supports(self, _path: Path) -> bool:
+                return True
+
+            def parse(self, _path: Path, *, mode: str = "auto") -> ParsedDocument:
+                return ParsedDocument(text=" \n\t\n", provider="fixture")
+
+        service = KnowledgeLibraryService(
+            KnowledgeLibraryConfig(self.root / "ParserQuality"),
+            parser_router=NoiseParser(),
+        )
+        base = service.create_base("Parser quality")
+        source = self.root / "noise.md"
+        source.write_text("source body", encoding="utf-8")
+
+        document = service.import_document(base["id"], source)
+
+        self.assertEqual("failed", document["status"])
+        self.assertEqual("empty_document", document["error"]["code"])
+        self.assertEqual(0, document["chunkCount"])
+        self.assertEqual("failed", service.list_jobs(base_id=base["id"])["jobs"][0]["status"])
+
     def test_builtin_parser_extracts_modern_office_packages(self) -> None:
         fixtures = {
             ".docx": {
@@ -422,6 +450,97 @@ class KnowledgeLibraryServiceTests(unittest.TestCase):
         self.assertEqual("failed", current["status"])
         self.assertEqual("cancelled", current["error"]["code"])
         self.assertEqual(0, current["chunkCount"])
+
+    def test_cancellation_after_projection_commit_cannot_become_success(self) -> None:
+        projection_started = threading.Event()
+        release_projection = threading.Event()
+
+        class BlockingDenseIndex:
+            def replace_document(self, _document_id: str, _chunks: object) -> None:
+                projection_started.set()
+                self.assert_release()
+
+            def assert_release(self) -> None:
+                if not release_projection.wait(timeout=2):
+                    raise RuntimeError("test projection was not released")
+
+            def delete_document(self, _document_id: str) -> None:
+                return None
+
+            def search(self, _query: str, *, base_ids: object, limit: int, document_ids: object = ()) -> tuple[()]:
+                return ()
+
+            def status(self) -> dict[str, object]:
+                return {"available": True}
+
+        service = KnowledgeLibraryService(
+            KnowledgeLibraryConfig(self.root / "CancelledProjection"),
+            dense_index=BlockingDenseIndex(),
+            background_jobs=True,
+        )
+        self.addCleanup(service.close)
+        base = service.create_base("Cancelled projection")
+        document = service.import_document(base["id"], self._document("cancel-projection.md"))
+        self.assertTrue(projection_started.wait(timeout=2))
+        job = service.list_jobs(base_id=base["id"])["items"][0]
+
+        cancelled = service.cancel_job(job["jobId"], base_id=base["id"])["job"]
+        release_projection.set()
+        service.close(wait=True)
+
+        self.assertEqual("cancelled", cancelled["status"])
+        self.assertEqual("cancelled", service.store.get_job(job["jobId"])["status"])
+        self.assertEqual("failed", service.get_document(document["documentId"])["status"])
+
+        # Repeating an old cancellation must not fence a newer successful
+        # retry, even though get_job joins the current document revision.
+        retried = service.retry_document(document["documentId"])
+        self.assertEqual("ready", retried["status"])
+        service.cancel_job(job["jobId"], base_id=base["id"])
+        current = service.get_document(document["documentId"])
+        self.assertEqual(retried["revision"], current["revision"])
+        self.assertEqual("ready", current["status"])
+
+    def test_retry_supersedes_a_stale_failed_attempt(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        calls = 0
+
+        class RetryParser:
+            def parse(self, _path: Path, *, mode: str = "auto") -> ParsedDocument:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    started.set()
+                    release.wait(timeout=2)
+                    raise RuntimeError("old attempt failed after retry")
+                return ParsedDocument(text="# Retry\n\nThe newer attempt succeeded.", provider="retry-fixture")
+
+        service = KnowledgeLibraryService(
+            KnowledgeLibraryConfig(self.root / "RetryFencing"),
+            parser_router=RetryParser(),
+            background_jobs=True,
+        )
+        self.addCleanup(service.close)
+        base = service.create_base("Retry fencing")
+        document = service.import_document(base["id"], self._document("retry-fencing.md"))
+        self.assertTrue(started.wait(timeout=1))
+        retried = service.retry_document(document["documentId"])
+        self.assertEqual(2, retried["revision"])
+        release.set()
+
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            current_jobs = service.list_jobs(base_id=base["id"])["items"]
+            if any(item["revision"] == 2 and item["status"] == "succeeded" for item in current_jobs):
+                break
+            time.sleep(0.01)
+        jobs = service.list_jobs(base_id=base["id"])["items"]
+        by_revision = {job["revision"]: job for job in jobs}
+        self.assertEqual("superseded", by_revision[1]["status"])
+        self.assertEqual("stale_result_dropped", by_revision[1]["stage"])
+        self.assertEqual("succeeded", by_revision[2]["status"])
+        self.assertEqual("ready", service.get_document(document["documentId"])["status"])
 
     def test_running_job_is_recovered_after_worker_restart(self) -> None:
         root = self.root / "RecoveredKnowledge"

@@ -1901,6 +1901,7 @@ const coordinatorToolSpecs: ToolSpec[] = [
     },
     guidelines: [
       "Use start only for long-lived servers, long builds, or commands that must continue while the Agent works; keep short commands on bash.",
+      "Keep each command at most 2,000 characters; split longer checks into separate calls.",
       "start and cancel keep the workspace approval boundary. list, status, and logs are read-only.",
       "Use the returned jobId for status, logs, and cancel. Logs are cursor-based and bounded.",
       "Interactive stdin is intentionally unavailable. Do not wrap the command with &, nohup, tmux, or another process manager.",
@@ -1949,6 +1950,7 @@ const coordinatorToolSpecs: ToolSpec[] = [
     guidelines: [
       "An explicit user execution request may proceed to an in-scope command. Todo tracks progress but grants no authority; read-only mode, workspace scope, network policy, command risk, and the existing action approval policy remain authoritative.",
       "Use read, grep, find and ls for ordinary inspection; use bash for builds, tests and diagnostics.",
+      "Keep each command at most 2,000 characters; split longer checks into separate calls.",
       "Use edit, write, or workspace_patch for file changes; do not wrap edits in shell commands.",
       "Do not use sleep or polling to wait for another Session or Room participant; use Agent events and status instead.",
       "Run an exact project command when one is provided. Do not include credentials or privilege commands.",

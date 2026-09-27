@@ -23,6 +23,8 @@ export interface ToolCallBlock {
   input?: string;
   output?: string;
   status: ToolStatus;
+  /** Transport timeout is not proof that an already-sent operation failed. */
+  executionOutcome?: 'applied' | 'unknown' | 'not_started';
   startedAt?: number;
   endedAt?: number;
 }
@@ -69,6 +71,10 @@ export interface AssistantMessage {
   error?: string;
   /** PAWOS addition: which Runtime actor published this loop. */
   actor?: string;
+  /** Stable participant identity; display names never determine avatar ownership. */
+  actorId?: string;
+  /** Exact source Session published with this Room card; absent if unbound or conflicting. */
+  actorSessionId?: string;
   /** PAWOS addition: secondary actor line (collaboration role, tool owner). */
   actorRole?: string;
   /** PAWOS addition: stable Runtime turn identity behind this card. */

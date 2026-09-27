@@ -20,8 +20,8 @@ import type { UiAgentEvent } from '@/contracts/ui-events';
 interface AgentLiveStore {
   projections: Record<string, AgentProjectionState>;
   ensure(sessionId: string): void;
-  hydrate(sessionId: string, value: unknown): void;
-  hydrateSnapshot(sessionId: string, snapshot: AgentSnapshot): void;
+  hydrate(sessionId: string, value: unknown): boolean;
+  hydrateSnapshot(sessionId: string, snapshot: AgentSnapshot): boolean;
   applyEvents(sessionId: string, events: readonly UiAgentEvent[]): boolean;
   applyBackgroundJobReceipt(sessionId: string, receipt: unknown): boolean;
   appendOptimistic(
@@ -76,11 +76,15 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
     }));
   },
   hydrate(sessionId, value) {
-    get().hydrateSnapshot(sessionId, agentSnapshotFromResponse(value));
+    if (isRecord(value) && (
+      value.ok === false
+      || (typeof value.sessionId === 'string' && value.sessionId !== sessionId)
+    )) return false;
+    return get().hydrateSnapshot(sessionId, agentSnapshotFromResponse(value));
   },
   hydrateSnapshot(sessionId, snapshot) {
     const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
-    if (snapshot.lastSequence < current.lastSequence) return;
+    if (snapshot.lastSequence < current.lastSequence) return false;
     // A snapshot with no messages can only be a transient/partial projection
     // failure for a Session that already has durable history. Rebuild the
     // cursor and terminal/status metadata against the last confirmed
@@ -114,10 +118,11 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       && !current.needsSnapshot
       && isTerminalProjection(current)
       && !isTerminalProjection(projection)
-    ) return;
+    ) return false;
     set((state) => ({
       projections: { ...state.projections, [sessionId]: projection },
     }));
+    return true;
   },
   applyEvents(sessionId, events) {
     const current = get().projections[sessionId] ?? createAgentProjection(sessionId);

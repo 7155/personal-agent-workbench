@@ -435,7 +435,7 @@ class AgentSessionStore:
         return self.get(session_id)
 
     def get(self, session_id: str) -> dict[str, object]:
-        with self._connect() as conn:
+        with self._read_connect() as conn:
             return self._get(conn, session_id)
 
     @staticmethod
@@ -3410,6 +3410,33 @@ class AgentSessionStore:
                 ),
             )
         return self.get_approval(approval_id, now_ms=timestamp)
+
+    def find_tool_call_approvals(
+        self,
+        session_id: str,
+        tool_call_id: str,
+        tool_name: str,
+    ) -> list[dict[str, object]]:
+        """Read an exact request's existing receipts without expiring or executing it.
+
+        Two rows are sufficient to reject an ambiguous historical binding. Do
+        not pick the newest receipt or search another Session on a miss.
+        """
+
+        self.get(session_id)
+        if not tool_call_id or len(tool_call_id) > 512:
+            raise ValueError("toolCallId must contain between 1 and 512 characters")
+        if not tool_name or len(tool_name) > 120:
+            raise ValueError("tool must contain between 1 and 120 characters")
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM agent_approvals WHERE session_id = ? AND tool_call_id = ? "
+                "ORDER BY requested_at_ms ASC LIMIT 2",
+                (session_id, tool_call_id),
+            ).fetchall()
+        if any(str(row["tool_name"]) != tool_name for row in rows):
+            raise ValueError("approval tool does not match the requested tool")
+        return [_approval_payload(row) for row in rows]
 
     def get_approval(self, approval_id: str, *, now_ms: int | None = None) -> dict[str, object]:
         timestamp = _timestamp(now_ms)

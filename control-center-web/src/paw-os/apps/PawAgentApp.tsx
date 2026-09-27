@@ -43,6 +43,10 @@ import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/featu
 import { PawSessionWorkspace } from './PawSessionWorkspace';
 import { PawRoomWorkspace } from './PawRoomWorkspace';
 import { PawAgentHome } from './PawAgentHome';
+import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-workspace/AgentModeSwitch';
+import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
+import { OrganizationWorkspace } from '@/features/semantic-workspace/OrganizationWorkspace';
+import '@/features/semantic-workspace/semantic-workspace.css';
 import { readSessionCatalog } from './session-catalog';
 import { PawWindowLeadingPortal, usePawWindowLeadingChromeTarget } from '../shell/PawWindowChrome';
 import { TraceAgentHandoffButton, type TraceAgentHandoffInput } from '@/features/trace-agent/handoff';
@@ -78,6 +82,10 @@ export function PawAgentApp({
     target?.kind === 'participant' ? target.roomId : undefined,
   ));
   const [railOpen, setRailOpen] = useState(false);
+  const [interfaceMode, setInterfaceMode] = useAgentInterfaceMode();
+  const [organizationOpen, setOrganizationOpen] = useState(false);
+  const organizationToggleRef = useRef<HTMLButtonElement>(null);
+  const directoryNeeded = railOpen || (interfaceMode === 'jev' && organizationOpen);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -104,6 +112,7 @@ export function PawAgentApp({
   const targetId = target?.id;
   const targetRoomId = target?.kind === 'participant' ? target.roomId : undefined;
   const selectedSessionId = selection.kind === 'session' ? selection.id : '';
+  const selectedRoomId = selection.kind === 'room' ? selection.id : '';
   /* 反向证据链只对它自己指名的那段 Session 生效；在同一扇窗里换一段
      Session 之后，落点就过期了，不该继续劫持视图。 */
   const evidenceFocus = useMemo(() => {
@@ -126,96 +135,113 @@ export function PawAgentApp({
     setRailOpen(false);
   }, [initialRoute, targetId, targetKind, targetRoomId]);
 
-  const loadCatalog = useCallback(async () => {
+  const loadCatalog = useCallback(async (controller: AbortController) => {
     const requestId = ++catalogRequestRef.current;
+    const isCurrent = () => catalogRequestRef.current === requestId && !controller.signal.aborted;
     setLoading(true);
     setLoadError('');
-    const includeRooms = selection.kind !== 'session' || railOpen;
+    const includeSessions = selection.kind !== 'room' || directoryNeeded;
+    const includeRooms = selection.kind !== 'session' || directoryNeeded;
     const includeRoleModels = selection.kind === 'new';
-    const [sessionResult, roomResult, roleResult, modelResult] = await Promise.allSettled([
-      readSessionCatalog(transport, showArchived, () => catalogRequestRef.current === requestId),
+    const sessionRead = includeSessions
+      ? readSessionCatalog(transport, showArchived, isCurrent, controller.signal)
+      : Promise.resolve(undefined);
+    /* Room and role metadata can render while a visible Session catalog pages
+     * through older records. Every result still belongs to this request id. */
+    const metadataRead = Promise.allSettled([
       includeRooms
-        ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' } })
+        ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' }, signal: controller.signal })
         : Promise.resolve(undefined),
-      transport.request({ pathId: 'agent.roles.list' }),
+      transport.request({ pathId: 'agent.roles.list', signal: controller.signal }),
       includeRoleModels
-        ? transport.request({ pathId: 'agent.role.models' })
+        ? transport.request({ pathId: 'agent.role.models', signal: controller.signal })
         : Promise.resolve(undefined),
-    ]);
-    if (catalogRequestRef.current !== requestId) return;
-    const failures = [sessionResult, roleResult,
+    ]).then(([roomResult, roleResult, modelResult]) => {
+      if (!isCurrent()) return [roomResult, roleResult, modelResult] as const;
+      startTransition(() => {
+        if (!isCurrent()) return;
+        if (roomResult.status === 'fulfilled' && roomResult.value !== undefined) {
+          const listed = roomItems(roomResult.value).filter((item) => (
+            !item.ownerAppId || item.id === selectedRoomId
+          ));
+          const listedIds = new Set(listed.map((item) => item.id));
+          for (const id of Object.keys(optimisticRoomsRef.current)) {
+            if (listedIds.has(id)) delete optimisticRoomsRef.current[id];
+          }
+          setRooms([
+            ...Object.values(optimisticRoomsRef.current),
+            ...listed.filter((item) => !optimisticRoomsRef.current[item.id]),
+          ]);
+        }
+        if (roleResult.status === 'fulfilled') setPersonas(roleItems(roleResult.value));
+        if (modelResult.status === 'fulfilled' && modelResult.value !== undefined) {
+          const catalog = parsePiModelCatalogOptions(modelResult.value);
+          setModels(catalog.models);
+          setDefaultModel(catalog.selectedReference);
+        }
+      });
+      return [roomResult, roleResult, modelResult] as const;
+    });
+    const [sessionResult] = await Promise.allSettled([sessionRead]);
+    const [roomResult, roleResult, modelResult] = await metadataRead;
+    if (!isCurrent()) return;
+    const failures = [roleResult,
+      ...(includeSessions ? [sessionResult] : []),
       ...(includeRooms ? [roomResult] : []),
       ...(includeRoleModels ? [modelResult] : []),
-    ]
-      .filter((result) => result.status === 'rejected').length;
-    /* A mock/local transport can resolve all four reads in the same turn. Put
-     * the directory projection behind React's transition lane so it cannot
-     * steal the click frame that opened the Agent window. */
+    ].filter((result) => result.status === 'rejected').length;
+    /* Keep the full Session directory and its completion state together, but
+     * do not make Room/role projection wait for the last Session page. */
     startTransition(() => {
-      if (catalogRequestRef.current !== requestId) return;
+      if (!isCurrent()) return;
       if (sessionResult.status === 'fulfilled') {
         /* Room Partner Sessions stay out of the ordinary work-record rail, but
          * a planet window must retain the one explicitly targeted Session so it
          * can render the same complete workspace as any other Session. */
-        const listed = sessionItems(sessionResult.value, { includeAppOwned: true }).filter((item) => (
+        const listed = sessionResult.value === undefined ? null : sessionItems(sessionResult.value, { includeAppOwned: true }).filter((item) => (
           !item.roomParticipant || item.id === selectedSessionId
         ));
-        const listedIds = new Set(listed.map((item) => item.id));
-        for (const id of Object.keys(optimisticSessionsRef.current)) {
-          if (listedIds.has(id)) delete optimisticSessionsRef.current[id];
+        if (listed) {
+          const listedIds = new Set(listed.map((item) => item.id));
+          for (const id of Object.keys(optimisticSessionsRef.current)) {
+            if (listedIds.has(id)) delete optimisticSessionsRef.current[id];
+          }
+          setSessions([
+            ...Object.values(optimisticSessionsRef.current),
+            ...listed.filter((item) => !optimisticSessionsRef.current[item.id]),
+          ]);
         }
-        setSessions([
-          ...Object.values(optimisticSessionsRef.current),
-          ...listed.filter((item) => !optimisticSessionsRef.current[item.id]),
-        ]);
-      }
-      if (roomResult.status === 'fulfilled' && roomResult.value !== undefined) {
-        const listed = roomItems(roomResult.value).filter((item) => (
-          !item.ownerAppId || item.id === (selection.kind === 'room' ? selection.id : '')
-        ));
-        const listedIds = new Set(listed.map((item) => item.id));
-        for (const id of Object.keys(optimisticRoomsRef.current)) {
-          if (listedIds.has(id)) delete optimisticRoomsRef.current[id];
-        }
-        setRooms([
-          ...Object.values(optimisticRoomsRef.current),
-          ...listed.filter((item) => !optimisticRoomsRef.current[item.id]),
-        ]);
-      }
-      if (roleResult.status === 'fulfilled') setPersonas(roleItems(roleResult.value));
-      if (modelResult.status === 'fulfilled' && modelResult.value !== undefined) {
-        const catalog = parsePiModelCatalogOptions(modelResult.value);
-        setModels(catalog.models);
-        setDefaultModel(catalog.selectedReference);
       }
       if (failures) setLoadError(failures === 4 ? 'Agent 工作记录暂时无法读取。' : '部分 Agent 目录暂时不可用。');
       setLoading(false);
     });
-  }, [railOpen, selectedSessionId, selection.kind, showArchived, transport]);
+  }, [directoryNeeded, selectedRoomId, selectedSessionId, selection.kind, showArchived, transport]);
 
   useEffect(() => {
-    if (surfaceActive === false || (selection.kind === 'session' && !railOpen)) {
+    if (surfaceActive === false || (selection.kind === 'session' && !directoryNeeded)) {
       catalogRequestRef.current += 1;
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     /* Let PawAppProcess' boot surface and the Agent home commit first. The
      * catalog remains truthful, but no longer runs inside the Dock click's
      * first paint budget. */
     const frame = window.requestAnimationFrame(() => {
-      if (!cancelled) void loadCatalog();
+      if (!cancelled) void loadCatalog(controller);
     });
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
       catalogRequestRef.current += 1;
+      controller.abort();
     };
-  }, [catalogRevision, loadCatalog, railOpen, selection.kind, surfaceActive]);
+  }, [catalogRevision, loadCatalog, directoryNeeded, selection.kind, surfaceActive]);
   useEffect(() => {
     if (
       surfaceActive === false
       || selection.kind !== 'session'
-      || railOpen
+      || directoryNeeded
       || !selectedSessionId
     ) {
       return;
@@ -247,7 +273,7 @@ export function PawAgentApp({
       window.cancelAnimationFrame(frame);
       selectedSessionRequestRef.current += 1;
     };
-  }, [railOpen, selectedSessionId, selection.kind, surfaceActive, transport]);
+  }, [directoryNeeded, selectedSessionId, selection.kind, surfaceActive, transport]);
 
   useEffect(() => {
     if (!railOpen) return;
@@ -288,6 +314,9 @@ export function PawAgentApp({
   const selectedRoom = selection.kind === 'room'
     ? rooms.find((item) => item.id === selection.id)
     : undefined;
+  const roomEntry = useRoomEntryMode({ roomId: selection.kind === 'room' ? selection.id : '',
+    roomKind: selectedRoom?.roomKind, transport,
+  });
 
   useEffect(() => {
     if (!surfaceIdentity?.windowId || !desktop?.bindAgentMain) return;
@@ -360,7 +389,24 @@ export function PawAgentApp({
 
   const railToggle = <button aria-controls="paw-agent-work-records" aria-expanded={railOpen} aria-label={railOpen ? '收起工作记录' : '打开工作记录'} className="paw-agent-rail-toggle" onClick={() => setRailOpen((open) => !open)} ref={railToggleRef} type="button"><PanelLeft size={16} /></button>;
   return (
-    <section aria-label="Agent 工作台" className="paw-agent-app" data-rail-open={railOpen || undefined} data-selection={selection.kind} role="region">
+    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} role="region">
+      <header className="paw-agent-modebar" inert={railOpen}>
+        {interfaceMode === 'jev' && selection.kind === 'room' ? <Menu>
+          <MenuTrigger asChild><button ref={organizationToggleRef} aria-label="工作台选项" title="工作台选项" type="button"><MoreHorizontal size={18} /></button></MenuTrigger>
+          <MenuContent align="end">
+            <MenuItem onSelect={() => setSelection({ kind: 'new' })}>返回复工首页</MenuItem>
+            <MenuItem onSelect={() => setOrganizationOpen(open => !open)}>工作空间</MenuItem>
+            <MenuSeparator />
+            <MenuItem onSelect={() => setInterfaceMode('traditional')}>切换到传统界面</MenuItem>
+            {roomEntry.error ? <MenuItem onSelect={roomEntry.refresh}>工作记录待同步 · 重试</MenuItem> : null}
+          </MenuContent>
+        </Menu> : <>
+        {selection.kind === 'room' && roomEntry.mode && roomEntry.error ? <button type="button" title={roomEntry.error} onClick={roomEntry.refresh}>工作记录待同步 · 重试</button> : null}
+        {interfaceMode === 'jev' && selection.kind !== 'new' ? <button type="button" onClick={() => setSelection({ kind: 'new' })}>返回复工首页</button> : null}
+        <AgentModeSwitch mode={interfaceMode} onChange={setInterfaceMode} />
+        {interfaceMode === 'jev' ? <button ref={organizationToggleRef} aria-expanded={organizationOpen} onClick={() => setOrganizationOpen(open => !open)} type="button">工作空间</button> : null}
+        </>}
+      </header>
       {windowChromeTarget ? <PawWindowLeadingPortal>{railToggle}</PawWindowLeadingPortal> : null}
       <aside aria-label="Agent 工作记录" className="paw-agent-rail" id="paw-agent-work-records" inert={!railOpen}>
         <header>
@@ -420,8 +466,10 @@ export function PawAgentApp({
       {windowChromeTarget ? null : railToggle}
       {railOpen ? <button aria-label="关闭工作记录" className="paw-agent-rail-backdrop" onClick={closeRail} type="button" /> : null}
       <section className="paw-agent-stage" inert={railOpen}>
+        <div className="paw-agent-content">
         {selection.kind === 'new' ? (
           <PawAgentHome
+            interfaceMode={interfaceMode}
             catalogError={loadError}
             catalogLoading={loading}
             defaultModel={defaultModel}
@@ -470,9 +518,11 @@ export function PawAgentApp({
               setSessions((current) => current.map((item) => item.id === updated.id ? updated : item));
             }}
           />
-        ) : selection.kind === 'room' ? (
+        ) : selection.kind === 'room' && roomEntry.mode ? (
           <PawRoomWorkspace
             active={surfaceActive ?? true}
+            interfaceMode={roomEntry.mode}
+            onJevEvents={roomEntry.onEvents}
             initialDraft={selection.draft}
             initialError={selection.error}
             key={`room:${selection.id}`}
@@ -488,7 +538,17 @@ export function PawAgentApp({
                 : [updated, ...current]);
             }}
           />
-        ) : null}
+        ) : selection.kind === 'room' ? <RailNotice text={roomEntry.error || '正在读取 Room 工作记录…'} action={roomEntry.error ? roomEntry.refresh : undefined} /> : null}
+        </div>
+        {interfaceMode === 'jev' && organizationOpen ? <OrganizationWorkspace
+          spaceKeys={[...sessions.map(item => `session:${item.id}`), ...rooms.map(item => `room:${item.id}`)]}
+          selectedKey={selection.kind === 'new' ? '' : `${selection.kind}:${selection.id}`}
+          onClose={() => { setOrganizationOpen(false); organizationToggleRef.current?.focus(); }}
+          onOpen={key => {
+            const separator = key.indexOf(':'); const kind = key.slice(0, separator); const id = key.slice(separator + 1);
+            if (kind === 'session' || kind === 'room') { setSelection({ kind, id }); setOrganizationOpen(false); }
+          }}
+        /> : null}
       </section>
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
         if (!open && !deleting) {

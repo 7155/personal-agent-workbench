@@ -6,6 +6,12 @@ import { EarthMap } from './EarthMap';
 import { updateSelection, type MapSelection } from './map-selection';
 import type { ProjectLayer } from './layer-catalog';
 const originalSvg=L.Browser.svg;
+function openDrawing() { fireEvent.click(screen.getByRole('button', { name: '绘制' })); }
+function openSelectionActions() {
+  const trigger = screen.getByRole('button', { name: '所选操作' });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+}
+
 afterEach(()=>{cleanup();Reflect.set(L.Browser,'svg',originalSvg);vi.restoreAllMocks();vi.unstubAllGlobals();localStorage.clear();});
 it.each((['project', 'cloud', 'local', 'draft'] as const).flatMap(source => (['polygon', 'polyline'] as const).map(kind => ({ source, kind }))))('routes real layer clicks through an existing $source polygon in $kind mode without duplicating ordinary selection', ({ source, kind }) => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -35,16 +41,20 @@ it.each((['project', 'cloud', 'local', 'draft'] as const).flatMap(source => (['p
   clickLayer([30.05, 120.05]);
   expect(layerClicks).toHaveBeenCalledWith(expect.objectContaining({ originalEvent: expect.any(MouseEvent) }));
   expect(selected).toHaveBeenCalledTimes(1);
-  expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'existing', geometry: feature.geometry }), 'toggle');
+  expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'existing', geometry: feature.geometry }), 'replace');
   expect(mapClicks).not.toHaveBeenCalled();
   selected.mockClear(); layerClicks.mockClear();
   const positions: L.LatLngTuple[] = [[30.02, 120.02], [30.02, 120.08], [30.06, 120.09], [30.08, 120.05], [30.06, 120.02]];
   for (let index = 1; index < positions.length; index += 1) expect(map.latLngToContainerPoint(positions[index]).distanceTo(map.latLngToContainerPoint(positions[index - 1]))).toBeGreaterThan(50);
+  openDrawing();
   fireEvent.click(screen.getByRole('button', { name: kind === 'polygon' ? '面' : '线' }));
   for (const position of positions) clickLayer(position);
   expect(layerClicks).toHaveBeenCalledTimes(5);
   expect(mapClicks).toHaveBeenCalledTimes(5);
   expect(screen.getByRole('status')).toHaveTextContent('5 个点');
+  fireEvent.click(screen.getByRole('button',{name:'撤销顶点'}));
+  expect(screen.getByRole('status')).toHaveTextContent('4 个点');
+  act(()=>{map.fire('mousemove',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('click')});});
   expect(selected).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '完成' }));
   expect(selected).toHaveBeenCalledTimes(1);
@@ -64,16 +74,20 @@ it('draws more than three vertices using the real Geoman handler and persists th
   render(<EarthMap run={null} selection={[]} workspaceKey="polygon-test" onActivity={vi.fn()} onSelect={selected}/>);
   const map=factory.mock.results[0].value as L.Map;
   act(()=>{map.setView([30.05,120.05],14);});
-  expect(screen.getByRole('button',{name:'面'})).toHaveAttribute('aria-pressed','false');
-  fireEvent.click(screen.getByRole('button',{name:'面'}));
-  expect(screen.getByRole('button',{name:'面'})).toHaveAttribute('aria-pressed','true');
-  expect(screen.getByRole('button',{name:'线'})).toHaveAttribute('aria-pressed','false');
+  expect(screen.queryByRole('button', { name: '面' })).not.toBeInTheDocument();
+  openDrawing();
+  fireEvent.click(screen.getByRole('button', { name: '面' }));
+  expect(screen.getByText('绘制面')).toBeVisible();
+  expect(screen.queryByRole('button', { name: '线' })).not.toBeInTheDocument();
   for(const [lat,lng] of [[30,120],[30,120.1],[30.1,120.15],[30.15,120.05],[30.08,119.95]]) {
     act(()=>{map.fire('mousemove',{latlng:L.latLng(lat,lng),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(lat,lng),originalEvent:new MouseEvent('click')});});
   }
   expect(screen.getByRole('status')).toHaveTextContent('5 个点');
+  fireEvent.click(screen.getByRole('button',{name:'撤销顶点'}));
+  expect(screen.getByRole('status')).toHaveTextContent('4 个点');
+  act(()=>{map.fire('mousemove',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(30.08,119.95),originalEvent:new MouseEvent('click')});});
   fireEvent.click(screen.getByRole('button',{name:'完成'}));
-  expect(screen.getByRole('button',{name:'面'})).toHaveAttribute('aria-pressed','false');
+  expect(screen.getByRole('button', { name: '选择' })).toHaveAttribute('aria-pressed', 'true');
   const feature=selected.mock.lastCall?.[0];
   expect(feature.geometry.type).toBe('Polygon');expect(feature.geometry.coordinates[0]).toHaveLength(6);
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:polygon-test')!)[0].id).toBe(feature.id);
@@ -91,6 +105,7 @@ it('keeps edit and cut in a cancellable draft; saved cut retains identity and a 
   act(()=>{owned!.setLatLngs([[30,120],[30,120.2],[30.1,120.1],[30.1,120]]);owned!.fire('pm:edit');});
   fireEvent.click(screen.getByRole('button',{name:'取消'}));
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:cut-test')!)[0]).toEqual(feature);
+  openSelectionActions();
   fireEvent.click(screen.getByRole('button',{name:'挖洞'}));
   // Draw a real cut polygon through Geoman; it computes the polygon difference.
   for(const [lat,lng] of [[30.02,120.02],[30.02,120.04],[30.04,120.04],[30.04,120.02]])act(()=>{map.fire('mousemove',{latlng:L.latLng(lat,lng),originalEvent:new MouseEvent('mousemove')});map.fire('click',{latlng:L.latLng(lat,lng),originalEvent:new MouseEvent('click')});});
@@ -174,9 +189,11 @@ it.each(['run:analysis:result.geojson', 'layer:missing'])('requires a project co
   // One read-only owner must also block a mixed selection of saved and result features.
   const view = render(<EarthMap {...props} selection={[saved, readOnly]} />);
   expect(screen.getByRole('button', { name: '编辑所选' })).toBeDisabled();
+  openSelectionActions();
   expect(screen.getByRole('button', { name: '挖洞' })).toBeDisabled();
   expect(screen.getByRole('status')).toHaveTextContent('需先保存为项目图层');
   fireEvent.click(screen.getByRole('button', { name: '编辑所选' }));
+  openSelectionActions();
   fireEvent.click(screen.getByRole('button', { name: '挖洞' }));
   expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument();
   expect(onUpdateFeatures).not.toHaveBeenCalled();
@@ -190,8 +207,9 @@ it.each(['run:analysis:result.geojson', 'layer:missing'])('requires a project co
 
   view.rerender(<EarthMap {...props} selection={[saved]} />);
   expect(screen.getByRole('button', { name: '编辑所选' })).toBeEnabled();
+  openSelectionActions();
   expect(screen.getByRole('button', { name: '挖洞' })).toBeEnabled();
-  expect(screen.getByRole('status')).not.toHaveTextContent('需先保存为项目图层');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
 it('multi-selects table rows by typed ID and layer and does not move the map when unchecking', async () => {
@@ -212,7 +230,9 @@ it('multi-selects table rows by typed ID and layer and does not move the map whe
   const map = factory.mock.results[0].value as L.Map;
   const fitBounds = vi.spyOn(map, 'fitBounds');
   // The table's checkboxes retain multi-selection even in single-click map mode.
-  fireEvent.click(screen.getByRole('button', { name: '多选开' }));
+  openDrawing();
+  expect(screen.getByRole('checkbox', { name: '连续多选' })).not.toBeChecked();
+  openDrawing();
   fireEvent.click(screen.getByRole('tab', { name: '属性表' }));
   const numericCheckbox = () => within(screen.getByRole('row', { name: /数字 ID 样本/ })).getByRole('checkbox');
   const textCheckbox = () => within(screen.getByRole('row', { name: /文本 ID 样本/ })).getByRole('checkbox');
@@ -257,7 +277,8 @@ it('retains a failed project geometry draft and only publishes selection after a
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
   expect(screen.getByRole('button', { name: '取消' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: '挖洞' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: '挖洞' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '绘制设置' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   expect(onUpdateFeatures).toHaveBeenCalledTimes(1);
   expect(selected).not.toHaveBeenCalled();
@@ -286,6 +307,7 @@ it('restores a saved project polygon when a real Geoman cut would remove it comp
   render(<EarthMap run={null} selection={[feature]} projectLayers={[layer]} workspaceKey="full-cut" onActivity={vi.fn()} onSelect={selected} onUpdateFeatures={onUpdateFeatures} />);
   const map = factory.mock.results[0].value as L.Map;
   act(() => { map.setView([30.05, 120.05], 14); });
+  openSelectionActions();
   fireEvent.click(screen.getByRole('button', { name: '挖洞' }));
   for (const [lat, lng] of [[29.99, 119.99], [29.99, 120.11], [30.11, 120.11], [30.11, 119.99]]) act(() => { map.fire('mousemove', { latlng: L.latLng(lat, lng), originalEvent: new MouseEvent('mousemove') }); map.fire('click', { latlng: L.latLng(lat, lng), originalEvent: new MouseEvent('click') }); });
   act(() => { (map.pm.Draw as any).Cut._finishShape(); });
@@ -341,12 +363,13 @@ it.each(['cloud', 'local'] as const)('does not override the initial %s result vi
 it('keeps snapping settings discoverable and returns keyboard focus when dismissed', () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   render(<EarthMap run={null} selection={[]} workspaceKey="snap-settings" onActivity={vi.fn()} onSelect={vi.fn()} />);
-  expect(screen.getByRole('button', {name:'矩形'})).toBeVisible();
-  const trigger=screen.getByText('吸附开');
+  openDrawing();
+  fireEvent.click(screen.getByRole('button', { name: '矩形' }));
+  const trigger=screen.getByRole('button', { name: '绘制设置' });
   fireEvent.click(trigger);
   expect(screen.getByRole('spinbutton', {name:'吸附容差（像素）'})).toBeVisible();
   fireEvent.keyDown(trigger, {key:'Escape'});
-  expect(trigger.closest('details')).not.toHaveAttribute('open');
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
   expect(trigger).toHaveFocus();
 });
 
@@ -358,15 +381,18 @@ it('stages deletion of a saved selection, supports undo and cancel, and persists
   const layer:ProjectLayer={id:'parcels',name:'地块',path:'parcels.geojson',format:'geojson',featureCount:1,geometryTypes:['Point'],crs:'EPSG:4326',updatedAt:'',revision:3,visible:true,features:[feature]};
   const save=vi.fn().mockResolvedValue(undefined), selected=vi.fn();
   render(<EarthMap run={null} selection={[feature]} projectLayers={[layer]} workspaceKey="delete-selection" onActivity={vi.fn()} onSelect={selected} onUpdateFeatures={save}/>);
+  openSelectionActions();
   fireEvent.click(screen.getByRole('button',{name:'删除所选'}));
   expect(save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button',{name:'撤销'}));
   fireEvent.click(screen.getByRole('button',{name:'保存'}));
   await waitFor(()=>expect(screen.queryByRole('button',{name:'保存'})).not.toBeInTheDocument());
   expect(save).not.toHaveBeenCalled();
+  openSelectionActions();
   fireEvent.click(screen.getByRole('button',{name:'删除所选'}));
   fireEvent.click(screen.getByRole('button',{name:'取消'}));
   expect(save).not.toHaveBeenCalled();
+  openSelectionActions();
   fireEvent.click(screen.getByRole('button',{name:'删除所选'}));
   fireEvent.click(screen.getByRole('button',{name:'保存'}));
   await waitFor(()=>expect(save).toHaveBeenCalledWith([],[expect.objectContaining({id:'parcel',pawLayerId:'parcels',pawRevision:3})]));
@@ -388,4 +414,21 @@ it('enables editing only for selected drafts and does not select unrelated draft
   await waitFor(()=>expect(screen.queryByRole('button',{name:'保存'})).not.toBeInTheDocument());
   expect(selected).not.toHaveBeenCalledWith(expect.objectContaining({id:'unselected'}),'upsert');
   expect(JSON.parse(localStorage.getItem('paw-earth-geometries:targeted-edit')!)).toEqual(features);
+});
+
+
+it('browses without creating points and cancels explicit drawing with Escape',()=>{
+  vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});Reflect.set(L.Browser,'svg',true);
+  const factory=vi.spyOn(L,'map'),selected=vi.fn();
+  render(<EarthMap run={null} selection={[]} workspaceKey="browse-not-draw" onActivity={vi.fn()} onSelect={selected}/>);
+  const map=factory.mock.results[0].value as L.Map;
+  act(()=>{map.fire('click',{latlng:L.latLng(30,120),originalEvent:new MouseEvent('click')});});
+  expect(selected).toHaveBeenCalledWith(null,'replace');
+  expect(selected.mock.calls.some(call=>call[0]?.geometry?.type==='Point')).toBe(false);
+  openDrawing();
+  fireEvent.click(screen.getByRole('button',{name:'点'}));
+  expect((map.pm.Draw.Marker as any).enabled()).toBe(true);
+  fireEvent.keyDown(screen.getByLabelText('地理分析地图'),{key:'Escape'});
+  expect((map.pm.Draw.Marker as any).enabled()).toBe(false);
+  expect(screen.getByRole('button',{name:'选择'})).toHaveAttribute('aria-pressed','true');
 });

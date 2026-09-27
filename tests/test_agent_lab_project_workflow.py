@@ -10,6 +10,16 @@ from rag_ime.agent_lab.project_application import AgentLabProjectApplication
 
 
 class ProjectWorkflowTests(unittest.TestCase):
+    def test_exported_app_default_is_independent_from_judge_model(self):
+        primary = {'provider': 'openai-codex', 'model': 'gpt-6-sol', 'thinkingLevel': 'max'}
+        worker = {'provider': 'openai-codex', 'model': 'gpt-6-luna', 'thinkingLevel': 'max'}
+        app = AgentLabProjectApplication(Path(tempfile.gettempdir()) / 'unused-model-route.sqlite',
+            session_application=Mock(), current_model=lambda: primary, app_model=lambda: worker)
+        app.apps.prepare = Mock(return_value={'ok': True})
+        app.store._prepare_app(None, {'projectId': 'fixture'}, {'directory': 'app'})
+        self.assertEqual(app.apps.prepare.call_args.args[-1], worker)
+        self.assertEqual(app.current_model(), primary)
+
     def setUp(self):
         self.project = {
             'projectId': 'project-one', 'bindings': [], 'artifacts': [], 'applications': [],
@@ -407,3 +417,19 @@ class ProjectWorkflowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestProgressProjectionTests(unittest.TestCase):
+    def test_partial_progress_deduplicates_receipts_and_preserves_unknown_denominators(self):
+        from rag_ime.agent_lab.project_workflow import _test_progress
+        row = {'caseId': 'case-1', 'split': 'development', 'variant': 'baseline', 'candidateIndex': 0, 'status': 'graded', 'judgment': {'verdict': 'pass'}, 'answer': 'PRIVATE ANSWER'}
+        job = {'progress': '正在评审', 'createdAtMs': 1000, 'updatedAtMs': 61000, 'result': {'snapshotId': 'snap', 'caseRuns': [row, row, {**row, 'caseId': 'case-2', 'status': 'runtime_error'}], 'usage': {'estimateComplete': True, 'estimatedCostUsd': .02}}}
+        result = _test_progress(job, {'snapshot': {'snapshotId': 'snap', 'developmentCount': 32}})
+        self.assertEqual(result['phases'][0]['completed'], 2)
+        self.assertEqual(result['phases'][0]['total'], 32)
+        self.assertEqual(result['phases'][0]['passed'], 1)
+        self.assertEqual(result['phases'][0]['errors'], 1)
+        self.assertEqual(result['costBasis'], 'estimate')
+        self.assertEqual(result['elapsedMs'], 60000)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        self.assertIsNone(_test_progress(job, {'snapshot': {'snapshotId': 'new'}})['phases'][0]['total'])

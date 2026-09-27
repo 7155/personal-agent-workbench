@@ -201,6 +201,8 @@ Knowledge 的 RAGFlow 能力对齐、索引重建和回退边界见
 
 简单任务使用一个 Session；需要分工时再展开 Room。[查看完整功能图集](assets/showcase/current/README.md)。
 
+源码中的 **Jev 任务模式**连接计划、依赖分派、独立核验、返修和最终答复，执行仍由伙伴的 Pi Session 承担。常规任务优先 Luna max，复杂任务使用 Sol max，规划和最难任务使用 Astra max；界面展示真实执行回执及待解决项。配置、工具策略和真实执行验证方法见 [Jev 接入说明](integrations/jev/README.md)。这项源码能力不代表已有安装包已更新。
+
 ## 常见问题
 
 | 遇到的情况 | 下一步 |

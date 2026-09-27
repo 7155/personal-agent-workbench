@@ -12,6 +12,7 @@ from pathlib import Path
 
 from rag_ime.contracts.json_schema import validate_contract
 from rag_ime.db import apply_database_migrations
+from rag_ime.rooms.work_transaction import participate_in_work_transaction
 
 
 WORK_STATES = frozenset(
@@ -32,6 +33,9 @@ class AgentRoomWorkAssignmentChanged(RuntimeError):
 
 class AgentRoomWorkStore:
     """Durable Room responsibility ledger with append-only transition evidence."""
+
+    # Optional trusted Jev commands enlist in the same canonical transaction.
+    task_graph_guard_version = 1
 
     def __init__(
         self,
@@ -72,6 +76,7 @@ class AgentRoomWorkStore:
         state: str = "active",
         depth: int = 1,
         created_at_ms: int | None = None,
+        _connection: sqlite3.Connection | None = None,
     ) -> dict[str, object]:
         """Create a directly owned WorkItem from the Room control surface.
 
@@ -120,7 +125,7 @@ class AgentRoomWorkStore:
         normalized_parent_id = _optional_text(parent_work_id, maximum=320)
         work_id = f"room-work:{uuid.uuid4()}"
 
-        with self._connect(immediate=True) as conn:
+        with self._creation_connection(_connection) as conn:
             existing = conn.execute(
                 """
                 SELECT * FROM agent_room_work_items
@@ -225,6 +230,7 @@ class AgentRoomWorkStore:
         created_at_ms: int,
         topic_id: str = "",
         root_turn_id: str = "",
+        prepared_only: bool = False,
     ) -> tuple[dict[str, object], bool]:
         """Create the one accountable Root WorkItem in a caller transaction."""
 
@@ -342,7 +348,7 @@ class AgentRoomWorkStore:
                 creator_id,
                 normalized_client_id,
                 assignment_key,
-                root_turn,
+                "" if prepared_only else root_turn,
                 timestamp,
                 timestamp,
             ),
@@ -989,6 +995,62 @@ class AgentRoomWorkStore:
             )
         return work_item_payload(row)
 
+    def transfer_for_jev_removal(
+        self, work_id: str, *, removed_participant_id: str,
+        target_participant_id: str, expected_revision: int,
+        expected_owner_id: str, expected_assignment_key: str,
+        expected_accepted_turn_id: str, reason: str,
+    ) -> dict[str, object]:
+        """Transfer one drained graph responsibility without changing its result.
+
+        GuardedWorkOwner supplies the exact execution proof and enlists this
+        mutation in the graph transaction. A queued offer becomes direct active
+        work only when its delegating owner is the departing participant.
+        """
+        removed = _required_text(removed_participant_id, "removed_participant_id", maximum=320)
+        target = _required_text(target_participant_id, "target_participant_id", maximum=320)
+        if removed == target:
+            raise ValueError("removal target must differ from departing participant")
+        with self._connect(immediate=True) as conn:
+            row = self._row(conn, work_id)
+            if (int(row["revision"]) != expected_revision
+                or str(row["current_owner_participant_id"]) != expected_owner_id
+                or str(row["assignment_key"]) != expected_assignment_key
+                or str(row["accepted_turn_id"] or "") != expected_accepted_turn_id):
+                raise ValueError("Room responsibility changed before removal transfer")
+            if str(row["state"]) not in {"queued", "active", "blocked"}:
+                raise ValueError("review or terminal work cannot be transferred during removal")
+            if removed not in {str(row["accountable_participant_id"]),
+                               str(row["current_owner_participant_id"]),
+                               str(row["offered_to_participant_id"] or "")}:
+                raise ValueError("departing participant has no open responsibility here")
+            _participant(conn, str(row["room_id"]), target)
+            move_owner = str(row["current_owner_participant_id"]) == removed
+            next_state = "active" if move_owner and row["state"] == "queued" else row["state"]
+            next_owner = target if move_owner else str(row["current_owner_participant_id"])
+            next_accountable = (target if str(row["accountable_participant_id"]) == removed
+                                else str(row["accountable_participant_id"]))
+            next_offered = (target if str(row["offered_to_participant_id"] or "") == removed and not move_owner
+                            else None if move_owner else row["offered_to_participant_id"])
+            now = _timestamp(None)
+            conn.execute("""
+                UPDATE agent_room_work_items
+                SET state=?, current_owner_participant_id=?, accountable_participant_id=?,
+                    offered_to_participant_id=?, assignment_key=?, accepted_turn_id=?, updated_at_ms=?
+                WHERE id=?
+            """, (next_state, next_owner, next_accountable, next_offered,
+                  f"{row['room_id']}:{work_id}:assignment:{uuid.uuid4()}" if move_owner else row["assignment_key"],
+                  "" if move_owner else row["accepted_turn_id"], now, work_id))
+            changed = self._row(conn, work_id)
+            self._append_event(conn, changed, event_type="reassigned",
+                actor_participant_id=target, created_at_ms=now,
+                payload={"source": "jev_participant_removal", "reason": _bounded(reason, 500),
+                         "releasedFromParticipantId": removed,
+                         "previousOwnerParticipantId": expected_owner_id,
+                         "previousAccountableParticipantId": str(row["accountable_participant_id"]),
+                         "previousOfferedToParticipantId": str(row["offered_to_participant_id"] or "")})
+            return work_item_payload(changed)
+
     def release_for_participant(
         self,
         room_id: str,
@@ -1047,6 +1109,17 @@ class AgentRoomWorkStore:
                 ),
             ).fetchall()
             released: list[dict[str, object]] = []
+            # Membership changes must not silently replace a Jev assignment or
+            # clear its accepted turn while verification/admission is pending.
+            # Keep the check in this write transaction, before any work changes.
+            for current in rows:
+                managed = conn.execute(
+                    "SELECT 1 FROM agent_jev_graphs g JOIN agent_jev_host_roots h USING(graph_id) "
+                    "WHERE g.room_id=? AND g.root_turn_id=? AND h.stopped=0 AND h.final_json='{}'",
+                    (normalized_room_id, str(current["root_turn_id"])),
+                ).fetchone()
+                if managed:
+                    raise ValueError("active Jev responsibility must be reclaimed by its graph before removing this participant")
             for current in rows:
                 previous_owner_id = str(current["current_owner_participant_id"])
                 previous_accountable_id = str(current["accountable_participant_id"])
@@ -1300,6 +1373,29 @@ class AgentRoomWorkStore:
                 created_at_ms=timestamp,
             )
         return work_item_payload(row)
+
+    def cancel_root(self, *, room_id: str, root_turn_id: str,
+                    actor_participant_id: str) -> list[dict[str, object]]:
+        """Persist a Stop fence; execution drain remains the cancellation owner's job."""
+        changed = []
+        with self._connect(immediate=True) as conn:
+            rows = conn.execute(
+                "SELECT * FROM agent_room_work_items WHERE room_id=? AND root_turn_id=?",
+                (room_id, root_turn_id)).fetchall()
+            if not rows or any(str(row["accountable_participant_id"]) != actor_participant_id
+                               for row in rows):
+                raise ValueError("Root cancellation requires its accountable participant")
+            for row in rows:
+                if row["state"] not in OPEN_WORK_STATES:
+                    continue
+                conn.execute("UPDATE agent_room_work_items SET state='cancelled',updated_at_ms=? WHERE id=?",
+                             (_timestamp(None), row["id"]))
+                current = self._row(conn, row["id"])
+                self._append_event(conn, current, event_type="cancelled",
+                                   actor_participant_id=actor_participant_id,
+                                   created_at_ms=_timestamp(None))
+                changed.append(work_item_payload(current))
+        return changed
 
     def list_for_session(
         self,
@@ -1608,6 +1704,31 @@ class AgentRoomWorkStore:
         }
         if not blocking_operability and not blocking_requirement:
             return None
+        # Jev's verifier is an ordinary, separately bound Pi
+        # purpose, not a synthetic child WorkItem. Its durable receipt must
+        # cover this exact task/result; worker prose cannot create this record.
+        from rag_ime.jev_tasks.ledger import task_from_row
+        from rag_ime.jev_tasks.types import canonical, digest
+        from dataclasses import asdict
+        task_hash = digest(asdict(task_from_row(dict(row))))
+        verification = conn.execute(
+            "SELECT v.dispatch_id,v.result_json,json_extract(e.request_json,'$.ownerId') AS verifier_id FROM agent_jev_verifications v "
+            "JOIN agent_jev_runtime_effects e ON e.effect_id=v.dispatch_id "
+            "JOIN agent_jev_aux_settlements s ON s.dispatch_id=v.dispatch_id "
+            "WHERE v.task_id=? AND v.task_hash=? AND e.state='accepted' "
+            "AND json_extract(e.request_json,'$.purpose')='verify' "
+            "AND json_extract(s.result_json,'$.status')='applied'",
+            (row["id"], task_hash)).fetchone()
+        if verification:
+            verdict = json.loads(verification["result_json"])
+            if verdict.get("operabilityVerdict") == "passed" and verdict.get("requirementVerdict") == "satisfied":
+                if verification["verifier_id"] == row["current_owner_participant_id"]:
+                    return {"verificationDispatchId": verification["dispatch_id"],
+                            "verificationHash": digest(canonical(verdict)),
+                            "verificationMode": "same_participant",
+                            "verifierParticipantId": verification["verifier_id"]}
+                return {"independentVerificationDispatchId": verification["dispatch_id"],
+                        "independentVerificationHash": digest(canonical(verdict))}
         if not superseded_by_work_id:
             raise ValueError(
                 "cannot accept passed/satisfied over Partner proposed "
@@ -1766,6 +1887,92 @@ class AgentRoomWorkStore:
         return row
 
     @contextmanager
+    def _creation_connection(self, connection: sqlite3.Connection | None):
+        """Internal batch owner: all creates enlist in the caller's canonical transaction."""
+        if connection is None:
+            with self._connect(immediate=True) as conn:
+                yield conn
+            return
+        databases = connection.execute("PRAGMA database_list").fetchall()
+        main = next((row[2] for row in databases if row[1] == "main"), "")
+        if not connection.in_transaction or Path(main).resolve() != self.db_path.resolve():
+            raise ValueError("task batch requires the canonical active transaction")
+        yield connection
+
+    def finalize_root_in_transaction(self, conn, *, work_id: str, actor_participant_id: str,
+                                     summary: str, success: bool, evidence_refs: list[str],
+                                     current_child_work_ids: list[str] | None = None):
+        with self._creation_connection(conn):
+            row = self._row(conn, work_id)
+            self._require_reviewer(conn, row, actor_participant_id)
+            if row["state"] == "cancelled":
+                raise ValueError("cancelled Root cannot finalize")
+            children = conn.execute("SELECT id,state FROM agent_room_work_items WHERE root_work_id=? AND id<>?", (work_id, work_id)).fetchall()
+            if current_child_work_ids is not None:
+                current_ids = set(current_child_work_ids)
+                all_ids = {child["id"] for child in children}
+                superseded = {old_id for (old_id,) in conn.execute(
+                    "SELECT old_task_id FROM agent_jev_task_supersessions WHERE graph_id IN "
+                    "(SELECT graph_id FROM agent_jev_graphs WHERE root_work_id=?)", (work_id,))}
+                if current_ids != all_ids - superseded:
+                    raise ValueError("current Jev child set does not match the active graph version")
+                children = [child for child in children if child["id"] in current_ids]
+            if success and children and any(child["state"] != "done" for child in children):
+                raise ValueError("Root has unaccepted child work")
+            if success and not children and row["state"] != "done":
+                raise ValueError("direct Root must be verified before finalization")
+            now = _timestamp(None)
+            conn.execute("UPDATE agent_room_work_items SET state=?,result_summary=?,evidence_refs_json=?,updated_at_ms=?,completed_at_ms=? WHERE id=?",
+                         ("done" if success else "failed", summary, json.dumps(evidence_refs), now, now, work_id))
+            current = self._row(conn, work_id)
+            self._append_event(conn, current, event_type="completed" if success else "failed",
+                               actor_participant_id=actor_participant_id, created_at_ms=now,
+                               payload={"source": "jev_finalization"})
+
+    def close_unresolved_in_transaction(self, conn, *, work_id: str,
+                                        actor_participant_id: str, reason: str) -> dict[str, object]:
+        with self._creation_connection(conn):
+            row = self._row(conn, work_id)
+            self._require_reviewer(conn, row, actor_participant_id)
+            if row["state"] in {"done", "cancelled"}:
+                return work_item_payload(row)
+            if row["state"] == "failed" and json.loads(row["blocker_json"] or "{}").get("terminal"):
+                return work_item_payload(row)
+            now = _timestamp(None)
+            conn.execute("UPDATE agent_room_work_items SET state='failed',blocker_json=?,updated_at_ms=?,completed_at_ms=? WHERE id=?",
+                         (json.dumps({"reason": _required_text(reason, "reason", maximum=2000), "terminal": True}), now, now, work_id))
+            current = self._row(conn, work_id)
+            self._append_event(conn, current, event_type="failed", actor_participant_id=actor_participant_id,
+                               created_at_ms=now)
+            return work_item_payload(current)
+
+    def retire_superseded_in_transaction(self, conn, *, work_id: str,
+                                         actor_participant_id: str, reason: str) -> dict[str, object]:
+        """Retire one old Jev responsibility after its exact execution drained.
+
+        Accepted historical work keeps its done state and evidence. Open work
+        receives a formal cancellation event; the version map records why it
+        is no longer in the current graph.
+        """
+        with self._creation_connection(conn):
+            row = self._row(conn, work_id)
+            self._require_reviewer(conn, row, actor_participant_id)
+            if row["state"] not in OPEN_WORK_STATES:
+                return work_item_payload(row)
+            now = _timestamp(None)
+            conn.execute(
+                "UPDATE agent_room_work_items SET state='cancelled',blocker_json=?,"
+                "updated_at_ms=?,completed_at_ms=? WHERE id=? AND state IN ('queued','active','review','blocked')",
+                (json.dumps({"reason": _required_text(reason, "reason", maximum=2000),
+                             "superseded": True}), now, now, work_id),
+            )
+            current = self._row(conn, work_id)
+            self._append_event(conn, current, event_type="cancelled",
+                               actor_participant_id=actor_participant_id,
+                               created_at_ms=now, payload={"source": "jev_task_revision"})
+            return work_item_payload(current)
+
+    @contextmanager
     def _connect(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
@@ -1773,7 +1980,8 @@ class AgentRoomWorkStore:
             conn.execute("PRAGMA foreign_keys = ON")
             if immediate:
                 conn.execute("BEGIN IMMEDIATE")
-            yield conn
+            with participate_in_work_transaction(conn, self.db_path, immediate=immediate):
+                yield conn
             conn.commit()
         except BaseException:
             conn.rollback()

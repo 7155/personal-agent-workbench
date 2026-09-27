@@ -1,0 +1,74 @@
+.paw-jev-partner-settings.ui-dialog { width: min(560px, calc(100vw - 32px)); }
+.paw-jev-objective-trigger { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; min-height: 28px; padding: 0; border: 0; color: inherit; background: none; text-align: left; cursor: pointer; }
+.paw-jev-objective-trigger svg { flex: none; color: var(--paw-muted, var(--color-text-secondary)); }
+.paw-jev-objective-trigger:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.paw-jev-objective-detail.ui-dialog { width: min(720px, calc(100vw - 32px)); }
+.paw-jev-objective-detail > div { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.paw-desktop-root .paw-room-workspace--jev .room-composer .jev-policy-control { width: auto; max-width: min(180px, 100%); min-width: 0; flex: 0 1 auto; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace--jev .room-composer__task-lock { padding: 6px 14px 2px; border: 0; background: transparent; color: var(--paw-chat-text-secondary); font-size: 11px; line-height: 16px; }
+.paw-desktop-root .paw-room-workspace--jev .room-composer__hint { padding-top: 4px; font-size: 10px; }
+@container paw-composer-toolbar (max-width: 460px) {
+  .paw-desktop-root .paw-room-workspace--jev .room-composer .jev-policy-control { width: 32px; min-width: 32px; max-width: 32px; min-height: 32px; flex: 0 0 32px; justify-content: center; padding: 0; }
+  .paw-desktop-root .paw-room-workspace--jev .room-composer .jev-policy-control > :is(span, svg:last-child) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+.paw-jev-partner-settings__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 16px; }
+.paw-jev-partner-settings__controls .room-composer__partner-picker { flex-basis: 100%; }
+.paw-jev-partner-settings__controls .room-composer__model-policy-note { flex-basis: 100%; color: var(--paw-muted, var(--color-text-secondary)); }
+.paw-jev-tool-records__trigger { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--ccui-border); border-radius: 9px; background: var(--ccui-surface-2); text-align: left; cursor: pointer; }
+.paw-jev-tool-records__trigger > span:nth-child(2) { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.paw-jev-tool-records__trigger strong { font-size: 12px; font-weight: 600; }
+.paw-jev-tool-records__trigger small { font-size: 11px; color: var(--ccui-muted); }
+.paw-jev-tool-records__trigger:hover { border-color: var(--ccui-border-strong); }
+.paw-jev-tool-records__trigger:focus-visible { outline: 2px solid var(--ccui-accent); outline-offset: 2px; }
+.paw-jev-tool-records__latest { max-width: 28%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; color: var(--ccui-muted); }
+.paw-jev-tool-records.ui-dialog { display: flex; flex-direction: column; gap: 8px; width: min(860px, calc(100vw - 32px)); max-height: min(780px, calc(100dvh - 48px)); overflow: hidden; }
+/* Portals inherit the document theme, outside the desktop's local tokens. */
+.ccui-tool-records {
+  --ccui-surface: var(--color-surface);
+  --ccui-surface-2: var(--color-surface-subtle);
+  --ccui-text: var(--color-text);
+  --ccui-muted: var(--color-text-secondary);
+  --ccui-faint: var(--color-text-tertiary);
+  --ccui-border: var(--color-border);
+  --ccui-border-strong: var(--color-border-strong, var(--color-border));
+  --ccui-accent: var(--color-accent);
+  --ccui-danger: var(--color-danger);
+  --ccui-warning: var(--color-warning);
+  --ccui-success: var(--color-success);
+}
+.paw-jev-tool-records .ui-dialog__title { display: flex; align-items: center; gap: 6px; padding-right: 24px; }
+.paw-jev-tool-records__list { min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 4px; }
+.paw-jev-tool-records .ccui-tool-head { color: var(--ccui-text); }
+.paw-jev-tool-records .ccui-tool-body { overflow-wrap: anywhere; }
+.ccui-tool-card[data-execution-outcome='unknown'] .ccui-tool-state-label { color: var(--ccui-warning); }
+@media (max-width: 600px) {
+  .paw-jev-tool-records .ccui-tool-main { flex-direction: column; gap: 3px; }
+  .paw-jev-tool-records .ccui-tool-main span { max-width: 100%; }
+}
+
+/* Portalled evidence retains the same quiet activity hierarchy as the Room. */
+.paw-jev-tool-records .ccui-tool-card.status-success[data-expanded='false'] {
+  background: transparent; border-color: transparent;
+}
+.paw-jev-tool-records .ccui-tool-head {
+  min-height: 40px; padding: 9px 10px; gap: 12px;
+}
+.paw-jev-tool-records .ccui-tool-main strong { font-size: 14px; font-weight: 550; }
+.paw-jev-tool-records .ccui-tool-main > span { font-size: 14px; }
+.paw-jev-tool-records .ccui-tool-kind { color: var(--ccui-muted); }
+.paw-jev-tool-records .ccui-tool-meta { align-items: center; }
+.paw-jev-tool-records .ccui-tool-card.status-success[data-expanded='false'] .ccui-tool-state-label {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+@media (hover: hover) and (pointer: fine) {
+  .paw-jev-tool-records .ccui-tool-head:not(:disabled):hover { background: var(--ccui-surface-2); }
+}
+
+.paw-room-removals__item { padding: 12px; margin-top: 10px; border: 1px solid var(--paw-line); border-radius: 10px; background: var(--paw-panel-soft); }
+.paw-room-removals__item > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.paw-room-removals__item > small { display: block; margin: 6px 0 10px; color: var(--paw-muted); line-height: 1.6; }
+.paw-room-removals__item > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+
+.paw-room-removals__item > label > span { flex: none; white-space: nowrap; }
+.paw-room-removals__item > label > button { min-width: 0; }

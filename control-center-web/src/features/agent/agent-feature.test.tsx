@@ -387,7 +387,7 @@ describe('Agent experience', () => {
     });
   });
 
-  it('does not present a settled recent user-only window as the completed conversation', async () => {
+  it('repairs a settled recent user-only window with one automatic full read before presenting it', async () => {
     const pendingFull = deferred<unknown>();
     const complete = previewAgentSnapshot('session-preview');
     const danglingUser = complete.messages.slice(2, 3);
@@ -409,21 +409,23 @@ describe('Agent experience', () => {
 
     renderAgent(transport, '/agent?session=session-preview');
 
-    expect(await screen.findByText('最近上下文')).toBeInTheDocument();
+    await waitFor(() => expect(transport.requests.filter((request) => (
+      request.pathId === 'agent.session.snapshot'
+      && request.query?.view === undefined
+    ))).toHaveLength(1));
     expect(screen.queryByText(
       '读取输入法工具书，并把结果作为可展开卡片保留。',
     )).not.toBeInTheDocument();
-    expect(transport.requests.filter((request) => (
-      request.pathId === 'agent.session.snapshot'
-      && request.query?.view === undefined
-    ))).toHaveLength(0);
-
-    await userEvent.setup().click(screen.getByRole('button', { name: '加载完整记录' }));
+    expect(useAgentLiveStore.getState().projections['session-preview']?.messageOrder ?? []).toEqual([]);
     await act(async () => pendingFull.resolve(complete));
     expect((await screen.findAllByText(
       '读取输入法工具书，并把结果作为可展开卡片保留。',
     )).length).toBeGreaterThan(0);
     expect(screen.queryByText('最近上下文')).not.toBeInTheDocument();
+    expect(transport.requests.filter((request) => (
+      request.pathId === 'agent.session.snapshot'
+      && request.query?.view === undefined
+    ))).toHaveLength(1);
   });
 
   it('keeps the Session usable and waits for an explicit full load when recent recovery fails', async () => {

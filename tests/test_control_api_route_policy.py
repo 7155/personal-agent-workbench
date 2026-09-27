@@ -18,6 +18,18 @@ class ControlRoutePolicyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.policy = default_route_policy()
 
+    def test_jev_plan_approval_contract_is_available_through_native_control(self):
+        for body in (
+            {"action": "create", "clientMessageId": "new-root", "message": "Plan first", "executionApproval": True},
+            *[{"action": action, "clientMessageId": action, "graphId": "graph", "rootId": "root", "planHash": "hash",
+               **({"message": "Use the attached scope", "attachmentIds": ["media"]} if action == "adjust_plan" else {})}
+              for action in ("approve_plan", "adjust_plan", "defer_plan")],
+        ):
+            with self.subTest(action=body["action"]):
+                self.policy.authorize(ControlRequest(request_id=body["clientMessageId"],
+                    path_id=ControlPathId.AGENT_JEV_COMMAND.value, params={"roomId": "room"}, body=body),
+                    ControlAccessContext.native())
+
     def test_manifest_covers_every_canonical_path_id_once(self) -> None:
         manifest = self.policy.manifest(include_targets=True)
 

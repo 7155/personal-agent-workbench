@@ -63,6 +63,9 @@ def verify(root: Path) -> dict:
         'apps/RagImeVoice.app/Contents/MacOS/RagImeVoice',
         'apps/RagImeDesktopBridge.app/Contents/MacOS/RagImeDesktopBridge',
         'pi-runtime/manifest.json',
+        'source/integrations/ego-browser/upstream/paw-ego-browser-runtime.json',
+        'source/integrations/ego-browser/upstream/package/ego-browser/dist/src/run.js',
+        'source/integrations/ego-browser/upstream/package/ego-linux-host/dist/cli.js',
     )
     for name in required:
         if name not in expected or not (root / name).is_file():

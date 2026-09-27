@@ -9,6 +9,42 @@ import { GIS_CATALOG, connectSpatialSource, exportGISLayer, inspectGISPath, list
 const python = process.env.PAW_EARTH_GIS_PYTHON || 'python3';
 const hasGISRuntime = spawnSync(python, ['-c', 'import geopandas, rasterio'], { stdio: 'ignore' }).status === 0;
 
+test('lists workspace-owned GIS files without following symlinks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-earth-gis-list-'));
+  const external = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-earth-gis-external-'));
+  try {
+    const data = path.join(root, 'data');
+    fs.mkdirSync(path.join(data, 'nested'), { recursive: true });
+    fs.mkdirSync(path.join(external, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(data, 'local.geojson'), '{"local":true}');
+    fs.writeFileSync(path.join(data, 'nested', 'inside.gpkg'), 'workspace');
+    fs.writeFileSync(path.join(external, 'outside.geojson'), '{"outside":"private metadata"}');
+    fs.writeFileSync(path.join(external, 'nested', 'hidden.geojson'), '{"outside":"hidden"}');
+    fs.symlinkSync(path.join(external, 'outside.geojson'), path.join(data, 'external.geojson'), 'file');
+    fs.symlinkSync(path.join(external, 'nested'), path.join(data, 'external-dir'), 'dir');
+
+    const items = listGISFiles(root);
+    assert.deepEqual(items.map(item => item.path), ['data/local.geojson', 'data/nested/inside.gpkg']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test('ignores dangling GIS file symlinks without failing the listing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-earth-gis-dangling-'));
+  try {
+    const data = path.join(root, 'data');
+    fs.mkdirSync(path.join(data, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(data, 'nested', 'valid.geojson'), '{}');
+    fs.symlinkSync(path.join(root, 'missing.geojson'), path.join(data, 'dangling.geojson'), 'file');
+
+    assert.deepEqual(listGISFiles(root).map(item => item.path), ['data/nested/valid.geojson']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("exposes GISclaw 28 deterministic operations and runs CRS-aware buffer", { skip: !hasGISRuntime && !process.env.PAW_EARTH_GIS_PYTHON ? 'set PAW_EARTH_GIS_PYTHON to run the GeoPandas/Rasterio integration test' : false }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-earth-gis-test-'));
   try {

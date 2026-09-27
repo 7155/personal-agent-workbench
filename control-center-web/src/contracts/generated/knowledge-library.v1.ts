@@ -21,7 +21,7 @@ export interface KnowledgeLibraryV1 {
   [k: string]: unknown;
 }
 export interface ChunkingConfig {
-  strategy: 'general' | 'markdown' | 'book' | 'qa' | 'laws' | 'separator' | 'fixed';
+  strategy: 'general' | 'markdown' | 'paper' | 'book' | 'qa' | 'laws' | 'separator' | 'fixed';
   size: number;
   overlap: number;
   separator: string;

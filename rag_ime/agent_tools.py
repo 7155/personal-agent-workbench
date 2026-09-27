@@ -53,6 +53,7 @@ from .agent_workspace import (
 from .browser_control import BrowserControlService
 from .contracts.json_schema import validate_contract
 from .desktop_bridge import DesktopBridgeClient
+from .jev_tasks.submission_contracts import submission_contract
 from .management_service import ManagementService, page_request
 from .memory_ownership import agent_visible_memory_owners
 from .memory_maintenance_settings import memory_enabled_from_settings
@@ -418,6 +419,7 @@ _TOOL_SPECS: tuple[dict[str, object], ...] = (
         "output": "立即委派回执、显式收集/等待结果、WorkItem 审核回执、直接 Intercom 回执或类型明确的公开回执",
         "does": "委派立即返回持久回执；Partner 完成由持久 wake 通知，collect/wait 只读取停止点且 wait 超时不取消；Facilitator 依据证据显式 accept 或 return。",
         "operations": (
+            "plan_submit", "result_submit", "verification_submit", "final_submit",
             "list",
             "add_participant",
             "remove_participant",
@@ -869,7 +871,7 @@ _KNOWLEDGE_CHUNKING_PARAMETER_SCHEMA: dict[str, object] = {
     "properties": {
         "strategy": {
             "type": "string",
-            "enum": ["general", "markdown", "book", "qa", "laws", "separator", "fixed"],
+            "enum": ["general", "markdown", "paper", "book", "qa", "laws", "separator", "fixed"],
         },
         "size": {"type": "integer", "minimum": 200, "maximum": 8_000},
         "overlap": {"type": "integer", "minimum": 0, "maximum": 2_000},
@@ -896,6 +898,38 @@ _KNOWLEDGE_RETRIEVAL_PARAMETER_SCHEMA: dict[str, object] = {
         "rerankCandidateDepth": {"type": "integer", "minimum": 1, "maximum": 100},
     },
 }
+
+_JEV_PLAN_PROPOSAL_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["requirementsRevision", "topologyRevision"],
+    "properties": {
+        "requirementsRevision": {"type": "integer", "minimum": 1},
+        "topologyRevision": {"type": "integer", "minimum": 0},
+        "tasks": {"type": "array", "minItems": 1, "maxItems": 6, "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["key", "objective", "expectedOutput", "acceptanceCriteria"],
+            "properties": {
+                "key": {"type": "string", "minLength": 1, "maxLength": 64},
+                "objective": {"type": "string", "minLength": 1, "maxLength": 8000},
+                "expectedOutput": {"type": "string", "minLength": 1, "maxLength": 8000},
+                "acceptanceCriteria": {"type": "array", "minItems": 1, "maxItems": 8,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 500}},
+                **{field: {"type": "array", "maxItems": 24, "items": {"type": "string", "minLength": 1}}
+                   for field in ("dependsOn", "contextRefs", "requiredCapabilities", "writeTargets")},
+                "ownerParticipantId": {"type": "string", "minLength": 1},
+                "difficulty": {"type": "string", "enum": ["simple", "routine", "complex", "critical"]},
+            }}},
+        "questions": {"type": "array", "minItems": 1, "maxItems": 3, "items": {
+            "type": "object", "additionalProperties": False, "required": ["id", "question"],
+            "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 64},
+                "question": {"type": "string", "minLength": 1, "maxLength": 1000},
+                "options": {"type": "array", "minItems": 2, "maxItems": 4,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 300}}}}},
+    },
+    "oneOf": [{"required": ["tasks"], "not": {"required": ["questions"]}},
+              {"required": ["questions"], "not": {"required": ["tasks"]}}],
+}
+
 
 _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
     "lab_research": {
@@ -983,6 +1017,7 @@ _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
                     "retry 沿同一修订链重新派发当前负责人。"
                 ),
                 "enum": [
+                    "plan_submit", "result_submit", "verification_submit", "final_submit",
                     "list",
                     "add_participant",
                     "remove_participant",
@@ -1000,6 +1035,7 @@ _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
                     "peer_reply",
                 ],
             },
+            "proposal": {"type": "object", "description": "Jev 当前 purpose 的结构化提交。计划、业务成果、独立验证或最终交付；后端从当前真实 dispatch 推导身份并校验。"},
             "targetParticipantId": {
                 "type": "string",
                 "minLength": 1,
@@ -1217,6 +1253,11 @@ _RUNTIME_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, object]] = {
             },
         },
         "oneOf": [
+            {"required": ["op", "proposal"], "properties": {
+                "op": {"const": "plan_submit"}, "proposal": _JEV_PLAN_PROPOSAL_SCHEMA}},
+            *[{"required": ["op", "proposal"], "properties": {
+                "op": {"const": operation}, "proposal": submission_contract(operation)["proposalSchema"]}}
+              for operation in ("result_submit", "verification_submit", "final_submit")],
             {
                 "required": ["op"],
                 "properties": {"op": {"const": "list"}},
@@ -3477,6 +3518,17 @@ class ControlToolGateway:
                     else None
                 )
                 available = participant is not None
+                jev = getattr(self.collaboration, "jev_application", None)
+                purpose_ops = {"plan_submit", "result_submit", "verification_submit", "final_submit"}
+                selected_op = ""
+                if jev is not None and participant is not None:
+                    _, dispatch_id = self.collaboration.room_turns.active_turn(str(session["id"]))
+                    effect = jev.lifecycle.effect_for_dispatch(dispatch_id)
+                    if effect:
+                        selected_op = {"plan":"plan_submit", "execute":"result_submit", "verify":"verification_submit", "synthesize":"final_submit"}[effect["request"].get("purpose", "execute")]
+                operations = [op for op in operations if op not in purpose_ops or op == selected_op]
+                operation_risks = {op: operation_risks[op] for op in operations}
+
             manifest = {
                 "schemaVersion": "rag-ime.control-tool-manifest.v1",
                 "id": spec["id"],
@@ -5667,7 +5719,6 @@ class ControlToolGateway:
         if not actual:
             raise ValueError("input settings already match the requested values")
         before_values = {str(item["key"]): current_flat.get(str(item["key"])) for item in actual}
-        after_values = {str(item["key"]): item["value"] for item in actual}
         action_payload: dict[str, object] = {"changes": actual}
         if source_approval_id:
             action_payload["sourceApprovalId"] = source_approval_id
@@ -7373,11 +7424,16 @@ class ControlToolGateway:
         )
         if not self._approval_payload_matches(approval, expected_digest):
             raise ValueError("approval payload no longer matches its preview")
-        receipt = self._background_job_service().cancel(
-            session_id,
-            str(action_payload.get("jobId") or ""),
-            reason=action_payload.get("reason"),
-        )
+        job_id = str(action_payload.get("jobId") or "")
+        causal = approval.get("causalMetadata")
+        jev = getattr(self.collaboration, "jev_application", None)
+        receipt = None
+        if jev is not None and isinstance(causal, Mapping) and causal.get("roomBound"):
+            receipt = jev.cancel_workspace_job(session_id, job_id, causal=causal,
+                                               reason=action_payload.get("reason"))
+        if receipt is None:
+            receipt = self._background_job_service().cancel(
+                session_id, job_id, reason=action_payload.get("reason"))
         return {
             **receipt,
             "mutationApplied": True,
@@ -10039,7 +10095,7 @@ def _normalize_knowledge_chunking_config(
         raise ValueError("chunkingConfig must contain at least one field")
     merged = {**_KNOWLEDGE_CHUNKING_DEFAULTS, **dict(defaults), **dict(value)}
     strategy = str(merged.get("strategy") or "").strip().lower()
-    if strategy not in {"general", "markdown", "book", "qa", "laws", "separator", "fixed"}:
+    if strategy not in {"general", "markdown", "paper", "book", "qa", "laws", "separator", "fixed"}:
         raise ValueError("unsupported knowledge chunking strategy")
     size = _knowledge_strict_int(
         merged.get("size"), field="chunkingConfig.size", minimum=200, maximum=8_000
@@ -10725,6 +10781,7 @@ def _tool_profile_allows(
         # than the read-only Session's source workspace.
         "room_partner": frozenset(
             {
+                "plan_submit", "result_submit", "verification_submit", "final_submit",
                 "list",
                 "add_participant",
                 "remove_participant",
@@ -10981,6 +11038,9 @@ def _runtime_tool_parameter_schema(
         # payload in place, and one mutation must not corrupt later Sessions.
         configured = copy.deepcopy(configured)
         allowed = {str(operation) for operation in operations}
+        op_schema = configured.get("properties", {}).get("op")
+        if isinstance(op_schema, dict) and isinstance(op_schema.get("enum"), list):
+            op_schema["enum"] = [value for value in op_schema["enum"] if value in allowed]
         branches = configured.get("oneOf")
         if isinstance(branches, list):
             filtered = [

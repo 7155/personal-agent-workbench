@@ -5,8 +5,9 @@ import { selectedLayerFeatures, type ProjectLayer, type SpatialSourceDraft, type
 import { createPropertyDraft, discardPropertyDraft, hasEditedProperties, materializePropertyDraft, updatePropertyDraft, type PropertyDraft } from './property-draft';
 import { buildWorkspaceFileTree, filterWorkspaceFileTree, workspaceNodeByteSize, WORKSPACE_FILE_LABELS, type WorkspaceFileNode } from './workspace-file-tree';
 import './earth-files.css';
+import { layerSymbol } from './map-symbols';
 
-type DockTab = 'layers' | 'attributes' | 'runs' | 'files' | 'databases';
+export type DockTab = 'layers' | 'attributes' | 'runs' | 'files' | 'databases';
 type BoundFeature = GeoJSON.Feature & { pawLayerId?: string; pawRevision?: number };
 type EditSession = { feature: BoundFeature; draft: PropertyDraft };
 
@@ -19,6 +20,9 @@ export type LocalGISRunSummary = {
 };
 
 export type EarthDataDockProps = {
+  dockView?: DockTab | null;
+  onDockViewChange?: (view: DockTab | null) => void;
+  onOpenCloud?: () => void;
   run: EarthRun | null;
   workspaceRoot: string;
   projectLayers: ProjectLayer[];
@@ -114,10 +118,31 @@ function fileIcon(node: WorkspaceFileNode, expanded: boolean) {
   return <Icon size={15} aria-hidden="true" className={`earth-files__icon earth-files__icon--${node.category}`} />;
 }
 
-export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSources, workspaceFiles, workspaceFilesIncomplete = false, workspaceFilesNotice, localRuns = EMPTY_RUNS, activeObjectLabel, selectedFeatures, onSaveLayer, onUpdateFeature, onSelectFeature, onCreateBundle, onShowRun, onCompareRuns, onExportLayer, onToggleLayer, onRemoveLayer, onOpenLayerRevision, onConnectSource, onLoadSourceLayer, onRefreshCatalog, onRefreshFiles, onOpenFile }: EarthDataDockProps) {
+export function EarthDataDock({ dockView, onDockViewChange, onOpenCloud, run, workspaceRoot, projectLayers, spatialSources, workspaceFiles, workspaceFilesIncomplete = false, workspaceFilesNotice, localRuns = EMPTY_RUNS, activeObjectLabel, selectedFeatures, onSaveLayer, onUpdateFeature, onSelectFeature, onCreateBundle, onShowRun, onCompareRuns, onExportLayer, onToggleLayer, onRemoveLayer, onOpenLayerRevision, onConnectSource, onLoadSourceLayer, onRefreshCatalog, onRefreshFiles, onOpenFile }: EarthDataDockProps) {
   const dockId = useId();
-  const [tab, setTab] = useState<DockTab>('layers');
-  const [collapsed, setCollapsed] = useState(false);
+  const dockRoot = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const controlled = dockView !== undefined;
+  const [localTab, setLocalTab] = useState<DockTab>('layers');
+  const [localCollapsed, setLocalCollapsed] = useState(false);
+  // Hiding a surface must not switch its content back to the first tab.
+  const tab = dockView ?? localTab;
+  const collapsed = controlled ? dockView === null : localCollapsed;
+  useEffect(() => { if (dockView) setLocalTab(dockView); }, [dockView]);
+  const setTab = (next: DockTab) => { setLocalTab(next); if (controlled) onDockViewChange?.(next); };
+  const setCollapsed = (next: boolean) => {
+    if (controlled) onDockViewChange?.(next ? null : localTab);
+    else setLocalCollapsed(next);
+  };
+  useEffect(() => {
+    if (!controlled || collapsed) return;
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    heading.current?.focus({ preventScroll: true });
+    return () => {
+      if (document.activeElement === document.body || dockRoot.current?.contains(document.activeElement)) opener.current?.focus({ preventScroll: true });
+    };
+  }, [controlled, collapsed]);
   const [layerName, setLayerName] = useState('候选区域');
   const [selectedLayerId, setSelectedLayerId] = useState('');
   const [exportFormat, setExportFormat] = useState<'shp' | 'gpkg'>('gpkg');
@@ -274,11 +299,15 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
     void perform('连接数据库', () => onConnectSource(source));
   }
 
-  const tabs: Array<{ id: DockTab; label: string; count?: number }> = [
+  const allTabs: Array<{ id: DockTab; label: string; count?: number }> = [
     { id: 'layers', label: '图层', count: projectLayers.length + runLayers.length },
     { id: 'attributes', label: '属性表' }, { id: 'runs', label: '运行', count: localRuns.length },
     { id: 'files', label: '文件' }, { id: 'databases', label: '数据库' },
   ];
+
+  const tabs = !controlled ? allTabs : allTabs.filter(item => tab === 'runs'
+    ? item.id === 'runs'
+    : ['layers', 'files'].includes(item.id) || item.id === tab);
 
   const exportControls = selectedLayer ? <section className="earth-data-dock__export-panel" aria-label="导出当前图层">
     <div className="earth-data-dock__section-head"><strong>导出 {selectedLayer.name}</strong><span>v{selectedLayer.revision ?? 1}</span></div>
@@ -305,14 +334,16 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
     <div className="earth-data-dock__edit-actions"><button type="button" className="earth-data-dock__primary" disabled={Boolean(pending) || !draftDirty || !draftResult?.ok} onClick={() => void saveProperties()}>{pending === '保存属性' ? '正在保存…' : '保存属性版本'}</button><button type="button" disabled={Boolean(pending) || !draftDirty} onClick={cancelProperties}>取消修改</button></div>
   </section> : null;
 
-  return <aside className={`earth-data-dock${tab === 'attributes' ? ' earth-data-dock--table' : ''}${collapsed ? ' earth-data-dock--collapsed' : ''}`} aria-label="GIS 数据工作区" aria-busy={Boolean(pending)}>
+  return <aside ref={dockRoot} className={`earth-data-dock${tab === 'attributes' ? ' earth-data-dock--table' : ''}${collapsed ? ' earth-data-dock--collapsed' : ''}`} aria-label="GIS 数据工作区" aria-busy={Boolean(pending)} hidden={controlled && collapsed} data-compact={controlled} data-view={tab} onKeyDown={event => {
+    if (controlled && event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); setCollapsed(true); }
+  }}>
     <header className="earth-data-dock__header">
-      <div><strong>GIS 数据工作区</strong><small title={activeObjectLabel || selectedLayer?.name}>{draftDirty ? '有未保存的属性修改' : activeObjectLabel ? `Agent · ${shortPath(activeObjectLabel)}` : selectedLayer ? `${selectedLayer.name} · v${selectedLayer.revision ?? 1}` : '图层、属性与运行记录'}</small></div>
+      <div><strong ref={heading} tabIndex={-1}>{controlled ? tab === 'runs' ? '结果' : '数据' : 'GIS 数据工作区'}</strong><small hidden={controlled && !draftDirty} title={activeObjectLabel || selectedLayer?.name}>{draftDirty ? '有未保存的属性修改' : activeObjectLabel ? `Agent · ${shortPath(activeObjectLabel)}` : selectedLayer ? `${selectedLayer.name} · v${selectedLayer.revision ?? 1}` : '图层、属性与运行记录'}</small></div>
       {!collapsed ? <button type="button" className="earth-data-dock__icon-button" aria-label="刷新 GIS 数据" title="刷新图层、文件和数据库目录" disabled={Boolean(pending) || (!onRefreshCatalog && !onRefreshFiles)} onClick={() => void perform('刷新数据', async () => { await Promise.all([onRefreshCatalog?.(), onRefreshFiles?.()]); })}><RefreshCw size={15} className={pending === '刷新数据' ? 'is-refreshing' : undefined} /></button> : null}
-      <button type="button" className="earth-data-dock__icon-button" aria-label={collapsed ? '展开 GIS 数据工作区' : '收起 GIS 数据工作区'} aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}</button>
+      <button type="button" className="earth-data-dock__icon-button" aria-label={collapsed ? '展开 GIS 数据工作区' : '收起 GIS 数据工作区'} aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>{collapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}</button>
     </header>
     <div className="earth-data-dock__body" hidden={collapsed}>
-      <details className="earth-data-dock__binding"><summary><FolderOpen size={14} aria-hidden="true" /><strong title={workspaceRoot}>{shortPath(workspaceRoot)}</strong><span>{selectedFeatures.length} 已选</span><ChevronDown size={13} aria-hidden="true" /></summary><div className="earth-data-dock__binding-details"><span>项目工作区</span><code>{workspaceRoot || '尚未绑定工作区'}</code><small>{projectLayers.length} 个项目图层 · 地图已选 {selectedFeatures.length} 个要素</small>{activeObjectLabel ? <p>Agent 当前操作：{activeObjectLabel}</p> : null}</div></details>
+      <details className="earth-data-dock__binding"><summary><FolderOpen size={14} aria-hidden="true" /><strong title={workspaceRoot}>{controlled ? '项目详情' : shortPath(workspaceRoot)}</strong>{selectedFeatures.length > 0 ? <span>{selectedFeatures.length} 已选</span> : null}<ChevronDown size={13} aria-hidden="true" /></summary><div className="earth-data-dock__binding-details"><span>项目工作区</span><code>{workspaceRoot || '尚未绑定工作区'}</code><small>{projectLayers.length} 个项目图层 · 地图已选 {selectedFeatures.length} 个要素</small>{activeObjectLabel ? <p>Agent 当前操作：{activeObjectLabel}</p> : null}</div></details>
       <nav className="earth-data-dock__tabs" role="tablist" aria-label="GIS 数据视角">{tabs.map(item => <button type="button" key={item.id} id={`${dockId}-${item.id}`} role="tab" aria-controls={`${dockId}-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={event => {
         if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
@@ -321,20 +352,22 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
         setTab(tabs[next].id); document.getElementById(`${dockId}-${tabs[next].id}`)?.focus();
       }}>{item.label}{item.count ? <small>{item.count}</small> : null}</button>)}</nav>
 
+      {controlled && tab === 'files' ? <button type="button" className="earth-data-dock__secondary-link" onClick={() => setTab('databases')}>连接数据库</button> : null}
+      {controlled && tab === 'runs' && onOpenCloud ? <button type="button" className="earth-data-dock__secondary-link" onClick={onOpenCloud}>查看云端任务</button> : null}
       {tab === 'layers' ? <section className="earth-data-dock__content" id={`${dockId}-panel-layers`} role="tabpanel" aria-label="图层管理">
         <div className="earth-data-dock__section-head"><strong>项目图层</strong><span>{projectLayers.length} 个</span></div>
         <div className="earth-data-dock__layer-list">{projectLayers.map(layer => <div className={`earth-data-dock__layer ${selectedLayer?.id === layer.id ? 'is-active' : ''}`} key={layer.id}>
           <input type="checkbox" aria-label={`${layer.name} 可见`} checked={layer.visible !== false} disabled={Boolean(pending) || !onToggleLayer} onChange={event => void perform('更新图层可见性', () => onToggleLayer?.(layer.id, event.target.checked))} />
-          <Layers size={14} aria-hidden="true" className="earth-data-dock__row-icon" /><button type="button" className="earth-data-dock__layer-select" title={layer.name} aria-pressed={selectedLayer?.id === layer.id} onClick={() => setSelectedLayerId(layer.id)}><strong>{layer.name}</strong><span title={layer.geometryTypes.join(' / ')}>{layer.featureCount} 要素 · {layer.geometryTypes.join(' / ') || '未知几何'} · v{layer.revision ?? 1}</span></button>{selectedLayer?.id === layer.id ? <span className="earth-data-dock__current-label">当前</span> : null}
+          <span className="earth-layer-symbol" data-shape={layerSymbol(layer.geometryTypes).shape} title={layerSymbol(layer.geometryTypes).label} aria-label={layerSymbol(layer.geometryTypes).label} style={{ backgroundColor: layerSymbol(layer.geometryTypes).color, borderColor: layerSymbol(layer.geometryTypes).ink }} /><button type="button" className="earth-data-dock__layer-select" title={layer.name} aria-pressed={selectedLayer?.id === layer.id} onClick={() => setSelectedLayerId(layer.id)}><strong>{layer.name}</strong><span title={layer.geometryTypes.join(' / ')}>{layer.featureCount} 个要素{controlled ? ` · ${layerSymbol(layer.geometryTypes).label}` : ` · ${layer.geometryTypes.join(' / ') || '未知几何'} · v${layer.revision ?? 1}`}</span></button>{!controlled && selectedLayer?.id === layer.id ? <span className="earth-data-dock__current-label">当前</span> : null}
         </div>)}</div>
         {!projectLayers.length ? <p className="earth-data-dock__empty">在地图上绘制或导入要素，再保存为项目图层。也可以从数据库加载子图层。</p> : null}
-        {selectedLayer ? <div className="earth-data-dock__layer-detail"><div><span>{selectedLayer.crs} · v{selectedLayer.revision ?? 1}</span><button type="button" onClick={() => setTab('attributes')}>打开属性表</button></div>
-          <details className="earth-data-dock__history"><summary>版本与图层管理<ChevronDown size={13} /></summary><dl className="earth-data-dock__metadata"><div><dt>图层 ID</dt><dd><code>{selectedLayer.id}</code></dd></div>{typeof selectedLayer.source?.path === 'string' ? <div><dt>源文件</dt><dd><code>{selectedLayer.source.path}</code></dd></div> : null}<div><dt>项目副本</dt><dd><code>{selectedLayer.path}</code></dd></div><div><dt>更新时间</dt><dd>{timeLabel(selectedLayer.updatedAt)}</dd></div></dl><div className="earth-data-dock__history-list">{[...(selectedLayer.history ?? [])].reverse().map(path => <button type="button" key={path} disabled={Boolean(pending) || !onOpenLayerRevision} onClick={() => void perform('打开图层版本', () => onOpenLayerRevision?.(selectedLayer, path))}><span>{path.split('/').at(-1) ?? path}</span><small>查看快照</small></button>)}{!selectedLayer.history?.length ? <p className="earth-data-dock__empty">尚无保存的历史快照。</p> : null}</div><button type="button" className="earth-data-dock__remove" disabled={Boolean(pending) || !onRemoveLayer} onClick={() => void perform('移除图层', () => onRemoveLayer?.(selectedLayer.id))}>从目录移除 {selectedLayer.name}</button></details>
+        {selectedLayer ? <div className="earth-data-dock__layer-detail"><div><span hidden={controlled}>{selectedLayer.crs} · v{selectedLayer.revision ?? 1}</span><button type="button" onClick={() => setTab('attributes')}>打开属性表</button></div>
+          <details className="earth-data-dock__history"><summary>版本与图层管理<ChevronDown size={13} /></summary><dl className="earth-data-dock__metadata"><div><dt>坐标系 / 版本</dt><dd>{selectedLayer.crs} · v{selectedLayer.revision ?? 1}</dd></div><div><dt>图层 ID</dt><dd><code>{selectedLayer.id}</code></dd></div>{typeof selectedLayer.source?.path === 'string' ? <div><dt>源文件</dt><dd><code>{selectedLayer.source.path}</code></dd></div> : null}<div><dt>项目副本</dt><dd><code>{selectedLayer.path}</code></dd></div><div><dt>更新时间</dt><dd>{timeLabel(selectedLayer.updatedAt)}</dd></div></dl><div className="earth-data-dock__history-list">{[...(selectedLayer.history ?? [])].reverse().map(path => <button type="button" key={path} disabled={Boolean(pending) || !onOpenLayerRevision} onClick={() => void perform('打开图层版本', () => onOpenLayerRevision?.(selectedLayer, path))}><span>{path.split('/').at(-1) ?? path}</span><small>查看快照</small></button>)}{!selectedLayer.history?.length ? <p className="earth-data-dock__empty">尚无保存的历史快照。</p> : null}</div><button type="button" className="earth-data-dock__remove" disabled={Boolean(pending) || !onRemoveLayer} onClick={() => void perform('移除图层', () => onRemoveLayer?.(selectedLayer.id))}>从目录移除 {selectedLayer.name}</button></details>
         </div> : null}
-        <details className="earth-data-dock__save-layer" open={!projectLayers.length}><summary>将地图所选保存为新图层 <span>{selectedFeatures.length} 要素</span></summary><div className="earth-data-dock__layer-actions"><input aria-label="新图层名称" value={layerName} onChange={event => setLayerName(event.target.value)} placeholder="图层名称" /><button type="button" disabled={Boolean(pending) || !onSaveLayer || !selectedFeatures.length || !layerName.trim()} onClick={() => void perform('保存图层', () => onSaveLayer?.(layerName.trim(), selectedFeatures))}>保存图层</button></div></details>
+        <details hidden={controlled && !selectedFeatures.length} className="earth-data-dock__save-layer" open={!projectLayers.length}><summary>将地图所选保存为新图层 <span>{selectedFeatures.length} 要素</span></summary><div className="earth-data-dock__layer-actions"><input aria-label="新图层名称" value={layerName} onChange={event => setLayerName(event.target.value)} placeholder="图层名称" /><button type="button" disabled={Boolean(pending) || !onSaveLayer || !selectedFeatures.length || !layerName.trim()} onClick={() => void perform('保存图层', () => onSaveLayer?.(layerName.trim(), selectedFeatures))}>保存图层</button></div></details>
         {selectedFeatures.length ? <button type="button" className="earth-data-dock__selection-link" onClick={() => setTab('attributes')}><span>地图已选 {selectedFeatures.length} 个要素</span><strong>{draftDirty ? '继续编辑草稿' : '查看属性与编辑'}</strong></button> : null}
         {attributeEditor && !selectedLayer ? attributeEditor : null}
-        {exportControls}
+        {controlled && exportControls ? <details className="earth-simple-export"><summary>导出图层</summary>{exportControls}</details> : exportControls}
         {runLayers.length ? <section className="earth-data-dock__cloud-layers"><div className="earth-data-dock__section-head"><strong>Earth Engine 结果</strong><span>云端图层</span></div>{runLayers.map(layer => <div className="earth-data-dock__run-layer" key={layer.id}><strong>{layer.name}</strong><small>{layer.status || '图层已返回'}</small></div>)}</section> : null}
       </section> : null}
 
@@ -348,13 +381,13 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
           {filteredFeatures.length > PAGE_SIZE ? <div className="earth-data-dock__pagination"><button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span>{currentPage + 1} / {Math.ceil(filteredFeatures.length / PAGE_SIZE)}</span><button type="button" disabled={(currentPage + 1) * PAGE_SIZE >= filteredFeatures.length} onClick={() => setPage(currentPage + 1)}>下一页</button></div> : null}
         </> : <p className="earth-data-dock__empty">保存一个项目图层后，可以在这里筛选、排序，并联动地图选择。</p>}
         {attributeEditor ?? <p className="earth-data-dock__empty">在地图或属性表中选择一个要素，查看和编辑它的字段。</p>}
-        {exportControls}
+        {controlled && exportControls ? <details className="earth-simple-export"><summary>导出图层</summary>{exportControls}</details> : exportControls}
       </section> : null}
 
       {tab === 'runs' ? <section className="earth-data-dock__content" id={`${dockId}-panel-runs`} role="tabpanel" aria-label="运行与交付">
         <div className="earth-data-dock__section-head"><strong>本地 GIS 运行</strong><span>{localRuns.length} 次</span></div>
         <p className="earth-data-dock__context-line">选择运行查看结果，比较两个已完成的方案，再生成成果包。</p>
-        <div className="earth-data-dock__run-list">{orderedRuns.map(item => <button type="button" key={item.runId} aria-pressed={selectedRun?.runId === item.runId} onClick={() => setSelectedRunId(item.runId)}><strong>{item.op || 'GIS 分析'}</strong><span className={`earth-data-dock__run-status earth-data-dock__run-status--${item.status}`}>{STATUS_LABELS[item.status] ?? item.status}</span><code>{item.runId}</code><small>{timeLabel(item.updatedAt)}</small></button>)}</div>
+        <div className="earth-data-dock__run-list">{orderedRuns.map(item => <button type="button" key={item.runId} aria-pressed={selectedRun?.runId === item.runId} onClick={() => setSelectedRunId(item.runId)}><strong>{item.op || 'GIS 分析'}</strong><span className={`earth-data-dock__run-status earth-data-dock__run-status--${item.status}`}>{STATUS_LABELS[item.status] ?? item.status}</span><code title={item.runId}>{controlled ? item.runId.slice(0, 8) : item.runId}</code><small>{timeLabel(item.updatedAt)}</small></button>)}</div>
         {!localRuns.length ? <p className="earth-data-dock__empty">还没有本地运行。完成一次 GIS 分析后，这里会保留输入、参数与结果。</p> : null}
         {selectedRun ? <section className="earth-data-dock__run-detail" aria-label="所选本地运行"><div className="earth-data-dock__section-head"><strong>{selectedRun.op || 'GIS 分析'}</strong><span>{STATUS_LABELS[selectedRun.status] ?? selectedRun.status}</span></div><code>{selectedRun.runId}</code>{Object.keys(selectedRun.params ?? {}).length ? <dl>{Object.entries(selectedRun.params ?? {}).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{displayValue(value)}</dd></div>)}</dl> : <p className="earth-data-dock__empty">这次运行没有额外参数。</p>}
           <div className="earth-data-dock__split-actions"><button type="button" disabled={Boolean(pending) || !onShowRun} onClick={() => void perform('查看运行', () => onShowRun?.(selectedRun.runId))}>查看运行结果</button><button type="button" className="earth-data-dock__primary" disabled={Boolean(pending) || selectedRun.status !== 'completed' || !onCreateBundle} onClick={() => void perform('生成成果包', () => onCreateBundle?.(selectedRun.runId))}>{pending === '生成成果包' ? '正在打包…' : '生成成果包'}</button></div>

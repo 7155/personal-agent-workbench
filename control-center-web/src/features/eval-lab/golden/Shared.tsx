@@ -15,8 +15,8 @@ export function GoldenModelCatalog({ children }: { children: ReactNode }) {
   return <CatalogContext.Provider value={{ models: parsePiModelCatalogOptions(query.data).models, loading: query.isFetching, error: query.isError, read: () => { void query.refetch(); } }}>{children}</CatalogContext.Provider>;
 }
 
-export function ModelFields({ label, value, onChange, disabled = false }: {
-  label: string; value: ModelConfig; onChange: (value: ModelConfig) => void; disabled?: boolean;
+export function ModelFields({ label, value, onChange, disabled = false, showPrompt = true }: {
+  label: string; value: ModelConfig; onChange: (value: ModelConfig) => void; disabled?: boolean; showPrompt?: boolean;
 }) {
   const id = useId();
   const catalog = useContext(CatalogContext);
@@ -49,11 +49,11 @@ export function ModelFields({ label, value, onChange, disabled = false }: {
       <Disclosure className="golden-disclosure" summary="模型标识与推理强度">{manual}</Disclosure>
     </> : manual}
     {!value.provider.trim() || !value.model.trim() || !validThinking ? <p className="golden-field-error" role="status">请填写明确的服务、模型，并选择支持的推理强度。</p> : null}
-    <Disclosure className="golden-disclosure" summary={`${promptLabel}（Prompt）`}>
+    {showPrompt ? <Disclosure className="golden-disclosure" summary={`${promptLabel}（Prompt）`}>
       <Field htmlFor={`${id}-prompt`} label={promptLabel}>
         <TextArea id={`${id}-prompt`} value={value.prompt} rows={5} placeholder={label === '评审' ? '可补充评审规则；留空使用固定评审协议' : '可补充回答规则；留空使用任务自带规则'} onChange={(event) => onChange({ ...value, prompt: event.target.value })} />
       </Field>
-    </Disclosure>
+    </Disclosure> : null}
   </fieldset>;
 }
 

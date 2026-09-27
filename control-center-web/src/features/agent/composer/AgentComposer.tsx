@@ -123,6 +123,7 @@ export function AgentComposer({
   busy,
   stopping = false,
   sending,
+  submissionBlocked = false,
   modelChanging = false,
   onDraftChange,
   onAttachmentsChange,
@@ -170,6 +171,7 @@ export function AgentComposer({
   busy: boolean;
   stopping?: boolean;
   sending: boolean;
+  submissionBlocked?: boolean;
   modelChanging?: boolean;
   onDraftChange: (value: string) => void;
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
@@ -374,7 +376,7 @@ export function AgentComposer({
     publishDraft(nextDraft);
   }
   function submit(delivery: ComposerSubmitMode | null): void {
-    if (!delivery || pastedText.blocked) return;
+    if (!delivery || pastedText.blocked || submissionBlocked) return;
     const value = composerDraft;
     /* A refused queue never reaches Runtime, so the draft has to stay exactly
        where the writer left it rather than vanish into a full queue. */
@@ -627,7 +629,7 @@ export function AgentComposer({
               label={sendBlockedReason ? `${sendActionLabel}（${sendBlockedReason}）` : sendActionLabel}
               icon={<Send size={16} />}
               onClick={() => submit(composerSubmitMode(actionModel))}
-              disabled={actionModel.primaryDisabled}
+              disabled={actionModel.primaryDisabled || submissionBlocked}
               tooltip
             />
           </>

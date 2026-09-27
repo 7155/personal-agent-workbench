@@ -1,3 +1,4 @@
+import { CloudRunProgress, type CloudProgress } from './CloudRunProgress';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, MapPin } from 'lucide-react';
 import type { ProjectLayer } from './layer-catalog';
@@ -44,6 +45,7 @@ export type RemoteSensingPanelProps = {
   initialKind?: RemoteSensingWorkflowPlan['kind'];
   imageFiles?: Array<{ path: string; name: string }>;
   busy?: boolean;
+  cloudProgress?: CloudProgress;
   onPrepareWorkflow?: (plan: RemoteSensingWorkflowPlan) => Promise<RemoteSensingPreparation | void> | RemoteSensingPreparation | void;
   onRunWorkflow?: (planId: string) => Promise<RemoteSensingRunReceipt | void> | RemoteSensingRunReceipt | void;
   onResearch?: (planId: string) => Promise<void> | void;
@@ -83,7 +85,7 @@ function parseBand(value: string): number | string {
   return trimmed;
 }
 
-export function RemoteSensingPanel({ projectLayers, selectedFeatures, initialKind = 'classification', imageFiles = [], busy = false, onPrepareWorkflow, onRunWorkflow, onResearch, onSaveSamples, onOpenResult }: RemoteSensingPanelProps) {
+export function RemoteSensingPanel({ projectLayers, selectedFeatures, initialKind = 'classification', imageFiles = [], busy = false, onPrepareWorkflow, onRunWorkflow, onResearch, onSaveSamples, onOpenResult, cloudProgress }: RemoteSensingPanelProps) {
   const panelId = useId();
   const [kind, setKind] = useState<RemoteSensingWorkflowPlan['kind']>(initialKind);
   const kindRef = useRef(kind);
@@ -247,6 +249,7 @@ export function RemoteSensingPanel({ projectLayers, selectedFeatures, initialKin
       <div><h2>{workflow.name}</h2><p>{workflow.description}</p></div>
       <label>分析内容<select aria-label="遥感任务" value={kind} disabled={disabled} onChange={event => setKind(event.target.value as RemoteSensingWorkflowPlan['kind'])}>{WORKFLOWS.map(item => <option value={item.kind} key={item.kind}>{item.name}</option>)}</select></label>
     </header>
+    {cloudProgress && cloudProgress.planId === preparation?.planId ? <CloudRunProgress progress={cloudProgress}/> : null}
     <ol className="earth-remote-sensing__steps" aria-label="分析步骤">
       {STEPS.map((step, index) => <li className="earth-remote-sensing__step" key={step} data-state={index < currentStep ? 'complete' : index === currentStep ? 'current' : 'upcoming'} aria-current={index === currentStep ? 'step' : undefined}><span aria-hidden="true">{index + 1}</span><span>{step}</span></li>)}
     </ol>
@@ -263,7 +266,7 @@ export function RemoteSensingPanel({ projectLayers, selectedFeatures, initialKin
       </section>
 
       <section className="earth-remote-sensing__stage" aria-label="分析材料">
-        <div className="earth-remote-sensing__stage-heading"><h3>样本与影像</h3><p>{kind === 'research' ? '问题必填；日期和影像来源可作为调研线索。' : kind === 'classification' ? '准备带坐标的影像，以及目标和非目标的样本。' : local ? '核对实际影像的波段。普通 RGB 截图不能计算植被指数。' : '选择实际观测的日期范围，数据来源可在进阶设置中调整。'}</p></div>
+        <div className="earth-remote-sensing__stage-heading"><h3>{kind === 'classification' ? '样本与影像' : '影像与日期'}</h3><p>{kind === 'research' ? '问题必填；日期和影像来源可作为调研线索。' : kind === 'classification' ? '准备带坐标的影像，以及目标和非目标的样本。' : local ? '核对实际影像的波段。普通 RGB 截图不能计算植被指数。' : '选择实际观测的日期范围，数据来源可在进阶设置中调整。'}</p></div>
         <div className="earth-remote-sensing__inputs">
           {kind === 'research' ? <label className="earth-remote-sensing__wide">研究问题<textarea aria-label="遥感研究问题" rows={3} value={researchQuestion} disabled={disabled} onChange={event => setResearchQuestion(event.target.value)} placeholder="例如：2019–2025 年间，这个区域的植被变化与哪些因素相关？" /><small>写清对象、时段、要回答的问题与希望交付的图表。</small></label> : null}
           {kind === 'ndvi' ? <fieldset className="earth-remote-sensing__provider"><legend>影像来源</legend><label><input type="radio" name={`${panelId}-ndvi-provider`} checked={ndviProvider === 'local'} disabled={disabled} onChange={() => setNdviProvider('local')} />本地 GeoTIFF</label><label><input type="radio" name={`${panelId}-ndvi-provider`} checked={ndviProvider === 'gee'} disabled={disabled} onChange={() => setNdviProvider('gee')} />Earth Engine</label></fieldset> : null}

@@ -28,13 +28,8 @@ export function MapTaskLauncher({ selectedFeatures, workspaceReady, onChoose }: 
       : `已选 ${selectedFeatures.length} 个地图要素。区域任务还需要绘制或选择一个面。`;
 
   return <section className="earth-task-launcher" aria-label="地图任务">
-    <header className="earth-task-launcher__header">
-      <h2>用这片地图做什么</h2>
-      <p>从要解决的问题开始，逐步确认范围、材料和成果。</p>
-    </header>
-    <p className="earth-task-launcher__context" data-has-selection={selectedFeatures.length > 0}>
-      {selectionHint}{!workspaceReady ? ' 请先关联工作区，以保存输入、分析版本和成果。' : ''}
-    </p>
+    <p className="earth-task-launcher__context">选择一种工作，或向 Agent 描述分析目标。</p>
+    {selectedFeatures.length > 0 || !workspaceReady ? <p className="earth-task-launcher__selection">{selectionHint}{!workspaceReady ? ' 请先打开项目。' : ''}</p> : null}
     <ul className="earth-task-launcher__list">
       {TASKS.map(({ action, title, description, Icon }) => <li key={action}>
         <button type="button" className="earth-task-launcher__action" aria-label={title} aria-describedby={`${launcherId}-${action}`} onClick={() => onChoose(action)}>
@@ -47,6 +42,6 @@ export function MapTaskLauncher({ selectedFeatures, workspaceReady, onChoose }: 
         </button>
       </li>)}
     </ul>
-    <p className="earth-task-launcher__boundary">路线、设施容量与服务覆盖需先确认路网、需求和约束数据。当前入口可交给 Agent 制定方案，不代表这些计算已经完成。</p>
+    <details className="earth-method-boundary"><summary>使用说明</summary><p>区域分析需要范围和真实数据。路线、设施容量与服务覆盖还需要相应的路网、需求和约束；选择任务不代表分析已完成。</p></details>
   </section>;
 }

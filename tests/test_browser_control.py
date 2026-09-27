@@ -507,6 +507,38 @@ class BrowserControlServiceTests(unittest.TestCase):
 
         service.command_runner.assert_not_called()
 
+    def test_browser_host_selector_uses_current_product_name_and_explicit_development_marker(self) -> None:
+        root = Path(self.temp.name)
+        app = root / "Applications" / "Personal Agent Workbench.app"
+        executable = self._write_canonical_electron_host(app, commit="a" * 40)
+        marker_path = app / "Contents/Resources/rag-ime-control-web-build-marker.json"
+        with mock.patch.object(Path, "home", return_value=root):
+            self.assertEqual(self.service._paw_browser_host_executable(current_commit="a" * 40), executable)
+            marker = json.loads(marker_path.read_text())
+            marker.update(gitDirty=True, sourceDirty=True)
+            marker["provenance"]["sourceDirty"] = True
+            marker_path.write_text(json.dumps(marker))
+            self.assertIsNone(self.service._paw_browser_host_executable(current_commit="a" * 40))
+            marker["developmentInstall"] = True
+            marker_path.write_text(json.dumps(marker))
+            self.assertEqual(self.service._paw_browser_host_executable(current_commit="a" * 40), executable)
+            marker["provenance"]["sourceDirty"] = False
+            marker_path.write_text(json.dumps(marker))
+            self.assertIsNone(self.service._paw_browser_host_executable(current_commit="a" * 40))
+
+    def test_browser_runtime_requires_compiled_host_modules_not_just_cli_wrappers(self) -> None:
+        self.service.ego_runtime_root = Path(self.temp.name) / "ego"
+        paths = self.service._ego_paths(port=0)
+        for key in ("cli", "host", "harness"):
+            paths[key].parent.mkdir(parents=True, exist_ok=True)
+            paths[key].write_text("// wrapper only")
+        self.assertFalse(self.service._ego_runtime_available())
+        for name in ("cli.js", "host-control.js"):
+            path = self.service.ego_runtime_root / "package/ego-linux-host/dist" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("export {};")
+        self.assertTrue(self.service._ego_runtime_available())
+
     def test_managed_browser_requires_matching_current_and_expected_source_commits(self) -> None:
         root = Path(self.temp.name)
         runtime = FakePawBrowserRuntime(root / "commit-profile")

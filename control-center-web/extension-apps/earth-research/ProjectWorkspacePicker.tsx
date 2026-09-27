@@ -97,8 +97,7 @@ export function ProjectWorkspacePicker({ sessions, session, draftRoot, open, dis
   }}>
     <button ref={triggerRef} className="earth-project-picker__trigger" type="button" aria-label="选择 GIS 项目与 Agent" aria-expanded={open} aria-controls={panelId} onClick={() => onOpenChange(!open)}>
       <FolderOpen size={17} aria-hidden="true" />
-      <span className="earth-project-picker__current"><strong>{projectName(visibleRoot)}</strong><span aria-label={currentRoot ? '当前项目文件夹' : '待打开项目文件夹'} title={visibleRoot}>{visibleRoot || '选择文件夹或已有项目'}</span></span>
-      <span className="earth-project-picker__agent" title={session?.title}>{session ? session.title : loading ? '正在读取…' : '未进入 Agent'}</span>
+      <span className="earth-project-picker__current" aria-label={currentRoot ? '当前项目文件夹' : '待打开项目文件夹'} data-path={visibleRoot} title={visibleRoot || '打开项目'}><strong>{visibleRoot ? projectName(visibleRoot) : '打开项目'}</strong></span>
       <ChevronDown size={13} aria-hidden="true" />
     </button>
     {open ? <section id={panelId} className="earth-project-picker__panel" aria-label="项目与 Agent 选择" aria-busy={working !== null}>

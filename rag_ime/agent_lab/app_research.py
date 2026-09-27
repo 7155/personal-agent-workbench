@@ -353,10 +353,23 @@ class FrozenResearchReader:
                 tokens = query.casefold().split()
                 docs = [key for key, doc in self.documents.items() if all(token in
                         (str(doc.get('title', '')) + ' ' + str(self.snapshot['sources'][key].get('title', ''))).casefold() for token in tokens)]
+                match_basis = 'title'
+                if not docs:
+                    # Opaque PDF filenames need identity lookup in the frozen
+                    # front matter. Never promote later bibliography mentions
+                    # to a document's author/title identity or return body text
+                    # here: the model must still find/open the original source.
+                    match_basis = 'first_page_text'
+                    for key, rows in self.by_document.items():
+                        front = '\n'.join(c['content'] for c in rows[:6]
+                                          if c.get('page') in (None, 1))[:4000].casefold()
+                        if all(token in front for token in tokens):
+                            docs.append(key)
                 offset, limit = _integer(args.get('offset', 0), 0, 20000, 'offset'), _integer(args.get('limit', 8), 1, 20, 'limit')
                 result['documents'] = []
                 for doc_id in docs[offset:offset + limit]:
                     row = self._metadata(doc_id)
+                    row['matchBasis'] = match_basis
                     charge = 0 if doc_id in state['metadata'] else len(row['title'])
                     if charge > available:
                         break

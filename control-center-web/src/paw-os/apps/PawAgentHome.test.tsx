@@ -14,10 +14,56 @@ import { ControlTransportHttpError } from '@/platform/http-transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import agentNextCss from '../styles/paw-os-agent-next.css?raw';
 import { PawAgentHome } from './PawAgentHome';
+import { readRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
+import { createAgentModeStore } from '@/features/semantic-workspace/agent-mode-store';
 
 afterEach(cleanup);
 
 describe('PAWOS Agent Home 首屏合同', () => {
+  it('starts the default Jev mode with three partners and its real graph command, preserving the authorization policy', async () => {
+    const user = userEvent.setup();
+    const onCreated = vi.fn();
+    const { transport } = renderHome({ interfaceMode: createAgentModeStore().getSnapshot(), onCreated,
+      personas: [persona('planner', '规划者'), persona('builder', '执行者'), persona('reviewer', '核对者')] });
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '分析依赖并完成改动');
+    await user.click(screen.getByRole('button', { name: '开始 Jev 任务' }));
+    await waitFor(() => expect(transport.requests.some(call => call.request.pathId === 'agent.jev.command')).toBe(true));
+    const container = transport.requests.find(call => call.request.pathId === 'agent.rooms.create')?.request.body as Record<string, unknown>;
+    expect(container.participants).toHaveLength(3);
+    expect(container.permissionPolicy).toMatchObject({ room: { executionMode: 'full_trust' } });
+    expect(transport.requests.find(call => call.request.pathId === 'agent.jev.command')?.request.body).toMatchObject({ action: 'create', message: '分析依赖并完成改动', modelRouting: 'balanced', toolApprovalMode: 'dispatch', verificationMode: 'auto', executionApproval: true });
+    expect(transport.requests.some(call => call.request.pathId === 'agent.room.message' || call.request.pathId === 'agent.session.prompt')).toBe(false);
+    expect(onCreated).toHaveBeenCalledWith({ kind: 'room', id: 'room-created' }, undefined, expect.objectContaining({ id: 'room-created' }));
+    expect(readRoomEntryMode(transport, 'room-created')).toBe('jev');
+  });
+  it('sends the chosen review policy from the Jev Home menu', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderHome({ interfaceMode: createAgentModeStore().getSnapshot(),
+      personas: [persona('planner', '规划者'), persona('builder', '执行者')] });
+    await user.click(screen.getByRole('button', { name: 'Jev 模型与工具设置' }));
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByRole('menuitemradio', { name: '简单任务允许原伙伴复核' })).toHaveAttribute('aria-checked', 'true');
+    expect(menu).toHaveTextContent('多步骤计划仍由其他伙伴复核');
+    await user.click(within(menu).getByRole('menuitemradio', { name: '始终由其他伙伴复核' }));
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '核对一项简单任务');
+    await user.click(screen.getByRole('button', { name: '开始 Jev 任务' }));
+    await waitFor(() => expect(transport.requests.some(call => call.request.pathId === 'agent.jev.command')).toBe(true));
+    expect(transport.requests.find(call => call.request.pathId === 'agent.jev.command')?.request.body).toMatchObject({ action: 'create', verificationMode: 'independent' });
+  });
+  it('allows an ordinary Session from the Jev home with its model control and unchanged draft', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderHome({ interfaceMode: createAgentModeStore().getSnapshot(), models: [model('gpt-5.6-luna', 'GPT-5.6 Luna')] });
+    expect(screen.getByRole('radio', { name: 'Room' })).toBeChecked();
+    const input = screen.getByRole('textbox', { name: '描述你想完成的工作' });
+    await user.type(input, '继续一个普通对话');
+    await user.click(screen.getByRole('radio', { name: 'Session' }));
+    expect(input).toHaveValue('继续一个普通对话');
+    expect(screen.getByRole('button', { name: /模型与推理：/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Jev 模型与工具设置' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+    await waitFor(() => expect(transport.requests.some(call => call.request.pathId === 'agent.session.prompt')).toBe(true));
+    expect(transport.requests.some(call => call.request.pathId === 'agent.rooms.create' || call.request.pathId === 'agent.jev.command')).toBe(false);
+  });
   it('completes the new-work composer and 继续工作 on one fixed surface without a galaxy landing section', async () => {
     const { container } = renderHome();
 
@@ -583,6 +629,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
 });
 
 function renderHome({
+  interfaceMode = 'traditional',
   modelReference = 'inherit',
   models = [],
   personas = [],
@@ -591,6 +638,7 @@ function renderHome({
   onCreated = vi.fn(),
   promptRoute = { ok: true },
 }: {
+  interfaceMode?: 'traditional' | 'jev';
   modelReference?: string;
   models?: PiModelOption[];
   personas?: AgentPersonaV1[];
@@ -616,6 +664,7 @@ function renderHome({
         },
       }),
       'agent.room.message': { ok: true },
+      'agent.jev.command': { ok: true, accepted: true, graphId: 'jev-created', rootId: 'jev-root' },
       'agent.sessions.create': {
         ok: true,
         session: {
@@ -635,6 +684,7 @@ function renderHome({
       <ControlTransportProvider transport={transport}>
         <TooltipProvider>
           <PawAgentHome
+            interfaceMode={interfaceMode}
             defaultModel="gpt/gpt-5.6-luna"
             models={models}
             personas={personas}

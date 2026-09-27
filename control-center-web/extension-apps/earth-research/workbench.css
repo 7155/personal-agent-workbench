@@ -1,0 +1,145 @@
+/* Workbench composition. Legacy map/editor internals remain in app.css.
+   Only this file owns the new shell, task rail, forms and status strip. */
+.earth-app--workbench {
+  --earth-surface: #fffefa;
+  --earth-surface-subtle: #f4f5f2;
+  --earth-ink: #26312d;
+  --earth-muted: #626d66;
+  --earth-line: #dce2dc;
+  --earth-accent: #17684f;
+  --earth-accent-pressed: #0e513c;
+  --earth-selection: #eaf3ed;
+  --earth-task-width: 400px;
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--earth-surface-subtle);
+  font: 13px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.earth-app--workbench [hidden] { display: none !important; }
+.earth-app--workbench *, .earth-app--workbench *::before, .earth-app--workbench *::after { box-sizing: border-box; }
+.earth-app--workbench .earth-app__header { height: 52px; padding: 0 16px; gap: 12px; border-bottom: 1px solid var(--earth-line); background: var(--earth-surface); }
+.earth-app--workbench .earth-app__header > [role=status] { font-size: 12px; color: var(--earth-muted); }
+.earth-app--workbench .earth-app__header > button { min-height: 32px; padding-inline: 10px; font-size: 12px; border-radius: 5px; }
+.earth-app--workbench .earth-app__body { min-height: 0; position: relative; }
+.earth-app--workbench .earth-workspace { position: relative; overflow: hidden; min-height: 0; }
+.earth-app--workbench .earth-agent { background: var(--earth-surface); border-right: 1px solid var(--earth-line); }
+.earth-app--workbench :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--earth-accent); outline-offset: 3px; }
+.earth-app--workbench button { cursor: pointer; }
+.earth-app--workbench button:disabled { cursor: not-allowed; }
+.earth-app--workbench .earth-workbench-toolbar { flex: none; min-height: 48px; gap: 8px; padding: 7px 12px; background: var(--earth-surface); border-bottom: 1px solid var(--earth-line); }
+.earth-app--workbench .earth-workbench-toolbar button { display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-height: 32px; padding: 5px 10px; border: 1px solid transparent; border-radius: 5px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.earth-app--workbench .earth-workbench-toolbar button:hover { background: var(--earth-selection); }
+.earth-app--workbench .earth-toolbar__views { display: flex; align-items: center; padding: 2px; gap: 2px; border: 1px solid var(--earth-line); border-radius: 6px; background: var(--earth-surface-subtle); }
+.earth-app--workbench .earth-toolbar__views button { min-height: 28px; padding: 3px 8px; }
+.earth-app--workbench .earth-toolbar__views button[aria-pressed=true] { background: var(--earth-surface); color: var(--earth-ink); box-shadow: 0 1px 3px #27392d14; }
+.earth-app--workbench .earth-workbench-toolbar .earth-toolbar__primary { background: var(--earth-accent); color: #fff; border-color: var(--earth-accent); }
+.earth-app--workbench .earth-workbench-toolbar .earth-toolbar__primary:hover { background: var(--earth-accent-pressed); }
+.earth-app--workbench .earth-toolbar__divider { width: 1px; height: 20px; background: var(--earth-line); }
+.earth-app--workbench .earth-toolbar__menu > summary { display: flex; align-items: center; gap: 5px; min-height: 32px; font-size: 12px; }
+.earth-app--workbench .earth-toolbar__menu > div { z-index: 1800; min-width: 180px; padding: 6px; border-radius: 6px; box-shadow: 0 8px 24px #25372c20; }
+.earth-app--workbench .earth-toolbar__menu > div > button { width: 100%; justify-content: flex-start; min-height: 36px; }
+.earth-app--workbench .earth-task-context { min-height: 36px; padding: 5px 12px; gap: 12px; background: var(--earth-selection); border-bottom: 1px solid var(--earth-line); font-size: 12px; }
+.earth-app--workbench .earth-task-context button { min-height: 26px; font-size: 12px; }
+.earth-app--workbench .earth-task-context small { font-size: 11px; color: var(--earth-muted); }
+.earth-app--workbench .earth-task-drawer {
+  position: absolute; z-index: 1200; top: 48px; right: 0; bottom: 0;
+  display: flex; flex-direction: column; width: min(var(--earth-task-width), calc(100% - 52px));
+  height: auto; min-height: 0; max-height: none; overflow: hidden;
+  border: 0; border-left: 1px solid var(--earth-line); background: var(--earth-surface);
+  box-shadow: -8px 0 24px #25372c12;
+}
+.earth-app--workbench .earth-task-drawer > .earth-drawer__header { display: flex; flex: none; align-items: center; justify-content: space-between; min-height: 70px; padding: 14px 20px; background: var(--earth-surface); border-bottom: 1px solid var(--earth-line); }
+.earth-task-drawer .earth-drawer__header small { font-size: 10px; color: var(--earth-muted); letter-spacing: .12em; }
+.earth-task-drawer .earth-drawer__header h2 { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.025em; }
+.earth-task-drawer .earth-drawer__header h2:focus { outline: none; }
+.earth-app--workbench .earth-task-drawer .earth-drawer__header button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--earth-line); border-radius: 5px; }
+.earth-task-drawer__body { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.earth-task-drawer__body > div > :is(.earth-sources, .earth-task-launcher, .earth-cloud-tasks, .earth-remote-panel, .earth-delivery-panel) { padding: 20px; }
+.earth-task-drawer :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { max-width: 100%; }
+.earth-app--workbench .earth-task-launcher__header h2 { font-size: 21px; line-height: 1.4; }
+.earth-app--workbench .earth-task-launcher__header p { font-size: 13px; }
+.earth-app--workbench .earth-task-launcher__list { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 0; }
+.earth-app--workbench .earth-task-launcher__action { min-height: 82px; padding: 14px; border: 1px solid var(--earth-line); border-radius: 6px; box-shadow: none; background: var(--earth-surface); }
+.earth-app--workbench .earth-task-launcher__action:hover { border-color: var(--earth-accent); background: var(--earth-selection); }
+.earth-app--workbench .earth-task-launcher__title { font-size: 14px; line-height: 1.5; }
+.earth-app--workbench .earth-task-launcher__description { font-size: 12px; line-height: 1.65; }
+.earth-app--workbench .earth-task-launcher__icon { color: var(--earth-accent); }
+.earth-app--workbench .earth-task-launcher__boundary { font-size: 12px; line-height: 1.7; }
+.earth-app--workbench .earth-analysis-form { display: flex; flex-direction: column; gap: 18px; padding: 0; }
+.earth-analysis-form__intro h2 { margin: 4px 0 6px; font-size: 23px; letter-spacing: -.035em; }
+.earth-analysis-form__intro p { margin: 0; color: var(--earth-muted); font-size: 13px; line-height: 1.7; }
+.earth-kicker { color: var(--earth-accent); font-size: 10px; letter-spacing: .1em; font-weight: 650; }
+.earth-analysis-steps { display: flex; justify-content: space-between; padding: 0 0 15px; margin: 0; list-style: none; gap: 8px; border-bottom: 1px solid var(--earth-line); }
+.earth-analysis-steps li { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--earth-muted); }
+.earth-analysis-steps li[data-active=true] { color: var(--earth-accent); font-weight: 600; }
+.earth-analysis-form fieldset { display: grid; gap: 15px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.earth-analysis-form legend { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+.earth-app--workbench .earth-analysis-form label { display: grid; gap: 7px; margin: 0; color: var(--earth-ink); font-size: 13px; font-weight: 550; }
+.earth-app--workbench .earth-analysis-form :is(input, select, textarea) { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--earth-line); border-radius: 5px; background: #fff; color: var(--earth-ink); font: inherit; }
+.earth-app--workbench .earth-analysis-form textarea { min-height: 92px; resize: vertical; }
+.earth-inline-hint { margin: 0; font-size: 12px; line-height: 1.65; color: var(--earth-muted); }
+.earth-preflight { padding: 14px; border: 1px solid #d9b16e; background: #fffbef; border-radius: 6px; }
+.earth-preflight[data-ready=true] { border-color: #b9d4c2; background: var(--earth-selection); }
+.earth-preflight h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 13px; }
+.earth-preflight p { display: grid; gap: 2px; margin: 8px 0; font-size: 12px; }
+.earth-preflight small { display: block; margin-top: 10px; color: var(--earth-muted); font-size: 11px; }
+.earth-analysis-form__actions { display: grid; gap: 8px; }
+.earth-app--workbench .earth-analysis-form__actions button { min-height: 40px; border: 1px solid var(--earth-line); border-radius: 5px; font-size: 13px; }
+.earth-app--workbench .earth-analysis-form .earth-primary-action { display: flex; align-items: center; justify-content: center; gap: 7px; background: var(--earth-accent); color: #fff; border-color: var(--earth-accent); }
+.earth-form-error { margin: 0; padding: 12px; background: #fff2ef; border-left: 3px solid #ae5746; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.earth-form-success { margin: 0; padding: 12px; background: var(--earth-selection); border-left: 3px solid var(--earth-accent); font-size: 12px; line-height: 1.7; }
+.earth-method-boundary > summary { min-height: 32px; font-size: 12px; cursor: pointer; }
+.earth-method-boundary p { font-size: 12px; line-height: 1.75; color: var(--earth-muted); }
+.earth-app--workbench .earth-code > header { min-height: 46px; }
+.earth-app--workbench .earth-code__identity > strong { font-size: 13px; }
+.earth-app--workbench .earth-code > header > button { min-height: 32px; font-size: 12px; }
+.earth-app--workbench .earth-gis-toolbar__tool { min-height: 34px; font-size: 12px !important; }
+.earth-app--workbench .earth-data-dock :is(button, select, input) { font-size: 12px; }
+.earth-app--workbench .earth-layer-toast { max-width: min(480px, calc(100% - 32px)); padding: 8px 12px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; pointer-events: none; }
+.earth-statusbar { position: relative; z-index: 1700; display: flex; align-items: center; gap: 18px; min-height: 30px; padding: 4px 14px; border-top: 1px solid var(--earth-line); background: var(--earth-surface); color: var(--earth-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.earth-statusbar > span, .earth-statusbar summary { display: flex; gap: 6px; align-items: center; }
+.earth-statusbar__jobs { margin-left: auto; min-width: 0; }
+.earth-statusbar__jobs > summary { cursor: pointer; list-style: none; min-height: 24px; }
+.earth-statusbar__jobs > summary::-webkit-details-marker { display: none; }
+.earth-statusbar__jobs > section { position: absolute; right: 12px; bottom: calc(100% + 6px); width: min(390px, calc(100vw - 32px)); max-height: 360px; padding: 18px; overflow: auto; color: var(--earth-ink); background: var(--earth-surface); border: 1px solid var(--earth-line); border-radius: 6px; box-shadow: 0 -6px 30px #25372c20; }
+.earth-statusbar__jobs h3 { margin: 0; font-size: 15px; }
+.earth-statusbar__jobs p { color: var(--earth-muted); font-size: 12px; line-height: 1.6; }
+.earth-statusbar__jobs ol { margin: 12px 0 0; padding: 0; list-style: none; }
+.earth-statusbar__jobs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; border-top: 1px solid var(--earth-line); padding: 10px 0; font-size: 12px; }
+.earth-statusbar__jobs li p { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.earth-statusbar__jobs li[data-state=running] { color: var(--earth-accent); }
+.earth-statusbar__ready { color: var(--earth-accent); flex: none; }
+.earth-cloud-tasks { font-size: 13px; }
+.earth-cloud-tasks__summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+.earth-cloud-tasks__summary span { padding: 4px 8px; border: 1px solid var(--earth-line); border-radius: 4px; background: var(--earth-surface-subtle); font-size: 12px; }
+.earth-app--workbench .earth-cloud-tasks li { padding: 14px; margin-top: 10px; border: 1px solid var(--earth-line); border-radius: 6px; }
+.earth-cloud-tasks li > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
+.earth-cloud-tasks li strong { font-size: 13px; overflow-wrap: anywhere; }
+.earth-cloud-tasks li span { font-size: 12px; }
+.earth-cloud-tasks li[data-state=FAILED] { border-color: #d9a99f; }
+.earth-spin { animation: earth-spin 1s linear infinite; }
+@keyframes earth-spin { to { transform: rotate(360deg); } }
+@container earth-workspace (min-width: 1100px) {
+  .earth-workspace[data-task-open=true] .earth-panels { margin-right: var(--earth-task-width); }
+  .earth-workspace[data-task-open=true] .earth-read-error { margin-right: var(--earth-task-width); }
+  .earth-task-drawer { box-shadow: none; }
+}
+@container earth-workspace (max-width: 700px) {
+  .earth-app--workbench .earth-workbench-toolbar { gap: 4px; flex-wrap: wrap; padding: 6px 8px; }
+  .earth-app--workbench .earth-workbench-toolbar button { padding-inline: 7px; }
+  .earth-app--workbench .earth-toolbar__divider { display: none; }
+  .earth-app--workbench .earth-task-drawer { top: 0; width: min(400px, calc(100% - 40px)); }
+  .earth-task-context small { display: none; }
+}
+@container earth-app (max-width: 600px) {
+  .earth-app--workbench .earth-app__header { padding-inline: 8px; gap: 5px; }
+  .earth-statusbar { gap: 6px; padding-inline: 8px; flex-wrap: wrap; }
+  .earth-statusbar > span:nth-child(2) { display: none; }
+  .earth-statusbar__jobs { max-width: 55%; }
+  .earth-statusbar__jobs summary > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+@media (prefers-reduced-motion: reduce) { .earth-spin { animation: none; } }
+
+.earth-app--workbench .earth-analysis-form .earth-primary-action:hover:not(:disabled) { background: var(--earth-accent-pressed); color: #fff; }

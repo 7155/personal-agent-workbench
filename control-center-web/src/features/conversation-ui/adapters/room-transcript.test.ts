@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { appendOptimisticRoomMessage, createRoomProjection } from '@/contracts/room-reducer';
+import { appendOptimisticRoomMessage, createRoomProjection, reduceRoomEvent } from '@/contracts/room-reducer';
+import { parseRoomEvent } from '@/contracts/validators';
 import { MODEL_AUTH_FAILURE_TEXT } from '@/features/agent/public-error';
+import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
 import type { AssistantMessage, TranscriptMessage, UserMessage } from '../model/types';
 import {
   roomApprovalDecision,
@@ -20,6 +22,123 @@ const options = {
 };
 
 describe('roomTranscript', () => {
+  it('classifies the persisted child-abort envelope after the reducer changes its message status', () => {
+    const { graph } = reclaimedAttempt();
+    const event = (sequence: number, eventType: string, payload: Record<string, unknown>) => parseRoomEvent({
+      schemaVersion: 'rag-ime.agent-room-event.v1', eventId: `room-live:${sequence}`,
+      roomId: 'room-live', sequence, turnId: 'root-a', eventType,
+      participantId: 'participant-a', sourceSessionId: 'session-a',
+      createdAtMs: sequence * 10, payload, resumeToken: `room-live:${sequence}`,
+    });
+    const events = [
+      event(1, 'participant_status', { status: 'jev_updated', graphId: 'graph-a', rootId: 'root-a' }),
+      event(2, 'route_decision', { rootId: 'root-a', dispatchId: 'dispatch-old', targetParticipantId: 'participant-a' }),
+      event(3, 'participant_message', { sourceEventId: 'pi:message', sourceEventType: 'message_completed', data: {
+        rootId: 'root-a', dispatchId: 'dispatch-old', sourceTurnId: 'turn-old', sourceLoopId: 'pi:message:old',
+        message: {
+          schemaVersion: 'rag-ime.agent-message.v1', id: 'old-assistant', sessionId: 'session-a', turnId: 'turn-old',
+          role: 'assistant', status: 'failed', attachments: [], citations: [], createdAtMs: 30, completedAtMs: 30,
+          blocks: [
+            { id: 'old-text', type: 'text', status: 'failed', presentationKind: 'markdown', data: { text: '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。' } },
+            { id: 'old-error', type: 'error', status: 'failed', presentationKind: 'error', data: { message: 'This operation was aborted' } },
+          ],
+        },
+      } }),
+      event(4, 'participant_activity', { sourceEventId: 'pi:terminal', sourceEventType: 'turn_completed', data: {
+        rootId: 'root-a', dispatchId: 'dispatch-old', sourceTurnId: 'turn-old',
+        activityKind: 'child', phase: 'aborted', status: 'aborted', summary: '',
+      } }),
+    ];
+    let projection = createRoomProjection('room-live');
+    for (const item of events) projection = reduceRoomEvent(projection, item).state;
+    expect(projection.diagnostics).toEqual([]);
+    const oldMessage = projection.messageOrder.map((id) => projection.messagesById[id])
+      .find((message) => message?.sourceTurnId === 'turn-old');
+    expect(oldMessage).toMatchObject({
+      status: 'aborted', roomId: 'room-live', rootId: 'root-a', dispatchId: 'dispatch-old',
+      sourceSessionId: 'session-a', sourceTurnId: 'turn-old',
+    });
+    expect(projection.turnsById['root-a']?.abortedDispatchIds).toContain('dispatch-old');
+    const card = roomTranscript(projection, { ...options, jevGraph: graph }).messages.at(-1) as AssistantMessage;
+    expect(card.blocks.at(-1)).toMatchObject({ kind: 'text', text: '旧执行已停止，任务已交接。' });
+  });
+
+  it('keeps an aborted message visible when no matching child terminal was recorded', () => {
+    const { projection, graph } = reclaimedAttempt();
+    projection.messagesById['message-agent']!.status = 'aborted';
+    const original = '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。';
+    expect((roomTranscript(projection, { ...options, jevGraph: graph }).messages.at(-1) as AssistantMessage).blocks.at(-1))
+      .toMatchObject({ kind: 'text', text: original });
+    projection.turnOrder.push('root-a');
+    projection.turnsById['root-a'] = {
+      id: 'root-a', rootId: 'root-a', status: 'running', messageIds: ['message-agent'], activityIds: [],
+      participantIds: ['participant-a'], abortedDispatchIds: ['dispatch-elsewhere'], createdAtMs: 100, updatedAtMs: 150,
+    };
+    expect((roomTranscript(projection, { ...options, jevGraph: graph }).messages.at(-1) as AssistantMessage).blocks.at(-1))
+      .toMatchObject({ kind: 'text', text: original });
+  });
+
+  it('shows a proven reclaimed attempt as a handoff while retaining its raw activity', () => {
+    const { projection, graph } = reclaimedAttempt();
+    const transcript = roomTranscript(projection, { ...options, jevGraph: graph });
+    const card = transcript.messages.at(-1) as AssistantMessage;
+    const tool = card.blocks.find((block) => block.id === 'tool:tool-a');
+
+    expect(tool).toMatchObject({ kind: 'tool', status: 'cancelled', summary: '旧执行已停止，任务已交接' });
+    expect(tool?.kind === 'tool' && tool.output).toContain('停止回执：This operation was aborted');
+    expect(card.blocks.at(-1)).toMatchObject({ kind: 'text', text: '旧执行已停止，任务已交接。' });
+    expect(card.error).toBeUndefined();
+    expect(transcript.activityByBlockId['tool:tool-a']).toBe(projection.activitiesById['tool-a']);
+    expect(transcript.reclaimedToolBlockIds.has('tool:tool-a')).toBe(true);
+  });
+
+  it.each([
+    ['another Room', (projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[1]!.request.roomId = 'room-elsewhere'; }],
+    ['another root', (projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.rootId = 'root-elsewhere'; }],
+    ['another Session', (projection: ReturnType<typeof roomProjection>) => { projection.messagesById['message-agent']!.sourceSessionId = 'session-elsewhere'; projection.activitiesById['tool-a']!.sourceSessionId = 'session-elsewhere'; }],
+    ['another dispatch', (projection: ReturnType<typeof roomProjection>) => { projection.messagesById['message-agent']!.dispatchId = 'dispatch-elsewhere'; projection.activitiesById['tool-a']!.payload.dispatchId = 'dispatch-elsewhere'; }],
+    ['unproven source turn', (projection: ReturnType<typeof roomProjection>) => { delete projection.messagesById['message-agent']!.sourceTurnId; delete projection.activitiesById['tool-a']!.payload.sourceTurnId; }],
+    ['unknown cancellation', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[0]!.state = 'unknown'; }],
+    ['a mismatched cancel receipt', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[0]!.receipt.sessionId = 'session-elsewhere'; }],
+    ['undrained execution', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[1]!.executionStatus = 'running'; }],
+    ['unaccepted reassignment', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[2]!.state = 'unknown'; }],
+    ['an older different-owner attempt', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.tasks[0]!.ownerId = 'participant-a'; graph.tasks[0]!.acceptedTurnId = 'dispatch-old'; }],
+    ['a verify-only successor', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[2]!.request.purpose = 'verify'; }],
+    ['a stale task revision', (_projection: ReturnType<typeof roomProjection>, graph: JevSnapshot) => { graph.effects[2]!.request.taskRevision = 1; }],
+  ])('keeps an aborted-looking provider failure when the reclaim belongs to %s', (_reason, change) => {
+    const { projection, graph } = reclaimedAttempt();
+    change(projection, graph);
+    const transcript = roomTranscript(projection, { ...options, jevGraph: graph });
+    const card = transcript.messages.at(-1) as AssistantMessage;
+    expect(card.blocks.find((block) => block.id === 'tool:tool-a')).toMatchObject({ kind: 'tool', status: 'error' });
+    expect(card.blocks.at(-1)).toMatchObject({ kind: 'text', text: '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。' });
+    expect(transcript.reclaimedToolBlockIds.size).toBe(0);
+  });
+
+  it('keeps a real provider error and an unknown tool timeout visible even beside a valid reclaim', () => {
+    const { projection, graph } = reclaimedAttempt();
+    projection.messagesById['message-agent']!.message = { blocks: [{ type: 'error', data: { message: '503 upstream request failed' } }] } as unknown as typeof projection.messagesById['message-agent']['message'];
+    projection.activitiesById['tool-a']!.payload.error = 'Tool gateway request timed out after 30000ms';
+    projection.activitiesById['tool-a']!.payload.result = { executionOutcome: 'unknown' };
+    const transcript = roomTranscript(projection, { ...options, jevGraph: graph });
+    const card = transcript.messages.at(-1) as AssistantMessage;
+    expect(card.blocks.find((block) => block.id === 'tool:tool-a')).toMatchObject({ kind: 'tool', status: 'error', executionOutcome: 'unknown' });
+    expect(card.blocks.at(-1)).toMatchObject({ kind: 'text', text: '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。' });
+  });
+
+  it('does not neutralize mixed abort and real failure evidence on one attempt', () => {
+    const { projection, graph } = reclaimedAttempt();
+    projection.messagesById['message-agent']!.message = { blocks: [
+      { type: 'error', data: { message: 'This operation was aborted' } },
+      { type: 'error', data: { message: '503 upstream request failed' } },
+    ] } as unknown as typeof projection.messagesById['message-agent']['message'];
+    projection.activitiesById['tool-a']!.payload.result = { error: '503 upstream request failed' };
+    const transcript = roomTranscript(projection, { ...options, jevGraph: graph });
+    const card = transcript.messages.at(-1) as AssistantMessage;
+    expect(card.blocks.find((block) => block.id === 'tool:tool-a')).toMatchObject({ kind: 'tool', status: 'error' });
+    expect(card.blocks.at(-1)).toMatchObject({ kind: 'text', text: '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。' });
+  });
+
   it.each(['模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。', '已完成文件检查。'])
   ('recovers persisted OAuth errors while preserving useful partial output: %s', (text) => {
     const projection = roomProjection();
@@ -105,6 +224,18 @@ describe('roomTranscript', () => {
       approvalId: 'approval-a',
       payloadSha256: 'a'.repeat(64),
     });
+  });
+
+  it('keeps an approved execution failure as a tool with its real cause', () => {
+    const projection = roomProjection();
+    const activity = projection.activitiesById['tool-a']!;
+    activity.status = 'failed';
+    activity.summary = 'bash';
+    activity.payload = { sourceEventType: 'tool_finished', toolName: 'bash', approvalId: 'already-approved', error: 'Tool gateway request timed out after 30000ms', result: { outputPreview: 'Tool gateway request timed out after 30000ms' } };
+    const transcript = roomTranscript(projection, options);
+    const block = transcript.messages.flatMap((message) => message.role === 'assistant' ? message.blocks : []).find((item) => item.id === 'tool:tool-a');
+    expect(block).toMatchObject({ kind: 'tool', name: '终端命令', status: 'error', summary: 'Tool gateway request timed out after 30000ms' });
+    expect(block?.kind === 'tool' && block.output).toContain('失败原因');
   });
 
   it('projects returned and reassigned WorkItem events as compact public receipts', () => {
@@ -206,6 +337,35 @@ describe('roomTranscript', () => {
     };
 
     expect(roomTranscriptRetrySource(projection, 'root-a')).toBeUndefined();
+  });
+
+  it('keeps an older failed turn before a newer user message in the complete record', () => {
+    const projection = roomProjection();
+    projection.turnOrder.push('root-a', 'root-b');
+    projection.turnsById['root-a'] = {
+      id: 'root-a', rootId: 'root-a', status: 'failed',
+      messageIds: ['message-user', 'message-agent'], activityIds: ['tool-a', 'approval-a'],
+      participantIds: ['participant-a'], createdAtMs: 100, updatedAtMs: 145,
+      failure: '旧轮次未完成',
+    };
+    projection.messageOrder.push('message-user-new', 'message-agent-new');
+    projection.messagesById['message-user-new'] = {
+      id: 'message-user-new', roomId: projection.roomId, turnId: 'root-b', participantId: null,
+      sourceSessionId: '', role: 'user', status: 'completed', text: '新一轮任务',
+      projectionKind: 'post', sequence: 6, createdAtMs: 160,
+    };
+    projection.messagesById['message-agent-new'] = {
+      id: 'message-agent-new', roomId: projection.roomId, turnId: 'root-b', participantId: 'participant-a',
+      sourceSessionId: 'session-a', role: 'assistant', status: 'completed', text: '新一轮已完成',
+      projectionKind: 'post', sequence: 7, createdAtMs: 170,
+    };
+
+    const { messages } = roomTranscript(projection, options);
+    const oldFailureIndex = messages.findIndex((message) => message.role === 'assistant' && message.error === '旧轮次未完成');
+    const nextUserIndex = messages.findIndex((message) => message.role === 'user' && message.text === '新一轮任务');
+    expect(oldFailureIndex).toBeGreaterThanOrEqual(0);
+    expect(nextUserIndex).toBeGreaterThan(oldFailureIndex);
+    expect(messages.at(-1)).toMatchObject({ role: 'assistant', turnId: 'root-b' });
   });
 
   it('restricts a partner satellite to that partner\u2019s own public lane', () => {
@@ -362,4 +522,42 @@ function roomProjection() {
     sequence: 3, createdAtMs: 120, updatedAtMs: 120,
   };
   return projection;
+}
+
+function reclaimedAttempt() {
+  const projection = roomProjection();
+  const message = projection.messagesById['message-agent']!;
+  message.status = 'failed';
+  message.text = '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。';
+  message.dispatchId = 'dispatch-old';
+  message.rootId = 'root-a';
+  message.sourceTurnId = 'turn-old';
+  message.message = { blocks: [{ type: 'error', data: { message: 'This operation was aborted' } }] } as unknown as typeof message.message;
+  const activity = projection.activitiesById['tool-a']!;
+  activity.status = 'failed';
+  activity.summary = 'read';
+  activity.payload = {
+    sourceEventType: 'tool_finished', toolName: 'read', rootId: 'root-a',
+    dispatchId: 'dispatch-old', sourceTurnId: 'turn-old',
+    error: 'This operation was aborted', result: { error: 'This operation was aborted' },
+  };
+  const graph: JevSnapshot = {
+    graphId: 'graph-a', rootId: 'root-a', version: 'v1', phase: 'execute', stopped: false,
+    requirementsRevision: 1, edges: [], ready: [], running: ['task-a'], review: [], blocked: [],
+    tasks: [{ id: 'task-a', state: 'running', revision: 2, ownerId: 'participant-b', parentId: '',
+      objective: '完成任务', expectedOutput: '结果', acceptance: [], result: '', artifacts: [], evidence: [], acceptedTurnId: 'dispatch-new' }],
+    effects: [
+      { effectId: 'cancel:reclaim-a', operation: 'cancel', state: 'accepted', executionStatus: 'accepted',
+        request: { graphId: 'graph-a', rootId: 'root-a', taskId: 'task-a', dispatchId: 'dispatch-old', sessionId: 'session-a', reclaimId: 'reclaim-a' },
+        receipt: { state: 'accepted', receiptId: 'cancel-receipt-a', taskId: 'task-a', dispatchId: 'dispatch-old', sessionId: 'session-a', reclaimId: 'reclaim-a' } },
+      { effectId: 'dispatch-old', operation: 'dispatch', state: 'accepted', executionStatus: 'drained',
+        request: { graphId: 'graph-a', roomId: 'room-live', rootId: 'root-a', taskId: 'task-a', dispatchId: 'dispatch-old', sessionId: 'session-a', ownerId: 'participant-a', purpose: 'execute', taskRevision: 1 },
+        receipt: { state: 'accepted', receiptId: 'dispatch-receipt-old', taskId: 'task-a', dispatchId: 'dispatch-old', sessionId: 'session-a', turnId: 'turn-old' } },
+      { effectId: 'dispatch-new', operation: 'dispatch', state: 'accepted', executionStatus: 'running',
+        request: { graphId: 'graph-a', roomId: 'room-live', rootId: 'root-a', taskId: 'task-a', dispatchId: 'dispatch-new', sessionId: 'session-b', ownerId: 'participant-b', purpose: 'execute', taskRevision: 2 },
+        receipt: { state: 'accepted', receiptId: 'dispatch-receipt-new', taskId: 'task-a', dispatchId: 'dispatch-new', sessionId: 'session-b', turnId: 'turn-new' } },
+    ],
+    events: [], final: null, modelCards: [], planApproval: null,
+  };
+  return { projection, graph };
 }

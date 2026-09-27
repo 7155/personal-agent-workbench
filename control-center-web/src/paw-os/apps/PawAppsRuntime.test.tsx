@@ -68,7 +68,20 @@ describe('PAWOS App runtime', () => {
     );
 
     expect(await screen.findByRole('heading', { name: '音乐律动预览' })).toBeInTheDocument();
-    expect(screen.getByTitle('音乐律动预览')).toHaveAttribute('sandbox', expect.stringContaining('allow-scripts'));
+    expect(await screen.findByTitle('音乐律动预览')).toHaveAttribute('sandbox', expect.stringContaining('allow-scripts'));
+  });
+
+  it('keeps an extension-owned HTML result in the isolated result surface', async () => {
+    render(
+      <PawAppBody
+        appId={'extension:earth-research' as never}
+        target={{ kind: 'result', id: 'earth-report-42', title: '2025 植被面积变化', resultKind: 'html', content: '<h1>报告</h1>' }}
+      />,
+    );
+
+    expect(await screen.findByRole('heading', { name: '2025 植被面积变化' })).toBeInTheDocument();
+    expect(await screen.findByTitle('2025 植被面积变化')).toHaveAttribute('sandbox', expect.stringContaining('allow-scripts'));
+    expect(screen.queryByRole('heading', { name: 'Google Earth Agent' })).not.toBeInTheDocument();
   });
 
   it('keeps the Room conversation in Agent while routing only named Room panels to satellites', async () => {

@@ -30,6 +30,77 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('offers the paper profile and shows source geometry reported by the parser', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport({ structuredSource: true });
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '公式');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await user.click(await screen.findByText('高级：检索详情', { selector: 'summary' }));
+    expect(screen.getByText('公式', { selector: 'dd' })).toBeVisible();
+    expect(screen.getByText('第 12 页 · 区域 10, 20, 80, 40（归一化坐标 0–1000）')).toBeVisible();
+    await openKnowledgeTool(user, '设置');
+    await user.click(screen.getByRole('combobox', { name: '策略' }));
+    await user.click(screen.getByRole('option', { name: '论文（保留章节与参考文献）' }));
+    expect(screen.getByText(/论文按章节保留摘要/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '保存切分设置' }));
+    await waitFor(() => expect(request(transport, 'knowledgeBases.update')?.body).toMatchObject({ chunkingConfig: { strategy: 'paper' } }));
+  });
+  it('tests temporary retrieval parameters without updating the base and restores the defaults', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport();
+    renderKnowledge(transport, '/knowledge?tab=search', true, true, true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '工具注册');
+    await user.click(screen.getByText('搜索范围与方式', { selector: 'summary' }));
+    await user.click(screen.getByRole('combobox', { name: '测试检索方式' }));
+    await user.click(screen.getByRole('option', { name: '关键词' }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: '测试返回数量' }), { target: { value: '3' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '测试最低相关度' }), { target: { value: '0.4' } });
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await screen.findByRole('listbox', { name: '检索结果' });
+    expect(request(transport, 'knowledgeBases.search')?.body).toMatchObject({ mode: 'lexical', topK: 3, threshold: .4 });
+    expect(transport.requests.some(({ request }) => request.pathId === 'knowledgeBases.update')).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: '打开来源' }));
+    await user.click(await screen.findByRole('button', { name: '返回搜索结果' }));
+    await user.click(screen.getByText('搜索范围与方式', { selector: 'summary' }));
+    expect(screen.getByRole('spinbutton', { name: '测试返回数量' })).toHaveValue(3);
+    await user.click(screen.getByRole('button', { name: '恢复知识库默认参数' }));
+    expect(screen.getByRole('spinbutton', { name: '测试返回数量' })).toHaveValue(10);
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(2));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')[1]?.request.body).toMatchObject({ mode: 'hybrid', topK: 10, threshold: .2 });
+  });
+
+  it('blocks invalid test budgets and preserves the parameters used by existing results', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport();
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '工具注册');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await screen.findByRole('listbox', { name: '检索结果' });
+    await user.click(screen.getByText('搜索范围与方式', { selector: 'summary' }));
+    const topK = screen.getByRole('spinbutton', { name: '测试返回数量' });
+    fireEvent.change(topK, { target: { value: '' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: '搜索' })).toBeDisabled());
+    fireEvent.change(topK, { target: { value: '21' } });
+    await user.click(screen.getByRole('switch', { name: '测试时启用重排' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('返回数量须为 1–20 的整数');
+    fireEvent.change(topK, { target: { value: '10' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '测试重排候选数' }), { target: { value: '9' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: '搜索' })).toBeDisabled());
+    expect(screen.getByText('混合检索 · Top K 10 · 分数阈值 0.20')).toBeVisible();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(1);
+    fireEvent.change(screen.getByRole('spinbutton', { name: '测试重排候选数' }), { target: { value: '0' } });
+    await user.click(screen.getByRole('switch', { name: '测试时启用重排' }));
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(2));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')[1]?.request.body).not.toHaveProperty('rerankCandidateDepth');
+    await screen.findByRole('listbox', { name: '检索结果' });
+    await user.click(screen.getByRole('button', { name: '恢复知识库默认参数' }));
+    expect(screen.getByRole('button', { name: '搜索' })).toBeEnabled();
+  });
+
   it('collapses the actual App library index while retaining the current search draft and a library selector', async () => {
     const user = userEvent.setup();
     renderKnowledge(createTransport(), '/knowledge', true);
@@ -77,7 +148,7 @@ describe('document knowledge library', () => {
     expect(await screen.findByRole('textbox', { name: '搜索知识库' })).toHaveValue('工具如何注册，只看运行时');
     const restoredResults = await screen.findByRole('listbox', { name: '检索结果' });
     const selected = within(restoredResults).getByRole('option', { selected: true });
-    expect(selected).toHaveTextContent('工具注册');
+    expect(selected).toHaveTextContent('Tool 注册');
     expect(within(restoredResults).getAllByRole('option')).toHaveLength(2);
     expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(1);
     expect(request(transport, 'knowledgeBases.search')?.body).toMatchObject({ query: '工具如何注册' });
@@ -168,7 +239,7 @@ describe('document knowledge library', () => {
     await user.click(screen.getByRole('tab', { name: '搜索' }));
     await user.type(screen.getByRole('textbox', { name: '搜索知识库' }), '工具如何注册');
     await user.click(screen.getByRole('button', { name: '搜索' }));
-    expect(await screen.findByRole('option', { name: /工具注册/ })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Tool 注册/ })).toBeInTheDocument();
     expect(screen.getByText('“工具如何注册” · 1 条结果')).toBeInTheDocument();
     expect(screen.getByText('高相关')).toHaveAttribute('data-level', 'high');
     expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('Reranker本次未重排');
@@ -182,11 +253,11 @@ describe('document knowledge library', () => {
     expect(screen.getByText('知识整理服务 → uses → 检索器')).toBeVisible();
     expect(screen.getByText('检索器 → reads → runtime.pdf')).toBeVisible();
     expect(screen.getByText('第 12 页')).toBeInTheDocument();
-    expect(screen.getByText('伙伴工作循环 > 工具')).toBeInTheDocument();
+    expect(screen.getByText('Agent Loop > Tools')).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('Knowledge Worker');
     const search = request(transport, 'knowledgeBases.search');
     expect(search?.params).toEqual({ kbId: 'kb-runtime' });
-    expect(search?.body).toEqual({ query: '工具如何注册', topK: 10, mode: 'hybrid', threshold: 0.2, rerank: false, rerankCandidateDepth: 40 });
+    expect(search?.body).toEqual({ query: '工具如何注册', topK: 10, mode: 'hybrid', threshold: 0.2, rerank: false });
 
     await user.click(screen.getByRole('button', { name: '打开来源' }));
     await waitFor(() => expect(transport.requests.find((call) => call.request.pathId === 'knowledgeBases.open' && call.request.query?.chunkId === 'chunk-tool')?.request).toMatchObject({
@@ -195,7 +266,7 @@ describe('document knowledge library', () => {
     }));
     await waitFor(() => expect(screen.getByRole('tab', { name: '查看材料' })).toHaveAttribute('data-state', 'active'));
     expect(await screen.findByText(/已定位检索命中/)).toBeInTheDocument();
-    expect(screen.getByText('伙伴启动时注册 knowledge。').closest('article')).toHaveAttribute('data-focused', 'true');
+    expect(screen.getByText('Agent 启动时注册 knowledge。').closest('article')).toHaveAttribute('data-focused', 'true');
   });
 
   it('imports through the typed transport and updates Agent/parser settings with revisions', async () => {
@@ -388,7 +459,7 @@ describe('document knowledge library', () => {
     const user = userEvent.setup();
     renderKnowledge(transport, '/knowledge?tab=viewer', true);
 
-    expect(await screen.findByRole('heading', { name: '伙伴工作循环' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Agent Loop' })).toBeVisible();
     const assembly = screen.getByText('装配记录', { selector: 'summary' });
     expect(assembly).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('region', { name: 'runtime.pdf 最近被哪些 Session 装配' })).not.toBeInTheDocument();
@@ -397,7 +468,7 @@ describe('document knowledge library', () => {
     await user.click(assembly);
     expect(await screen.findByRole('region', { name: 'runtime.pdf 最近被哪些 Session 装配' })).toBeVisible();
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.list')).toBe(true));
-    expect(screen.getByRole('heading', { name: '伙伴工作循环' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Agent Loop' })).toBeVisible();
 
     await user.click(assembly);
     await waitFor(() => expect(screen.queryByRole('region', { name: 'runtime.pdf 最近被哪些 Session 装配' })).not.toBeInTheDocument());
@@ -412,16 +483,16 @@ describe('document knowledge library', () => {
     await user.click(await screen.findByRole('button', { name: '查看 runtime.pdf' }));
     expect(await screen.findByRole('tab', { name: '源文件' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '正文' })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByRole('heading', { name: '伙伴工作循环' })).toBeInTheDocument();
-    expect(screen.getByText('图片引用已隔离：远程图')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Agent Loop' })).toBeInTheDocument();
+    expect(screen.getByText('图片引用未关联本地产物：远程图')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: '远程图' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: '源文件' }));
-    expect(await screen.findByTitle('runtime.pdf 源文件')).toHaveAttribute('src', 'blob:knowledge-source');
+    expect(await screen.findByTitle('runtime.pdf 源文件')).toHaveAttribute('src', 'blob:knowledge-source#page=1');
     expect(transport.knowledgeDocumentSourceCalls[0]).toMatchObject({ kbId: 'kb-runtime', fileId: 'file-runtime' });
     await user.click(screen.getByRole('tab', { name: '段落' }));
-    expect(screen.getByText('伙伴启动时注册 knowledge。')).toBeInTheDocument();
-    expect(screen.getByText('伙伴工作循环 > 工具')).toBeInTheDocument();
+    expect(screen.getByText('Agent 启动时注册 knowledge。')).toBeInTheDocument();
+    expect(screen.getByText('Agent Loop > Tools')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: '解析产物' }));
     expect(await screen.findByRole('img', { name: '工具流程图' })).toHaveAttribute('src', 'blob:knowledge-asset');
     expect(screen.getByRole('link', { name: '查看 tool-flow.png' })).toHaveAttribute('href', 'blob:knowledge-asset');
@@ -487,7 +558,7 @@ describe('document knowledge library', () => {
     await user.click(await screen.findByRole('button', { name: '查看 runtime.pdf' }));
     const outline = await screen.findByRole('navigation', { name: '文档目录' });
     expect(within(outline).getByText('1 个标题')).toBeInTheDocument();
-    const entry = within(outline).getByRole('button', { name: '伙伴工作循环' });
+    const entry = within(outline).getByRole('button', { name: 'Agent Loop' });
     await user.click(entry);
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(entry).toHaveAttribute('aria-current', 'location');
@@ -558,7 +629,7 @@ describe('document knowledge library', () => {
     await openKnowledgeTool(user, '设置');
     const strategy = screen.getByRole('combobox', { name: '策略' });
     await user.click(strategy);
-    expect(await screen.findAllByRole('option')).toHaveLength(7);
+    expect(await screen.findAllByRole('option')).toHaveLength(8);
     await user.click(screen.getByRole('option', { name: '法律条款' }));
     await user.click(screen.getByRole('button', { name: '预览切分' }));
 
@@ -567,9 +638,9 @@ describe('document knowledge library', () => {
       body: { chunkingConfig: { strategy: 'laws' }, limit: 12 },
     }));
     expect(await screen.findByText('2 个段落')).toBeInTheDocument();
-    expect(screen.getByText(/\u4f19伴运行环境/)).toBeInTheDocument();
-    expect(screen.getByText(/\u5de5具只按需检索/)).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent('Agent Runtime');
+    expect(screen.getByText(/Agent Runtime/)).toBeInTheDocument();
+    expect(screen.getByText(/Tool 只按需检索/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('伙伴运行环境');
   });
 
   it('cancels an active indexing job from the jobs workspace', async () => {
@@ -901,7 +972,7 @@ function RouteRemountedKnowledge() {
   return <KnowledgeFeature key={location.search} />;
 }
 
-function createTransport(options: { activeJob?: boolean; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
+function createTransport(options: { structuredSource?: boolean; activeJob?: boolean; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
   let graphRequestCount = 0;
   const extraGraphNodes = options.manyRelations
     ? Array.from({ length: 9 }, (_, index) => ({
@@ -985,6 +1056,7 @@ function createTransport(options: { activeJob?: boolean; emptyGraph?: boolean; m
         }] : []), {
           id: 'chunk-tool', documentId: 'file-runtime', documentName: 'runtime.pdf', title: 'Tool 注册',
           excerpt: 'Agent 启动时注册 knowledge。', score: .92, page: 12, heading: 'Agent Loop > Tools',
+          ...(options.structuredSource ? { citation: { kind: 'formula', sourceBlocks: [{ page: 12, bbox: [10, 20, 80, 40], metadata: { coordinateSystem: 'normalized-1000' } }] } } : {}),
           diagnostics: {
             effectiveMode: 'hybrid', lexicalRank: 1, denseRank: 2, graphRank: 1,
             lexicalScore: .95, denseScore: .88, graphScore: .9,
