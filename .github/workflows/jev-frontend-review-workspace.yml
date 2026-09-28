@@ -1,47 +1,48 @@
 name: Jev isolated frontend review workspace
-
 on:
   push:
     branches: [codex/jev-frontend-review-20260928]
     paths: [.github/workflows/jev-frontend-review-workspace.yml]
-
 permissions:
   contents: read
-
+defaults:
+  run:
+    shell: bash
 jobs:
   frontend-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           ref: 3ee530bea05f54a199544153594b50e0a00c8bfa
           persist-credentials: false
-      - name: Apply hash-verified frontend candidate
+      - name: Apply hash-verified candidate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p control-center-web/review-output
           python3 <<'PY'
           import base64, hashlib, json, lzma, pathlib, subprocess
-          blobs = ['5ab9883fe8a67d91f552743ce238ffde591f3192', 'd235a25afbb603b11f42c8df1d60ccb6694e439f', 'cc7486a05d0dddb6843be161825372789d0fb079', 'b3918298a47f3c931fd137ae6168507079f792df']
-          chunks = []
-          for sha in blobs:
-              data = json.loads(subprocess.check_output(['gh', 'api', 'repos/7155/personal-agent-workbench/git/blobs/' + sha]))
-              chunks.append(base64.b64decode(data['content']))
-          patch = lzma.decompress(b''.join(chunks))
-          assert hashlib.sha256(patch).hexdigest() == '803106dd2240de5f54fed4330b7d60cc6bc1be29a7898ba8d5097a8763865883'
-          path = pathlib.Path('/tmp/frontend-candidate.patch'); path.write_bytes(patch)
-          subprocess.run(['git', 'apply', '--check', '--unidiff-zero', str(path)], check=True)
-          subprocess.run(['git', 'apply', '--index', '--unidiff-zero', str(path)], check=True)
-          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
-          assert tree == 'a6f3f15f0dcc8b778d77a54abc22e0bcabe06c13', tree
-          pathlib.Path('control-center-web/review-output/candidate-tree.txt').write_text(tree + '\n')
+          def blob(sha):
+              data=json.loads(subprocess.check_output(['gh','api','repos/7155/personal-agent-workbench/git/blobs/'+sha]))
+              return base64.b64decode(data['content'])
+          def apply(data, expected):
+              patch=lzma.decompress(data)
+              assert hashlib.sha256(patch).hexdigest()==expected
+              p=pathlib.Path('/tmp/review.patch');p.write_bytes(patch)
+              subprocess.run(['git','apply','--check','--unidiff-zero',str(p)],check=True)
+              subprocess.run(['git','apply','--index','--unidiff-zero',str(p)],check=True)
+          apply(b''.join(blob(s) for s in ['5ab9883fe8a67d91f552743ce238ffde591f3192','d235a25afbb603b11f42c8df1d60ccb6694e439f','cc7486a05d0dddb6843be161825372789d0fb079','b3918298a47f3c931fd137ae6168507079f792df']), '803106dd2240de5f54fed4330b7d60cc6bc1be29a7898ba8d5097a8763865883')
+          apply(blob('db2aee39981aeaa87f9bee294a1a40c41fa41789'),'6f83912310cc2cc5066133c395ba95b44e046a66a8606370483979f2684146d9')
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert tree=='bed3ec80b49d6b6c696141817447d89ffe51769e',tree
+          p=pathlib.Path('control-center-web/review-output');p.mkdir(exist_ok=True)
+          p.joinpath('candidate-tree.txt').write_text(tree+'\n')
           PY
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
-      - name: Install pinned toolchain and browser
+      - name: Install pinned frontend and Chromium
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: |
@@ -50,7 +51,7 @@ jobs:
           pnpm --dir control-center-web install --frozen-lockfile
           pnpm --dir control-center-web exec playwright install --with-deps chromium
           sudo apt-get install -y fonts-noto-cjk
-      - name: Browser state, interaction and screenshot checks
+      - name: Browser checks
         id: browser
         continue-on-error: true
         working-directory: control-center-web
@@ -58,23 +59,29 @@ jobs:
           pnpm exec vite --host 127.0.0.1 --port 5199 --strictPort >review-output/vite.log 2>&1 &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:5199/ >/dev/null && break; sleep 1; done
           node e2e/verify-workbench-polish.mjs 2>&1 | tee review-output/browser.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jev-polish-browser-bed3ec80
+          path: control-center-web/review-output
+          retention-days: 3
       - name: Typecheck
         id: typecheck
         continue-on-error: true
         working-directory: control-center-web
         run: pnpm typecheck 2>&1 | tee review-output/typecheck.log
-      - name: Affected frontend regression tests
+      - name: Focused regression
         id: tests
         continue-on-error: true
         working-directory: control-center-web
         run: |
-          pnpm exec vitest run --maxWorkers=2 --testTimeout=60000 src/features/composer src/features/agent/composer src/features/rooms/composer src/features/semantic-workspace src/paw-os/apps/PawJevTeamPanels.test.tsx src/paw-os/apps/PawRoomWorkspace.test.tsx src/paw-os/apps/PawRoomConversation.test.tsx src/paw-os/apps/PawSessionWorkspace.test.tsx src/paw-os/apps/PawSessionWorkspace.performance.test.tsx src/paw-os/apps/session-mission.test.ts src/features/conversation-ui 2>&1 | tee review-output/tests.log
+          pnpm exec vitest run --maxWorkers=2 --testTimeout=60000 src/features/composer src/features/agent/composer src/features/rooms/composer src/features/semantic-workspace/JevCompanion.test.tsx src/features/semantic-workspace/jev-mission.test.ts src/features/semantic-workspace/use-jev-arrival-highlight.test.tsx src/paw-os/apps/PawJevTeamPanels.test.tsx src/paw-os/apps/PawRoomWorkspace.test.tsx src/paw-os/apps/PawRoomConversation.test.tsx src/paw-os/apps/PawSessionWorkspace.test.tsx src/paw-os/apps/PawSessionWorkspace.performance.test.tsx src/paw-os/apps/session-mission.test.ts 2>&1 | tee review-output/tests.log
       - name: Build
         id: build
         continue-on-error: true
         working-directory: control-center-web
         run: pnpm build 2>&1 | tee review-output/build.log
-      - name: Record check outcomes
+      - name: Record outcomes
         if: always()
         env:
           BROWSER: ${{ steps.browser.outcome }}
@@ -90,7 +97,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-frontend-polish-review-a6f3f15f
+          name: jev-polish-checks-bed3ec80
           path: control-center-web/review-output
           retention-days: 3
       - name: Require all checks
