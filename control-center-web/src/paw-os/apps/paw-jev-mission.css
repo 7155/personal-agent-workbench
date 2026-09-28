@@ -550,13 +550,13 @@
 .paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header span { overflow: hidden; color: var(--jev-muted); font-size: var(--jev-micro); text-overflow: ellipsis; white-space: nowrap; }
 .paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header > button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--jev-muted); cursor: pointer; }
 .paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header > button:hover { background: var(--jev-sunken); color: var(--jev-ink); }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__task-title { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: var(--jev-ink); font: inherit; font-size: var(--jev-ui); font-weight: 550; text-align: left; cursor: pointer; }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__task-title > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__state { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--jev-muted); font-size: var(--jev-meta); }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent { display: grid; gap: 2px; padding: 6px 8px; border: 0; border-radius: 7px; background: var(--jev-sunken); color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent > span { color: var(--jev-muted); font-size: var(--jev-micro); }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent > strong { overflow: hidden; color: var(--jev-ink); font-size: var(--jev-meta); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent:hover { background: var(--jev-accent-soft); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__task-title { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: var(--jev-ink); font: inherit; font-size: var(--jev-ui); font-weight: 550; text-align: left; cursor: pointer; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__task-title > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__state { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--jev-muted); font-size: var(--jev-meta); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__recent { display: grid; gap: 2px; padding: 6px 8px; border: 0; border-radius: 7px; background: var(--jev-sunken); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__recent > span { color: var(--jev-muted); font-size: var(--jev-micro); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__recent > strong { overflow: hidden; color: var(--jev-ink); font-size: var(--jev-meta); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) .paw-jev-partner__recent:hover { background: var(--jev-accent-soft); }
 
 /* New delivered file / result row: one short highlight, never a height animation. */
 .paw-jev-rail [data-fresh] { animation: jev-row-fresh 1.2s var(--jev-ease) both; }
