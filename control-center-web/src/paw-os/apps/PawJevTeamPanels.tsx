@@ -160,8 +160,9 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
     : graph?.phase === 'awaiting_input' ? '等待补充需求' : graph?.phase === 'awaiting_approval' ? '方案待确认'
     : graph?.phase === 'deferred' ? '方案暂未执行' : planningActive ? '正在拆分任务'
     : planningEffect?.executionStatus === 'unknown' ? '规划回执待核实' : '等待规划进度';
-  const reviewing = partners.length > 0 && partners.every(work => work.effects.every(effect => ['verify', 'synthesize'].includes(String(effect.request.purpose))));
-  const panels: PanelKind[] = assignments.length ? ['plan', 'criteria'] : reviewing ? ['records', 'current'] : ['current', 'records'];
+  // Keep the current partner and delivery record in stable places as work
+  // moves from execution to review. Swapping both rails loses reading position.
+  const panels: PanelKind[] = assignments.length ? ['plan', 'criteria'] : ['current', 'records'];
   const count = (kind: PanelKind) => kind === 'current' ? partners.length : kind === 'records' ? history.length + pending.length : assignments.length;
   const openParticipant = (id: string) => { setInspector(null); onOpenParticipant(id); };
   // An inspector must never keep showing a task from a previous graph.
@@ -186,6 +187,7 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
       })}</ul>
     </section>;
     return <section className="paw-jev-records">
+      {graph?.rootAttachments?.length ? <><h3>原始附件</h3><ul className="paw-jev-input-files">{graph.rootAttachments.map(file => <li key={file.mediaId} title={file.fileName}><FileText size={15} aria-hidden /><span>{file.fileName}</span></li>)}</ul></> : null}
       {files.length ? <><h3>文档与文件证据</h3><ul className="paw-jev-files">{(expanded ? files : files.slice(0, 4)).map(file => <li key={file.key}>
         <button className="paw-jev-record-row" type="button" onClick={() => openFile(file)} title={file.ref}
           aria-label={onOpenFile && file.sessionId ? `打开文件 ${file.name}` : undefined}>
@@ -223,9 +225,9 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
         {kind === 'current' || kind === 'plan' ? <UsersRound size={17} aria-hidden /> : kind === 'criteria' ? <ListChecks size={17} aria-hidden /> : <FolderOpen size={17} aria-hidden />}
         <strong>{PANEL_TITLES[kind]}</strong><span>{count(kind)}</span><ChevronRight size={15} aria-hidden />
       </button>{kind === 'current' && partners.length ? toggleCards(`${panelId}-current`) : null}</div>
-      <div className="paw-jev-team__progress" aria-label={index === 0 ? '任务完成进度' : '文件证据数量'}>
-        {!graph ? <span>{index === 0 ? active ? '正在同步任务进度' : '任务进度待同步' : '文件证据待同步'}</span>
-          : index !== 0 ? <span><FileText size={12} aria-hidden />文件证据 {files.length} 项</span>
+      <div className="paw-jev-team__progress" aria-label={index === 0 ? '任务完成进度' : '附件与交付文件数量'}>
+        {!graph ? <span>{index === 0 ? active ? '正在同步任务进度' : '任务进度待同步' : '文件记录待同步'}</span>
+          : index !== 0 ? <span><FileText size={12} aria-hidden />{graph.rootAttachments?.length ? `原始附件 ${graph.rootAttachments.length} 项 · ` : ''}交付文件 {files.length} 项</span>
             : taskCount ? <>
               <strong>已验收 {acceptedCount}/{taskCount}</strong>{!graph.final || executingCount > 0 ? <span>{active ? '执行中' : '上次执行中'} {executingCount}</span> : null}{!graph.final || reviewCount > 0 ? <span>待复核 {reviewCount}</span> : null}
               <progress aria-label="任务验收数" aria-valuetext={`${acceptedCount} 项已验收，共 ${taskCount} 项任务；不是预计耗时进度`} value={acceptedCount} max={taskCount} />

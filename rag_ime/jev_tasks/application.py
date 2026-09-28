@@ -246,9 +246,10 @@ class JevRoomApplication:
                 conn, graph_id, [task.accepted_turn_id for task in snapshot.tasks])
             reads = self._projection_execution_reads(conn, snapshot, dispatches, effects)
             events = [dict(r) for r in conn.execute(
-                "SELECT source_id,kind,state,result_json FROM agent_jev_owner_events WHERE graph_id=? ORDER BY created_at_ms DESC LIMIT 100",
+                "SELECT source_id,kind,state,result_json FROM agent_jev_owner_events WHERE graph_id=? ORDER BY created_at_ms DESC,rowid DESC LIMIT 100",
                 (graph_id,))]
             policy = self.lifecycle.policy(graph_id, conn)
+            root_attachments = self._input_attachments(binding, policy, conn=conn)
             approval = self.lifecycle.plan_approval(graph_id, conn)
             revisions = self.revisions.projection(conn, graph_id)
             participant_removals = self.removal.projection(room_id, conn=conn)
@@ -269,6 +270,8 @@ class JevRoomApplication:
             "phase": policy["phase"],
             "requirementsRevision": policy["requirements_revision"],
             "currentRootObjective": current_objective,
+            "roomId": room_id,
+            "rootAttachmentReceipts": root_attachments,
             "activeTaskIds": list(snapshot.active_task_ids),
             "revisions": revisions,
             "participantRemovals": participant_removals,
@@ -391,6 +394,21 @@ class JevRoomApplication:
             return self.stop(room_id, binding["root_turn_id"])
         if action == "reconcile":
             return self.reconcile_graph(binding)
+        if action == "retry_route":
+            with self.ledger.connection(write=True) as conn:
+                policy = self.lifecycle.policy(graph_id, conn)
+                latest = conn.execute(
+                    "SELECT state,result_json FROM agent_jev_owner_events WHERE graph_id=? "
+                    "ORDER BY created_at_ms DESC,rowid DESC LIMIT 1", (graph_id,),
+                ).fetchone()
+                if (policy["stopped"] or policy["final_json"] != "{}" or policy["phase"] != "route"
+                        or latest is None or latest["state"] != "done"
+                        or json.loads(latest["result_json"]).get("status") != "abstained"):
+                    raise GraphConflict("route retry requires the current abstained Root")
+                queued = self._enqueue(conn, graph_id, "route-retry:" + graph_id, "work_created")
+            if queued:
+                self.service.wake_scheduler.wake()
+            return {"ok": True, "accepted": True, "graphId": graph_id, "queued": queued}
         if action in {"approve_plan", "adjust_plan", "defer_plan"}:
             return self.lifecycle.control_plan(binding, payload)
         if action == "revise_task":
@@ -1437,21 +1455,39 @@ class JevRoomApplication:
         return {"status": "reconciliation_required" if any(e["state"] in {"sending", "unknown"} for e in effects) else "applied",
                 "effects": effects}
 
+    def _input_attachments(self, binding, policy=None, *, conn=None, ids=None):
+        if ids is None:
+            policy = policy or self.lifecycle.policy(binding["graph_id"])
+            ids = json.loads(policy["attachment_ids_json"])
+        receipts = []
+        for media_id in ids:
+            try:
+                receipts.append(self.service.media.receipt(media_id, room_id=binding["room_id"], conn=conn))
+            except (FileNotFoundError, ValueError, KeyError):
+                # Keep the Root and its task state readable if a stored file
+                # becomes unavailable after admission.
+                continue
+        return receipts
+
     def publish_input(self, binding, *, client_id=""):
         root = self.service.room_work.get(binding["root_work_id"])
-        self.service.room_events.publish_projection(
-            projection_key="jev-input:" + binding["graph_id"],
-            room_id=binding["room_id"],
-            event_type="user_message",
-            payload={
-                "text": root["objective"],
-                "clientMessageId": client_id or root["clientMessageId"],
-                "mode": "jev",
-                "graphId": binding["graph_id"],
-            },
-            turn_id=binding["root_turn_id"],
-            topic_id=str(root.get("topicId") or ""),
-        )
+        key = "jev-input:" + binding["graph_id"]
+        if not self.service.room_events.store.has_projection(key):
+            attachments = self._input_attachments(binding)
+            self.service.room_events.publish_projection(
+                projection_key=key,
+                room_id=binding["room_id"],
+                event_type="user_message",
+                payload={
+                    "text": root["objective"],
+                    "clientMessageId": client_id or root["clientMessageId"],
+                    "mode": "jev",
+                    "graphId": binding["graph_id"],
+                    **({"attachmentReceipts": attachments} if attachments else {}),
+                },
+                turn_id=binding["root_turn_id"],
+                topic_id=str(root.get("topicId") or ""),
+            )
         self.lifecycle.publish_plan_adjustments(binding)
 
     def execution_terminal(self, effect, *, lookup=True, reads=None):

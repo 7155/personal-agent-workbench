@@ -23,6 +23,11 @@ export function JevCompanion({ execution, room, connected = true, active = true,
   const abstentionChoice = jevRecord(jevRecord(jevRecord(abstention?.result.receipt).decision).answer).choice;
   const headline = jevStatusLabel(graph, execution.loading);
   const tasks = jevLeafTasks(graph);
+  const canRetryRoute = Boolean(abstention && graph?.phase === 'route' && graph.graphId === execution.liveSnapshot?.graphId);
+  const routeRecovery = canRetryRoute ? <section className="jev-route-recovery" aria-label="继续当前任务">
+    <div><strong>路径判断已暂停</strong><p>原任务{graph?.rootAttachments?.length ? '和附件' : ''}已保留。重新判断后会在这条任务中继续。</p></div>
+    <button type="button" disabled={execution.routeRetrying || stale} onClick={() => void execution.retryRoute()}>{execution.routeRetrying ? '正在重新判断…' : '重新判断并继续'}</button>
+  </section> : null;
   return <aside aria-label="Jev 任务进展" className={`jev-companion jev-companion--${presentation}`} data-motion={active && !stale && !abstention ? 'active' : 'paused'}>
     <details className="jev-companion__disclosure" open={presentation === 'sidebar' ? true : undefined}>
       <summary><Workflow size={16} aria-hidden /><strong>{presentation === 'stage' ? headline : 'Jev 任务进展'}</strong>{stale ? <span className="jev-companion__stale-label" role="status">状态待更新</span> : null}<ChevronDown size={14} aria-hidden /></summary>
@@ -34,7 +39,8 @@ export function JevCompanion({ execution, room, connected = true, active = true,
           {execution.items.map((item, index) => <option key={item.id} value={item.id}>{item.title || `任务 ${execution.items.length - index}`}{item.stopped ? ' · 已停止' : item.phase === 'final' ? ' · 已结束' : ''}</option>)}
         </select></label> : null}
         {stale ? <p className="jev-companion__warning" role="status"><CircleAlert size={14} aria-hidden />{execution.error || '连接中断。保留上次状态，恢复连接后重新核实。'}</p> : null}
-        {abstention ? <details className="jev-dispatches"><summary>查看调度回执</summary><p>最近的调度回执未选出下一步，当前没有运行或待派发的执行。任务仍保留，你可以停止本次任务。</p><p>{abstentionChoice === 'insufficient_evidence' ? '调度器选择了“现有证据不足”。' : '回执未提供进一步说明。'}</p></details> : null}
+        {presentation === 'sidebar' ? routeRecovery : null}
+        {abstention ? <details className="jev-dispatches"><summary>查看调度回执</summary><p>{graph?.phase === 'route' ? '路径判断暂未选出直接执行或先规划，当前没有运行中的执行。' : '最近的调度回执未选出下一步，当前没有运行或待派发的执行。任务仍保留，你可以停止本次任务。'}</p><p>{abstentionChoice === 'insufficient_evidence' ? '调度器选择了“现有证据不足”。' : '回执未提供进一步说明。'}</p></details> : null}
         {graph ? <>
           {presentation === 'sidebar' ? <JevPhaseRail graph={graph} /> : null}
           <div className="jev-companion__scope"><span>{jevTaskCountLabel(graph)}</span><span>需求版本 {graph.requirementsRevision}</span></div>
@@ -68,6 +74,7 @@ export function JevCompanion({ execution, room, connected = true, active = true,
       </div>
     </details>
     {presentation === 'stage' && graph ? <JevPhaseRail graph={graph} /> : null}
+    {presentation === 'stage' ? routeRecovery : null}
     {presentation === 'stage' ? <button className="jev-companion__sync" aria-label="同步 Jev 任务" disabled={execution.loading} onClick={execution.refresh} type="button"><RefreshCw size={14} aria-hidden /></button> : null}
   </aside>;
 }

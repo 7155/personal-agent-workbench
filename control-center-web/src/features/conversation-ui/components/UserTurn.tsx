@@ -1,3 +1,4 @@
+import { Paperclip } from 'lucide-react';
 import { useConversationSurface } from '../ConversationSurfaceContext';
 import type { UserMessage } from '../model/types';
 import { MessageActions } from './MessageActions';
@@ -14,7 +15,7 @@ export function UserTurn({ message }: { message: UserMessage }) {
       <div className="ccui-user-bubble">
         {message.attachments?.length ? (
           <div className="ccui-attachment-strip">
-            {message.attachments.map((file) => <span className="ccui-attachment-chip" key={file.id}>{file.name}</span>)}
+            {message.attachments.map((file) => <span className="ccui-attachment-chip" key={file.id} title={file.name}><Paperclip size={12} aria-hidden /><span>{file.name}</span></span>)}
           </div>
         ) : null}
         <div className="ccui-user-text">{message.text}</div>

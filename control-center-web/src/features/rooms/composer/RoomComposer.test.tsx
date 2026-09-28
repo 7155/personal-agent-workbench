@@ -9,6 +9,19 @@ import { RoomComposer, roomMentionedParticipants } from './RoomComposer';
 afterEach(cleanup);
 
 describe('RoomComposer macOS input methods', () => {
+  it('shows a route waiting state without implying that execution is running', () => {
+    render(<TooltipProvider><RoomComposer
+      room={{ id: 'room-waiting', status: 'active', participants: [] }} personas={[]} draft="下一轮补充"
+      attachments={[]} sending={false} taskBusyState="waiting" busySubmitBehavior="queue"
+      onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()} onPasteImages={vi.fn()}
+      onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={vi.fn()}
+    /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('当前任务等待重新判断，原任务已保留');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(status.querySelector('.room-composer__status-icon')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '排入下一轮任务' })).toBeEnabled();
+  });
   it('keeps add, settings, stop and send on one shared toolbar without changing the draft', async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

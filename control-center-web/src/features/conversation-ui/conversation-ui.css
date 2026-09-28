@@ -149,17 +149,20 @@
 }
 
 .ccui-attachment-chip {
-  max-width: 220px;
-  overflow: hidden;
-  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(100%, 320px);
+  padding: 4px 7px;
   border: 1px solid var(--ccui-border);
   border-radius: 5px;
   background: var(--ccui-surface);
   font-size: 11px;
-  color: var(--ccui-muted);
-  text-overflow: ellipsis;
+  color: var(--ccui-text);
   white-space: nowrap;
 }
+.ccui-attachment-chip > svg { flex: none; color: var(--ccui-accent); }
+.ccui-attachment-chip > span { overflow: hidden; text-overflow: ellipsis; }
 
 .ccui-user-footer,
 .ccui-assistant-footer {

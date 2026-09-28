@@ -146,6 +146,7 @@ describe('PawRoomConversation', () => {
 
     const dispatch = document.querySelector<HTMLElement>('[data-tool-block="dispatch:dispatch-a"]')!;
     await user.click(within(dispatch).getByRole('button', { expanded: false }));
+    await user.click(within(dispatch).getByText('运行记录'));
     expect(within(dispatch).getByText('jev-purpose:abc123')).toBeInTheDocument();
     expect(within(dispatch).queryByRole('link', { name: /jev-purpose/ })).not.toBeInTheDocument();
     await user.click(within(dispatch).getByRole('button', { name: '复制派遣标识' }));
@@ -218,6 +219,67 @@ describe('PawRoomConversation', () => {
     ]);
     expect(within(dispatch).queryByRole('link', { name: /jev-purpose:opaque/ })).not.toBeInTheDocument();
     expect(within(dispatch).getByText('jev-purpose:opaque')).toBeInTheDocument();
+  });
+
+  it('shows the fixed worker task when a different partner receives its verification dispatch', async () => {
+    const user = userEvent.setup();
+    const { projection, room } = roomConversation();
+    const taskId = 'task-to-verify';
+    const dispatchId = 'jev-purpose:verify-bound';
+    projection.activityOrder.push('verify-bound');
+    projection.activitiesById['verify-bound'] = {
+      id: 'verify-bound', turnId: 'root-a', participantId: 'participant-a', sourceSessionId: 'session-a',
+      kind: 'route_decision', status: 'completed', summary: '已确定复核伙伴',
+      payload: { sourceEventType: 'route_decision', routingPolicy: 'jev', purpose: 'verify', dispatchId,
+        rootId: 'root-a', targetParticipantId: 'participant-a', targetSessionId: 'session-a', subjectTaskId: taskId },
+      sequence: 5, createdAtMs: 140, updatedAtMs: 140,
+    };
+    const graph: JevSnapshot = {
+      graphId: 'graph-verify', rootId: 'root-a', version: 'v1', phase: 'execute', stopped: false,
+      requirementsRevision: 1, edges: [], ready: [], running: [], review: [taskId], blocked: [],
+      tasks: [{ id: taskId, state: 'review', revision: 0, ownerId: 'participant-b', parentId: '',
+        objective: '核对点击文件是否真的打开', expectedOutput: '实际点击证据', acceptance: [], result: '',
+        artifacts: [], evidence: [], acceptedTurnId: 'jev-dispatch:worker' }],
+      effects: [{ effectId: dispatchId, operation: 'dispatch', state: 'accepted', executionStatus: 'completed',
+        request: { graphId: 'graph-verify', roomId: room.id, rootId: 'root-a', dispatchId,
+          ownerId: 'participant-a', sessionId: 'session-a', taskId, taskRevision: 0, purpose: 'verify' }, receipt: {} }],
+      events: [], final: null, modelCards: [], planApproval: null,
+    };
+    renderRoom({ graph, projection, room });
+    const dispatch = document.querySelector<HTMLElement>('[data-tool-block="dispatch:verify-bound"]')!;
+    await user.click(within(dispatch).getByRole('button', { expanded: false }));
+    await user.click(within(dispatch).getByText('查看任务详情'));
+    expect(within(dispatch).getByText('核对点击文件是否真的打开')).toBeVisible();
+    expect(within(dispatch).getByText(/当前任务状态：/)).toHaveTextContent('复核');
+    expect(within(dispatch).getByText('预期交付：实际点击证据')).toBeVisible();
+  });
+
+  it('keeps escaped managed text behind a readable summary in a Room tool record', async () => {
+    const user = userEvent.setup();
+    const { projection, room } = roomConversation();
+    const ref = 'media://media_lBpgH2mPPde2OLSM1EIcq4gJ';
+    projection.activitiesById['tool-a'] = { ...projection.activitiesById['tool-a']!,
+      status: 'completed', summary: `已读取受管资源 ${ref}`,
+      payload: { sourceEventType: 'tool_finished', toolName: 'read', dispatchId: 'jev-purpose:review',
+        result: { outputPreview: `[resourceRef: ${ref}] [resourceRevision: ${'a'.repeat(64)}] `
+          + String.raw`test \u001b[33m 2913\u001b[2mms\u001b[39m\n\u001b[33m✓\u001b[39m\nnext\nlast`, outputTruncated: true } },
+    };
+    projection.activityOrder.splice(1, 0, 'tool-b');
+    projection.activitiesById['tool-b'] = { ...projection.activitiesById['tool-a']!,
+      id: 'tool-b', sequence: 2.5, createdAtMs: 115, updatedAtMs: 115,
+      summary: '已读取另一文件', payload: { sourceEventType: 'tool_finished', toolName: 'read' },
+    };
+    renderRoom({ collaborationMode: 'jev', projection, room });
+    await user.click(screen.getByRole('button', { name: /工具记录 · 2 项/ }));
+    const dialog = screen.getByRole('dialog', { name: /工具记录 · 2 项/ });
+    const tool = within(dialog).getByText('读取受管资源').closest<HTMLElement>('[data-tool-block="tool:tool-a"]')!;
+    expect(tool).toHaveTextContent('读取受管资源');
+    expect(tool).not.toHaveTextContent('\\u001b');
+    await user.click(within(tool).getByRole('button', { expanded: false }));
+    expect(within(tool).getByText(/已读取受管资源的一个片段/)).toBeVisible();
+    await user.click(within(tool).getByText('查看整理后的片段'));
+    expect(within(tool).getByText(/2913ms/)).toBeVisible();
+    expect(within(tool).queryByText(/\\u001b/)).not.toBeInTheDocument();
   });
 
   it('does not expose task evidence when a dispatch belongs to another Room or Session', async () => {

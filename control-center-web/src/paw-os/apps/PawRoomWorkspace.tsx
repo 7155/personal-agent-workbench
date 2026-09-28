@@ -1174,7 +1174,9 @@ export function PawRoomWorkspace({
                     attachments={attachments}
                     sending={sending}
                     uncertainSubmission={jevEnabled && Boolean(jev.pendingInput)}
-                    taskBusyState={jevEnabled ? jev.busy || activeTurn && !jev.liveSnapshot ? 'running' : undefined : taskBusyState}
+                    taskBusyState={jevEnabled ? jev.busy || activeTurn && !jev.liveSnapshot
+                      ? jev.liveSnapshot?.phase === 'route' && jevAbstention(jev.liveSnapshot) ? 'waiting' : 'running'
+                      : undefined : taskBusyState}
                     busySubmitBehavior={jevEnabled ? 'queue' : 'steer'}
                     onStop={stopCurrentWork}
                     stopping={jevEnabled ? jev.stopping : abortingActiveTurn}

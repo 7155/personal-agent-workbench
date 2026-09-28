@@ -3,7 +3,7 @@ import { commandJevAssignment, pendingJevAssignment, readJevAssignment, type Jev
 import { commandJevRevision, pendingJevRevision, readJevRevision } from './jev-task-revision';
 import type { ControlTransport } from '@/platform/transport';
 import { publicAgentErrorText } from '@/features/agent/public-error';
-import { acknowledgeJevAdmission, acknowledgeJevPlan, commandJevPlan, createJevWork, jevAwaitingPlan, jevIsBusy, jevRecord, pendingJevInput, uncertainJevInput, uncertainJevPlan, parseJevList, parseJevSnapshot, type JevGraphItem, type JevSnapshot, type JevStrategy, type JevModelRouting, type JevToolApproval, type JevVerificationMode, type JevPlanAction, type JevPlanCommand } from './jev-execution';
+import { acknowledgeJevAdmission, acknowledgeJevPlan, commandJevPlan, createJevWork, jevAbstention, jevAwaitingPlan, jevIsBusy, jevRecord, pendingJevInput, uncertainJevInput, uncertainJevPlan, parseJevList, parseJevSnapshot, type JevGraphItem, type JevSnapshot, type JevStrategy, type JevModelRouting, type JevToolApproval, type JevVerificationMode, type JevPlanAction, type JevPlanCommand } from './jev-execution';
 
 export function useJevExecution({ roomId, enabled, active, transport }: {
   roomId: string; enabled: boolean; active: boolean; transport: ControlTransport;
@@ -15,6 +15,7 @@ export function useJevExecution({ roomId, enabled, active, transport }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [stopping, setStopping] = useState(false);
+  const [routeRetrying, setRouteRetrying] = useState(false);
   const [creating, setCreating] = useState(false);
   const [planSending, setPlanSending] = useState<JevPlanAction | ''>('');
   const [, projectCommandReceipt] = useState(0);
@@ -88,7 +89,7 @@ export function useJevExecution({ roomId, enabled, active, transport }: {
 
   useEffect(() => {
     selected.current = ''; historySelected.current = false; setSelectedId(''); setItems([]); setSnapshot(null); setLiveSnapshot(null); setError('');
-    commandPending.current = null; setStopping(false); setCreating(false); setPlanSending(''); setRecoveredAdmission(undefined); setVerificationMode(pendingJevInput(transport, roomId)?.verificationMode ?? 'auto'); setScope({ roomId, transport });
+    commandPending.current = null; setStopping(false); setRouteRetrying(false); setCreating(false); setPlanSending(''); setRecoveredAdmission(undefined); setVerificationMode(pendingJevInput(transport, roomId)?.verificationMode ?? 'auto'); setScope({ roomId, transport });
     return () => { requestId.current++; abort.current?.abort(); };
   }, [roomId, transport]);
   useEffect(() => {
@@ -158,6 +159,19 @@ export function useJevExecution({ roomId, enabled, active, transport }: {
     } catch (reason) { if (matches()) setError(publicAgentErrorText(reason, '停止请求尚未确认，请重新同步后核实。')); }
     finally { if (commandPending.current === command) commandPending.current = null; if (matchesScope()) setStopping(false); }
   };
+  const retryRoute = async () => {
+    if (!liveSnapshot || liveSnapshot.phase !== 'route' || !jevAbstention(liveSnapshot) || commandPending.current) return;
+    const command = {}; commandPending.current = command; setRouteRetrying(true); setError('');
+    try {
+      const result = jevRecord(await transport.request({ pathId: 'agent.jev.command', params: { roomId }, body: {
+        action: 'retry_route', graphId: liveSnapshot.graphId,
+        clientMessageId: `paw-jev-route-retry:${liveSnapshot.graphId}`,
+      } }));
+      if (result.ok !== true || result.accepted !== true) throw new Error('原任务尚未重新进入路径判断。');
+      if (matches()) await refresh(undefined, true);
+    } catch (reason) { if (matches()) setError(publicAgentErrorText(reason, '继续请求尚未确认，请同步状态后核实。')); }
+    finally { if (commandPending.current === command) commandPending.current = null; if (matchesScope()) setRouteRetrying(false); }
+  };
   const taskControls = useMemo<JevTaskControls>(() => ({
     revision: {
       load: (graphId, taskId, signal) => readJevRevision(transport, roomId, graphId, taskId, signal),
@@ -195,7 +209,7 @@ export function useJevExecution({ roomId, enabled, active, transport }: {
     selectedId: bound ? selectedId : '', selectGraph, loading, error: bound ? error : '', stopping, creating, recoveredAdmission: bound ? recoveredAdmission : undefined, strategy, setStrategy, modelRouting, setModelRouting, toolApprovalMode, setToolApprovalMode, verificationMode, setVerificationMode,
     pendingInput: bound ? uncertainJevInput(transport, roomId) : undefined, retryPending,
     awaitingPlan: bound && jevAwaitingPlan(liveSnapshot), planSending, decidePlan, retryPendingPlan, pendingPlan: bound ? uncertainJevPlan(transport, roomId) : undefined,
-    busy: bound && jevIsBusy(liveSnapshot), refresh: () => { void refresh(); }, onEvents, send, stop, taskControls };
+    busy: bound && jevIsBusy(liveSnapshot), routeRetrying, retryRoute, refresh: () => { void refresh(); }, onEvents, send, stop, taskControls };
 }
 
 export type JevExecution = ReturnType<typeof useJevExecution>;

@@ -53,13 +53,56 @@ class JevPlanApprovalTests(JevHostFixture):
         created = self.app.create(self.room["id"], {"clientMessageId": "multi-auto", "message": "先调研，再实现并测试",
             "strategy": "auto", "modelRouting": "participant", "executionApproval": True})
         with patch.object(self.app.driver.controller.decider, "choose_action",
-                          side_effect=lambda state, actions: (next(a for a in actions if a.operation == "plan"), {})):
+                          side_effect=lambda state, actions, **kwargs: (next(a for a in actions if a.operation == "plan"), {})):
             self.app.tick()
         self.assertEqual(self.view(created)["phase"], "plan")
         self.assertEqual(self.view(created)["planApproval"]["status"], "planning")
         self.assertEqual(self.effects(created, "execute"), [])
         self.app.tick()
         self.assertEqual(len(self.effects(created, "plan")), 1)
+
+    def test_document_route_abstention_keeps_attachment_and_can_resume_same_root(self):
+        media = self.service.media.import_bytes(room_id=self.room["id"],
+            data=b"# Comparison source\nVCP, Codex and Pi", mime_type="text/markdown",
+            file_name="comparison.md")
+        created = self.app.create(self.room["id"], {"clientMessageId": "document-route", "message": "Compare the attached document",
+            "strategy": "auto", "modelRouting": "participant", "executionApproval": True, "attachmentIds": [media["mediaId"]]})
+        with self.app.ledger.connection() as conn:
+            event = conn.execute("SELECT payload_json FROM agent_room_events WHERE room_id=? AND event_type='user_message'",
+                (self.room["id"],)).fetchone()
+        import json
+        self.assertEqual(json.loads(event[0])["attachmentReceipts"][0]["mediaId"], media["mediaId"])
+        self.assertEqual(self.view(created)["rootAttachmentReceipts"][0]["fileName"], "comparison.md")
+
+        # Reproduce the installed route-only dead end, then resume the same Root.
+        with patch.object(self.app.lifecycle, "advance", return_value={"status": "abstained", "effects": []}):
+            self.app.tick(limit=1)
+        self.assertEqual(self.view(created)["phase"], "route")
+        retry = self.service.jev_command(self.room["id"], {"action": "retry_route", "graphId": created["graphId"],
+            "clientMessageId": "retry-document-route"})
+        self.assertTrue(retry["queued"])
+        with patch.object(self.app.driver.controller.decider, "choose_action", return_value=(None, None)):
+            self.app.tick(limit=1)
+        self.assertEqual(self.view(created)["phase"], "plan")
+        route_result = next(json.loads(event["result_json"]) for event in self.view(created)["events"]
+            if event["source_id"].startswith("route-retry:"))
+        self.assertEqual(route_result["routeSource"],
+            "abstention_fallback")
+        self.assertEqual(self.view(created)["rootId"], created["rootId"])
+        self.app.tick(limit=1)
+        planner = self.effects(created, "plan")[0]
+        self.assertIn(media["mediaId"], planner["request"]["contextManifest"]["executionScope"]["attachmentIds"])
+        with self.assertRaises(GraphConflict):
+            self.service.jev_command(self.room["id"], {"action": "retry_route", "graphId": created["graphId"],
+                "clientMessageId": "retry-again"})
+
+    def test_plain_route_abstention_uses_direct_executor(self):
+        created = self.app.create(self.room["id"], {"clientMessageId": "plain-route", "message": "Hi",
+            "strategy": "auto", "executionApproval": True})
+        with patch.object(self.app.driver.controller.decider, "choose_action", return_value=(None, None)):
+            self.app.tick(limit=1)
+        self.assertEqual(self.view(created)["phase"], "execute")
+        self.assertIsNone(self.view(created).get("planApproval"))
 
     def planned(self, *, drain=True, questions=False):
         created, planner = self.start_planner()

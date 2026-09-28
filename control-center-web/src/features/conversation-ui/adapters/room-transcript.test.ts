@@ -22,6 +22,26 @@ const options = {
 };
 
 describe('roomTranscript', () => {
+  it('shows Room files and restores the original Jev attachment on an older input event', () => {
+    const receipt = { mediaId: 'media_abcdefghijklmnop', roomId: 'room-live', fileName: 'comparison.md',
+      mimeType: 'text/markdown', byteSize: 40182, sha256: 'a'.repeat(64) };
+    const projection = roomProjection();
+    projection.messagesById['message-user']!.attachmentReceipts = [receipt];
+    expect((roomTranscript(projection, options).messages[0] as UserMessage).attachments).toEqual([
+      { id: receipt.mediaId, name: receipt.fileName, kind: 'file', size: receipt.byteSize },
+    ]);
+    delete projection.messagesById['message-user']!.attachmentReceipts;
+    const graph = { ...reclaimedAttempt().graph, roomId: 'room-live', rootId: 'root-a', rootAttachments: [receipt] };
+    const restored = roomTranscript(projection, { ...options, jevGraph: graph }).messages[0] as UserMessage;
+    expect(restored.attachments?.[0]?.name).toBe('comparison.md');
+    projection.messageOrder.push('message-followup');
+    projection.messagesById['message-followup'] = { ...projection.messagesById['message-user']!,
+      id: 'message-followup', text: '补充说明', sequence: 5, createdAtMs: 200 };
+    const messages = roomTranscript(projection, { ...options, jevGraph: graph }).messages.filter(
+      (message): message is UserMessage => message.role === 'user',
+    );
+    expect(messages[1]?.attachments).toBeUndefined();
+  });
   it('classifies the persisted child-abort envelope after the reducer changes its message status', () => {
     const { graph } = reclaimedAttempt();
     const event = (sequence: number, eventType: string, payload: Record<string, unknown>) => parseRoomEvent({
@@ -209,6 +229,23 @@ describe('roomTranscript', () => {
     expect(JSON.stringify(dispatch)).not.toContain('不应出现的目标人名');
     expect(JSON.stringify(dispatch)).not.toContain('不应出现的候选人名');
     expect(dispatch?.kind === 'tool' && dispatch.name).toContain('协作行星');
+  });
+
+  it('names Jev execution and repeated verification by responsibility and real task', () => {
+    const projection = roomProjection();
+    projection.activityOrder = ['execute-route', 'verify-route-1', 'verify-route-2'];
+    projection.activitiesById = Object.fromEntries(projection.activityOrder.map((id, index) => [id, {
+      id, turnId: 'root-a', participantId: 'participant-a', sourceSessionId: 'session-a',
+      kind: 'route_decision', status: 'completed', summary: '已确定本轮分工',
+      payload: { sourceEventType: 'route_decision', routingPolicy: 'jev', purpose: index ? 'verify' : 'execute',
+        dispatchId: id, targetParticipantId: 'participant-a', ...(index ? { subjectTaskId: 'task-files' } : { workItemId: 'task-files' }) },
+      sequence: index + 2, createdAtMs: 110 + index, updatedAtMs: 110 + index,
+    }]));
+    const blocks = roomTranscript(projection, { ...options, workItemObjective: id => id === 'task-files' ? '让 PAW 点击查看文件' : '' })
+      .messages.flatMap(message => message.role === 'assistant' ? message.blocks : []);
+    expect(blocks.find(block => block.id === 'dispatch:execute-route')).toMatchObject({ name: 'Sol → Mars · 执行分派', summary: '执行：让 PAW 点击查看文件' });
+    expect(blocks.find(block => block.id === 'dispatch:verify-route-1')).toMatchObject({ name: 'Sol → Mars · 复核分派', summary: '复核：让 PAW 点击查看文件' });
+    expect(blocks.find(block => block.id === 'dispatch:verify-route-2')).toMatchObject({ name: 'Sol → Mars · 复核分派', summary: '第 2 次复核：让 PAW 点击查看文件' });
   });
 
   it('keeps a pending approval on the card and links it back to its activity', () => {

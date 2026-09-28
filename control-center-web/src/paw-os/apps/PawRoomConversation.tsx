@@ -5,6 +5,7 @@ import { writeClipboardText } from '@/platform/clipboard';
 import { publicAgentErrorText } from '@/features/agent/public-error';
 import { PublicToolOutput } from '@/features/agent/timeline/ActivitySummary';
 import {
+  publicToolOutputText,
   publicToolResultView,
   type PublicToolResultView,
 } from '@/features/agent/timeline/public-tool-result';
@@ -22,13 +23,14 @@ import {
 import type { AssistantBlock, AssistantMessage, ToolCallBlock } from '@/features/conversation-ui';
 import { roomCollaborationRoleLabel } from '@/features/rooms/room-copy';
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
+import { roomWorkStateLabel } from '@/features/rooms/room-presentation';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
-import type { JevSnapshot, JevTask } from '@/features/semantic-workspace/jev-execution';
+import { JEV_TASK_STAGE_LABELS, type JevSnapshot, type JevTask } from '@/features/semantic-workspace/jev-execution';
 import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
 import { runtimeToolWindowRequest } from '../runtime/runtime-tool-window';
 import { roomFocusCelestialName } from './room-focus-projection';
-import { roomDispatchPlanFromActivity, roomToolEvidence } from './room-gravity-projection';
+import { readableManagedReadExcerpt, roomDispatchPlanFromActivity, roomEscapedManagedRead, roomToolEvidence } from './room-gravity-projection';
 import { jevToolGroups, PawJevToolRecordDialog, PawJevToolRecords } from './PawJevToolRecords';
 import { toolExecutionOutcome } from '@/features/conversation-ui/model/tool-receipt';
 import './paw-room-conversation-navigation.css';
@@ -130,10 +132,10 @@ export function PawRoomConversation({
     const plan = roomDispatchPlanFromActivity(activity);
     const target = dispatchTarget(activity);
     if (!plan || !target || !plan.dispatchId) return undefined;
-    const work = room.workItems?.find((item) => item.id === plan.workItemId
+    const jevDispatch = plan.routingPolicy === 'jev' || plan.dispatchId.startsWith('jev-');
+    if (!jevDispatch) return room.workItems?.find((item) => item.id === plan.workItemId
       && item.roomId === room.id && item.rootTurnId === activity.turnId
       && item.currentOwnerParticipantId === target.id);
-    if (work) return work;
     if (!graph || graph.rootId !== activity.turnId) return undefined;
     const effect = graph.effects.find((candidate) => candidate.operation === 'dispatch'
       && candidate.request.graphId === graph.graphId
@@ -146,12 +148,22 @@ export function PawRoomConversation({
     const revision = effect?.request.taskRevision;
     const subjectTaskId = typeof activity.payload.subjectTaskId === 'string' ? activity.payload.subjectTaskId : '';
     if (!taskId || (subjectTaskId && subjectTaskId !== taskId)) return undefined;
-    return graph.tasks.find((item) => item.id === taskId && item.revision === revision && item.ownerId === target.id);
+    return graph.tasks.find((item) => item.id === taskId && item.revision === revision
+      && (plan.purpose === 'verify' || item.ownerId === target.id));
   }, [dispatchTarget, graph, room.id, room.workItems]);
 
   const renderBlockDetail = useCallback((block: AssistantBlock) => {
     const activity = transcript.activityByBlockId[block.id];
     if (!activity || block.kind !== 'tool') return undefined;
+    const escapedRead = roomEscapedManagedRead(activity);
+    if (escapedRead) return <section className="paw-room-managed-read" aria-label="受管资源读取结果">
+      <p>已读取受管资源的一个片段。这是带转义符的机器文本；颜色控制符已从下面的预览中隐藏。</p>
+      <details>
+        <summary>查看整理后的片段</summary>
+        <pre>{publicToolOutputText(readableManagedReadExcerpt(escapedRead.preview))}</pre>
+      </details>
+      {escapedRead.truncated ? <small>这里只显示本次公开的返回片段，原始工具回执仍保留。</small> : null}
+    </section>;
     const plan = roomDispatchPlanFromActivity(activity);
     if (plan) {
       const task = dispatchTask(activity);
@@ -162,7 +174,7 @@ export function PawRoomConversation({
           <summary><ListChecks size={16} aria-hidden /><span>查看任务详情</span><ChevronRight className="paw-room-dispatch-detail__chevron" size={14} aria-hidden /></summary>
           <div className="paw-room-dispatch-detail__task">
             <strong>{task.objective}</strong>
-            <small>任务状态：{task.state} · 修订：{task.revision}</small>
+            <small>当前任务状态：{'artifactRefs' in task ? roomWorkStateLabel(task.state) : JEV_TASK_STAGE_LABELS[task.state] ?? task.state} · 修订：{task.revision}</small>
             {task.expectedOutput ? <p>预期交付：{task.expectedOutput}</p> : null}
             <DispatchEvidenceLinks
               refs={taskReferences(task)}
@@ -171,8 +183,11 @@ export function PawRoomConversation({
             />
           </div>
         </details> : null}
-        {plan.dispatchId ? <CopyableReference label="派遣标识" value={plan.dispatchId} /> : null}
-        {plan.workItemId && !task ? <CopyableReference label="Room 工作项标识" value={plan.workItemId} /> : null}
+        {plan.dispatchId || plan.workItemId && !task ? <details className="paw-room-dispatch-detail__runtime">
+          <summary>运行记录<ChevronRight className="paw-room-dispatch-detail__chevron" size={14} aria-hidden /></summary>
+          {plan.dispatchId ? <CopyableReference label="派遣标识" value={plan.dispatchId} /> : null}
+          {plan.workItemId && !task ? <CopyableReference label="Room 工作项标识" value={plan.workItemId} /> : null}
+        </details> : null}
       </div>;
     }
     const facts = roomToolEvidence(activity.payload)?.facts ?? [];

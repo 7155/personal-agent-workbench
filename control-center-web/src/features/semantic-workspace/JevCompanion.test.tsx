@@ -11,7 +11,7 @@ afterEach(cleanup);
 const task = { id: 'task-one', state: 'active', revision: 1, owner_id: 'actor-one', objective: '核对依赖', acceptance: ['给出实际验证结果'] };
 function mount(overrides: Record<string, unknown> = {}, presentation: 'sidebar' | 'stage' = 'sidebar') {
   let failure = '';
-  const transport = new MockControlTransport({ routes: { 'agent.jev.get': (request: ControlRequest) => {
+  const transport = new MockControlTransport({ routes: { 'agent.jev.command': () => ({ ok: true, accepted: true }), 'agent.jev.get': (request: ControlRequest) => {
     if (failure) throw new Error(failure);
     return request.query?.graphId
     ? { ok: true, mode: 'jev', graphId: 'graph-one', rootId: 'root-one', snapshotVersion: 'v1', phase: 'execute', tasks: [task], effects: [], edges: [], final: {}, ...overrides }
@@ -21,6 +21,22 @@ function mount(overrides: Record<string, unknown> = {}, presentation: 'sidebar' 
   return { ...render(<Surface />), transport, fail: (reason: string) => { failure = reason; } };
 }
 describe('Jev conversation companion', () => {
+  it('offers a same Root route retry when the initial path judgment abstained', async () => {
+    const { transport } = mount({ phase: 'route', roomId: 'room-one', rootAttachmentReceipts: [{ ownerType: 'room', roomId: 'room-one', mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 }], events: [{ source_id: 'initial', state: 'done', result_json: { status: 'abstained' } }] });
+    await screen.findByText('等待重新判断');
+    expect(screen.getByText('原任务和附件已保留。重新判断后会在这条任务中继续。')).toBeVisible();
+    await userEvent.setup().click(screen.getByRole('button', { name: '重新判断并继续' }));
+    await waitFor(() => expect(transport.requests).toEqual(expect.arrayContaining([
+      expect.objectContaining({ request: expect.objectContaining({ pathId: 'agent.jev.command',
+        body: expect.objectContaining({ action: 'retry_route', graphId: 'graph-one' }) }) }),
+    ])));
+  });
+  it('keeps route recovery visible when the stage details are collapsed', async () => {
+    const view = mount({ phase: 'route', events: [{ source_id: 'initial', state: 'done', result_json: { status: 'abstained' } }] }, 'stage');
+    await screen.findByText('等待重新判断');
+    expect(view.container.querySelector('.jev-companion__disclosure')).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: '重新判断并继续' })).toBeVisible();
+  });
   it('pauses motion for a latest drained abstention while keeping Stop available', async () => {
     const view = mount({ events: [{ source_id: 'latest', state: 'done', result_json: { status: 'abstained', receipt: { decision: { answer: { choice: 'insufficient_evidence' } } } } }] }, 'stage');
     await screen.findByText('暂未选出下一步');

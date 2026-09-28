@@ -13,10 +13,18 @@ export function graphList(...ids: string[]) {
 }
 
 describe('Jev execution receipts', () => {
+  it('keeps only room-owned attachment receipts for an older Jev input', () => {
+    const graph = parseJevSnapshot(graphFixture('graph-one', { roomId: 'room-one', rootAttachmentReceipts: [
+      { ownerType: 'room', roomId: 'room-one', mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 },
+      { ownerType: 'room', roomId: 'other-room', mediaId: 'media_abcdefghijklmnop', fileName: 'private.md', mimeType: 'text/markdown', byteSize: 10 },
+    ] }), 'graph-one');
+    expect(graph.rootAttachments).toEqual([{ roomId: 'room-one', mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 }]);
+  });
   it('shows a drained latest abstention without releasing the open Root', () => {
     const graph = parseJevSnapshot(graphFixture('graph-one', { effects: [], events: [{ source_id: 'latest', state: 'done', result_json: { status: 'abstained' } }] }), 'graph-one');
     expect(jevAbstention(graph)?.id).toBe('latest');
     expect(jevStatusLabel(graph)).toBe('暂未选出下一步');
+    expect(jevStatusLabel({ ...graph, phase: 'route' })).toBe('等待重新判断');
     expect(jevIsBusy(graph)).toBe(true);
     expect(jevAbstention({ ...graph, events: [{ id: 'later', kind: 'work_submitted', state: 'done', result: { status: 'applied' } }, ...graph.events] })).toBeNull();
     expect(jevAbstention({ ...graph, events: [...graph.events, { id: 'queued', kind: 'executor_drained', state: 'pending', result: {} }] })).toBeNull();

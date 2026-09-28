@@ -35,7 +35,7 @@ class JevProjectionReadTests(JevHostFixture):
         view = self.app.driver.projection(graph, graph, self.app.executions(snapshot))
         with self.app.ledger.connection() as conn:
             ids = [r[0] for r in conn.execute('SELECT effect_id FROM agent_jev_runtime_effects WHERE graph_id=? ORDER BY updated_at_ms DESC LIMIT 200', (graph,))]
-            events = [dict(r) for r in conn.execute('SELECT source_id,kind,state,result_json FROM agent_jev_owner_events WHERE graph_id=? ORDER BY created_at_ms DESC LIMIT 100', (graph,))]
+            events = [dict(r) for r in conn.execute('SELECT source_id,kind,state,result_json FROM agent_jev_owner_events WHERE graph_id=? ORDER BY created_at_ms DESC,rowid DESC LIMIT 100', (graph,))]
             owner = conn.execute('SELECT current_objective FROM agent_jev_host_roots WHERE graph_id=?', (graph,)).fetchone()
             superseded_by = dict(conn.execute(
                 'SELECT old_task_id,new_task_id FROM agent_jev_task_supersessions WHERE graph_id=?', (graph,)))
@@ -68,6 +68,9 @@ class JevProjectionReadTests(JevHostFixture):
                     stopped=bool(policy['stopped']), phase=policy['phase'],
                     requirementsRevision=policy['requirements_revision'],
                     currentRootObjective=owner[0] or snapshot.task(snapshot.root_work_id).objective,
+                    roomId=snapshot.room_id,
+                    rootAttachmentReceipts=self.app._input_attachments(
+                        self.app.binding(snapshot.room_id, graph), policy),
                     activeTaskIds=active_ids, revisions=revisions,
                     participantRemovals=self.app.removal.projection(snapshot.room_id),
                     final=json.loads(policy['final_json']),
@@ -108,6 +111,17 @@ class JevProjectionReadTests(JevHostFixture):
             self.assertEqual(len(connections), 1)
             self.assertEqual(snapshots.call_count, 1)
         self.assertEqual(len(self.calls), 1)
+
+    def test_root_attachment_receipt_uses_the_projection_read_transaction(self):
+        media = self.service.media.import_bytes(room_id=self.room['id'], data=b'Comparison source',
+            mime_type='text/markdown', file_name='comparison.md')
+        created = self.app.create(self.room['id'], {'clientMessageId': 'projection-file',
+            'message': 'Compare the attached document', 'strategy': 'auto',
+            'attachmentIds': [media['mediaId']]})
+        with self.read_budget() as (connections, _snapshots):
+            view = self.app.projection(self.room['id'], created['graphId'])
+        self.assertEqual(len(connections), 1)
+        self.assertEqual(view['rootAttachmentReceipts'][0]['mediaId'], media['mediaId'])
 
     def test_projection_reads_applied_successor_and_pending_revision_from_one_snapshot(self):
         created, _ = self.populated()

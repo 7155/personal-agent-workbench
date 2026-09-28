@@ -35,7 +35,8 @@ export interface JevPlanApproval {
   tasks: JevPlanTask[]; clarifications: { id: string; question: string; options: string[] }[];
 }
 export interface JevSnapshot {
-  graphId: string; rootId: string; version: string; phase: JevPhase; stopped: boolean;
+  graphId: string; roomId?: string; rootId: string; version: string; phase: JevPhase; stopped: boolean;
+  rootAttachments?: { mediaId: string; roomId: string; fileName: string; mimeType: string; byteSize: number }[];
   requirementsRevision: number; tasks: JevTask[];
   edges: { prerequisite: string; dependent: string; kind: string }[];
   ready: string[]; running: string[]; review: string[];
@@ -104,7 +105,14 @@ export function parseJevSnapshot(value: unknown, graphId: string): JevSnapshot {
   }));
   const activeTaskIds = Array.isArray(data.activeTaskIds) ? strings(data.activeTaskIds) : undefined;
   return {
-    graphId, rootId: text(data.rootId), version: text(data.snapshotVersion), phase: data.phase as JevPhase,
+    graphId, roomId: text(data.roomId), rootId: text(data.rootId), version: text(data.snapshotVersion), phase: data.phase as JevPhase,
+    rootAttachments: list(data.rootAttachmentReceipts).map(jevRecord).filter(item =>
+      item.ownerType === 'room' && item.roomId === data.roomId
+      && /^media_[A-Za-z0-9_-]{12,80}$/u.test(text(item.mediaId))
+      && typeof item.fileName === 'string' && typeof item.mimeType === 'string'
+      && Number.isInteger(item.byteSize) && Number(item.byteSize) > 0,
+    ).map(item => ({ mediaId: text(item.mediaId), roomId: text(item.roomId), fileName: text(item.fileName),
+      mimeType: text(item.mimeType), byteSize: Number(item.byteSize) })),
     stopped: data.stopped === true, requirementsRevision: Number(data.requirementsRevision) || 0,
     ready: strings(data.ready), running: strings(data.running), review: strings(data.review),
     tasks: activeTaskIds ? allTasks.filter(task => activeTaskIds.includes(task.id)) : allTasks,
@@ -195,7 +203,7 @@ export function jevStatusLabel(graph: JevSnapshot | null, loading = false) {
   const approvalStatus = graph.planApproval?.status || graph.phase;
   if (jevAwaitingPlan(graph)) return approvalStatus === 'awaiting_input' ? '等待补充目标与范围'
     : approvalStatus === 'deferred' ? '方案已保留，暂未执行' : '方案已就绪，等待确认';
-  if (jevAbstention(graph)) return '暂未选出下一步';
+  if (jevAbstention(graph)) return graph.phase === 'route' ? '等待重新判断' : '暂未选出下一步';
   return ({ route: '判断任务路径', plan: '规划任务与依赖', awaiting_input: '等待补充目标与范围', awaiting_approval: '方案已就绪，等待确认', deferred: '方案已保留，暂未执行', execute: '推进任务与复核', synthesize: '汇总结果与证据', final: '等待最终答复同步' })[graph.phase];
 }
 

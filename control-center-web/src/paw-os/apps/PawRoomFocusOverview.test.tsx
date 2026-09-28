@@ -141,6 +141,8 @@ const focus: RoomFocusProjection = {
         parallelIndex: 1,
         parallelSize: 2,
         workItemId: 'runtime:mars',
+        subjectTaskId: '',
+        purpose: '',
         workItemState: 'active',
         candidates: [
           { participantId: 'p-earth', displayName: 'Agent 1', score: 0, signals: [], selected: false },

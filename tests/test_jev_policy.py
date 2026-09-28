@@ -32,8 +32,9 @@ class JevModelPolicyTests(unittest.TestCase):
             self.assertTrue(next(e["url"] for e in card["evidence"] if e["sourceKind"] == "community").startswith("https://www.reddit.com/"))
         cards[0]["strengths"].clear()
         self.assertTrue(model_cards()[0]["strengths"])
-        self.assertIn("日常执行", model_role_guidance("gpt-6-luna", "execute"))
+        self.assertIn("简单任务", model_role_guidance("gpt-6-luna", "execute"))
         self.assertIn("不授予新权限", model_role_guidance("gpt-6-sol", "verify"))
+        self.assertIn("优先使用 Sol max", next(e for e in cards[0]["evidence"] if e["sourceKind"] == "user_policy")["summary"])
         self.assertEqual(model_role_guidance("other", "execute"), "")
 
     def test_default_and_old_root_policy_are_distinct(self):
@@ -49,12 +50,14 @@ class JevModelPolicyTests(unittest.TestCase):
                 normalize_policy(payload)
 
     def test_exact_model_tiers_and_planning(self):
+        self.assertEqual(select_model(catalog(), purpose="execute")["modelId"], "gpt-6-sol")
         for purpose, difficulty, model in (
             ("plan", "simple", "sol"), ("plan", "routine", "sol"),
-            ("plan", "complex", "sol"), ("plan", "critical", "astra"), ("execute", "simple", "luna"),
-            ("execute", "routine", "luna"), ("execute", "complex", "sol"), ("execute", "critical", "astra"),
+            ("plan", "complex", "sol"), ("plan", "critical", "sol"), ("execute", "simple", "luna"),
+            ("execute", "routine", "sol"), ("execute", "complex", "sol"), ("execute", "critical", "sol"),
             ("verify", "simple", "sol"), ("verify", "routine", "sol"),
-            ("verify", "complex", "sol"), ("verify", "critical", "astra"), ("synthesize", "routine", "luna"),
+            ("verify", "complex", "sol"), ("verify", "critical", "sol"),
+            ("synthesize", "simple", "luna"), ("synthesize", "routine", "sol"),
         ):
             with self.subTest(purpose=purpose, difficulty=difficulty):
                 chosen = select_model(catalog(), purpose=purpose, difficulty=difficulty)
@@ -69,11 +72,11 @@ class JevModelPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(GraphConflict, "PROVIDER_AMBIGUOUS"):
             select_model(catalog("a") + catalog("b"), purpose="execute")
         with self.assertRaisesRegex(GraphConflict, "REASONING_UNAVAILABLE"):
-            select_model([{"provider": "a", "id": "gpt-6-luna", "thinkingLevels": ["high"]}], purpose="execute")
+            select_model([{"provider": "a", "id": "gpt-6-luna", "thinkingLevels": ["high"]}], purpose="execute", difficulty="simple")
         with self.assertRaisesRegex(GraphConflict, "MODEL_UNAVAILABLE"):
-            select_model([{**catalog()[2], "available": False}], purpose="execute")
+            select_model([{**catalog()[2], "available": False}], purpose="execute", difficulty="simple")
         with self.assertRaisesRegex(GraphConflict, "API_UNSUPPORTED"):
-            select_model([{**catalog()[2], "api": "openai-completions"}], purpose="execute")
+            select_model([{**catalog()[2], "api": "openai-completions"}], purpose="execute", difficulty="simple")
 
     def test_planning_does_not_upgrade_to_astra_when_sol_is_missing(self):
         with self.assertRaisesRegex(GraphConflict, "MODEL_UNAVAILABLE"):

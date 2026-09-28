@@ -22,6 +22,14 @@
 .jev-companion select { width: 100%; min-width: 0; min-height: 30px; padding: 4px 7px; border: 1px solid var(--paw-line); border-radius: 6px; background: var(--paw-panel); color: var(--paw-ink); }
 .jev-companion__warning { display: flex; align-items: flex-start; gap: 6px; padding: 9px 0; color: var(--paw-ink); line-height: 1.5; }
 .jev-companion__warning > svg { flex: none; margin-top: 2px; color: var(--paw-warning, #a16207); }
+.jev-route-recovery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 14px; padding: 11px 12px; border: 1px solid var(--paw-line); border-radius: 10px; background: var(--paw-panel); line-height: 1.5; }
+.jev-route-recovery > div { flex: 1 1 190px; min-width: 0; }
+.jev-route-recovery strong { display: block; color: var(--paw-ink); font-size: 12px; font-weight: 600; }
+.jev-route-recovery p { margin: 3px 0 0; color: var(--paw-muted); overflow-wrap: anywhere; }
+.jev-route-recovery button { flex: none; min-height: 32px; padding: 5px 10px; border: 0; border-radius: 6px; background: var(--paw-accent); color: var(--paw-panel); font-weight: 600; }
+.jev-route-recovery button:not(:disabled):hover { filter: brightness(.94); }
+.jev-route-recovery button:disabled { background: var(--paw-accent-soft); color: var(--paw-muted); }
+.jev-companion--stage > .jev-route-recovery { margin: 0 16px 12px; }
 .jev-phase-rail { display: flex; justify-content: space-between; gap: 4px; list-style: none; padding: 0; margin: 18px 0; }
 .jev-phase-rail > li { display: grid; justify-items: center; gap: 7px; color: var(--paw-muted); font-size: 10px; text-align: center; }
 .jev-phase-rail__mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--paw-line); background: var(--paw-panel); transition: background-color 180ms var(--paw-ease-out, cubic-bezier(.23, 1, .32, 1)), color 180ms var(--paw-ease-out, cubic-bezier(.23, 1, .32, 1)); }

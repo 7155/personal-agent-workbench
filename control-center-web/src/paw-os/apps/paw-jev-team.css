@@ -67,6 +67,9 @@
 .paw-jev-files .paw-jev-record-row { min-width: 0; }
 .paw-jev-files__evidence { display: grid; place-items: center; flex: 0 0 30px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--paw-muted); cursor: pointer; }
 .paw-jev-files__evidence:hover { color: var(--paw-ink); background: var(--paw-hover); }
+.paw-jev-input-files li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 0; color: var(--paw-ink); }
+.paw-jev-input-files svg { flex: none; color: var(--paw-accent); }
+.paw-jev-input-files span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .paw-jev-records { min-width: 0; color: var(--paw-ink); }
 .paw-jev-records > p { margin: 0 0 12px; color: var(--paw-muted); font-size: 12px; line-height: 1.65; }
 .paw-jev-records > h3 { margin: 2px 0 9px; color: var(--paw-muted); font-size: 11px; font-weight: 500; }

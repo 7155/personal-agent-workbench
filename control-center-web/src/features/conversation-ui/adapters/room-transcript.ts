@@ -13,6 +13,7 @@ import {
   roomDispatchPlanSummary,
   roomDispatchSourceParticipantId,
   roomToolActivityLine,
+  roomEscapedManagedRead,
   roomToolEvidence,
   type RoomDispatchPlan,
 } from '@/paw-os/apps/room-gravity-projection';
@@ -90,6 +91,10 @@ export function roomTranscript(
   const activityByBlockId: Record<string, RoomActivityProjection> = {};
   const reclaimedToolBlockIds = new Set<string>();
   const reclaimedAttempts = provenReclaimedAttempts(projection, options.jevGraph);
+  const jevInputMessageId = options.jevGraph?.roomId === projection.roomId
+    ? projection.messageOrder.map((id) => projection.messagesById[id]).find((message) =>
+      message?.role === 'user' && (message.rootId || message.turnId) === options.jevGraph?.rootId,
+    )?.id : undefined;
   const cardByKey = new Map<string, AssistantMessage>();
   const ambiguousSessionCards = new Set<string>();
   let openKey = '';
@@ -144,12 +149,22 @@ export function roomTranscript(
     if (entry.kind === 'message' && entry.message.role === 'user') {
       openKey = '';
       const steerReceipt = roomSteerReceipt(entry.message, projection);
+      const eventAttachments = entry.message.attachmentReceipts ?? [];
+      const recoveredAttachments = entry.message.id === jevInputMessageId
+        && options.jevGraph?.rootId === entryRoot
+        ? options.jevGraph.rootAttachments ?? [] : [];
+      const attachments = eventAttachments.length ? eventAttachments : recoveredAttachments;
       messages.push({
         id: entry.message.id,
         role: 'user',
         text: entry.message.text,
         timestamp: entry.message.createdAtMs,
         deliveryStatus: userDeliveryStatus(entry.message),
+        ...(attachments.length ? { attachments: attachments.map((item) => ({
+          id: item.mediaId, name: item.fileName,
+          kind: item.mimeType.startsWith('image/') ? 'image' as const : 'file' as const,
+          size: item.byteSize,
+        })) } : {}),
         ...(steerReceipt ? { steerReceipt } : {}),
       });
       continue;
@@ -470,27 +485,37 @@ function activityBlock(
       options.actorName(roomDispatchSourceParticipantId(plan, dispatchPlans) || null),
     );
     const targetName = roomPublicPlanetName(options.actorName(plan.targetParticipantId));
-    const objective = plan.workItemId ? options.workItemObjective?.(plan.workItemId) ?? '' : '';
+    const taskRef = plan.workItemId || plan.subjectTaskId;
+    const objective = taskRef ? options.workItemObjective?.(taskRef) ?? '' : '';
+    const jevPurpose = plan.routingPolicy === 'jev'
+      ? ({ execute: '执行', verify: '复核', plan: '规划', synthesize: '汇总' } as Record<string, string>)[plan.purpose] ?? ''
+      : '';
+    const sameTaskDispatches = jevPurpose === '复核' && taskRef
+      ? dispatchPlans.filter((candidate) => candidate.routingPolicy === 'jev'
+        && candidate.purpose === 'verify'
+        && (candidate.workItemId || candidate.subjectTaskId) === taskRef)
+      : [];
+    const attempt = sameTaskDispatches.findIndex((candidate) => candidate.dispatchId === plan.dispatchId) + 1;
+    const attemptLabel = attempt > 1 ? `第 ${attempt} 次复核` : '复核';
     const routingDetail = [
       objective ? `任务：${objective}` : '',
-      plan.routingPolicy === 'jev' ? 'Jev 已选择本轮负责伙伴' : plan.routingPolicyLabel,
+      plan.routingPolicy === 'jev' ? `${jevPurpose || '任务'}已交给 ${targetName}${attempt > 1 ? ` · ${attemptLabel}` : ''}` : plan.routingPolicyLabel,
       ...plan.candidates.map((candidate) => (
         `${roomPublicPlanetName(options.actorName(candidate.participantId))} · ${candidate.score.toFixed(1)}${candidate.selected ? ' · 已选择' : ''}${candidate.signals.length ? ` · ${candidate.signals.join('、')}` : ''}`
       )),
     ].filter(Boolean).join('\n');
-    /* Runtime's own line stays first: the derived plan summary explains the
-     * routing, it does not replace what the Room actually published. A real
-     * WorkItem objective is a paragraph, so it rides in the card body rather
-     * than flooding the head. */
-    const dispatchLine = [compact(activity.summary), plan.reason === 'jev'
-      ? '由 Jev 选择本轮负责伙伴'
-      : roomDispatchPlanSummary(plan)]
+    /* Jev dispatches lead with the bound purpose and task; other Room routes
+     * keep their published summary. The objective remains in the detail too. */
+    const dispatchLine = [
+      jevPurpose ? `${jevPurpose === '复核' ? attemptLabel : jevPurpose}：${compact(objective) || `交给 ${targetName}`}` : compact(activity.summary),
+      jevPurpose ? '' : roomDispatchPlanSummary(plan),
+    ]
       .filter(Boolean)
       .filter((part, index, parts) => parts.indexOf(part) === index);
     return {
       id: `dispatch:${activity.id}`,
       kind: 'tool',
-      name: `${sourceName} → ${targetName} · 任务分派`,
+      name: `${sourceName} → ${targetName} · ${jevPurpose ? `${jevPurpose}分派` : '任务分派'}`,
       summary: dispatchLine.join(' · '),
       status: toolStatus(activity.status),
       ...(routingDetail ? { output: routingDetail } : {}),
@@ -499,6 +524,7 @@ function activityBlock(
   }
   if (eventType === 'tool' || eventType.startsWith('tool_')) {
     const evidence = roomToolEvidence(activity.payload);
+    const managedRead = roomEscapedManagedRead(activity);
     if (reclaimedTool) return {
       id: `tool:${activity.id}`,
       kind: 'tool',
@@ -514,8 +540,8 @@ function activityBlock(
      * is derived from real evidence instead; the blob stays reachable as the
      * card's input, so folding never costs a trace. */
     const raw = rawDetail(activity.summary);
-    const name = evidence?.label || '工具';
-    const line = roomToolActivityLine(raw ? '' : activity.summary, activity.payload, activity.status);
+    const name = managedRead ? '读取受管资源' : evidence?.label || '工具';
+    const line = managedRead ? '已读取机器文本片段' : roomToolActivityLine(raw ? '' : activity.summary, activity.payload, activity.status);
     /* The card head already names the tool and carries its state, so a derived
      * line of exactly those two would print the same sentence twice. One that
      * carries the real op (`行星协调 · 批量并行委派`) still says something. */
@@ -530,7 +556,7 @@ function activityBlock(
       summary: duplicate ? '' : line,
       status: toolStatus(activity.status),
       ...(raw ? { input: activity.summary.trim() } : {}),
-      ...(evidence?.facts.length
+      ...(!managedRead && evidence?.facts.length
         ? { output: evidence.facts.map((fact) => `${fact.label}：${fact.value}`).join('\n') }
         : {}),
       startedAt: activity.createdAtMs,

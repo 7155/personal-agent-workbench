@@ -35,6 +35,8 @@ export interface RoomDispatchPlan {
   parallelIndex: number;
   parallelSize: number;
   workItemId: string;
+  subjectTaskId: string;
+  purpose: string;
   workItemState: string;
   candidates: RoomDispatchCandidate[];
 }
@@ -110,6 +112,8 @@ export function roomDispatchPlanFromPayload(payload: Record<string, unknown>): R
     parallelIndex: numberValue(payload.parallelIndex, -1),
     parallelSize: numberValue(payload.parallelSize, 0),
     workItemId: stringValue(payload.workItemId),
+    subjectTaskId: stringValue(payload.subjectTaskId),
+    purpose: stringValue(payload.purpose),
     workItemState: stringValue(payload.workItemState),
     candidates,
   };
@@ -241,6 +245,29 @@ export interface RoomToolEvidence {
   label: string;
   headline: string;
   facts: RoomToolFact[];
+}
+
+/** A managed-resource read whose public preview is an escaped machine-text
+ * fragment. The original receipt stays in Runtime; the conversation can show
+ * a readable excerpt without treating JSON escapes as a user document. */
+export function roomEscapedManagedRead(activity: RoomActivityProjection): { resourceRef: string; preview: string; truncated: boolean } | undefined {
+  if (stringValue(activity.payload.toolName) !== 'read') return undefined;
+  const resourceRef = /^已读取受管资源 (media:\/\/media_[A-Za-z0-9_-]+)$/u.exec(activity.summary)?.[1];
+  if (!resourceRef) return undefined;
+  const result = recordValue(activity.payload.result);
+  const output = stringValue(result.outputPreview);
+  if (!output.startsWith(`[resourceRef: ${resourceRef}]`)) return undefined;
+  const preview = output.replace(/^\[resourceRef: [^\]]+\]\s*\[resourceRevision: [^\]]+\]\s*/u, '');
+  const escapedLines = preview.match(/\\n/gu)?.length ?? 0;
+  if (!/\\u001b\[/iu.test(preview) && !(escapedLines >= 3 && !preview.includes('\n'))) return undefined;
+  return { resourceRef, preview, truncated: result.outputTruncated === true };
+}
+
+export function readableManagedReadExcerpt(preview: string): string {
+  return preview
+    .replace(/(?:\\u001b|\u001b)\[[0-9;]*[A-Za-z]/giu, '')
+    .replace(/\\r\\n|\\n/gu, '\n')
+    .replace(/\\t/gu, '  ');
 }
 
 export function roomToolEvidence(payload: Record<string, unknown>): RoomToolEvidence | undefined {

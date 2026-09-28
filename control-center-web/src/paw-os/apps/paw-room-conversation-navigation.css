@@ -37,6 +37,15 @@
 .paw-room-dispatch-detail__reference code { overflow-wrap: anywhere; }
 .paw-room-dispatch-detail__reference button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-decoration: underline; }
 .paw-room-dispatch-detail__reference small { flex-basis: 100%; }
+.paw-room-dispatch-detail__runtime { color: var(--color-text-secondary); font-size: 12px; }
+.paw-room-dispatch-detail__runtime > summary { color: var(--color-text-secondary); }
+.paw-room-dispatch-detail__runtime .paw-room-dispatch-detail__reference { padding-top: 8px; }
+.paw-room-managed-read { display: grid; gap: 8px; min-width: 0; color: var(--color-text-secondary); font-size: 13px; }
+.paw-room-managed-read p { margin: 0; line-height: 1.5; }
+.paw-room-managed-read details > summary { width: fit-content; color: var(--color-accent); cursor: pointer; font-weight: 600; }
+.paw-room-managed-read pre { max-height: 240px; margin: 8px 0 0; padding: 10px 12px; overflow: auto; border-radius: 7px; background: var(--color-surface-subtle); color: var(--color-text); font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.paw-room-managed-read small { color: var(--color-text-tertiary); }
+.paw-room-managed-read summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 
 /* Keep text anchored; motion belongs to the affordance being operated. */
 .paw-room-dispatch-detail__decision,

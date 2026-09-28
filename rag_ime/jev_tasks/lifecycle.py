@@ -160,12 +160,17 @@ class JevLifecycle:
             rows = conn.execute("SELECT command_id,result_json FROM agent_jev_commands WHERE graph_id=? AND operation='adjust_plan' ORDER BY created_at_ms,rowid",
                 (binding["graph_id"],)).fetchall()
         for row in rows:
+            if self.service.room_events.store.has_projection(row["command_id"]):
+                continue
             result = json.loads(row["result_json"])
             revision = result["planApproval"]["revisions"][-1]
+            attachments = self.app._input_attachments(binding, ids=revision["attachmentIds"])
             self.service.room_events.publish_projection(projection_key=row["command_id"],
                 room_id=binding["room_id"], event_type="user_message", turn_id=binding["root_turn_id"],
                 payload={"text": revision["message"], "clientMessageId": result["clientMessageId"],
-                    "attachmentIds": revision["attachmentIds"], "mode": "jev", "graphId": binding["graph_id"]})
+                    "attachmentIds": revision["attachmentIds"],
+                    **({"attachmentReceipts": attachments} if attachments else {}),
+                    "mode": "jev", "graphId": binding["graph_id"]})
 
     def effect_for_dispatch(self, dispatch_id):
         with self.ledger.connection() as conn:
@@ -390,6 +395,7 @@ class JevLifecycle:
             instructions = (
                 "为目标设计最小可验收计划，最多六项；简单目标可返回一项。不要执行任务。调用 room_partner op=plan_submit，"
                 'proposal={requirementsRevision,topologyRevision,tasks:[{key,objective,expectedOutput,acceptanceCriteria,ownerParticipantId,dependsOn,contextRefs,requiredCapabilities,writeTargets,difficulty:"simple|routine|complex|critical"}]}。'
+                "仅低风险、小范围、输入输出与验收都明确的执行任务标 simple；其余默认 routine 或更高，使用 Sol max。"
                 "依赖用本次别名，不能有环。requiredCapabilities 使用真实工具 ID（例如 workspace_read/workspace_edit）；"
                 "仅当用户明确要求某 Skill 时，可用 skill:<精确名称> 表达必需 Skill，当前 Pi 目录须由 Host 核验，不得猜测名称或授权；"
                 "writeTargets 为授权工作区内的实际绝对文件路径，不修改文件时为空。contextRefs 只选本任务确需的已有资料引用。"
@@ -813,6 +819,7 @@ class JevLifecycle:
             return {"status": approval["status"], "effects": []}
         root = snapshot.task(snapshot.root_work_id)
         if policy["phase"] == "route":
+            attachment_ids = json.loads(policy["attachment_ids_json"])
             actions = [
                 Candidate.make(
                     "direct",
@@ -828,10 +835,17 @@ class JevLifecycle:
                 ),
             ]
             action, _ = self.app.driver.controller.decider.choose_action(
-                {"context": {"objective": root.objective, "acceptance": root.acceptance}}, actions
+                {"context": {"objective": root.objective, "acceptance": root.acceptance,
+                             "attachmentCount": len(attachment_ids)}},
+                actions, min_probability=0.0, min_margin=0.0,
             )
+            abstained = action is None
             if action is None:
-                return {"status": "abstained", "effects": []}
+                # Routing is only a direct/plan choice. An explicit abstention
+                # must not strand an authorized Root; a supplied document can
+                # be inspected by the planner, while a plain request can be
+                # answered or clarified by the direct executor.
+                action = actions[1] if attachment_ids else actions[0]
             with self.ledger.connection(write=True) as conn:
                 self.ledger.require_unchanged(conn, snapshot)
                 current = self.policy(event.graph_id, conn)
@@ -852,7 +866,8 @@ class JevLifecycle:
                 self.app._enqueue(
                     conn, event.graph_id, "route:" + snapshot.root_id, "work_created"
                 )
-            return {"status": "applied", "effects": []}
+            return {"status": "applied", "effects": [], "routeChoice": action.operation,
+                    "routeSource": "abstention_fallback" if abstained else "jev_choice"}
         purpose, subject = None, None
         if policy["phase"] == "plan":
             purpose, subject = "plan", root

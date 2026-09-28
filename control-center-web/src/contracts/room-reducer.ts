@@ -26,6 +26,7 @@ export interface RoomMessageProjection {
   status: 'queued' | 'streaming' | 'completed' | 'failed' | 'aborted';
   text: string;
   message?: UiAgentMessage;
+  attachmentReceipts?: RoomAttachmentReceipt[];
   clientMessageId?: string;
   projectionKind?: 'optimistic' | 'execution' | 'post';
   rootId?: string;
@@ -504,6 +505,7 @@ export function appendOptimisticRoomMessage(
     role: 'user',
     status: 'queued',
     text: input.text,
+    attachmentReceipts: input.attachments ?? [],
     message: roomUserMessage({
       id,
       roomId: state.roomId,
@@ -1027,6 +1029,7 @@ function applyUserMessage(
     role: 'user',
     status: 'completed',
     text: answerText,
+    attachmentReceipts: attachments,
     message: roomUserMessage({
       id: text(payload.messageId) || `${event.eventId}:user`,
       roomId: event.roomId,

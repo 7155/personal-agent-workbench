@@ -81,7 +81,7 @@ export function RoomComposer({
   draft: string;
   attachments: RoomAttachmentReceipt[];
   sending: boolean;
-  taskBusyState?: 'running' | 'blocked';
+  taskBusyState?: 'running' | 'blocked' | 'waiting';
   /** JEV holds a follow-up until the current graph settles; it does not steer a Room turn. */
   busySubmitBehavior?: 'steer' | 'queue';
   /** A compact workspace can move its one draft editor into a larger dialog. */
@@ -392,6 +392,8 @@ export function RoomComposer({
               ? '当前任务正在等待你的回答。这里只发送文字回答；点名和附件不会随回答发送。'
               : attachments.length
                 ? '附件已保留，当前协作结束后就能发送。'
+              : taskBusyState === 'waiting'
+                ? '当前任务等待重新判断，原任务已保留。可在进展栏继续；新消息会排入下一轮。'
               : busySubmitBehavior === 'queue'
                 ? '任务进行中 · 新消息将排入下一轮'
               : taskBusyState === 'blocked'

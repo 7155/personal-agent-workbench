@@ -174,8 +174,9 @@ class AgentMediaStore:
         *,
         session_id: str = "",
         room_id: str = "",
+        conn: sqlite3.Connection | None = None,
     ) -> dict[str, object]:
-        row = self._row(media_id, session_id=session_id, room_id=room_id)
+        row = self._row(media_id, session_id=session_id, room_id=room_id, conn=conn)
         payload = _receipt_payload(row)
         validate_contract(payload, "agent-media.v1.json")
         return payload
@@ -393,17 +394,23 @@ class AgentMediaStore:
         *,
         session_id: str = "",
         room_id: str = "",
+        conn: sqlite3.Connection | None = None,
     ) -> sqlite3.Row:
         normalized = _validated_media_id(media_id)
         owner_type, owner_id = _media_owner(session_id=session_id, room_id=room_id)
-        with self._connect() as conn:
-            row = conn.execute(
+        def query(db: sqlite3.Connection) -> sqlite3.Row | None:
+            return db.execute(
                 """
                 SELECT * FROM agent_media
                 WHERE media_id = ? AND owner_type = ? AND owner_id = ?
                 """,
                 (normalized, owner_type, owner_id),
             ).fetchone()
+        if conn is None:
+            with self._connect() as db:
+                row = query(db)
+        else:
+            row = query(conn)
         if row is None:
             raise KeyError(f"agent media not found for this {owner_type}")
         return row
