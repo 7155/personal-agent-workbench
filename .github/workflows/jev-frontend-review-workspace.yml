@@ -1,0 +1,49 @@
+name: Jev isolated frontend review workspace
+
+on:
+  push:
+    branches: [codex/jev-frontend-review-20260928]
+    paths: [.github/workflows/jev-frontend-review-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 3ee530bea05f54a199544153594b50e0a00c8bfa
+          persist-credentials: false
+      - name: Export the immutable review baseline
+        run: |
+          git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/paw-source-3ee530be.tar.gz"
+          git rev-parse HEAD > "$RUNNER_TEMP/paw-source-commit.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-review-source-3ee530be
+          path: |
+            ${{ runner.temp }}/paw-source-3ee530be.tar.gz
+            ${{ runner.temp }}/paw-source-commit.txt
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Install the repository-pinned frontend toolchain
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+          pnpm --dir control-center-web install --frozen-lockfile
+      - name: Export Linux frontend dependencies for the isolated review
+        run: tar -czf "$RUNNER_TEMP/paw-frontend-dependencies.tar.gz" -C control-center-web node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-review-dependencies-3ee530be
+          path: ${{ runner.temp }}/paw-frontend-dependencies.tar.gz
+          retention-days: 1
+          compression-level: 0
