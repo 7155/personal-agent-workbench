@@ -4,7 +4,7 @@ import { JevCompanion } from '@/features/semantic-workspace/JevCompanion';
 import { JevPolicyControls } from '@/features/semantic-workspace/JevPolicyControls';
 import { JevPlanReview } from '@/features/semantic-workspace/JevPlanReview';
 import { PawRoomRemovalProgress, useRoomRemovals } from './PawRoomRemovalProgress';
-import { PawJevTeamPanels } from './PawJevTeamPanels';
+import { jevRailHasContent, PawJevTeamPanels } from './PawJevTeamPanels';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { useJevExecution } from '@/features/semantic-workspace/use-jev-execution';
 import { jevAbstention, jevStatusLabel, jevTaskCountLabel, pendingJevInput } from '@/features/semantic-workspace/jev-execution';
@@ -16,8 +16,11 @@ import {
   GitBranch,
   ListChecks,
   LoaderCircle,
+  Maximize2,
   MessageCircle,
   Orbit,
+  PanelRightClose,
+  PanelRightOpen,
   PanelsTopLeft,
   Plus,
   Settings2,
@@ -93,7 +96,7 @@ import {
 import '@/features/agent/agent.css';
 import '@/features/rooms/rooms.css';
 import './paw-jev-conversation.css';
-import './paw-jev-visual.css';
+import './paw-jev-mission.css';
 
 export { PawRoomConversation } from './PawRoomConversation';
 
@@ -121,6 +124,35 @@ const roomToolPanelItems = Object.keys(roomToolPanelLabels) as RoomToolPanel[];
    Room snapshot; this constant is a capacity rule, not a second roster. */
 const ROOM_PARTICIPANT_LIMIT = 8;
 const ROOM_TIMELINE_END_THRESHOLD_PX = 96;
+/* Below this Room width the task rail floats over the conversation instead
+   of taking a column away from it. */
+const JEV_RAIL_OVERLAY_WIDTH = 900;
+const JEV_RAIL_PREFERENCE_KEY = 'paw.jev.task-rail.v1';
+
+function useJevRailPreference(): ['open' | 'closed', (value: 'open' | 'closed') => void] {
+  const [value, setValue] = useState<'open' | 'closed'>(() => {
+    try { return globalThis.localStorage?.getItem(JEV_RAIL_PREFERENCE_KEY) === 'closed' ? 'closed' : 'open'; } catch { return 'open'; }
+  });
+  const update = useCallback((next: 'open' | 'closed') => {
+    setValue(next);
+    try { globalThis.localStorage?.setItem(JEV_RAIL_PREFERENCE_KEY, next); } catch { /* presentation only */ }
+  }, []);
+  return [value, update];
+}
+
+function useContainerNarrow(ref: { current: HTMLElement | null }, width: number): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setNarrow(node.clientWidth > 0 && node.clientWidth < width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ref, width]);
+  return narrow;
+}
 
 export function followRoomTimelineIfReaderAtEnd(
   timeline: HTMLElement | null,
@@ -201,6 +233,12 @@ export function PawRoomWorkspace({
   const externalCollaborationFocus = !jevEnabled && hasDesktopFocusSource && collaborationFocusActive;
   const previousFocusRef = useRef(collaborationFocusActive);
   const [view, setView] = useRoomViewRecovery(`room:${recordId}`);
+  const workspaceRef = useRef<HTMLElement>(null);
+  const jevRailToggleRef = useRef<HTMLButtonElement>(null);
+  const [jevRailPreference, setJevRailPreference] = useJevRailPreference();
+  const [jevRailOverlayOpen, setJevRailOverlayOpen] = useState(false);
+  const jevRailNarrow = useContainerNarrow(workspaceRef, JEV_RAIL_OVERLAY_WIDTH);
+  useEffect(() => { if (!jevRailNarrow) setJevRailOverlayOpen(false); }, [jevRailNarrow]);
   // The desktop roster and selected partner own details in external focus.
   // Derive this immediately so a restored inline inspector never claims space.
   const visiblePanel = externalCollaborationFocus || jevEnabled && panel === 'focus' ? 'none' : panel;
@@ -936,7 +974,7 @@ export function PawRoomWorkspace({
     if (queue.queue.length) setDraft(queue.restoreToDraft(draft));
     if (jevEnabled && jev.liveSnapshot) void jev.stop(); else void abortTurn(activeRootId);
   };
-  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
+  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-agent-mode={jevEnabled ? 'jev' : undefined} data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
     {jevEnabled ? <span aria-label="Agent 中的 Jev 任务模式" className="paw-room-workspace__mode">Jev</span> : coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
     {jevEnabled ? <nav aria-label="Jev 工作台视图"><button type="button" aria-pressed={visiblePanel === 'none'} onClick={() => setPanel('none')}><MessageCircle size={14} /><span>对话与进展</span></button><button type="button" aria-pressed={visiblePanel === 'governance'} onClick={() => setPanel('governance')}><Users size={14} /><span>伙伴与设置</span></button></nav> : !externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
       <button aria-label="对话与结果" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>对话与结果</span></button>
@@ -963,10 +1001,46 @@ export function PawRoomWorkspace({
       setPartnerSettingsOpen(false);
     }}
   /> : null;
-  const jevObjective = jev.liveSnapshot?.currentRootObjective || jev.liveSnapshot?.tasks.find(task => !task.parentId)?.objective || record?.description || record?.title || 'Jev 当前目标';
+  const jevGraph = jev.snapshot ?? jev.liveSnapshot;
+  const jevHistorical = Boolean(jev.snapshot && jev.liveSnapshot && jev.snapshot.graphId !== jev.liveSnapshot.graphId);
+  const jevObjective = jevGraph?.currentRootObjective || jevGraph?.tasks.find(task => !task.parentId)?.objective || record?.description || record?.title || 'Jev 当前目标';
+  const jevRailAvailable = jevRailHasContent(jev.snapshot);
+  const jevRailVisible = jevRailAvailable && (jevRailNarrow ? jevRailOverlayOpen : jevRailPreference !== 'closed');
+  const setJevRail = (open: boolean) => {
+    if (jevRailNarrow) setJevRailOverlayOpen(open);
+    else setJevRailPreference(open ? 'open' : 'closed');
+    if (!open) queueMicrotask(() => jevRailToggleRef.current?.focus({ preventScroll: true }));
+  };
+  const openJevRail = () => {
+    setJevRail(true);
+    requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('.paw-jev-rail button')?.focus({ preventScroll: true }));
+  };
+  /* The plan and clarification forms are part of the transcript tail. Keep
+     reading position otherwise; this is an explicit jump requested by the user. */
+  const focusJevPlan = () => {
+    const plan = timelineRef.current?.querySelector<HTMLElement>('.jev-plan-review');
+    if (!plan) return;
+    plan.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    plan.querySelector<HTMLElement>('.jev-plan-review__question button, .jev-plan-review__primary, textarea')?.focus({ preventScroll: true });
+  };
+  const jevRootAttachments = jevGraph?.rootAttachments?.length ?? 0;
+  const jevLead = jevEnabled ? <div className="jev-mission__goal">
+    <Dialog>
+      <DialogTrigger asChild><button className="paw-jev-objective-trigger" type="button" aria-label="查看完整任务要求" title={jevObjective}><strong>{jevObjective.trim().split('\n')[0].slice(0, 140)}</strong><Maximize2 size={13} aria-hidden="true" /></button></DialogTrigger>
+      <DialogContent className="paw-jev-objective-detail"><DialogTitle>任务要求</DialogTitle><DialogDescription>本轮任务的原始目标，分工和验收围绕这些要求推进。</DialogDescription><div>{jevObjective}</div></DialogContent>
+    </Dialog>
+    <span className="jev-mission__roster">
+      {activeParticipants.length ? <span className="jev-mission__planets" aria-hidden>{activeParticipants.slice(0, 5).map(participant => <RoomPlanetAvatar key={participant.id} ordinal={participant.ordinal} size={18} decorative />)}</span> : null}
+      <span>{!record ? '正在恢复 Room 协作现场' : `${activeParticipants.length} 位伙伴`}{jevGraph ? ` · ${jevTaskCountLabel(jevGraph)}` : ''}{jevRootAttachments ? ` · ${jevRootAttachments} 项附件` : ''}{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
+    </span>
+  </div> : null;
+  const jevRailToggle = jevEnabled && jevRailAvailable ? <button ref={jevRailToggleRef} type="button" className="jev-mission__rail-toggle" aria-pressed={jevRailVisible} aria-label={jevRailVisible ? '收起任务栏' : '展开任务栏'} title={jevRailVisible ? '收起任务栏' : '展开任务栏'} onClick={() => setJevRail(!jevRailVisible)}>
+    {jevRailVisible ? <PanelRightClose size={16} aria-hidden /> : <PanelRightOpen size={16} aria-hidden />}<span>任务</span>
+  </button> : null;
 
   return (
     <section
+      ref={workspaceRef}
       className={`paw-room-workspace paw-room-workspace--migrated-v1${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
       data-agent-mode={jevEnabled ? 'jev' : 'room'}
       data-collaboration-mode={!jevEnabled && collaborationFocusActive}
@@ -980,24 +1054,27 @@ export function PawRoomWorkspace({
       {windowChromeTarget ? <PawWindowChromePortal>{roomChromeControls}</PawWindowChromePortal> : <header className="paw-room-workspace__header">{roomChromeControls}</header>}
 
       <WorkspaceRecoveryNotice recovery={recovery} />
-      {!externalCollaborationFocus ? <section aria-label="Room 当前协作" className="paw-room-workspace__signal">
+      {!externalCollaborationFocus && !jevEnabled ? <section aria-label="Room 当前协作" className="paw-room-workspace__signal">
         <div className="paw-room-workspace__objective">
-          <div>{jevEnabled ? <Dialog>
-            <DialogTrigger asChild><button className="paw-jev-objective-trigger" type="button" aria-label="查看完整任务要求"><strong>{jevObjective.trim().split('\n')[0].slice(0, 100)}</strong><ExternalLink size={13} aria-hidden="true" /></button></DialogTrigger>
-            <DialogContent className="paw-jev-objective-detail"><DialogTitle>任务要求</DialogTitle><DialogDescription>本轮任务的原始目标，分工和验收围绕这些要求推进。</DialogDescription><div>{jevObjective}</div></DialogContent>
-          </Dialog> : <strong>{(focusProjection?.goal.title !== '主话题' && focusProjection?.goal.title) || (activeTopic?.title !== '主话题' && activeTopic?.title) || record?.description || record?.title || activeWork?.objective || '当前协作'}</strong>}</div>
-          <span>{jevEnabled ? !record ? '正在恢复 Room 协作现场' : `${activeParticipants.length} 位伙伴 · ${jev.liveSnapshot ? jevTaskCountLabel(jev.liveSnapshot) : '正在同步任务进度'}` : `${activeParticipants.length} 颗行星 · ${focusProjection?.workItems.length ?? 0} 项任务`}{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
+          <div><strong>{(focusProjection?.goal.title !== '主话题' && focusProjection?.goal.title) || (activeTopic?.title !== '主话题' && activeTopic?.title) || record?.description || record?.title || activeWork?.objective || '当前协作'}</strong></div>
+          <span>{`${activeParticipants.length} 颗行星 · ${focusProjection?.workItems.length ?? 0} 项任务`}{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
         </div>
-        {!jevEnabled && focusProjection ? <div aria-label={`${originLabel} 当前状态`} className="paw-room-workspace__signal-status">
+        {focusProjection ? <div aria-label={`${originLabel} 当前状态`} className="paw-room-workspace__signal-status">
           {signalChips.length
             ? signalChips.map(([tone, count, label]) => <span data-tone={tone} key={tone}><i />{count} {label}</span>)
             : <span data-tone="idle"><i />待命</span>}
         </div> : null}
       </section> : null}
 
-      <div className="paw-room-workspace__body" data-jev-layout={jevEnabled && visiblePanel === 'none' ? 'team' : undefined}>
-        {jevEnabled && visiblePanel === 'none' ? <JevCompanion presentation="stage" execution={jev} room={record} active={active && pageVisible} connected={!connectionError} onStop={stopCurrentWork} /> : null}
-        {jevEnabled && visiblePanel === 'none' ? <PawJevTeamPanels graph={jev.snapshot} taskControls={jev.taskControls} room={record} projection={projection} active={active && pageVisible && !connectionError && !jev.error} observeCompletions={Boolean(jev.liveSnapshot && jev.snapshot?.graphId === jev.liveSnapshot.graphId)} onOpenParticipant={openParticipantById} onOpenFile={desktop?.openRoute || desktop?.openApp ? openJevFile : undefined} /> : null}
+      <div className="paw-room-workspace__body" data-jev-layout={jevEnabled && visiblePanel === 'none' ? 'team' : undefined} data-jev-rail={jevEnabled && visiblePanel === 'none' ? jevRailVisible ? jevRailNarrow ? 'overlay' : 'open' : 'closed' : undefined}>
+        {jevEnabled && visiblePanel === 'none' ? <JevCompanion presentation="stage" execution={jev} room={record} active={active && pageVisible} connected={!connectionError} onStop={stopCurrentWork}
+          lead={jevLead} trailing={jevRailToggle} onOpenTasks={jevRailAvailable ? openJevRail : undefined} onOpenPlan={focusJevPlan} /> : null}
+        {jevEnabled && visiblePanel === 'none' && jevRailVisible ? <>
+          {jevRailNarrow ? <button type="button" className="paw-jev-rail__scrim" aria-label="关闭任务栏" tabIndex={-1} onClick={() => setJevRail(false)} /> : null}
+          <div className="paw-jev-rail__host" data-overlay={jevRailNarrow || undefined} onKeyDown={event => { if (jevRailNarrow && event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); setJevRail(false); } }}>
+            <PawJevTeamPanels graph={jev.snapshot} taskControls={jev.taskControls} room={record} projection={projection} historical={jevHistorical} onCollapse={() => setJevRail(false)} active={active && pageVisible && !connectionError && !jev.error} observeCompletions={Boolean(jev.liveSnapshot && jev.snapshot?.graphId === jev.liveSnapshot.graphId)} onOpenParticipant={openParticipantById} onOpenFile={desktop?.openRoute || desktop?.openApp ? openJevFile : undefined} />
+          </div>
+        </> : null}
         <section aria-label={`${title} 主 Room`} className="paw-room-workspace__main" role="region">
           {visibleView === 'starfield' && focusProjection ? (
             <LazyPawRoomStarfield
@@ -1039,7 +1116,12 @@ export function PawRoomWorkspace({
                 graph={jevEnabled ? jev.snapshot : null}
                 empty={loading
                   ? <div className="paw-room-workspace__loading"><LoaderCircle className="ui-spin" size={18} />正在恢复 Room 协作现场</div>
-                  : <div className="paw-room-workspace__empty"><Users size={24} /><strong>Room 已准备好</strong><p>发送目标，伙伴会分工、执行并汇合结果。</p></div>}
+                  : jevEnabled ? <div className="paw-room-workspace__empty paw-jev-empty">
+                    <span className="paw-jev-empty__planets" aria-hidden>{activeParticipants.slice(0, 5).map(participant => <RoomPlanetAvatar key={participant.id} ordinal={participant.ordinal} size={36} activity="idle" decorative />)}</span>
+                    <strong>描述一个目标，团队会接手</strong>
+                    <p>简单问题会直接回答；需要分工时，Jev 先给出完整方案，你确认后伙伴才开始执行。</p>
+                    <ol><li><b>1</b>说清目标与验收标准</li><li><b>2</b>确认方案与分工</li><li><b>3</b>在任务栏跟进执行、复核与交付</li></ol>
+                  </div> : <div className="paw-room-workspace__empty"><Users size={24} /><strong>Room 已准备好</strong><p>发送目标，伙伴会分工、执行并汇合结果。</p></div>}
                 {...(optimisticSteer ? {
                   lead: (
                     <article

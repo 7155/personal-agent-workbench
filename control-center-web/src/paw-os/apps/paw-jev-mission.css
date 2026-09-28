@@ -1,0 +1,565 @@
+/*
+ * Jev Room — mission layout.
+ *
+ * One owner for the multi-Agent Room surface. Rules are grouped in reading
+ * order: local tokens → layout → mission header → task rail → conversation →
+ * plan → composer → motion. Component files keep only structural defaults;
+ * type, rhythm and colour for this surface resolve from the tokens below.
+ *
+ * Type scale (px / line-height):
+ *   title 17/1.45 600 · body 15/1.75 · ui 13/1.5 · meta 12/1.5 · micro 11/1.4
+ * Status tones always pair colour with a text label.
+ */
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev {
+  --jev-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --jev-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  --jev-title: 17px; --jev-body: 15px; --jev-ui: 13px; --jev-meta: 12px; --jev-micro: 11px;
+  --jev-ink: var(--paw-ink);
+  --jev-muted: color-mix(in srgb, var(--paw-ink) 64%, var(--paw-panel-strong));
+  --jev-faint: color-mix(in srgb, var(--paw-ink) 46%, var(--paw-panel-strong));
+  --jev-line: color-mix(in srgb, var(--paw-ink) 10%, var(--paw-panel-strong));
+  --jev-line-strong: color-mix(in srgb, var(--paw-ink) 18%, var(--paw-panel-strong));
+  --jev-surface: var(--paw-panel-strong);
+  --jev-sunken: color-mix(in srgb, var(--paw-ink) 3.5%, var(--paw-panel-strong));
+  --jev-hover: color-mix(in srgb, var(--paw-ink) 5.5%, var(--paw-panel-strong));
+  --jev-accent: var(--paw-accent);
+  --jev-accent-soft: color-mix(in srgb, var(--paw-accent) 11%, var(--paw-panel-strong));
+  --jev-done: var(--paw-success, #28795f);
+  --jev-review: var(--paw-stellar-violet, #7453d6);
+  --jev-warn: var(--paw-warning, #896216);
+  --jev-danger: var(--paw-danger, #b44759);
+  --jev-wait: color-mix(in srgb, var(--paw-ink) 26%, var(--paw-panel-strong));
+  --jev-ease: cubic-bezier(.23, 1, .32, 1);
+  --jev-read: 740px;
+  --jev-rail: clamp(292px, 27%, 360px);
+  /* Shared tokens for panels that still read the legacy names. */
+  --paw-panel: var(--jev-surface);
+  --paw-panel-soft: var(--jev-sunken);
+  --paw-muted: var(--jev-muted);
+  --paw-line: var(--jev-line);
+  --paw-hover: var(--jev-hover);
+  font-family: var(--jev-font);
+  font-size: var(--jev-body);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'tnum' 0;
+}
+
+/* ─── Layout ──────────────────────────────────────────────────────────
+   Header spans the window; conversation takes the remaining width. The
+   task rail exists only when the graph has something real to show. The
+   workspace is a column so optional rows (fallback chrome, recovery notice)
+   never push the body into an auto-height grid track. */
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev { display: flex; flex-direction: column; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev > :not(.paw-room-workspace__body) { flex: none; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev > .paw-room-workspace__body { flex: 1 1 auto; min-height: 0; }
+.paw-desktop-root .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: 'jev' 'room-main';
+  background: var(--jev-surface);
+}
+.paw-desktop-root .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__body[data-jev-rail='open'] {
+  grid-template-columns: minmax(0, 1fr) var(--jev-rail);
+  grid-template-areas: 'jev jev' 'room-main jev-rail';
+}
+.paw-jev-rail__host { grid-area: jev-rail; min-width: 0; min-height: 0; display: flex; }
+.paw-jev-rail__host > .paw-jev-rail { flex: 1; }
+.paw-room-workspace__body[data-jev-rail='overlay'] > .paw-jev-rail__host {
+  position: absolute; z-index: 30; top: var(--jev-header-h, 0); right: 0; bottom: 0;
+  width: min(360px, calc(100% - 40px));
+  box-shadow: -18px 0 40px rgb(10 18 32 / 14%);
+  animation: jev-rail-in 200ms var(--jev-ease) both;
+}
+.paw-jev-rail__scrim {
+  position: absolute; inset: 0; z-index: 29; padding: 0; border: 0;
+  background: color-mix(in srgb, var(--paw-ink) 12%, transparent); cursor: default;
+  animation: jev-fade-in 160ms ease both;
+}
+.paw-room-workspace__body[data-jev-rail='overlay'] { position: relative; }
+@keyframes jev-rail-in { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes jev-fade-in { from { opacity: 0; } }
+
+/* Low-frequency Agent-app commands no longer consume a header row. */
+.paw-desktop-root .paw-agent-app[data-agent-mode='jev'][data-selection='room'] { position: relative; grid-template-rows: minmax(0, 1fr); }
+.paw-desktop-root .paw-agent-app[data-agent-mode='jev'][data-selection='room'] > .paw-agent-stage { grid-row: 1; }
+.paw-desktop-root .paw-agent-app[data-agent-mode='jev'][data-selection='room'] > .paw-agent-modebar {
+  position: absolute; inset: 14px 16px auto auto; z-index: 20;
+  min-height: 0; padding: 0; border: 0; background: transparent;
+}
+.paw-desktop-root .paw-agent-app[data-agent-mode='jev'][data-selection='room'] > .paw-agent-modebar > button {
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 8px; background: transparent; color: var(--paw-muted);
+}
+
+/* ─── Mission header ──────────────────────────────────────────────── */
+.paw-desktop-root .paw-room-workspace--jev .jev-mission {
+  grid-area: jev; position: relative; z-index: 12;
+  display: grid; gap: 10px; min-height: 0; padding: 14px 24px 12px;
+  overflow: visible; border: 0; border-bottom: 1px solid var(--jev-line);
+  background: var(--jev-surface); color: var(--jev-ink); font-size: var(--jev-ui);
+}
+.jev-mission__top { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
+.jev-mission__lead { flex: 1; min-width: 0; }
+.jev-mission__tools { display: flex; flex: none; align-items: center; gap: 4px; margin-top: 1px; }
+.jev-mission__goal { display: grid; gap: 4px; min-width: 0; }
+.paw-room-workspace--jev .paw-jev-objective-trigger { max-width: 100%; min-height: 26px; gap: 7px; border-radius: 6px; }
+.paw-room-workspace--jev .paw-jev-objective-trigger strong {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--jev-title); line-height: 1.45; font-weight: 600; letter-spacing: -.01em;
+}
+.paw-room-workspace--jev .paw-jev-objective-trigger svg { opacity: 0; transition: opacity 140ms ease; }
+.paw-room-workspace--jev .paw-jev-objective-trigger:is(:hover, :focus-visible) svg { opacity: 1; }
+.jev-mission__roster { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--jev-muted); font-size: var(--jev-meta); line-height: 1.5; }
+.jev-mission__roster > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jev-mission__planets { display: inline-flex; flex: none; }
+.jev-mission__planets > * + * { margin-left: -5px; }
+.jev-mission__planets > * { border-radius: 50%; box-shadow: 0 0 0 2px var(--jev-surface); }
+.jev-mission :is(.jev-companion__sync, .jev-mission__rail-toggle) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; min-width: 30px; margin: 0; padding: 0 8px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--jev-muted); font: inherit; font-size: var(--jev-meta); cursor: pointer;
+}
+.jev-mission .jev-companion__sync { width: 30px; padding: 0; }
+.jev-mission :is(.jev-companion__sync, .jev-mission__rail-toggle):not(:disabled):hover { background: var(--jev-hover); color: var(--jev-ink); }
+.jev-mission .jev-mission__rail-toggle[aria-pressed='true'] { color: var(--jev-accent); }
+.jev-mission :is(button, summary):focus-visible { outline: 2px solid var(--jev-accent); outline-offset: 2px; }
+
+.jev-mission__status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 22px; min-width: 0; }
+.jev-mission .jev-companion__disclosure { position: relative; flex: none; }
+.jev-mission .jev-companion__disclosure > summary {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 28px; padding: 3px 8px 3px 6px; margin-left: -6px;
+  border-radius: 7px; list-style: none; cursor: pointer; font-size: var(--jev-ui);
+}
+.jev-mission .jev-companion__disclosure > summary:hover { background: var(--jev-hover); }
+.jev-mission .jev-companion__disclosure > summary > strong { font-weight: 600; white-space: nowrap; }
+.jev-mission .jev-companion__disclosure > summary > svg:last-child { margin-left: 0; color: var(--jev-faint); transition: transform 160ms var(--jev-ease); }
+.jev-mission .jev-companion__disclosure[open] > summary > svg:last-child { transform: rotate(180deg); }
+.jev-mission .jev-companion__disclosure:not([open]) > summary > svg:last-child { transform: none; }
+.jev-mission__state-dot { position: relative; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--jev-accent); }
+.jev-mission[data-tone='done'] .jev-mission__state-dot { background: var(--jev-done); }
+.jev-mission[data-tone='failed'] .jev-mission__state-dot { background: var(--jev-danger); }
+.jev-mission:is([data-tone='waiting'], [data-tone='stale']) .jev-mission__state-dot { background: var(--jev-warn); }
+.jev-mission:is([data-tone='stopped'], [data-tone='idle']) .jev-mission__state-dot { background: var(--jev-wait); }
+.jev-mission[data-tone='running'][data-motion='active'] .jev-mission__state-dot::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--jev-accent);
+  animation: jev-live-ring 1.8s var(--jev-ease) infinite;
+}
+@keyframes jev-live-ring { 0% { transform: scale(.55); opacity: .8; } 100% { transform: scale(1.35); opacity: 0; } }
+.jev-mission__history-label, .jev-mission .jev-companion__stale-label {
+  padding: 1px 6px; border: 1px solid currentColor; border-radius: 999px; font-size: var(--jev-micro); line-height: 1.5; font-weight: 500;
+}
+.jev-mission__history-label { color: var(--jev-muted); }
+.jev-mission .jev-companion__content {
+  position: absolute; top: calc(100% + 6px); left: -6px; z-index: 40; display: block;
+  width: min(440px, calc(100vw - 48px)); max-height: min(520px, 62vh); overflow: auto; overscroll-behavior: contain;
+  padding: 14px 16px 16px; border: 1px solid var(--jev-line); border-radius: 12px;
+  background: var(--jev-surface); box-shadow: 0 18px 44px rgb(10 18 32 / 16%), 0 2px 6px rgb(10 18 32 / 6%);
+  font-size: var(--jev-meta); animation: jev-pop 160ms var(--jev-ease) both;
+}
+@keyframes jev-pop { from { opacity: 0; transform: translateY(-4px); } }
+
+/* Phase stepper: the lifecycle position, never a percentage. */
+.jev-mission .jev-phase-rail { display: flex; align-items: center; gap: 0; margin: 0; padding: 0; list-style: none; }
+.jev-mission .jev-phase-rail > li {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--jev-faint); font-size: var(--jev-meta); font-weight: 450; white-space: nowrap;
+}
+.jev-mission .jev-phase-rail > li + li::before { content: ''; width: 18px; height: 1px; margin: 0 8px; background: var(--jev-line-strong); }
+.jev-mission .jev-phase-rail > li[data-current] { color: var(--jev-ink); font-weight: 600; }
+.jev-mission .jev-phase-rail[data-stopped] > li[data-current] { color: var(--jev-muted); }
+.jev-mission .jev-phase-rail__mark { width: 18px; height: 18px; border: 0; background: transparent; color: inherit; }
+.jev-mission .jev-phase-rail > li[data-current] .jev-phase-rail__mark { background: transparent; color: var(--jev-accent); }
+
+/* Segmented task meter: one segment per real task, coloured by stage. */
+.jev-mission__meter {
+  display: flex; align-items: center; gap: 12px; min-width: 0; margin: 0 0 0 auto; padding: 4px 8px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--jev-ink); font: inherit; text-align: left; cursor: pointer;
+}
+.jev-mission__meter:not(:disabled):hover { background: var(--jev-hover); }
+.jev-mission__meter:disabled { cursor: default; }
+.jev-mission__meter > ol { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.jev-mission__meter > ol > li { width: 18px; height: 6px; border-radius: 3px; background: var(--jev-wait); transition: background-color 240ms var(--jev-ease); }
+.jev-mission__meter > ol:has(> li:nth-child(9)) > li { width: 10px; }
+.jev-mission__meter > ol:has(> li:nth-child(17)) > li { width: 5px; }
+.jev-mission__meter > ol > li[data-tone='done'] { background: var(--jev-done); }
+.jev-mission__meter > ol > li[data-tone='active'] { background: var(--jev-accent); }
+.jev-mission__meter > ol > li[data-tone='review'] { background: var(--jev-review); }
+.jev-mission__meter > ol > li[data-tone='attention'] { background: var(--jev-warn); }
+.jev-mission__meter > ol > li[data-tone='failed'] { background: var(--jev-danger); }
+.jev-mission__meter > ol > li[data-tone='stopped'] { background: repeating-linear-gradient(135deg, var(--jev-wait) 0 2px, transparent 2px 4px); }
+.jev-mission[data-motion='active'] .jev-mission__meter > ol > li[data-tone='active'] { animation: jev-segment-live 1.6s ease-in-out infinite; }
+@keyframes jev-segment-live { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+.jev-mission__meter > span { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.jev-mission__meter strong { font-size: var(--jev-ui); font-weight: 600; }
+.jev-mission__meter small { color: var(--jev-muted); font-size: var(--jev-meta); }
+.jev-mission__meter-note { margin-left: auto; color: var(--jev-muted); font-size: var(--jev-meta); }
+
+/* The single thing that needs the user now. */
+.jev-mission__attention, .paw-room-workspace--jev .jev-mission > .jev-route-recovery {
+  display: flex; align-items: center; gap: 12px; margin: 0; padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--jev-accent) 26%, var(--jev-line)); border-radius: 10px;
+  background: var(--jev-accent-soft); line-height: 1.5;
+}
+.jev-mission__attention > svg, .jev-mission > .jev-route-recovery > svg { flex: none; color: var(--jev-accent); }
+.jev-mission__attention > div, .jev-mission > .jev-route-recovery > div { flex: 1; min-width: 0; }
+.jev-mission__attention strong, .jev-mission > .jev-route-recovery strong { display: block; font-size: var(--jev-ui); font-weight: 600; }
+.jev-mission__attention p, .jev-mission > .jev-route-recovery p { margin: 1px 0 0; color: var(--jev-muted); font-size: var(--jev-meta); overflow-wrap: anywhere; }
+.jev-mission__attention > button, .jev-mission > .jev-route-recovery > button {
+  flex: none; min-height: 30px; padding: 5px 12px; border: 0; border-radius: 7px;
+  background: var(--jev-accent); color: var(--jev-surface); font: inherit; font-size: var(--jev-meta); font-weight: 600; cursor: pointer;
+}
+.jev-mission__attention > button:hover, .jev-mission > .jev-route-recovery > button:not(:disabled):hover { filter: brightness(.95); }
+.jev-mission__attention[data-tone='warning'], .jev-mission > .jev-route-recovery { border-color: color-mix(in srgb, var(--jev-warn) 34%, var(--jev-line)); background: color-mix(in srgb, var(--jev-warn) 9%, var(--jev-surface)); }
+.jev-mission__attention[data-tone='warning'] > svg, .jev-mission > .jev-route-recovery > svg { color: var(--jev-warn); }
+.jev-mission__attention[data-tone='danger'] { border-color: color-mix(in srgb, var(--jev-danger) 34%, var(--jev-line)); background: color-mix(in srgb, var(--jev-danger) 8%, var(--jev-surface)); }
+.jev-mission__attention[data-tone='danger'] > svg { color: var(--jev-danger); }
+.jev-mission__attention[data-tone='info'] { border-color: var(--jev-line); background: var(--jev-sunken); }
+.jev-mission__attention[data-tone='info'] > svg { color: var(--jev-muted); }
+.jev-mission__attention:is([data-tone='warning'], [data-tone='danger'], [data-tone='info']) > button { background: var(--jev-surface); color: var(--jev-ink); box-shadow: inset 0 0 0 1px var(--jev-line-strong); }
+.jev-mission__attention { animation: jev-pop 200ms var(--jev-ease) both; }
+
+/* ─── Task rail ───────────────────────────────────────────────────── */
+.paw-room-workspace--jev .paw-jev-rail {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  border-left: 1px solid var(--jev-line); background: var(--jev-sunken); color: var(--jev-ink);
+}
+.paw-jev-rail__head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 10px 4px 18px; }
+.paw-jev-rail__head > div { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.paw-jev-rail__head strong { font-size: var(--jev-ui); font-weight: 600; }
+.paw-jev-rail__head small { color: var(--jev-warn); font-size: var(--jev-micro); }
+.paw-jev-rail__collapse { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--jev-muted); cursor: pointer; }
+.paw-jev-rail__collapse:hover { background: var(--jev-hover); color: var(--jev-ink); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-team__progress {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-height: 0; height: auto;
+  padding: 0 18px 12px; border: 0; color: var(--jev-muted); font-size: var(--jev-meta);
+}
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-team__progress strong { color: var(--jev-ink); font-size: var(--jev-meta); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-team__progress progress { height: 3px; margin-top: 6px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-team__content {
+  display: flex; flex-direction: column; gap: 0; padding: 0 10px 18px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--jev-line-strong) transparent;
+}
+.paw-jev-rail__section { padding: 12px 0 6px; border-top: 1px solid var(--jev-line); }
+.paw-jev-rail__section:first-child { border-top: 0; padding-top: 4px; }
+.paw-jev-rail__section-head { display: flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; }
+.paw-jev-rail__section-head > button { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; padding: 2px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.paw-jev-rail__section-head h3 { margin: 0; color: var(--jev-muted); font-size: var(--jev-micro); font-weight: 600; letter-spacing: .04em; }
+.paw-jev-rail__section-head span { color: var(--jev-faint); font-size: var(--jev-micro); font-variant-numeric: tabular-nums; }
+.paw-jev-rail__section-head > button > svg { color: var(--jev-faint); opacity: 0; transition: opacity 140ms ease; }
+.paw-jev-rail__section-head > button:is(:hover, :focus-visible) > svg { opacity: 1; }
+.paw-jev-rail__section-head .paw-jev-team__toggle { margin: 0; padding: 3px 6px; font-size: var(--jev-micro); }
+.paw-jev-rail__note { margin: 2px 8px 4px; color: var(--jev-muted); font-size: var(--jev-meta); line-height: 1.55; }
+.paw-jev-rail h4, .paw-jev-inspector h4 { margin: 12px 8px 4px; color: var(--jev-faint, var(--color-text-secondary)); font-size: var(--jev-micro, 11px); font-weight: 600; }
+.paw-jev-rail__list { list-style: none; margin: 0; padding: 0; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-records li + li,
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-rail__list li + li { border-top: 0; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row {
+  align-items: flex-start; gap: 10px; padding: 8px 8px; border-radius: 8px; transition: background-color 140ms ease;
+}
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row:hover { background: var(--jev-hover); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row > :is(svg, .jev-activity-icon, .room-planet-avatar):first-child { margin-top: 1px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row > span { gap: 2px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row strong { font-size: var(--jev-ui); font-weight: 550; line-height: 1.45; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row span > span { color: var(--jev-muted); font-size: var(--jev-meta); line-height: 1.5; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row small { gap: 4px; color: var(--jev-muted); font-size: var(--jev-micro); line-height: 1.5; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row > svg:last-child { margin-top: 3px; color: var(--jev-faint); }
+.paw-jev-rail__why { color: var(--jev-faint) !important; }
+.paw-jev-rail__why > svg { flex: none; }
+.paw-jev-record-row[data-tone='attention'] small:first-of-type { color: var(--jev-warn); }
+.paw-jev-record-row[data-tone='review'] > .jev-activity-icon { color: var(--jev-review); }
+.paw-jev-record-row[data-tone='waiting'] > .jev-activity-icon { color: var(--jev-faint); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row[data-state='done'] small { color: var(--jev-done); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row[data-state='failed'] small { color: var(--jev-danger); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-files > li { gap: 2px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-files .paw-jev-record-row { padding-block: 6px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-files .paw-jev-record-row > svg { color: var(--jev-accent); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-files__path { color: var(--jev-faint); font-family: var(--jev-mono); font-size: 10.5px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-input-files li { padding: 5px 8px; color: var(--jev-muted); font-size: var(--jev-meta); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-input-files svg { color: var(--jev-faint); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-records > details { margin: 8px 8px 0; color: var(--jev-muted); font-size: var(--jev-meta); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-records__more { margin: 2px 4px 0; font-size: var(--jev-meta); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-team__empty { padding: 6px 8px; font-size: var(--jev-meta); }
+
+/* Partner rows: planet, task, live stage and the latest public action. */
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner { margin: 2px 0; border-radius: 10px; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] {
+  grid-template-columns: 28px minmax(0, 1fr) 26px; grid-template-rows: auto auto auto auto;
+  gap: 3px 10px; padding: 10px 8px; border: 0; background: transparent;
+}
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact]:hover { background: var(--jev-hover); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] > header > .room-planet-avatar { width: 28px; height: 28px; grid-row: 1 / 5; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__task-title { font-size: var(--jev-ui); font-weight: 550; line-height: 1.45; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__state { grid-row: 2; font-size: var(--jev-micro); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-task-progress { grid-column: 2 / 4; grid-row: 3; padding: 2px 0; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__recent { grid-row: 4; }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__recent > strong { font-size: var(--jev-micro); color: var(--jev-muted); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__recent > span { font-size: var(--jev-micro); color: var(--jev-faint); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner:not([data-compact]) { border-color: var(--jev-line); background: var(--jev-surface); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-state='running'] .paw-jev-partner__state { color: var(--jev-accent); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-partner[data-purpose='verify'][data-state='running'] .paw-jev-partner__state { color: var(--jev-review); }
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-task-progress[data-compact] > ol > li { font-size: 10.5px; }
+
+/* Task drawer: the one detail surface, anchored to the trailing edge. */
+.paw-jev-inspector.ui-dialog {
+  top: 12px; right: 12px; bottom: 12px; left: auto; transform: none;
+  width: min(520px, calc(100vw - 24px)); max-height: none; padding: 22px 22px 18px; border-radius: 14px;
+  animation: jev-drawer-in 220ms var(--ease-standard, cubic-bezier(.2,.8,.2,1)) both;
+  overscroll-behavior: contain;
+}
+@keyframes jev-drawer-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+.paw-jev-inspector .ui-dialog__title { font-size: 16px; line-height: 1.45; }
+.paw-jev-inspector__details h3 { letter-spacing: .02em; }
+.paw-jev-inspector__details p { font-size: 14px; line-height: 1.75; }
+.paw-jev-inspector__refs { list-style: none; padding: 0 !important; }
+.paw-jev-inspector__refs li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.paw-jev-inspector__refs code { min-width: 0; padding: 2px 6px; border-radius: 5px; background: var(--color-surface-subtle); font: 12px/1.6 var(--jev-mono, ui-monospace, monospace); overflow-wrap: anywhere; white-space: normal; }
+
+/* ─── Conversation ────────────────────────────────────────────────── */
+.paw-desktop-root .paw-room-workspace--jev .ccui-conversation-surface { --ccui-reading-width: var(--jev-read); --ccui-faint: var(--jev-faint); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-turn { width: min(var(--ccui-reading-width), calc(100% - 56px)); padding: 14px 0; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-transcript-lead { height: 12px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-user-turn { padding-top: 22px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-user-bubble { max-width: min(88%, 620px); padding: 11px 15px; border: 0; border-radius: 14px 14px 4px 14px; background: var(--jev-accent-soft); box-shadow: none; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-user-text { font-size: var(--jev-body); line-height: 1.7; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-user-footer { margin-top: 4px; font-size: var(--jev-micro); color: var(--jev-faint); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-footer:empty { display: none; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-head { align-items: center; gap: 8px; margin-bottom: 8px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-head strong { font-size: 14px; font-weight: 600; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-head small { padding: 0 6px; border-radius: 999px; background: var(--jev-sunken); color: var(--jev-muted); font-size: var(--jev-micro); line-height: 18px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-head time { margin-left: 0; color: var(--jev-faint); font-size: var(--jev-micro); font-variant-numeric: tabular-nums; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-body { font-size: var(--jev-body); line-height: 1.75; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-assistant-body > * + * { margin-top: 10px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-markdown .agent-markdown :is(p, ul, ol) { margin-block: 0 12px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-markdown .agent-markdown :is(h2, h3) { margin-block: 22px 8px; line-height: 1.4; font-weight: 600; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-markdown .agent-markdown h2 { font-size: 18px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-markdown .agent-markdown h3 { font-size: 16px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-markdown .agent-markdown li + li { margin-top: 4px; }
+
+/* Tool receipts: settled success recedes to one quiet line; running,
+   failed and pending keep a container and a readable state label. */
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card { border-radius: 9px; border-color: var(--jev-line); background: var(--jev-surface); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-head { min-height: 38px; padding: 8px 12px; gap: 10px; font-size: var(--jev-ui); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-main strong { font-size: var(--jev-ui); font-weight: 550; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-main > span { color: var(--jev-muted); font-size: var(--jev-ui); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-meta { align-items: center; font-size: var(--jev-micro); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-kind { flex: none; color: var(--jev-faint); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card.status-running { border-color: color-mix(in srgb, var(--jev-accent) 30%, var(--jev-line)); background: color-mix(in srgb, var(--jev-accent) 4%, var(--jev-surface)); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card.status-running .ccui-tool-kind { color: var(--jev-accent); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card.status-error { border-color: color-mix(in srgb, var(--jev-danger) 34%, var(--jev-line)); background: color-mix(in srgb, var(--jev-danger) 5%, var(--jev-surface)); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card.status-success:not(:has(.ccui-tool-body, .ccui-tool-action)) { border-color: transparent; background: transparent; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card.status-success:not(:has(.ccui-tool-body, .ccui-tool-action)) .ccui-tool-head { min-height: 30px; padding: 4px 6px; margin-left: -6px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card.status-success[data-expanded='false'] .ccui-tool-state-label {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-body { border-top-color: var(--jev-line); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-body pre { font-family: var(--jev-mono); font-size: 12px; line-height: 1.6; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-tool-records__trigger { min-height: 40px; padding: 8px 12px; border-color: var(--jev-line); background: var(--jev-sunken); }
+.paw-desktop-root .paw-room-workspace--jev .paw-room-conversation__route-link { font-size: var(--jev-meta); font-weight: 500; color: var(--jev-accent); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-transcript-tail { padding: 0 0 20px; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-jump-bottom { bottom: 12px; padding: 5px 12px; border: 1px solid var(--jev-line); background: var(--jev-surface); box-shadow: 0 6px 18px rgb(10 18 32 / 10%); font-size: var(--jev-meta); }
+.paw-desktop-root .paw-room-workspace--jev ::selection { color: var(--jev-ink); background: color-mix(in srgb, var(--jev-accent) 22%, var(--jev-surface)); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-transcript-scroll { scrollbar-width: thin; scrollbar-color: var(--jev-line-strong) transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .paw-desktop-root .paw-room-workspace--jev .ccui-tool-head:not(:disabled):hover { background: var(--jev-hover); }
+}
+
+/* ─── Plan ────────────────────────────────────────────────────────── */
+.paw-room-workspace--jev .jev-plan-review {
+  width: min(var(--jev-read), calc(100% - 56px)); margin: 8px auto 24px; padding: 18px 20px;
+  border: 1px solid var(--jev-line-strong); border-radius: 14px; background: var(--jev-surface);
+  box-shadow: 0 1px 2px rgb(10 18 32 / 4%); font-size: var(--jev-ui); scroll-margin-top: 16px;
+}
+.paw-room-workspace--jev .jev-plan-review[data-status='awaiting_approval'],
+.paw-room-workspace--jev .jev-plan-review[data-status='awaiting_input'] { border-color: color-mix(in srgb, var(--jev-accent) 38%, var(--jev-line)); box-shadow: 0 0 0 4px var(--jev-accent-soft); }
+.paw-room-workspace--jev .jev-plan-review > header { gap: 10px; padding-bottom: 14px; }
+.paw-room-workspace--jev .jev-plan-review > header strong { font-size: 15px; }
+.paw-room-workspace--jev .jev-plan-review > header span { font-size: var(--jev-meta); }
+.paw-room-workspace--jev .jev-plan-review__objective { margin: 14px 0 0; color: var(--jev-muted); font-size: var(--jev-ui); line-height: 1.65; }
+.paw-room-workspace--jev .jev-plan-review__sequence { margin-top: 16px; padding-bottom: 16px; }
+.paw-room-workspace--jev .jev-plan-review__sequence > strong { font-size: var(--jev-ui); }
+.paw-room-workspace--jev .jev-plan-review__sequence > p { margin: 4px 0 12px; font-size: var(--jev-meta); }
+.paw-room-workspace--jev .jev-plan-review__sequence > ol { gap: 10px; }
+.paw-room-workspace--jev .jev-plan-review__sequence > ol > li {
+  position: relative; flex: 1 1 150px; padding: 10px 12px; border: 1px solid var(--jev-line); border-left: 0; border-radius: 10px; background: var(--jev-sunken);
+}
+.paw-room-workspace--jev .jev-plan-review__sequence > ol > li::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--jev-accent); }
+.paw-room-workspace--jev .jev-plan-review__sequence > ol > li + li::after { content: '→'; position: absolute; left: -9px; top: 50%; translate: 0 -50%; color: var(--jev-faint); font-size: 12px; }
+.paw-room-workspace--jev .jev-plan-review__sequence > ol > li > span { font-size: var(--jev-micro); font-weight: 600; color: var(--jev-muted); }
+.paw-room-workspace--jev .jev-plan-review__sequence > ol > li > div { font-size: var(--jev-meta); line-height: 1.55; }
+.paw-room-workspace--jev .jev-plan-review__tasks > li { padding: 14px 0; }
+.paw-room-workspace--jev .jev-plan-review__task-title > strong { font-size: var(--jev-ui); }
+.paw-room-workspace--jev .jev-plan-review__task-title > strong > small { font-size: var(--jev-micro); }
+.paw-room-workspace--jev .jev-plan-review__task-title > span { font-size: var(--jev-meta); }
+.paw-room-workspace--jev .jev-plan-review__tasks :is(p, ul, details) { font-size: var(--jev-meta); line-height: 1.7; }
+.paw-room-workspace--jev .jev-plan-review__actions { gap: 8px; margin-top: 12px; padding-top: 14px; }
+.paw-room-workspace--jev .jev-plan-review__actions > span { font-size: var(--jev-meta); }
+.paw-room-workspace--jev .jev-plan-review button { min-height: 32px; padding: 6px 12px; border-radius: 8px; font-size: var(--jev-meta); }
+.paw-room-workspace--jev .jev-plan-review button.jev-plan-review__primary { font-weight: 600; }
+.paw-room-workspace--jev .jev-plan-review__question > label { font-size: var(--jev-ui); }
+.paw-room-workspace--jev .jev-plan-review__question textarea { font-size: var(--jev-ui); border-radius: 8px; }
+.paw-room-workspace--jev .jev-plan-review__approved-trigger {
+  width: min(var(--jev-read), calc(100% - 56px)); margin: 6px auto 12px; min-height: 36px; padding: 7px 12px;
+  border: 1px solid var(--jev-line); border-radius: 9px; background: var(--jev-sunken); color: var(--jev-muted); font-size: var(--jev-meta);
+}
+.paw-room-workspace--jev .jev-plan-review__approved-trigger:hover { color: var(--jev-ink); border-color: var(--jev-line-strong); }
+
+/* ─── Composer ────────────────────────────────────────────────────── */
+.paw-desktop-root .paw-room-workspace--jev .paw-room-workspace__composer { padding: 8px 24px 14px; border-top: 0; background: var(--jev-surface); }
+.paw-desktop-root .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__composer { max-height: 50cqh; overflow-y: auto; overscroll-behavior: contain; }
+.paw-desktop-root .paw-room-workspace--jev .paw-room-workspace__composer > .room-composer-shell,
+.paw-desktop-root .paw-room-workspace--jev .paw-room-workspace__composer .ccui-queue-tray,
+.paw-desktop-root .paw-room-workspace--jev .paw-room-workspace__composer .ccui-queue-panel,
+.paw-desktop-root .paw-room-workspace--jev .room-composer { width: min(var(--jev-read), 100%); margin-inline: auto; }
+.paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer {
+  border: 1px solid var(--jev-line-strong); border-radius: 14px; background: var(--jev-surface);
+  box-shadow: 0 1px 2px rgb(10 18 32 / 4%), 0 6px 20px rgb(10 18 32 / 4%);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer:focus-within {
+  border-color: color-mix(in srgb, var(--jev-accent) 55%, var(--jev-line)); box-shadow: 0 0 0 4px var(--jev-accent-soft);
+}
+.paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer .agent-composer__editor > textarea {
+  min-height: 46px; padding: 12px 44px 4px 16px; font-size: var(--jev-body); line-height: 24px; caret-color: var(--jev-accent);
+}
+.paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer .agent-composer__editor > textarea::placeholder { color: var(--jev-faint); opacity: 1; }
+.paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer .agent-composer__toolbar { min-height: 34px; margin: 0 8px 7px; }
+.paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer .agent-composer__controls { gap: 2px; }
+.paw-desktop-root .paw-room-workspace--jev .room-composer :is(.paw-room-observer-toggle, .jev-policy-control) {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--jev-muted); font: inherit; font-size: var(--jev-meta); white-space: nowrap;
+}
+.paw-desktop-root .paw-room-workspace--jev .room-composer :is(.paw-room-observer-toggle, .jev-policy-control):not(:disabled):hover { background: var(--jev-hover); color: var(--jev-ink); }
+.paw-desktop-root .paw-room-workspace--jev .room-composer__task-lock {
+  display: flex; align-items: center; gap: 7px; margin: 0; padding: 8px 16px 0; border: 0; background: transparent;
+  color: var(--jev-muted); font-size: var(--jev-meta); line-height: 18px;
+}
+.paw-desktop-root .paw-room-workspace--jev .room-composer__task-lock > svg { color: var(--jev-accent); }
+.paw-desktop-root .paw-room-workspace--jev .room-composer__hint { justify-content: center; gap: 16px; padding-top: 6px; color: var(--jev-faint); font-size: var(--jev-micro); line-height: 16px; }
+.paw-desktop-root .paw-room-workspace--jev .room-composer__hint > span:last-child:not([data-count]) { display: none; }
+.paw-desktop-root .paw-room-workspace--jev .agent-composer__send { border-radius: 10px; }
+@media (hover: hover) and (pointer: fine) {
+  .paw-desktop-root .paw-room-workspace--jev .agent-composer__send { transition: transform 120ms var(--jev-ease); }
+  .paw-desktop-root .paw-room-workspace--jev .agent-composer__send:active { transform: scale(.96); }
+}
+@container paw-composer-toolbar (max-width: 460px) {
+  .paw-desktop-root .paw-room-workspace--jev .room-composer :is(.paw-room-observer-toggle, .jev-policy-control) { width: 30px; min-width: 30px; padding: 0; justify-content: center; }
+  .paw-desktop-root .paw-room-workspace--jev .room-composer :is(.paw-room-observer-toggle, .jev-policy-control) > :is(span, small, svg:last-child:not(:first-child)) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────── */
+@container paw-room-workspace (max-width: 900px) {
+  .paw-desktop-root .paw-room-workspace--jev .jev-mission { padding: 12px 16px 10px; }
+  .jev-mission__meter { margin-left: 0; }
+  .jev-mission .jev-phase-rail > li + li::before { width: 10px; margin: 0 5px; }
+}
+@container paw-room-workspace (max-width: 640px) {
+  .jev-mission .jev-phase-rail { display: none; }
+  .jev-mission__rail-toggle > span { display: none; }
+  .paw-desktop-root .paw-room-workspace--jev .ccui-turn,
+  .paw-room-workspace--jev .jev-plan-review,
+  .paw-room-workspace--jev .jev-plan-review__approved-trigger { width: calc(100% - 28px); }
+  .paw-desktop-root .paw-room-workspace--jev .paw-room-workspace__composer { padding: 6px 12px 10px; }
+  .jev-mission__attention { flex-wrap: wrap; }
+  .jev-mission__attention > button { margin-left: 28px; }
+}
+
+/* ─── Dark theme adjustments ──────────────────────────────────────── */
+:root[data-theme='dark'] .paw-desktop-root .paw-room-workspace.paw-room-workspace--jev {
+  --jev-line: color-mix(in srgb, var(--paw-ink) 13%, var(--paw-panel-strong));
+  --jev-line-strong: color-mix(in srgb, var(--paw-ink) 22%, var(--paw-panel-strong));
+  --jev-sunken: color-mix(in srgb, var(--paw-ink) 4%, var(--paw-panel-strong));
+  --jev-accent-soft: color-mix(in srgb, var(--paw-accent) 16%, var(--paw-panel-strong));
+  --jev-wait: color-mix(in srgb, var(--paw-ink) 24%, var(--paw-panel-strong));
+}
+:root[data-theme='dark'] .paw-desktop-root .paw-room-workspace--jev .agent-composer.paw-unified-composer { box-shadow: none; }
+:root[data-theme='dark'] .paw-room-workspace--jev .jev-mission__attention > button,
+:root[data-theme='dark'] .paw-room-workspace--jev .jev-mission > .jev-route-recovery > button { color: var(--paw-bg, #050817); }
+:root[data-theme='dark'] .paw-room-workspace--jev .jev-mission__attention:is([data-tone='warning'], [data-tone='danger'], [data-tone='info']) > button { color: var(--jev-ink); }
+:root[data-theme='dark'] .paw-room-workspace--jev .jev-mission .jev-companion__content { box-shadow: 0 18px 44px rgb(0 0 0 / 45%); }
+
+/* ─── Motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .jev-mission__state-dot::after, .jev-mission__meter > ol > li, .jev-mission__attention, .jev-mission .jev-companion__content,
+  .paw-jev-rail__host, .paw-jev-rail__scrim, .paw-jev-inspector.ui-dialog { animation: none !important; }
+  .paw-desktop-root .paw-room-workspace--jev .agent-composer__send:active { transform: none; }
+}
+[data-reduce-motion='true'] :is(.jev-mission__state-dot::after, .jev-mission__meter > ol > li, .jev-mission__attention, .jev-mission .jev-companion__content, .paw-jev-rail__host, .paw-jev-rail__scrim),
+[data-reduce-motion='true'] .paw-jev-inspector.ui-dialog { animation: none !important; }
+[data-reduce-motion='true'] .jev-mission__state-dot::after { display: none; }
+
+/* Row geometry: an activity icon is a span too; keep it a fixed mark. */
+.paw-room-workspace--jev .paw-jev-rail .paw-jev-record-row > .jev-activity-icon { display: inline-flex; flex: none; margin-top: 3px; color: var(--jev-accent); }
+.paw-jev-rail__section-head > button { flex: 0 1 auto; }
+.paw-jev-rail__section-head > .paw-jev-team__toggle { margin-left: auto; }
+
+/* ─── Handoffs ────────────────────────────────────────────────────────
+   A dispatch reads as a handoff between two planets. The travelling dot is
+   shown only while that dispatch receipt is still running. */
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:'] {
+  position: relative; border: 1px dashed color-mix(in srgb, var(--jev-accent) 34%, var(--jev-line)); background: transparent;
+}
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:'] .ccui-tool-kind { color: var(--jev-accent); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:'] .ccui-tool-main strong { color: var(--jev-ink); }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:'].status-success:not(:has(.ccui-tool-body, .ccui-tool-action)) {
+  border-color: color-mix(in srgb, var(--jev-accent) 22%, var(--jev-line)); background: transparent;
+}
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:'].status-success:not(:has(.ccui-tool-body, .ccui-tool-action)) .ccui-tool-head { min-height: 36px; padding: 7px 12px; margin-left: 0; }
+.paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:'].status-running::after {
+  content: ''; position: absolute; left: 12px; bottom: -1px; width: 6px; height: 2px; border-radius: 1px; background: var(--jev-accent);
+  animation: jev-handoff-travel 1.6s var(--jev-ease) infinite;
+}
+@keyframes jev-handoff-travel { 0% { transform: translateX(0); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(min(560px, 60vw)); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .paw-desktop-root .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:']::after { animation: none !important; display: none; } }
+[data-reduce-motion='true'] .paw-room-workspace--jev .ccui-tool-card[data-tool-block^='dispatch:']::after { display: none; }
+
+/* Completion feedback: a task that moves to accepted in this view gets one
+   brief ring on its segment; initial snapshots and history stay still. */
+.jev-mission__meter > ol > li[data-fresh] { animation: jev-segment-done 700ms var(--jev-ease) both; }
+@keyframes jev-segment-done { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--jev-done) 60%, transparent); } 100% { box-shadow: 0 0 0 5px transparent; } }
+@media (prefers-reduced-motion: reduce) { .jev-mission__meter > ol > li[data-fresh] { animation: none; } }
+[data-reduce-motion='true'] .jev-mission__meter > ol > li[data-fresh] { animation: none; }
+
+/* ─── Empty room ──────────────────────────────────────────────────── */
+.paw-room-workspace--jev .paw-jev-empty { display: grid; justify-items: center; gap: 10px; max-width: 460px; margin: 12vh auto 0; padding: 0 24px; text-align: center; }
+.paw-jev-empty__planets { display: inline-flex; margin-bottom: 6px; }
+.paw-jev-empty__planets > * + * { margin-left: -8px; }
+.paw-jev-empty__planets > * { border-radius: 50%; box-shadow: 0 0 0 3px var(--jev-surface); }
+.paw-room-workspace--jev .paw-jev-empty > strong { font-size: var(--jev-title); font-weight: 600; }
+.paw-room-workspace--jev .paw-jev-empty > p { margin: 0; color: var(--jev-muted); font-size: var(--jev-ui); line-height: 1.7; }
+.paw-room-workspace--jev .paw-jev-empty > ol { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; text-align: left; }
+.paw-room-workspace--jev .paw-jev-empty > ol > li { display: flex; align-items: center; gap: 10px; color: var(--jev-muted); font-size: var(--jev-meta); }
+.paw-room-workspace--jev .paw-jev-empty > ol b { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--jev-accent-soft); color: var(--jev-accent); font-size: var(--jev-micro); font-weight: 600; }
+
+/* The mission header owns the status line; the window chrome keeps only the
+   live dot and the Stop control so the state is not printed twice. */
+.paw-desktop-root .paw-room-window-chrome[data-agent-mode='jev'] .paw-room-workspace__runtime > span { min-width: 0; max-width: 0; overflow: hidden; gap: 0; padding: 0; font-size: 0; }
+.paw-desktop-root .paw-room-window-chrome[data-agent-mode='jev'] .paw-room-workspace__runtime > span > i { display: none; }
+
+/* Attention action: the global button reset outranks the plain selector. */
+.paw-desktop-root .paw-room-workspace--jev .jev-mission__attention > button,
+.paw-desktop-root .paw-room-workspace--jev .jev-mission > .jev-route-recovery > button { background: var(--jev-accent); color: #fff; }
+.paw-desktop-root .paw-room-workspace--jev .jev-mission__attention:is([data-tone='warning'], [data-tone='danger'], [data-tone='info']) > button { background: var(--jev-surface); color: var(--jev-ink); box-shadow: inset 0 0 0 1px var(--jev-line-strong); }
+
+/* Keep the latest message clear of the jump button. */
+.paw-desktop-root .paw-room-workspace--jev .ccui-transcript { padding-bottom: 56px; }
+
+/* Partner card: identity, task, state, latest action — one column, no nested boxes. */
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--jev-line); border-radius: 10px; background: var(--jev-surface); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])[data-state='running'] { border-color: color-mix(in srgb, var(--jev-accent) 30%, var(--jev-line)); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header > div { display: grid; flex: 1; min-width: 0; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header strong { font-size: var(--jev-ui); font-weight: 600; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header span { overflow: hidden; color: var(--jev-muted); font-size: var(--jev-micro); text-overflow: ellipsis; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header > button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--jev-muted); cursor: pointer; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact]) > header > button:hover { background: var(--jev-sunken); color: var(--jev-ink); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__task-title { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: var(--jev-ink); font: inherit; font-size: var(--jev-ui); font-weight: 550; text-align: left; cursor: pointer; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__task-title > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__state { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--jev-muted); font-size: var(--jev-meta); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent { display: grid; gap: 2px; padding: 6px 8px; border: 0; border-radius: 7px; background: var(--jev-sunken); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent > span { color: var(--jev-muted); font-size: var(--jev-micro); }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent > strong { overflow: hidden; color: var(--jev-ink); font-size: var(--jev-meta); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace--jev .paw-jev-partner:not([data-compact])__recent:hover { background: var(--jev-accent-soft); }
+
+/* New delivered file / result row: one short highlight, never a height animation. */
+.paw-jev-rail [data-fresh] { animation: jev-row-fresh 1.2s var(--jev-ease) both; }
+@keyframes jev-row-fresh { 0% { background: var(--jev-accent-soft); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .paw-jev-rail [data-fresh] { animation: none; } }
+[data-reduce-motion='true'] .paw-jev-rail [data-fresh] { animation: none; }

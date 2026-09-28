@@ -1,8 +1,10 @@
-import { ChevronDown, CircleAlert, GitBranch, Layers2, RefreshCw, Square, Workflow } from 'lucide-react';
+import { ChevronDown, CircleAlert, GitBranch, Hand, Layers2, RefreshCw, Square, Workflow } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { roomPlanetName } from '@/features/rooms/room-copy';
-import { jevAbstention, jevLeafTasks, jevPhaseStep, jevRecord, jevStatusLabel, jevTaskCountLabel, jevTaskEffect, jevTaskStage, type JevSnapshot, type JevTaskStage } from './jev-execution';
+import { JEV_TASK_STAGE_LABELS, jevAbstention, jevAwaitingPlan, jevLeafTasks, jevPhaseStep, jevRecord, jevStatusLabel, jevTaskCountLabel, jevTaskEffect, jevTaskStage, type JevSnapshot, type JevTaskStage } from './jev-execution';
+import { jevAttention, jevMission } from './jev-mission';
 import type { JevExecution } from './use-jev-execution';
 import { JevPolicyControls } from './JevPolicyControls';
 import './jev-execution.css';
@@ -13,58 +15,44 @@ const LABELS: Record<JevTaskStage, string> = { revising: '修改中 · 等待旧
 
 
 /** A companion to the conversation: backend snapshots own every transition. */
-export function JevCompanion({ execution, room, connected = true, active = true, onStop, presentation = 'sidebar' }: {
+export function JevCompanion({ execution, room, connected = true, active = true, onStop, presentation = 'sidebar', lead, trailing, onOpenTasks, onOpenPlan }: {
   execution: JevExecution; room?: RoomSummary; connected?: boolean; active?: boolean; onStop?: () => void; presentation?: 'sidebar' | 'stage';
+  /** Stage only: the goal line owned by the workspace. */
+  lead?: ReactNode;
+  /** Stage only: workspace controls such as the task-rail toggle. */
+  trailing?: ReactNode;
+  onOpenTasks?: () => void;
+  onOpenPlan?: () => void;
 }) {
+  if (presentation === 'stage') return <JevMissionHeader execution={execution} room={room} connected={connected} active={active} onStop={onStop} lead={lead} trailing={trailing} onOpenTasks={onOpenTasks} onOpenPlan={onOpenPlan} />;
   const { snapshot: graph } = execution;
   const actorName = (id: string) => { const actor = room?.participants.find(item => item.id === id); if (!actor) return id || '待分配'; const planet = roomPlanetName(actor.ordinal); return planet === actor.displayName ? planet : `${planet} · ${actor.displayName}`; };
   const stale = !connected || Boolean(execution.error);
   const abstention = jevAbstention(graph);
   const abstentionChoice = jevRecord(jevRecord(jevRecord(abstention?.result.receipt).decision).answer).choice;
   const headline = jevStatusLabel(graph, execution.loading);
-  const tasks = jevLeafTasks(graph);
   const canRetryRoute = Boolean(abstention && graph?.phase === 'route' && graph.graphId === execution.liveSnapshot?.graphId);
   const routeRecovery = canRetryRoute ? <section className="jev-route-recovery" aria-label="继续当前任务">
     <div><strong>路径判断已暂停</strong><p>原任务{graph?.rootAttachments?.length ? '和附件' : ''}已保留。重新判断后会在这条任务中继续。</p></div>
     <button type="button" disabled={execution.routeRetrying || stale} onClick={() => void execution.retryRoute()}>{execution.routeRetrying ? '正在重新判断…' : '重新判断并继续'}</button>
   </section> : null;
   return <aside aria-label="Jev 任务进展" className={`jev-companion jev-companion--${presentation}`} data-motion={active && !stale && !abstention ? 'active' : 'paused'}>
-    <details className="jev-companion__disclosure" open={presentation === 'sidebar' ? true : undefined}>
-      <summary><Workflow size={16} aria-hidden /><strong>{presentation === 'stage' ? headline : 'Jev 任务进展'}</strong>{stale ? <span className="jev-companion__stale-label" role="status">状态待更新</span> : null}<ChevronDown size={14} aria-hidden /></summary>
+    <details className="jev-companion__disclosure" open>
+      <summary><Workflow size={16} aria-hidden /><strong>Jev 任务进展</strong>{stale ? <span className="jev-companion__stale-label" role="status">状态待更新</span> : null}<ChevronDown size={14} aria-hidden /></summary>
       <div className="jev-companion__content">
-        {presentation === 'sidebar' ? <div className="jev-companion__heading"><strong aria-live="polite">{headline}</strong>
+        <div className="jev-companion__heading"><strong aria-live="polite">{headline}</strong>
           <button aria-label="同步 Jev 任务" disabled={execution.loading} onClick={execution.refresh} type="button"><RefreshCw size={14} aria-hidden /></button>
-        </div> : null}
+        </div>
         {execution.items.length > 1 ? <label className="jev-companion__select"><span>当前查看</span><select aria-label="选择 Jev 工作" value={execution.selectedId} onChange={event => execution.selectGraph(event.target.value)}>
           {execution.items.map((item, index) => <option key={item.id} value={item.id}>{item.title || `任务 ${execution.items.length - index}`}{item.stopped ? ' · 已停止' : item.phase === 'final' ? ' · 已结束' : ''}</option>)}
         </select></label> : null}
         {stale ? <p className="jev-companion__warning" role="status"><CircleAlert size={14} aria-hidden />{execution.error || '连接中断。保留上次状态，恢复连接后重新核实。'}</p> : null}
-        {presentation === 'sidebar' ? routeRecovery : null}
+        {routeRecovery}
         {abstention ? <details className="jev-dispatches"><summary>查看调度回执</summary><p>{graph?.phase === 'route' ? '路径判断暂未选出直接执行或先规划，当前没有运行中的执行。' : '最近的调度回执未选出下一步，当前没有运行或待派发的执行。任务仍保留，你可以停止本次任务。'}</p><p>{abstentionChoice === 'insufficient_evidence' ? '调度器选择了“现有证据不足”。' : '回执未提供进一步说明。'}</p></details> : null}
         {graph ? <>
-          {presentation === 'sidebar' ? <JevPhaseRail graph={graph} /> : null}
+          <JevPhaseRail graph={graph} />
           <div className="jev-companion__scope"><span>{jevTaskCountLabel(graph)}</span><span>需求版本 {graph.requirementsRevision}</span></div>
-          <ol className="jev-task-list" aria-label="任务依赖与负责人">
-            {tasks.map(task => {
-              const state = jevTaskStage(task, graph);
-              const effect = jevTaskEffect(task, graph);
-              const currentOwner = effect?.executionStatus === 'running' && typeof effect.request.ownerId === 'string' ? effect.request.ownerId : task.ownerId;
-              const prerequisites = graph.edges.filter(edge => edge.dependent === task.id);
-              const blocked = graph.blocked.find(item => item.taskId === task.id);
-              return <li className="jev-task" data-state={state} key={task.id}>
-                <div className="jev-task__line"><span className="jev-task__mark" key={`${task.id}:${state}`} aria-hidden><JevActivityIcon state={state} active={active && !stale && !graph.stopped} size={15} /></span><strong>{task.objective || '未命名任务'}</strong></div>
-                <div className="jev-task__status"><span>{LABELS[state]}</span><span>{actorName(currentOwner)}</span>{currentOwner !== task.ownerId ? <span>任务负责人：{actorName(task.ownerId)}</span> : null}</div>
-                {prerequisites.length ? <ul className="jev-task__dependencies" aria-label={`${task.objective}的依赖`}>{prerequisites.map(edge => <li key={`${edge.kind}:${edge.prerequisite}`}><GitBranch size={12} aria-hidden />{edge.kind === 'context' ? '参考' : '等待'}：{graph.tasks.find(item => item.id === edge.prerequisite)?.objective || edge.prerequisite}</li>)}</ul> : null}
-                {task.result || task.acceptance.length || task.artifacts.length || blocked?.reasons.length ? <details className="jev-task__evidence"><summary>结果与验收依据</summary>
-                  {task.result ? <p>{task.result}</p> : null}
-                  {task.expectedOutput ? <p><strong>交付：</strong>{task.expectedOutput}</p> : null}
-                  {task.acceptance.length ? <ul>{task.acceptance.map(item => <li key={item}>{item}</li>)}</ul> : null}
-                  {blocked?.reasons.length ? <p>等待条件：{blocked.reasons.map(reason => REASONS[reason] || reason).join('、')}</p> : null}
-                  {task.artifacts.concat(task.evidence).length ? <ul>{[...new Set([...task.artifacts, ...task.evidence])].map(item => <li key={item}>{item}</li>)}</ul> : null}
-                </details> : null}
-              </li>;
-            })}
-          </ol>
+          <JevTaskList graph={graph} actorName={actorName} active={active && !stale && !graph.stopped} />
           <JevDispatches graph={graph} actorName={actorName} />
           {graph.modelCards.length ? <JevModelCards cards={graph.modelCards} /> : null}
           {graph.final ? <details className="jev-final" open data-status={graph.final.status}><summary><Layers2 size={15} aria-hidden />{graph.final.status === 'completed' ? '最终答复' : '未完成说明'}</summary><MarkdownBody documentKey={`jev-final:${graph.graphId}`} text={graph.final.content} /></details> : null}
@@ -73,10 +61,145 @@ export function JevCompanion({ execution, room, connected = true, active = true,
         <details className="jev-companion__settings"><summary>下一次任务设置</summary><label>推进方式<select aria-label="Jev 推进方式" value={execution.strategy} onChange={event => execution.setStrategy(event.target.value as 'auto' | 'direct' | 'plan')}><option value="auto">自动判断</option><option value="direct">直接执行</option><option value="plan">先规划再执行</option></select></label><JevPolicyControls modelRouting={execution.modelRouting} toolApprovalMode={execution.toolApprovalMode} verificationMode={execution.verificationMode} onModelRouting={execution.setModelRouting} onToolApprovalMode={execution.setToolApprovalMode} onVerificationMode={execution.setVerificationMode} /></details>
       </div>
     </details>
-    {presentation === 'stage' && graph ? <JevPhaseRail graph={graph} /> : null}
-    {presentation === 'stage' ? routeRecovery : null}
-    {presentation === 'stage' ? <button className="jev-companion__sync" aria-label="同步 Jev 任务" disabled={execution.loading} onClick={execution.refresh} type="button"><RefreshCw size={14} aria-hidden /></button> : null}
   </aside>;
+}
+
+/**
+ * The mission header: goal, lifecycle step, one segment per real task and
+ * the single thing that needs the user now. Everything is read from the
+ * owner snapshot; unknown progress is shown as a stage, never as a percentage.
+ */
+function JevMissionHeader({ execution, room, connected, active, onStop, lead, trailing, onOpenTasks, onOpenPlan }: {
+  execution: JevExecution; room?: RoomSummary; connected: boolean; active: boolean; onStop?: () => void;
+  lead?: ReactNode; trailing?: ReactNode; onOpenTasks?: () => void; onOpenPlan?: () => void;
+}) {
+  const graph = execution.snapshot;
+  const stale = !connected || Boolean(execution.error);
+  const abstention = jevAbstention(graph);
+  const headline = jevStatusLabel(graph, execution.loading);
+  const { tasks, counts } = jevMission(graph);
+  const fresh = useFreshAcceptance(graph, active && !stale);
+  const historical = Boolean(graph && execution.liveSnapshot && graph.graphId !== execution.liveSnapshot.graphId);
+  const attention = historical ? null : jevAttention(graph);
+  const canRetryRoute = Boolean(abstention && graph?.phase === 'route' && graph.graphId === execution.liveSnapshot?.graphId);
+  const running = Boolean(graph && !graph.stopped && !graph.final && graph.effects.some(effect => effect.executionStatus === 'running'));
+  const motion = active && !stale && !abstention && running;
+  const planTasks = graph?.planApproval && jevAwaitingPlan(graph) ? graph.planApproval.tasks.length : 0;
+  const tone = stale ? 'stale' : !graph ? 'idle' : graph.stopped ? 'stopped' : graph.final ? graph.final.status === 'completed' ? 'done' : 'failed'
+    : jevAwaitingPlan(graph) ? 'waiting' : abstention ? 'waiting' : running ? 'running' : 'active';
+  const summary = [
+    counts.running ? `执行中 ${counts.running}` : '',
+    counts.reviewing ? `复核 ${counts.reviewing}` : '',
+    counts.waiting ? `等待 ${counts.waiting}` : '',
+    counts.attention ? `需处理 ${counts.attention}` : '',
+    counts.failed ? `未完成 ${counts.failed}` : '',
+    counts.stopped ? `已停止 ${counts.stopped}` : '',
+  ].filter(Boolean);
+  const action = attention && (attention.kind === 'approve' || attention.kind === 'clarify' || attention.kind === 'deferred') && onOpenPlan
+    ? { label: attention.kind === 'clarify' ? '去回答' : '查看方案', run: onOpenPlan }
+    : attention && ['returned', 'unknown', 'failed', 'stopped'].includes(attention.kind) && onOpenTasks && counts.total
+      ? { label: '查看任务', run: onOpenTasks } : null;
+  return <aside aria-label="Jev 任务进展" className="jev-companion jev-companion--stage jev-mission" data-motion={motion ? 'active' : 'paused'} data-tone={tone}>
+    <div className="jev-mission__top">
+      <div className="jev-mission__lead">{lead}</div>
+      <div className="jev-mission__tools">
+        <button className="jev-companion__sync" aria-label="同步 Jev 任务" title="重新读取任务状态" disabled={execution.loading} onClick={execution.refresh} type="button"><RefreshCw size={14} aria-hidden /></button>
+        {trailing}
+      </div>
+    </div>
+    <div className="jev-mission__status">
+      <details className="jev-companion__disclosure">
+        <summary title="查看状态详情、调度回执与下一次任务设置">
+          <span className="jev-mission__state-dot" aria-hidden />
+          <strong>{headline}</strong>
+          {stale ? <span className="jev-companion__stale-label" role="status">状态待更新</span> : null}
+          {historical ? <span className="jev-mission__history-label">历史记录</span> : null}
+          <ChevronDown size={14} aria-hidden />
+        </summary>
+        <div className="jev-companion__content"><CompanionDetails execution={execution} room={room} active={active} stale={stale} onStop={onStop} /></div>
+      </details>
+      {graph ? <JevPhaseRail graph={graph} /> : null}
+      {counts.total ? <button className="jev-mission__meter" type="button" onClick={onOpenTasks} disabled={!onOpenTasks}
+        aria-label={`已验收 ${counts.accepted}/${counts.total}${summary.length ? `，${summary.join('，')}` : ''}。打开任务栏`}>
+        <ol aria-hidden>{tasks.map(item => <li key={item.task.id} data-tone={item.tone} data-fresh={fresh.has(item.task.id) || undefined} title={`${item.task.objective.split(/[。\n]/u)[0].slice(0, 60)} · ${JEV_TASK_STAGE_LABELS[item.stage]}`} />)}</ol>
+        <span><strong>已验收 {counts.accepted}/{counts.total}</strong>{summary.map(item => <small key={item}>{item}</small>)}</span>
+      </button> : planTasks ? <span className="jev-mission__meter-note">{planTasks} 项拟分工 · 确认后开始</span>
+        : graph && jevPhaseStep(graph.phase) === 'plan' && running ? <span className="jev-mission__meter-note">正在拆分任务与依赖</span> : null}
+    </div>
+    {canRetryRoute ? <section className="jev-route-recovery" aria-label="继续当前任务">
+      <CircleAlert size={16} aria-hidden />
+      <div><strong>路径判断已暂停</strong><p>原任务{graph?.rootAttachments?.length ? '和附件' : ''}已保留。重新判断后会在这条任务中继续。</p></div>
+      <button type="button" disabled={execution.routeRetrying || stale} onClick={() => void execution.retryRoute()}>{execution.routeRetrying ? '正在重新判断…' : '重新判断并继续'}</button>
+    </section> : attention ? <section className="jev-mission__attention" data-tone={attention.tone} role={attention.tone === 'action' ? 'status' : undefined} aria-label={attention.title}>
+      {attention.tone === 'action' ? <Hand size={16} aria-hidden /> : attention.kind === 'stopped' ? <Square size={14} aria-hidden /> : <CircleAlert size={16} aria-hidden />}
+      <div><strong>{attention.title}</strong><p>{attention.detail}</p></div>
+      {action ? <button type="button" onClick={action.run}>{action.label}</button> : null}
+    </section> : null}
+  </aside>;
+}
+
+/** Tasks newly accepted since the last observed snapshot of the same graph. */
+function useFreshAcceptance(graph: JevSnapshot | null, observing: boolean): ReadonlySet<string> {
+  const previous = useRef<{ graphId: string; done: Set<string> } | null>(null);
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const before = previous.current;
+    const done = new Set(graph?.tasks.filter(task => task.state === 'done').map(task => task.id) ?? []);
+    previous.current = graph ? { graphId: graph.graphId, done } : null;
+    if (!graph || !observing || before?.graphId !== graph.graphId) { setFresh(current => current.size ? new Set() : current); return; }
+    const added = [...done].filter(id => !before.done.has(id));
+    if (!added.length) return;
+    setFresh(new Set(added));
+    const timer = window.setTimeout(() => setFresh(new Set()), 900);
+    return () => window.clearTimeout(timer);
+  }, [graph, observing]);
+  return fresh;
+}
+
+function CompanionDetails({ execution, room, active, stale, onStop }: { execution: JevExecution; room?: RoomSummary; active: boolean; stale: boolean; onStop?: () => void }) {
+  const graph = execution.snapshot;
+  const actorName = (id: string) => { const actor = room?.participants.find(item => item.id === id); if (!actor) return id || '待分配'; const planet = roomPlanetName(actor.ordinal); return planet === actor.displayName ? planet : `${planet} · ${actor.displayName}`; };
+  const abstention = jevAbstention(graph);
+  const abstentionChoice = jevRecord(jevRecord(jevRecord(abstention?.result.receipt).decision).answer).choice;
+  return <>
+    {execution.items.length > 1 ? <label className="jev-companion__select"><span>当前查看</span><select aria-label="选择 Jev 工作" value={execution.selectedId} onChange={event => execution.selectGraph(event.target.value)}>
+      {execution.items.map((item, index) => <option key={item.id} value={item.id}>{item.title || `任务 ${execution.items.length - index}`}{item.stopped ? ' · 已停止' : item.phase === 'final' ? ' · 已结束' : ''}</option>)}
+    </select></label> : null}
+    {stale ? <p className="jev-companion__warning" role="status"><CircleAlert size={14} aria-hidden />{execution.error || '连接中断。保留上次状态，恢复连接后重新核实。'}</p> : null}
+    {abstention ? <details className="jev-dispatches"><summary>查看调度回执</summary><p>{graph?.phase === 'route' ? '路径判断暂未选出直接执行或先规划，当前没有运行中的执行。' : '最近的调度回执未选出下一步，当前没有运行或待派发的执行。任务仍保留，你可以停止本次任务。'}</p><p>{abstentionChoice === 'insufficient_evidence' ? '调度器选择了“现有证据不足”。' : '回执未提供进一步说明。'}</p></details> : null}
+    {graph ? <>
+      <div className="jev-companion__scope"><span>{jevTaskCountLabel(graph)}</span><span>需求版本 {graph.requirementsRevision}</span></div>
+      <JevTaskList graph={graph} actorName={actorName} active={active && !stale && !graph.stopped} />
+      <JevDispatches graph={graph} actorName={actorName} />
+      {graph.modelCards.length ? <JevModelCards cards={graph.modelCards} /> : null}
+      {execution.busy ? <button className="jev-companion__stop" type="button" disabled={execution.stopping} onClick={onStop ?? (() => void execution.stop())}><Square size={12} fill="currentColor" aria-hidden />{execution.stopping ? '正在请求停止' : '停止当前任务'}</button> : null}
+    </> : <p className="jev-companion__empty">在下方描述目标。Jev 会按任务需要判断路径、安排执行、复核结果，再给出答复。</p>}
+    <details className="jev-companion__settings"><summary>下一次任务设置</summary><label>推进方式<select aria-label="Jev 推进方式" value={execution.strategy} onChange={event => execution.setStrategy(event.target.value as 'auto' | 'direct' | 'plan')}><option value="auto">自动判断</option><option value="direct">直接执行</option><option value="plan">先规划再执行</option></select></label><JevPolicyControls modelRouting={execution.modelRouting} toolApprovalMode={execution.toolApprovalMode} verificationMode={execution.verificationMode} onModelRouting={execution.setModelRouting} onToolApprovalMode={execution.setToolApprovalMode} onVerificationMode={execution.setVerificationMode} /></details>
+  </>;
+}
+
+function JevTaskList({ graph, actorName, active }: { graph: JevSnapshot; actorName: (id: string) => string; active: boolean }) {
+  return <ol className="jev-task-list" aria-label="任务依赖与负责人">
+    {jevLeafTasks(graph).map(task => {
+      const state = jevTaskStage(task, graph);
+      const effect = jevTaskEffect(task, graph);
+      const currentOwner = effect?.executionStatus === 'running' && typeof effect.request.ownerId === 'string' ? effect.request.ownerId : task.ownerId;
+      const prerequisites = graph.edges.filter(edge => edge.dependent === task.id);
+      const blocked = graph.blocked.find(item => item.taskId === task.id);
+      return <li className="jev-task" data-state={state} key={task.id}>
+        <div className="jev-task__line"><span className="jev-task__mark" key={`${task.id}:${state}`} aria-hidden><JevActivityIcon state={state} active={active} size={15} /></span><strong>{task.objective || '未命名任务'}</strong></div>
+        <div className="jev-task__status"><span>{LABELS[state]}</span><span>{actorName(currentOwner)}</span>{currentOwner !== task.ownerId ? <span>任务负责人：{actorName(task.ownerId)}</span> : null}</div>
+        {prerequisites.length ? <ul className="jev-task__dependencies" aria-label={`${task.objective}的依赖`}>{prerequisites.map(edge => <li key={`${edge.kind}:${edge.prerequisite}`}><GitBranch size={12} aria-hidden />{edge.kind === 'context' ? '参考' : '等待'}：{graph.tasks.find(item => item.id === edge.prerequisite)?.objective || edge.prerequisite}</li>)}</ul> : null}
+        {task.result || task.acceptance.length || task.artifacts.length || blocked?.reasons.length ? <details className="jev-task__evidence"><summary>结果与验收依据</summary>
+          {task.result ? <p>{task.result}</p> : null}
+          {task.expectedOutput ? <p><strong>交付：</strong>{task.expectedOutput}</p> : null}
+          {task.acceptance.length ? <ul>{task.acceptance.map(item => <li key={item}>{item}</li>)}</ul> : null}
+          {blocked?.reasons.length ? <p>等待条件：{blocked.reasons.map(reason => REASONS[reason] || reason).join('、')}</p> : null}
+          {task.artifacts.concat(task.evidence).length ? <ul>{[...new Set([...task.artifacts, ...task.evidence])].map(item => <li key={item}>{item}</li>)}</ul> : null}
+        </details> : null}
+      </li>;
+    })}
+  </ol>;
 }
 
 function JevPhaseRail({ graph }: { graph: JevSnapshot }) {

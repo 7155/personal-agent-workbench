@@ -38,6 +38,7 @@ interface ComposerRoom {
   id: string;
   status: string;
   roomKind?: 'collaboration' | 'roleplay';
+  routingPolicy?: string;
   participants: ComposerParticipant[];
 }
 
@@ -393,9 +394,9 @@ export function RoomComposer({
               : attachments.length
                 ? '附件已保留，当前协作结束后就能发送。'
               : taskBusyState === 'waiting'
-                ? '当前任务等待重新判断，原任务已保留。可在进展栏继续；新消息会排入下一轮。'
+                ? '当前任务等待重新判断，原任务已保留。可在顶部继续；新消息会排入下一轮。'
               : busySubmitBehavior === 'queue'
-                ? '任务进行中 · 新消息将排入下一轮'
+                ? '任务进行中 · 新消息不会打断当前执行，会排入下一轮'
               : taskBusyState === 'blocked'
                 ? '当前任务已暂停。发送文字可以告诉主持伙伴怎样继续，停止按钮会终止整条协作。'
                 : '当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。'}
@@ -522,7 +523,7 @@ export function RoomComposer({
           </>
         )}
       />
-      <div className="room-composer__hint"><span><Keyboard size={12} aria-hidden />Enter 发送 · Shift + Enter 换行</span><span><Paperclip size={12} aria-hidden />{composerDraft.length > 6400 || expanded ? `${composerDraft.length.toLocaleString()} / 8,000` : '支持粘贴或拖入附件'}</span></div>
+      <div className="room-composer__hint"><span><Keyboard size={12} aria-hidden />Enter 发送 · Shift + Enter 换行</span><span data-count={composerDraft.length > 6400 || expanded || undefined}><Paperclip size={12} aria-hidden />{composerDraft.length > 6400 || expanded ? `${composerDraft.length.toLocaleString()} / 8,000` : '支持粘贴或拖入附件'}</span></div>
     </div></PopoverAnchor>
     </Popover>
   </div>;
@@ -622,6 +623,7 @@ function roomParticipantMentionNames(
 function composerPlaceholder(room?: ComposerRoom): string {
   if (!room) return '选择一个协作空间，或新建一个';
   if (room.status === 'archived') return '恢复这个协作空间后就能继续聊';
+  if (room.routingPolicy === 'jev') return '描述目标或补充要求；输入 @ 可以直接请一位伙伴处理';
   return room.roomKind === 'roleplay'
     ? '说点什么；输入 @ 可以请一位伙伴回应'
     : '继续聊，或输入 @ 请一位伙伴接手';

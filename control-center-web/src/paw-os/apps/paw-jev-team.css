@@ -1,6 +1,4 @@
 .paw-jev-team { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--paw-panel-soft); }
-.paw-jev-team--left { grid-area: jev-left; border-right: 1px solid var(--paw-line); }
-.paw-jev-team--right { grid-area: jev-right; border-left: 1px solid var(--paw-line); }
 .paw-jev-team__heading-bar { display: flex; align-items: center; flex-shrink: 0; min-width: 0; border-bottom: 1px solid var(--paw-line); }
 .paw-jev-team__heading-bar .paw-jev-team__heading { flex: 1; min-width: 0; width: auto; border-bottom: 0; }
 .paw-jev-team__toggle { display: inline-flex; align-items: center; flex-shrink: 0; gap: 2px; padding: 7px 5px; margin-right: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--paw-muted); font-size: 10px; cursor: pointer; }
@@ -117,55 +115,6 @@
 .room-partner-permission-popover > p { font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; }
 .room-partner-permission-popover > footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 12px; }
 .room-composer__model-policy-note { font-size: 10px; color: var(--paw-muted); }
-.paw-desktop-root .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'],
-.paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] {
-  grid-template-columns: minmax(190px, 23%) minmax(0, 1fr) minmax(190px, 23%);
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas: 'jev jev jev' 'jev-left room-main jev-right';
-}
-/* The main Room is a size container. Keep a readable timeline when a short
-   PAWOS window cannot fit the full composer; its controls remain scrollable. */
-.paw-desktop-root .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__composer {
-  max-height: 50cqh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.jev-companion--stage { position: relative; display: flex; align-items: center; gap: 16px; min-height: 43px; overflow: visible; border-left: 0; border-bottom: 1px solid var(--paw-line); padding: 0 12px; background: var(--paw-panel); }
-.jev-companion--stage .jev-companion__disclosure > summary { padding: 10px 0; }
-.jev-companion--stage .jev-companion__disclosure > summary > strong { font-size: 12px; font-weight: 550; }
-.jev-companion--stage .jev-companion__content { position: absolute; top: calc(100% + 4px); left: 12px; z-index: 24; display: block; padding: 12px 16px; max-height: min(460px, 65vh); overflow: auto; width: min(410px, calc(100% - 24px)); border: 1px solid var(--paw-line); border-radius: 9px; background: var(--paw-panel); box-shadow: 0 10px 30px rgb(0 0 0 / 9%); }
-.jev-companion--stage .jev-companion__heading > button { display: none; }
-.jev-companion--stage > .jev-phase-rail { flex: 1; justify-content: flex-start; gap: 20px; margin: 0; }
-.jev-companion--stage > .jev-phase-rail > li { display: flex; align-items: center; gap: 7px; }
-.jev-companion--stage > .jev-phase-rail .jev-phase-rail__mark { width: 18px; height: 18px; }
-.jev-companion__sync { display: grid; place-items: center; flex: none; width: 28px; height: 28px; margin-left: auto; border: 0; border-radius: 5px; background: transparent; }
-
-/* Keep responsive overrides after the three-column baseline. The Room's
-   existing named container follows PAWOS window width, not browser width. */
-@container paw-room-workspace (max-width: 1100px) {
-  .paw-desktop-root .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'],
-  .paw-room-workspace--jev[data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto 76px minmax(0, 1fr);
-    grid-template-areas: 'jev jev' 'jev-left jev-right' 'room-main room-main';
-  }
-  .paw-jev-team { padding: 0; overflow: hidden; border-top: 0; border-bottom: 1px solid var(--paw-line); }
-  .paw-jev-team--left { border-right: 1px solid var(--paw-line); }
-  .paw-jev-team--right { border-left: 0; }
-  .paw-jev-team__heading { min-height: 44px; height: 44px; padding: 8px 12px; border-bottom: 0; }
-  .paw-jev-team__progress { height: 32px; min-height: 32px; padding: 4px 9px; gap: 4px 8px; border-bottom: 0; }
-  .paw-jev-team__heading-bar { border-bottom: 0; }
-  .paw-jev-team__heading-bar > .paw-jev-team__toggle { display: none; }
-  .paw-jev-team__content { display: none; }
-
-}
-@container paw-room-workspace (max-width: 700px) {
-  .jev-companion--stage > .jev-phase-rail { display: none; }
-  .jev-companion--stage { gap: 8px; }
-  .paw-jev-team__heading { gap: 6px; padding-inline: 9px; }
-  .paw-jev-team__heading strong { font-size: 11px; }
-}
-
 .paw-jev-inspector__dependency { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface-subtle); color: var(--color-text-primary); text-align: left; cursor: pointer; font: inherit; }
 .paw-jev-inspector__dependency > span { flex: 1; min-width: 0; }
 .paw-jev-inspector__dependency small { display: block; color: var(--color-text-secondary); font-size: 11px; }

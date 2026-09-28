@@ -72,3 +72,16 @@
 
 .paw-room-removals__item > label > span { flex: none; white-space: nowrap; }
 .paw-room-removals__item > label > button { min-width: 0; }
+
+/* One tick per call in the group: a scan of how the batch went, not a percentage. */
+.paw-jev-tool-records__ticks { display: inline-flex; flex: none; align-items: center; gap: 2px; max-width: 30%; overflow: hidden; }
+.paw-jev-tool-records__ticks > i { width: 4px; height: 12px; border-radius: 2px; background: var(--ccui-success); opacity: .55; }
+.paw-jev-tool-records__ticks > i[data-status='running'] { background: var(--ccui-accent); opacity: 1; animation: paw-jev-tick-live 1.2s ease-in-out infinite; }
+.paw-jev-tool-records__ticks > i[data-status='error'] { background: var(--ccui-danger); opacity: 1; }
+.paw-jev-tool-records__ticks > i:is([data-status='pending'], [data-status='cancelled']) { background: var(--ccui-warning); opacity: .9; }
+.paw-jev-tool-records__trigger[data-status='error'] { border-color: color-mix(in srgb, var(--ccui-danger) 40%, var(--ccui-border)); }
+.paw-jev-tool-records__trigger[data-status='running'] { border-color: color-mix(in srgb, var(--ccui-accent) 34%, var(--ccui-border)); }
+@keyframes paw-jev-tick-live { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .paw-jev-tool-records__ticks > i { animation: none !important; } }
+[data-reduce-motion='true'] .paw-jev-tool-records__ticks > i { animation: none !important; }
+@media (max-width: 600px) { .paw-jev-tool-records__ticks { display: none; } }

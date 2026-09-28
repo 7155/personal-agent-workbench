@@ -46,9 +46,11 @@ function recordSummary(blocks: ToolCallBlock[]) {
 
 export function PawJevToolRecords({ blocks, onOpen }: { blocks: ToolCallBlock[]; onOpen: (blocks: ToolCallBlock[]) => void }) {
   const { status, counts, latest } = recordSummary(blocks);
-  return <button className="paw-jev-tool-records__trigger" type="button" aria-haspopup="dialog" onClick={() => onOpen(blocks)}>
+  const ticks = blocks.length > 24 ? blocks.slice(-24) : blocks;
+  return <button className="paw-jev-tool-records__trigger" type="button" aria-haspopup="dialog" data-status={status} onClick={() => onOpen(blocks)}>
         <ToolStatusMark status={status} />
         <span><strong>工具记录 · {blocks.length} 项</strong><small>{counts || '等待执行回执'}</small></span>
+        <span className="paw-jev-tool-records__ticks" aria-hidden="true">{ticks.map(block => <i key={block.id} data-status={toolReceiptPresentation(block).status} />)}</span>
         <span className="paw-jev-tool-records__latest" title={latest?.summary || latest?.name}>{latest?.summary || latest?.name}</span>
         <ChevronRight size={15} aria-hidden="true" />
       </button>;
@@ -66,7 +68,7 @@ export function PawJevToolRecordDialog({ blocks, open, onClose, renderDetail }: 
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
     <DialogContent className="ccui-tool-records paw-jev-tool-records">
       <DialogTitle><ListChecks size={18} aria-hidden="true" /> 工具记录 · {blocks.length} 项</DialogTitle>
-      <DialogDescription>{counts || '等待执行回执'}。按发生顺序查看调用和原始证据。</DialogDescription>
+      <DialogDescription>{counts || '等待执行回执'}。按发生顺序列出，展开任一项可查看调用参数与原始返回。</DialogDescription>
       <div className="paw-jev-tool-records__list">
         {blocks.map(block => <ToolCard key={block.id} block={block} detail={renderDetail(block)} />)}
       </div>

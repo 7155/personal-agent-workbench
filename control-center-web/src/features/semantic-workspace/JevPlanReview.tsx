@@ -28,7 +28,7 @@ export function JevPlanReview({ execution, room, onAdjust }: { execution: JevExe
     catch (reason) { setError(publicAgentErrorText(reason, '方案操作尚未确认，请重新同步后核实。')); execution.refresh(); }
   };
   if (approved) return <Dialog>
-    <DialogTrigger asChild><button className="jev-plan-review__approved-trigger" type="button"><Check size={15} aria-hidden /><span>执行方案已确认 · 版本 {plan.requirementsRevision}</span><ChevronRight size={14} aria-hidden /></button></DialogTrigger>
+    <DialogTrigger asChild><button className="jev-plan-review__approved-trigger" type="button" aria-label={`执行方案已确认 · 版本 ${plan.requirementsRevision}`} title="查看完整方案、分工与验收标准"><Check size={15} aria-hidden /><span>执行方案已确认 · 版本 {plan.requirementsRevision}</span><small>{plan.tasks.length} 项任务{waveCount(plan.tasks) > 1 ? ` · 分 ${waveCount(plan.tasks)} 步` : ''}</small><em>查看完整方案</em><ChevronRight size={14} aria-hidden /></button></DialogTrigger>
     <DialogContent className="jev-plan-review jev-plan-review__dialog">
       <div className="jev-plan-review__dialog-heading">
         <DialogTitle>已确认的执行方案</DialogTitle>
@@ -48,7 +48,7 @@ export function JevPlanReview({ execution, room, onAdjust }: { execution: JevExe
       <div className="jev-plan-review__actions"><span>执行会在方案确认后开始。</span><button className="jev-plan-review__primary" disabled={busy || !Object.values(answers).some(answer => answer.trim())} type="submit">提交补充</button><button type="button" disabled={busy || plan.status === 'deferred'} onClick={() => void act('defer_plan')}>暂不执行</button></div>
     </form> : <>
       <PlanTasks room={room} plan={plan} />
-      <div className="jev-plan-review__actions"><span>{editing ? '在下方补充要调整的内容，发送后会生成修订方案。' : '确认后开始本方案中的任务。'}</span><button className="jev-plan-review__primary" disabled={busy || !plan.planHash || !plan.tasks.length} type="button" onClick={() => void act('approve_plan')}><Play size={13} aria-hidden />{execution.planSending === 'approve_plan' ? '正在确认' : '开始执行'}</button><button disabled={busy} type="button" onClick={() => { setEditing(true); onAdjust(); }}><Pencil size={13} aria-hidden />调整方案</button><button disabled={busy || plan.status === 'deferred'} type="button" onClick={() => void act('defer_plan')}>暂不执行</button></div>
+      <div className="jev-plan-review__actions"><span>{editing ? '在下方输入框写下要调整的内容，发送后 Jev 会生成修订方案。' : '确认即授权本方案中的全部任务执行，执行期间不再逐项审批工具。'}</span><button className="jev-plan-review__primary" disabled={busy || !plan.planHash || !plan.tasks.length} type="button" onClick={() => void act('approve_plan')}><Play size={13} aria-hidden />{execution.planSending === 'approve_plan' ? '正在确认' : '开始执行'}</button><button disabled={busy} type="button" onClick={() => { setEditing(true); onAdjust(); }}><Pencil size={13} aria-hidden />调整方案</button><button disabled={busy || plan.status === 'deferred'} type="button" onClick={() => void act('defer_plan')}>暂不执行</button></div>
     </>}
     {error ? <p className="jev-plan-review__error" role="alert"><CircleAlert size={14} aria-hidden />{error}</p> : null}
   </section>;
@@ -60,8 +60,8 @@ function PlanTasks({ room, plan, graph }: { room: RoomSummary; plan: NonNullable
   return <>
     <section className="jev-plan-review__sequence" aria-label="任务执行顺序">
       <strong>分工与执行顺序</strong>
-      <p>{plan.tasks.length} 项任务 · 同一步中的独立任务可并行推进，依赖任务验收后继续。</p>
-      {waves ? <ol>{waves.map((wave, index) => <li key={wave[0].key}><span>第 {index + 1} 步{wave.length > 1 ? ' · 可并行' : ''}</span><div>{wave.map(task => <span key={task.key}>任务 {number(task.key)} · {planTaskTitle(task, room)}</span>)}</div></li>)}</ol> : <p>依赖顺序尚未确认，请调整方案后再执行。</p>}
+      <p>{plan.tasks.length} 项任务 · 同一步的任务同时开始；下一步等上一步验收后再开始。</p>
+      {waves ? <ol>{waves.map((wave, index) => <li key={wave[0].key} data-parallel={wave.length > 1 || undefined}><span>第 {index + 1} 步{wave.length > 1 ? ` · ${wave.length} 项并行` : ''}{index ? ` · 等第 ${index} 步验收` : ' · 确认后开始'}</span><div>{wave.map(task => { const owner = room.participants.find(item => item.id === task.ownerParticipantId); return <span key={task.key}>{owner ? <RoomPlanetAvatar ordinal={owner.ordinal} size={16} decorative /> : null}任务 {number(task.key)} · {planTaskTitle(task, room)}</span>; })}</div></li>)}</ol> : <p>依赖顺序尚未确认，请调整方案后再执行。</p>}
     </section>
     <ol className="jev-plan-review__tasks">{plan.tasks.map(task => {
     // Older approved plans left assignment to dispatch. Show a uniquely bound
@@ -91,6 +91,8 @@ function planTaskTitle(task: JevPlanTask, room: RoomSummary): string {
 }
 
 /** A display of approved dependencies, never a second scheduler. */
+function waveCount(tasks: JevPlanTask[]) { return jevPlanWaves(tasks)?.length ?? 0; }
+
 export function jevPlanWaves(tasks: JevPlanTask[]): JevPlanTask[][] | null {
   const remaining = new Map(tasks.map(task => [task.key, task]));
   const complete = new Set<string>();

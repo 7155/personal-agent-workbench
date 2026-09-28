@@ -22,7 +22,7 @@ describe('Jev equal partner windows', () => {
       { ownerType: 'room', roomId: room.id, mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 },
     ] }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
-    expect(screen.getByText('原始附件 1 项 · 交付文件 0 项')).toBeVisible();
+    expect(screen.getByText('原始附件 1 项')).toBeVisible();
     expect(screen.getByText('comparison.md')).toBeVisible();
   });
   it('shows receipt-backed stages without turning running work into a percentage', () => {
@@ -77,7 +77,7 @@ describe('Jev equal partner windows', () => {
     const graph = parseJevSnapshot({ ...raw, phase: 'final', final: { status: 'completed', content: '已完成' },
       tasks: raw.tasks.map(task => ({ ...task, state: 'done' })), effects: [] }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
-    expect(screen.getByLabelText('左侧伙伴与分工')).toHaveAttribute('data-summary', 'true');
+    expect(screen.getByLabelText('任务与成果')).toHaveAttribute('data-summary', 'true');
     expect(screen.getByRole('progressbar', { name: '任务验收数' })).toHaveAttribute('value', '2');
     expect(screen.queryByRole('button', { name: '展开伙伴卡片' })).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button', { name: /Earth.*核对读取/ }));
@@ -206,7 +206,7 @@ describe('Jev equal partner windows', () => {
     const graph = parseJevSnapshot({ ...raw, final: { status: 'completed', content: '完成' }, tasks: raw.tasks.map(task => ({ ...task, state: 'done', result: '已核对' })) }, 'graph');
     expect(jevPartnerWork(graph, room)).toEqual([]);
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
-    expect(screen.getByText('阶段与交付记录')).toBeVisible();
+    expect(screen.getByText('结果与交付')).toBeVisible();
     expect(screen.queryByRole('region', { name: /当前工作/ })).not.toBeInTheDocument();
     expect(screen.getByText('已验收 2/2')).toBeVisible();
     expect(screen.getAllByText('已验收', { exact: true })).toHaveLength(2);
@@ -252,13 +252,13 @@ describe('Jev equal partner windows', () => {
     expect(container.querySelector('.paw-jev-partner [data-room-planet]')).toHaveAttribute('data-activity', 'static');
     expect(container.querySelector('.ccui-conversation-surface')).toBeNull();
   });
-  it('keeps the current verifier on the left and delivery records on the right with keyboard focus', async () => {
+  it('keeps the current verifier and delivery records in one rail with keyboard focus', async () => {
     const graph = parseJevSnapshot(raw, 'graph');
     const onOpenParticipant = vi.fn();
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={onOpenParticipant} />);
-    const left = screen.getByRole('complementary', { name: '左侧伙伴与分工' });
+    const left = screen.getByRole('complementary', { name: '任务与成果' });
     expect(within(left).getByRole('region', { name: 'Venus 当前工作' })).toBeVisible();
-    expect(within(screen.getByRole('complementary', { name: '右侧伙伴与交付' })).getByText('阶段与交付记录')).toBeVisible();
+    expect(within(left).getByText('结果与交付')).toBeVisible();
     const user = userEvent.setup();
     const opener = within(left).getByRole('button', { name: '展开当前伙伴' });
     opener.focus();
@@ -276,7 +276,7 @@ describe('Jev equal partner windows', () => {
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
     expect(screen.getAllByText('待确认 · 未开始')).toHaveLength(2);
     expect(screen.queryByText('已验收')).not.toBeInTheDocument();
-    const left = screen.getByRole('complementary', { name: '左侧伙伴与分工' });
+    const left = screen.getByRole('complementary', { name: '任务与成果' });
     await userEvent.setup().click(within(left).getByRole('button', { name: /再实现三维场景/ }));
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('浏览器显示真实三维场景');

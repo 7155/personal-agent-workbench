@@ -51,3 +51,8 @@
 .jev-plan-review__tasks .jev-plan-review__task-status { font-weight: 550; color: var(--paw-ink); }
 .jev-plan-review__task-status[data-state='done'] { color: var(--color-success); }
 .jev-plan-review__task-status:is([data-state='running'], [data-state='verifying']) { color: var(--paw-accent); }
+.jev-plan-review__approved-trigger > small { flex: none; color: var(--paw-muted); font-size: inherit; }
+.jev-plan-review__approved-trigger > em { flex: none; color: var(--paw-accent); font-style: normal; font-weight: 550; }
+.jev-plan-review__sequence > ol > li > div > span { display: flex; align-items: flex-start; gap: 6px; }
+.jev-plan-review__sequence > ol > li > div > span > .room-planet-avatar { flex: none; margin-top: 1px; }
+.jev-plan-review__sequence > ol > li[data-parallel] > span { color: var(--paw-accent); }
