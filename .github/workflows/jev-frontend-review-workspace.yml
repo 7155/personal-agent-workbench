@@ -9,18 +9,39 @@ permissions:
   contents: read
 
 jobs:
-  baseline-browser:
+  frontend-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
           ref: 3ee530bea05f54a199544153594b50e0a00c8bfa
           persist-credentials: false
+      - name: Apply hash-verified frontend candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p control-center-web/review-output
+          python3 <<'PY'
+          import base64, hashlib, json, lzma, pathlib, subprocess
+          blobs = ['5ab9883fe8a67d91f552743ce238ffde591f3192', 'd235a25afbb603b11f42c8df1d60ccb6694e439f', 'cc7486a05d0dddb6843be161825372789d0fb079', 'b3918298a47f3c931fd137ae6168507079f792df']
+          chunks = []
+          for sha in blobs:
+              data = json.loads(subprocess.check_output(['gh', 'api', 'repos/7155/personal-agent-workbench/git/blobs/' + sha]))
+              chunks.append(base64.b64decode(data['content']))
+          patch = lzma.decompress(b''.join(chunks))
+          assert hashlib.sha256(patch).hexdigest() == '803106dd2240de5f54fed4330b7d60cc6bc1be29a7898ba8d5097a8763865883'
+          path = pathlib.Path('/tmp/frontend-candidate.patch'); path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', '--unidiff-zero', str(path)], check=True)
+          subprocess.run(['git', 'apply', '--index', '--unidiff-zero', str(path)], check=True)
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          assert tree == 'a6f3f15f0dcc8b778d77a54abc22e0bcabe06c13', tree
+          pathlib.Path('control-center-web/review-output/candidate-tree.txt').write_text(tree + '\n')
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
-      - name: Install pinned dependencies and Chromium
+      - name: Install pinned toolchain and browser
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: |
@@ -29,41 +50,49 @@ jobs:
           pnpm --dir control-center-web install --frozen-lockfile
           pnpm --dir control-center-web exec playwright install --with-deps chromium
           sudo apt-get install -y fonts-noto-cjk
-      - name: Capture before screenshots using real product components
+      - name: Browser state, interaction and screenshot checks
+        id: browser
+        continue-on-error: true
         working-directory: control-center-web
         run: |
-          mkdir -p review-output
           pnpm exec vite --host 127.0.0.1 --port 5199 --strictPort >review-output/vite.log 2>&1 &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:5199/ >/dev/null && break; sleep 1; done
-          node --input-type=module <<'JS'
-          import { chromium } from '@playwright/test';
-          import { writeFile } from 'node:fs/promises';
-          const browser = await chromium.launch();
-          const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: 'zh-CN' });
-          const errors = [];
-          page.on('pageerror', error => errors.push(String(error)));
-          for (const width of [1440, 820]) {
-            await page.setViewportSize({ width, height: 960 });
-            for (const scene of ['parallel', 'approval']) {
-              await page.goto(`http://127.0.0.1:5199/e2e/fixtures/jev-execution.html?scene=${scene}`, { waitUntil: 'networkidle' });
-              await page.locator('.jev-mission').waitFor({ timeout: 30000 });
-              await page.screenshot({ path: `review-output/before-jev-${scene}-${width}-light.png`, animations: 'disabled' });
-              await page.getByRole('button', { name: '深色主题', exact: true }).click();
-              await page.screenshot({ path: `review-output/before-jev-${scene}-${width}-dark.png`, animations: 'disabled' });
-            }
-          }
-          await page.setViewportSize({ width: 1440, height: 960 });
-          await page.goto('http://127.0.0.1:5199/?frontend=paw-os&controlTransport=mock#/agent?session=session-preview', { waitUntil: 'networkidle' });
-          await page.locator('.paw-session-workspace').waitFor({ timeout: 30000 });
-          await page.locator('.paw-session-workspace__runtime').filter({ hasText: '已同步' }).waitFor({ timeout: 30000 });
-          await page.screenshot({ path: 'review-output/before-session-1440-light.png', animations: 'disabled' });
-          await writeFile('review-output/session-before-text.txt', await page.locator('.paw-session-workspace').innerText());
-          await writeFile('review-output/browser-errors.json', JSON.stringify(errors, null, 2));
-          await browser.close();
-          JS
+          node e2e/verify-workbench-polish.mjs 2>&1 | tee review-output/browser.log
+      - name: Typecheck
+        id: typecheck
+        continue-on-error: true
+        working-directory: control-center-web
+        run: pnpm typecheck 2>&1 | tee review-output/typecheck.log
+      - name: Affected frontend regression tests
+        id: tests
+        continue-on-error: true
+        working-directory: control-center-web
+        run: |
+          pnpm exec vitest run --maxWorkers=2 --testTimeout=60000 src/features/composer src/features/agent/composer src/features/rooms/composer src/features/semantic-workspace src/paw-os/apps/PawJevTeamPanels.test.tsx src/paw-os/apps/PawRoomWorkspace.test.tsx src/paw-os/apps/PawRoomConversation.test.tsx src/paw-os/apps/PawSessionWorkspace.test.tsx src/paw-os/apps/PawSessionWorkspace.performance.test.tsx src/paw-os/apps/session-mission.test.ts src/features/conversation-ui 2>&1 | tee review-output/tests.log
+      - name: Build
+        id: build
+        continue-on-error: true
+        working-directory: control-center-web
+        run: pnpm build 2>&1 | tee review-output/build.log
+      - name: Record check outcomes
+        if: always()
+        env:
+          BROWSER: ${{ steps.browser.outcome }}
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          python3 - <<'PY'
+          import os,json,pathlib
+          p=pathlib.Path('control-center-web/review-output');p.mkdir(exist_ok=True)
+          p.joinpath('outcomes.json').write_text(json.dumps({k:os.environ[k] for k in ['BROWSER','TYPECHECK','TESTS','BUILD']},indent=2))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-before-browser-3ee530be
+          name: jev-frontend-polish-review-a6f3f15f
           path: control-center-web/review-output
           retention-days: 3
+      - name: Require all checks
+        if: always()
+        run: test '${{ steps.browser.outcome }}' = success && test '${{ steps.typecheck.outcome }}' = success && test '${{ steps.tests.outcome }}' = success && test '${{ steps.build.outcome }}' = success
