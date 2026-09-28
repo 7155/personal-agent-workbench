@@ -35,8 +35,9 @@ jobs:
           apply(b''.join(blob(s) for s in ['5ab9883fe8a67d91f552743ce238ffde591f3192','d235a25afbb603b11f42c8df1d60ccb6694e439f','cc7486a05d0dddb6843be161825372789d0fb079','b3918298a47f3c931fd137ae6168507079f792df']), '803106dd2240de5f54fed4330b7d60cc6bc1be29a7898ba8d5097a8763865883')
           apply(blob('db2aee39981aeaa87f9bee294a1a40c41fa41789'),'6f83912310cc2cc5066133c395ba95b44e046a66a8606370483979f2684146d9')
           apply(blob('7fb1794480d6aa4d2a6c89a8582368e8a2f89da5'),'0bd1ca967005fd714e3805d796503b75c3bd1d0c8ff8e7954075f4b05f69e6fc')
+          apply(blob('aaf21d3916886dc131398e8afb68568a0c449e2a'),'f94dac22a82dfe322fe3df6a563ac4275b7abc97aea3e01675c1b47226aab303')
           tree=subprocess.check_output(['git','write-tree'],text=True).strip()
-          assert tree=='251e3beb8fac97cc561e1e86625e2859e1d1bd15',tree
+          assert tree=='58307347699fa8146072d5f2dfa7181b38db830f',tree
           p=pathlib.Path('control-center-web/review-output');p.mkdir(exist_ok=True)
           p.joinpath('candidate-tree.txt').write_text(tree+'\n')
           PY
@@ -63,7 +64,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-polish-browser-251e3beb
+          name: jev-polish-browser-58307347
           path: control-center-web/review-output
           retention-days: 3
       - name: Typecheck
@@ -107,13 +108,13 @@ jobs:
           entries=[{'path':p,'type':'blob','mode':'100644','content':pathlib.Path(p).read_text()} for p in paths]
           data={'base_tree':'5a4dab85bfd7177af1059794b0268a7999bb1a27','tree':entries}
           result=json.loads(subprocess.check_output(['gh','api','repos/7155/personal-agent-workbench/git/trees','--method','POST','--input','-'],input=json.dumps(data).encode()))
-          assert result['sha']=='251e3beb8fac97cc561e1e86625e2859e1d1bd15',result['sha']
+          assert result['sha']=='58307347699fa8146072d5f2dfa7181b38db830f',result['sha']
           pathlib.Path('control-center-web/review-output/verified-github-tree.json').write_text(json.dumps({'sha':result['sha'],'paths':paths},indent=2))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-polish-checks-251e3beb
+          name: jev-polish-checks-58307347
           path: control-center-web/review-output
           retention-days: 3
       - name: Require all checks
