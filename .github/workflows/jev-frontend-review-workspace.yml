@@ -4,7 +4,7 @@ on:
     branches: [codex/jev-frontend-review-20260928]
     paths: [.github/workflows/jev-frontend-review-workspace.yml]
 permissions:
-  contents: read
+  contents: write
 defaults:
   run:
     shell: bash
@@ -34,8 +34,9 @@ jobs:
               subprocess.run(['git','apply','--index','--unidiff-zero',str(p)],check=True)
           apply(b''.join(blob(s) for s in ['5ab9883fe8a67d91f552743ce238ffde591f3192','d235a25afbb603b11f42c8df1d60ccb6694e439f','cc7486a05d0dddb6843be161825372789d0fb079','b3918298a47f3c931fd137ae6168507079f792df']), '803106dd2240de5f54fed4330b7d60cc6bc1be29a7898ba8d5097a8763865883')
           apply(blob('db2aee39981aeaa87f9bee294a1a40c41fa41789'),'6f83912310cc2cc5066133c395ba95b44e046a66a8606370483979f2684146d9')
+          apply(blob('7fb1794480d6aa4d2a6c89a8582368e8a2f89da5'),'0bd1ca967005fd714e3805d796503b75c3bd1d0c8ff8e7954075f4b05f69e6fc')
           tree=subprocess.check_output(['git','write-tree'],text=True).strip()
-          assert tree=='bed3ec80b49d6b6c696141817447d89ffe51769e',tree
+          assert tree=='251e3beb8fac97cc561e1e86625e2859e1d1bd15',tree
           p=pathlib.Path('control-center-web/review-output');p.mkdir(exist_ok=True)
           p.joinpath('candidate-tree.txt').write_text(tree+'\n')
           PY
@@ -62,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-polish-browser-bed3ec80
+          name: jev-polish-browser-251e3beb
           path: control-center-web/review-output
           retention-days: 3
       - name: Typecheck
@@ -70,12 +71,12 @@ jobs:
         continue-on-error: true
         working-directory: control-center-web
         run: pnpm typecheck 2>&1 | tee review-output/typecheck.log
-      - name: Focused regression
+      - name: Affected regression tests
         id: tests
         continue-on-error: true
         working-directory: control-center-web
         run: |
-          pnpm exec vitest run --maxWorkers=2 --testTimeout=60000 src/features/composer src/features/agent/composer src/features/rooms/composer src/features/semantic-workspace/JevCompanion.test.tsx src/features/semantic-workspace/jev-mission.test.ts src/features/semantic-workspace/use-jev-arrival-highlight.test.tsx src/paw-os/apps/PawJevTeamPanels.test.tsx src/paw-os/apps/PawRoomWorkspace.test.tsx src/paw-os/apps/PawRoomConversation.test.tsx src/paw-os/apps/PawSessionWorkspace.test.tsx src/paw-os/apps/PawSessionWorkspace.performance.test.tsx src/paw-os/apps/session-mission.test.ts 2>&1 | tee review-output/tests.log
+          pnpm exec vitest run --maxWorkers=2 --testTimeout=60000 src/features/composer src/features/agent/composer src/features/rooms/composer src/features/semantic-workspace src/paw-os/apps/PawJevTeamPanels.test.tsx src/paw-os/apps/PawRoomWorkspace.test.tsx src/paw-os/apps/PawRoomConversation.test.tsx src/paw-os/apps/PawSessionWorkspace.test.tsx src/paw-os/apps/PawSessionWorkspace.performance.test.tsx src/paw-os/apps/session-mission.test.ts src/features/conversation-ui 2>&1 | tee review-output/tests.log
       - name: Build
         id: build
         continue-on-error: true
@@ -94,10 +95,25 @@ jobs:
           p=pathlib.Path('control-center-web/review-output');p.mkdir(exist_ok=True)
           p.joinpath('outcomes.json').write_text(json.dumps({k:os.environ[k] for k in ['BROWSER','TYPECHECK','TESTS','BUILD']},indent=2))
           PY
+      - name: Store verified source tree without changing any branch
+        if: steps.browser.outcome == 'success' && steps.typecheck.outcome == 'success' && steps.tests.outcome == 'success' && steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 <<'PY'
+          import json,pathlib,subprocess
+          paths=subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0')
+          assert paths and all(p.startswith('control-center-web/') for p in paths)
+          entries=[{'path':p,'type':'blob','mode':'100644','content':pathlib.Path(p).read_text()} for p in paths]
+          data={'base_tree':'5a4dab85bfd7177af1059794b0268a7999bb1a27','tree':entries}
+          result=json.loads(subprocess.check_output(['gh','api','repos/7155/personal-agent-workbench/git/trees','--method','POST','--input','-'],input=json.dumps(data).encode()))
+          assert result['sha']=='251e3beb8fac97cc561e1e86625e2859e1d1bd15',result['sha']
+          pathlib.Path('control-center-web/review-output/verified-github-tree.json').write_text(json.dumps({'sha':result['sha'],'paths':paths},indent=2))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-polish-checks-bed3ec80
+          name: jev-polish-checks-251e3beb
           path: control-center-web/review-output
           retention-days: 3
       - name: Require all checks
