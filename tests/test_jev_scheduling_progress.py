@@ -80,6 +80,20 @@ class SchedulingCandidateTests(unittest.TestCase):
             self.assertEqual(candidate.arguments()["reason"], proof.reason)
             self.assertEqual(candidate.arguments()["evidenceRefs"], list(proof.evidence_refs))
 
+    def test_dependency_facts_keep_current_acceptance_separate_from_old_prose(self):
+        from rag_ime.jev_tasks.application import JevRoomApplication
+        snapshot = replace(self.snapshot, edges=(*self.snapshot.edges, Edge("C", "A", "context")), tasks=tuple(
+            replace(task, state="done", result="等待独立复核") if task.id == "A" else task
+            for task in self.snapshot.tasks))
+        facts = JevRoomApplication.scheduling_dependency_facts(snapshot)
+        self.assertEqual(set(facts), {"C"})
+        self.assertEqual([row["taskId"] for row in facts["C"]], ["A", "B"])
+        self.assertTrue(facts["C"][0]["accepted"])
+        self.assertTrue(facts["C"][0]["resultAvailable"])
+        self.assertFalse(facts["C"][1]["accepted"])
+        self.assertNotIn("等待独立复核", canonical(facts))
+        self.assertEqual(facts["C"][0]["taskRevision"], snapshot.task("A").revision)
+
     def test_removing_wait_does_not_remove_explicit_abstention(self):
         captured = []
         def abstain(state, questions):

@@ -194,6 +194,8 @@ class JevChoices:
                 "候选已由宿主按真实依赖、执行占用、能力权限和上下文检查生成；本次只排序下一动作，不再要求人批准或先完成任务再派遣。"
                 "任务 active 表示责任未结束，不代表 Pi 正在运行；运行状态以 executionFacts 为准。"
                 "多个独立任务都可执行时可任选一项先派遣，优先延续合格且空闲的当前负责人；不能仅因其他任务尚未执行就等待。"
+                "dependencyFacts 是当前版本真实前置的宿主状态；accepted=true 表示前置已验收，不因缺少仍在进行的 verificationFacts 再次等待复核。"
+                "resultAvailable 只说明原成果可供执行者使用，不等于下游任务已执行；参考上下文关系不作为等待条件。"
                 "verificationFacts 是独立核验者对当前 taskHash 绑定提交的正式结论，执行结束由 executionFacts 证明。"
                 "你负责选择这些已检查动作的提交先后，不重复充当 verifier，不要求调度包重复提供原始 Tool 记录。"
                 "accept 提交已有 passed/satisfied 核验为任务完成；return 提交已有失败或未验证结论以返修。"

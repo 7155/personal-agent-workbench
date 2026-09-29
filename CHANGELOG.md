@@ -5,6 +5,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Include current prerequisite revisions, acceptance state and result
+  availability in Jev scheduling decisions. Do not confuse historical worker
+  prose or completed verification with a new dependency barrier; reference
+  edges remain non-blocking, and downstream execution still needs real receipts.
+
 - Add Workspace V3 reading navigation and local text/motion preferences, task
   and delivered-file filters, collapsed ended-task history, and explicit
   copy/download feedback without changing execution or file authority.

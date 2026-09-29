@@ -810,6 +810,7 @@ class JevRoomApplication:
                     "wait 只用于候选中已有的真实运行、未决派遣或回收核实；全部已 drain 且有合法动作时不能等待一个不存在的新事件。"
                     "材料不足或冲突时仍可选 insufficient_evidence，不能编造验证或执行。",
                 },
+                "dependencyFacts": self.scheduling_dependency_facts(snapshot),
                 "verificationFacts": {
                     key: {
                         "taskHash": proof.task_hash,
@@ -845,6 +846,28 @@ class JevRoomApplication:
             owner_preferences=owner_preferences,
             eligibility_missing=eligibility_missing,
         )
+
+    @staticmethod
+    def scheduling_dependency_facts(snapshot):
+        """Expose canonical prerequisite state, not a second verifier's verdict.
+
+        A done prerequisite no longer has an active verification candidate. The
+        scheduler still needs its dependency binding and result availability;
+        raw worker prose (which can say 'awaiting review') is not current state.
+        Context-only edges must never be promoted to scheduling prerequisites.
+        """
+        requires = snapshot.graph().requires
+        return {
+            task.id: [
+                {"taskId": dependency.id, "taskRevision": dependency.revision,
+                 "state": dependency.state, "accepted": dependency.state == "done",
+                 "resultAvailable": bool(dependency.result),
+                 "acceptedTurnId": dependency.accepted_turn_id,
+                 "source": "current_canonical_dependency"}
+                for dependency in (snapshot.task(identity) for identity in sorted(requires[task.id]))
+            ]
+            for task in snapshot.active_tasks if requires[task.id]
+        }
 
     def write_conflict(self, snapshot, task_id, specification):
         targets = [Path(p).resolve() for p in specification.get("writeTargets", [])]
