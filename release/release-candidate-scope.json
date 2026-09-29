@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-29T03:56:27.748917+00:00",
+  "generatedAt": "2026-09-29T04:04:42.901042+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -47,7 +47,7 @@
     },
     "conversation_v2_integration": {
       "description": "Conversation v2 and Jev integration with current main.",
-      "pathCount": 34
+      "pathCount": 35
     },
     "workspace_completion": {
       "description": "Complete user-authorized workspace source checkpoint across Jev, Lab and shared product owners.",
@@ -155,10 +155,10 @@
     }
   },
   "summary": {
-    "pathCount": 1497,
+    "pathCount": 1498,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1298
+      "keep_release": 1299
     },
     "groupCounts": {
       "local_docs": 122,
@@ -169,7 +169,7 @@
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
-      "conversation_v2_integration": 34,
+      "conversation_v2_integration": 35,
       "workspace_completion": 319,
       "memory_lifecycle": 15,
       "verification": 112,
@@ -5309,6 +5309,13 @@
       "disposition": "keep_release",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-gravity-harness.test.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "modified"
     },
     {
