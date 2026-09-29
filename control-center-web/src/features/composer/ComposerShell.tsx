@@ -6,6 +6,7 @@ import {
   composerAttachmentKind,
 } from '@/contracts/attachment-policy';
 import { managedAgentMediaContentPath } from '@/platform/transport';
+import { ImageGallery } from '@/features/conversation-ui/media/ImageGallery';
 import './composer-enhancements.css';
 import './composer-workbench.css';
 
@@ -122,45 +123,29 @@ export function ComposerShell({
  */
 export function ComposerAttachmentPreview({ attachment }: { attachment: ComposerShellAttachment }) {
   const transport = useOptionalControlTransport();
-  const [localUrl, setLocalUrl] = useState('');
-  const [failed, setFailed] = useState(false);
+  const [local, setLocal] = useState<{ file: File; url: string } | null>(null);
   const isImage = composerAttachmentKind(attachment.mimeType) === 'image';
   const previewFile = isImage ? attachment.previewFile : undefined;
-
-  const managedPath = isImage && attachment.sha256
-    ? managedAttachmentContentPath(attachment)
-    : null;
-  const managedUrl = managedPath
-    ? transport?.agentMediaContentUrl?.(managedPath) ?? managedPath
-    : null;
-
+  // Ownership is enforced by the existing media route. An optional hash is not a thumbnail gate.
+  const managedPath = isImage ? managedAttachmentContentPath(attachment) : null;
+  const managedUrl = managedPath ? transport?.agentMediaContentUrl?.(managedPath) ?? managedPath : '';
   useEffect(() => {
-    setFailed(false);
-    if (!previewFile || typeof URL.createObjectURL !== 'function') {
-      setLocalUrl('');
-      return undefined;
-    }
-    const nextUrl = URL.createObjectURL(previewFile);
-    setLocalUrl(nextUrl);
-    return () => URL.revokeObjectURL(nextUrl);
+    if (!previewFile || typeof URL.createObjectURL !== 'function') { setLocal(null); return; }
+    const url = URL.createObjectURL(previewFile); setLocal({ file: previewFile, url });
+    return () => URL.revokeObjectURL(url);
   }, [previewFile]);
-
   if (!isImage) {
     const badge = composerAttachmentBadge(attachment.name, attachment.mimeType);
-    return badge
-      ? <i aria-hidden="true" className="agent-composer__attachment-badge">{badge}</i>
-      : <Paperclip aria-hidden="true" size={16} />;
+    return badge ? <i aria-hidden="true" className="agent-composer__attachment-badge">{badge}</i> : <Paperclip aria-hidden="true" size={16} />;
   }
-  const previewUrl = previewFile ? localUrl : managedUrl;
-  if (!previewUrl || failed) return <Paperclip aria-hidden="true" size={16} />;
-  return (
-    <img
-      alt=""
-      draggable={false}
-      src={previewUrl}
-      onError={() => setFailed(true)}
-    />
-  );
+  // Never paint a prior File's ObjectURL while a replacement effect is still pending.
+  const previewUrl = previewFile ? local?.file === previewFile ? local.url : '' : managedUrl;
+  if (!previewUrl) return <Paperclip aria-hidden="true" size={16} />;
+  return <ImageGallery key={previewUrl} compact items={[{
+    id: attachment.id, source: previewUrl, name: attachment.name, alt: attachment.name,
+    mimeType: attachment.mimeType, byteSize: attachment.byteSize, origin: 'local_draft',
+    caption: attachment.description || '待发送附件；打开预览不会把图片发送给模型。', receipt: managedPath || undefined,
+  }]} />;
 }
 
 function managedAttachmentContentPath(attachment: ComposerShellAttachment): string | null {

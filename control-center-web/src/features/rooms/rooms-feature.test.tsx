@@ -2126,7 +2126,7 @@ describe('Rooms experience', () => {
     expect(composer).toHaveValue('下一条补充说明');
 
     const restored = within(screen.getByLabelText('待发送附件'))
-      .getAllByRole('button')
+      .getAllByRole('button', { name: /^移除 / })
       .map((button) => button.getAttribute('aria-label'));
     expect(restored).toEqual([
       '移除 newer-duplicate.png',

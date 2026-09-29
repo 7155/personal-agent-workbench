@@ -1468,7 +1468,7 @@ describe('Agent experience', () => {
   it('opens the memory control from a historical receipt deep link without changing preferences', async () => {
     const transport = productionTransport();
     renderAgent(transport, '/agent?session=session-preview&tools=memory');
-    const search = await screen.findByRole('textbox', { name: '搜索工具' });
+    const search = await screen.findByRole('textbox', { name: '搜索当前对话功能' });
     expect(search).toHaveValue('记忆');
     expect(transport.requests.some((call) => call.pathId === 'agent.session.capability-policy.update')).toBe(false);
   });
@@ -3782,9 +3782,9 @@ describe('Agent experience', () => {
 
     await openCommandPalette();
     await user.click(screen.getByRole('option', { name: /\/tools/ }));
-    const toolPicker = document.querySelector('.agent-tool-picker');
+    const toolPicker = document.querySelector('.pi-capabilities');
     expect(toolPicker).not.toBeNull();
-    expect(within(toolPicker as HTMLElement).getByText('当前对话工具')).toBeInTheDocument();
+    expect(within(toolPicker as HTMLElement).getByText('当前对话的能力')).toBeInTheDocument();
     await user.keyboard('{Escape}');
 
     await openCommandPalette();
@@ -4341,21 +4341,21 @@ describe('Agent experience', () => {
     renderAgent(transport);
     const trigger = await screen.findByRole(
       'button',
-      { name: '对话功能：记忆、工具、插件与技能；这段对话可执行工具：14 个；已登记工具：14 个' },
+      { name: '对话功能：记忆、工具、插件与技能；14 个当前可用工具，14 个已登记工具' },
       { timeout: 5_000 },
     );
 
     await user.click(trigger);
     expect(screen.getByRole('button', { name: /^控制中心概览/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^受控命令/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^记忆召回/ }).closest('article')).toHaveTextContent(
-      '把相关记忆加入对话，并允许 Agent 查询记忆。关闭后从下一轮停止使用；不会删除已保存的记忆。',
+    expect(screen.getByRole('button', { name: /^记忆召回/ })).toHaveTextContent(
+      '按需要把相关记忆加入对话。关闭只影响后续使用，不删除已保存的记忆。',
     );
-    expect(screen.getByRole('button', { name: /^知识库 \/ Agent RAG/ }).closest('article')).toHaveTextContent(
-      '启用后，Agent 可按当前问题反复检索已允许的知识库。',
+    expect(screen.getByRole('button', { name: /^知识库 \/ Agent RAG/ })).toHaveTextContent(
+      '按当前问题检索已允许的知识库，保留资料来源。',
     );
-    await user.click(screen.getByRole('combobox', { name: '知识库 / Agent RAG的当前对话使用' }));
-    await user.click(await screen.findByRole('option', { name: '当前对话关闭' }));
+    await user.click(screen.getByRole('button', { name: /^知识库 \/ Agent RAG/ }));
+    await user.selectOptions(screen.getByRole('combobox', { name: '此对话如何使用' }), 'disabled');
     await waitFor(() => expect(transport.requests).toContainEqual(expect.objectContaining({
       request: expect.objectContaining({
         pathId: 'agent.session.capability-policy.update',
@@ -4364,6 +4364,7 @@ describe('Agent experience', () => {
       }),
     })));
     await user.click(screen.getByRole('button', { name: /^控制中心概览/ }));
+    await user.click(screen.getByRole('button', { name: '加入消息' }));
 
     expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('帮我看看当前状态：');
     expect(screen.queryByText('overview')).not.toBeInTheDocument();
@@ -4378,9 +4379,9 @@ describe('Agent experience', () => {
 
     expect(await screen.findByRole('button', { name: '控制中心迁移' })).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: '消息' })).toBeInTheDocument();
-    const unavailableTools = await screen.findByRole('button', { name: '对话功能：记忆、工具、插件与技能；能力列表暂不可用' });
-    expect(unavailableTools).toBeDisabled();
-    expect(unavailableTools).toHaveTextContent('功能 · 未加载');
+    const unavailableTools = await screen.findByRole('button', { name: '对话功能：记忆、工具、插件与技能；能力目录暂不可用' });
+    expect(unavailableTools).toBeEnabled();
+    expect(unavailableTools).toHaveTextContent('功能 · 未同步');
   });
 
   it('opens the backend active conversation instead of a newer empty Session', async () => {
@@ -4602,7 +4603,7 @@ describe('Agent experience', () => {
 
     expect(await screen.findByRole(
       'button',
-      { name: /这段对话可执行工具：14 个；已登记工具：14 个/ },
+      { name: /14 个当前可用工具，14 个已登记工具/ },
       { timeout: 5_000 },
     )).toBeEnabled();
 
@@ -4626,7 +4627,7 @@ describe('Agent experience', () => {
     )).toBeEnabled();
     expect(await screen.findByRole(
       'button',
-      { name: /这段对话可执行工具：14 个；已登记工具：14 个/ },
+      { name: /14 个当前可用工具，14 个已登记工具/ },
       { timeout: 5_000 },
     )).toBeEnabled();
     expect(useAgentLiveStore.getState().projections['session-preview']?.messageOrder ?? []).toEqual([]);

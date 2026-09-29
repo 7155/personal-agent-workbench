@@ -166,19 +166,20 @@ describe('AgentComposer macOS input methods', () => {
       </TooltipProvider>,
     );
 
-    const trigger = screen.getByRole('button', { name: '对话功能：记忆、工具、插件与技能；这段对话可执行工具：1 个；已登记工具：1 个' });
+    const trigger = screen.getByRole('button', { name: '对话功能：记忆、工具、插件与技能；1 个当前可用工具，1 个已登记工具' });
     expect(trigger).toHaveTextContent('功能');
     expect(screen.queryByRole('button', { name: '当前对话插件与技能' })).not.toBeInTheDocument();
     fireEvent.click(trigger);
-    const dialog = screen.getByRole('dialog', { name: '当前对话工具' });
-    expect(within(dialog).getByRole('combobox', { name: '规划与任务的当前对话使用' })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: '当前对话的能力' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^规划与任务/ }));
+    expect(within(dialog).getByRole('combobox', { name: '此对话如何使用' })).toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.click(within(dialog).getByRole('button', { name: '当前对话插件与技能' }));
-    expect(screen.getByRole('dialog', { name: '当前对话插件与技能' })).toHaveTextContent('没有找到插件或技能');
-    fireEvent.click(screen.getByRole('button', { name: '工具 · 1/1' }));
-    expect(screen.getByRole('dialog', { name: '当前对话工具' })).toHaveTextContent('规划与任务');
-    fireEvent.click(within(dialog).getByRole('button', { name: '关闭当前对话工具' }));
-    expect(screen.queryByRole('dialog', { name: '当前对话工具' })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /^技能/ }));
+    expect(dialog).toHaveTextContent('没有匹配的功能');
+    fireEvent.click(within(dialog).getByRole('button', { name: /^工具/ }));
+    expect(dialog).toHaveTextContent('规划与任务');
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭对话功能' }));
+    expect(screen.queryByRole('dialog', { name: '当前对话的能力' })).not.toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -218,7 +219,7 @@ describe('AgentComposer macOS input methods', () => {
     const send = view.getByRole('button', { name: '发送' });
     expect(controls).toContainElement(view.getByRole('button', { name: '添加内容' }));
     expect(controls).toContainElement(view.getByRole('button', { name: /对话权限/ }));
-    expect(controls).toContainElement(view.getByRole('button', { name: /这段对话可执行工具/ }));
+    expect(controls).toContainElement(view.getByRole('button', { name: /当前可用工具/ }));
     expect(controls).not.toContainElement(send);
     expect(send.closest('.agent-composer__toolbar')).not.toBeNull();
     expect(view.queryByRole('button', { name: '打开命令面板' })).not.toBeInTheDocument();
@@ -263,7 +264,7 @@ describe('AgentComposer macOS input methods', () => {
     expect(view.getByRole('textbox', { name: '消息' })).toHaveAttribute('placeholder', '继续追问经营数据…');
     expect(view.getByRole('button', { name: '添加内容' })).toBeInTheDocument();
     expect(view.queryByRole('button', { name: /对话权限/ })).not.toBeInTheDocument();
-    expect(view.queryByRole('button', { name: /这段对话可执行工具/ })).not.toBeInTheDocument();
+    expect(view.queryByRole('button', { name: /当前可用工具/ })).not.toBeInTheDocument();
     expect(view.getByRole('button', { name: /发送/ })).toBeInTheDocument();
   });
 

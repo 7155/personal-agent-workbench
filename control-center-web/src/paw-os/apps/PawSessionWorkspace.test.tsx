@@ -141,9 +141,10 @@ describe('PAWOS Agent Session structural migration', () => {
         toolPickerIntent={{ id: 'memory-request-1', query: '记忆' }}
         onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
     </TooltipProvider></ControlTransportProvider>);
-    const search = await screen.findByRole('textbox', { name: '搜索工具' });
+    const search = await screen.findByRole('textbox', { name: '搜索当前对话功能' });
     expect(search).toHaveValue('记忆');
-    expect(screen.getByRole('combobox', { name: '记忆召回的当前对话使用' })).toBeVisible();
+    await userEvent.setup().click(screen.getByRole('button', { name: /^记忆召回/ }));
+    expect(screen.getByRole('combobox', { name: '此对话如何使用' })).toBeVisible();
     await act(async () => { delayedModel.resolve({}); });
   });
 

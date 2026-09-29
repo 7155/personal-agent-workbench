@@ -72,16 +72,15 @@ it('starts memory off and updates only the selected partner through the Session 
   </ControlTransportProvider></QueryClientProvider>);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('button', { name: /对话功能：/ }));
-  await user.click(await screen.findByRole('button', { name: '当前对话记忆已关闭，打开记忆开关' }));
-  await user.click(screen.getByRole('combobox', { name: '记忆召回的当前对话使用' }));
-  await user.click(screen.getByRole('option', { name: '当前对话启用' }));
-  await screen.findByRole('button', { name: '当前对话记忆已开启，打开记忆开关' });
+  await user.click(await screen.findByRole('button', { name: /^记忆召回 当前已关闭/ }));
+  await user.selectOptions(screen.getByRole('combobox', { name: '此对话如何使用' }), 'enabled');
+  await screen.findByRole('button', { name: /^记忆召回 当前可用/ });
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('combobox', { name: '选择要设置记忆和插件的伙伴' }));
   await user.click(screen.getByRole('option', { name: 'Mars' }));
   await waitFor(() => expect(screen.getByRole('button', { name: /对话功能：/ })).toBeEnabled());
   await user.click(screen.getByRole('button', { name: /对话功能：/ }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '当前对话记忆已关闭，打开记忆开关' })).toBeVisible());
+  await waitFor(() => expect(screen.getByRole('button', { name: /^记忆召回 当前已关闭/ })).toBeVisible());
 });
 
 it('changes model reasoning on the selected partner and rereads that Session', async () => {

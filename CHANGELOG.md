@@ -5,6 +5,18 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Add Pi Content V5: result-first tool records with separate argument tabs,
+  stable adjacent-image galleries, local draft previews, zoom/comparison, and
+  a searchable Session-bound capability catalog. Keep installation, disclosure,
+  authorization and actual invocation distinct.
+- Add Studio V6: an on-demand delivery desk with format covers, search, window-local
+  pins, source results and return to original task controls in one Dialog.
+  Image overview/focus and canvas backgrounds preserve reading state without
+  modifying file bytes, task acceptance or the application theme.
+- Align new content surfaces with PAW typography and semantic text colors;
+  improve small-label readability and light/dark contrast, and preserve the
+  capability popover's intended width against shared primitive styles.
+
 - Include current prerequisite revisions, acceptance state and result
   availability in Jev scheduling decisions. Dependency materials also carry
   the canonical completion timestamp so verifiers can check acceptance before

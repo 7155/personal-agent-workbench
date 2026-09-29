@@ -1660,7 +1660,7 @@ describe('Agent chat rendering', () => {
 
     const image = screen.getByRole('img', { name: '受控图片' });
     expect(image).toHaveAttribute('src', managedReceipt);
-    expect(container.querySelector('.paw-rich-image img')).toBe(image);
+    expect(container.querySelector('.paw-image-gallery img')).toBe(image);
 
     rerender(<AgentBlock block={imageBlock({ src: managedReceipt, alt: '伪造回执' })} />);
     expect(screen.queryByRole('img', { name: '伪造回执' })).not.toBeInTheDocument();
@@ -1688,8 +1688,8 @@ describe('Agent chat rendering', () => {
     );
     fireEvent.error(image);
     expect(screen.queryByRole('img', { name: '原始对话图片' })).not.toBeInTheDocument();
-    expect(screen.getByText('图片暂时无法读取')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '重试读取' }));
+    expect(screen.getByText('图片未能加载')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试预览' }));
     expect(screen.getByRole('img', { name: '原始对话图片' })).toHaveAttribute('src', image.getAttribute('src'));
   });
 

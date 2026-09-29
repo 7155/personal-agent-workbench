@@ -1,0 +1,8 @@
+body { margin:0; background:var(--color-surface); color:var(--color-text); }
+.studio-v6-fixture { max-width:840px; margin:30px auto; padding:20px; font:14px/1.8 var(--font-sans,system-ui); }
+.studio-v6-fixture>header { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+.studio-v6-fixture select { padding:8px; border:1px solid var(--color-border); border-radius:6px; color:inherit; background:var(--color-surface); }
+.studio-v6-fixture>h1 { font-size:27px; margin:24px 0 12px; }.studio-v6-fixture>p { color:var(--color-text-secondary); }
+.studio-v6-dialog { width:min(1180px,calc(100vw - 30px)); max-width:calc(100vw - 20px); height:min(850px,calc(100dvh - 30px)); display:flex; flex-direction:column; min-height:0; padding:20px 0 0; gap:0; overflow:hidden; }
+.studio-v6-dialog>h2,.studio-v6-dialog>p { padding:0 24px; margin:0 0 5px; }.studio-v6-dialog>h2 { font-size:15px; }.studio-v6-dialog>p { font-size:11px; }
+.studio-v6-desk { flex:1; min-height:0; }.studio-v6-desk[hidden] { display:none; }.studio-v6-task { min-height:0; overflow:auto; padding:25px; }.studio-v6-task code { overflow-wrap:anywhere; }

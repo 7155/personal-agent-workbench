@@ -79,7 +79,7 @@ function snapshot(currentRoomId: string) {
   const a = task('api', '恢复后重新核实文件读取回执', 'participant-firstlight', parallel || scene === 'single' || scene === 'assignment' || scene === 'revision' ? 'active' : 'done');
   const assignment = scene === 'assignment' ? { taskHash: 'fixture-assignment-v1', accepted_turn_id: 'a' } : {};
   const b = { ...task('ui', '保留阅读位置与未提交内容', 'participant-future', parallel ? 'active' : scene === 'review' ? 'review' : scene === 'returned' ? 'queued' : scene === 'failed' ? 'failed' : 'done'), revision: scene === 'returned' ? 2 : 1 };
-  const result = scene === 'review' ? { ...b, result: '已提交恢复界面与针对性回归。等待独立伙伴核对。' } : b;
+  const result = scene === 'review' ? { ...b, result: '已提交恢复界面与针对性回归。等待独立伙伴核对。' } : scene === 'final' ? { ...b, artifacts: ['delivery/synthetic-reading-report.md'], result: '合成成果记录，仅验证原 Room 的来源跳转，不读取真实文件。' } : b;
   const phase = planning ? 'plan' : hasApproval && planState !== 'approved' ? planState : scene === 'synthesize' ? 'synthesize' : scene === 'final' || scene === 'failed' ? 'final' : 'execute';
   const effects = planning ? [effect('plan', 'root', 'plan', 'running', 'participant-present')]
     : parallel ? [effect('a', 'api', 'execute', 'running', 'participant-firstlight'), effect('b', 'ui', 'execute', 'running', 'participant-future')]

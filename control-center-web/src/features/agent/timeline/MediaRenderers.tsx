@@ -8,7 +8,7 @@ import { stickerAsset } from './PersonaAvatar';
 import { BlockedMedia } from './StructuredRenderers';
 import type { AgentBlockRenderProps } from './renderer-contract';
 import { finiteNumber, text } from './renderer-values';
-import { RichImage } from './rich/RichImage';
+import { ConversationImageGallery } from './rich/ConversationImageGallery';
 import { RichMediaPlayer } from './rich/RichMediaPlayer';
 import './rich/rich-conversation.css';
 
@@ -39,14 +39,8 @@ export function CitationBlockRenderer({ block }: AgentBlockRenderProps) {
   </section>;
 }
 
-export function ImageBlockRenderer({ block }: AgentBlockRenderProps) {
-  const desktop = usePawOsDesktop(); const transport = useOptionalControlTransport(); const data = block.data;
-  const receiptPath = managedAgentMediaContentPath(text(data.receiptUrl));
-  const source = receiptPath ? transport?.agentMediaContentUrl?.(receiptPath) ?? receiptPath : '';
-  if (!source) return <BlockedMedia detail="这条消息没有可验证的附件回执。请重新上传图片后发送。" icon={<ImageIcon size={16} />} label="图片回执不可用" />;
-  return <RichImage key={source} source={source} alt={text(data.alt) || '对话图片'} caption={text(data.caption)}
-    width={imageDimension(data.width ?? data.pixelWidth) || undefined} height={imageDimension(data.height ?? data.pixelHeight) || undefined}
-    {...(desktop ? { onOpenExternal: () => desktop.openWindow({ appId: 'agent', target: { kind: 'result', id: resultId('image'), title: text(data.alt) || '对话图片', resultKind: 'image', source, subtitle: text(data.caption) || '来自当前 Agent 消息的受控图片回执' } }) } : {})} />;
+export function ImageBlockRenderer({ block, sessionId }: AgentBlockRenderProps) {
+  return <ConversationImageGallery blocks={[block]} sessionId={sessionId} />;
 }
 
 export function AudioBlockRenderer({ block }: AgentBlockRenderProps) {
@@ -66,6 +60,7 @@ export function FileBlockRenderer({ block, sessionId }: AgentBlockRenderProps) {
   const transport = useOptionalControlTransport();
   const path = text(block.data.mimeType).startsWith('video/') ? managedAgentMediaContentPath(text(block.data.receiptUrl)) : null;
   const source = path ? transport?.agentMediaContentUrl?.(path) ?? path : '';
+  if (text(block.data.mimeType).startsWith('image/')) return <ConversationImageGallery blocks={[block]} sessionId={sessionId} />;
   return <>{source ? <RichMediaPlayer key={source} kind="video" source={source} name={text(block.data.fileName ?? block.data.name) || '视频附件'} transcript={text(block.data.transcript)} /> : null}
     <AgentFileBlock data={block.data} sessionId={sessionId} /></>;
 }
@@ -103,5 +98,4 @@ function fileMeta(data: Record<string, unknown>): string {
   const sizeText = size ? size >= 1_048_576 ? `${(size / 1_048_576).toFixed(1)} MB` : `${Math.ceil(size / 1_024)} KB` : '';
   return [text(data.mimeType ?? data.type), sizeText].filter(Boolean).join(' · ') || '受控文件回执';
 }
-function imageDimension(value: unknown): number { const n = finiteNumber(value); return n >= 1 && n <= 8_192 ? Math.round(n) : 0; }
 function resultId(kind: string): string { return `${kind}-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`; }

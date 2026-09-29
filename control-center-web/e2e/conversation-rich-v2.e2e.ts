@@ -29,10 +29,13 @@ test('rich conversation renders math, data, diagrams and controlled media', asyn
   await expect(mermaid).toHaveAttribute('sandbox', '');
   await expect(page.frameLocator('iframe[title="Mermaid 图示"]').locator('svg')).toBeVisible();
   await expect(page.getByTitle('静态 SVG 图示', { exact: true })).toHaveAttribute('sandbox', '');
-  const opener = page.getByRole('button', { name: '放大图片：上一版工作台设计截图' });
+  const opener = page.getByRole('button', { name: '查看图片 上一版工作台设计截图' });
+  await opener.scrollIntoViewIfNeeded();
+  await expect(opener.locator('img')).toHaveAttribute('data-loaded', 'true');
   await opener.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: '原尺寸', exact: true }).click();
   await dialog.getByRole('button', { name: '放大图片', exact: true }).click();
   await expect(dialog.locator('output')).toHaveText('125%');
   await page.keyboard.press('Escape');
