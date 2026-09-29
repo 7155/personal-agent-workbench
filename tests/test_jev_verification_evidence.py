@@ -458,7 +458,8 @@ class VerificationPreparationTests(host.JevHostFixture):
         pack = json.loads(verifier["request"]["taskBrief"]["objective"].split("\nExecutionPack:\n")[1])
         instructions = verifier["request"]["taskBrief"]["objective"].split("\nExecutionPack:\n")[0]
         self.assertIn("现有read工具", instructions)
-        self.assertIn("byteOffset=0、byteLimit=32768", instructions)
+        self.assertIn("offset=1、limit=2000", instructions)
+        self.assertIn("行号，不是字节偏移", instructions)
         self.assertNotIn("用workspace_read", instructions)
         evidence = pack["workerToolEvidence"]
         self.assertEqual(evidence["binding"]["dispatchId"], effect["effectId"])

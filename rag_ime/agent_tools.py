@@ -2941,6 +2941,12 @@ def _normalize_runtime_tool_args(
     args: Mapping[str, object],
 ) -> dict[str, object]:
     normalized = dict(args)
+    # Pi native projections call the Host target directly, not the `read`
+    # alias. Preserve managed-resource routing for their line-based contract.
+    if tool == "workspace_read" and not normalized.get("resourceRef"):
+        path = str(normalized.get("path") or "")
+        if re.match(r"^(?:artifact|media|room|skill)://", path):
+            normalized["resourceRef"] = normalized.pop("path")
     if tool != "memory" or str(normalized.get("op") or "").strip():
         return normalized
 
@@ -4087,6 +4093,34 @@ class ControlToolGateway:
                 sort_keys=True,
                 indent=2,
             )
+        if "lineOffset" in args or "lineLimit" in args:
+            start = _bounded_int(args.get("lineOffset"), default=1, minimum=1, maximum=50_000_000)
+            limit = _bounded_int(args.get("lineLimit"), default=2_000, minimum=1, maximum=2_000)
+            lines = content.splitlines(keepends=True)
+            if start > max(1, len(lines)):
+                raise ValueError("managed resource lineOffset is beyond end of content")
+            selected: list[str] = []
+            size = 0
+            for line in lines[start - 1:start - 1 + limit]:
+                line_size = len(line.encode("utf-8"))
+                if size + line_size > 40 * 1024:
+                    if not selected:
+                        raise ValueError("managed resource line exceeds native read limit; use resourceRef byte pagination")
+                    break
+                selected.append(line)
+                size += line_size
+            end_line = start - 1 + len(selected)
+            next_line = end_line + 1 if end_line < len(lines) else None
+            return {
+                "summary": f"已读取受管资源 {resource_ref}",
+                "resourceRef": resource_ref, "resourceKind": parsed.scheme,
+                "resourceId": resource_id, "metadata": metadata,
+                "content": "".join(selected), "contentBytes": size,
+                "size": len(content.encode("utf-8")),
+                "startLine": start, "endLine": end_line,
+                "nextLineOffset": next_line, "truncated": next_line is not None,
+                "resourceRevision": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            }
         offset = _bounded_int(
             args.get("offset"),
             default=0,

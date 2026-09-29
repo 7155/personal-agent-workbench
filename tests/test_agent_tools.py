@@ -799,7 +799,8 @@ class ControlToolGatewayTests(unittest.TestCase):
             for kind, request in self.management.memory_requests
             if kind == "evidence"
         ]
-        self.assertEqual(participant_calls, [self.session["id"]])
+        # Scenario policy context and memory visibility each resolve the owner.
+        self.assertEqual(participant_calls, [self.session["id"], self.session["id"]])
         self.assertEqual(len(evidence_requests), 2)
         self.assertTrue(
             all(
@@ -3146,6 +3147,43 @@ class ControlToolGatewayTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "does not belong"):
             read("room://room:other")
+
+        # Actual Pi native callbacks name workspace_read, with path and line
+        # arguments, bypassing the public `read` alias normalization.
+        def native_read(path: str, **args: object) -> dict[str, object]:
+            return gateway.execute({
+                **self._tool_call("workspace_read", "read", path=path, **args),
+                "sessionId": coordinator["id"],
+            })["result"]
+
+        first = native_read("media://media_abcdefghijkl", lineOffset=1, lineLimit=1)
+        self.assertEqual(first["content"], "第一段\n")
+        self.assertEqual(first["nextLineOffset"], 2)
+        second = native_read("media://media_abcdefghijkl", lineOffset=2, lineLimit=1)
+        self.assertEqual(second["content"], "second\n")
+        self.assertIsNone(second["nextLineOffset"])
+        self.assertEqual(first["resourceRevision"], second["resourceRevision"])
+        with self.assertRaisesRegex(ValueError, "does not belong"):
+            native_read("room://room:other", lineOffset=1)
+        with self.assertRaisesRegex(ValueError, "beyond end"):
+            native_read("media://media_abcdefghijkl", lineOffset=3)
+        collaboration.read_media_resource = lambda *args, **kwargs: (
+            {"mimeType": "text/plain"}, ("证据\n" * 10_000).encode(),
+        )
+        page = native_read("media://media_abcdefghijkl", lineOffset=1, lineLimit=2000)
+        self.assertEqual(page["nextLineOffset"], 2001)
+        self.assertTrue(page["truncated"])
+        collaboration.read_media_resource = lambda *args, **kwargs: (
+            {"mimeType": "text/plain"}, (b"x" * 20_000 + b"\n") * 3,
+        )
+        page = native_read("media://media_abcdefghijkl", lineOffset=1)
+        self.assertEqual(page["nextLineOffset"], 3)
+        self.assertEqual(page["contentBytes"], 40_002)
+        collaboration.read_media_resource = lambda *args, **kwargs: (
+            {"mimeType": "text/plain"}, b"x" * (40 * 1024 + 1),
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds native read limit"):
+            native_read("media://media_abcdefghijkl", lineOffset=1)
 
     def test_workspace_job_starts_only_after_hash_bound_approval_and_exposes_logs(self) -> None:
         workspace = Path(self.tmp.name) / "background-workspace"

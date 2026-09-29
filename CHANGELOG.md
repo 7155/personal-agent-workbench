@@ -9,6 +9,9 @@ source checkpoint is not a signed and notarized macOS binary release.
   availability in Jev scheduling decisions. Do not confuse historical worker
   prose or completed verification with a new dependency barrier; reference
   edges remain non-blocking, and downstream execution still needs real receipts.
+- Route Pi native `read` callbacks for managed resource references to their
+  authorized owners, preserving line-based pagination and bounded output.
+  Jev verifier instructions now use the actual native read contract.
 
 - Add Workspace V3 reading navigation and local text/motion preferences, task
   and delivered-file filters, collapsed ended-task history, and explicit
