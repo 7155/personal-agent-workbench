@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-29T07:55:28.485249+00:00",
+  "generatedAt": "2026-09-29T08:08:26.365985+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -47,7 +47,7 @@
     },
     "pi_content_studio_v5_v6": {
       "description": "Pi Content V5 and Studio V6 presentation, existing-owner integration and regression checks.",
-      "pathCount": 16
+      "pathCount": 41
     },
     "workspace_completion": {
       "description": "Complete user-authorized workspace source checkpoint across Jev, Lab and shared product owners.",
@@ -83,7 +83,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 62
+      "pathCount": 61
     },
     "trace_optimization": {
       "description": "Trace diagnosis and bounded optimization source, contracts and executable regressions.",
@@ -159,10 +159,10 @@
     }
   },
   "summary": {
-    "pathCount": 1516,
+    "pathCount": 1540,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1317
+      "keep_release": 1341
     },
     "groupCounts": {
       "local_docs": 122,
@@ -173,7 +173,7 @@
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
-      "pi_content_studio_v5_v6": 16,
+      "pi_content_studio_v5_v6": 41,
       "workspace_completion": 315,
       "conversation_v2_integration": 49,
       "memory_lifecycle": 15,
@@ -182,7 +182,7 @@
       "composition_refactor": 32,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
-      "conversation_controls": 62,
+      "conversation_controls": 61,
       "trace_optimization": 61,
       "scheduled_tasks": 25,
       "session_full_access": 8,
@@ -1215,6 +1215,34 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/fixtures/delivery-studio-v6-data.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/delivery-studio-v6.css",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/delivery-studio-v6.html",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/delivery-studio-v6.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/e2e/fixtures/file-previews.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -1306,6 +1334,41 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/fixtures/pi-content-v5-assets.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/pi-content-v5-data.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/pi-content-v5.css",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/pi-content-v5.html",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/pi-content-v5.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/e2e/fixtures/readme-lab/index.html",
       "status": "added",
       "group": "public_showcase",
@@ -1339,6 +1402,13 @@
       "disposition": "keep_release",
       "group": "memory_lifecycle",
       "reason": "Keep shared metric labels readable without icons, including Memory lifecycle at desktop and narrow widths."
+    },
+    {
+      "path": "control-center-web/e2e/pi-studio-v5-v6.e2e.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
     },
     {
       "path": "control-center-web/e2e/workbench-design.e2e.ts",
@@ -2629,6 +2699,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/agent/composer/PiCapabilityBrowser.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/agent/composer/ToolPicker.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -2643,11 +2720,25 @@
       "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions."
     },
     {
+      "path": "control-center-web/src/features/agent/composer/capability-display.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/agent/composer/permission-policy.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "session_full_access",
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/composer/pi-capabilities.css",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/agent/composer/tool-picker.css",
@@ -2874,6 +2965,13 @@
       "reason": "Lossless reference archives, attribution and dated acceptance records."
     },
     {
+      "path": "control-center-web/src/features/agent/timeline/conversation-content-groups.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/progressive-markdown/ATTRIBUTION.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -2886,6 +2984,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/ConversationImageGallery.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/agent/timeline/rich/RichBlockTools.tsx",
@@ -3168,6 +3273,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/components/pi-tool-card.css",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/components/tool-status-mark.css",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -3215,6 +3327,41 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/media/ImageGallery.test.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/media/ImageGallery.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/media/ImageGalleryView.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/media/image-gallery-model.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/media/image-gallery.css",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/conversation-ui/model/tool-receipt.ts",
@@ -5002,6 +5149,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/JevDeliveryDesk.tsx",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/JevRailFilters.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -5012,8 +5166,8 @@
       "path": "control-center-web/src/paw-os/apps/PawAgentApp.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "conversation_controls",
-      "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawAgentApp.tsx",
@@ -5363,6 +5517,20 @@
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/jev-delivery-desk-model.ts",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/jev-delivery-desk.css",
+      "disposition": "keep_release",
+      "group": "pi_content_studio_v5_v6",
+      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
       "status": "added"
     },
     {

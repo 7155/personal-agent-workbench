@@ -755,7 +755,9 @@ describe('PAWOS Agent App', () => {
 
     await user.click(screen.getByRole('button', { name: '重新读取目录' }));
 
-    const model = await screen.findByRole('button', { name: '模型与推理：GPT-5.6 Luna · gpt · 高' });
+    // Recovery is asynchronous; keep exact state and request-count assertions
+    // with the same bounded deadline as Session model discovery under load.
+    const model = await screen.findByRole('button', { name: '模型与推理：GPT-5.6 Luna · gpt · 高' }, { timeout: 5_000 });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(modelCalls).toBe(2);
     expect(model).toBeEnabled();
