@@ -1,6 +1,11 @@
-import { ArrowUpRight, CheckCircle2, ExternalLink, FileText } from 'lucide-react';
-import { memo, useMemo, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { ArrowUpRight, CheckCircle2, FileText } from 'lucide-react';
+import { createContext, memo, useContext, useMemo, type ComponentProps, type ReactNode } from 'react';
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
+import remarkMath from 'remark-math';
+import { RichTableFrame } from './rich/RichBlockTools';
+import { RichMath } from './rich/RichMath';
+import { MarkdownImage } from './rich/RichImage';
+import './rich/rich-conversation.css';
 import remarkGfm from 'remark-gfm';
 import {
   evidenceEchoRoute,
@@ -72,7 +77,7 @@ export function MarkdownBody({
   }
   if (!progressiveMode) {
     return (
-      <div className="agent-markdown">
+      <div className="agent-markdown paw-rich-prose">
         <StableMarkdownFragment sessionId={sessionId} source={source} />
       </div>
     );
@@ -86,7 +91,7 @@ export function MarkdownBody({
   // motion or a hidden document, so the transcript stays truthful.
   return (
     <ProgressiveMarkdown
-      className="agent-markdown"
+      className="agent-markdown paw-rich-prose"
       documentKey={documentKey}
       isStreaming={streamingTail}
       renderChunk={(context) => renderProgressiveChunk(context, sessionId)}
@@ -217,6 +222,7 @@ function renderProgressiveChunk(context: ProgressiveChunkRenderContext, sessionI
           {context.openFence.prefix.trim() ? (
             <StableMarkdownFragment
               deferRichHtml
+              sessionId={sessionId}
               source={context.openFence.prefix}
             />
           ) : null}
@@ -268,134 +274,73 @@ const StableMarkdownFragment = memo(function StableMarkdownFragment({
   return <MarkdownFragment deferRichHtml={deferRichHtml} sessionId={sessionId} source={source} />;
 });
 
-function MarkdownFragment({
-  deferRichHtml = false,
-  sessionId = '',
-  source,
-  streamingTail = false,
-}: {
-  deferRichHtml?: boolean;
-  sessionId?: string;
-  source: string;
-  streamingTail?: boolean;
+/* Component identities are stable across token batches. Dynamic context travels
+ * through a provider, never through a freshly-created components object. */
+type MarkdownRenderContextValue = {
+  desktop: ReturnType<typeof usePawOsDesktop>;
+  sessionId: string;
+  deferRichHtml: boolean;
+  streamingTail: boolean;
+};
+const MarkdownRenderContext = createContext<MarkdownRenderContextValue | null>(null);
+
+function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+  const context = useContext(MarkdownRenderContext);
+  if (!context) return <span>{children}</span>;
+  const filePath = workspaceFileReference(href);
+  if (filePath) {
+    const target: EvidenceEchoEntity = { appId: 'files', entityId: filePath, label: fileName(filePath),
+      ...(context?.sessionId ? { sessionId: context.sessionId } : {}) };
+    return <a aria-label={`打开文件 ${target.label}`} className="agent-markdown__file-link" href={evidenceEchoRoute(target)}
+      onClick={event => { event.preventDefault(); openEvidenceEchoEntity(context.desktop, target); }} title={filePath}>
+      {children}<FileText aria-hidden="true" size={12} />
+    </a>;
+  }
+  const safe = safeLink(href);
+  return safe ? <a href={safe} target={safe.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
+}
+
+const MARKDOWN_COMPONENTS: Components = {
+  a: MarkdownLink,
+  p: ({ children, node: _node, ...props }) => <p {...props}>{children}<StreamingCursor active={hasStreamingTail(props)} /></p>,
+  li: ({ children, node: _node, ...props }) => <li {...props}>{children}<StreamingCursor active={hasStreamingTail(props)} /></li>,
+  td: ({ children, node: _node, ...props }) => <td {...props}>{children}<StreamingCursor active={hasStreamingTail(props)} /></td>,
+  h1: ({ children, node: _node, ...props }) => <h1 {...props}>{children}<StreamingCursor active={hasStreamingTail(props)} /></h1>,
+  h2: ({ children, node: _node, ...props }) => <h2 {...props}>{children}<StreamingCursor active={hasStreamingTail(props)} /></h2>,
+  h3: ({ children, node: _node, ...props }) => <h3 {...props}>{children}<StreamingCursor active={hasStreamingTail(props)} /></h3>,
+  code: MarkdownCode,
+  pre: ({ children }) => <>{children}</>,
+  table: ({ children, node: _node, ...props }) => <RichTableFrame><table {...props}>{children}</table></RichTableFrame>,
+  img: ({ src, alt }) => <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
+};
+
+function MarkdownCode({ className, children, node: _node, ...props }: ComponentProps<'code'> & ExtraProps) {
+  const context = useContext(MarkdownRenderContext);
+  const match = /language-([\w-]+)/u.exec(className ?? '');
+  const raw = String(children);
+  const code = raw.replace(/\n$/u, '');
+  const fenced = Boolean(match) || raw.endsWith('\n');
+  const tail = hasStreamingTail(props);
+  const waiting = Boolean(context?.deferRichHtml || context?.streamingTail || tail);
+  if (className?.includes('math-inline')) return <RichMath source={code} inline streaming={Boolean(context?.streamingTail)} />;
+  if (className?.includes('math-display')) return <RichMath source={code} streaming={waiting} />;
+  if (fenced && match?.[1]?.toLowerCase() === 'html') return waiting ? <HtmlOutputPlaceholder /> : <InlineHtmlOutput content={code} />;
+  return fenced ? <CodeContentBlock code={code} language={match?.[1] ?? 'text'} streamingTail={tail || waiting} />
+    : <code {...props}>{children}<StreamingCursor active={tail} /></code>;
+}
+
+function MarkdownFragment({ deferRichHtml = false, sessionId = '', source, streamingTail = false }: {
+  deferRichHtml?: boolean; sessionId?: string; source: string; streamingTail?: boolean;
 }) {
   const desktop = usePawOsDesktop();
-  return (
-    <ReactMarkdown
-      skipHtml
+  const context = useMemo(() => ({ desktop, sessionId, deferRichHtml, streamingTail }), [desktop, sessionId, deferRichHtml, streamingTail]);
+  return <MarkdownRenderContext.Provider value={context}>
+    <ReactMarkdown skipHtml
       remarkPlugins={streamingTail
-        ? [remarkGfm, remarkWorkspaceFileReferences, remarkLiteralHtml, remarkStreamingTail]
-        : [remarkGfm, remarkWorkspaceFileReferences, remarkLiteralHtml]}
-      components={{
-        a: ({ href, children }) => {
-          const filePath = workspaceFileReference(href);
-          if (filePath) {
-            const target: EvidenceEchoEntity = {
-              appId: 'files',
-              entityId: filePath,
-              label: fileName(filePath),
-              ...(sessionId ? { sessionId } : {}),
-            };
-            return (
-              <a
-                aria-label={`打开文件 ${target.label}`}
-                className="agent-markdown__file-link"
-                href={evidenceEchoRoute(target)}
-                onClick={(event) => {
-                  event.preventDefault();
-                  openEvidenceEchoEntity(desktop, target);
-                }}
-                title={filePath}
-              >
-                {children}
-                <FileText aria-hidden="true" size={12} />
-              </a>
-            );
-          }
-          const safe = safeLink(href);
-          return safe ? (
-            <a
-              href={safe}
-              target={safe.startsWith('http') ? '_blank' : undefined}
-              rel="noreferrer"
-            >
-              {children}
-              {safe.startsWith('http') ? <ExternalLink size={12} aria-hidden="true" /> : null}
-            </a>
-          ) : (
-            <span>{children}</span>
-          );
-        },
-        p: ({ children, node: _node, ...props }) => (
-          <p {...props}>
-            {children}
-            <StreamingCursor active={hasStreamingTail(props)} />
-          </p>
-        ),
-        li: ({ children, node: _node, ...props }) => (
-          <li {...props}>
-            {children}
-            <StreamingCursor active={hasStreamingTail(props)} />
-          </li>
-        ),
-        td: ({ children, node: _node, ...props }) => (
-          <td {...props}>
-            {children}
-            <StreamingCursor active={hasStreamingTail(props)} />
-          </td>
-        ),
-        h1: ({ children, node: _node, ...props }) => (
-          <h1 {...props}>
-            {children}
-            <StreamingCursor active={hasStreamingTail(props)} />
-          </h1>
-        ),
-        h2: ({ children, node: _node, ...props }) => (
-          <h2 {...props}>
-            {children}
-            <StreamingCursor active={hasStreamingTail(props)} />
-          </h2>
-        ),
-        h3: ({ children, node: _node, ...props }) => (
-          <h3 {...props}>
-            {children}
-            <StreamingCursor active={hasStreamingTail(props)} />
-          </h3>
-        ),
-        code: ({ className, children, node: _node, ...props }) => {
-          const match = /language-([\w-]+)/u.exec(className ?? '');
-          const raw = String(children);
-          const code = raw.replace(/\n$/u, '');
-          const fenced = Boolean(match) || raw.endsWith('\n');
-          const tail = hasStreamingTail(props);
-          const html = match?.[1]?.toLowerCase() === 'html';
-          if (fenced && html) {
-            return deferRichHtml || streamingTail || tail
-              ? <HtmlOutputPlaceholder />
-              : <InlineHtmlOutput content={code} />;
-          }
-          return fenced ? (
-            <CodeContentBlock
-              code={code}
-              language={match?.[1] ?? 'text'}
-              streamingTail={tail}
-            />
-          ) : (
-            <code {...props}>
-              {children}
-              <StreamingCursor active={tail} />
-            </code>
-          );
-        },
-        pre: ({ children }) => <>{children}</>,
-        img: ({ alt }) => (
-          <span className="agent-markdown__blocked-media">{alt || '图片'}</span>
-        ),
-      }}
-    >
-      {source}
-    </ReactMarkdown>
-  );
+        ? [remarkGfm, remarkMath, remarkWorkspaceFileReferences, remarkLiteralHtml, remarkStreamingTail]
+        : [remarkGfm, remarkMath, remarkWorkspaceFileReferences, remarkLiteralHtml]}
+      components={MARKDOWN_COMPONENTS}>{source}</ReactMarkdown>
+  </MarkdownRenderContext.Provider>;
 }
 
 type MarkdownAstNode = {

@@ -1,5 +1,6 @@
 import { ChevronDown, CircleAlert, GitBranch, Hand, Layers2, RefreshCw, Square, Workflow } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { useReceiptHighlight } from './use-receipt-highlight';
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { roomPlanetName } from '@/features/rooms/room-copy';
@@ -50,7 +51,7 @@ export function JevCompanion({ execution, room, connected = true, active = true,
         {routeRecovery}
         {abstention ? <details className="jev-dispatches"><summary>查看调度回执</summary><p>{graph?.phase === 'route' ? '路径判断暂未选出直接执行或先规划，当前没有运行中的执行。' : '最近的调度回执未选出下一步，当前没有运行或待派发的执行。任务仍保留，你可以停止本次任务。'}</p><p>{abstentionChoice === 'insufficient_evidence' ? '调度器选择了“现有证据不足”。' : '回执未提供进一步说明。'}</p></details> : null}
         {graph ? <>
-          <JevPhaseRail graph={graph} />
+          <JevPhaseRail graph={graph} active={active && !stale && graph.graphId === execution.liveSnapshot?.graphId} />
           <div className="jev-companion__scope"><span>{jevTaskCountLabel(graph)}</span><span>需求版本 {graph.requirementsRevision}</span></div>
           <JevTaskList graph={graph} actorName={actorName} active={active && !stale && !graph.stopped} />
           <JevDispatches graph={graph} actorName={actorName} />
@@ -78,12 +79,12 @@ function JevMissionHeader({ execution, room, connected, active, onStop, lead, tr
   const abstention = jevAbstention(graph);
   const headline = jevStatusLabel(graph, execution.loading);
   const { tasks, counts } = jevMission(graph);
-  const fresh = useFreshAcceptance(graph, active && !stale);
   const historical = Boolean(graph && execution.liveSnapshot && graph.graphId !== execution.liveSnapshot.graphId);
+  const fresh = useReceiptHighlight(graph?.graphId ?? '', graph?.tasks.filter(task => task.state === 'done').map(task => task.id) ?? [], active && !stale && !historical && !graph?.stopped, 900);
   const attention = historical ? null : jevAttention(graph);
   const canRetryRoute = Boolean(abstention && graph?.phase === 'route' && graph.graphId === execution.liveSnapshot?.graphId);
-  const running = Boolean(graph && !graph.stopped && !graph.final && graph.effects.some(effect => effect.executionStatus === 'running'));
-  const motion = active && !stale && !abstention && running;
+  const running = Boolean(graph && !graph.stopped && !graph.final && graph.effects.some(effect => effect.operation === 'dispatch' && effect.executionStatus === 'running' && graph.tasks.some(task => task.id === effect.request.taskId && task.revision === effect.request.taskRevision)));
+  const motion = active && !stale && !historical && !abstention && running;
   const planTasks = graph?.planApproval && jevAwaitingPlan(graph) ? graph.planApproval.tasks.length : 0;
   const tone = stale ? 'stale' : !graph ? 'idle' : graph.stopped ? 'stopped' : graph.final ? graph.final.status === 'completed' ? 'done' : 'failed'
     : jevAwaitingPlan(graph) ? 'waiting' : abstention ? 'waiting' : running ? 'running' : 'active';
@@ -103,7 +104,7 @@ function JevMissionHeader({ execution, room, connected, active, onStop, lead, tr
     <div className="jev-mission__top">
       <div className="jev-mission__lead">{lead}</div>
       <div className="jev-mission__tools">
-        <button className="jev-companion__sync" aria-label="同步 Jev 任务" title="重新读取任务状态" disabled={execution.loading} onClick={execution.refresh} type="button"><RefreshCw size={14} aria-hidden /></button>
+        <button className="jev-companion__sync" aria-label="同步 Jev 任务" title="重新读取任务状态" disabled={execution.loading} onClick={execution.refresh} type="button"><RefreshCw size={15} aria-hidden className={execution.loading ? 'jev-mission__syncing' : undefined} /></button>
         {trailing}
       </div>
     </div>
@@ -116,9 +117,9 @@ function JevMissionHeader({ execution, room, connected, active, onStop, lead, tr
           {historical ? <span className="jev-mission__history-label">历史记录</span> : null}
           <ChevronDown size={14} aria-hidden />
         </summary>
-        <div className="jev-companion__content"><CompanionDetails execution={execution} room={room} active={active} stale={stale} onStop={onStop} /></div>
+        <div className="jev-companion__content"><CompanionDetails execution={execution} room={room} active={active && !historical} stale={stale} onStop={onStop} /></div>
       </details>
-      {graph ? <JevPhaseRail graph={graph} /> : null}
+      {graph ? <JevPhaseRail graph={graph} active={active && !stale && graph.graphId === execution.liveSnapshot?.graphId} /> : null}
       {counts.total ? <button className="jev-mission__meter" type="button" onClick={onOpenTasks} disabled={!onOpenTasks}
         aria-label={`已验收 ${counts.accepted}/${counts.total}${summary.length ? `，${summary.join('，')}` : ''}。打开任务栏`}>
         <ol aria-hidden>{tasks.map(item => <li key={item.task.id} data-tone={item.tone} data-fresh={fresh.has(item.task.id) || undefined} title={`${item.task.objective.split(/[。\n]/u)[0].slice(0, 60)} · ${JEV_TASK_STAGE_LABELS[item.stage]}`} />)}</ol>
@@ -136,24 +137,6 @@ function JevMissionHeader({ execution, room, connected, active, onStop, lead, tr
       {action ? <button type="button" onClick={action.run}>{action.label}</button> : null}
     </section> : null}
   </aside>;
-}
-
-/** Tasks newly accepted since the last observed snapshot of the same graph. */
-function useFreshAcceptance(graph: JevSnapshot | null, observing: boolean): ReadonlySet<string> {
-  const previous = useRef<{ graphId: string; done: Set<string> } | null>(null);
-  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
-  useEffect(() => {
-    const before = previous.current;
-    const done = new Set(graph?.tasks.filter(task => task.state === 'done').map(task => task.id) ?? []);
-    previous.current = graph ? { graphId: graph.graphId, done } : null;
-    if (!graph || !observing || before?.graphId !== graph.graphId) { setFresh(current => current.size ? new Set() : current); return; }
-    const added = [...done].filter(id => !before.done.has(id));
-    if (!added.length) return;
-    setFresh(new Set(added));
-    const timer = window.setTimeout(() => setFresh(new Set()), 900);
-    return () => window.clearTimeout(timer);
-  }, [graph, observing]);
-  return fresh;
 }
 
 function CompanionDetails({ execution, room, active, stale, onStop }: { execution: JevExecution; room?: RoomSummary; active: boolean; stale: boolean; onStop?: () => void }) {
@@ -202,7 +185,7 @@ function JevTaskList({ graph, actorName, active }: { graph: JevSnapshot; actorNa
   </ol>;
 }
 
-function JevPhaseRail({ graph }: { graph: JevSnapshot }) {
+function JevPhaseRail({ graph, active = true }: { graph: JevSnapshot; active?: boolean }) {
   const phase = jevPhaseStep(graph.phase);
   const stages = STAGES.filter(([id]) => id === phase || id === 'final'
     || id === 'plan' && (graph.planApproval || graph.effects.some(effect => effect.request.purpose === 'plan'))
@@ -210,7 +193,7 @@ function JevPhaseRail({ graph }: { graph: JevSnapshot }) {
     || id === 'synthesize' && graph.effects.some(effect => effect.request.purpose === 'synthesize'));
   return <ol aria-label="任务阶段" className="jev-phase-rail" data-stopped={graph.stopped || undefined}>
     {stages.map(([id, label]) => <li aria-current={!graph.stopped && phase === id ? 'step' : undefined} data-current={phase === id || undefined} key={id}>
-      <span className="jev-phase-rail__mark" aria-hidden><JevActivityIcon size={13} state={id === 'final' ? graph.final?.status === 'completed' ? 'done' : graph.final ? 'failed' : 'queued' : id === 'route' || id === 'plan' ? 'planning' : id === 'synthesize' ? 'synthesizing' : 'running'} active={!graph.stopped && phase === id && graph.effects.some(effect => effect.executionStatus === 'running')} /></span><span>{label}</span>
+      <span className="jev-phase-rail__mark" aria-hidden><JevActivityIcon size={13} state={id === 'final' ? graph.final?.status === 'completed' ? 'done' : graph.final ? 'failed' : 'queued' : id === 'route' || id === 'plan' ? 'planning' : id === 'synthesize' ? 'synthesizing' : 'running'} active={active && !graph.stopped && phase === id && graph.effects.some(effect => effect.operation === 'dispatch' && effect.executionStatus === 'running' && graph.tasks.some(task => task.id === effect.request.taskId && task.revision === effect.request.taskRevision))} /></span><span>{label}</span>
     </li>)}
   </ol>;
 }

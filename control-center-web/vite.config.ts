@@ -141,7 +141,15 @@ function browserDependencyBoundary(): Plugin {
           map: null,
         };
       }
-      if (!moduleId.endsWith('/lodash/_nodeUtil.js')) return null;
+      if ((moduleId.includes('/mermaid/dist/chunks/') || moduleId.includes('/@mermaid-js/parser/dist/chunks/')) && moduleId.endsWith('.mjs')) {
+        // Mermaid 12 bundles Lodash into some lazy diagram chunks. Its guarded
+        // Node util probe is unreachable in browsers; retain the existing JS
+        // fallback, as for the standalone Lodash dependency below. Do not relax
+        // the production CSP/code-generation check for a prebundled dependency.
+        const browserCode = code.replace(/\b[A-Za-z_$][\w$]*\.require\((['"])util\1\)\.types/g, 'undefined');
+        return browserCode === code ? null : { code: browserCode, map: null };
+      }
+      if (!/\/lodash(?:-es)?\/(?:_nodeUtil|lodash)\.js$/u.test(moduleId)) return null;
       const browserCode = code.replace(
         /freeModule\.require\((['"])util\1\)\.types/g,
         'undefined',

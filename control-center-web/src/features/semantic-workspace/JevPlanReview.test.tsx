@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { previewRoomSnapshot } from '@/app/preview-room-data';
@@ -45,7 +45,9 @@ describe('Jev whole-plan approval', () => {
     const { commands, onAdjust } = mount(); const user = userEvent.setup();
     await screen.findByRole('region', { name: '整体执行方案' });
     expect(screen.getByText('交付：可复验的读取结果')).toBeVisible();
-    expect(screen.getByRole('region', { name: '任务执行顺序' })).toHaveTextContent('第 1 步');
+    expect(screen.getByRole('region', { name: '任务执行顺序' })).toHaveTextContent('可以先开始');
+    await user.click(within(screen.getByRole('region', { name: '任务执行顺序' })).getByRole('button', { name: /核对文件恢复/ }));
+    expect(screen.getByText('交付：可复验的读取结果').closest('[data-plan-key]')).toHaveFocus();
     await user.click(screen.getByText('完整任务与验收标准 · 1 项'));
     expect(screen.getByText('重复打开保留当前文件')).toBeVisible();
     expect(screen.getByLabelText('实际运行')).toHaveTextContent('false');

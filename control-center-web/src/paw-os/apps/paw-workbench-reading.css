@@ -1,0 +1,74 @@
+@import '../../features/conversation-ui/workbench-tokens.css';
+
+/* Full Session only. Embedded apps keep their existing frame and density. */
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--wb-surface); color: var(--wb-ink); container: paw-session-workspace / inline-size;
+}
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] > :not(.paw-session-workspace__body) { flex: none; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] > .paw-session-workspace__body { flex: 1 1 auto; min-height: 0; }
+.paw-session-focus { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 0; padding: 18px 28px 16px; border-bottom: 1px solid var(--wb-line); background: var(--wb-surface); }
+.paw-session-focus__identity { display: grid; gap: 7px; min-width: 0; }
+.paw-session-focus__eyebrow { color: var(--wb-faint); font: 9px/1.4 var(--wb-mono); letter-spacing: .17em; }
+.paw-session-focus h2 { overflow: hidden; max-width: 680px; margin: 0; color: var(--wb-ink); font-size: 18px; line-height: 1.45; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.03em; }
+.paw-session-focus p { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--wb-muted); font-size: 12px; line-height: 1.5; }
+.paw-session-focus p > i { position: relative; width: 5px; height: 5px; margin-inline: 2px; border-radius: 50%; background: var(--wb-faint); }
+.paw-session-focus[data-tone='running'] p > i { background: var(--wb-accent); }
+.paw-session-focus[data-motion='active'] p > i::after { position: absolute; content: ''; inset: -4px; border: 1px solid var(--wb-accent); border-radius: 50%; animation: paw-session-signal 2s ease-out infinite; }
+.paw-session-focus[data-tone='attention'] p { color: var(--wb-warning); }
+.paw-session-focus__actions { display: flex; flex: none; align-items: center; gap: 5px; }
+.paw-session-focus__actions > button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 34px; min-height: 34px; box-sizing: border-box; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; color: var(--wb-muted); background: transparent; font: 12px/1.4 var(--wb-font); cursor: pointer; transition: background-color var(--wb-fast), color var(--wb-fast), border-color var(--wb-fast); }
+.paw-session-focus__actions > button:hover { color: var(--wb-ink); background: var(--wb-sunken); }
+.paw-session-focus__actions > button[aria-pressed='true'] { border-color: var(--wb-line); color: var(--wb-accent); background: var(--wb-accent-soft); }
+.paw-session-focus__actions > button > i { position: absolute; top: 4px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--wb-warning); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 12px 30px 21px; border: 0; background: var(--wb-surface); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer > .agent-composer-wrap { width: min(var(--wb-read), 100%); margin-inline: auto; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation { --ccui-font-size: 16px; --ccui-line-height: 1.8; font-family: var(--wb-font); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) { font-size: 16px; line-height: 1.85; letter-spacing: .003em; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) :is(p, ul, ol) { margin-block: 0 1em; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) :is(h2, h3) { margin-block: 1.65em .65em; font-size: 1.1em; line-height: 1.5; font-weight: 600; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-user-bubble { border: 0; border-radius: 14px; padding: 14px 18px; background: var(--wb-sunken); box-shadow: none; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-user-text { font-size: 15px; line-height: 1.8; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-turn { width: min(var(--wb-read), calc(100% - 64px)); max-width: none; margin-inline: auto; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-assistant-header { color: var(--wb-muted); font-size: 12px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-tool-card { border: 1px solid var(--wb-line); border-radius: 9px; background: var(--wb-sunken); box-shadow: none; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-tool-head { padding: 10px 12px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-tool-card.status-error { border-color: color-mix(in srgb, var(--wb-danger) 26%, var(--wb-line)); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-tool-card.status-running { border-color: color-mix(in srgb, var(--wb-accent) 28%, var(--wb-line)); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-turn :is(pre, code) { font-family: var(--wb-mono); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-turn pre:not(.shiki):not([data-code-surface]) { padding: 15px 18px; border: 1px solid var(--wb-line); border-radius: 9px; font-size: 12px; line-height: 1.7; }
+/* AgentTimeline's production FX DOM, alongside shared conversation blocks. */
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn { width: 100%; max-width: var(--wb-read); box-sizing: border-box; margin-inline: auto; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn + .agent-turn { margin-top: 30px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-assistant-text { padding-inline: 0; color: var(--wb-ink); font-size: 16px; line-height: 1.85; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-user-message { max-width: min(94%, 660px); margin-left: 28px; padding: 14px 18px; border: 0; border-radius: 14px; background: var(--wb-sunken); color: var(--wb-ink); font-size: 15px; line-height: 1.8; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.fx-user-meta, .fx-meta) { color: var(--wb-faint); font-size: 11px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .fx-context-chips { gap: 7px; padding-block: 5px 26px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .fx-context-chip { padding: 4px 9px; border-radius: 6px; box-shadow: none; background: var(--wb-surface); font-size: 11px; font-weight: 400; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__toggle { min-height: 32px; padding: 5px 8px; border-radius: 7px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__copy { gap: 8px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__copy strong { font-size: 13px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__copy small { font-size: 11px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__reveal { transition: opacity 140ms ease-out; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__result { gap: 22px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn-work__step-body { padding-block: 4px 10px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__panel { border-left: 1px solid var(--wb-line); background: var(--wb-sunken); }
+@container paw-session-workspace (max-width: 730px) {
+  .paw-session-focus { gap: 10px; padding: 20px 22px 17px; }
+  .paw-session-focus h2 { font-size: 18px; }
+  .paw-session-focus__actions { gap: 1px; }
+  .paw-session-focus__actions > button { padding: 8px; }
+  .paw-session-focus__actions > button > span { display: none; }
+  .paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-turn { width: calc(100% - 40px); }
+}
+@container paw-session-workspace (max-width: 470px) {
+  .paw-session-focus { align-items: flex-start; padding: 16px 17px; }
+  .paw-session-focus h2 { font-size: 17px; }
+  .paw-session-focus p { font-size: 11px; }
+  .paw-session-focus__eyebrow { font-size: 8px; }
+  .paw-session-focus__actions > button { width: 29px; min-width: 29px; padding: 6px; }
+  .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 9px 12px 12px; }
+}
+@keyframes paw-session-signal { 0% { opacity: .5; transform: scale(.65); } 100% { opacity: 0; transform: scale(1.6); } }
+@media (prefers-reduced-motion: reduce) { .paw-session-focus *, .paw-session-focus *::after { animation: none !important; transition: none !important; } }
+[data-reduce-motion='true'] .paw-session-focus *, [data-reduce-motion='true'] .paw-session-focus *::after { animation: none !important; transition: none !important; }

@@ -17,11 +17,12 @@ const raw = { ok: true, mode: 'jev', graphId: 'graph', rootId: 'root', snapshotV
   { effectId: 'verify', operation: 'dispatch', executionStatus: 'running', request: { taskId: 'b', taskRevision: 1, ownerId: room.participants[2].id, purpose: 'verify' } },
 ] };
 describe('Jev equal partner windows', () => {
-  it('separates submitted input attachments from produced file evidence', () => {
+  it('separates submitted input attachments from produced file evidence', async () => {
     const graph = parseJevSnapshot({ ...raw, roomId: room.id, effects: [], rootAttachmentReceipts: [
       { ownerType: 'room', roomId: room.id, mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 },
     ] }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /成果/ }));
     expect(screen.getByText('原始附件 1 项')).toBeVisible();
     expect(screen.getByText('comparison.md')).toBeVisible();
   });
@@ -66,7 +67,7 @@ describe('Jev equal partner windows', () => {
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
     const user = userEvent.setup();
     await user.click(screen.getByText('旧版本任务 · 2'));
-    await user.click(screen.getAllByRole('button', { name: /核对读取.*已由新版本接手/ })[0]);
+    await user.click(within(screen.getByText('旧版本任务 · 2').closest('details')!).getAllByRole('button', { name: /核对读取/ })[0]);
     expect(screen.getByRole('dialog')).toHaveTextContent('已由新版本接手');
     await user.click(screen.getByRole('button', { name: '查看当前版本任务' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('第三版读取要求');
@@ -168,7 +169,7 @@ describe('Jev equal partner windows', () => {
     const view = render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={onOpenParticipant} />);
     const completed = { ...graph, version: 'two', tasks: graph.tasks.map(task => task.id === 'a' ? { ...task, state: 'done' } : task) };
     view.rerender(<PawJevTeamPanels graph={completed} room={room} onOpenParticipant={onOpenParticipant} />);
-    const avatar = view.container.querySelector('.paw-jev-records [data-room-planet="0"]');
+    const avatar = view.container.querySelector('.paw-jev-record-row [data-room-planet="0"]');
     expect(avatar).toHaveAttribute('data-activity', 'done');
     expect(avatar).toHaveAttribute('data-expression', 'happy');
     act(() => vi.advanceTimersByTime(500));
@@ -206,7 +207,7 @@ describe('Jev equal partner windows', () => {
     const graph = parseJevSnapshot({ ...raw, final: { status: 'completed', content: '完成' }, tasks: raw.tasks.map(task => ({ ...task, state: 'done', result: '已核对' })) }, 'graph');
     expect(jevPartnerWork(graph, room)).toEqual([]);
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
-    expect(screen.getByText('结果与交付')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '已结束' })).toBeVisible();
     expect(screen.queryByRole('region', { name: /当前工作/ })).not.toBeInTheDocument();
     expect(screen.getByText('已验收 2/2')).toBeVisible();
     expect(screen.getAllByText('已验收', { exact: true })).toHaveLength(2);
@@ -258,7 +259,7 @@ describe('Jev equal partner windows', () => {
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={onOpenParticipant} />);
     const left = screen.getByRole('complementary', { name: '任务与成果' });
     expect(within(left).getByRole('region', { name: 'Venus 当前工作' })).toBeVisible();
-    expect(within(left).getByText('结果与交付')).toBeVisible();
+    expect(within(left).getByRole('tab', { name: /成果/ })).toHaveAttribute('aria-selected', 'false');
     const user = userEvent.setup();
     const opener = within(left).getByRole('button', { name: '展开当前伙伴' });
     opener.focus();
@@ -312,13 +313,14 @@ describe('Jev equal partner windows', () => {
     view.rerender(<PawJevTeamPanels graph={{ ...graph, stopped: true }} room={room} onOpenParticipant={vi.fn()} />);
     expect(view.container.querySelector('.paw-jev-partner__state .jev-activity-icon[data-animated]')).not.toBeInTheDocument();
     view.rerender(<PawJevTeamPanels graph={{ ...graph, effects: graph.effects.map((effect, index) => ({ ...effect, executionStatus: index ? 'unknown' : 'admitted', state: 'pending', receipt: {} })) }} room={room} onOpenParticipant={vi.fn()} />);
-    expect(screen.getByText('执行中 0')).toBeVisible();
+    expect(screen.queryByText(/执行中 0/)).not.toBeInTheDocument();
     expect(view.container.querySelector('.paw-jev-partner__state .jev-activity-icon[data-animated]')).not.toBeInTheDocument();
     expect(screen.queryByText('gpt-6-sol · max')).not.toBeInTheDocument();
   });
   it('lists only file-shaped artifact evidence and opens its original receipt instead of inventing planned files', async () => {
     const graph = parseJevSnapshot({ ...raw, effects: [], tasks: [{ ...raw.tasks[0], state: 'done', artifacts: ['/workspace/docs/contract.md'], evidence: ['/workspace/docs/contract.md', 'docs/verification.txt:12', 'pi-settlement:receipt-1'], result: '接口已验收' }], planApproval: { status: 'approved', proposal: { tasks: [{ key: 'future', objective: '下一项任务', writeTargets: ['/workspace/not-written.md'] }] } } }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /成果/ }));
     expect(screen.getByText('交付文件 2 项')).toBeVisible();
     expect(screen.getByText('contract.md')).toBeVisible();
     expect(screen.getByText('verification.txt')).toBeVisible();
@@ -341,6 +343,7 @@ describe('Jev equal partner windows', () => {
       evidence: [main, 'pi-settlement:receipt-1'], result: '真实产物已验收',
     }] }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /成果/ }));
     expect(screen.getByText('交付文件 4 项')).toBeVisible();
     for (const name of ['main.js', 'input.js', 'README.md', 'persistence.md']) {
       expect(screen.getByText(name)).toBeVisible();
@@ -360,6 +363,7 @@ describe('Jev equal partner windows', () => {
       request: { taskId: task.id, taskRevision: task.revision, purpose: 'execute', sessionId: `producing-session-${index}`, ownerId: task.owner_id },
     })) }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} onOpenFile={onOpenFile} />);
+    await user.click(screen.getByRole('tab', { name: /成果/ }));
     expect(screen.getByText('交付文件 2 项')).toBeVisible();
     const files = screen.getAllByRole('button', { name: '打开文件 verification.md' });
     await user.click(files[0]);
@@ -381,6 +385,7 @@ describe('Jev equal partner windows', () => {
       { ...raw.tasks[1], state: 'done', accepted_turn_id: 'missing-worker', artifacts: ['unbound.md'] },
     ] }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} onOpenFile={onOpenFile} />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /成果/ }));
     expect(screen.getByText('交付文件 3 项')).toBeVisible();
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: '打开文件 main.js' }));
@@ -416,5 +421,32 @@ describe('Jev equal partner windows', () => {
     await user.click(within(dialog).getByRole('button', { name: '展开伙伴卡片' }));
     expect(within(dialog).getByRole('button', { name: '收起伙伴卡片' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(dialog).getByRole('region', { name: 'Venus 当前工作' })).toBeVisible();
+  });
+  it('keeps both tab scroll positions and filters only delivered files from real receipts', async () => {
+    const user = userEvent.setup();
+    const graph = parseJevSnapshot({ ...raw, effects: [], tasks: [{ ...raw.tasks[0], state: 'done',
+      artifacts: ['docs/contract.md', 'src/verify.py'], evidence: [],
+    }] }, 'graph');
+    render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
+    const tasksTab = screen.getByRole('tab', { name: /任务/ });
+    const filesTab = screen.getByRole('tab', { name: /成果/ });
+    const tasksPanel = screen.getByRole('tabpanel', { name: /任务/ });
+    tasksPanel.scrollTop = 180;
+    tasksTab.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(filesTab).toHaveFocus();
+    expect(filesTab).toHaveAttribute('aria-selected', 'true');
+    const filesPanel = screen.getByRole('tabpanel', { name: /成果/ });
+    filesPanel.scrollTop = 70;
+    await user.type(screen.getByRole('searchbox', { name: '筛选交付文件' }), 'verify');
+    expect(within(filesPanel).getByText('verify.py')).toBeVisible();
+    expect(within(filesPanel).queryByText('contract.md')).not.toBeInTheDocument();
+    await user.clear(screen.getByRole('searchbox', { name: '筛选交付文件' }));
+    await user.type(screen.getByRole('searchbox', { name: '筛选交付文件' }), 'missing');
+    expect(within(filesPanel).getByText(/没有匹配的交付文件/)).toBeVisible();
+    await user.click(tasksTab);
+    expect(tasksPanel.scrollTop).toBe(180);
+    await user.click(filesTab);
+    expect(filesPanel.scrollTop).toBe(70);
   });
 });

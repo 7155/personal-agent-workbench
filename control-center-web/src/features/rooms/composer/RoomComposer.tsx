@@ -1,4 +1,4 @@
-import { AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Paperclip, Play, Send, Square } from 'lucide-react';
+import { AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Play, Send, Square } from 'lucide-react';
 import { Anchor as PopoverAnchor } from '@radix-ui/react-popover';
 import {
   startTransition,
@@ -480,6 +480,7 @@ export function RoomComposer({
                 ? busySubmitBehavior === 'queue' ? '补充下一轮任务…' : '立即干预当前回合…'
                 : composerPlaceholder(room)}
             aria-label="协作消息"
+            aria-describedby={`${menuId}-hint`}
             aria-autocomplete="list"
             aria-controls={mention && mentionCandidates.length ? menuId : undefined}
             aria-activedescendant={mention && mentionCandidates.length
@@ -495,6 +496,7 @@ export function RoomComposer({
         )}
         actions={(
           <>
+            {composerDraft.length > 6400 || expanded ? <span className="room-composer__count" aria-label={`已输入 ${composerDraft.length} 字，最多 8000 字`}>{composerDraft.length.toLocaleString()}<span> / 8,000</span></span> : null}
             {onStop && taskBusyState ? <IconButton className="room-composer__stop" label={stopping ? '正在停止协作' : '停止当前协作'} icon={<Square size={15} fill="currentColor" />} disabled={stopping} onClick={onStop} tooltip /> : null}
             {onQueue && taskBusyState === 'running' && !pendingAnswerMode && busySubmitBehavior !== 'queue' ? <IconButton
               className="room-composer__queue"
@@ -523,7 +525,7 @@ export function RoomComposer({
           </>
         )}
       />
-      <div className="room-composer__hint"><span><Keyboard size={12} aria-hidden />Enter 发送 · Shift + Enter 换行</span><span data-count={composerDraft.length > 6400 || expanded || undefined}><Paperclip size={12} aria-hidden />{composerDraft.length > 6400 || expanded ? `${composerDraft.length.toLocaleString()} / 8,000` : '支持粘贴或拖入附件'}</span></div>
+      <div className="room-composer__hint" id={`${menuId}-hint`}><span><Keyboard size={12} aria-hidden />Enter 发送 · Shift + Enter 换行</span><span className="room-composer__hint-accessible">支持粘贴或拖入附件。中文输入法选字时不会发送。</span></div>
     </div></PopoverAnchor>
     </Popover>
   </div>;

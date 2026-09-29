@@ -39,6 +39,7 @@ describe('Jev room-backed conversation flow', () => {
     </PawOsDesktopProvider></TooltipProvider></ControlTransportProvider></QueryClientProvider>);
     const input = await screen.findByRole('textbox', { name: '协作消息' });
     await user.type(input, '还要核对报告');
+    await user.click(await screen.findByRole('tab', { name: /成果/ }));
     await user.click(await screen.findByRole('button', { name: '打开文件 验收报告.md' }));
     expect(openRoute).toHaveBeenCalledWith(`/files?session=agent%3Aoriginal-file-owner&path=${encodeURIComponent('docs/验收报告.md')}`);
     expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(input);
@@ -204,7 +205,10 @@ describe('Jev room-backed conversation flow', () => {
     await user.click(screen.getAllByRole('button', { name: 'Jev 模型与工具设置' })[0]);
     expect(within(screen.getByRole('menu')).getByRole('menuitemradio', { name: '始终由其他伙伴复核' })).toHaveAttribute('aria-checked', 'true');
     await user.keyboard('{Escape}');
-    await user.type(input, '完成第一项');
+    // This workflow tests admission/queue ownership, not per-keystroke editing.
+    // Paste through the real composer to avoid repeated full-workspace renders in jsdom.
+    await user.click(input);
+    await user.paste('完成第一项');
     await user.click(screen.getByRole('button', { name: '发送消息' }));
     await within(screen.getByRole('complementary', { name: 'Jev 任务进展' })).findByText('推进任务与复核');
     expect(commands).toHaveLength(1);
@@ -214,7 +218,8 @@ describe('Jev room-backed conversation flow', () => {
     await within(screen.getByRole('complementary', { name: 'Jev 任务进展' })).findByText('暂未选出下一步');
     expect(screen.getByLabelText('Room 窗口控制')).not.toHaveAttribute('data-status', 'busy');
     expect(screen.getByRole('button', { name: '停止 Jev 执行' })).toBeEnabled();
-    await user.type(input, '接着核对第二项');
+    await user.click(input);
+    await user.paste('接着核对第二项');
     await user.click(screen.getByRole('button', { name: '排入下一轮任务' }));
     expect(commands).toHaveLength(1);
     graphs[0].done = true;

@@ -1392,10 +1392,11 @@ describe('Agent chat rendering', () => {
       container.querySelector<HTMLDetailsElement>('.agent-rich-checklist')!,
       container.querySelector<HTMLDetailsElement>('.agent-rich-table')!,
       container.querySelector<HTMLDetailsElement>('.agent-inline-diff')!,
-      container.querySelector<HTMLDetailsElement>('.agent-code-collapse')!,
       container.querySelector<HTMLDetailsElement>('.agent-unknown-block')!,
     ];
     expect(disclosures.every(Boolean)).toBe(true);
+    expect(within(screen.getByRole('region', { name: '交互表格可滚动内容' })).getByRole('table')).toHaveTextContent('可读取');
+    expect(screen.getByRole('button', { name: /展开阅读区/ })).toHaveAttribute('aria-expanded', 'false');
 
     for (const details of disclosures) {
       const summary = details.querySelector<HTMLElement>(':scope > summary')!;
@@ -1544,7 +1545,7 @@ describe('Agent chat rendering', () => {
     expect(document.activeElement).toBe(summary);
   });
 
-  it('keeps partial JSON as streaming text, collapses large code, and degrades unknown blocks readably', async () => {
+  it('keeps partial JSON as streaming text, bounds large code, and degrades unknown blocks readably', async () => {
     const user = userEvent.setup();
     const partial = '{"type":"card","data":{"title":"还没结束"';
     const blocks: UiAgentBlock[] = [
@@ -1557,9 +1558,12 @@ describe('Agent chat rendering', () => {
 
     expect(container.querySelectorAll('.agent-rich-card')).toHaveLength(0);
     expect(screen.getByText(partial)).toBeInTheDocument();
-    const codeDetails = container.querySelector('details.agent-code-collapse');
-    expect(codeDetails).not.toHaveAttribute('open');
-    expect(codeDetails).toHaveTextContent('worker.log40 行');
+    const codeRegion = screen.getByRole('region', { name: 'worker.log 代码内容' });
+    expect(codeRegion).toHaveTextContent('line 40');
+    const expand = screen.getByRole('button', { name: /展开阅读区/ });
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    await user.click(expand);
+    expect(expand).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(/暂不支持的内容 · timeline_chart/)).toBeInTheDocument();
     await user.click(screen.getByText(/暂不支持的内容 · timeline_chart/));
     expect(screen.getByText('未来时间线')).toBeInTheDocument();
@@ -1656,7 +1660,7 @@ describe('Agent chat rendering', () => {
 
     const image = screen.getByRole('img', { name: '受控图片' });
     expect(image).toHaveAttribute('src', managedReceipt);
-    expect(container.querySelector('.agent-media-block img')).toBe(image);
+    expect(container.querySelector('.paw-rich-image img')).toBe(image);
 
     rerender(<AgentBlock block={imageBlock({ src: managedReceipt, alt: '伪造回执' })} />);
     expect(screen.queryByRole('img', { name: '伪造回执' })).not.toBeInTheDocument();
@@ -1684,7 +1688,9 @@ describe('Agent chat rendering', () => {
     );
     fireEvent.error(image);
     expect(screen.queryByRole('img', { name: '原始对话图片' })).not.toBeInTheDocument();
-    expect(screen.getByText('图片无法读取')).toBeInTheDocument();
+    expect(screen.getByText('图片暂时无法读取')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试读取' }));
+    expect(screen.getByRole('img', { name: '原始对话图片' })).toHaveAttribute('src', image.getAttribute('src'));
   });
 
   it('keeps remote Markdown images blocked', () => {
@@ -1693,7 +1699,8 @@ describe('Agent chat rendering', () => {
     );
 
     expect(container.querySelector('.agent-markdown img')).not.toBeInTheDocument();
-    expect(screen.getByText('外部图片')).toHaveClass('agent-markdown__blocked-media');
+    expect(screen.getByText('外部图片').closest('.paw-rich-image-reference')).toBeInTheDocument();
+    expect(screen.getByText('没有受控回执，未自动加载外部图片')).toBeVisible();
   });
 
   it('shows one public failure notice without repeating the raw provider error', () => {

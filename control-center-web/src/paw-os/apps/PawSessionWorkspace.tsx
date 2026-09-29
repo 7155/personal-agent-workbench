@@ -1,4 +1,5 @@
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
+import { PawSessionFocusHeader } from './PawSessionFocusHeader';
 import {
   CircleAlert,
   FolderTree,
@@ -1366,6 +1367,7 @@ export function PawSessionWorkspace({
       {!embedded && windowChromeTarget ? <PawWindowChromePortal>{sessionChrome}</PawWindowChromePortal> : null}
       <section
         className="paw-session-workspace paw-chatfx"
+        data-design={!embedded && !evaluationSnapshot ? 'workbench' : undefined}
         data-chrome-in-window={windowChromeTarget ? true : undefined}
         data-appearance={appearance}
         data-panel={panel}
@@ -1373,6 +1375,18 @@ export function PawSessionWorkspace({
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
       <WorkspaceRecoveryNotice recovery={recovery} />
+      {!embedded && !evaluationSnapshot && workspaceView === 'conversation' ? <PawSessionFocusHeader
+        title={title}
+        busy={busy}
+        stopping={stopping}
+        active={active}
+        hasMessages={projectionSlice.hasTurns}
+        needsAttention={Boolean(pendingApproval || pendingGenericInput || pendingMemoryReview)}
+        panel={panel}
+        onOpenTasks={() => panel === 'status' ? setPanel('none') : openToolPanel('status')}
+        onOpenFiles={() => panel === 'files' ? setPanel('none') : openToolPanel('files')}
+        onOpenSubagents={() => panel === 'subagents' ? setPanel('none') : openToolPanel('subagents')}
+      /> : null}
 
       <div className="paw-session-workspace__body">
         <div className="paw-session-workspace__primary" ref={primaryRef}>
