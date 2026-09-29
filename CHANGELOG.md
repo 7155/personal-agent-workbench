@@ -6,7 +6,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 ## Unreleased
 
 - Include current prerequisite revisions, acceptance state and result
-  availability in Jev scheduling decisions. Do not confuse historical worker
+  availability in Jev scheduling decisions. Dependency materials also carry
+  the canonical completion timestamp so verifiers can check acceptance before
+  downstream execution. Do not confuse historical worker
   prose or completed verification with a new dependency barrier; reference
   edges remain non-blocking, and downstream execution still needs real receipts.
 - Route Pi native `read` callbacks for managed resource references to their

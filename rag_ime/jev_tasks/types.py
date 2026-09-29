@@ -81,6 +81,7 @@ class Task:
     artifacts: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
     result: str = ""
+    completed_at_ms: int = 0
 
     @classmethod
     def from_payload(cls, item: Mapping[str, object]) -> Task:
@@ -103,6 +104,7 @@ class Task:
             artifacts=string_tuple(item.get("artifactRefs", []), "artifacts", 64),
             evidence=string_tuple(item.get("evidenceRefs", []), "evidence", 64),
             result=text(item.get("resultSummary", ""), "result", 16000, empty=True),
+            completed_at_ms=integer(item.get("completedAtMs") or 0, "completed at"),
         )
 
     @property

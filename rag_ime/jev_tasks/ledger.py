@@ -103,6 +103,7 @@ def task_from_row(row: Mapping[str, object]) -> Task:
         "parentWorkId": row.get("parent_work_id") or "",
         "artifactRefs": unpack("artifact_refs_json"), "evidenceRefs": unpack("evidence_refs_json"),
         "resultSummary": row.get("result_summary") or "",
+        "completedAtMs": row.get("completed_at_ms"),
     })
 
 

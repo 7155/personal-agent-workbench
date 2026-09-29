@@ -396,6 +396,10 @@ class MaterialPipelineTests(unittest.TestCase):
         self.assertEqual(evidence_call.kwargs["inline_byte_budget"], 2000)
         self.assertIn('"state":"done"', self.body(accepted))
         self.assertIn('"stateSource":"current canonical WorkItem"', self.body(accepted))
+        accepted_at = self.work.get(self.second["id"])["completedAtMs"]
+        self.assertGreater(accepted_at, 0)
+        self.assertEqual(evidence_call.args[1].completed_at_ms, accepted_at)
+        self.assertIn(f'"acceptedAtMs":{accepted_at}', self.body(accepted))
         self.assertIn("media://dependency-tools", self.body(accepted))
         self.assertIn("Accepted artifact v2", self.body(accepted))
         self.assertIn("artifact:revision-2", self.body(accepted))

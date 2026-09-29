@@ -861,6 +861,7 @@ class JevRoomApplication:
             task.id: [
                 {"taskId": dependency.id, "taskRevision": dependency.revision,
                  "state": dependency.state, "accepted": dependency.state == "done",
+                 "acceptedAtMs": (dependency.completed_at_ms or None) if dependency.state == "done" else None,
                  "resultAvailable": bool(dependency.result),
                  "acceptedTurnId": dependency.accepted_turn_id,
                  "source": "current_canonical_dependency"}
