@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-20T11:56:05.083842+00:00",
+  "generatedAt": "2026-09-29T03:56:27.748917+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Current PAW source checkpoint integrating the Lab, Files, embedded App and README work with Session and Room conversation controls, selective text attachments and unified schedule management. Existing Runtime and store owners retain execution authority. Private development records and experiments remain outside the commit; local installation and foreground acceptance are recorded separately. This checkpoint also includes Earth Agent GIS and cloud/local workflows plus Knowledge and Lab recall diagnostics and search recovery; it does not declare installed foreground or binary-release acceptance. Integrates the already-published optional Jev credentials and Knowledge reranker implementation with the Earth GIS workbench; existing execution owners and defaults remain authoritative."
+    "candidateCommitPolicy": "Integrate Conversation v2 rich rendering and Jev execution with current main. Preserve current main Earth implementation and unrelated dirty worktrees. Pi remains the execution owner; repository checks, live canaries and local installation are separate evidence boundaries."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -13,45 +13,13 @@
     "other_work_not_in_release": "Leave outside this candidate."
   },
   "groups": {
-    "brand_stellar": {
-      "description": "User-selected branding and bounded stellar visual behavior.",
-      "pathCount": 60
-    },
-    "composition_refactor": {
-      "description": "Typed application dependencies and construction using existing Runtime and store owners.",
-      "pathCount": 32
-    },
-    "lab_backend": {
-      "description": "Agent Lab package, resource resolution and service consumers.",
-      "pathCount": 74
-    },
-    "lab_tools": {
-      "description": "Operator scripts that import Lab owners or record current source paths.",
-      "pathCount": 10
-    },
     "local_docs": {
       "description": "Stop tracking local development records and their dedicated checks; preserve local files.",
       "pathCount": 122
     },
-    "owner_boundaries": {
-      "description": "Product extension host assembly and module dependency checks.",
-      "pathCount": 15
-    },
-    "pi_runtime_refactor": {
-      "description": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
-      "pathCount": 23
-    },
-    "portable_agent_ui": {
-      "description": "Shared Agent controls and their standalone bundle entry.",
-      "pathCount": 8
-    },
     "product_integration": {
       "description": "Integrate current product source and public contribution guidance.",
       "pathCount": 57
-    },
-    "public_showcase": {
-      "description": "Public synthetic-data screenshots and usage documentation.",
-      "pathCount": 30
     },
     "react_os_docs": {
       "description": "Current React OS naming, architecture and development entrypoints.",
@@ -61,33 +29,33 @@
       "description": "Public owner navigation and an offline Lab adapter using the existing extension contract.",
       "pathCount": 9
     },
-    "refactor_integration": {
-      "description": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
-      "pathCount": 23
+    "earth_research": {
+      "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
+      "pathCount": 115
     },
-    "refactor_verification": {
-      "description": "Regression and architecture checks for the Runtime and application dependency refactoring.",
-      "pathCount": 66
+    "brand_stellar": {
+      "description": "User-selected branding and bounded stellar visual behavior.",
+      "pathCount": 60
+    },
+    "public_showcase": {
+      "description": "Public synthetic-data screenshots and usage documentation.",
+      "pathCount": 30
     },
     "references_history": {
       "description": "Lossless reference archives, attribution and dated acceptance records.",
       "pathCount": 8
     },
-    "release_scope": {
-      "description": "Current source maintenance candidate inventory.",
-      "pathCount": 1
+    "conversation_v2_integration": {
+      "description": "Conversation v2 and Jev integration with current main.",
+      "pathCount": 34
     },
-    "room_frontend": {
-      "description": "Room partner windows, readable replies, sidebars and responsive layout.",
-      "pathCount": 20
+    "workspace_completion": {
+      "description": "Complete user-authorized workspace source checkpoint across Jev, Lab and shared product owners.",
+      "pathCount": 319
     },
-    "room_service_refactor": {
-      "description": "Explicit Room work, dispatch, cancellation and approval dependencies with stable stores and events.",
-      "pathCount": 43
-    },
-    "trace_optimization": {
-      "description": "Trace diagnosis and bounded optimization source, contracts and executable regressions.",
-      "pathCount": 61
+    "memory_lifecycle": {
+      "description": "Canonical Memory import/export, ingress privacy, daily reports and owner-scoped resumable refresh.",
+      "pathCount": 15
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
@@ -97,60 +65,100 @@
       "description": "App naming and desktop voice integration.",
       "pathCount": 19
     },
-    "offline_installer": {
-      "description": "Unsigned offline macOS installer using existing product lifecycle owners.",
-      "pathCount": 12
+    "composition_refactor": {
+      "description": "Typed application dependencies and construction using existing Runtime and store owners.",
+      "pathCount": 32
     },
-    "session_full_access": {
-      "description": "Full Access permission selection, automatic execution and focused regressions.",
-      "pathCount": 9
+    "portable_agent_ui": {
+      "description": "Shared Agent controls and their standalone bundle entry.",
+      "pathCount": 8
+    },
+    "owner_boundaries": {
+      "description": "Product extension host assembly and module dependency checks.",
+      "pathCount": 15
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
       "pathCount": 68
     },
-    "agent_capsule": {
-      "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
-      "pathCount": 3
-    },
-    "memory_lifecycle": {
-      "description": "Canonical Memory import/export, ingress privacy, daily reports and owner-scoped resumable refresh.",
-      "pathCount": 15
-    },
-    "browser_recovery": {
-      "description": "Preserve Browser load errors, terminal receipts and same-tab recovery.",
-      "pathCount": 1
-    },
-    "lab_frontend": {
-      "description": "Lab workflow presentation backed by project and experiment receipts.",
-      "pathCount": 54
+    "trace_optimization": {
+      "description": "Trace diagnosis and bounded optimization source, contracts and executable regressions.",
+      "pathCount": 61
     },
     "scheduled_tasks": {
       "description": "Unified schedule management for Agent, Eval and Memory using their existing schedulers.",
       "pathCount": 25
     },
-    "earth_research": {
-      "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 115
-    },
-    "knowledge_runtime": {
-      "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
-      "pathCount": 12
+    "session_full_access": {
+      "description": "Full Access permission selection, automatic execution and focused regressions.",
+      "pathCount": 9
     },
     "jev_integration": {
       "description": "Jev integration and regression coverage.",
       "pathCount": 10
     },
+    "lab_frontend": {
+      "description": "Lab workflow presentation backed by project and experiment receipts.",
+      "pathCount": 54
+    },
     "second_brain": {
       "description": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately.",
       "pathCount": 24
+    },
+    "knowledge_runtime": {
+      "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
+      "pathCount": 12
+    },
+    "room_frontend": {
+      "description": "Room partner windows, readable replies, sidebars and responsive layout.",
+      "pathCount": 20
+    },
+    "agent_capsule": {
+      "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
+      "pathCount": 3
+    },
+    "refactor_integration": {
+      "description": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
+      "pathCount": 23
+    },
+    "offline_installer": {
+      "description": "Unsigned offline macOS installer using existing product lifecycle owners.",
+      "pathCount": 12
+    },
+    "room_service_refactor": {
+      "description": "Explicit Room work, dispatch, cancellation and approval dependencies with stable stores and events.",
+      "pathCount": 43
+    },
+    "lab_backend": {
+      "description": "Agent Lab package, resource resolution and service consumers.",
+      "pathCount": 74
+    },
+    "pi_runtime_refactor": {
+      "description": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
+      "pathCount": 23
+    },
+    "browser_recovery": {
+      "description": "Preserve Browser load errors, terminal receipts and same-tab recovery.",
+      "pathCount": 1
+    },
+    "lab_tools": {
+      "description": "Operator scripts that import Lab owners or record current source paths.",
+      "pathCount": 10
+    },
+    "release_scope": {
+      "description": "Current source maintenance candidate inventory.",
+      "pathCount": 1
+    },
+    "refactor_verification": {
+      "description": "Regression and architecture checks for the Runtime and application dependency refactoring.",
+      "pathCount": 66
     }
   },
   "summary": {
-    "pathCount": 1144,
+    "pathCount": 1497,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 945
+      "keep_release": 1298
     },
     "groupCounts": {
       "local_docs": 122,
@@ -161,6 +169,8 @@
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
+      "conversation_v2_integration": 34,
+      "workspace_completion": 319,
       "memory_lifecycle": 15,
       "verification": 112,
       "voice_desktop": 19,
@@ -1137,6 +1147,111 @@
       "reason": "Own the source previously located at paw-agent-chat-ui-kit-source.zip; preserve runtime behavior and attribution."
     },
     {
+      "path": "control-center-web/e2e/conversation-rich-v2.e2e.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/file-previews.e2e.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/conversation-rich-v2-assets.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/conversation-rich-v2.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/conversation-rich-v2.html",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/conversation-rich-v2.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/file-previews.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-execution.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-execution.html",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-execution.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-live.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-live.html",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-live.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/lab-comparison/index.html",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/lab-comparison/main.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/e2e/fixtures/readme-lab/index.html",
       "status": "added",
       "group": "public_showcase",
@@ -1172,6 +1287,13 @@
       "reason": "Keep shared metric labels readable without icons, including Memory lifecycle at desktop and narrow widths."
     },
     {
+      "path": "control-center-web/e2e/workbench-design.e2e.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/electron/host-config.test.mjs",
       "status": "modified",
       "group": "verification",
@@ -1184,6 +1306,13 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/electron/local-server.test.mjs",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/electron/main.mjs",
@@ -1212,6 +1341,13 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/electron/startup-lifecycle.test.mjs",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/electron/voice-control.mjs",
@@ -2075,6 +2211,13 @@
       "disposition": "delete_old_implementation"
     },
     {
+      "path": "control-center-web/scripts/browser-dependency-boundary.test.mjs",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/scripts/build-portable-agent-ui.mjs",
       "status": "modified",
       "disposition": "keep_release",
@@ -2087,6 +2230,13 @@
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Bind each resource kind in the fixture export callback and satisfy the repository-wide CI lint check."
+    },
+    {
+      "path": "control-center-web/src/app/App-loading.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/app/App.tsx",
@@ -2122,6 +2272,20 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/app/preview-knowledge-data.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/app/preview-knowledge-data.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/app/register-extension-hosts.ts",
@@ -2208,6 +2372,27 @@
       "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
     },
     {
+      "path": "control-center-web/src/contracts/generated/agent-memory-maintenance-status.v1.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-room-snapshot.v1.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/agent-room.v1.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/contracts/generated/agent-tool-call.v1.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -2250,11 +2435,25 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/contracts/generated/knowledge-library.v1.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/contracts/generated/observability-trace-get.v1.ts",
       "group": "trace_optimization",
       "disposition": "keep_release",
       "reason": "Keep Trace contracts synchronized and public source checks independent of local documents.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/space-organization-command.v1.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/contracts/generated/trace-diagnostic-inspection.v1.ts",
@@ -2297,6 +2496,20 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "control-center-web/src/contracts/room-reducer.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/contracts/room-reducer.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/contracts/schema-index.ts",
@@ -2390,6 +2603,27 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/agent/file-preview/AgentFileBlock.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/FilePreviewHost.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/use-rich-html-url.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/agent/index.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -2432,6 +2666,48 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/agent/runtime/snapshot-request-queue.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/runtime/snapshot-request-queue.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.consistency.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.fallback.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/agent/sessions/NewSessionDialog.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -2446,11 +2722,88 @@
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
     },
     {
+      "path": "control-center-web/src/features/agent/state/live-store.acknowledgement.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/state/live-store.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/ActivitySummary.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/AgentTimeline.follow.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/AgentTimeline.tsx",
       "status": "modified",
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/BlockRenderer.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/CodeDiffRenderers.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/CompactActivityContext.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/MarkdownRenderer.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/MediaRenderers.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/StructuredRenderers.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/chat-rendering.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/agent/timeline/chat-ui-kit/ATTRIBUTION.md",
@@ -2465,6 +2818,97 @@
       "disposition": "keep_release",
       "group": "references_history",
       "reason": "Lossless reference archives, attribution and dated acceptance records."
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/public-tool-result.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichBlockTools.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichCodePreview.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichDiagram.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichImage.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichMath.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichMediaPlayer.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/rich-conversation.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/rich-data.test.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/rich-data.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/rich-rendering.test.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/tool-cancellation.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/tool-presentation.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/agent/types.ts",
@@ -2507,6 +2951,13 @@
       "group": "conversation_controls",
       "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/composer-workbench.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/composer/pasted-text.tsx",
@@ -2558,6 +3009,13 @@
       "reason": "Lossless reference archives, attribution and dated acceptance records."
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/ConversationSurfaceContext.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/adapters/room-transcript.test.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -2579,11 +3037,123 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/components/ConversationSurface.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/components/MessageActions.tsx",
       "status": "modified",
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/components/ToolCard.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/components/ToolCard.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/components/ToolStatusMark.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/components/UserTurn.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/components/VirtualTranscript.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/components/tool-status-mark.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/conversation-tokens.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/conversation-ui.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/hooks/usePinnedTranscript.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/hooks/usePinnedTranscript.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/hooks/useVirtualTranscript.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/hooks/useVirtualTranscript.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/model/tool-receipt.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/model/types.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/workbench-tokens.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/eval-lab/StoryDeck.test.tsx",
@@ -2635,11 +3205,25 @@
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
+      "path": "control-center-web/src/features/eval-lab/golden/CaseReview.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/golden/Experiment.tsx",
       "status": "modified",
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/GoldenWorkflow.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/eval-lab/golden/GoldenWorkflow.test.tsx",
@@ -2675,6 +3259,13 @@
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/golden/Shared.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/eval-lab/golden/api.ts",
@@ -2838,6 +3429,48 @@
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/LabOptimizationCompare.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabOptimizationCompare.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabParallelTests.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabParallelTests.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabProjectFlow.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/LabProjectFlow.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/LabProjectHome.tsx",
       "status": "added",
       "group": "lab_frontend",
@@ -2915,6 +3548,20 @@
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/OptimizationObjectivePicker.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ProjectGuide.context.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/ProjectGuide.tsx",
       "status": "modified",
       "group": "lab_frontend",
@@ -2943,6 +3590,20 @@
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/comparison-metrics.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/comparison-metrics.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/experiment-artifact-visual.css",
       "status": "added",
       "group": "lab_frontend",
@@ -2969,6 +3630,13 @@
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/lab-optimization-compare.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/lab-project-home.css",
@@ -3011,6 +3679,27 @@
       "disposition": "keep_release",
       "group": "lab_frontend",
       "reason": "Lab workflow, experiment and project presentation backed by execution receipts."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/optimization-parameters.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/optimization-weights.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/optimization-weights.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/portable-agent-ui.css",
@@ -3202,11 +3891,53 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/features/knowledge/public-copy.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/reader-api.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/reader-pdf.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/knowledge/reading-context.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/structured-reading.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/structured-reading.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/structured-viewer.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/knowledge/vault-workspace.css",
@@ -3223,6 +3954,13 @@
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
+      "path": "control-center-web/src/features/memory/ActivityTimeline.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/memory/ActivityTimeline.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3230,10 +3968,24 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/memory/MemoryCurationWorkbench.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/memory/MemoryCurationWorkbench.tsx",
       "disposition": "keep_release",
       "group": "composition_refactor",
       "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/memory/MemoryLibraryNavigation.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
     },
     {
@@ -3258,6 +4010,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/memory/knowledge-workbench-api.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/memory/memory-feature.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -3269,6 +4028,13 @@
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/memory/memory.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
     },
     {
@@ -3319,6 +4085,20 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/features/paw-os/PawResultWindow.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/paw-os/PawResultWindow.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/paw-os/app-icons.ts",
@@ -3398,6 +4178,34 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/rooms/RoomPlanetAvatar.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/assets/README.md",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/assets/planet-avatars-v1.png",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/assets/planet-bodies-v1.png",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/rooms/composer/RoomCapabilityControls.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -3426,6 +4234,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/rooms/composer/RoomPartnerPermissionControls.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/rooms/composer/room-composer.css",
       "status": "added",
       "group": "conversation_controls",
@@ -3438,6 +4253,13 @@
       "group": "room_frontend",
       "reason": "Improve Room reading, participant feedback and conversation controls.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/room-planet-avatar.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/rooms/room-presentation.test.tsx",
@@ -3454,6 +4276,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/rooms/room-types.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/rooms/rooms-feature.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -3466,6 +4295,41 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/shared-room-live-session.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/use-room-live-session.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/state/live-store.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/state/room-event-window.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/timeline/RoomTurn.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/schedules/MemorySchedules.tsx",
@@ -3515,6 +4379,363 @@
       "group": "composition_refactor",
       "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/AgentModeSwitch.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/ContinuityHome.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/ContinuityHome.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevActivityIcon.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevActivityIcon.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevCompanion.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevCompanion.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevPlanReview.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevPlanReview.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevPolicyControls.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevProgress.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevTaskAssignment.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevTaskAssignment.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevTaskRevision.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/JevTaskRevision.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationSurface.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationSurface.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.v21.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/agent-mode-store.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/continuity-model.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/continuity.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-activity-icon.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-execution.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-execution.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-execution.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-mission.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-plan-review.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-task-assignment.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-task-assignment.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-task-revision.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-task-revision.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-task-revision.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-catalog.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-controller.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-core.test.js",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-journal.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-model.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-request.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/organization-request.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/reading-recovery.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/room-entry-mode.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/room-entry-mode.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/semantic-workspace.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/use-jev-execution.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/use-jev-execution.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/use-receipt-highlight.test.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/use-receipt-highlight.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/workspace-recovery.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/workspace-recovery.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/trace-agent/diagnostic-start.test.ts",
@@ -3720,6 +4941,13 @@
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawAgentModes.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawAppsRuntime.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3732,6 +4960,41 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawJevTeamPanels.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawJevTeamPanels.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawJevToolRecords.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawJevToolRecords.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawJevWorkspace.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawNativeApps.test.tsx",
@@ -3748,6 +5011,20 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomAssignmentMap.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomAssignmentMap.v2.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomConversation.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3760,6 +5037,62 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomFocusOverview.test.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomFocusOverview.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomFocusParticipants.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomFocusParticipants.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomProgress.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomProgress.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomRemovalProgress.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomRemovalProgress.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawRoomRoundSheet.test.tsx",
@@ -3776,6 +5109,27 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomRoutingEvidence.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomWorkStatus.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomWorkStatus.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomWorkspace.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3788,6 +5142,13 @@
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawSessionFocusHeader.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.test.tsx",
@@ -3895,11 +5256,88 @@
       "reason": "Current React OS naming, architecture and development entrypoints."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/paw-jev-conversation.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-jev-mission.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-jev-team.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-room-conversation-navigation.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/paw-room-round-sheet.css",
       "status": "modified",
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-workbench-reading.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-focus-projection.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-focus-projection.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-gravity-projection.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-gravity-projection.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-observer-preference.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-participant-presentation.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/paw-os/apps/room-round-task-sheet.test.ts",
@@ -3916,6 +5354,20 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/room-route-visibility.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-route-visibility.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/room-satellite-auto-open.test.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -3928,6 +5380,48 @@
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-task-view.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-visibility-regression.test.js",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-visibility-v2.test.js",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-visual-progress.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-visual-progress.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/room-work-status.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/paw-os/apps/session-catalog.test.ts",
@@ -4350,6 +5844,20 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawWayfinderWork.test.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawWayfinderWork.tsx",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/PawWindowLayer.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -4441,11 +5949,32 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/styles/paw-os-room-progress.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-room-work-status.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/styles/paw-os-shell-migrated-v1.css",
       "status": "modified",
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-stellar-dark.css",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-stellar.css",
@@ -4469,6 +5998,27 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/platform/attachment-import.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/platform/browser-attachment-picker.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/platform/browser-attachment-picker.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/platform/http-transport.test.ts",
       "status": "modified",
       "group": "voice_desktop",
@@ -4481,6 +6031,13 @@
       "group": "voice_desktop",
       "disposition": "keep_release",
       "reason": "Installed app naming and Electron voice control integration."
+    },
+    {
+      "path": "control-center-web/src/platform/jev-transport.test.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/platform/native-transport.test.ts",
@@ -4516,6 +6073,13 @@
       "group": "voice_desktop",
       "disposition": "keep_release",
       "reason": "Installed app naming and Electron voice control integration."
+    },
+    {
+      "path": "control-center-web/src/test/fixtures/room-visual.ts",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "control-center-web/vite.config.ts",
@@ -4742,6 +6306,13 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "integrations/ego-browser/UPSTREAM.md",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "integrations/jev/README.md",
       "status": "added",
       "disposition": "keep_release",
@@ -4775,6 +6346,13 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "integrations/pi/pi-0.87-compatibility.md",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "integrations/pi/rag-ime-control.ts",
@@ -4817,6 +6395,13 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "integrations/pi/skills/facilitate-room/SKILL.md",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "integrations/pi/skills/pawos-system/SKILL.md",
@@ -4938,11 +6523,25 @@
       "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
+      "path": "rag_ime/agent_background_jobs.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/agent_capability_catalog.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "rag_ime/agent_command_receipts.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "rag_ime/agent_composition.py",
@@ -4971,6 +6570,13 @@
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_events.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "rag_ime/agent_execution_policy.py",
@@ -5715,6 +7321,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/agent_sessions.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/agent_skill_routing.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -5785,6 +7398,27 @@
       "reason": "Product extension host assembly, generated tool contracts and module dependency checks."
     },
     {
+      "path": "rag_ime/contracts/json/agent-memory-maintenance-status.v1.json",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-room-snapshot.v1.json",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-room.v1.json",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/contracts/json/agent-tool-call.v1.json",
       "status": "modified",
       "disposition": "keep_release",
@@ -5827,11 +7461,25 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/contracts/json/knowledge-library.v1.json",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/contracts/json/observability-trace-get.v1.json",
       "group": "trace_optimization",
       "disposition": "keep_release",
       "reason": "Keep Trace contracts synchronized and public source checks independent of local documents.",
       "status": "modified"
+    },
+    {
+      "path": "rag_ime/contracts/json/space-organization-command.v1.json",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/contracts/json/trace-diagnostic-inspection.v1.json",
@@ -5904,6 +7552,13 @@
       "reason": "Shared Pi history and declared Lab HTTP error ownership with consumer and boundary regressions."
     },
     {
+      "path": "rag_ime/daily_planner.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/db/migrations/0199_trace_optimization.sql",
       "status": "added",
       "disposition": "keep_release",
@@ -5939,11 +7594,102 @@
       "reason": "Agent Lab package, knowledge resources and service consumers."
     },
     {
+      "path": "rag_ime/db/migrations/0204_agent_space_organization.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0205_space_continuity.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0206_jev_room_plans.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0207_jev_task_graph.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0208_jev_host_events.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0209_jev_event_recovery.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0210_jev_execution_purposes.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0211_jev_root_policy.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0212_jev_execution_drains.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0213_jev_plan_approval.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0214_jev_task_revisions.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0215_jev_participant_removal.sql",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/debug_server.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
+    },
+    {
+      "path": "rag_ime/deepseek_memory_organizer.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "rag_ime/desktop_files.py",
@@ -5974,6 +7720,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/external_actions.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/hybrid_rag_explain.py",
       "status": "deleted",
       "group": "product_integration",
@@ -5986,6 +7739,174 @@
       "disposition": "keep_release",
       "group": "jev_integration",
       "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "rag_ime/jev_decisions.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_room_plans.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/__init__.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/application.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/candidates.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/context.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/controller.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/decider.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/effects.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/event_queue.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/graph.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/ledger.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/lifecycle.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/materials.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/owner.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/policy.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/reclaim.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/removal.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/revisions.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/room_driver.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/runtime_adapter.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/skill_requirements.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/submission_contracts.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/types.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/keychain_secrets.py",
@@ -6016,6 +7937,13 @@
       "reason": "Inventory the Knowledge owner documentation already committed in 0e128f50; uncommitted Knowledge work remains outside this candidate."
     },
     {
+      "path": "rag_ime/knowledge_library/__init__.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/knowledge_library/client.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -6028,6 +7956,13 @@
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/epub.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/knowledge_library/identity.py",
@@ -6044,11 +7979,32 @@
       "reason": "Jev credentials, structured approval and optional Knowledge reranking."
     },
     {
+      "path": "rag_ime/knowledge_library/legacy_office.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/knowledge_library/mineru_structure.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/knowledge_library/models.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/knowledge_library/office.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/knowledge_library/parsers.py",
@@ -6063,6 +8019,13 @@
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/reader_artifacts.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/knowledge_library/rerank.py",
@@ -6084,6 +8047,13 @@
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, knowledge resources and service consumers."
+    },
+    {
+      "path": "rag_ime/knowledge_library/structured.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/knowledge_library/vault.py",
@@ -6282,6 +8252,20 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/personal_context_maintenance.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "rag_ime/personal_context_observability.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/pi/README.md",
       "status": "added",
       "group": "refactor_docs_examples",
@@ -6450,6 +8434,13 @@
       "reason": "Operator scripts that import Lab owners or record current source paths."
     },
     {
+      "path": "rag_ime/rag_retrieval_experiment.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/rooms/README.md",
       "status": "added",
       "group": "refactor_docs_examples",
@@ -6483,6 +8474,13 @@
       "group": "room_service_refactor",
       "reason": "Explicit Room work, dispatch, cancellation and approval dependencies with stable stores and events.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/rooms/jev_routing.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/rooms/lifecycle.py",
@@ -6597,6 +8595,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/rooms/work_transaction.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/rooms/workspace_ledger.py",
       "status": "added",
       "group": "room_service_refactor",
@@ -6616,6 +8621,34 @@
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/space_context.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/space_continuity.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/space_organization.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/space_organization_validation.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "rag_ime/trace_diagnostics.py",
@@ -6730,6 +8763,13 @@
       "reason": "Offline preview installer, bundled runtime validation and the existing stack installation path."
     },
     {
+      "path": "scripts/build_ego_browser_runtime.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "scripts/build_macos_installer.py",
       "status": "added",
       "disposition": "keep_release",
@@ -6779,6 +8819,13 @@
       "reason": "Offline preview installer, bundled runtime validation and the existing stack installation path."
     },
     {
+      "path": "scripts/canary_jev_room.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "scripts/canary_rag_benchmark_agent.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -6798,6 +8845,13 @@
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "scripts/check_control_center_web_dist.sh",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "modified"
     },
     {
       "path": "scripts/check_import_boundaries.py",
@@ -7148,6 +9202,13 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "tests/test_agent_event_publication_order.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "tests/test_agent_execution_policy.py",
@@ -7619,6 +9680,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_skill_routing.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "tests/test_agent_tool_runtime_contracts.py",
       "disposition": "keep_release",
       "group": "verification",
@@ -7638,6 +9706,13 @@
       "group": "scheduled_tasks",
       "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_workspace.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "tests/test_binary_installer.py",
@@ -7673,6 +9748,13 @@
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "tests/test_build_paw_backend_web_model_package.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
     },
     {
       "path": "tests/test_canary_rag_benchmark_agent.py",
@@ -7724,11 +9806,25 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_deepseek_memory_organizer.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
       "path": "tests/test_desktop_files.py",
       "status": "added",
       "group": "verification",
       "reason": "Verify the integrated product behavior and ownership contracts.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_ego_browser_runtime_build.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "tests/test_enterprise_rag_luna_prompt_v5.py",
@@ -7794,11 +9890,277 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "tests/test_jev_artifact_revision_guard.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_assignment_controls.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_canary_report.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_command_transactions.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_context_pipeline.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_decisions.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_direct_completion.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_execution_status.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_failure_lifecycle.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_host_application.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_http.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "tests/test_jev_knowledge_rerank.py",
       "status": "added",
       "disposition": "keep_release",
       "group": "jev_integration",
       "reason": "Jev credentials, structured approval and optional Knowledge reranking."
+    },
+    {
+      "path": "tests/test_jev_lifecycle.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_manual_reassign.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_manual_reclaim.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_outbox_recovery.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_owner_preference.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_participant_guard.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_participant_removal.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_plan_approval.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_policy.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_policy_admission.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_prepared_admission.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_projection_reads.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_prompt_context.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_publication_recovery.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_retired_recovery.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_room_steer.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_runtime_adapter.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_scheduling_progress.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_shared_session_wakeup.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_skill_availability.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_submission_contracts.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_task_revision.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_tasks_owner_integration.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_verification_evidence.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_verification_followup.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_jev_workspace_job_cancel.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_document_formats.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "tests/test_knowledge_library.py",
@@ -7820,6 +10182,48 @@
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "tests/test_knowledge_mineru_structure.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_office_structure.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_parser_pipeline.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_reader_structure.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_retrieval_engineering.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_structured_chunking.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "tests/test_lab_extension_example.py",
@@ -7983,11 +10387,39 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_personal_context_maintenance.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_pi_exact_turn_cancellation.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "tests/test_pi_projection_boundaries.py",
       "status": "added",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_pi_prompt_settings_overlay.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_pi_prompt_tool_sync.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "tests/test_pi_provider_auth.py",
@@ -8060,6 +10492,13 @@
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
     },
     {
+      "path": "tests/test_pi_turn_activity.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "tests/test_public_release.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -8102,6 +10541,27 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_room_control_retention.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_room_event_ordering.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_room_event_visibility.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
       "path": "tests/test_room_permission_policy.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -8128,6 +10588,27 @@
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "tests/test_space_continuity.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_space_organization.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_space_organization_v21.py",
+      "disposition": "keep_release",
+      "group": "workspace_completion",
+      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
     },
     {
       "path": "tests/test_trace_diagnostic_http.py",
