@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-29T04:04:42.901042+00:00",
+  "generatedAt": "2026-09-29T05:05:23.344542+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Integrate Conversation v2 rich rendering and Jev execution with current main. Preserve current main Earth implementation and unrelated dirty worktrees. Pi remains the execution owner; repository checks, live canaries and local installation are separate evidence boundaries."
+    "candidateCommitPolicy": "Integrate Conversation V2 rich rendering, Workspace V3 reading, Multi-Agent V4 panorama and Jev execution with current main. Preserve current main Earth implementation and unrelated dirty worktrees. Pi remains the execution owner; repository checks, live canaries and local installation are separate evidence boundaries."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -47,7 +47,7 @@
     },
     "conversation_v2_integration": {
       "description": "Conversation v2 and Jev integration with current main.",
-      "pathCount": 35
+      "pathCount": 53
     },
     "workspace_completion": {
       "description": "Complete user-authorized workspace source checkpoint across Jev, Lab and shared product owners.",
@@ -155,10 +155,10 @@
     }
   },
   "summary": {
-    "pathCount": 1498,
+    "pathCount": 1516,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1299
+      "keep_release": 1317
     },
     "groupCounts": {
       "local_docs": 122,
@@ -169,7 +169,7 @@
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
-      "conversation_v2_integration": 35,
+      "conversation_v2_integration": 53,
       "workspace_completion": 319,
       "memory_lifecycle": 15,
       "verification": 112,
@@ -1189,11 +1189,60 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/fixtures/conversation-workspace-v3.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/conversation-workspace-v3.html",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/conversation-workspace-v3.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/e2e/fixtures/file-previews.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-collaboration-v4-data.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-collaboration-v4.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-collaboration-v4.html",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/jev-collaboration-v4.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/e2e/fixtures/jev-execution.css",
@@ -1291,6 +1340,13 @@
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/workspace-v3-v4.e2e.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "added"
     },
     {
@@ -2869,6 +2925,27 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/agent/timeline/rich/RichReadingSurface.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/reading-surface.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/rich/reading-surface.test.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/rich/rich-conversation.css",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -3147,6 +3224,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/reading/reading-preferences.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/conversation-ui/workbench-tokens.css",
@@ -4899,6 +4983,27 @@
       "reason": "Installed app naming and Electron voice control integration."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/JevCollaborationPanel.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/JevCollaborationView.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/JevRailFilters.tsx",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawAgentApp.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -5233,6 +5338,27 @@
       "disposition": "keep_release",
       "group": "trace_optimization",
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/jev-collaboration-model.test.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/jev-collaboration-model.ts",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/jev-collaboration.css",
+      "disposition": "keep_release",
+      "group": "conversation_v2_integration",
+      "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/paw-os/apps/paw-agent-capsule.css",
