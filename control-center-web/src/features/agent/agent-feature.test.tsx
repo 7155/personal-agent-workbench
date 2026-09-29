@@ -2074,12 +2074,13 @@ describe('Agent experience', () => {
     const queuedTurn = Object.values(useAgentLiveStore.getState().projections['session-preview'].turnsById)
       .find((turn) => turn.id.startsWith('local-turn:'));
     expect(queuedTurn?.status).toBe('queued');
-    const pending = await screen.findByRole('status');
+    // Rich code blocks also expose clipboard live regions with role=status.
+    const pending = (await screen.findByText('思考中')).closest('[role="status"]');
     expect(pending).toHaveClass('agent-assistant-pending');
     expect(pending).toHaveTextContent('思考中');
     expect(pending).toHaveTextContent('0秒');
     expect(pending).toHaveTextContent('消息已收到');
-    const assistantTurn = pending.closest('.agent-assistant-turn');
+    const assistantTurn = pending?.closest('.agent-assistant-turn');
     expect(assistantTurn).not.toBeNull();
     expect(within(assistantTurn as HTMLElement).queryByRole('img', { name: 'Pi Agent' })).not.toBeInTheDocument();
     expect(assistantTurn?.querySelector('.agent-persona-avatar')).not.toBeInTheDocument();

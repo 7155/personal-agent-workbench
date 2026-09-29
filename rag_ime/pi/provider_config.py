@@ -157,6 +157,25 @@ def _models(
                 if max_tokens is not None:
                     model["maxTokens"] = max_tokens
 
+            # Preserve Pi's model-specific image limits instead of silently
+            # replacing gateway settings with generic defaults. Only documented
+            # scalar fields cross this boundary; no arbitrary provider payload.
+            input_limits = _image_input_limits(raw_model.get("inputLimits"))
+            if input_limits:
+                model["inputLimits"] = input_limits
+            cache = raw_model.get("promptCache")
+            if isinstance(cache, dict):
+                lifetimes = {key: seconds for key in ("short", "long")
+                             if (seconds := _positive_token_limit(cache.get(key))) is not None}
+                if lifetimes:
+                    model["promptCache"] = lifetimes
+            modalities = raw_model.get("modalities")
+            inputs = modalities.get("input") if isinstance(modalities, dict) else None
+            if isinstance(inputs, list) and inputs and all(
+                isinstance(item, str) and item in {"text", "image"} for item in inputs
+            ):
+                model["input"] = list(dict.fromkeys(inputs))
+
             variants = raw_model.get("variants")
             if isinstance(variants, dict):
                 supported = {
@@ -176,6 +195,35 @@ def _models(
                     }
         models.append(model)
     return models
+
+
+def _image_input_limits(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    request_bytes = _positive_token_limit(value.get("maxRequestBytes"))
+    if request_bytes is not None:
+        result["maxRequestBytes"] = request_bytes
+    image = value.get("images")
+    if not isinstance(image, dict):
+        return result
+    limits = {}
+    for key in ("maxPerMessage", "maxPerRequest"):
+        limit = _positive_token_limit(image.get(key))
+        if limit is not None:
+            limits[key] = limit
+    resize = image.get("resize")
+    if isinstance(resize, dict):
+        bounded = {}
+        for key in ("maxWidth", "maxHeight", "maxBytes", "jpegQuality"):
+            limit = _positive_token_limit(resize.get(key))
+            if limit is not None and (key != "jpegQuality" or limit <= 100):
+                bounded[key] = limit
+        if bounded:
+            limits["resize"] = bounded
+    if limits:
+        result["images"] = limits
+    return result
 
 
 def _model_name(value: object) -> str:

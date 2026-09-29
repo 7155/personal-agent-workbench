@@ -110,6 +110,7 @@ class SchedulingObservationTests(JevHostFixture):
         root = self.snapshot(created).task(created["workItemId"])
         self.assertEqual(captured[0]["work"]["context"], {
             "objective": root.objective, "acceptance": list(root.acceptance),
+            "attachmentCount": 0,
         })
         self.assertEqual(self.app.lifecycle.policy(created["graphId"])["phase"], "execute")
         self.prompt.assert_not_called()

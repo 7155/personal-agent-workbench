@@ -394,6 +394,8 @@ class MaterialPipelineTests(unittest.TestCase):
         self.assertEqual(evidence_call.args[1].revision, 1)
         self.assertIs(evidence_call.args[2], effect)
         self.assertEqual(evidence_call.kwargs["inline_byte_budget"], 2000)
+        self.assertIn('"state":"done"', self.body(accepted))
+        self.assertIn('"stateSource":"current canonical WorkItem"', self.body(accepted))
         self.assertIn("media://dependency-tools", self.body(accepted))
         self.assertIn("Accepted artifact v2", self.body(accepted))
         self.assertIn("artifact:revision-2", self.body(accepted))

@@ -532,7 +532,7 @@ describe('PawOsSatelliteHost', () => {
     const statusline = await screen.findByLabelText('当前工作与状态');
     expect(statusline).toHaveAttribute('data-state', 'completed');
     expect(statusline).toHaveTextContent('本轮执行结束');
-    expect(statusline).toHaveTextContent('公开执行记录已更新');
+    expect(statusline).toHaveTextContent('最近有执行记录');
     expect(statusline).not.toHaveTextContent('participant_activity');
     expect(statusline).not.toHaveTextContent('participantactivity');
   });

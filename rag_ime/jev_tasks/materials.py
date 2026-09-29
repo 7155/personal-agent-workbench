@@ -550,7 +550,12 @@ class JevMaterialService:
             ) if lifecycle is not None else {"status": "unavailable", "tools": []}
             materials.append(Material("dependency:" + dependency.id, str(dependency.revision),
                                       "已验收依赖成果", "work:" + dependency.id, "",
-                                      original=canonical({"result": dependency.result,
+                                      original=canonical({"taskId": dependency.id,
+                                                          "taskRevision": dependency.revision,
+                                                          "state": dependency.state,
+                                                          "stateSource": "current canonical WorkItem",
+                                                          "statePolicy": "state 是宿主当前已验收状态；result 是验收前的历史执行者提交，可能仍写着待验收。不得用历史文字覆盖当前 state。",
+                                                          "result": dependency.result,
                                                           "artifacts": list(dependency.artifacts),
                                                           "evidence": list(dependency.evidence),
                                                           "workerToolEvidence": tool_evidence}),
