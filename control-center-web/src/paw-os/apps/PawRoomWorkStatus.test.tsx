@@ -23,8 +23,9 @@ describe('Room composer status dock', () => {
     render(<PawRoomWorkStatus {...props()} />);
     expect(screen.getByRole('button',{name:'展开任务'})).toHaveAttribute('aria-expanded','false');
     expect(screen.queryByLabelText('任务分派图')).not.toBeInTheDocument();
-    expect(screen.getByText('工作项完成 0 / 2')).toBeInTheDocument();
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('执行项完成 0 / 2')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '当前执行项完成数量' })).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '2');
   });
   it('keeps a selected task across folding and streaming updates', async () => {
     const user=userEvent.setup(), p=props();const view=render(<PawRoomWorkStatus {...p} />);

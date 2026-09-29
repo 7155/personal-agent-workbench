@@ -361,7 +361,9 @@ describe('room gravity projection over the minecraft harness', () => {
     );
 
     const timeline = await screen.findByRole('log', { name: '行星公开对话时间线' });
-    const receipts = [...timeline.querySelectorAll('.ccui-tool-card')];
+    fireEvent.click(within(timeline).getByRole('button', { name: /工具记录 · 8 项/ }));
+    const records = await screen.findByRole('dialog', { name: /工具记录 · 8 项/ });
+    const receipts = [...records.querySelectorAll('.ccui-tool-card')];
     const messages = receipts.map((card) => card.querySelector('.ccui-tool-main')?.textContent?.trim() ?? '');
     expect(messages.length).toBeGreaterThanOrEqual(5);
     // Real prose summaries survive; machine ids never surface as row text.

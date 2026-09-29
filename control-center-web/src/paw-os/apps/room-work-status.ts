@@ -1,3 +1,4 @@
+import { roomPublicAction } from './room-visual-progress';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import { roomCollaborationRoleLabel } from '@/features/rooms/room-copy';
 import { roomFocusActionLabel, type RoomFocusProjection, type RoomFocusState, type RoomFocusWorkItem } from './room-focus-projection';
@@ -35,7 +36,8 @@ export function roomPartnerStatusLabel(state: RoomFocusState): string {
   return stateLabels[state];
 }
 export function roomWorkStatusLabel(task: RoomFocusWorkItem): string {
-  if (!task.ownerParticipantId && task.offeredToParticipantId) return '待接收';
+  if (!['completed', 'failed', 'stopped'].includes(task.state)
+    && !task.ownerParticipantId && task.offeredToParticipantId) return '待接收';
   if (task.state === 'completed') {
     if (task.source === 'runtime') return '执行已返回';
     return task.review?.operability === 'passed' && task.review?.requirement === 'satisfied'
@@ -70,10 +72,13 @@ export function buildRoomWorkStatus(input: RoomWorkStatusInput): RoomWorkStatus 
     && partner.state === 'running') : [];
   const latest = [...activities].sort((a, b) =>
     (b.sequence ?? b.createdAtMs) - (a.sequence ?? a.createdAtMs))[0];
-  const publicAction = roomFocusActionLabel(latest?.summary.trim() || '');
-  const updatedAtMs = Math.max(0, turn?.updatedAtMs ?? 0,
+  const publicAction = roomPublicAction(roomFocusActionLabel(latest?.summary.trim() || ''), '');
+  const updatedAtMs = Math.max(0, ...[
+    turn?.updatedAtMs,
     ...activities.map((item) => item.updatedAtMs ?? item.createdAtMs),
-    ...focus.workItems.map((item) => item.updatedAtMs));
+    ...focus.workItems.map((item) => item.updatedAtMs),
+  ].filter((value): value is number => typeof value === 'number'
+    && Number.isFinite(value) && value > 0 && value <= 8.64e15));
   const live = Boolean(visible && recoveryState === 'synced' && projection && !projection.needsSnapshot);
   const base = {
     live, updatedAtMs, completed: explicit.filter((item) => item.state === 'completed').length,
@@ -88,13 +93,19 @@ export function buildRoomWorkStatus(input: RoomWorkStatusInput): RoomWorkStatus 
   if (!visible) return status('paused-view', '实时显示已暂停', '回到此页面后恢复同步；后台任务不会因此停止。');
   if (recoveryState !== 'synced' || !projection || projection.needsSnapshot)
     return status('syncing', '正在同步协作状态', '正在核对事件与快照；上次状态不代表此刻仍在执行。', 'sync');
-  if (stopping) return status('stopping', '正在停止协作', '等待执行方的停止回执；此时尚未确认全部停止。');
   if (turn?.status === 'aborted') return status('stopped', '本轮已停止', '保留已有结果和证据，未执行的工作不会标记完成。');
   if (turn?.status === 'failed') return status('failed', '本轮执行失败', turn.failure || '查看任务或实际 Session，核对失败原因。');
-  const question = projection.pendingUserQuestion;
-  if (pendingInput || (question && question.rootId === focus.goal.rootId))
+  if (turn?.status === 'completed') return status('completed', '本轮执行已结束',
+    explicit.some((item) => !['completed', 'stopped'].includes(item.state))
+      ? '仍有未收束工作项，请展开核对；不会把执行结束当作全部验收。'
+      : explicit.length ? `${base.completed} / ${base.total} 工作项已完成，结果与证据可展开查看。`
+        : 'Root 已有终态回执；此轮没有可核对的工作项计数。');
+  if (stopping) return status('stopping', '正在停止协作', '等待执行方的停止回执；此时尚未确认全部停止。');
+  const question = projection.pendingUserQuestion?.rootId === focus.goal.rootId
+    ? projection.pendingUserQuestion : undefined;
+  if (pendingInput || question)
     return status('needs-input', '需要你的回答', question?.prompt || '请在下方回答现有问题，随后继续本轮。', 'answer');
-  const detail = running.map((partner) => `${partner.celestialName}（${roomCollaborationRoleLabel(partner.collaborationRole)}）· ${partner.currentAction}`).join('；');
+  const detail = running.map((partner) => `${partner.celestialName}（${roomCollaborationRoleLabel(partner.collaborationRole)}）· ${roomPublicAction(partner.currentAction)}`).join('；');
   if (blocked.length) return status('blocked', `${blocked.length} 个工作项需要处理`,
     `${blocked[0]?.blocker?.reason || blocked[0]?.objective}${running.length ? `；另有 ${running.length} 位伙伴仍在执行` : ''}`);
   if (running.length) {
@@ -107,11 +118,6 @@ export function buildRoomWorkStatus(input: RoomWorkStatusInput): RoomWorkStatus 
   }
   if (review.length) return status('review', `${review.length} 个工作项等待复核`,
     `${review[0]?.objective}；执行结束与验收完成分别记录。`);
-  if (turn?.status === 'completed') return status('completed', '本轮执行已结束',
-    explicit.some((item) => !['completed', 'stopped'].includes(item.state))
-      ? '仍有未收束工作项，请展开核对；不会把执行结束当作全部验收。'
-      : explicit.length ? `${base.completed} / ${base.total} 工作项已完成，结果与证据可展开查看。`
-        : 'Root 已有终态回执；此轮没有可核对的工作项计数。');
   if (turn?.status === 'running') return status('awaiting-root', '等待协作回执',
     publicAction || '目前没有可确认的执行节点，等待统筹或伙伴的新回执。');
   if (turn?.status === 'queued') return status('idle', '请求已排队', '尚未收到执行开始的证据。');
