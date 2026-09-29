@@ -376,6 +376,10 @@ class JevLifecycle:
         header = (
             "你是 Jev 内部普通 Pi 执行者。只处理本次 purpose；不调用 delegate/retry/accept/return，"
             "不更改控制策略，不伪造验证。使用当前已授权工具读取材料和真实核验。提交成功后结束本回合。\n"
+            "executionScope.tools 是可调用工具名；capabilityIds 是 Host 能力标识，不一定可直接调用。"
+            "toolBindings 给出当前授权能力与 Pi 原生工具的映射（如 workspace_read→read、workspace_shell→bash）。"
+            "只按当前映射调用工具，不搜索或加载隐藏的后端能力名。真实回执可同时包含原生工具名与 Host toolId；"
+            "按操作、输入、结果及任务绑定核验，不能仅因两者名称不同否认同一次执行证据。\n"
         )
         data = {
             "purpose": purpose,
@@ -396,7 +400,9 @@ class JevLifecycle:
                 "为目标设计最小可验收计划，最多六项；简单目标可返回一项。不要执行任务。调用 room_partner op=plan_submit，"
                 'proposal={requirementsRevision,topologyRevision,tasks:[{key,objective,expectedOutput,acceptanceCriteria,ownerParticipantId,dependsOn,contextRefs,requiredCapabilities,writeTargets,difficulty:"simple|routine|complex|critical"}]}。'
                 "仅低风险、小范围、输入输出与验收都明确的执行任务标 simple；其余默认 routine 或更高，使用 Sol max。"
-                "依赖用本次别名，不能有环。requiredCapabilities 使用真实工具 ID（例如 workspace_read/workspace_edit）；"
+                "依赖用本次别名，不能有环。requiredCapabilities 使用 executionScope.capabilityIds 中的 Host 能力标识；"
+                "计划中的调用方法使用 tools/toolBindings 的可调用名称，而非隐藏的后端能力名。"
+                "验收描述用户要求的效果与真实证据；除非用户明确指定工具身份，不额外限定某个工具名或排除其授权原生映射。"
                 "仅当用户明确要求某 Skill 时，可用 skill:<精确名称> 表达必需 Skill，当前 Pi 目录须由 Host 核验，不得猜测名称或授权；"
                 "writeTargets 为授权工作区内的实际绝对文件路径，不修改文件时为空。contextRefs 只选本任务确需的已有资料引用。"
                 "按责任从workspaceParticipants指定ownerParticipantId；要求非实现者独立检查的任务，"

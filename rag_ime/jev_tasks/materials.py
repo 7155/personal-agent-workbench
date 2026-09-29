@@ -485,7 +485,25 @@ class JevMaterialService:
         roots = list(session.get("workspaceRoots") or [])
         if unrestricted_workspace_policy_active(session):
             roots = list(system_wide_workspace_roots(roots))
-        tools = self.service._runtime_tool_manifest(session)
+        tools = [tool for tool in self.service._runtime_tool_manifest(session)
+                 if tool.get("available", True)]
+        capability_ids = set()
+        callable_names = set()
+        bindings = []
+        for tool in tools:
+            capability = str(tool.get("name") or tool.get("id") or "")
+            if not capability:
+                continue
+            capability_ids.add(capability)
+            if tool.get("modelVisible") is not False:
+                callable_names.add(capability)
+            for projection in tool.get("runtimeProjections", []):
+                if not isinstance(projection, Mapping) or not projection.get("name"):
+                    continue
+                name = str(projection["name"])
+                callable_names.add(name)
+                bindings.append({"capabilityId": capability, "name": name,
+                                 "operation": str(projection.get("operation") or "")})
         return {"sessionId": session["id"], "ownerId": task.owner_id,
                 "assignmentKey": task.assignment_key, "mode": session.get("mode"),
                 "executionMode": session.get("executionMode"),
@@ -493,8 +511,9 @@ class JevMaterialService:
                 "workspaceRoots": roots,
                 "writeRoots": [] if read_only_policy_active(session) else roots,
                 "writeTargets": [text(value, "write target", 2000) for value in write_targets],
-                "tools": sorted({str(tool.get("name") or tool.get("id")) for tool in tools
-                                 if tool.get("name") or tool.get("id")})}
+                "tools": sorted(callable_names),
+                "capabilityIds": sorted(capability_ids),
+                "toolBindings": sorted(bindings, key=lambda item: (item["capabilityId"], item["name"], item["operation"]))}
 
     def _requirements(self, snapshot, task) -> list[Material]:
         materials = []

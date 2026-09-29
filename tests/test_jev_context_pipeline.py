@@ -227,6 +227,24 @@ class MaterialPipelineTests(unittest.TestCase):
         self.assertEqual(payload["executionScope"]["writeRoots"], [])
         self.assertEqual(payload["executionScope"]["tools"], ["workspace_read"])
 
+    def test_execution_scope_distinguishes_callable_names_from_host_capabilities(self):
+        self.service._runtime_tool_manifest = lambda session: [
+            {"name": "workspace_read", "modelVisible": False,
+             "runtimeProjections": [{"name": "read", "operation": "read"}]},
+            {"name": "workspace_shell", "modelVisible": False,
+             "runtimeProjections": [{"name": "bash", "operation": "run"}]},
+            {"name": "hidden", "modelVisible": False},
+            {"name": "unavailable", "available": False},
+            {"name": "room_partner"},
+        ]
+        scope = self.manifest().for_executor()["executionScope"]
+        self.assertEqual(scope["tools"], ["bash", "read", "room_partner"])
+        self.assertEqual(scope["toolBindings"], [
+            {"capabilityId": "workspace_read", "name": "read", "operation": "read"},
+            {"capabilityId": "workspace_shell", "name": "bash", "operation": "run"},
+        ])
+        self.assertNotIn("unavailable", scope["capabilityIds"])
+
     def test_registered_work_document_reads_body_and_honors_explicit_section(self):
         path = self.root / "docs" / "draft.md"
         path.parent.mkdir()

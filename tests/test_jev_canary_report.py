@@ -104,7 +104,7 @@ class JevCanaryReportTests(unittest.TestCase):
         self.conn.execute(f"INSERT INTO {table} VALUES({','.join('?' for _ in values)})", values)
 
     def dispatch(self, dispatch, purpose, task, owner, start, end):
-        model = "gpt-6-astra" if purpose == "plan" else "gpt-6-luna"
+        model = "gpt-6-luna" if purpose == "execute" else "gpt-6-sol"
         request = {
             "sessionId": f"session-{owner}", "taskId": task, "ownerId": f"owner-{owner}", "purpose": purpose,
             "contextManifest": {"executionScope": {"modelSelection": {"modelId": model, "provider": "openai-codex", "thinkingLevel": "max"}}},
@@ -234,6 +234,19 @@ class JevCanaryReportTests(unittest.TestCase):
                     payload["reasoning"]["effort"] = wrong if field == "effort" else "max"
                 self.mutate_debug("worker-A", wrong_request)
                 self.assertEqual(self.audit()["checks"]["actual_gpt6_max_routing"]["status"], "failed")
+
+    def test_legacy_astra_planning_is_rejected_even_with_matching_receipts(self):
+        effect = next(e for e in self.projection["effects"] if e["effectId"] == "plan")
+        effect["request"]["contextManifest"]["executionScope"]["modelSelection"]["modelId"] = "gpt-6-astra"
+        self.mutate_debug("plan", lambda v: v["providerRequests"][0]["payload"].update(model="gpt-6-astra"))
+        self.mutate_json("agent_jev_execution_drains", "proof_json", "dispatch_id", "plan",
+            lambda p: p["settlement"]["receipt"]["finalMessage"].update(model="gpt-6-astra"))
+        self.assertEqual(self.audit()["checks"]["actual_gpt6_max_routing"]["status"], "failed")
+
+    def test_routine_execution_does_not_silently_use_luna(self):
+        self.conn.execute("UPDATE agent_jev_task_requirements SET specification_json=? WHERE task_id='A'",
+                          (json.dumps({"key": "A", "difficulty": "routine"}),))
+        self.assertEqual(self.audit()["checks"]["actual_gpt6_max_routing"]["status"], "failed")
 
     def test_missing_actual_request_is_unverified(self):
         (self.root / "debug" / "worker-A.json").unlink()

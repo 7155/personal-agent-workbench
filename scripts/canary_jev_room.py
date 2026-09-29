@@ -369,7 +369,12 @@ def build_canary_evidence(private_root, projection):
         req, receipt = effect["request"], effect["receipt"]
         selected = _object(_object(_object(req.get("contextManifest")).get("executionScope")).get("modelSelection"))
         difficulty = spec_by_task.get(req["taskId"], {}).get("difficulty", "routine")
-        expected_model = "gpt-6-astra" if req.get("purpose") == "plan" or difficulty == "critical" else "gpt-6-sol" if difficulty == "complex" else "gpt-6-luna"
+        # Independently audit the documented balanced policy: Sol owns planning,
+        # verification and all non-simple work; only simple execute/synthesize
+        # uses Luna. Never infer expected routing from the selected receipt.
+        expected_model = ("gpt-6-luna" if difficulty == "simple"
+                          and req.get("purpose", "execute") in {"execute", "synthesize"}
+                          else "gpt-6-sol")
         calls = request_by_turn.get((req["sessionId"], receipt.get("turnId")), [])
         proof = drain_by_id.get(effect["effectId"], {})
         valid = (selected.get("modelId") == expected_model and selected.get("thinkingLevel") == "max"
@@ -655,6 +660,7 @@ def main():
                     "strategy": "plan",
                     "message": message,
                     "modelRouting": "balanced",
+                    "verificationMode": "independent",
                     "toolApprovalMode": "dispatch",
                     "executionApproval": args.approve_plan,
                 },
