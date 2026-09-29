@@ -34,6 +34,9 @@ import { parsePiModelCatalogOptions, type PiModelOption } from '@/features/agent
 import { roleItems, sessionItems, type SessionSummary } from '@/features/agent/types';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
+import type { RoomProjectionState } from '@/contracts/room-reducer';
+import { buildRoomCollabTimeline } from '@/features/collab-timeline/room-timeline';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { selectActivePublicRoomTurn, selectPublicRoomTurnOrder } from '@/features/rooms/runtime/room-execution-lanes';
 import { publicAgentErrorText } from '@/features/agent/public-error';
 import { evidenceEchoFocusFromRoute } from '@/features/evidence-echo/evidence-echo';
@@ -667,11 +670,24 @@ function RoomWorkRow({ active, onClick, room }: { active: boolean; onClick: () =
     projection.state = running ? 'working' : latest.status === 'failed' ? 'attention'
       : ['completed', 'aborted'].includes(latest.status) ? 'complete' : 'neutral';
   }
-  return <WorkRow active={active} onClick={onClick} projection={projection} title={room.title} />;
+  return <WorkRow active={active} onClick={onClick} projection={projection} title={room.title}
+    extra={<RoomPlanetStrip room={room} projection={live && !live.needsSnapshot ? live : undefined} />} />;
 }
 
-function WorkRow({ active, onClick, projection, title, trailing }: { active: boolean; onClick: () => void; projection: WorkFileProjection; title: string; trailing?: ReactNode }) {
-  return <div className="paw-agent-row-shell" data-active={active || undefined} data-work-state={projection.state}><button aria-current={active ? 'page' : undefined} className="paw-agent-row" onClick={onClick} title={title} type="button"><FileText aria-hidden="true" size={15} /><span><strong>{title}</strong><small>{projection.meta}</small><small className="paw-agent-row__detail">{projection.detail}</small></span></button>{trailing}</div>;
+/** Tiny per-planet state strip: who worked this round and who is working now. */
+function RoomPlanetStrip({ room, projection }: { room: RoomSummary; projection?: RoomProjectionState }) {
+  const timeline = useMemo(() => (projection ? buildRoomCollabTimeline({ room, projection }) : undefined), [room, projection]);
+  const lanes = (timeline?.lanes ?? []).filter((lane) => lane.kind === 'partner').slice(0, 6);
+  if (!timeline || !lanes.length) return null;
+  return <span className="paw-agent-row__planets" aria-label={lanes.map((lane) => `${lane.label} ${lane.status}`).join('，')}>
+    {lanes.map((lane) => <span key={lane.id} data-state={lane.state} title={`${lane.label} · ${lane.status}`}>
+      <RoomPlanetAvatar ordinal={lane.ordinal ?? 0} size={16} decorative activity={['working', 'thinking', 'reviewing'].includes(lane.state) ? 'working' : lane.state === 'done' ? 'static' : 'static'} />
+    </span>)}
+  </span>;
+}
+
+function WorkRow({ active, onClick, projection, title, trailing, extra }: { active: boolean; onClick: () => void; projection: WorkFileProjection; title: string; trailing?: ReactNode; extra?: ReactNode }) {
+  return <div className="paw-agent-row-shell" data-active={active || undefined} data-work-state={projection.state}><button aria-current={active ? 'page' : undefined} className="paw-agent-row" onClick={onClick} title={title} type="button"><FileText aria-hidden="true" size={15} /><span><strong>{title}</strong><small>{projection.meta}</small><small className="paw-agent-row__detail">{projection.detail}</small>{extra}</span></button>{trailing}</div>;
 }
 
 function SessionActions({ onArchive, onDelete, session }: { onArchive: () => void; onDelete: () => void; session: SessionSummary }) {

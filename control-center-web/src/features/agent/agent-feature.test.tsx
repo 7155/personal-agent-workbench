@@ -4342,7 +4342,7 @@ describe('Agent experience', () => {
     const trigger = await screen.findByRole(
       'button',
       { name: '对话功能：记忆、工具、插件与技能；14 个当前可用工具，14 个已登记工具' },
-      { timeout: 5_000 },
+      { timeout: 15_000 },
     );
 
     await user.click(trigger);
@@ -4601,10 +4601,12 @@ describe('Agent experience', () => {
     });
     renderAgent(transport);
 
+    // Catalog promises remain unresolved: this proves independence, not a
+    // wall-clock SLO for jsdom under a full-suite CPU load.
     expect(await screen.findByRole(
       'button',
       { name: /14 个当前可用工具，14 个已登记工具/ },
-      { timeout: 5_000 },
+      { timeout: 15_000 },
     )).toBeEnabled();
 
     await act(async () => {

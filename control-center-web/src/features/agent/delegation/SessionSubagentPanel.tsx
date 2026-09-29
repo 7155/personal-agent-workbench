@@ -35,6 +35,7 @@ import {
   subagentTemplateLabel,
 } from '../status/subagent-presentation';
 import { SubagentLaunchPanel } from './SubagentLaunchPanel';
+import { SessionCollabTimeline } from '@/features/collab-timeline/SessionCollabTimeline';
 import './session-subagent.css';
 
 export const SessionSubagentPanel = forwardRef<HTMLElement, {
@@ -143,7 +144,8 @@ export const SessionSubagentPanel = forwardRef<HTMLElement, {
                 />
               </Disclosure>
             </div>
-          ) : <><section className="session-subagent-graph" aria-label="子 Agent 运行图">
+          ) : <>{runs.length ? <SessionCollabTimeline sessionId={sessionId} title={session?.title || '当前 Session'} runs={runs} active={open && pageVisible} {...(onOpenRun ? { onOpenRun } : {})} /> : null}
+          <section className="session-subagent-graph" aria-label="子 Agent 运行图">
             <header>
               <span><Network size={17} /><strong>子 Agent 运行图</strong></span>
               <div aria-label="子 Agent 运行统计">

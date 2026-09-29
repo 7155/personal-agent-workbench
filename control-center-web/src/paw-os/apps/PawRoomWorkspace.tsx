@@ -10,6 +10,7 @@ import { useJevExecution } from '@/features/semantic-workspace/use-jev-execution
 import { jevAbstention, jevStatusLabel, jevTaskCountLabel, pendingJevInput } from '@/features/semantic-workspace/jev-execution';
 import {
   Archive,
+  ChartGantt,
   CircleAlert,
   ExternalLink,
   Focus,
@@ -76,7 +77,7 @@ import {
   type RoomWorkItem,
 } from '@/features/rooms/room-types';
 import { PawRoomConversation, roomProcessWindowRequest } from './PawRoomConversation';
-import { PawRoomLiveFocusOverview } from './PawRoomLiveFocusOverview';
+import { PawRoomLiveFocusOverview, RoomCollabTimelineLive } from './PawRoomLiveFocusOverview';
 import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 import { useRoomObserverAutoOpen, useRoomWorkStatusVisible } from './room-observer-preference';
 import { PawRoomWorkStatus } from './PawRoomWorkStatus';
@@ -978,6 +979,7 @@ export function PawRoomWorkspace({
     {jevEnabled ? <span aria-label="Agent 中的 Jev 任务模式" className="paw-room-workspace__mode">Jev</span> : coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
     {jevEnabled ? <nav aria-label="Jev 工作台视图"><button type="button" aria-pressed={visiblePanel === 'none'} onClick={() => setPanel('none')}><MessageCircle size={14} /><span>对话与进展</span></button><button type="button" aria-pressed={visiblePanel === 'governance'} onClick={() => setPanel('governance')}><Users size={14} /><span>伙伴与设置</span></button></nav> : !externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
       <button aria-label="对话与结果" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>对话与结果</span></button>
+      <button aria-label="协作时间线" aria-pressed={view === 'timeline'} data-room-view="timeline" onClick={() => { setView('timeline'); exitCollaborationFocus(); }} type="button"><ChartGantt size={14} /><span>时间线</span></button>
       <button aria-label="消息流" aria-pressed={view === 'messages'} data-room-view="messages" onClick={() => { setView('messages'); exitCollaborationFocus(); }} type="button"><GitBranch size={14} /><span>消息流</span></button>
       <button aria-label="协同模式" aria-pressed={collaborationFocusActive} data-room-view="collaboration" onClick={enterCollaborationMode} ref={collaborationTriggerRef} type="button"><Focus size={14} /><span>协同模式</span></button>
       <button aria-label="完整记录" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'conversation'} data-room-view="conversation" onClick={() => { setView('conversation'); exitCollaborationFocus(); }} type="button"><MessageCircle size={14} /><span>完整记录</span></button>
@@ -1084,6 +1086,17 @@ export function PawRoomWorkspace({
               onExit={() => setView('conversation')}
               onOpenParticipant={openParticipantById}
             />
+          ) : visibleView === 'timeline' && record ? (
+            <div className="paw-room-timeline-view">
+              <RoomCollabTimelineLive
+                active={liveActive}
+                focus={focusProjection}
+                room={record}
+                projection={projection}
+                roomId={recordId}
+                onOpenParticipant={openParticipantById}
+              />
+            </div>
           ) : visibleView === 'messages' && focusProjection ? (
             <div className="paw-room-message-workspace">
               <PawRoomLiveFocusOverview

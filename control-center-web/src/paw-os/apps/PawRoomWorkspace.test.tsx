@@ -379,8 +379,8 @@ describe('PAWOS Room collaboration tools', () => {
     await screen.findByRole('textbox', { name: '协作消息' });
 
     const primaryNavigation = screen.getByRole('navigation', { name: 'Room 工作台视图' });
-    expect(within(primaryNavigation).getAllByRole('button')).toHaveLength(5);
-    for (const label of ['对话与结果', '消息流', '协同模式', '完整记录', '星空']) {
+    expect(within(primaryNavigation).getAllByRole('button')).toHaveLength(6);
+    for (const label of ['对话与结果', '协作时间线', '消息流', '协同模式', '完整记录', '星空']) {
       expect(within(primaryNavigation).getByRole('button', { name: label })).toHaveAttribute('aria-label', label);
     }
     expect(within(primaryNavigation).getByRole('button', { name: '对话与结果' })).toHaveAttribute('aria-pressed', 'true');
@@ -549,7 +549,7 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByRole('button', { name: '协同模式' })).toHaveAttribute('aria-pressed', 'false');
     expect(rendered.container.querySelector('.paw-room-workspace')).toHaveAttribute('data-collaboration-mode', 'false');
     const navigation = screen.getByRole('navigation', { name: 'Room 工作台视图' });
-    expect(within(navigation).getAllByRole('button')).toHaveLength(5);
+    expect(within(navigation).getAllByRole('button')).toHaveLength(6);
     expect(rendered.container.querySelector('.paw-window-title')).toHaveTextContent('Room 934');
     expect(screen.getByRole('region', { name: 'Room 当前协作' })).toBeInTheDocument();
     await user.click(within(navigation).getByRole('button', { name: '完整记录' }));
@@ -563,6 +563,19 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.queryByRole('complementary', { name: 'Room 协作态势' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(composer);
     expect(composer).toHaveValue('外部聚焦继续保留');
+  });
+
+  it('opens the collaboration timeline as a Room view with every active planet as a lane', async () => {
+    const user = userEvent.setup();
+    const { container } = renderRoom(1200);
+    await screen.findByRole('textbox', { name: '协作消息' });
+    const navigation = screen.getByRole('navigation', { name: 'Room 工作台视图' });
+    await user.click(within(navigation).getByRole('button', { name: '协作时间线' }));
+    expect(container.querySelector('.paw-room-workspace')).toHaveAttribute('data-view', 'timeline');
+    const stage = await screen.findByRole('region', { name: '多 Agent 协作时间线' });
+    expect(within(stage).getByRole('button', { name: /^Earth，/ })).toBeInTheDocument();
+    expect(within(stage).getByRole('button', { name: /^Mars，/ })).toBeInTheDocument();
+    expect(within(stage).getByRole('button', { name: /^团队调度，/ })).toBeDisabled();
   });
 
   it('removes the omitted signal row from external focus geometry and keeps the runtime text readable', () => {

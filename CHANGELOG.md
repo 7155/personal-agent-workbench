@@ -5,6 +5,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Add receipt-based Room and Session collaboration timelines with on-demand
+  replay, shared dialogs, partner lanes and separate return/acceptance states.
+  Playback flicker remains reported on the user's browser despite passing
+  layout and pause checks; do not treat those checks as visual acceptance.
+
 - Add Pi Content V5: result-first tool records with separate argument tabs,
   stable adjacent-image galleries, local draft previews, zoom/comparison, and
   a searchable Session-bound capability catalog. Keep installation, disclosure,

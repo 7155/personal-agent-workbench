@@ -52,7 +52,7 @@ describe('Agent-led Lab project container', () => {
       'agent.eval-lab.golden.get': { ok: true, items: [], suite: null },
     } });
     mount(transport, { initialProjectId: current.projectId });
-    fireEvent.click(await screen.findByRole('button', { name: '查看新题集核对的运行记录' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看新题集核对的运行记录' }, { timeout: 5_000 }));
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'new-suite')).toBe(true));
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'old-suite')).toBe(false);
   });

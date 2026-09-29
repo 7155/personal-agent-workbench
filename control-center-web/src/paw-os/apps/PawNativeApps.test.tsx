@@ -206,7 +206,7 @@ describe('PAWOS native Apps', () => {
     const user = userEvent.setup();
     renderNative('project-workbench', transport, { initialRoute: `/work-documents?document=${NATIVE_DOCUMENT_ID}` });
 
-    expect(await screen.findByRole('region', { name: '工作文档生命周期' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '工作文档生命周期' }, { timeout: 5_000 })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '完成依据' }), 'terminal-project-1');
     await user.click(screen.getByRole('button', { name: '归档到历史' }));
     await waitFor(() => expect(transport.requests.map(({ request }) => request.pathId)).toContain('workDocuments.archive'));

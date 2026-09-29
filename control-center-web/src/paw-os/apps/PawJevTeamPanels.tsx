@@ -20,6 +20,8 @@ import { JevDeliveryDesk, JevDeliveryDeskLaunch } from './JevDeliveryDesk';
 import { emptyDeliveryDesk, type DeliveryDeskState } from './jev-delivery-desk-model';
 import { JevRailFilters, matchesJevRailFilter, type JevRailFilter } from './JevRailFilters';
 import { usePresentationMotion } from '@/features/conversation-ui/reading/reading-preferences';
+import { CollabTimelinePeek, CollabTimelineStage } from '@/features/collab-timeline/CollabTimelineStage';
+import { roomPlanetAvatarRenderer, useRoomTimeline } from '@/features/collab-timeline/RoomCollabTimeline';
 
 const PURPOSES: Record<string, string> = { plan: '对话与规划', execute: '执行任务', verify: '结果复核', synthesize: '汇总交付' };
 const STATUS: Record<string, string> = { prepared: '等待派发', admitted: '已接收', running: '正在进行', unknown: '回执待核实' };
@@ -168,6 +170,9 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [openableOnly, setOpenableOnly] = useState(false);
   const motionAllowed = usePresentationMotion(active && !historical);
+  const [collaborationTab, setCollaborationTab] = useState<'timeline' | 'map'>('timeline');
+  const collaborationId = useId();
+  const railTimeline = useRoomTimeline({ room, projection, graph, active: active && !historical, ...(graph?.rootId ? { rootId: graph.rootId } : {}) });
   const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setRailView('tasks'); setFileQuery(''); setTaskFilter('all'); setHistoryExpanded(false); setOpenableOnly(false); }, [graph?.graphId]);
   const inspectorContent = useRef<HTMLDivElement>(null);
@@ -315,9 +320,11 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
             {counts.waiting ? <span>等待 {counts.waiting}</span> : null}
           </> : <span>{planningActive ? <LoaderCircle className="paw-jev-partner__spinner" size={12} aria-hidden /> : null}{planningLabel}</span>}
       </div>
-      <JevCollaborationPanel graph={graph} room={room} projection={projection} active={active} historical={historical}
-        observeCompletions={observeCompletions} presentation="peek" onExpand={openCollaboration}
-        onInspectTask={node => { if (node.task) setInspector({ kind: 'task', task: node.task }); else if (node.proposal) setInspector({ kind: 'plan', task: node.proposal }); }} />
+      {railTimeline && railTimeline.lanes.some(lane => lane.kind === 'partner' && railTimeline.segments.some(segment => segment.laneId === lane.id))
+        ? <CollabTimelinePeek timeline={railTimeline} active={motionAllowed} renderAvatar={roomPlanetAvatarRenderer(false)} onExpand={() => { setCollaborationTab('timeline'); openCollaboration(); }} />
+        : <JevCollaborationPanel graph={graph} room={room} projection={projection} active={active} historical={historical}
+          observeCompletions={observeCompletions} presentation="peek" onExpand={() => { setCollaborationTab('map'); openCollaboration(); }}
+          onInspectTask={node => { if (node.task) setInspector({ kind: 'task', task: node.task }); else if (node.proposal) setInspector({ kind: 'plan', task: node.proposal }); }} />}
       <div className="paw-jev-rail__tabs" role="tablist" aria-label="任务栏内容" ref={tabsRef}
         onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -363,9 +370,29 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
       }}>
       <DialogHeader className="paw-jev-inspector__header"><span className="paw-jev-inspector__eyebrow">任务板 / {inspector?.kind === 'deliveries' ? '成果桌' : inspector?.kind === 'collaboration' ? '分工与依赖' : inspector?.kind === 'panel' ? '全部记录' : inspectedPlan ? '执行方案' : '任务详情'}</span><DialogTitle>{title}</DialogTitle><DialogDescription>{inspector?.kind === 'deliveries' ? '浏览文件记录，整理本窗口重点，回到原任务核对结果。' : inspector?.kind === 'collaboration' ? '查看当前任务、依赖关系、执行者与复核者。不会改变任务调度。' : inspector?.kind === 'panel' ? '来自当前方案、任务状态与执行回执。' : '完整责任、验收与交付依据；执行历史可在伙伴 Session 中查看。'}</DialogDescription></DialogHeader>
       {collaborationVisited && inspector ? <div className="paw-jev-collaboration-mount" hidden={inspector.kind !== 'collaboration'}>
-        <JevCollaborationPanel graph={graph} room={room} projection={projection} active={active && inspector.kind === 'collaboration'}
-          historical={historical} observeCompletions={observeCompletions} onOpenParticipant={openParticipant}
-          onInspectTask={node => { if (node.task) setInspector({ kind: 'task', task: node.task }); else if (node.proposal) setInspector({ kind: 'plan', task: node.proposal }); }} />
+        {railTimeline ? <div className="paw-jev-collaboration-switch" role="tablist" aria-label="协作全景视图"
+          onKeyDown={event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 'timeline' : event.key === 'End' ? 'map' : collaborationTab === 'timeline' ? 'map' : 'timeline';
+            setCollaborationTab(next);
+            document.getElementById(`${collaborationId}-${next}`)?.focus();
+          }}>
+          {(['timeline', 'map'] as const).map(tab => <button key={tab} id={`${collaborationId}-${tab}`} type="button" role="tab"
+            aria-controls={`${collaborationId}-${tab}-panel`} tabIndex={collaborationTab === tab ? 0 : -1}
+            aria-selected={collaborationTab === tab} onClick={() => setCollaborationTab(tab)}>{tab === 'timeline' ? '协作时间线' : '任务关系'}</button>)}
+        </div> : null}
+        {railTimeline ? <div className="paw-jev-collaboration-pane" id={`${collaborationId}-timeline-panel`} role="tabpanel"
+          aria-labelledby={`${collaborationId}-timeline`} hidden={collaborationTab !== 'timeline'}>
+          <CollabTimelineStage timeline={railTimeline} active={motionAllowed && inspector.kind === 'collaboration' && collaborationTab === 'timeline'} renderAvatar={roomPlanetAvatarRenderer(motionAllowed && collaborationTab === 'timeline')}
+            onOpenLane={lane => { if (lane.kind === 'partner') openParticipant(lane.id); }} />
+        </div> : null}
+        <div className="paw-jev-collaboration-pane" id={`${collaborationId}-map-panel`} role={railTimeline ? 'tabpanel' : undefined}
+          aria-labelledby={railTimeline ? `${collaborationId}-map` : undefined} hidden={Boolean(railTimeline) && collaborationTab !== 'map'}>
+          <JevCollaborationPanel graph={graph} room={room} projection={projection} active={active && inspector.kind === 'collaboration' && (!railTimeline || collaborationTab === 'map')}
+            historical={historical} observeCompletions={observeCompletions} onOpenParticipant={openParticipant}
+            onInspectTask={node => { if (node.task) setInspector({ kind: 'task', task: node.task }); else if (node.proposal) setInspector({ kind: 'plan', task: node.proposal }); }} />
+        </div>
       </div> : null}
       {deliveryVisited && inspector ? <div className="paw-jev-delivery-mount" hidden={inspector.kind !== 'deliveries'}>
         <JevDeliveryDesk files={files} state={deliveryView} onState={changeDeliveryView}

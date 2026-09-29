@@ -33,7 +33,7 @@ test.describe('PAWOS App interface audit (ops)', () => {
     const evidence: AppAuditEvidence[] = [];
 
     for (const app of PAWOS_APPS) {
-      await openAppFromLaunchpad(page, app.label);
+      await openAppFromLaunchpad(page, app.id, app.label);
       const shell = page.locator(`.paw-window-shell[data-app="${app.id}"]`).last();
       await expect(shell).toBeVisible({ timeout: 15_000 });
       await settleAppWindow(page, app.id);
@@ -63,13 +63,15 @@ test.describe('PAWOS App interface audit (ops)', () => {
   });
 });
 
-async function openAppFromLaunchpad(page: Page, label: string): Promise<void> {
+async function openAppFromLaunchpad(page: Page, appId: PawOsAppId, label: string): Promise<void> {
   // The menu-bar system mark opens the same Launchpad ("打开全部 App"), so the
   // Dock button has to be named exactly or the audit stops on an ambiguity.
   await page.getByRole('button', { name: '全部 App', exact: true }).click();
   const launcher = page.getByRole('dialog', { name: '全部 App' });
   await expect(launcher).toBeVisible();
-  await launcher.getByRole('button', { name: new RegExp(label) }).click();
+  const app = launcher.locator(`button[data-app="${appId}"]`);
+  await expect(app).toHaveAccessibleName(new RegExp(label));
+  await app.click();
   await expect(launcher).toBeHidden({ timeout: 5_000 });
 }
 
