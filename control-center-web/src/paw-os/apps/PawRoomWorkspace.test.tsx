@@ -505,7 +505,8 @@ describe('PAWOS Room collaboration tools', () => {
     const composer = await screen.findByRole('textbox', { name: '协作消息' });
     await user.type(composer, '保留正在写的补充');
     const runtime = rendered.container.querySelector('.paw-room-workspace__runtime');
-    await waitFor(() => expect(runtime).toHaveTextContent('1 个工作项等待复核'));
+    // The preview Root is terminal; stale review items cannot resurrect it.
+    await waitFor(() => expect(runtime).toHaveTextContent('本轮执行已结束'));
     expect(screen.queryByRole('navigation', { name: 'Room 工作台视图' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Room 当前协作' })).not.toBeInTheDocument();
     expect(rendered.container.querySelector('.paw-window-title')).not.toBeInTheDocument();
@@ -519,7 +520,7 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(composer);
     expect(composer).toHaveValue('保留正在写的补充');
     expect(composer).toHaveFocus();
-    expect(runtime).toHaveTextContent('1 个工作项等待复核');
+    expect(runtime).toHaveTextContent('本轮执行已结束');
   });
 
   it('replaces a stale embedded inspector on external focus and restores ordinary views after exit', async () => {
