@@ -169,6 +169,23 @@ the managed Pi generation, installs the visible Control Center last, and checks
 that the installed components agree on the expected commit before returning
 success.
 
+For an explicitly requested local desktop development install from a feature
+branch or a dirty checkout, use the existing Electron installer with this opt-in:
+
+```bash
+RAG_IME_ALLOW_DEVELOPMENT_INSTALL=1 scripts/build_paw_os_electron_host.sh install-release
+```
+
+Use `build-release` with the same flag to build without installing. The flag
+accepts `0` (disabled) or `1`; enabling it is limited to these two source-build
+actions. Invalid values and enabling it for preview actions are rejected.
+Without it, formal desktop builds and installs require clean `main`
+(the existing dirty-main install opt-in remains supported). The app marker keeps
+the actual `sourceBranch`, `sourceDirty` and `developmentInstall` values. The
+normal signing, checks and `.paw-update.*` backup flow still apply. This flag
+does not change the full-stack installer's guards or prove backend alignment
+or foreground acceptance.
+
 Inspect the removal plan without changing the machine:
 
 ```bash

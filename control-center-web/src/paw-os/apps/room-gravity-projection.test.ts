@@ -7,7 +7,9 @@ import {
   roomDispatchPlanSummary,
   roomDispatchSourceParticipantId,
   roomDispatchWaves,
+  roomEscapedManagedRead,
   roomGravityToolLabel,
+  readableManagedReadExcerpt,
   roomToolActivityLine,
   roomToolEvidence,
   roomToolOpLabel,
@@ -129,11 +131,27 @@ describe('roomGravityToolLabel', () => {
     expect(roomGravityToolLabel('agents')).toBe('子 Agent 编排');
     expect(roomGravityToolLabel('workspace_job')).toBe('后台任务');
     expect(roomGravityToolLabel('read')).toBe('读取文件');
+    expect(roomGravityToolLabel('workspace_shell')).toBe('终端命令');
+    expect(roomGravityToolLabel('workspace_edit')).toBe('编辑文件');
   });
 
   it('keeps unknown tools and the generic fallback intact', () => {
     expect(roomGravityToolLabel('my_custom_tool')).toBe('my_custom_tool');
     expect(roomGravityToolLabel('')).toBe('工具');
+  });
+});
+
+describe('managed resource read presentation', () => {
+  it('recognizes an escaped evidence fragment and removes only display control codes', () => {
+    const ref = 'media://media_lBpgH2mPPde2OLSM1EIcq4gJ';
+    const item = { ...activity('read-evidence', 'tool', {
+      toolName: 'read', result: { outputPreview: `[resourceRef: ${ref}] [resourceRevision: ${'a'.repeat(64)}] `
+        + String.raw`the new read pending \u001b[33m 2913\u001b[2mms\u001b[22m\u001b[39m\n\u001b[33m✓\u001b[2m runs\u001b[39m\nnext\nlast`, outputTruncated: true },
+    }), summary: `已读取受管资源 ${ref}` };
+    const read = roomEscapedManagedRead(item);
+    expect(read).toMatchObject({ resourceRef: ref, truncated: true });
+    expect(readableManagedReadExcerpt(read!.preview)).toBe('the new read pending  2913ms\n✓ runs\nnext\nlast');
+    expect(roomEscapedManagedRead({ ...item, summary: '已读取用户文件 notes.md' })).toBeUndefined();
   });
 });
 

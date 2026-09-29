@@ -316,6 +316,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
   const [settingsPermissionPolicy, setSettingsPermissionPolicy] = useState<RoomPermissionPolicy>();
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState('');
+  const [memberRemovalNotice, setMemberRemovalNotice] = useState('');
   const [memberSavingRoleId, setMemberSavingRoleId] = useState('');
   const [memberRemovingId, setMemberRemovingId] = useState('');
   const [memberUpdatingId, setMemberUpdatingId] = useState('');
@@ -1213,6 +1214,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
     if (!room || room.status !== 'active' || memberRemovingId) return;
     setMemberRemovingId(participant.id);
     setSettingsError('');
+    setMemberRemovalNotice('');
     try {
       const response = await transport.request<Record<string, unknown>>({
         pathId: 'agent.room.participant.remove',
@@ -1221,6 +1223,8 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
       });
       const updated = isRoom(record(response).room) ? record(response).room as unknown as RoomSummary : undefined;
       if (!updated) throw new Error('服务端没有返回移出伙伴后的协作空间。');
+      if (response.status === 'pending') setMemberRemovalNotice('正在移交任务并等待执行停止，伙伴暂时保留在 Room 中。');
+      if (response.status === 'blocked') setSettingsError('暂时无法移出这位伙伴。请在伙伴与设置中查看移交条件，或先停止本轮协作。');
       setRooms((current) => current.map((item) => item.id === updated.id ? updated : item));
     } catch (requestError) {
       setSettingsError(publicErrorText(requestError, '这位伙伴暂时无法移出；请先完成或转交她名下的工作。'));
@@ -1609,11 +1613,12 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
         <DialogFooter><Button variant="quiet" disabled={creating || workspacePicking} onClick={() => setCreateOpen(false)}>先不开始</Button><Button type="submit" form="room-create-form" variant="primary" loading={creating} disabled={!createTitle.trim() || selectedRoleIds.length < 2 || workspacePicking}>{createRoomKind === 'roleplay' ? '开始群聊' : createPermissionPolicy.room.executionMode === 'full_trust' ? '启用全自动并开始协作' : '开始协作'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-    <Dialog open={settingsOpen} onOpenChange={(open) => { if (!settingsSaving && !memberSavingRoleId && !memberRemovingId && !memberUpdatingId && !deleting) { setSettingsOpen(open); if (!open) setSettingsError(''); } }}>
+    <Dialog open={settingsOpen} onOpenChange={(open) => { if (!settingsSaving && !memberSavingRoleId && !memberRemovingId && !memberUpdatingId && !deleting) { setSettingsOpen(open); if (!open) { setSettingsError(''); setMemberRemovalNotice(''); } } }}>
       <DialogContent className="room-settings-dialog">
         <DialogHeader><DialogTitle>设置协作空间</DialogTitle><DialogDescription>{room?.roomKind === 'roleplay' ? '名称、共同背景和不抬权的分层权限会在保存后更新；伙伴邀请会单独立即生效。已经发生的对话不会被改写。' : '名称、协作约定和工作权限会在保存后从下一轮生效；伙伴与分工会单独立即更新。'}</DialogDescription></DialogHeader>
         <form id="room-settings-form" className="room-create-form" onSubmit={(event) => { event.preventDefault(); void saveRoomSettings(); }}>
           {settingsError ? <p className="room-dialog-error" role="alert">{settingsError}</p> : null}
+          {memberRemovalNotice ? <p role="status">{memberRemovalNotice}</p> : null}
           <div className="room-create-pair">
             <label className="room-create-field"><span>名称</span><input maxLength={120} value={settingsTitle} onChange={(event) => setSettingsTitle(event.target.value)} aria-label="协作空间名称" /></label>
             <label className="room-create-field"><span>图标</span><Select aria-label="协作空间图标" onValueChange={setSettingsAvatar} options={roomAvatarOptions()} value={settingsAvatar} /></label>

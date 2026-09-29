@@ -1,4 +1,5 @@
-import { AtSign, ListPlus, Play, Send, Square } from 'lucide-react';
+import { AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Play, Send, Square } from 'lucide-react';
+import { Anchor as PopoverAnchor } from '@radix-ui/react-popover';
 import {
   startTransition,
   useCallback,
@@ -11,7 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { Button, IconButton } from '@/components/primitives';
+import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, IconButton, Popover, PopoverContent } from '@/components/primitives';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import type { RoomAttachmentReceipt } from '@/contracts/room-reducer';
 import { ComposerShell } from '@/features/composer/ComposerShell';
@@ -37,6 +38,7 @@ interface ComposerRoom {
   id: string;
   status: string;
   roomKind?: 'collaboration' | 'roleplay';
+  routingPolicy?: string;
   participants: ComposerParticipant[];
 }
 
@@ -54,6 +56,9 @@ export function RoomComposer({
   attachments,
   sending,
   taskBusyState,
+  busySubmitBehavior = 'steer',
+  expandInDialog = false,
+  uncertainSubmission = false,
   pendingUserAnswer = false,
   inputRef,
   queueDepth = 0,
@@ -77,7 +82,12 @@ export function RoomComposer({
   draft: string;
   attachments: RoomAttachmentReceipt[];
   sending: boolean;
-  taskBusyState?: 'running' | 'blocked';
+  taskBusyState?: 'running' | 'blocked' | 'waiting';
+  /** JEV holds a follow-up until the current graph settles; it does not steer a Room turn. */
+  busySubmitBehavior?: 'steer' | 'queue';
+  /** A compact workspace can move its one draft editor into a larger dialog. */
+  expandInDialog?: boolean;
+  uncertainSubmission?: boolean;
   pendingUserAnswer?: boolean;
   inputRef?: { current: HTMLTextAreaElement | null };
   /** How many follow-ups the host is already holding for this Room. */
@@ -100,6 +110,7 @@ export function RoomComposer({
   onInvitePartners?: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
   const menuId = useId();
   const draftRef = useRef(draft);
@@ -131,6 +142,9 @@ export function RoomComposer({
   const mentionCandidates = mention
     ? participants.filter((participant) => roomMentionMatches(participant, mention.query, participantAliases))
     : [];
+  useEffect(() => {
+    mentionMenuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex, mention]);
   // Attachments staged while Send is pending belong to the next prompt;
   // a running Room accepts only text steering.
   const canSend = Boolean(
@@ -314,24 +328,35 @@ export function RoomComposer({
     if (onQueue(composerDraft)) clearDraft();
   }
 
-  return <div className="room-composer-shell" data-expanded={expanded || undefined} data-dragging={dragging || undefined}
+  const editor = <div className="room-composer-shell" data-expanded={expanded || undefined} data-dragging={dragging || undefined}
     onDragEnter={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current += 1; if (canAttach) setDragging(true); }}
     onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = canAttach ? 'copy' : 'none'; } }}
     onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false); }}
     onDrop={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); if (canAttach) onPasteImages([...event.dataTransfer.files]); }}
   >
-    {sendError ? <div className="room-composer__recovery" role="alert"><span>{failedDraft ? '上一条没有发出，内容已保留。' : '消息没有发出，草稿已保留，可以重试。'}</span>{failedDraft !== undefined ? <Button size="small" variant="quiet" onClick={() => {
+    {sendError ? <div className="room-composer__recovery" role="alert"><span>{uncertainSubmission ? '上次发送尚未确认，原内容已保留。' : failedDraft ? '上一条没有发出，内容已保留。' : '消息没有发出，草稿已保留，可以重试。'}</span>{failedDraft !== undefined ? <Button size="small" variant="quiet" onClick={() => {
       const next = `${failedDraft}${composerDraft ? `\n\n${composerDraft}` : ''}`;
       if (next.length > 8000) { setExpanded(true); return; }
       setComposerDraft(next); publishDraft(next); setFailedDraft(undefined); setSendError(false); textareaRef.current?.focus();
-    }} disabled={failedDraft.length + composerDraft.length + (composerDraft ? 2 : 0) > 8000}>找回未发送内容</Button> : null}{failedDraft !== undefined ? <details><summary>查看未发送内容</summary><textarea aria-label="未发送的消息" readOnly value={failedDraft} /></details> : null}</div> : null}
+    }} disabled={failedDraft.length + composerDraft.length + (composerDraft ? 2 : 0) > 8000}>{uncertainSubmission ? '找回原内容' : '找回未发送内容'}</Button> : null}{failedDraft !== undefined ? <details><summary>{uncertainSubmission ? '查看原内容' : '查看未发送内容'}</summary><textarea aria-label={uncertainSubmission ? '尚未确认的消息' : '未发送的消息'} readOnly value={failedDraft} /></details> : null}</div> : null}
     {dragging ? <div className="room-composer__drop-hint" role="status">松开以添加附件</div> : null}
-    <div className="room-composer-wrap">
-      {mention && mentionCandidates.length ? <div
+    <Popover open={Boolean(mention && mentionCandidates.length)} onOpenChange={(open) => { if (!open) setMention(undefined); }}>
+    <PopoverAnchor asChild><div className="room-composer-wrap">
+      <PopoverContent
+        ref={mentionMenuRef}
         id={menuId}
         className="room-mention-menu"
         role="listbox"
         aria-label="选择要点名的伙伴"
+        side="top"
+        align="start"
+        sideOffset={7}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => {
+          // The editor owns autocomplete focus and keyboard navigation.
+          if (event.target === textareaRef.current) event.preventDefault();
+        }}
       >
         <header><AtSign size={14} /><span><strong>想请谁加入</strong><small>继续输入名字可以筛选</small></span></header>
         {mentionCandidates.map((participant, index) => {
@@ -353,7 +378,7 @@ export function RoomComposer({
           <kbd>{index === activeIndex ? 'Enter' : `@${mentionName}`}</kbd>
         </button>;
         })}
-      </div> : null}
+      </PopoverContent>
       <ComposerShell
         surface="room"
         className="room-composer"
@@ -361,15 +386,21 @@ export function RoomComposer({
         editorAction={<ComposerExpandButton expanded={expanded} onToggle={() => { setExpanded(!expanded); textareaRef.current?.focus(); }} />}
         onSurfacePress={() => textareaRef.current?.focus()}
         banner={<>{pastedText.pendingNotice}{taskBusyState || pendingAnswerMode ? (
-          <p className="room-composer__task-lock" role="status">
+          <p className="room-composer__task-lock" role="status" data-running={taskBusyState === 'running' && !pendingAnswerMode || undefined}>
+            {taskBusyState === 'running' && !pendingAnswerMode ? <LoaderCircle className="room-composer__status-icon" size={14} aria-hidden /> : <MessageCircle size={14} aria-hidden />}
+            <span>
             {pendingAnswerMode
               ? '当前任务正在等待你的回答。这里只发送文字回答；点名和附件不会随回答发送。'
               : attachments.length
                 ? '附件已保留，当前协作结束后就能发送。'
+              : taskBusyState === 'waiting'
+                ? '当前任务等待重新判断，原任务已保留。可在顶部继续；新消息会排入下一轮。'
+              : busySubmitBehavior === 'queue'
+                ? '任务进行中 · 新消息不会打断当前执行，会排入下一轮'
               : taskBusyState === 'blocked'
                 ? '当前任务已暂停。发送文字可以告诉主持伙伴怎样继续，停止按钮会终止整条协作。'
                 : '当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。'}
-          </p>
+          </span></p>
         ) : null}</>}
         attachments={attachments.map((attachment) => ({
           id: attachment.mediaId,
@@ -446,9 +477,10 @@ export function RoomComposer({
             placeholder={pendingAnswerMode
               ? '回答伙伴正在等待的问题…'
               : taskBusyState
-                ? '立即干预当前回合…'
+                ? busySubmitBehavior === 'queue' ? '补充下一轮任务…' : '立即干预当前回合…'
                 : composerPlaceholder(room)}
             aria-label="协作消息"
+            aria-describedby={`${menuId}-hint`}
             aria-autocomplete="list"
             aria-controls={mention && mentionCandidates.length ? menuId : undefined}
             aria-activedescendant={mention && mentionCandidates.length
@@ -458,14 +490,15 @@ export function RoomComposer({
         )}
         controls={(
           <>
-            {capabilityControls}
             <ComposerAddMenu canAttach={canAttach} disabled={!roomCanCompose} onPickAttachments={onPickAttachments} onMention={participants.length && !pendingAnswerMode ? openMentionMenu : undefined} onInvite={onInvitePartners} />
+            {capabilityControls}
           </>
         )}
         actions={(
           <>
+            {composerDraft.length > 6400 || expanded ? <span className="room-composer__count" aria-label={`已输入 ${composerDraft.length} 字，最多 8000 字`}>{composerDraft.length.toLocaleString()}<span> / 8,000</span></span> : null}
             {onStop && taskBusyState ? <IconButton className="room-composer__stop" label={stopping ? '正在停止协作' : '停止当前协作'} icon={<Square size={15} fill="currentColor" />} disabled={stopping} onClick={onStop} tooltip /> : null}
-            {onQueue && taskBusyState === 'running' && !pendingAnswerMode ? <IconButton
+            {onQueue && taskBusyState === 'running' && !pendingAnswerMode && busySubmitBehavior !== 'queue' ? <IconButton
               className="room-composer__queue"
               label={queueDepth ? `排到当前回合之后（已排 ${queueDepth} 条）` : '排到当前回合之后'}
               icon={<ListPlus size={18} />}
@@ -482,7 +515,7 @@ export function RoomComposer({
               : taskBusyState === 'blocked'
                 ? '告诉伙伴怎样继续'
                 : taskBusyState
-                  ? '立即干预当前回合'
+                  ? busySubmitBehavior === 'queue' ? '排入下一轮任务' : '立即干预当前回合'
                   : '发送消息'}
             icon={canContinue ? <Play size={17} fill="currentColor" /> : <Send size={18} />}
             disabled={!canSend && !canContinue}
@@ -492,9 +525,21 @@ export function RoomComposer({
           </>
         )}
       />
-      <div className="room-composer__hint"><span>Enter 发送 · Shift + Enter 换行</span><span>{composerDraft.length > 6400 || expanded ? `${composerDraft.length.toLocaleString()} / 8,000` : '支持粘贴或拖入附件'}</span></div>
-    </div>
+      <div className="room-composer__hint" id={`${menuId}-hint`}><span><Keyboard size={12} aria-hidden />Enter 发送 · Shift + Enter 换行</span><span className="room-composer__hint-accessible">支持粘贴或拖入附件。中文输入法选字时不会发送。</span></div>
+    </div></PopoverAnchor>
+    </Popover>
   </div>;
+  if (!expandInDialog) return editor;
+  return <Dialog open={expanded} onOpenChange={setExpanded}>
+    {expanded ? <button type="button" className="room-composer__editing" onClick={() => setExpanded(false)}>正在窗口中编辑 · 收起</button> : editor}
+    <DialogContent className="room-composer-dialog"
+      onOpenAutoFocus={event => { event.preventDefault(); textareaRef.current?.focus(); }}
+      onCloseAutoFocus={event => { event.preventDefault(); queueMicrotask(() => textareaRef.current?.focus()); }}
+      onEscapeKeyDown={event => { if (mention && mentionCandidates.length) { event.preventDefault(); setMention(undefined); } }}>
+      <DialogHeader><DialogTitle>编辑任务消息</DialogTitle><DialogDescription>草稿会保留。发送方式和当前协作状态保持一致。</DialogDescription></DialogHeader>
+      {expanded ? editor : null}
+    </DialogContent>
+  </Dialog>;
 }
 
 export function roomMentionedParticipants<T extends ComposerParticipant>(
@@ -580,6 +625,7 @@ function roomParticipantMentionNames(
 function composerPlaceholder(room?: ComposerRoom): string {
   if (!room) return '选择一个协作空间，或新建一个';
   if (room.status === 'archived') return '恢复这个协作空间后就能继续聊';
+  if (room.routingPolicy === 'jev') return '描述目标或补充要求；输入 @ 可以直接请一位伙伴处理';
   return room.roomKind === 'roleplay'
     ? '说点什么；输入 @ 可以请一位伙伴回应'
     : '继续聊，或输入 @ 请一位伙伴接手';

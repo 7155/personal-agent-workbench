@@ -6,6 +6,8 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
+from threading import Barrier
+from unittest.mock import patch
 
 from rag_ime.agent_context_runtime import AgentContextRuntime
 from rag_ime.rooms.work import AgentRoomWorkStore
@@ -17,6 +19,107 @@ from rag_ime.agent_sessions import (
 )
 from rag_ime.contracts.json_schema import validate_contract
 from rag_ime.work_documents import WorkDocumentService
+
+
+class AgentSessionPersistentReadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-session-reads-")
+        self.addCleanup(self.tmp.cleanup)
+        self.db_path = Path(self.tmp.name) / "rag-ime.sqlite"
+        self.store = AgentSessionStore(self.db_path, persistent_reads=True)
+        self.addCleanup(self.store.close)
+        self.store.initialize()
+        self.session_id = str(self.store.create(title="fresh session")["id"])
+        self.store.bind_pi_session(
+            self.session_id,
+            pi_session_id="pi-read-test",
+            session_file="/managed/sessions/read-test.jsonl",
+        )
+
+    def test_get_reuses_initialized_connection(self) -> None:
+        with patch("rag_ime.agent_sessions.sqlite3.connect", wraps=sqlite3.connect) as connect:
+            for _ in range(5):
+                self.assertEqual(self.store.get(self.session_id)["id"], self.session_id)
+            connect.assert_not_called()
+
+    def test_get_observes_external_policy_status_and_generation_commit(self) -> None:
+        before = self.store.get(self.session_id)
+        self.assertEqual(before["executionMode"], "per_action")
+        self.assertEqual(before["status"], "active")
+        self.assertEqual(before["runtimeBinding"]["generation"], 1)
+
+        with closing(sqlite3.connect(self.db_path)) as writer:
+            writer.execute(
+                "UPDATE agent_sessions SET execution_mode = 'read_only', status = 'archived' WHERE id = ?",
+                (self.session_id,),
+            )
+            writer.execute(
+                "UPDATE agent_runtime_bindings SET generation = 2 WHERE session_id = ?",
+                (self.session_id,),
+            )
+            writer.commit()
+
+        after = self.store.get(self.session_id)
+        self.assertEqual(after["executionMode"], "read_only")
+        self.assertEqual(after["status"], "archived")
+        self.assertEqual(after["runtimeBinding"]["generation"], 2)
+
+    def test_get_shares_connection_safely_across_threads_and_remains_fresh(self) -> None:
+        barrier = Barrier(7)
+
+        def read_in_worker(_: int) -> list[str]:
+            barrier.wait(timeout=5)
+            before = [str(self.store.get(self.session_id)["title"]) for _ in range(10)]
+            barrier.wait(timeout=5)
+            barrier.wait(timeout=5)
+            after = [str(self.store.get(self.session_id)["title"]) for _ in range(10)]
+            return before + after
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = [pool.submit(read_in_worker, index) for index in range(6)]
+            barrier.wait(timeout=5)
+            barrier.wait(timeout=5)
+            with closing(sqlite3.connect(self.db_path)) as writer:
+                writer.execute(
+                    "UPDATE agent_sessions SET title = 'updated session' WHERE id = ?",
+                    (self.session_id,),
+                )
+                writer.commit()
+            barrier.wait(timeout=5)
+            for future in futures:
+                self.assertEqual(
+                    future.result(timeout=5),
+                    ["fresh session"] * 10 + ["updated session"] * 10,
+                )
+
+    def test_get_after_close_uses_temporary_connection(self) -> None:
+        connection = self.store._read_connection
+        self.store.close()
+        self.store.close()
+        assert connection is not None
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")
+        with patch("rag_ime.agent_sessions.sqlite3.connect", wraps=sqlite3.connect) as connect:
+            self.assertEqual(self.store.get(self.session_id)["id"], self.session_id)
+            self.assertEqual(connect.call_count, 1)
+
+    def test_nonpersistent_get_opens_and_closes_temporary_connections(self) -> None:
+        store = AgentSessionStore(self.db_path)
+        opened: list[sqlite3.Connection] = []
+        original_connect = sqlite3.connect
+
+        def connect(*args, **kwargs):
+            connection = original_connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+
+        with patch("rag_ime.agent_sessions.sqlite3.connect", side_effect=connect):
+            for _ in range(2):
+                self.assertEqual(store.get(self.session_id)["id"], self.session_id)
+        self.assertEqual(len(opened), 2)
+        for connection in opened:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
 
 
 class AgentSessionStoreTests(unittest.TestCase):

@@ -222,6 +222,7 @@ class KnowledgeStore:
             _ensure_column(connection, "knowledge_bases", "config_revision", "INTEGER NOT NULL DEFAULT 1")
             _ensure_column(connection, "knowledge_documents", "artifact_path", "TEXT NOT NULL DEFAULT ''")
             _ensure_column(connection, "knowledge_documents", "indexed_config_revision", "INTEGER NOT NULL DEFAULT 0")
+            _ensure_column(connection, "knowledge_chunks", "provenance_json", "TEXT NOT NULL DEFAULT '{}'")
             _ensure_column(connection, "knowledge_jobs", "parser_mode", "TEXT NOT NULL DEFAULT 'auto'")
             _ensure_column(connection, "knowledge_graph_state", "extractor_mode", "TEXT NOT NULL DEFAULT 'deterministic'")
             _ensure_column(connection, "knowledge_graph_state", "extractor_model", "TEXT NOT NULL DEFAULT ''")
@@ -425,6 +426,14 @@ class KnowledgeStore:
             (job_id,),
         )
 
+    def latest_document_parser_mode(self, document_id: str) -> str | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT parser_mode FROM knowledge_jobs WHERE document_id = ? ORDER BY revision DESC, created_at_ms DESC LIMIT 1",
+                (document_id,),
+            ).fetchone()
+        return str(row["parser_mode"]) if row is not None else None
+
     def recoverable_jobs(self) -> list[sqlite3.Row]:
         return self.all(
             "SELECT j.*, d.base_id, d.display_name AS file_name, d.status AS document_status, "
@@ -504,11 +513,12 @@ class KnowledgeStore:
             for chunk in chunks:
                 connection.execute(
                     "INSERT INTO knowledge_chunks "
-                    "(id, document_id, base_id, ordinal, content, heading, page, content_hash, created_at_ms) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "(id, document_id, base_id, ordinal, content, heading, page, content_hash, created_at_ms, provenance_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         chunk["id"], document_id, chunk["base_id"], chunk["ordinal"], chunk["content"],
                         chunk.get("heading", ""), chunk.get("page"), chunk["content_hash"], now_ms(),
+                        json.dumps(chunk.get("provenance") or {}, ensure_ascii=False),
                     ),
                 )
                 connection.execute(
@@ -585,7 +595,10 @@ class KnowledgeStore:
         if not fts_query:
             return []
         params: list[Any] = [fts_query]
-        filters = ["d.status='ready'"]
+        # A ready flag alone is not enough during a concurrent reindex. The
+        # worker records the config revision that produced the chunks; only
+        # rows from the base's current revision are active search evidence.
+        filters = ["d.status='ready'", "d.indexed_config_revision=b.config_revision"]
         if agent_only:
             filters.append("b.agent_enabled=1")
         if base_ids:
@@ -597,11 +610,11 @@ class KnowledgeStore:
         params.append(max(1, min(100, int(limit))))
         sql = (
             "SELECT c.id AS chunk_id, c.base_id, b.name AS base_name, c.document_id, "
-            "d.display_name AS document_name, c.ordinal, c.content, c.heading, c.page, "
+            "d.display_name AS document_name, c.ordinal, c.content, c.heading, c.page, c.provenance_json, "
             "bm25(knowledge_chunks_fts) AS rank "
             "FROM knowledge_chunks_fts "
             "JOIN knowledge_chunks c ON c.id=knowledge_chunks_fts.chunk_id "
-            "JOIN knowledge_documents d ON d.id=c.document_id "
+            "JOIN knowledge_documents d ON d.id=c.document_id AND d.base_id=c.base_id "
             "JOIN knowledge_bases b ON b.id=c.base_id "
             f"WHERE knowledge_chunks_fts MATCH ? AND {' AND '.join(filters)} "
             "ORDER BY rank ASC, c.ordinal ASC LIMIT ?"
@@ -623,6 +636,7 @@ class KnowledgeStore:
                 score=scores[index],
                 page=int(row["page"]) if row["page"] is not None else None,
                 heading=str(row["heading"] or ""),
+                provenance=decode_metadata(row, field="provenance_json"),
             )
             for index, row in enumerate(rows)
         ]
@@ -635,12 +649,12 @@ class KnowledgeStore:
             if base is None:
                 raise KnowledgeNotFoundError("knowledge base was not found")
             documents = connection.execute("SELECT id,display_name,sha256,byte_size,chunk_count,status,indexed_config_revision FROM knowledge_documents WHERE base_id=? ORDER BY rowid", (base_id,)).fetchall()
-            size = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(content AS BLOB))),0) FROM knowledge_chunks WHERE base_id=?", (base_id,)).fetchone()
+            size = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(content AS BLOB)) + length(CAST(provenance_json AS BLOB))),0) FROM knowledge_chunks WHERE base_id=?", (base_id,)).fetchone()
             if not documents or len(documents) > 20000 or size[0] > 200000 or size[1] > 64 * 1024 * 1024:
                 raise KnowledgeLibraryError("search snapshot exceeds the portable document or chunk budget", code="snapshot_budget")
             if any(row["status"] != "ready" or row["indexed_config_revision"] != base["config_revision"] for row in documents):
                 raise KnowledgeLibraryError("search snapshot requires a complete current index", code="index_not_ready")
-            chunks = connection.execute("SELECT id,document_id,ordinal,content,heading,page,content_hash FROM knowledge_chunks WHERE base_id=? ORDER BY rowid", (base_id,)).fetchall()
+            chunks = connection.execute("SELECT id,document_id,ordinal,content,heading,page,content_hash,provenance_json FROM knowledge_chunks WHERE base_id=? ORDER BY rowid", (base_id,)).fetchall()
             if sum(row["chunk_count"] for row in documents) != len(chunks):
                 raise KnowledgeLibraryError("search snapshot chunk counts are inconsistent", code="index_not_ready")
             return {"schemaVersion": "paw.knowledge-search-snapshot.v1",
@@ -650,7 +664,7 @@ class KnowledgeStore:
                                    "byteSize": row["byte_size"], "chunkCount": row["chunk_count"]} for row in documents],
                     "chunks": [{"id": row["id"], "documentId": row["document_id"], "ordinal": row["ordinal"],
                                 "content": row["content"], "heading": row["heading"], "page": row["page"],
-                                "contentHash": row["content_hash"]} for row in chunks]}
+                                "contentHash": row["content_hash"], "provenance": decode_metadata(row, field="provenance_json")} for row in chunks]}
 
     def import_search_snapshot(self, snapshot: dict[str, Any]) -> None:
         """Rehydrate an exported search cache into an empty library, atomically.
@@ -671,7 +685,10 @@ class KnowledgeStore:
         total = 0
         for chunk in chunks:
             content = chunk["content"].encode("utf-8")
-            total += len(content)
+            provenance = chunk.get("provenance") or {}
+            if not isinstance(provenance, dict):
+                raise KnowledgeLibraryError("invalid chunk provenance", code="invalid_snapshot")
+            total += len(content) + len(json.dumps(provenance, ensure_ascii=False).encode("utf-8"))
             if (chunk["documentId"] not in ids or total > 64 * 1024 * 1024
                     or hashlib.sha256(content).hexdigest() != chunk["contentHash"]):
                 raise KnowledgeLibraryError("search snapshot content or reference mismatch", code="invalid_snapshot")
@@ -686,8 +703,8 @@ class KnowledgeStore:
                                (base["id"], base["name"], base["id"], json.dumps(base["chunkingConfig"]), json.dumps(base["retrievalConfig"])))
             connection.executemany("INSERT INTO knowledge_documents(id,base_id,display_name,source_name,sha256,byte_size,stored_path,status,chunk_count,indexed_config_revision,created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,'','ready',?,1,0,0)",
                                    [(row["id"], base["id"], row["title"], "", row["sha256"], row["byteSize"], row["chunkCount"]) for row in documents])
-            connection.executemany("INSERT INTO knowledge_chunks(id,document_id,base_id,ordinal,content,heading,page,content_hash,created_at_ms) VALUES(?,?,?,?,?,?,?,?,0)",
-                                   [(row["id"], row["documentId"], base["id"], row["ordinal"], row["content"], row.get("heading", ""), row.get("page"), row["contentHash"]) for row in chunks])
+            connection.executemany("INSERT INTO knowledge_chunks(id,document_id,base_id,ordinal,content,heading,page,content_hash,created_at_ms,provenance_json) VALUES(?,?,?,?,?,?,?,?,0,?)",
+                                   [(row["id"], row["documentId"], base["id"], row["ordinal"], row["content"], row.get("heading", ""), row.get("page"), row["contentHash"], json.dumps(row.get("provenance") or {}, ensure_ascii=False)) for row in chunks])
             connection.executemany("INSERT INTO knowledge_chunks_fts(chunk_id,content) VALUES(?,?)", [(row["id"], row["content"]) for row in chunks])
 
     def hydrate_dense_hits(
@@ -734,7 +751,11 @@ class KnowledgeStore:
         if not scored_ids:
             return []
         chunk_ids = [item[0] for item in scored_ids]
-        filters = [f"c.id IN ({', '.join('?' for _ in chunk_ids)})", "d.status='ready'"]
+        filters = [
+            f"c.id IN ({', '.join('?' for _ in chunk_ids)})",
+            "d.status='ready'",
+            "d.indexed_config_revision=b.config_revision",
+        ]
         params: list[Any] = list(chunk_ids)
         if base_ids:
             filters.append(f"c.base_id IN ({', '.join('?' for _ in base_ids)})")
@@ -746,8 +767,8 @@ class KnowledgeStore:
             filters.append("b.agent_enabled=1")
         rows = self.all(
             "SELECT c.id AS chunk_id, c.base_id, b.name AS base_name, c.document_id, "
-            "d.display_name AS document_name, c.ordinal, c.content, c.heading, c.page "
-            "FROM knowledge_chunks c JOIN knowledge_documents d ON d.id=c.document_id "
+            "d.display_name AS document_name, c.ordinal, c.content, c.heading, c.page, c.provenance_json "
+            "FROM knowledge_chunks c JOIN knowledge_documents d ON d.id=c.document_id AND d.base_id=c.base_id "
             "JOIN knowledge_bases b ON b.id=c.base_id "
             f"WHERE {' AND '.join(filters)}",
             params,
@@ -771,6 +792,7 @@ class KnowledgeStore:
                     score=round(max(0.0, min(1.0, normalized_score)), 6),
                     page=int(row["page"]) if row["page"] is not None else None,
                     heading=str(row["heading"] or ""),
+                    provenance=decode_metadata(row, field="provenance_json"),
                 )
             )
         return hits
@@ -1005,9 +1027,9 @@ def re_split_query(value: str) -> list[str]:
     return re.findall(r"[\w\u3400-\u9fff]+", value, flags=re.UNICODE)
 
 
-def decode_metadata(row: sqlite3.Row) -> dict[str, Any]:
+def decode_metadata(row: sqlite3.Row, *, field: str = "metadata_json") -> dict[str, Any]:
     try:
-        value = json.loads(str(row["metadata_json"] or "{}"))
+        value = json.loads(str(row[field] or "{}"))
     except (json.JSONDecodeError, TypeError):
         return {}
     return value if isinstance(value, dict) else {}

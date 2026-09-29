@@ -31,7 +31,7 @@ export interface Room {
   ownerAppId?: string;
   surfaceKey?: string;
   routingPolicy?:
-    'manual_mentions' | 'moderator' | 'sequential' | 'natural' | 'parallel' | 'invite_only';
+    'manual_mentions' | 'moderator' | 'sequential' | 'natural' | 'parallel' | 'invite_only' | 'jev';
   routingConfig?: {
     [k: string]: unknown;
   };

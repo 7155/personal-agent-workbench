@@ -46,6 +46,8 @@ from .agent_runtime_driver import AgentRuntimeError
 from .agent_surface_runtime import AgentSurfaceRuntime, PiSurfaceCompletionProvider
 from .agent_role_book_control import AgentRoleBookControlService
 from .agent_service import AgentService, agent_service_from_settings
+from .space_organization import SpaceOrganization
+from .space_continuity import SpaceContinuity
 from .desktop_files import DesktopFiles
 from .agent_routes import (
     agent_collaboration_profile_route,
@@ -733,6 +735,8 @@ class DebugImeService:
                 or Path.cwd()
             ),
         )
+        self.space_organization = SpaceOrganization(config.db_path, sessions=self.agent.sessions, rooms=self.agent.rooms)
+        self.space_continuity = SpaceContinuity(config.db_path, agent=self.agent, organization=self.space_organization)
         self.desktop_files = DesktopFiles(editability=lambda session_id, path:
             self.agent_tools.workspace_harness.file_editability(self.agent.sessions.get(session_id), path))
         self.agent_tools = ControlToolGateway(
@@ -5375,6 +5379,7 @@ class DebugImeService:
             model_curation = memory_curation_model_status(
                 conn,
                 limit=min(limit, 8),
+                required_model=managed.automatic_organization_model,
             )
             book_projection = personal_memory_book_projection_status(conn)
             rows = conn.execute(
@@ -7995,7 +8000,22 @@ _ISOLATED_HTML_PREVIEW_DOCUMENT = b"""<!doctype html>
   <script>
   window.addEventListener('DOMContentLoaded', () => {
     try {
-      const encoded = window.location.hash.slice(1).replace(/-/g, '+').replace(/_/g, '/');
+      const fragment = window.location.hash.slice(1);
+      if (fragment.startsWith('message:')) {
+        const token = fragment.slice('message:'.length);
+        if (!/^[0-9a-f-]{36}$/.test(token)) throw new Error('invalid preview token');
+        window.addEventListener('message', function receive(event) {
+          if (event.source !== window.parent || event.data?.type !== 'paw-html-preview-document' ||
+              event.data.token !== token || typeof event.data.source !== 'string') return;
+          window.removeEventListener('message', receive);
+          document.open();
+          document.write(event.data.source);
+          document.close();
+        });
+        window.parent.postMessage({ type: 'paw-html-preview-ready', token }, '*');
+        return;
+      }
+      const encoded = fragment.replace(/-/g, '+').replace(/_/g, '/');
       if (!encoded) throw new Error('preview source is missing');
       const padded = encoded + '='.repeat((4 - encoded.length % 4) % 4);
       const binary = window.atob(padded);
@@ -8999,6 +9019,10 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 self.service.agent.collaboration_profile_projection(collaboration_profile_id),
             )
+            return
+        if agent_room_id and room_action == "jev":
+            self._write_json(HTTPStatus.OK, self.service.agent.jev_workspace(
+                agent_room_id, str(query.get("graphId", [""])[0])))
             return
         if agent_room_id and room_action == "snapshot":
             self._write_json(
@@ -10010,6 +10034,11 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                         self._dispatch_descriptor_route(descriptor_route, payload=payload)
                     except Exception as exc:
                         self._write_json(*lab_trial_error_response(exc))
+                elif descriptor_route.error_response is not None:
+                    try:
+                        self._dispatch_descriptor_route(descriptor_route, payload=payload)
+                    except Exception as exc:
+                        self._write_json(*descriptor_route.error_response(exc))
                 else:
                     self._dispatch_descriptor_route(descriptor_route, payload=payload)
                 return
@@ -10329,6 +10358,9 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                         payload,
                     ),
                 )
+            elif agent_room_id and room_action == "jev":
+                self.service.require_agent_runtime_execution_owner()
+                self._write_json(HTTPStatus.OK, self.service.agent.jev_command(agent_room_id, payload))
             elif agent_room_id and room_action == "messages":
                 self.service.require_agent_runtime_execution_owner()
                 self._write_json(

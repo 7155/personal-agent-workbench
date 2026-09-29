@@ -1,5 +1,8 @@
 import { act, cleanup, render, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
+import { ControlTransportProvider } from '@/app/control-transport';
+import { MockControlTransport } from '@/test/mock-transport';
+import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/primitives';
 import { previewAgentSnapshot } from '../preview-data';
@@ -110,4 +113,18 @@ describe('Agent timeline follow intent', () => {
     act(() => virtuosoMock.atBottomStateChange?.(true));
     expect(virtuosoMock.followOutput?.()).toBe(false);
   });
+  it('keeps a persisted position during StrictMode cleanup before messages load', () => {
+    const transport = new MockControlTransport();
+    Object.defineProperty(transport, 'connectionIdentity', { value: 'reading-recovery-test' });
+    const key = recoveryScope(transport, `session:${SESSION_ID}`) + ':anchor';
+    const saved = JSON.stringify({ conversationId: SESSION_ID, rowKey: 'old-turn', rowIndex: 1, offsetFromViewportTopPx: -30, fallbackScrollTop: 200 });
+    localStorage.setItem(key, saved);
+    const view = render(<StrictMode><ControlTransportProvider transport={transport}><TooltipProvider>
+      <AgentTimeline modelSelectionAvailable onApprovalDecision={() => {}} onRetryTurn={() => false} onSwitchModel={() => {}} sessionId={SESSION_ID} />
+    </TooltipProvider></ControlTransportProvider></StrictMode>);
+    view.unmount();
+    expect(localStorage.getItem(key)).toBe(saved);
+    localStorage.removeItem(key);
+  });
+
 });

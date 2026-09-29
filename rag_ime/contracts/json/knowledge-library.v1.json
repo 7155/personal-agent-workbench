@@ -33,7 +33,7 @@
       "type": "object",
       "required": ["strategy", "size", "overlap", "separator", "respectHeadings", "respectPageBoundaries"],
       "properties": {
-        "strategy": {"enum": ["general", "markdown", "book", "qa", "laws", "separator", "fixed"]},
+        "strategy": {"enum": ["general", "markdown", "paper", "book", "qa", "laws", "separator", "fixed"]},
         "size": {"type": "integer", "minimum": 200, "maximum": 8000},
         "overlap": {"type": "integer", "minimum": 0, "maximum": 2000},
         "separator": {"type": "string", "maxLength": 100},

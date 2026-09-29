@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -10,6 +10,7 @@ import type {
   ControlTransport,
 } from '@/platform/transport';
 import { ActivityTimeline } from './ActivityTimeline';
+import { memoryQueryKeys } from './api';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
 
@@ -120,6 +121,96 @@ describe('ActivityTimeline activity projection', () => {
     }));
   });
 
+  it('replaces an old failed local job when the calendar reports a newer completed job', async () => {
+    const user = userEvent.setup();
+    const requests: ControlRequest[] = [];
+    const today = localDateForTest();
+    let latestJob: Record<string, unknown> = {};
+    const view = renderTimeline(semanticTimeline(), {
+      requests,
+      calendarAutomation: () => ({ state: 'scheduled', job: latestJob }),
+      jobResult: (jobId) => jobId === 'memory-maintenance:test'
+        ? {
+            jobId,
+            state: 'failed',
+            createdAtMs: 100,
+            error: 'old job failed',
+          }
+        : {
+            jobId,
+            state: 'completed',
+            createdAtMs: 200,
+            progress: { currentDate: today, completedDayCount: 1, totalDayCount: 1 },
+            result: { ok: true },
+          },
+    });
+
+    await user.click(await screen.findByRole('button', { name: '整理本月' }));
+    await user.click(within(await screen.findByRole('dialog', { name: '整理本月' }))
+      .getByRole('button', { name: '确认整理本月' }));
+    expect(await screen.findByRole('alert', { name: '历史日记整理进度' })).toHaveTextContent('任务 memory-maintenance:test');
+
+    latestJob = {
+      jobId: 'memory-maintenance:newer-completed',
+      state: 'completed',
+      mode: 'single_day',
+      createdAtMs: 200,
+      progress: { currentDate: today, completedDayCount: 1, totalDayCount: 1 },
+      result: { ok: true },
+    };
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: memoryQueryKeys.activityTimelineCalendar(today.slice(0, 7)) });
+    });
+
+    const receipt = await screen.findByRole('status', { name: '历史日记整理进度' });
+    expect(receipt).toHaveTextContent('任务 memory-maintenance:newer-completed');
+    expect(screen.queryByRole('alert', { name: '历史日记整理进度' })).not.toBeInTheDocument();
+    expect(requests).toContainEqual(expect.objectContaining({
+      pathId: 'agent.memoryMaintenance.run',
+      query: { jobId: 'memory-maintenance:newer-completed' },
+    }));
+  });
+
+  it('shows a running catch-up spanning the selected older month', async () => {
+    const oldMonth = shiftMonthForTest(localDateForTest().slice(0, 7), -2);
+    const oldMonthStart = `${oldMonth}-01`;
+    const jobId = 'memory-maintenance:cross-month-catch-up';
+    renderTimeline(semanticTimeline(), {
+      initialDate: oldMonthStart,
+      calendarAutomation: {
+        state: 'scheduled',
+        job: {
+          jobId,
+          state: 'running',
+          mode: 'manual_catch_up',
+          progress: {
+            phase: 'activity_timeline_catch_up',
+            throughDate: localDateForTest(),
+            currentDate: oldMonthStart,
+            completedDayCount: 1,
+            totalDayCount: 41,
+          },
+        },
+      },
+      jobResult: {
+        jobId,
+        state: 'running',
+        progress: {
+          phase: 'activity_timeline_catch_up',
+          throughDate: localDateForTest(),
+          currentDate: oldMonthStart,
+          completedDayCount: 1,
+          totalDayCount: 41,
+        },
+      },
+    });
+
+    const status = await screen.findByRole('status', { name: '历史日记整理进度' });
+    expect(status).toHaveTextContent('已完成 1 / 41 天');
+    expect(status).toHaveTextContent(`任务 ${jobId}`);
+    expect(screen.getByRole('button', { name: '正在整理' })).toBeDisabled();
+  });
+
   it('shows a traceable completed receipt and a failed-job recovery action', async () => {
     const completed = renderTimeline(semanticTimeline(), {
       calendarAutomation: {
@@ -226,6 +317,30 @@ describe('ActivityTimeline activity projection', () => {
     expect(expired).toHaveTextContent(`任务 ${jobId}`);
     await user.click(within(expired).getByRole('button', { name: '重新检查范围' }));
     expect(await screen.findByRole('dialog', { name: '整理本月' })).toBeInTheDocument();
+  });
+
+  it('names the configured model mismatch in a failed month job', async () => {
+    const error = 'memory curation requires the canonical live model openai-codex/gpt-5.6-luna; received openai-codex/gpt-6-luna';
+    renderTimeline(semanticTimeline(), {
+      calendarAutomation: {
+        state: 'failed',
+        job: {
+          jobId: 'memory-maintenance:model-mismatch',
+          state: 'failed',
+          mode: 'manual_catch_up',
+          error,
+        },
+      },
+      jobResult: {
+        jobId: 'memory-maintenance:model-mismatch',
+        state: 'failed',
+        error,
+      },
+    });
+
+    const failure = await screen.findByRole('alert', { name: '历史日记整理进度' });
+    expect(failure).toHaveTextContent('整理模型不匹配：本次使用 gpt-6-luna，执行器当时仅接受 gpt-5.6-luna');
+    expect(failure).not.toHaveTextContent('读取或保存失败');
   });
 
   it('keeps semantic verification failures as a visible warning instead of a job error', async () => {
@@ -597,7 +712,7 @@ function renderTimeline(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const view = render(
     <PawOsDesktopProvider openRoute={(route) => options.routes?.push(route)} openWindow={() => undefined}>
       <TooltipProvider delayDuration={0}>
         <ControlTransportProvider transport={timelineTransport(timeline, options)}>
@@ -614,6 +729,7 @@ function renderTimeline(
       </TooltipProvider>
     </PawOsDesktopProvider>,
   );
+  return { ...view, client };
 }
 
 function timelineTransport(
@@ -662,7 +778,9 @@ function timelineTransport(
             waitingDayCount: 1,
             outdatedDayCount: 0,
           },
-          ...(options.calendarAutomation ? { automation: options.calendarAutomation } : {}),
+          ...(options.calendarAutomation ? { automation: typeof options.calendarAutomation === 'function'
+            ? options.calendarAutomation()
+            : options.calendarAutomation } : {}),
           days: [
             { date: today, status: 'approved', organized: options.organized ?? true, modelOrganized: options.organized ?? true, needsRefresh: false, sourceEventCount: 12, segmentCount: 2 },
             { date: waitingDate, status: 'none', organized: false, modelOrganized: false, needsRefresh: false, sourceEventCount: 12, segmentCount: 0 },
@@ -697,10 +815,13 @@ function timelineTransport(
           ok: true,
           jobId: 'memory-maintenance:test',
           state: 'queued',
+          createdAtMs: 100,
         } as Response;
       }
       if (request.pathId === 'agent.memoryMaintenance.run') {
-        return (options.jobResult ?? {
+        return (typeof options.jobResult === 'function'
+          ? options.jobResult(String(request.query?.jobId ?? ''))
+          : options.jobResult ?? {
           schemaVersion: 'rag-ime.gateway-memory-maintenance-job.v1',
           ok: true,
           jobId: 'memory-maintenance:test',
@@ -721,8 +842,8 @@ interface TimelineTransportOptions {
   onOpenOrganize?: () => void;
   initialDate?: string;
   organized?: boolean;
-  calendarAutomation?: Record<string, unknown>;
-  jobResult?: Record<string, unknown>;
+  calendarAutomation?: Record<string, unknown> | (() => Record<string, unknown>);
+  jobResult?: Record<string, unknown> | ((jobId: string) => Record<string, unknown>);
   requests?: ControlRequest[];
   routes?: string[];
 }

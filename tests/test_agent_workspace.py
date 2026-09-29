@@ -640,6 +640,24 @@ class AgentWorkspaceHarnessTests(unittest.TestCase):
             with self.subTest(command=command), self.assertRaises(WorkspaceHarnessError):
                 harness.prepare_command(self.session, {"command": command})
 
+    def test_shell_and_background_job_report_command_length_separately(self) -> None:
+        harness = WorkspaceHarness(executor=lambda prepared: {})
+        for prepare in (harness.prepare_command, harness.prepare_background_command):
+            with self.subTest(prepare=prepare.__name__):
+                command = "#" + "x" * 1_999
+                self.assertEqual(prepare(self.session, {"command": command}).command, command)
+                with self.assertRaisesRegex(
+                    WorkspaceHarnessError,
+                    "exceeds 2000 characters; split it into shorter commands",
+                ):
+                    prepare(self.session, {"command": command + "x"})
+                for malformed in ("pwd\x00", "pwd\r"):
+                    with self.assertRaisesRegex(
+                        WorkspaceHarnessError,
+                        "contains NUL or carriage return",
+                    ):
+                        prepare(self.session, {"command": malformed})
+
     def test_full_automation_model_arbitrates_bounded_destruction_but_keeps_hard_fences(self) -> None:
         harness = WorkspaceHarness(executor=lambda prepared: {})
         roots = [str(self.root.resolve())]

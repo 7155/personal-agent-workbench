@@ -1,12 +1,14 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
+import { BookOpen, ChevronDown, FilePenLine, FolderOpen, Globe, Search, SquareTerminal, UsersRound, Wrench, Network, Sparkles, ClipboardList } from 'lucide-react';
 import type { ToolCallBlock } from '../model/types';
+import { ToolStatusMark } from './ToolStatusMark';
+import { toolReceiptPresentation } from '../model/tool-receipt';
 
-const TOOL_STATUS_LABEL: Record<ToolCallBlock['status'], string> = {
-  pending: '等待',
-  running: '正在执行',
-  success: '已完成',
-  error: '失败',
-  cancelled: '已停止',
+const actionLabels: Readonly<Record<string, string>> = {
+  workspace_read: '读取文件', workspace_write: '写入文件', workspace_edit: '修改文件',
+  workspace_shell: '终端命令', workspace_list: '浏览目录', workspace_search: '搜索文件',
+  read: '读取文件', write: '写入文件', edit: '修改文件', bash: '终端命令',
+  work_documents: '任务文档', room_partner: '伙伴协作',
 };
 
 /** One tool call as a bounded receipt: a reader line always, the raw call and
@@ -20,29 +22,46 @@ export function ToolCard({ action, block, detail }: {
    *  which exists so a host without structured evidence still shows one. */
   detail?: ReactNode;
 }) {
+  const receipt = toolReceiptPresentation(block);
   const [open, setOpen] = useState(block.status === 'error');
+  const detailId = useId();
   const hasDetail = Boolean(block.input || block.output || detail);
+  const displayName = actionLabels[block.name] ?? block.name;
+  const name = block.name.toLowerCase();
+  const Glyph = /技能|skill/.test(name) ? Sparkles
+    : /jev|路由|调度/.test(name) ? Network
+    : /任务文档|work_documents|计划|plan/.test(name) ? ClipboardList
+    : /分派|改派|伙伴|协调|room_partner|delegate/.test(name) ? UsersRound
+    : /搜索|查找|search|grep|find/.test(name) ? Search
+    : /读取|阅读|\bread\b|workspace_read/.test(name) ? BookOpen
+    : /写入|修改|write|edit/.test(name) ? FilePenLine
+    : /命令|终端|shell|bash|terminal/.test(name) ? SquareTerminal
+    : /列出|目录|list|\bls\b/.test(name) ? FolderOpen
+    : /浏览|网页|browser|fetch/.test(name) ? Globe : Wrench;
   return (
-    <section className={`ccui-tool-card status-${block.status}`} data-tool-block={block.id}>
+    <section data-expanded={open && hasDetail} className={`ccui-tool-card status-${receipt.status}`} data-tool-block={block.id} data-execution-outcome={block.executionOutcome}>
       <button
         aria-expanded={hasDetail ? open : undefined}
+        aria-controls={hasDetail ? detailId : undefined}
         className="ccui-tool-head"
         disabled={!hasDetail}
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
-        <span aria-hidden="true" className="ccui-tool-status" />
+        <Glyph className="ccui-tool-kind" size={17} strokeWidth={1.7} aria-hidden="true" />
         <span className="ccui-tool-main">
-          <strong>{block.name}</strong>
-          {block.summary ? <span>{block.summary}</span> : null}
+          <strong title={displayName !== block.name ? block.name : undefined}>{displayName}</strong>
+          {receipt.summary ? <span title={receipt.summary}>{receipt.summary}</span> : null}
         </span>
         <span className="ccui-tool-meta">
-          {TOOL_STATUS_LABEL[block.status]}
-          {hasDetail ? <i aria-hidden="true">{open ? '收起' : '详情'}</i> : null}
+          <ToolStatusMark status={receipt.status} size={13} />
+          <span className="ccui-tool-state-label" key={receipt.label}>{receipt.label}</span>
+          {hasDetail ? <ChevronDown className="ccui-tool-disclosure" size={14} aria-hidden="true" /> : null}
         </span>
       </button>
       {open && hasDetail ? (
-        <div className="ccui-tool-body">
+        <div className="ccui-tool-body" id={detailId}>
+          {block.executionOutcome === 'unknown' && block.summary ? <p>{block.summary}</p> : null}
           {block.input ? <div><span className="ccui-tool-label">调用</span><pre>{block.input}</pre></div> : null}
           {detail ?? (block.output ? <div><span className="ccui-tool-label">证据</span><pre>{block.output}</pre></div> : null)}
         </div>

@@ -45,7 +45,10 @@ export function useVirtualTranscript<T>({
 }: UseVirtualTranscriptOptions<T>) {
   const sizeCache = useRef(new Map<string, number>());
   const elementToKey = useRef(new WeakMap<Element, string>());
+  const measuredElements = useRef(new Map<string, HTMLElement>());
+  const measurementRefs = useRef(new Map<string, (element: HTMLElement | null) => void>());
   const observerRef = useRef<ResizeObserver | null>(null);
+  const pendingScrollTop = useRef<number | null>(null);
   const layoutRef = useRef<{ rows: VirtualRow[]; totalSize: number }>({ rows: [], totalSize: 0 });
   const initiallyPositionedKeyRef = useRef('');
   const [measurementEpoch, setMeasurementEpoch] = useState(0);
@@ -121,43 +124,84 @@ export function useVirtualTranscript<T>({
     const top = initialAnchor
       ? initialViewport.top
       : Math.max(0, layout.totalSize - height);
+    pendingScrollTop.current = null;
     scroller.scrollTop = top;
     initiallyPositionedKeyRef.current = initialScrollKey;
     setViewport({ top, height });
   }, [initialAnchor, initialScrollKey, initialViewport.top, layout.rows.length, layout.totalSize, scrollRef]);
 
   useLayoutEffect(() => {
+    const target = pendingScrollTop.current;
+    pendingScrollTop.current = null;
+    const scroller = scrollRef.current;
+    if (target === null || !scroller) return;
+    // Commit the compensating position only after the new sizer height is in
+    // the DOM. Assigning it earlier can clamp against the previous height.
+    scroller.scrollTop = target;
+    setViewport({ top: scroller.scrollTop, height: scroller.clientHeight || DEFAULT_UNMEASURED_VIEWPORT_HEIGHT });
+  }, [measurementEpoch, scrollRef]);
+
+  useLayoutEffect(() => {
     if (typeof ResizeObserver !== 'function') return;
-    observerRef.current = new ResizeObserver((entries) => {
+    const observer = new ResizeObserver((entries) => {
       let changed = false;
       let scrollAdjustment = 0;
       const scroller = scrollRef.current;
       const geometry = layoutRef.current;
       for (const entry of entries) {
         const key = elementToKey.current.get(entry.target);
-        if (!key) continue;
-        const next = Math.max(1, Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height));
+        if (!key || measuredElements.current.get(key) !== entry.target) continue;
+        const next = Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+        // A removed virtual row or hidden host has no measurable geometry;
+        // treating its zero box as a tiny row collapses retained history.
+        if (next <= 0) continue;
         const row = geometry.rows.find((candidate) => candidate.key === key);
         const previous = sizeCache.current.get(key) ?? row?.size;
+        sizeCache.current.set(key, next);
         if (previous === next) continue;
         // If a fully-above row changes height, compensate scrollTop by the same
         // delta so the first visible content keeps its screen position.
         if (scroller && row && previous !== undefined && row.start + previous <= scroller.scrollTop) {
           scrollAdjustment += next - previous;
         }
-        sizeCache.current.set(key, next);
         changed = true;
       }
-      if (scrollAdjustment && scroller) scroller.scrollTop += scrollAdjustment;
+      if (scrollAdjustment && scroller) {
+        const top = Math.max(0, (pendingScrollTop.current ?? scroller.scrollTop) + scrollAdjustment);
+        pendingScrollTop.current = top;
+        // Render the matching window in the same commit as new row geometry,
+        // instead of briefly unmounting the reader's row until a scroll RAF.
+        setViewport({ top, height: scroller.clientHeight || DEFAULT_UNMEASURED_VIEWPORT_HEIGHT });
+      }
       if (changed) setMeasurementEpoch((epoch) => epoch + 1);
     });
-    return () => observerRef.current?.disconnect();
+    observerRef.current = observer;
+    for (const element of measuredElements.current.values()) observer.observe(element);
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
   }, [scrollRef]);
 
-  const measureElement = useCallback((key: string) => (element: HTMLElement | null) => {
-    if (!element) return;
-    elementToKey.current.set(element, key);
-    observerRef.current?.observe(element);
+  const measureElement = useCallback((key: string) => {
+    let callback = measurementRefs.current.get(key);
+    if (!callback) {
+      callback = (element: HTMLElement | null) => {
+        const previous = measuredElements.current.get(key);
+        if (previous === element) return;
+        if (previous) {
+          observerRef.current?.unobserve(previous);
+          elementToKey.current.delete(previous);
+          measuredElements.current.delete(key);
+        }
+        if (!element) return;
+        measuredElements.current.set(key, element);
+        elementToKey.current.set(element, key);
+        observerRef.current?.observe(element);
+      };
+      measurementRefs.current.set(key, callback);
+    }
+    return callback;
   }, []);
 
   const virtualRows = useMemo(() => {

@@ -11,6 +11,7 @@
 .ccui-conversation-surface,
 .ccui-queue-tray,
 .ccui-queue-panel,
+.ccui-tool-records,
 .ccui-queue-cap-notice {
   --ccui-surface: var(--paw-panel, #ffffff);
   --ccui-surface-2: var(--paw-panel-soft, #f1f5fa);
@@ -89,6 +90,9 @@
   width: 100%;
 }
 
+.ccui-transcript-content, .ccui-transcript-tail { display: flow-root; }
+.ccui-transcript-tail { padding-bottom: 24px; }
+
 .ccui-virtual-row {
   position: absolute;
   top: 0;
@@ -145,17 +149,20 @@
 }
 
 .ccui-attachment-chip {
-  max-width: 220px;
-  overflow: hidden;
-  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(100%, 320px);
+  padding: 4px 7px;
   border: 1px solid var(--ccui-border);
   border-radius: 5px;
   background: var(--ccui-surface);
   font-size: 11px;
-  color: var(--ccui-muted);
-  text-overflow: ellipsis;
+  color: var(--ccui-text);
   white-space: nowrap;
 }
+.ccui-attachment-chip > svg { flex: none; color: var(--ccui-accent); }
+.ccui-attachment-chip > span { overflow: hidden; text-overflow: ellipsis; }
 
 .ccui-user-footer,
 .ccui-assistant-footer {
@@ -374,42 +381,14 @@
 
 .ccui-tool-meta { display: flex; gap: 6px; font-size: 11px; color: var(--ccui-faint); white-space: nowrap; }
 
-/* 运行态流光落在字上，与 Session 的 paw-activity 运行行同一语言：
-   行背景保持干净，进行中的工具名与摘要本身过一道柔和的受光带。
-   只动 background-position；reduced-motion 下回落为静态墨色。 */
-.ccui-tool-card.status-running .ccui-tool-main strong { --ccui-running-ink: var(--ccui-text); }
-.ccui-tool-card.status-running .ccui-tool-main span { --ccui-running-ink: var(--ccui-muted); }
+/* Keep the content readable while execution is live. Motion belongs to the
+   receipt mark; completed/error/cancelled all remain explicit text states. */
+.ccui-tool-state-label { color: var(--ccui-muted); animation: ccui-receipt-fade 180ms ease; }
+.ccui-tool-card.status-error .ccui-tool-state-label { color: var(--ccui-danger); }
+.ccui-tool-head:focus-visible { outline: 2px solid var(--ccui-accent); outline-offset: -3px; }
 
-.ccui-tool-card.status-running .ccui-tool-main :is(strong, span) {
-  color: transparent;
-  background:
-    linear-gradient(
-      100deg,
-      var(--ccui-running-ink) 10%,
-      var(--ccui-running-ink) 36%,
-      color-mix(in srgb, var(--ccui-accent) 68%, #fff) 50%,
-      var(--ccui-running-ink) 64%,
-      var(--ccui-running-ink) 90%
-    );
-  background-clip: text;
-  background-size: 230% 100%;
-  -webkit-background-clip: text;
-  animation: ccui-text-sweep 1.85s ease-in-out infinite;
-}
-
-@keyframes ccui-text-sweep {
-  0%, 18% { background-position: 100% 50%; }
-  82%, 100% { background-position: -100% 50%; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ccui-tool-card.status-running .ccui-tool-main :is(strong, span) {
-    color: var(--ccui-running-ink);
-    background: none;
-    animation: none;
-  }
-}
-.ccui-tool-meta i { font-style: normal; }
+.ccui-tool-disclosure { flex: none; }
+.ccui-tool-head[aria-expanded="true"] .ccui-tool-disclosure { transform: rotate(180deg); }
 
 /* An action a Runtime contract owns — a pending approval, a background
    process link — stays outside the disclosure so it can never fold away. */

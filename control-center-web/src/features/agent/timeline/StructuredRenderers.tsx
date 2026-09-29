@@ -21,6 +21,7 @@ import {
 } from '@/contracts/approval-decision';
 import { publicAgentErrorText } from '../public-error';
 import { MarkdownBody } from './MarkdownRenderer';
+import { RichTableFrame } from './rich/RichBlockTools';
 import { SmoothDisclosureReveal } from './SmoothDisclosureReveal';
 import { useDisclosureControl } from './disclosure-anchor';
 import { publicToolLabel } from './public-tool-result';
@@ -137,7 +138,7 @@ export function TableBlockRenderer({ block }: AgentBlockRenderProps) {
       </>}
     >
       {columns.length ? (
-        <div aria-label={`${title}内容`} role="region" tabIndex={0}>
+        <RichTableFrame label={title} hint={`可见 ${visibleRows.length}/${rows.length} 行 · ${visibleColumns.length}/${columns.length} 列`}>
           <table>
             <thead><tr>{visibleColumns.map((column) => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
             <tbody>
@@ -157,7 +158,7 @@ export function TableBlockRenderer({ block }: AgentBlockRenderProps) {
               })}
             </tbody>
           </table>
-        </div>
+        </RichTableFrame>
       ) : <p>表格缺少可展示的列。</p>}
       {visibleRows.length < rows.length || visibleColumns.length < columns.length ? <div className="agent-rich-load-more" role="group" aria-label={`${title}加载更多`}>
         {visibleRows.length < rows.length ? <Button onClick={() => setVisibleRowCount((count) => Math.min(rows.length, count + 24))} size="small" variant="quiet">加载更多行（{visibleRows.length}/{rows.length}）</Button> : null}

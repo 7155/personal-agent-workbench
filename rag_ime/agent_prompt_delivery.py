@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from typing import Any
 
 from .agent_context_runtime import (
@@ -41,6 +42,7 @@ class AgentPromptDeliveryService:
             list[Mapping[str, object]],
         ],
         room_public_recovery_context: Callable[[str], str],
+        room_admission_gate: Callable[[str, str], Any] | None = None,
         execution_policy_context: (
             Callable[[Mapping[str, object]], str] | None
         ) = None,
@@ -51,6 +53,7 @@ class AgentPromptDeliveryService:
         self.context_runtime = context_runtime
         self._runtime_provider = runtime_provider
         self.runtime_tool_manifest = runtime_tool_manifest
+        self.room_admission_gate = room_admission_gate
         self._session_memory_enabled_provider = session_memory_enabled_provider
         self.room_public_recovery_context = (
             room_public_recovery_context
@@ -82,6 +85,7 @@ class AgentPromptDeliveryService:
             Callable[[Mapping[str, object]], None] | None
         ) = None,
         before_runtime: Callable[[], None] | None = None,
+        room_id: str = "",
     ) -> tuple[dict[str, object], str, int]:
         trace_id = self.context_runtime.begin_trace(
             session_id,
@@ -204,28 +208,34 @@ class AgentPromptDeliveryService:
                 "toolCount": tool_count,
             },
         )
-        if before_runtime is not None:
-            before_runtime()
-        accepted, duration_ms = self._runtime_prompt(
-            trace_id,
-            request_node=request_node,
-            session_id=session_id,
-            runtime_message=runtime_message,
-            images=images,
-            client_message_id=client_message_id,
-            delivery=delivery,
-        )
-        if on_accepted is not None:
-            try:
-                on_accepted(accepted)
-            except Exception as exc:
-                # There is no source-proven durable Host ledger between
-                # remote acceptance and this local write. A process death in
-                # that gap is therefore unresolved, never safe to replay.
-                raise AgentPromptPostAcceptanceFailure(
-                    "Pi accepted the command, but durable local acceptance "
-                    "evidence could not be written"
-                ) from exc
+        # All catalog, context, memory, and attachment work above runs before
+        # this brief admission fence. It serializes the exact Pi hand-off with
+        # a durable member-removal intent, not with the global Room lock.
+        guard = (self.room_admission_gate(session_id, room_id)
+                 if source_kind == "room" and room_id and self.room_admission_gate is not None
+                 else nullcontext())
+        with guard:
+            if before_runtime is not None:
+                before_runtime()
+            accepted, duration_ms = self._runtime_prompt(
+                trace_id,
+                request_node=request_node,
+                session_id=session_id,
+                runtime_message=runtime_message,
+                images=images,
+                client_message_id=client_message_id,
+                delivery=delivery,
+            )
+            if on_accepted is not None:
+                try:
+                    on_accepted(accepted)
+                except Exception as exc:
+                    # Pi accepted, but its Host receipt is uncertain. Removal
+                    # must later prove the exact existing turn has drained.
+                    raise AgentPromptPostAcceptanceFailure(
+                        "Pi accepted the command, but durable local acceptance "
+                        "evidence could not be written"
+                    ) from exc
         turn_id = str(accepted.get("turnId") or "")
         self.context_runtime.mark_delivered(
             list(materialized["itemIds"]),

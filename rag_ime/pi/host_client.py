@@ -55,6 +55,7 @@ class PiRuntimeHostClient:
         # therefore delay or deadlock an otherwise immediate command ACK.
         self._event_queue: queue.Queue[object] = queue.Queue()
         self._stderr: deque[str] = deque(maxlen=32)
+        self._fatal_error = ""
         self._process: subprocess.Popen[bytes] | None = None
         self._stdout_thread: threading.Thread | None = None
         self._event_thread: threading.Thread | None = None
@@ -118,6 +119,8 @@ class PiRuntimeHostClient:
                 self._process = None
                 raise
             self._stopping = False
+            self._stderr.clear()
+            self._fatal_error = ""
             # A client is normally one-shot, but resetting the lane here keeps
             # an explicit stop/start from inheriting the previous sentinel.
             self._event_queue = queue.Queue()
@@ -137,8 +140,8 @@ class PiRuntimeHostClient:
                 daemon=True,
             )
             self._event_thread.start()
-            self._stdout_thread.start()
             self._stderr_thread.start()
+            self._stdout_thread.start()
         return self.send("hello")
 
     def send(
@@ -254,7 +257,7 @@ class PiRuntimeHostClient:
         self.kill_gate.mark_terminated(self.host_identity, now_ms=int(time.time() * 1000))
 
     def diagnostic_error(self) -> str:
-        return redact_runtime_text(self._stderr[-1] if self._stderr else "")
+        return self._fatal_error or redact_runtime_text(self._stderr[-1] if self._stderr else "")
 
     def _read_stdout(self) -> None:
         process = self._process
@@ -298,6 +301,11 @@ class PiRuntimeHostClient:
                 exit_code = process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 exit_code = None
+        # EOF may race the stderr reader. Drain its final bounded diagnostic
+        # before publishing the exit; native stacks otherwise hide the cause.
+        stderr_thread = self._stderr_thread
+        if stderr_thread is not None and stderr_thread is not threading.current_thread():
+            stderr_thread.join(timeout=1)
         error = protocol_error or self.diagnostic_error()
         self.on_exit(exit_code, error)
         self.kill_gate.mark_terminated(self.host_identity, now_ms=int(time.time() * 1000))
@@ -307,9 +315,6 @@ class PiRuntimeHostClient:
         event_thread = self._event_thread
         if event_thread is not None and event_thread is not threading.current_thread():
             event_thread.join(timeout=2)
-        stderr_thread = self._stderr_thread
-        if stderr_thread is not None and stderr_thread is not threading.current_thread():
-            stderr_thread.join(timeout=1)
         for stream in (process.stdin, process.stdout, process.stderr):
             if stream is not None:
                 stream.close()
@@ -339,7 +344,11 @@ class PiRuntimeHostClient:
             raw = process.stderr.readline()
             if not raw:
                 return
-            self._stderr.append(raw.decode("utf-8", errors="replace").strip())
+            line = raw.decode("utf-8", errors="replace").strip()
+            summary = redact_runtime_text(line)
+            self._stderr.append(summary)
+            if line.startswith("FATAL ERROR:") or "JavaScript heap out of memory" in line:
+                self._fatal_error = summary
 
     def _fail_pending(self, error: BaseException) -> None:
         with self._lock:

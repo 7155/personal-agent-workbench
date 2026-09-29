@@ -62,6 +62,9 @@ def runtime_primitive_capabilities(value: object) -> dict[str, object]:
     operations = as_mapping(source.get("sessionCancelOperations"))
     continuation_envelope = source.get("continuationEnvelope")
     return {
+        "sessionExactTurnCancel": source.get("sessionExactTurnCancel") is True,
+        "sessionRetiredTurnRecovery": source.get("sessionRetiredTurnRecovery") is True,
+        "sessionInterruptedTurnRecovery": source.get("sessionInterruptedTurnRecovery") is True,
         "continuationEnvelope": (
             continuation_envelope if continuation_envelope in {"1", "2"} else ""
         ),

@@ -15,6 +15,17 @@ from rag_ime.agent_lab.trials import AgentLabTrialConflict, AgentLabTrialStore
 
 
 class KnowledgeDataTests(unittest.TestCase):
+    def test_explicit_standard_rejects_fabricated_or_undeclared_evidence(self):
+        docs = normalize_documents([{'id': 'd1', 'text': 'A measured value.'}, {'id': 'd2', 'text': 'Another value.'}])
+        base = {'id': 'q', 'question': 'What value?', 'answer': 'A measured value.', 'sourceIds': ['d1'],
+                'answerable': True, 'requiredFacts': ['A measured value.'], 'rubric': ['Correct value.']}
+        for evidence in ([{'sourceId': 'd1', 'quote': 'Fabricated value.'}],
+                         [{'sourceId': 'd2', 'quote': 'Another value.'}]):
+            with self.subTest(evidence=evidence), self.assertRaisesRegex(KnowledgeIntakeError, '逐字存在'):
+                normalize_cases([{**base, 'evidence': evidence}], docs)
+        with self.assertRaisesRegex(KnowledgeIntakeError, '显式答案标准'):
+            normalize_cases([{**base, 'answerable': 'false', 'evidence': []}], docs)
+
     def test_import_keeps_explicit_development_and_holdout_assignments(self):
         docs = normalize_documents([{'id': 'd1', 'text': 'First original paper'}, {'id': 'd2', 'text': 'Second original paper'}])
         cases, summary = normalize_cases([
@@ -218,6 +229,38 @@ class KnowledgeResourceTests(unittest.TestCase):
         self.assertEqual(sources[0]["sourceId"], "doc-7")
         self.assertNotIn("Returns are permitted", json.dumps(sources))
         self.assertLess(len(sources), index["documentCount"])
+
+    def test_explicit_agentic_standard_survives_import_binding_and_pending_review(self):
+        questions = [json.loads(line) for line in self.cases_file.read_text().splitlines()]
+        for number in (0, 1):
+            questions[number].update(
+                answerable=bool(number), requiredFacts=[f'Explicit fact {number}'],
+                rubric=[f'Explicit criterion {number}'],
+                evidence=[{'sourceId': f'doc-{number}', 'quote': f'permits returns within {number + 3} days.',
+                           'chunkId': f'chunk-{number}'}],
+                split='development' if number == 0 else 'holdout',
+                review={'status': 'approved'},
+                samples=[{'sampleId': 'reference', 'answer': 'An explicit sample.', 'category': 'correct',
+                          'humanVerdict': 'pass', 'humanNote': 'Untrusted imported approval'}])
+        self.cases_file.write_text('\n'.join(json.dumps(row) for row in questions))
+        _, dataset, index = self.prepare_resources()
+        stored = self.resource._cases(dataset)[0]['answerStandard']
+        self.assertFalse(stored['answerable'])
+        self.assertEqual(stored['evidence'][0]['chunkId'], 'chunk-0')
+        self.assertNotIn('humanVerdict', stored['samples'][0])
+        value = self.resource.golden_inputs(self.project, {'indexId': index['jobId'], 'datasetId': dataset['datasetId'], 'targetCount': 20})
+        store = AgentLabGoldenStore(self.root / 'lab.sqlite', default_model={'provider': 'test', 'model': 'test', 'thinkingLevel': 'low'})
+        suite = store.command({'action': 'create', 'expectedRevision': 0, 'clientRequestId': 'explicit-standard', 'input': value})['suite']
+        for number in (0, 1):
+            case = next(row for row in suite['cases'] if row['caseId'] == f'question-{number}')
+            self.assertEqual(case['answerable'], bool(number))
+            self.assertEqual(case['requiredFacts'], [f'Explicit fact {number}'])
+            self.assertEqual(case['rubric'], [f'Explicit criterion {number}'])
+            self.assertEqual(case['evidence'], [{'sourceId': f'doc-{number}', 'quote': f'permits returns within {number + 3} days.'}])
+            self.assertEqual(case['split'], 'development' if number == 0 else 'holdout')
+            self.assertEqual(case['review']['status'], 'pending')
+            self.assertEqual(case['samples'][0]['answer'], 'An explicit sample.')
+            self.assertIsNone(case['samples'][0]['humanVerdict'])
 
     def test_portable_search_uses_frozen_knowledge_owner_with_equal_ranking_and_no_labels(self):
         from rag_ime.agent_lab.app_knowledge_runtime import materialize, retrieve

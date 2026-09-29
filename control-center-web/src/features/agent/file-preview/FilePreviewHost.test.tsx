@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -118,6 +118,34 @@ describe('file preview interaction', () => {
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
     expect(frame).not.toHaveAttribute('srcdoc');
   });
+
+  it('delivers large interactive reports once through the opaque preview frame, without an authored URL payload', () => {
+    const content = '<!doctype html><html><body><button onclick="this.textContent=\'clicked\'">点击</button><script>document.body.dataset.interactive="yes"</script>'
+      + ' '.repeat(1_600_000) + '</body></html>';
+    render(<RichHtmlPreview content={content} title="large-earth-report.html" />);
+    const frame = screen.getByTitle('large-earth-report.html 交互预览') as HTMLIFrameElement;
+    const src = frame.getAttribute('src') ?? '';
+    expect(src).toMatch(/^\/__paw_html_preview#message:[0-9a-f-]{36}$/u);
+    expect(src).not.toContain('interactive');
+    expect(src.length).toBeLessThan(100);
+    expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(frame).not.toHaveAttribute('srcdoc');
+    const token = src.split('#message:')[1];
+    const send = vi.spyOn(frame.contentWindow!, 'postMessage');
+    const ready = (origin: string, source: MessageEventSource | null, nonce = token) =>
+      fireEvent(window, new MessageEvent('message', { data: { type: 'paw-html-preview-ready', token: nonce }, origin, source }));
+    ready(window.location.origin, frame.contentWindow);
+    ready('null', frame.contentWindow, crypto.randomUUID());
+    expect(send).not.toHaveBeenCalled();
+    ready('null', frame.contentWindow);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'paw-html-preview-document', token, source: expect.stringContaining('document.body.dataset.interactive="yes"') }), '*');
+    expect(send.mock.calls[0][0].source).toContain(' '.repeat(1_600_000));
+    ready('null', frame.contentWindow);
+    expect(send).toHaveBeenCalledOnce();
+  });
+
 
   it('keeps a file disabled when no authoritative parent session is available', () => {
     render(<AgentFileBlock data={{ mediaId: MEDIA_ID, fileName: 'orphan.diff' }} />);

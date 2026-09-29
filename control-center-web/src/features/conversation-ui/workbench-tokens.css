@@ -1,0 +1,40 @@
+/* A local visual vocabulary, shared by workspaces and their portalled sheets. */
+:is(.paw-room-workspace--jev, .paw-session-workspace[data-design='workbench'],
+    [data-composer-design='workbench'], .paw-jev-inspector, .jev-plan-review__dialog,
+    .paw-jev-objective-detail, .paw-jev-partner-settings, .room-composer-dialog) {
+  --wb-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --wb-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --wb-surface: var(--paw-panel-strong, #ffffff);
+  --wb-ink: var(--paw-ink, #282826);
+  --wb-accent: var(--paw-accent, #2969ae);
+  --wb-muted: color-mix(in srgb, var(--wb-ink) 68%, var(--wb-surface));
+  --wb-faint: color-mix(in srgb, var(--wb-ink) 52%, var(--wb-surface));
+  --wb-line: color-mix(in srgb, var(--wb-ink) 11%, var(--wb-surface));
+  --wb-line-strong: color-mix(in srgb, var(--wb-ink) 20%, var(--wb-surface));
+  --wb-sunken: color-mix(in srgb, var(--wb-ink) 3%, var(--wb-surface));
+  --wb-hover: color-mix(in srgb, var(--wb-accent) 6%, var(--wb-surface));
+  --wb-accent-soft: color-mix(in srgb, var(--wb-accent) 9%, var(--wb-surface));
+  --wb-success: var(--paw-success, #277b62);
+  --wb-review: var(--paw-stellar-violet, #8060b0);
+  --wb-warning: var(--paw-warning, #936f24);
+  --wb-danger: var(--paw-danger, #b14456);
+  --wb-ease: cubic-bezier(.22, 1, .36, 1);
+  --wb-fast: 140ms;
+  --wb-medium: 220ms;
+  --wb-read: 760px;
+  font-family: var(--wb-font);
+  -webkit-font-smoothing: antialiased;
+}
+:root[data-theme='dark'] :is(.paw-jev-inspector, .jev-plan-review__dialog, .paw-jev-objective-detail, .paw-jev-partner-settings, .room-composer-dialog) {
+  --wb-surface: var(--paw-panel-strong, #111b2c);
+  --wb-ink: var(--paw-ink, #e5ebf3);
+  --wb-accent: var(--paw-accent, #87b7ed);
+  --wb-success: var(--paw-success, #7ccea9);
+  --wb-review: var(--paw-stellar-violet, #baa4ec);
+  --wb-warning: var(--paw-warning, #e7be79);
+  --wb-danger: var(--paw-danger, #f3a4b1);
+}
+:is(.paw-room-workspace--jev, .paw-session-workspace[data-design='workbench'], .paw-jev-inspector, .jev-plan-review__dialog) :is(button, input, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 3px;
+}

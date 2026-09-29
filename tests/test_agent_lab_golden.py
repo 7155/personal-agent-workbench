@@ -222,6 +222,20 @@ class GoldenStoreTests(unittest.TestCase):
                 self.command('experiment', {'snapshotId': snapshot['snapshotId'], 'baseline': {},
                     'candidate': {'applicationMethod': method}, 'optimizePrompt': False})
 
+    def test_imported_knowledge_references_have_a_separate_bounded_storage_budget(self):
+        sources = [{**SOURCE, 'sourceId': f'large-{i}', 'text': 'x' * 410_000} for i in range(5)]
+        with self.assertRaises(AgentLabGoldenValidationError):
+            self.store.command(self.payload('create', {'title': 'Draft', 'scenario': 'qa', 'targetCount': 2, 'sources': sources}, revision=0))
+        cases = [case('dev'), case('hold', 'holdout')]
+        for item in cases:
+            item['evidence'] = [{'sourceId': 'large-0', 'quote': 'xxx'}]
+        suite = self.store.command(self.payload('create', {'title': 'Imported', 'scenario': 'qa', 'targetCount': 2, 'sources': sources, 'importedCases': cases,
+            'knowledge': {'projectId': 'p', 'indexId': 'idx', 'corpusHash': 'c', 'configHash': 'cfg', 'profile': {}, 'documentCount': 5, 'chunkCount': 5}}, revision=0))['suite']
+        self.assertEqual(sum(len(source['text']) for source in suite['sources']), 2_050_000)
+        from rag_ime.agent_lab.golden import _sources
+        with self.assertRaises(AgentLabGoldenValidationError):
+            _sources([{**SOURCE, 'sourceId': str(i), 'text': 'x' * 500_000} for i in range(17)], total_limit=8_000_000)
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="paw-golden-test-")
         self.addCleanup(temporary.cleanup)

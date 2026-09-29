@@ -1,0 +1,15 @@
+.ccui-execution-mark { display: inline-flex; flex: none; color: var(--paw-muted, var(--color-text-secondary)); }
+.ccui-execution-mark > span { display: inline-flex; animation: ccui-receipt-change 180ms var(--paw-ease-out, cubic-bezier(.23, 1, .32, 1)); }
+.ccui-execution-mark[data-state='running'] { color: var(--paw-accent, var(--color-accent)); }
+.ccui-execution-mark[data-state='running'] svg { animation: ccui-tool-running 1.2s linear infinite; }
+.ccui-execution-mark[data-state='success'] { color: var(--paw-success, var(--color-success)); }
+.ccui-execution-mark[data-state='error'] { color: var(--paw-danger, var(--color-danger)); }
+.ccui-execution-mark[data-state='cancelled'] { color: var(--paw-muted, var(--color-text-secondary)); }
+.ccui-execution-mark[data-active='false'] > span, .ccui-execution-mark[data-active='false'] svg { animation-play-state: paused; }
+@keyframes ccui-receipt-change { from { opacity: .45; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+@keyframes ccui-tool-running { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ccui-execution-mark > span { animation: ccui-receipt-fade 180ms ease; }
+  .ccui-execution-mark[data-state='running'] svg { animation: none; }
+}
+@keyframes ccui-receipt-fade { from { opacity: .6; } to { opacity: 1; } }

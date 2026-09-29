@@ -286,8 +286,8 @@ class AgentLabKnowledgeResource:
             if not isinstance(chunking, Mapping) or set(chunking) - {"strategy", "size", "overlap"}:
                 raise KnowledgeIntakeError("切片配置无效。")
             strategy = chunking.get("strategy", "markdown")
-            if strategy not in {"general", "markdown", "fixed", "qa"}:
-                raise KnowledgeIntakeError("请选择段落、Markdown、固定长度或问答切片。")
+            if strategy not in {"general", "markdown", "paper", "fixed", "qa"}:
+                raise KnowledgeIntakeError("请选择段落、Markdown、论文、固定长度或问答切片。")
             size = _integer(chunking.get("size", 1200), "切片长度", 200, 8000)
             overlap = _integer(chunking.get("overlap", 160), "切片重叠", 0, min(size - 1, 2000))
             private["chunking"] = {"strategy": strategy, "size": size, "overlap": overlap}
@@ -724,22 +724,29 @@ class AgentLabKnowledgeResource:
             # A bounded, deterministic document sample is used for drafting
             # standards only; solver retrieval still searches the entire index.
             source_documents = sorted(unique_documents, key=lambda row: digest(row["sourceId"]))[:min(12, len(unique_documents))]
-        if len(source_documents) > 100 or sum(len(row["text"]) for row in source_documents) > 2_000_000:
+        reference_limit = 8_000_000 if dataset_id else 2_000_000
+        if len(source_documents) > 100 or sum(len(row["text"]) for row in source_documents) > reference_limit:
             raise KnowledgeIntakeError("本次参考材料超过回答评测预算，请减少题目数。知识库索引无需缩小。")
         sources = [{"sourceId": row["externalId"], "title": row["title"], "kind": "document", "text": row["text"],
                     "uri": row["uri"] or f"lab-knowledge://{index['jobId']}/{row['externalId']}"} for row in source_documents]
         imported = []
         for row in selected:
-            evidence = [{"sourceId": canonical_documents[source]["externalId"], "quote": canonical_documents[source]["text"][:100_000]}
-                        for source in dict.fromkeys(source_aliases[source] for source in row["sourceIds"])]
-            imported.append({"caseId": row["caseId"], "question": row["question"], "taskType": "knowledge_qa", "answerable": True,
-                             "requiredFacts": [row["answer"]], "evidence": evidence,
-                             "rubric": ["Answer the original question accurately and cover the reference answer's material facts. Cite supporting knowledge sources and avoid unsupported claims."],
-                             "split": row["split"], "samples": [
+            standard = row.get("answerStandard", {})
+            if standard:
+                evidence = [{**item, "sourceId": canonical_documents[source_aliases[item["sourceId"]]]["externalId"]}
+                            for item in standard["evidence"]]
+            else:
+                evidence = [{"sourceId": canonical_documents[source]["externalId"], "quote": canonical_documents[source]["text"][:100_000]}
+                            for source in dict.fromkeys(source_aliases[source] for source in row["sourceIds"])]
+            imported.append({"caseId": row["caseId"], "question": row["question"], "taskType": "knowledge_qa",
+                             "answerable": standard.get("answerable", True),
+                             "requiredFacts": standard.get("requiredFacts", [row["answer"]]), "evidence": evidence,
+                             "rubric": standard.get("rubric", ["Answer the original question accurately and cover the reference answer's material facts. Cite supporting knowledge sources and avoid unsupported claims."]),
+                             "split": row["split"], "samples": standard.get("samples", [
                                  {"sampleId": "reference", "answer": row["answer"], "category": "correct"},
                                  {"sampleId": "diagnostic-unsupported", "answer": "This feature always works automatically and has no requirements or limitations.", "category": "incorrect"},
                                  {"sampleId": "diagnostic-partial", "answer": row["answer"][:max(1, len(row["answer"]) // 3)], "category": "boundary"},
-                             ]})
+                             ])})
         return {"title": project["title"], "scenario": value.get("scenario") or project["description"], "sources": sources,
                 "targetCount": len(imported) if imported else count, "knowledge": binding, "datasetProvenance": provenance,
                 **({"importedCases": imported} if imported else {})}

@@ -109,6 +109,30 @@ test('managed Markdown, code, Diff, image, and interactive HTML previews stay us
   });
 });
 
+test('large HTML reports retain authored scripts under isolated preview CSP without URL or request content', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one real browser is sufficient for the large transport');
+  const previewRequests: string[] = [];
+  await page.route('**/__paw_html_preview', async (route) => {
+    previewRequests.push(route.request().url());
+    await route.fulfill({
+      body: ISOLATED_PREVIEW_BOOTSTRAP,
+      contentType: 'text/html; charset=utf-8',
+      headers: { 'Content-Security-Policy': ISOLATED_PREVIEW_CSP, 'Cache-Control': 'private, no-store' },
+    });
+  });
+  await page.goto('/e2e/fixtures/file-previews.html?large-html=1');
+  const frame = page.locator('iframe[title="HTML 输出预览"]');
+  await expect(frame).toHaveAttribute('src', /^\/__paw_html_preview#message:[0-9a-f-]{36}$/u);
+  await expect(frame).toHaveAttribute('sandbox', /allow-scripts/u);
+  await expect(frame).not.toHaveAttribute('sandbox', /allow-same-origin/u);
+  await expect(frame.contentFrame().getByRole('heading', { name: '大型交互报告' })).toBeVisible();
+  await frame.contentFrame().getByRole('button', { name: '运行脚本' }).click();
+  await expect(frame.contentFrame().getByRole('heading', { name: '大型报告脚本已运行' })).toBeVisible();
+  expect(previewRequests).toHaveLength(1);
+  expect(previewRequests[0]).not.toContain('大型交互报告');
+  expect(previewRequests[0].length).toBeLessThan(150);
+});
+
 const ISOLATED_PREVIEW_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline' https: http: blob: data:",

@@ -42,6 +42,29 @@ BANNED_ATTRIBUTES = frozenset(
 )
 
 
+class ExactDispatchFinishTests(unittest.TestCase):
+    def test_exact_finish_preserves_newer_pending_dispatch_in_same_root(self):
+        registry = RoomTurnRegistry()
+        registry.begin("session", "root", dispatch_id="old-dispatch", child=True)
+        registry.accept("session", "old-turn", "root")
+        registry.begin("session", "root", dispatch_id="new-dispatch", child=True,
+                       work_item_id="new-work", work_item_revision=2)
+        self.assertTrue(registry.finish_exact_dispatch("session", "old-turn", "root", "old-dispatch"))
+        self.assertEqual(registry.active_turn("session"), ("root", "new-dispatch"))
+        self.assertEqual(registry.pending_work_by_session["session"]["workItemId"], "new-work")
+        self.assertIn("session", registry.pending_child_dispatch_by_session)
+        self.assertNotIn("old-dispatch", registry.child_dispatch_ids)
+        self.assertFalse(registry.finish_exact_dispatch("session", "old-turn", "root", "old-dispatch"))
+
+    def test_other_root_or_dispatch_cannot_remove_turn(self):
+        registry = RoomTurnRegistry()
+        registry.begin("session", "root", dispatch_id="dispatch")
+        registry.accept("session", "turn", "root")
+        self.assertFalse(registry.finish_exact_dispatch("session", "turn", "other-root", "dispatch"))
+        self.assertFalse(registry.finish_exact_dispatch("session", "turn", "root", "other-dispatch"))
+        self.assertEqual(registry.active_turn("session"), ("root", "dispatch"))
+
+
 class PriorityReservationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.registry = RoomTurnRegistry()

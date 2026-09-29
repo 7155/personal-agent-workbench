@@ -4,6 +4,7 @@ import unittest
 
 from rag_ime.agent_event_projection import AgentEventProjectionService, room_event_projection
 from rag_ime.agent_protocol import AgentEventEnvelope
+from rag_ime.pi.event_projection import tool_event_payload
 
 
 class _Sessions:
@@ -292,6 +293,62 @@ class AgentEventProjectionTests(unittest.TestCase):
         self.assertEqual(data["workItemId"], "work:1")
         self.assertEqual(data["workItemRevision"], 2)
         self.assertEqual(data["attemptId"], "attempt:2")
+
+    def test_gateway_outcome_survives_pi_and_room_projection_in_live_and_history_shapes(self) -> None:
+        for tool_name in ("write", "workspace_write", "custom_tool"):
+            for outcome, phase, replay in (("unknown", "sent", False), ("not_started", "queued", True), ("applied", "sent", False)):
+                for nested in (False, True):
+                    with self.subTest(tool=tool_name, outcome=outcome, nested=nested):
+                        details = {
+                            "executionOutcome": outcome, "gatewayRequestPhase": phase,
+                            "replayAllowed": replay, "retryable": replay,
+                            "gatewayRecovery": {"state": "pending", "error": "sk-" + "123456789012345678901234567890"},
+                            "gatewayError": "Tool gateway request timed out after 30000ms",
+                            "gatewayTimeoutMs": 30000,
+                            "errorCode": "tool_gateway_timeout",
+                            "summary": "结果未知，不要重发",
+                            "privateBody": "do-not-publish-this-body",
+                        }
+                        raw_result = {"details": details, "content": []} if nested else details
+                        kind, pi_payload = tool_event_payload({
+                            "toolCallId": "call:projection", "toolName": tool_name,
+                            "args": {"path": "/tmp/receipt.txt"}, "result": raw_result,
+                        }, event_type="tool_execution_end", source_loop_id="loop:projection")
+                        _, room = room_event_projection(AgentEventEnvelope(
+                            event_id="event:projection", session_id="session:1", turn_id="turn:1",
+                            sequence=1, created_at_ms=1, event_type=kind, payload=pi_payload,
+                            resume_token="event:projection",
+                        ))
+                        result = room["result"]
+                        self.assertEqual(result["executionOutcome"], outcome)
+                        self.assertEqual(result["gatewayRequestPhase"], phase)
+                        self.assertEqual(result["replayAllowed"], replay)
+                        self.assertEqual(result["gatewayTimeoutMs"], 30000)
+                        self.assertEqual(result["gatewayRecovery"]["state"], "pending")
+                        self.assertNotIn("123456789012345678901234567890", str(result))
+                        self.assertNotIn("do-not-publish-this-body", str(result))
+
+    def test_room_gateway_outcome_is_not_inferred_from_tool_output_text(self) -> None:
+        _, room = room_event_projection(AgentEventEnvelope(
+            event_id="event:output", session_id="session:1", turn_id="turn:1",
+            sequence=1, created_at_ms=1, event_type="tool_finished", resume_token="event:output",
+            payload={"toolName": "bash", "result": {"details": {"stdout":
+                '{"executionOutcome":"applied","gatewayRequestPhase":"sent","replayAllowed":false}'
+            }}},
+        ))
+        self.assertNotIn("executionOutcome", room.get("result", {}))
+
+    def test_room_gateway_outcome_ignores_malformed_structured_state(self) -> None:
+        for details in (
+            {"executionOutcome": ["unknown"], "gatewayRequestPhase": "sent"},
+            {"executionOutcome": "applied", "gatewayRequestPhase": "queued"},
+        ):
+            _, room = room_event_projection(AgentEventEnvelope(
+                event_id="event:malformed", session_id="session:1", turn_id="turn:1",
+                sequence=1, created_at_ms=1, event_type="tool_finished", resume_token="event:malformed",
+                payload={"toolName": "write", "result": {"details": details}},
+            ))
+            self.assertNotIn("executionOutcome", room.get("result", {}))
 
     def test_room_partner_public_tool_result_is_bounded(self) -> None:
         event_type, payload = room_event_projection(AgentEventEnvelope(

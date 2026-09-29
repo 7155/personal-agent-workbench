@@ -5,7 +5,7 @@ import { MockControlTransport } from '@/test/mock-transport';
 import { HttpControlTransport } from '@/platform/http-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { useAgentLiveStore } from '../state/live-store';
-import { useAgentLiveSession } from './use-agent-live-session';
+import { recentAgentSnapshotIsPresentable, useAgentLiveSession } from './use-agent-live-session';
 
 const SESSION_ID = 'session-shared';
 
@@ -702,4 +702,10 @@ describe('useAgentLiveSession shared ownership', () => {
     expect(restored).toHaveBeenLastCalledWith(SESSION_ID);
     window.unmount();
   });
+});
+
+it('does not present a truncated post-restart status tail as an empty conversation', () => {
+  expect(recentAgentSnapshotIsPresentable({ status: 'idle', snapshotScope: 'recent', partial: true, items: [], recentFromSequence: 4454 })).toBe(false);
+  expect(recentAgentSnapshotIsPresentable({ status: 'idle', snapshotScope: 'recent', partial: true, items: [], recentFromSequence: 0 })).toBe(true);
+  expect(recentAgentSnapshotIsPresentable({ status: 'idle', snapshotScope: 'recent', partial: true, items: [{ role: 'assistant' }], recentFromSequence: 4454 })).toBe(true);
 });

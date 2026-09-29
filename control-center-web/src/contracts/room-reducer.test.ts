@@ -18,6 +18,34 @@ import { parseRoomEvent } from './validators';
 import { roomEventFixture as roomEvent } from '@/test/fixtures/events';
 
 describe('RoomEventReducer', () => {
+  it.each(['user_message', 'participant_status'] as const)('keeps a Jev Root open after planner drain and publishes its real final once (%s marker)', marker => {
+    const graphId = 'jev-graph:fixture';
+    const markerPayload = marker === 'user_message' ? { mode: 'jev', graphId, text: '计算 A、B，再合并 C' } : { status: 'jev_updated', graphId };
+    const events = [
+      roomEvent(1, marker, markerPayload),
+      roomEvent(2, 'route_decision', { rootId: 'room-turn-1', dispatchId: 'plan', targetParticipantId: 'participant-1' }),
+      roomEvent(3, 'participant_activity', { activityKind: 'child', rootId: 'room-turn-1', dispatchId: 'plan', sourceTurnId: 'pi-plan', sourceEventId: 'session:3', sourceEventType: 'turn_completed', phase: 'completed', status: 'completed' }),
+    ];
+    let state = createRoomProjection('room-1');
+    for (const event of events) state = reduceRoomEvent(state, event).state;
+    expect(state.turnsById['room-turn-1']).toMatchObject({ lifecycleOwner: 'jev', status: 'running', terminalDispatchIds: ['plan'] });
+    expect(state.turnsById['room-turn-1'].rootTerminalAtMs).toBeUndefined();
+    const worker = roomEvent(4, 'participant_activity', { rootId: 'room-turn-1', dispatchId: 'execute-a', sourceTurnId: 'pi-a', sourceEventId: 'session:4', sourceEventType: 'tool_started', toolCallId: 'calculate', toolName: 'workspace_shell', summary: '计算 A' });
+    state = reduceRoomEvent(state, worker).state;
+    const finalId = `jev-final:${graphId}`;
+    const final = roomEvent(5, 'room_post', { post: { ...roomPost(finalId, 'A=15，B=12，C=A+B=27。', finalId), generation: 1, publicationSource: { kind: 'runtime_projection', ref: finalId } } });
+    final.sourceSessionId = '';
+    state = reduceRoomEvent(state, final).state;
+    const terminal = roomEvent(6, 'turn_completed', { status: 'completed', rootId: 'room-turn-1', finalizationId: finalId });
+    terminal.participantId = null; terminal.sourceSessionId = '';
+    state = reduceRoomEvent(state, terminal).state;
+    state = reduceRoomEvent(state, final).state;
+    expect(state.messagesById[finalId]).toMatchObject({ text: 'A=15，B=12，C=A+B=27。', projectionKind: 'post', postKind: 'result' });
+    expect(state.messageOrder.filter(id => id === finalId)).toHaveLength(1);
+    expect(state.activityOrder.some(id => state.activitiesById[id].payload.toolCallId === 'calculate')).toBe(true);
+    expect(state.turnsById['room-turn-1']).toMatchObject({ status: 'completed', rootTerminalAtMs: terminal.createdAtMs });
+    expect(state.diagnostics.filter(item => item.eventType === 'room_event_after_root_terminal')).toHaveLength(0);
+  });
   it('replays the 2,000-event message-first Room window without blocking the first paint', () => {
     const events = Array.from({ length: 1_000 }, (_value, index) => {
       const turnId = `room-turn-${index + 1}`;

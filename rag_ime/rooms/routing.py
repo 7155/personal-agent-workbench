@@ -16,6 +16,7 @@ ROOM_ROUTING_POLICIES = frozenset(
         "natural",
         "parallel",
         "invite_only",
+        "jev",
     }
 )
 MAX_ROOM_RESPONDERS = 4

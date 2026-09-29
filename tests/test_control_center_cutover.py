@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ControlCenterCutoverTests(unittest.TestCase):
+    def stack_fixture(self, root: Path) -> Path:
+        """Exercise later preflights on real main, independently of this checkout."""
+        scripts = root / "scripts"
+        (scripts / "support").mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts/install_product_stack.sh", scripts / "install_product_stack.sh")
+        shutil.copyfile(ROOT / "scripts/support/prebuilt_product.sh", scripts / "support/prebuilt_product.sh")
+        # Keep the real read-only Pi preflight and its source dependencies.
+        (scripts / "build_managed_pi_runtime_v2.py").symlink_to(ROOT / "scripts/build_managed_pi_runtime_v2.py")
+        for args in (("init", "-b", "main"), ("add", "."),
+                     ("-c", "user.name=PAW test", "-c", "user.email=paw-test@example.invalid",
+                      "-c", "commit.gpgsign=false", "commit", "-m", "fixture")):
+            subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
+        return scripts / "install_product_stack.sh"
+
     def test_fresh_web_install_authorizes_electron_runtime(self) -> None:
         workspace = (
             ROOT / "control-center-web" / "pnpm-workspace.yaml"
@@ -55,10 +70,11 @@ class ControlCenterCutoverTests(unittest.TestCase):
             existing_workdir.mkdir()
             caller_marker = existing_workdir / "keep-me"
             caller_marker.write_text("caller owned\n", encoding="utf-8")
+            installer = self.stack_fixture(tmp_path / "source")
 
             result = subprocess.run(
-                ["bash", str(ROOT / "scripts" / "install_product_stack.sh"), "--include-squirrel"],
-                cwd=ROOT,
+                ["bash", str(installer), "--include-squirrel"],
+                cwd=installer.parent.parent,
                 env={
                     **os.environ,
                     "HOME": str(tmp_path),
@@ -93,11 +109,12 @@ class ControlCenterCutoverTests(unittest.TestCase):
                     (pi_worktree / "packages" / "rag-ime-runtime-host").mkdir(
                         parents=True
                     )
+                installer = self.stack_fixture(tmp_path / "source")
 
                 result = subprocess.run(
                     [
                         "bash",
-                        str(ROOT / "scripts" / "install_product_stack.sh"),
+                        str(installer),
                         "--include-pi",
                         "--pi-worktree",
                         str(pi_worktree),
@@ -106,7 +123,7 @@ class ControlCenterCutoverTests(unittest.TestCase):
                         "--skip-maintenance",
                         "--skip-mlx",
                     ],
-                    cwd=ROOT,
+                    cwd=installer.parent.parent,
                     env={
                         **os.environ,
                         "HOME": str(tmp_path),
@@ -507,6 +524,150 @@ class ControlCenterCutoverTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('"${RAG_IME_ALLOW_DIRTY_INSTALL:-0}"', footprint)
         self.assertIn('expected_dirty = allow_dirty == "1"', footprint)
+
+
+class ElectronDevelopmentInstallTests(unittest.TestCase):
+    """Run the real shell admission path, stopping at a harmless build double."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="paw-electron-install-guard-")
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.case_number = 0
+        self.source = (ROOT / "scripts/build_paw_os_electron_host.sh").read_text(encoding="utf-8")
+
+    def fixture(self, branch="main", dirty=False):
+        self.case_number += 1
+        root = self.tmp / str(self.case_number)
+        (root / "scripts/support").mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts/build_paw_os_electron_host.sh", root / "scripts/build_paw_os_electron_host.sh")
+        shutil.copyfile(ROOT / "scripts/support/prebuilt_product.sh", root / "scripts/support/prebuilt_product.sh")
+        electron = root / "control-center-web/node_modules/electron/dist/Electron.app"
+        electron.mkdir(parents=True)
+        (electron / "fixture").write_text("pinned runtime fixture\n")
+        bins = root / "bin"
+        bins.mkdir()
+        for path, body in (
+            (bins / "node", "printf '1.0.0\\n'\n"),
+            (bins / "curl", "exit 0\n"),
+            (root / "scripts/build_control_center_web.sh",
+             'printf "%s\\n" "$RAG_IME_SOURCE_DIRTY" > "$PAW_TEST_GUARD_LOG"\nexit 73\n'),
+        ):
+            path.write_text("#!/usr/bin/env bash\nset -eu\n" + body)
+            path.chmod(0o755)
+        self.git(root, "init", "-b", "main")
+        self.git(root, "add", "--force", ".")
+        self.git(root, "-c", "user.name=PAW test", "-c", "user.email=paw-test@example.invalid",
+                 "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
+        if branch == "detached":
+            self.git(root, "checkout", "--detach")
+        elif branch != "main":
+            self.git(root, "checkout", "-b", branch)
+        if dirty:
+            (root / "uncommitted.txt").write_text("keep this local change\n")
+        return root
+
+    @staticmethod
+    def git(root, *args):
+        return subprocess.run(["git", "-C", str(root), *args], check=True, text=True, capture_output=True)
+
+    def run_guard(self, root, action, *, development=None, legacy_dirty=None):
+        env = {key: value for key, value in os.environ.items() if key not in {
+            "RAG_IME_ALLOW_DEVELOPMENT_INSTALL", "RAG_IME_ALLOW_DIRTY_INSTALL", "PAW_BINARY_PAYLOAD"}}
+        env["PATH"] = str(root / "bin") + os.pathsep + env["PATH"]
+        log = self.tmp / f"guard-{self.case_number}.txt"
+        env["PAW_TEST_GUARD_LOG"] = str(log)
+        if development is not None:
+            env["RAG_IME_ALLOW_DEVELOPMENT_INSTALL"] = development
+        if legacy_dirty is not None:
+            env["RAG_IME_ALLOW_DIRTY_INSTALL"] = legacy_dirty
+        result = subprocess.run(["bash", str(root / "scripts/build_paw_os_electron_host.sh"), action],
+                                cwd=root, env=env, text=True, capture_output=True, timeout=10)
+        return result, log
+
+    def test_default_release_actions_require_main_and_clean_source(self):
+        for action in ("build-release", "install-release"):
+            for branch, dirty in (("codex/feature", False), ("codex/feature", True), ("main", True), ("detached", False)):
+                with self.subTest(action=action, branch=branch, dirty=dirty):
+                    result, log = self.run_guard(self.fixture(branch, dirty), action)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("refusing formal", result.stderr)
+                    self.assertFalse(log.exists())
+            with self.subTest(action=action, branch="main", dirty=False):
+                result, log = self.run_guard(self.fixture(), action)
+                self.assertEqual(result.returncode, 73, result.stderr)
+                self.assertEqual(log.read_text().strip(), "false")
+
+    def test_explicit_development_allows_actual_source_without_cleaning_it(self):
+        for action in ("build-release", "install-release"):
+            for branch, dirty in (("codex/feature", True), ("codex/feature", False), ("main", True), ("detached", True)):
+                with self.subTest(action=action, branch=branch, dirty=dirty):
+                    root = self.fixture(branch, dirty)
+                    before = self.git(root, "status", "--porcelain", "--untracked-files=all").stdout
+                    result, log = self.run_guard(root, action, development="1")
+                    self.assertEqual(result.returncode, 73, result.stderr)
+                    self.assertIn("Development", result.stderr)
+                    self.assertEqual(log.read_text().strip(), str(dirty).lower())
+                    self.assertEqual(self.git(root, "status", "--porcelain", "--untracked-files=all").stdout, before)
+
+    def test_invalid_or_preview_development_flag_never_reaches_build(self):
+        for value in ("true", "yes", "2", "1 "):
+            with self.subTest(value=value):
+                result, log = self.run_guard(self.fixture(), "install-release", development=value)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("RAG_IME_ALLOW_DEVELOPMENT_INSTALL", result.stderr)
+                self.assertFalse(log.exists())
+        for action in ("build", "install-preview"):
+            with self.subTest(action=action):
+                result, log = self.run_guard(self.fixture("codex/feature", True), action, development="1")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertFalse(log.exists())
+
+    def test_legacy_dirty_opt_in_stays_limited_to_main_install(self):
+        result, log = self.run_guard(self.fixture("main", True), "install-release", legacy_dirty="1")
+        self.assertEqual(result.returncode, 73, result.stderr)
+        self.assertEqual(log.read_text().strip(), "true")
+        for branch, action in (("codex/feature", "install-release"), ("main", "build-release")):
+            with self.subTest(branch=branch, action=action):
+                result, log = self.run_guard(self.fixture(branch, True), action, legacy_dirty="1")
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertFalse(log.exists())
+
+    def test_build_marker_records_branch_dirty_and_development_independently(self):
+        marker_command = self.source.split('python3 - "$RESOURCES/rag-ime-control-web-build-marker.json"', 1)[1]
+        marker_python = marker_command.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        for branch, dirty, development in (("main", "false", "false"), ("codex/feature", "false", "true"),
+                                           ("codex/feature", "true", "true"), ("", "true", "true")):
+            with self.subTest(branch=branch, dirty=dirty):
+                target = self.tmp / "marker.json"
+                result = subprocess.run([sys.executable, "-", str(target), "com.rag-ime.control", "release", "production",
+                    "a" * 40, dirty, "b" * 64, "1.0.0", "7", branch, development],
+                    input=marker_python, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                marker = json.loads(target.read_text())
+                self.assertEqual(marker["sourceBranch"], branch)
+                self.assertIs(marker["sourceDirty"], dirty == "true")
+                self.assertIs(marker["gitDirty"], dirty == "true")
+                self.assertIs(marker["developmentInstall"], development == "true")
+                self.assertIs(marker["provenance"]["sourceDirty"], dirty == "true")
+
+    def test_footprint_check_receives_observed_dirty_state_instead_of_opt_in(self):
+        body = self.source.split("verify_release_provenance() {\n", 1)[1].split("\n}\n", 1)[0]
+        scripts = self.tmp / "scripts"
+        scripts.mkdir()
+        check = scripts / "check_control_center_footprint.sh"
+        check.write_text('#!/usr/bin/env bash\nprintf "%s" "$RAG_IME_ALLOW_DIRTY_INSTALL"\n')
+        check.chmod(0o755)
+        # Remove only the output redirect so the real function's checker env
+        # is observable without starting a bundle or invoking the actual gate.
+        body = body.replace(">/dev/null", "")
+        for dirty in ("true", "false"):
+            result = subprocess.run(["bash", "-c", "set -eu\nverify_release_provenance() {\n" + body +
+                '\n}\nverify_release_provenance "fixture.app"\n'],
+                env={**os.environ, "ROOT": str(self.tmp), "SOURCE_COMMIT": "a" * 40,
+                     "SOURCE_DIRTY": dirty, "RAG_IME_ALLOW_DIRTY_INSTALL": "1"}, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "1" if dirty == "true" else "0")
 
 
 if __name__ == "__main__":

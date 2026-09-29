@@ -355,7 +355,14 @@ function createSharedAgentLiveSession(
           throw error;
         }
         if (!isCurrentSnapshot(requestId, controller)) return false;
-        if (requestedView === 'recent' && preferredSnapshotView() === 'full') {
+        // A bounded idle snapshot can omit the completed answer (for example,
+        // a Room-public projection with only user messages). Retrying that
+        // same recent view cannot repair it, even while SSE heartbeats work.
+        // Escalate this read once to the authoritative complete transcript.
+        if (requestedView === 'recent' && (
+          preferredSnapshotView() === 'full'
+          || (isRecentAgentSnapshot(value) && !recentAgentSnapshotIsPresentable(value))
+        )) {
           requestedView = 'full';
           continue;
         }
@@ -640,6 +647,9 @@ export function recentAgentSnapshotIsPresentable(value: unknown): boolean {
     : Array.isArray(value.messages)
       ? value.messages
       : [];
+  // After a Runtime restart, a bounded snapshot may contain only a late
+  // status event. It cannot establish that the saved transcript is empty.
+  if (!items.length && isRecentAgentSnapshot(value) && Number(value.recentFromSequence) > 1) return false;
   const last = items.at(-1);
   return !(isRecord(last) && last.role === 'user');
 }

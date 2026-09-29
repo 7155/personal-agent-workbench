@@ -995,7 +995,7 @@ class BrowserControlService:
         paths = self._ego_paths(port=0)
         return all(
             path.is_file()
-            for path in (paths["cli"], paths["host"], paths["harness"])
+            for path in (paths["cli"], paths["host"], paths["harness"], paths["cliModule"], paths["hostModule"])
         )
 
     def _ego_paths(self, *, port: int) -> dict[str, Path]:
@@ -1009,6 +1009,8 @@ class BrowserControlService:
             "pid": runtime / "host.pid",
             "cli": host_package / "bin" / "ego-browser.mjs",
             "host": host_package / "bin" / "ego-linux-hostd.mjs",
+            "cliModule": host_package / "dist" / "cli.js",
+            "hostModule": host_package / "dist" / "host-control.js",
             "harness": self.ego_runtime_root
             / "package"
             / "ego-browser"
@@ -1065,7 +1067,8 @@ class BrowserControlService:
     def _ensure_ego_host(self, *, node: Path, environment: Mapping[str, str]) -> None:
         if not self._ego_runtime_available():
             raise BrowserControlError(
-                "ego-browser runtime is not built; run scripts/build_ego_browser_runtime.sh"
+                "PAW Browser runtime is missing; build with scripts/build_ego_browser_runtime.py "
+                "and install its output under app/integrations/ego-browser/upstream"
             )
 
         def doctor() -> Mapping[str, object]:
@@ -1596,6 +1599,8 @@ class BrowserControlService:
         # A caller-controlled app path can otherwise make an old WebKit/native
         # bundle win over the canonical installed Electron host.
         candidates = (
+            Path.home() / "Applications" / "Personal Agent Workbench.app",
+            Path("/Applications/Personal Agent Workbench.app"),
             Path.home() / "Applications" / "RagImeControl.app",
             Path("/Applications/RagImeControl.app"),
         )
@@ -1657,9 +1662,10 @@ class BrowserControlService:
             return False
         if "swiftFallback" in marker:
             return False
-        if marker.get("gitDirty") is not False:
+        source_dirty = marker.get("sourceDirty")
+        if not isinstance(source_dirty, bool) or marker.get("gitDirty") is not source_dirty:
             return False
-        if marker.get("sourceDirty") is not False:
+        if source_dirty and marker.get("developmentInstall") is not True:
             return False
 
         if any(
@@ -1673,7 +1679,7 @@ class BrowserControlService:
             return False
         required_provenance = {
             "sourceCommit": expected_commit,
-            "sourceDirty": False,
+            "sourceDirty": source_dirty,
             "frontendProduct": "paw-os",
             "bundleId": "com.rag-ime.control",
             "frontendTransport": "http",

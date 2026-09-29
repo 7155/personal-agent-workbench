@@ -3,6 +3,11 @@ import { isApplicationMethodComparison, type ApplicationMethodComparison } from 
 export type LabWorkflowStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'unavailable';
 export type LabWorkflowKind = 'materials' | 'corpus' | 'index' | 'dataset' | 'calibration' | 'experiment' | 'artifact' | 'application' | 'job' | 'step';
 export type LabWorkflowMetric = { label: string; baseline: number | null; candidate: number | null; unit?: string; value?: number | null; sampleCount?: number };
+export type LabTestProgress = {
+  counter?: { completed: number; total: number; unit: string };
+  stage: string; costUsd: number | null; costBasis: 'actual' | 'estimate' | 'unavailable'; costScope: 'all_job_calls'; elapsedMs: number | null;
+  phases: { split: 'development' | 'holdout'; variant: 'baseline' | 'candidate'; candidateIndex: number; completed: number; total: number | null; passed: number; failed: number; uncertain: number; errors: number }[];
+};
 export type LabWorkflowNode = {
   id: string; kind: LabWorkflowKind; title: string; status: LabWorkflowStatus; summary: string;
   dependencies: string[]; parentId?: string; ref: { kind: string; id: string; version?: string | number };
@@ -10,7 +15,7 @@ export type LabWorkflowNode = {
   factors?: { name: string; before: string; after: string; reason: string }[];
   reasons?: string[]; evidenceRefs?: { kind: string; id: string; version?: number }[];
   optimization?: { scope: string; baselineModel?: string; candidateModel?: string; promptChanged?: boolean; selectedCandidateIndex?: number };
-  applicationMethodComparison?: ApplicationMethodComparison;
+  applicationMethodComparison?: ApplicationMethodComparison; testProgress?: LabTestProgress;
 };
 export type LabProjectWorkflow = {
   schemaVersion: 'paw.lab-project-workflow.v1'; observedAtMs: number; nodes: LabWorkflowNode[];
@@ -41,6 +46,7 @@ export function isLabProjectWorkflow(value: unknown): value is LabProjectWorkflo
       && (node.parentId === undefined || text(node.parentId)) && (node.children === undefined || strings(node.children))
       && (node.updatedAtMs === undefined || natural(node.updatedAtMs)) && (node.decision === undefined || text(node.decision))
       && (node.reasons === undefined || strings(node.reasons))
+      && (node.testProgress === undefined || isTestProgress(node.testProgress))
       && (node.applicationMethodComparison === undefined || isApplicationMethodComparison(node.applicationMethodComparison))
       && (node.factors === undefined || (Array.isArray(node.factors) && node.factors.every((raw) => { const factor = record(raw); return ['name', 'before', 'after', 'reason'].every((key) => text(factor[key])); })))
       && (node.evidenceRefs === undefined || (Array.isArray(node.evidenceRefs) && node.evidenceRefs.every((raw) => { const evidence = record(raw); return text(evidence.kind) && text(evidence.id) && (evidence.version === undefined || natural(evidence.version)); })))
@@ -57,4 +63,14 @@ export function isLabProjectWorkflow(value: unknown): value is LabProjectWorkflo
   const ids = new Set(item.nodes.map((node) => record(node).id));
   return ids.size === item.nodes.length && (item.currentNodeId === null || ids.has(item.currentNodeId))
     && item.edges.every((raw) => { const edge = record(raw); return text(edge.source) && text(edge.target) && ids.has(edge.source) && ids.has(edge.target); });
+}
+
+function isTestProgress(value: unknown): value is LabTestProgress {
+  const p = record(value);
+  return (p.counter === undefined || (natural(record(p.counter).completed) && natural(record(p.counter).total) && Number(record(p.counter).completed) <= Number(record(p.counter).total) && text(record(p.counter).unit))) && text(p.stage) && ['actual', 'estimate', 'unavailable'].includes(String(p.costBasis)) && p.costScope === 'all_job_calls'
+    && (p.costUsd === null || (finite(p.costUsd) && p.costUsd >= 0)) && (p.elapsedMs === null || (finite(p.elapsedMs) && p.elapsedMs >= 0))
+    && Array.isArray(p.phases) && p.phases.every((value) => { const row = record(value); return ['development', 'holdout'].includes(String(row.split)) && ['baseline', 'candidate'].includes(String(row.variant))
+      && ['candidateIndex', 'completed', 'passed', 'failed', 'uncertain', 'errors'].every((key) => natural(row[key]))
+      && (row.total === null || (natural(row.total) && Number(row.total) >= Number(row.completed)))
+      && row.completed === Number(row.passed) + Number(row.failed) + Number(row.uncertain) + Number(row.errors); });
 }

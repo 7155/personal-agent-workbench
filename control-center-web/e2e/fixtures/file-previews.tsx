@@ -52,6 +52,7 @@ const files: PreviewFixture[] = [
 
 const byMediaId = new Map(files.map((file) => [file.mediaId, file]));
 const inlineHtml = '<section><h2>页内 HTML 已渲染</h2><label>页内备注 <input aria-label="页内报告备注" value="初始页内值"></label><button type="button" onclick="document.querySelector(\'h2\').textContent=document.querySelector(\'input\').value">更新页内报告</button></section>';
+const largeHtml = `<!doctype html><html><body><h1>大型交互报告</h1><button type="button" onclick="document.querySelector('h1').textContent='大型报告脚本已运行'">运行脚本</button><!--${'x'.repeat(1_600_000)}--></body></html>`;
 const transport = new MockControlTransport({
   routes: {
     'agent.media.preview': (request) => {
@@ -80,7 +81,7 @@ createRoot(document.getElementById('root')!).render(
             sessionId={sessionId}
           />
         ))}
-        <InlineHtmlOutput content={inlineHtml} />
+        <InlineHtmlOutput content={location.search.includes('large-html') ? largeHtml : inlineHtml} />
       </section>
       <FilePreviewHost />
     </ControlTransportProvider>

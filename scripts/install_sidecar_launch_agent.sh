@@ -338,6 +338,17 @@ if [[ ! -s "$PORTABLE_UI_SOURCE/agent-ui.js" || ! -s "$PORTABLE_UI_SOURCE/agent-
 fi
 PORTABLE_UI_TARGET="$APP_CODE_DIR/control-center-web/.generated/portable-agent-ui"
 
+# BrowserControlService resolves this runtime relative to the installed code.
+# Binary installs already carry compiled helpers and their bundled Node; never
+# run npm or a browser doctor on the destination machine.
+if ! is_dry_run; then
+  ego_args=(--output "$APP_CODE_DIR/integrations/ego-browser/upstream" --replace)
+  if [[ -n "${PAW_BINARY_PAYLOAD:-}" ]]; then
+    ego_args+=(--from-built --node "$PAW_BINARY_PAYLOAD/pi-runtime/bin/node")
+  fi
+  "$PYTHON_EXECUTABLE" "$ROOT/scripts/build_ego_browser_runtime.py" "${ego_args[@]}"
+fi
+
 mkdir -p "$PLIST_DIR" "$LOG_DIR" "$(dirname "$DB_PATH")" "$APP_CODE_DIR"
 mkdir -p "$PORTABLE_UI_TARGET"
 cp "$PORTABLE_UI_SOURCE/agent-ui.js" "$PORTABLE_UI_SOURCE/agent-ui.css" "$PORTABLE_UI_TARGET/"

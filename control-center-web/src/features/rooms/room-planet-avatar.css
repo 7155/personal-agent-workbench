@@ -1,0 +1,86 @@
+/* Ambient state motion is explicitly requested. Only live surfaces opt in;
+   history, ordinary rosters and unconfirmed execution remain quiet by default. */
+.room-planet-avatar {
+  transform-origin: 50% 65%;
+  transition: opacity 180ms var(--paw-ease-out, cubic-bezier(.23, 1, .32, 1));
+}
+.room-planet-avatar[data-activity='idle'],
+.room-planet-avatar[data-activity='waiting'] {
+  animation: room-planet-float 4.8s cubic-bezier(.77, 0, .175, 1) infinite;
+}
+.room-planet-avatar[data-activity='thinking'] {
+  animation: room-planet-think 2.4s cubic-bezier(.77, 0, .175, 1) infinite;
+}
+.room-planet-avatar[data-activity='working'] {
+  animation: room-planet-work 1.2s cubic-bezier(.77, 0, .175, 1) infinite;
+}
+.room-planet-avatar[data-activity='done'] {
+  animation: room-planet-done 240ms var(--paw-ease-out, cubic-bezier(.23, 1, .32, 1)) 1;
+}
+.room-planet-avatar[data-activity='error'],
+.room-planet-avatar[data-activity='stopped'] { animation: none; }
+.room-planet-happy-eyes,
+.room-planet-brows,
+.room-planet-open-mouth,
+.room-planet-curious-mouth,
+.room-planet-concerned-mouth,
+.room-planet-calm-mouth { opacity: 0; }
+.room-planet-avatar[data-expression='happy'] .room-planet-eyes,
+.room-planet-avatar:not([data-expression='smile']) .room-planet-smile { opacity: 0; }
+.room-planet-avatar[data-expression='happy'] .room-planet-happy-eyes,
+.room-planet-avatar[data-expression='happy'] .room-planet-open-mouth,
+.room-planet-avatar[data-expression='open'] .room-planet-open-mouth,
+.room-planet-avatar[data-expression='talking'] .room-planet-open-mouth,
+.room-planet-avatar[data-expression='curious'] .room-planet-curious-mouth,
+.room-planet-avatar[data-expression='curious'] .room-planet-brows,
+.room-planet-avatar[data-expression='concerned'] .room-planet-concerned-mouth,
+.room-planet-avatar[data-expression='calm'] .room-planet-calm-mouth { opacity: 1; }
+.room-planet-avatar:is([data-activity='idle'], [data-activity='waiting'], [data-activity='thinking'], [data-activity='working']) .room-planet-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: room-planet-blink 5.6s linear infinite;
+}
+.room-planet-avatar[data-activity='thinking'] .room-planet-gaze {
+  animation: room-planet-look 4s ease-in-out infinite;
+}
+.room-planet-avatar[data-activity='working'] .room-planet-mouth {
+  transform-box: fill-box;
+  transform-origin: center top;
+  animation: room-planet-talk 1.6s ease-in-out infinite;
+}
+@keyframes room-planet-blink {
+  0%, 42%, 46%, 72%, 76%, 100% { transform: scaleY(1); }
+  44%, 74% { transform: scaleY(.08); }
+}
+@keyframes room-planet-look {
+  0%, 15%, 90%, 100% { transform: translate(0, 0); }
+  35%, 60% { transform: translate(7px, -5px); }
+}
+@keyframes room-planet-talk {
+  0%, 100% { transform: scaleY(1); }
+  25%, 65% { transform: scaleY(.48); }
+  45%, 80% { transform: scaleY(.84); }
+}
+@keyframes room-planet-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-4%) rotate(1deg); }
+}
+@keyframes room-planet-think {
+  0%, 100% { transform: rotate(-3deg) scale(1); }
+  50% { transform: rotate(3deg) scale(1.025); }
+}
+@keyframes room-planet-work {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-5%) rotate(2deg); }
+}
+@keyframes room-planet-done {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-8%) scale(1.06); }
+  100% { transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-planet-avatar[data-activity],
+  .room-planet-avatar[data-activity] .room-planet-eye,
+  .room-planet-avatar[data-activity] .room-planet-gaze,
+  .room-planet-avatar[data-activity] .room-planet-mouth { animation: none; transform: none; }
+}

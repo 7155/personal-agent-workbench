@@ -12,6 +12,7 @@ export type KnowledgeReadingContext = {
     draft: string;
     query: string;
     config: KnowledgeRetrievalConfig | null;
+    overrides: Partial<Pick<KnowledgeRetrievalConfig, 'mode' | 'topK' | 'threshold' | 'rerankEnabled' | 'rerankCandidateDepth'>> | null;
     hits: KnowledgeSearchHit[];
     retrieval: KnowledgeSearchRetrieval | null;
     selectedId: string;
@@ -24,7 +25,7 @@ export type KnowledgeReadingContext = {
 function emptyContext(): KnowledgeReadingContext {
   return {
     documentId: '', materialsFilter: '', readerOrigin: 'materials', focusHit: null,
-    search: { draft: '', query: '', config: null, hits: [], retrieval: null, selectedId: '', status: 'idle', error: '', request: 0 },
+    search: { draft: '', query: '', config: null, overrides: null, hits: [], retrieval: null, selectedId: '', status: 'idle', error: '', request: 0 },
   };
 }
 

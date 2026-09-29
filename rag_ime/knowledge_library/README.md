@@ -33,3 +33,121 @@ The search response is intentionally diagnostic: it reports the requested and
 effective retrieval mode, lexical/dense/graph candidate counts, RRF settings,
 reranker state, fallbacks, and source citations. That evidence is required for
 an acceptance claim; a UI label saying “hybrid” is not enough.
+
+## Retrieval testing and configuration
+
+In Knowledge → Search, expand **搜索范围与方式** to test a retrieval mode,
+top K, score threshold, or reranking with a bounded candidate depth. These
+overrides apply only to that search request. **恢复知识库默认参数** removes the
+overrides; saving a default for future Agent searches remains in Settings.
+The search result retains its recorded configuration while the next test is
+being edited, including when returning from source reading.
+
+With reranking enabled, the first stage supplies the bounded candidate window
+before threshold filtering. The threshold applies to the final reranker score;
+without reranking it applies to the first-stage retrieval score. A threshold
+chosen for one mode or model is not evidence of quality in another. Inspect
+the source passage and both ranks, and include queries with no supporting
+document when selecting defaults. An unavailable reranker is an explicit
+error, never a successful unreranked result.
+
+Only ready documents indexed against the base's current configuration are
+eligible retrieval evidence. SQLite filters the canonical document and chunk
+rows before selecting dense candidates. When an ANN projection contains stale
+or orphaned candidates, it uses the same exact filtered scan; the runtime
+reports `readyFilterFallbackCount`. This prioritizes usable results during a
+rebuild and may increase query latency until the projection is refreshed.
+
+## Document structure and paper parsing
+
+File format, parsing engine and chunking strategy are separate choices. The
+**论文（保留章节与参考文献）** strategy uses the configured MinerU engine for
+PDFs in `auto` mode, including when an existing automatically parsed document
+is rebuilt. Explicit per-document parser choices survive retry and rebuild.
+Without MinerU, paper chunking preserves recognizable text headings and
+references; it does not reconstruct columns, equations or missing OCR text.
+
+| Input | Preserved structure | Current limits |
+| --- | --- | --- |
+| MinerU PDF/image output | Ordered content-list blocks, headings, tables, formulas, image captions, reference blocks, one-based pages and declared bounding boxes; original JSON attachment | Depends on the configured engine's actual output; missing/unsupported structure has explicit fallback metadata |
+| DOCX | Continuous text across formatting runs, paragraphs, heading ancestry, table cells, merge metadata and embedded media | No rendered pagination; image text comes from supplied alternative text, not OCR |
+| XLSX | Sheet order/names, cell coordinates, empty columns, cached values, formulas, merge ranges and embedded media | Very sparse sheets use coordinate/value rows; no date/number display formatting or merged-cell HTML |
+| PPTX | Presentation slide order, tables, speaker notes, actual slide numbers and embedded media | Notes are searchable; image text comes from supplied alternative text, not OCR |
+| EPUB | Spine reading order, chapter headings, tables and packaged image assets | No invented print-page numbers; encrypted chapters require another adapter; remote resources are not fetched |
+| DOC/XLS/PPT | Optional local LibreOffice conversion into the corresponding OOXML parser | Requires an available `soffice`/`libreoffice`; conversion fidelity depends on that installed version |
+| Text/Markdown and builtin PDF text | Existing text parsing; paper strategy retains explicit sections and bibliography | No inferred authors, layout coordinates or Word/Excel page numbers |
+
+General, Markdown, Book and Paper strategies preserve supplied structure and
+keep tables/formulas separate from prose. Oversized
+tables use bounded row groups with repeated headers where possible; a single
+oversized row or formula must still split to respect the chunk size. Prose
+overlap applies inside long blocks. QA, Laws, Fixed and Separator strategies
+retain their existing text-template rules rather than block geometry. Printed
+page-number blocks remain in the parse tree but are not standalone search chunks.
+
+Office pictures retain their original bytes/hash and source part. Chart blocks
+retain available cached series/category data; missing cached data stays explicitly
+unavailable. Neither operation performs image OCR or recalculates chart formulas.
+Legacy conversion uses a separate temporary profile, disables macros and active
+content, bounds execution/output, and leaves the source unchanged. Its receipt
+records original/converted formats, converter version and converted-file hash.
+
+Chunks carry bounded source-block provenance through search citations, source
+opening, re-chunk previews and portable search snapshots. Search details show
+block type and supplied page/coordinate evidence. A full parsed block tree is
+kept internally for re-chunking, rather than returned with every document list.
+Old chunks and snapshots remain readable with empty provenance. Existing bases
+need an explicit rebuild to acquire new parser output; preview alone never
+reruns OCR. These guarantees are covered by synthetic offline fixtures and do
+not establish recognition accuracy on real papers.
+
+## Reading and source verification
+
+Document text, titles, headings and retrieval excerpts retain their original
+wording. UI terminology localization never rewrites the source. The reader
+connects tables and images to chunks using persisted block identities and
+asset hashes. Known local Markdown images open on demand; remote image URLs
+are not fetched. Identical filenames without a unique source association do
+not establish a match.
+
+Structured tables display rows and columns, retaining blank cells. A split
+retrieval hit distinguishes its exact excerpt from the larger source table.
+Large previews explicitly report truncation; use the original source download
+for the complete table. The reader projection is bounded to 32 tables, 800
+data rows and 16,000 cells overall, with at most 200 rows per table. Original
+files and parser artifacts remain unchanged. Legacy documents without typed
+blocks use the existing text table fallback.
+
+For PDFs, **源文件** opens a valid search-hit page and provides bounded page
+navigation. When total pages are unknown, only evidenced pages are offered;
+the number of indexed pages is never presented as the document page count.
+Downloads retain the unmodified source. PDF page navigation depends on the
+browser PDF viewer; bounding-box highlighting and reconstructed PDF layouts
+are not implemented.
+
+## RAGFlow design references
+
+The comparison baseline is
+[`302ada2cdbdd72a5db4bd8e046478e52011fe4f0`](https://github.com/infiniflow/ragflow/tree/302ada2cdbdd72a5db4bd8e046478e52011fe4f0).
+PAW implements these patterns in its own owners; no RAGFlow source is bundled.
+
+| RAGFlow reference | PAW implementation |
+| --- | --- |
+| [Retrieval testing](https://github.com/infiniflow/ragflow/blob/302ada2cdbdd72a5db4bd8e046478e52011fe4f0/docs/guides/dataset/retrieval_testing.md): per-test settings and source inspection | Request-only overrides, result configuration snapshots, source-reader return context |
+| [Search pipeline](https://github.com/infiniflow/ragflow/blob/302ada2cdbdd72a5db4bd8e046478e52011fe4f0/rag/nlp/search.py): eligibility constraints and final score filtering | Canonical ready/current-index filtering before candidate limits; threshold after optional reranking |
+| [Parsing task execution](https://github.com/infiniflow/ragflow/blob/302ada2cdbdd72a5db4bd8e046478e52011fe4f0/rag/svr/task_executor.py): empty-output checks and cancellation | Document revision fences, cancellation-aware terminal transitions and explicit parser validation in the existing Knowledge worker |
+
+Offline regression checks use temporary Knowledge roots and deterministic
+encoders/rerankers:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_knowledge*.py'
+pnpm --dir control-center-web test src/features/knowledge src/app/preview-control-transport.test.ts
+pnpm --dir control-center-web typecheck
+pnpm --dir control-center-web build
+```
+
+These checks establish engineering behavior, not retrieval-quality gains for a
+real corpus. Provider/model quality, MinerU output quality and installed native
+behavior require separate runtime evidence. Existing source and index revisions
+are retained; this work does not automatically reparse or rebuild a user's base.

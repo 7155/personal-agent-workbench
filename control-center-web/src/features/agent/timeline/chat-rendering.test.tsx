@@ -1,3 +1,4 @@
+import { CompactActivityContext } from './CompactActivityContext';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +37,29 @@ afterEach(() => {
 });
 
 describe('Agent chat rendering', () => {
+  it('folds only completed embedded history, keeps failures visible, and expands the original sequence', () => {
+    useAgentLiveStore.getState().hydrateSnapshot('session-1', { messages: [userMessage('session-1', 'turn-1')], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle' });
+    let sequence = 0;
+    const events = [];
+    for (let i = 0; i < 4; i++) {
+      events.push(agentEventFixture(++sequence, 'reasoning_summary', { requestId: `r${i}`, summary: `分析阶段${i}`, items: [`分析阶段${i}`], source: 'provider_reasoning_summary', state: 'completed' }));
+      events.push(agentEventFixture(++sequence, 'tool_started', { toolCallId: `t${i}`, toolName: 'read', args: { path: `file-${i}` } }));
+      events.push(agentEventFixture(++sequence, 'tool_finished', { toolCallId: `t${i}`, toolName: 'read', isError: i === 1, publicResult: { summary: i === 1 ? '文件读取失败' : `读取完成${i}` } }));
+    }
+    useAgentLiveStore.getState().applyEvents('session-1', events);
+    const view = render(<CompactActivityContext.Provider value><AgentTurn sessionId="session-1" turnId="turn-1" onApprovalDecision={() => {}} /></CompactActivityContext.Provider>);
+    expect(screen.queryByRole('button', { name: '查看 Agent 思考摘要：分析阶段0' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看 Agent 思考摘要：分析阶段3' })).toBeVisible();
+    const disclosures = view.container.querySelectorAll('.agent-compact-history > summary');
+    expect(disclosures.length).toBeGreaterThan(0);
+    fireEvent.click(disclosures[0]!);
+    expect(screen.getByRole('button', { name: '查看 Agent 思考摘要：分析阶段0' })).toBeVisible();
+    // The opt-in does not change the full Session transcript.
+    view.rerender(<AgentTurn sessionId="session-1" turnId="turn-1" onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-compact-history')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看 Agent 思考摘要：分析阶段0' })).toBeVisible();
+  });
+
 
   it('explains an authoritative empty Session and points to the composer', () => {
     render(
@@ -1368,10 +1392,11 @@ describe('Agent chat rendering', () => {
       container.querySelector<HTMLDetailsElement>('.agent-rich-checklist')!,
       container.querySelector<HTMLDetailsElement>('.agent-rich-table')!,
       container.querySelector<HTMLDetailsElement>('.agent-inline-diff')!,
-      container.querySelector<HTMLDetailsElement>('.agent-code-collapse')!,
       container.querySelector<HTMLDetailsElement>('.agent-unknown-block')!,
     ];
     expect(disclosures.every(Boolean)).toBe(true);
+    expect(within(screen.getByRole('region', { name: '交互表格可滚动内容' })).getByRole('table')).toHaveTextContent('可读取');
+    expect(screen.getByRole('button', { name: /展开阅读区/ })).toHaveAttribute('aria-expanded', 'false');
 
     for (const details of disclosures) {
       const summary = details.querySelector<HTMLElement>(':scope > summary')!;
@@ -1520,7 +1545,7 @@ describe('Agent chat rendering', () => {
     expect(document.activeElement).toBe(summary);
   });
 
-  it('keeps partial JSON as streaming text, collapses large code, and degrades unknown blocks readably', async () => {
+  it('keeps partial JSON as streaming text, bounds large code, and degrades unknown blocks readably', async () => {
     const user = userEvent.setup();
     const partial = '{"type":"card","data":{"title":"还没结束"';
     const blocks: UiAgentBlock[] = [
@@ -1533,9 +1558,12 @@ describe('Agent chat rendering', () => {
 
     expect(container.querySelectorAll('.agent-rich-card')).toHaveLength(0);
     expect(screen.getByText(partial)).toBeInTheDocument();
-    const codeDetails = container.querySelector('details.agent-code-collapse');
-    expect(codeDetails).not.toHaveAttribute('open');
-    expect(codeDetails).toHaveTextContent('worker.log40 行');
+    const codeRegion = screen.getByRole('region', { name: 'worker.log 代码内容' });
+    expect(codeRegion).toHaveTextContent('line 40');
+    const expand = screen.getByRole('button', { name: /展开阅读区/ });
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    await user.click(expand);
+    expect(expand).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(/暂不支持的内容 · timeline_chart/)).toBeInTheDocument();
     await user.click(screen.getByText(/暂不支持的内容 · timeline_chart/));
     expect(screen.getByText('未来时间线')).toBeInTheDocument();
@@ -1632,7 +1660,7 @@ describe('Agent chat rendering', () => {
 
     const image = screen.getByRole('img', { name: '受控图片' });
     expect(image).toHaveAttribute('src', managedReceipt);
-    expect(container.querySelector('.agent-media-block img')).toBe(image);
+    expect(container.querySelector('.paw-rich-image img')).toBe(image);
 
     rerender(<AgentBlock block={imageBlock({ src: managedReceipt, alt: '伪造回执' })} />);
     expect(screen.queryByRole('img', { name: '伪造回执' })).not.toBeInTheDocument();
@@ -1660,7 +1688,9 @@ describe('Agent chat rendering', () => {
     );
     fireEvent.error(image);
     expect(screen.queryByRole('img', { name: '原始对话图片' })).not.toBeInTheDocument();
-    expect(screen.getByText('图片无法读取')).toBeInTheDocument();
+    expect(screen.getByText('图片暂时无法读取')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试读取' }));
+    expect(screen.getByRole('img', { name: '原始对话图片' })).toHaveAttribute('src', image.getAttribute('src'));
   });
 
   it('keeps remote Markdown images blocked', () => {
@@ -1669,7 +1699,8 @@ describe('Agent chat rendering', () => {
     );
 
     expect(container.querySelector('.agent-markdown img')).not.toBeInTheDocument();
-    expect(screen.getByText('外部图片')).toHaveClass('agent-markdown__blocked-media');
+    expect(screen.getByText('外部图片').closest('.paw-rich-image-reference')).toBeInTheDocument();
+    expect(screen.getByText('没有受控回执，未自动加载外部图片')).toBeVisible();
   });
 
   it('shows one public failure notice without repeating the raw provider error', () => {

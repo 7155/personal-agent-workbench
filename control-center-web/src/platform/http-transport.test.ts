@@ -8,6 +8,46 @@ import {
 } from './http-transport';
 
 describe('HttpControlTransport', () => {
+  it('picks workspace roots through the installed desktop without importing an attachment', async () => {
+    const pickWorkspaceDirectory = vi.fn(async () => ({ name: 'voxel', path: '/work/voxel' }));
+    vi.stubGlobal('pawBrowserHost', { kind: 'electron-webview', partition: 'persist:paw-browser', pickWorkspaceDirectory });
+    const fetch = vi.fn() as typeof globalThis.fetch;
+    try {
+      const desktop = new HttpControlTransport({ baseUrl: window.location.origin, fetch });
+      expect(await desktop.pickFiles({ purpose: 'workspace-root', selection: 'directory', multiple: true, maxFiles: 4 }))
+        .toEqual([expect.objectContaining({ name: 'voxel', path: '/work/voxel', mimeType: 'inode/directory', byteSize: 0 })]);
+      expect(pickWorkspaceDirectory).toHaveBeenCalledOnce();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(document.querySelector('input[type="file"]')).toBeNull();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('preserves cancellation and abort for the native workspace picker', async () => {
+    const pickWorkspaceDirectory = vi.fn<() => Promise<{ name: string; path: string } | null>>().mockResolvedValue(null);
+    vi.stubGlobal('pawBrowserHost', { kind: 'electron-webview', partition: 'persist:paw-browser', pickWorkspaceDirectory });
+    try {
+      const desktop = new HttpControlTransport({ baseUrl: window.location.origin, fetch: vi.fn() as typeof fetch });
+      expect(await desktop.pickFiles({ purpose: 'workspace-root', selection: 'directory' })).toEqual([]);
+      const controller = new AbortController(); controller.abort();
+      await expect(desktop.pickFiles({ purpose: 'workspace-root', signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+      expect(pickWorkspaceDirectory).toHaveBeenCalledOnce();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('does not expose local workspace paths to a remote transport or a plain browser', async () => {
+    const pickWorkspaceDirectory = vi.fn(async () => ({ name: 'private', path: '/work/private' }));
+    vi.stubGlobal('pawBrowserHost', { kind: 'electron-webview', partition: 'persist:paw-browser', pickWorkspaceDirectory });
+    try {
+      const remote = new HttpControlTransport({ baseUrl: 'https://gateway.example.test', fetch: vi.fn() as typeof fetch });
+      await expect(remote.pickFiles({ purpose: 'workspace-root', selection: 'directory' })).rejects.toThrow();
+      delete window.pawBrowserHost;
+      const browser = new HttpControlTransport({ baseUrl: window.location.origin, fetch: vi.fn() as typeof fetch });
+      await expect(browser.pickFiles({ purpose: 'workspace-root', selection: 'directory' })).rejects.toThrow();
+      expect(pickWorkspaceDirectory).not.toHaveBeenCalled();
+      expect(document.querySelector('input[type="file"]')).toBeNull();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('exposes voice controls only through a same-origin installed preload', async () => {
     const voice = {
       status: vi.fn(), credentialStatus: vi.fn(), saveCredentials: vi.fn(), action: vi.fn(),
@@ -109,6 +149,20 @@ describe('HttpControlTransport', () => {
     ]);
     expect(calls.every((call) => call.init?.body === image)).toBe(true);
     expect(calls.every((call) => new Headers(call.init?.headers).get('Cache-Control') === 'no-store')).toBe(true);
+
+    const source = '{"type":"FeatureCollection","features":[],"name":"研究范围"}';
+    const geojson = new File([source], 'region.geojson', { type: 'application/geo+json' });
+    await expect(transport.pasteImages({ sessionId: 'session:http-1', files: [geojson] })).resolves.toEqual([
+      expect.objectContaining({ name: 'region.geojson', mimeType: 'text/plain', byteSize: geojson.size }),
+    ]);
+    const upload = calls.at(-1)!;
+    expect(new Headers(upload.init?.headers).get('Content-Type')).toBe('text/plain');
+    expect(await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(upload.init!.body as File); })).toBe(source);
+    const uploads = calls.length;
+    await expect(transport.pasteImages({ sessionId: 'session:http-1', files: [image, new File(['zip'], 'archive.zip', {type:'application/zip'})] })).rejects.toThrow('数据入口');
+    expect(calls).toHaveLength(uploads);
+    await expect(transport.pasteImages({ sessionId: 'session:http-1', files: [new File([new Uint8Array([0xff, 0xfe])], 'invalid.geojson')] })).rejects.toThrow('UTF-8');
+    await expect(transport.pasteImages({ sessionId: 'session:http-1', files: [new File(['x'.repeat(2 * 1024 * 1024 + 1)], 'large.geojson')] })).rejects.toThrow('2 MB');
   });
 
   it('does not pretend HTTP can recover clipboard images when WebKit exposes no File', async () => {

@@ -1366,6 +1366,7 @@
 .knowledge-search__config { color: var(--color-text-secondary); font-size: 13px; }
 .knowledge-search__config > summary { width: fit-content; padding-block: 5px; cursor: pointer; }
 .knowledge-search__config p { margin: 6px 0; line-height: 1.5; }
+.knowledge-search__test-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; align-items: end; margin-block: 12px; }
 .knowledge-search__result-summary, .knowledge-search__hint { margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; }
 .knowledge-search__hint { padding-top: 20px; }
 .knowledge-search__notice {
@@ -2574,3 +2575,15 @@
 :root[data-reduce-motion='true'] :is(main, section).knowledge-feature--migrated-v1[data-paw-os-app='knowledge'] .knowledge-library__tabs > [role='tabpanel'] { animation: none; }
 
 :root[data-reduce-motion='true'] .knowledge-pipeline__stages li[data-state='active'] .knowledge-pipeline__dot { animation: none; }
+
+.knowledge-structured-chunk { display: grid; gap: 10px; min-width: 0; }
+.knowledge-structured-chunk > small, .knowledge-table-limit { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.knowledge-structured-chunk details p { white-space: pre-wrap; }
+.knowledge-inline-image { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; vertical-align: top; }
+.knowledge-inline-image > span { display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
+.knowledge-inline-image img { display: block; max-width: 100%; max-height: 420px; object-fit: contain; }
+.knowledge-inline-image button { max-width: 100%; white-space: normal; text-align: start; overflow-wrap: anywhere; }
+.knowledge-pdf-source { display: grid; gap: 12px; min-width: 0; }
+.knowledge-pdf-controls, .knowledge-pdf-controls form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.knowledge-pdf-controls input { width: 6rem; }
+.knowledge-pdf-location { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; color: var(--color-text-secondary); font-size: 13px; overflow-wrap: anywhere; }

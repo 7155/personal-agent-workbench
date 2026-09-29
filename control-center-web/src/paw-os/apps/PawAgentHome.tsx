@@ -1,3 +1,7 @@
+import { ContinuityHome } from '@/features/semantic-workspace/ContinuityHome';
+import { createJevWork, type JevModelRouting, type JevToolApproval, type JevVerificationMode } from '@/features/semantic-workspace/jev-execution';
+import { JevPolicyControls } from '@/features/semantic-workspace/JevPolicyControls';
+import { rememberRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 /**
  * PawAgentHome — Agent 新建工作主页
  *
@@ -115,6 +119,7 @@ const PROMPT_STARTERS: ReadonlyArray<{ label: string; prompt: string }> = [
 ];
 
 export function PawAgentHome({
+  interfaceMode = 'traditional',
   catalogError = '',
   catalogLoading = false,
   defaultModel,
@@ -129,6 +134,7 @@ export function PawAgentHome({
   rooms,
   sessions,
 }: {
+  interfaceMode?: 'traditional' | 'jev';
   catalogError?: string;
   catalogLoading?: boolean;
   defaultModel: string;
@@ -147,7 +153,12 @@ export function PawAgentHome({
   const electronHost = pawBrowserHost();
   const preferenceRead = useAgentPreferencesRead();
   const preferences = preferenceRead.preferences;
-  const [mode, setMode] = useState<WorkMode>('session');
+  const [mode, setMode] = useState<WorkMode>();
+  const workMode = mode ?? (interfaceMode === 'jev' ? 'room' : 'session');
+  const jevRoom = interfaceMode === 'jev' && workMode === 'room';
+  const [jevModelRouting, setJevModelRouting] = useState<JevModelRouting>('balanced');
+  const [jevToolApproval, setJevToolApproval] = useState<JevToolApproval>('dispatch');
+  const [jevVerificationMode, setJevVerificationMode] = useState<JevVerificationMode>('auto');
   const [prompt, setPrompt] = useState(initialDraft ?? '');
   const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(preferences.executionMode);
@@ -193,7 +204,9 @@ export function PawAgentHome({
   const availableRoomPersonas = personas
     .filter((persona) => persona.selectableModes.includes('coordinator'))
     .slice(0, 8);
-  const suggestedParticipantCount = suggestedRoomParticipantCount(prompt, availableRoomPersonas.length);
+  const suggestedParticipantCount = jevRoom
+    ? Math.min(availableRoomPersonas.length, Math.max(3, suggestedRoomParticipantCount(prompt, availableRoomPersonas.length)))
+    : suggestedRoomParticipantCount(prompt, availableRoomPersonas.length);
   const roomParticipantCount = Math.min(
     availableRoomPersonas.length,
     Math.max(0, roomParticipantOverride ?? suggestedParticipantCount),
@@ -212,10 +225,10 @@ export function PawAgentHome({
   const uniformRoomPermissions = Object.values(effectiveRoomPermissions).every(
     (value) => value === effectiveRoomPermissions.room,
   );
-  const permissionLabel = mode === 'room'
+  const permissionLabel = workMode === 'room'
     ? `${uniformRoomPermissions ? roomPermission.effectiveLabel : '自定义'} · 分层`
     : sessionPermission.label;
-  const permissionMode = mode === 'room'
+  const permissionMode = workMode === 'room'
     ? roomPermissionPolicy.room.executionMode
     : executionMode;
 
@@ -231,7 +244,7 @@ export function PawAgentHome({
     const next = event.key === 'Home' ? 'session'
       : event.key === 'End' ? 'room'
         : ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
-          ? mode === 'session' ? 'room' : 'session'
+          ? workMode === 'session' ? 'room' : 'session'
           : undefined;
     if (!next) return;
     event.preventDefault();
@@ -329,11 +342,11 @@ export function PawAgentHome({
   async function startWork(): Promise<void> {
     const message = prompt.trim() || (pendingAttachments.length || pendingClipboardPaste ? '请查看附件。' : '');
     if (!message || submitting) return;
-    if (mode === 'room' && !roomReady) {
+    if (workMode === 'room' && !roomReady) {
       setError('当前没有足够的 Room 伙伴。');
       return;
     }
-    if (mode === 'session' && executionMode === 'workspace_managed' && !workspaceRoot) {
+    if (workMode === 'session' && executionMode === 'workspace_managed' && !workspaceRoot) {
       setError('工作区托管需要先选择一个项目。');
       return;
     }
@@ -351,7 +364,7 @@ export function PawAgentHome({
       ? systemWorkspaceRoots
       : workspaceRoot ? [workspaceRoot] : [];
     try {
-      if (mode === 'session') {
+      if (workMode === 'session') {
         const response = await transport.request<Record<string, unknown>>({
           pathId: 'agent.sessions.create',
           body: {
@@ -474,6 +487,7 @@ export function PawAgentHome({
         const rawRoom = record(record(response).room);
         const roomId = text(rawRoom.id);
         if (!roomId) throw new Error('服务端没有返回可验证的 Room。');
+        rememberRoomEntryMode(transport, roomId, jevRoom ? 'jev' : 'traditional');
         const clientMessageId = clientId('room');
         const createdRoom = createdRoomSummary(
           rawRoom,
@@ -491,12 +505,14 @@ export function PawAgentHome({
           nowMs: Date.now(),
         });
         onCreated({ kind: 'room', id: roomId }, undefined, createdRoom);
-        void transport.request<Record<string, unknown>>({
-          pathId: 'agent.room.message',
-          params: { roomId },
-          body: { message, clientMessageId, attachmentIds },
-        }).then((messageResponse) => {
-          useRoomLiveStore.getState().acceptMessage(roomId, messageResponse);
+        const admission = jevRoom
+          ? createJevWork(transport, roomId, { message, attachmentIds, modelRouting: jevModelRouting, toolApprovalMode: jevToolApproval, verificationMode: jevVerificationMode, executionApproval: true })
+          : transport.request<Record<string, unknown>>({
+              pathId: 'agent.room.message', params: { roomId }, body: { message, clientMessageId, attachmentIds },
+            });
+        void admission.then((messageResponse) => {
+          if (jevRoom) useRoomLiveStore.getState().discardOptimistic(roomId, clientMessageId);
+          else useRoomLiveStore.getState().acceptMessage(roomId, messageResponse);
         }).catch((requestError) => {
           useRoomLiveStore.getState().discardOptimistic(roomId, clientMessageId);
           onCreated({ kind: 'room', id: roomId, draft: message, error: errorText(requestError) });
@@ -524,7 +540,7 @@ export function PawAgentHome({
   );
 
   return (
-    <div className="paw-agent-next an-home-root">
+    <div className="paw-agent-next an-home-root" data-interface-mode={interfaceMode}>
       <div className="an-home">
         <div className="an-home-wrap">
           <header className="an-home-intro">
@@ -587,14 +603,14 @@ export function PawAgentHome({
             <div className="an-composer-foot">
               <span className="an-mode-seg" role="radiogroup" aria-label="工作类型">
                 <button
-                  aria-checked={mode === 'session'}
+                  aria-checked={workMode === 'session'}
                   aria-label="Session"
                   disabled={submitting}
                   onClick={() => { setMode('session'); setOptionsPanel(null); }}
                   onKeyDown={moveModeFocus}
                   ref={(node) => { modeRefs.current.session = node; }}
                   role="radio"
-                  tabIndex={mode === 'session' ? 0 : -1}
+                  tabIndex={workMode === 'session' ? 0 : -1}
                   title="Session"
                   type="button"
                 >
@@ -602,14 +618,14 @@ export function PawAgentHome({
                   <span className="an-chip-text">Session</span>
                 </button>
                 <button
-                  aria-checked={mode === 'room'}
+                  aria-checked={workMode === 'room'}
                   aria-label="Room"
                   disabled={submitting}
                   onClick={() => { setMode('room'); setOptionsPanel(null); }}
                   onKeyDown={moveModeFocus}
                   ref={(node) => { modeRefs.current.room = node; }}
                   role="radio"
-                  tabIndex={mode === 'room' ? 0 : -1}
+                  tabIndex={workMode === 'room' ? 0 : -1}
                   title="Room"
                   type="button"
                 >
@@ -619,7 +635,7 @@ export function PawAgentHome({
               </span>
 
               <span className="an-anchor">
-                {mode === 'room' ? (
+                {workMode === 'room' ? (
                   <Popover open={optionsPanel === 'permission'} onOpenChange={(open) => setOptionsPanel(open ? 'permission' : null)}>
                     <PopoverTrigger asChild>{permissionTrigger}</PopoverTrigger>
                     <PopoverContent align="start" aria-label="Room 三层权限" className="paw-agent-next an-home-menu an-home-menu--policy" side="bottom">
@@ -661,7 +677,7 @@ export function PawAgentHome({
               </span>
 
               <span className="an-anchor an-model-anchor">
-                <ModelPicker
+                {jevRoom ? <JevPolicyControls modelRouting={jevModelRouting} toolApprovalMode={jevToolApproval} verificationMode={jevVerificationMode} onModelRouting={setJevModelRouting} onToolApprovalMode={setJevToolApproval} onVerificationMode={setJevVerificationMode} disabled={submitting} /> : <ModelPicker
                   className="an-chip an-model-chip"
                   options={{ models, modelReference, thinking }}
                   disabled={submitting || !models.length}
@@ -674,7 +690,7 @@ export function PawAgentHome({
                     setModelReference(`${provider}/${modelId}`);
                     setThinking(level);
                   }}
-                />
+                />}
               </span>
 
               <span className="an-anchor">
@@ -718,9 +734,9 @@ export function PawAgentHome({
               </span>
 
               <button
-                aria-label={submitting ? '正在创建' : `开始 ${mode === 'session' ? 'Session' : 'Room'}`}
+                aria-label={submitting ? '正在创建' : jevRoom ? '开始 Jev 任务' : `开始 ${workMode === 'session' ? 'Session' : 'Room'}`}
                 className="an-send"
-                disabled={(!prompt.trim() && !pendingAttachments.length && !pendingClipboardPaste) || submitting || (mode === 'room' && !roomReady)}
+                disabled={(!prompt.trim() && !pendingAttachments.length && !pendingClipboardPaste) || submitting || (workMode === 'room' && !roomReady)}
                 onClick={() => void startWork()}
                 type="button"
               >
@@ -746,7 +762,7 @@ export function PawAgentHome({
               ))}
             </div>
           ) : null}
-          {mode === 'session' ? (
+          {workMode === 'session' ? (
             <p className="an-mode-brief" id={modeBriefId}>
               随时补充想法，也可以暂停。
             </p>
@@ -785,7 +801,7 @@ export function PawAgentHome({
               <span>当前没有可用的 Room 伙伴，暂时无法开始。</span>
             </div>
           )}
-          {mode === 'room' ? (
+          {workMode === 'room' ? (
             <p aria-label="Room 执行权限" className="an-mode-brief" role="status">
               {uniformRoomPermissions && effectiveRoomPermissions.room === 'full_trust'
                 ? 'Room、伙伴和 Tool Agent 均为全权限，开始后无需逐项批准。可在权限中分别调整。'
@@ -802,7 +818,12 @@ export function PawAgentHome({
             <p className="an-home-error" role="alert"><CircleAlert size={14} /><span>{error}</span></p>
           ) : null}
 
-          {recents.length ? (
+          {interfaceMode === 'jev' ? <ContinuityHome
+            spaceKeys={[...sessions.filter(item => item.status !== 'archived').map(item => ({ key: `session:${item.id}`, at: item.updatedAtMs })), ...rooms.filter(item => item.status !== 'archived').map(item => ({ key: `room:${item.id}`, at: item.updatedAtMs }))].sort((a, b) => b.at - a.at).map(item => item.key)}
+            onOpen={key => key.startsWith('session:') ? onOpenSession(key.slice(8)) : onOpenRoom(key.slice(5))}
+          /> : null}
+
+          {interfaceMode === 'traditional' && recents.length ? (
             /* 桌面首屏合同：继续工作与 Composer 同屏。列表在自身内部滚动，
                绝不把页面推成一篇往下翻的长文。 */
             <div className="an-home-section an-home-recents">

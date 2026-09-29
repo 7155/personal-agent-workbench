@@ -22,11 +22,13 @@ export function ConversationSurface({
   empty,
   label,
   lead,
+  tail,
 }: {
   controller: ConversationSurfaceController;
   label: string;
   density?: 'comfortable' | 'compact';
   lead?: ReactNode;
+  tail?: ReactNode;
   empty?: ReactNode;
   children?: ReactNode;
 }) {
@@ -42,6 +44,7 @@ export function ConversationSurface({
         <VirtualTranscript
           label={`${label}时间线`}
           {...(lead ? { lead } : {})}
+          {...(tail ? { tail } : {})}
           {...(empty ? { empty } : {})}
         />
         {children ? <div className="ccui-surface-foot">{children}</div> : null}

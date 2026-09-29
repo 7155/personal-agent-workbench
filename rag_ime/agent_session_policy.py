@@ -140,6 +140,24 @@ class AgentSessionPolicyService:
             "items": commands,
         }
 
+    def skill_catalog(self, session_id: str) -> dict[str, object]:
+        """Effective loaded Skills for a Session, with unknown kept distinct."""
+        session = self.sessions.get(session_id)
+        try:
+            skills = self.runtime.skill_catalog(session_id)
+        except AgentRuntimeError:
+            return {"runtimeAvailable": False, "items": []}
+        owners = self._extension_app_skill_owners()
+        return {
+            "runtimeAvailable": True,
+            "items": [
+                skill for skill in skills
+                if self._command_allowed_for_session(
+                    skill, session=session, owners=owners,
+                )
+            ],
+        }
+
     def invoke_command(
         self,
         session_id: str,

@@ -123,7 +123,7 @@ describe('Knowledge reading recovery', () => {
     expect(attempts).toBe(1);
 
     await user.click(retry);
-    expect(await screen.findByTitle('source.md 源文件')).toHaveAttribute('src', 'blob:recovered-source');
+    expect(await screen.findByTitle('source.md 源文件')).toHaveAttribute('src', 'blob:recovered-source#page=1');
     expect(document.querySelector('.knowledge-viewer')).toBe(reader);
     expect(reader.scrollTop).toBe(144);
     expect(screen.getByRole('tab', { name: '源文件' })).toHaveAttribute('aria-selected', 'true');

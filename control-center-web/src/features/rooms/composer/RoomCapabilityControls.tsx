@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { BrainCircuit } from 'lucide-react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, Select } from '@/components/primitives';
 import { ToolPicker } from '@/features/agent/composer/ToolPicker';
@@ -10,6 +11,8 @@ import { toolItems } from '@/features/agent/types';
 import type { ModelCatalog } from '@/features/agent/types';
 import { requireSessionCapabilityCatalog, type CapabilityPreference } from '@/features/plugins/capability-policy';
 import { roomParticipantPlanetName } from '../room-participant-identity';
+import type { RoomSummary } from '../room-types';
+import { RoomPartnerPermissionControls } from './RoomPartnerPermissionControls';
 
 type Participant = {
   id: string;
@@ -20,11 +23,17 @@ type Participant = {
 };
 
 /** Room partners are ordinary Sessions; these controls update that same policy owner. */
-export function RoomCapabilityControls({ participants, aliases = {}, busy, disabled, onSelectTool }: {
+export function RoomCapabilityControls({ participants, aliases = {}, busy, disabled, onSelectTool, showModelControls = true, room, onRoomUpdated, showSessionSettings = false, automaticModels = false, modelSyncKey = '' }: {
   participants: Participant[];
   aliases?: Readonly<Record<string, string>>;
   busy: boolean;
   disabled: boolean;
+  showModelControls?: boolean;
+  room?: RoomSummary;
+  onRoomUpdated?: (room: RoomSummary) => void;
+  showSessionSettings?: boolean;
+  automaticModels?: boolean;
+  modelSyncKey?: string;
   onSelectTool: (name: string) => void;
 }) {
   const transport = useControlTransport();
@@ -64,6 +73,8 @@ export function RoomCapabilityControls({ participants, aliases = {}, busy, disab
     },
   });
   const error = mutation.isError && mutation.variables.owner === sessionId ? mutation.error : query.error;
+  const memory = query.data?.catalog.items.find(item => item.canonicalId === 'tool:memory');
+  const memoryEnabled = memory?.disclosure.effective === 'enabled';
   if (!selected) return null;
   return <>
     <Select
@@ -73,7 +84,10 @@ export function RoomCapabilityControls({ participants, aliases = {}, busy, disab
       options={active.map((participant) => ({ value: participant.id, label: aliases[participant.id] ?? roomParticipantPlanetName(participant) }))}
       onValueChange={setSelectedId}
     />
-    <RoomPartnerModelControls key={sessionId} sessionId={sessionId} disabled={disabled || busy} />
+    {showSessionSettings && room ? <RoomPartnerPermissionControls room={room} sessionId={sessionId} name={aliases[selected.id] ?? roomParticipantPlanetName(selected)} busy={busy} disabled={disabled} onRoomUpdated={onRoomUpdated} /> : null}
+    {showSessionSettings ? <Button className="agent-composer__picker" size="small" variant="quiet" leadingIcon={<BrainCircuit size={14} aria-hidden />} role="switch" aria-checked={Boolean(memoryEnabled)} aria-label={`${aliases[selected.id] ?? roomParticipantPlanetName(selected)} 的记忆`} title={`仅作用于当前伙伴 ${aliases[selected.id] ?? roomParticipantPlanetName(selected)}，更改从下一轮生效`} disabled={!memory || busy || disabled || mutation.isPending} onClick={() => mutation.mutate({ owner: sessionId, canonicalId: 'tool:memory', preference: memoryEnabled ? 'disabled' : 'enabled' })}>记忆 · {memory ? memoryEnabled ? '开' : '关' : query.isError ? '未同步' : '未提供'}</Button> : null}
+    {showModelControls ? <RoomPartnerModelControls key={sessionId} sessionId={sessionId} disabled={disabled || busy} syncKey={modelSyncKey} /> : null}
+    {showSessionSettings && automaticModels ? <span className="room-composer__model-policy-note" title="上方显示当前伙伴的模型与思考强度；自动路由会在每个执行阶段按任务选择模型。">执行时自动路由</span> : null}
     <ToolPicker
       sessionId={sessionId}
       capabilityCatalog={query.data?.catalog}
@@ -95,7 +109,7 @@ export function RoomCapabilityControls({ participants, aliases = {}, busy, disab
   </>;
 }
 
-function RoomPartnerModelControls({ sessionId, disabled }: { sessionId: string; disabled: boolean }) {
+function RoomPartnerModelControls({ sessionId, disabled, syncKey }: { sessionId: string; disabled: boolean; syncKey: string }) {
   const transport = useControlTransport();
   const client = useQueryClient();
   const queryKey = ['room-composer-model', sessionId];
@@ -105,6 +119,7 @@ function RoomPartnerModelControls({ sessionId, disabled }: { sessionId: string; 
     return catalog;
   }
   const query = useQuery({ queryKey, queryFn: ({ signal }) => read(signal), retry: false });
+  useEffect(() => { if (syncKey) void query.refetch(); }, [syncKey]);
   const mutation = useMutation({
     mutationFn: async (selection: AgentModelSelection) => {
       const current = await read();

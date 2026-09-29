@@ -56,6 +56,7 @@ import {
   previewLexiconReview,
 } from './preview-input-data';
 import { previewEvalLabEvidence, previewEvalLabRuns } from './preview-eval-lab-data';
+import { PREVIEW_PDF_BASE, previewKnowledgeAsset, previewKnowledgeDetail, previewKnowledgePdfHit, previewKnowledgeSource, previewReadableDocument, previewStructuredPdfDocument } from './preview-knowledge-data';
 
 /**
  * The mock transport has one broadcast event bus for convenience. Preview
@@ -176,7 +177,10 @@ export function createPreviewTransport(): MockControlTransport {
     parserProvider: 'auto',
     revision: 1,
     updatedAtMs: Date.now() - 240_000,
-  }];
+  }, previewStructuredPdfDocument].map(previewReadableDocument);
+  previewKnowledgeBases = previewKnowledgeBases.map((base) => base.id === PREVIEW_PDF_BASE
+    ? { ...base, documentCount: Number(base.documentCount) + 1, chunkCount: Number(base.chunkCount) + previewStructuredPdfDocument.chunkCount }
+    : base);
   let previewKnowledgeJobs: Record<string, unknown>[] = [];
   let previewTransport: MockControlTransport | undefined;
   const previewBackgroundJobsBySession: Record<string, AgentBackgroundJobV1[]> = {
@@ -694,7 +698,9 @@ export function createPreviewTransport(): MockControlTransport {
       stringValue(record(request.params).referenceId),
     );
   routes['agent.memoryMaintenance.run'] = (request: ControlRequest) =>
-    stringValue(record(request.query).jobId)
+    record(request.query).projectionOnly === true || record(request.query).projectionOnly === 'true'
+      ? { schemaVersion: 'rag-ime.agent-memory-maintenance-status.v1', ok: true, job: previewMemoryJob }
+      : stringValue(record(request.query).jobId)
       ? previewMemoryJob
       : stringValue(record(request.query).runId)
       ? previewMemoryCurationRun(previewMemorySelections, previewMemoryRunStatus)
@@ -752,6 +758,29 @@ export function createPreviewTransport(): MockControlTransport {
       record(request.query).includeArchived === true || stringValue(session.status) !== 'archived'
     )),
   });
+  // Explicit read-only preview. Never fabricate a Jev decision or a persisted receipt.
+  routes['agent.organization.read'] = (request: ControlRequest) => {
+    const keys = record(request.body).keys;
+    const available = new Map<string, Record<string, unknown>>([
+      ...sessions.map(item => [`session:${item.id}`, item] as const),
+      ...[...previewRoomSnapshots.values()].map(snapshot => {
+        const item = record(snapshot.room); return [`room:${item.id}`, item] as const;
+      }),
+    ]);
+    const requested = Array.isArray(keys) ? keys.filter((key): key is string => typeof key === 'string').slice(0, 100) : [];
+    return { ok: true, receipts: [],
+      readOnlyReason: '演示数据仅供浏览；连接本机服务后可以分类、收起和撤销。',
+      unavailable: requested.filter(key => !available.has(key)),
+      items: requested.filter(key => available.has(key)).map(key => ({
+        key, title: stringValue(available.get(key)?.title), category: 'unknown', placement: 'desk',
+        pinned: false, group: '', revision: 0,
+      })),
+    };
+  };
+  routes['agent.organization.suggest'] = () => ({ ok: true, proposal: null, message: '演示模式不会调用 Jev，请连接本机服务。' });
+  routes['agent.organization.command'] = routes['agent.organization.undo'] = () => {
+    throw new Error('演示模式不能写入整理记录，请连接本机服务。');
+  };
   routes['agent.roles.list'] = () => ({ ok: true, roles: personas });
   routes['agent.roles.create'] = (request: ControlRequest) => {
     const role = previewEditablePersona(
@@ -1281,6 +1310,10 @@ export function createPreviewTransport(): MockControlTransport {
     if (!snapshot) throw new Error('这个协作空间已经不存在，请刷新列表。');
     return { ok: true, room: record(snapshot.room) };
   };
+  routes['agent.jev.get'] = (request: ControlRequest) => {
+    if (request.query?.graphId) throw new Error('预览中没有这项 Jev 工作记录。');
+    return { ok: true, mode: 'jev', items: [] };
+  };
   routes['agent.room.snapshot'] = (request: ControlRequest) => {
     const roomId = stringValue(record(request.params).roomId);
     const snapshot = previewRoomSnapshots.get(roomId);
@@ -1346,6 +1379,39 @@ export function createPreviewTransport(): MockControlTransport {
     if (!base) throw new Error('这个文档知识库已经不存在，请刷新列表。');
     return { ok: true, base: { ...base } };
   };
+  routes['knowledgeBases.search'] = (request: ControlRequest) => {
+    const baseId = stringValue(record(request.params).kbId);
+    const base = previewKnowledgeBases.find((item) => stringValue(item.id) === baseId);
+    if (!base) throw new Error('这个文档知识库已经不存在，请刷新列表。');
+    const fixture = record(previewResponse('knowledgeBases.search'));
+    const retrieval = record(fixture.retrieval);
+    const body = record(request.body);
+    const config: Record<string, unknown> = {
+      ...record(retrieval.config), ...record(base.retrievalConfig),
+      ...Object.fromEntries(['mode', 'topK', 'threshold', 'rerankCandidateDepth'].filter((key) => body[key] !== undefined).map((key) => [key, body[key]])),
+      ...(typeof body.rerank === 'boolean' ? { rerankEnabled: body.rerank } : {}),
+    };
+    if (config.rerankEnabled) throw new Error('演示环境未配置重排模型，请关闭测试重排后重试。');
+    const mode = String(config.mode);
+    const topK = Number(config.topK);
+    const threshold = Number(config.threshold);
+    if (!['lexical', 'dense', 'hybrid'].includes(mode) || !Number.isInteger(topK) || topK < 1 || topK > 100 || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      throw new Error('请检查测试检索方式、返回数量和最低相关度。');
+    }
+    // Preview scores are fixed illustrative data, but request scope and budgets
+    // obey the management contract and never modify the saved base profile.
+    const demoHit = previewKnowledgePdfHit(baseId, stringValue(body.query));
+    const items = (demoHit ? [demoHit] : Array.isArray(fixture.items) && baseId === 'kb:preview-project-docs' ? fixture.items : [])
+      .map((value) => {
+        const item = record(value);
+        return { ...item, diagnostics: { ...record(item.diagnostics), effectiveMode: mode, lexicalRank: mode === 'dense' ? null : 1, denseRank: mode === 'lexical' ? null : 1 } };
+      })
+      .filter((item) => Number(record(item).score) >= threshold).slice(0, topK);
+    return { ok: true, items, retrieval: {
+      ...retrieval, mode, effectiveMode: mode, config,
+      libraries: [{ kbId: baseId, config, effectiveMode: mode, candidateLimit: Math.min(100, topK * Number(config.candidateMultiplier)), lexicalCandidates: mode === 'dense' || baseId !== 'kb:preview-project-docs' ? 0 : 1, denseCandidates: mode === 'lexical' || baseId !== 'kb:preview-project-docs' ? 0 : 1, graphCandidates: 0, graphStatus: 'disabled', rerankApplied: false, rerankCandidates: 0, returned: items.length }],
+    } };
+  };
   routes['knowledgeBases.create'] = (request: ControlRequest) => {
     const body = record(request.body);
     const name = stringValue(body.name).trim();
@@ -1400,6 +1466,7 @@ export function createPreviewTransport(): MockControlTransport {
         .map((document) => ({ ...document })),
     };
   };
+  routes['knowledgeBases.document.get'] = (request: ControlRequest) => previewKnowledgeDetail(request, previewKnowledgeDocuments);
   routes['knowledgeBases.chunkPreview'] = (request: ControlRequest) => {
     const baseId = stringValue(record(request.params).kbId);
     const documentId = stringValue(record(request.params).fileId);
@@ -1471,6 +1538,8 @@ export function createPreviewTransport(): MockControlTransport {
   ));
   previewTransport = new PreviewControlTransport({
     routes,
+    knowledgeDocumentSource: (input) => previewKnowledgeSource(input, previewKnowledgeDocuments),
+    knowledgeAsset: (input) => previewKnowledgeAsset(input, previewKnowledgeDocuments),
     capabilities: {
       routeIds,
       features: {

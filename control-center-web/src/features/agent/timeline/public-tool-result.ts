@@ -10,6 +10,7 @@ export interface PublicToolActivityProjection {
   kind: string;
   status: AgentActivityProjection['status'] | 'aborted';
   payload: Record<string, unknown>;
+  settledByTurnStatus?: AgentActivityProjection['settledByTurnStatus'];
 }
 
 export interface PublicToolResultField {
@@ -219,6 +220,7 @@ const memoryCountFields: Array<[string, string]> = [
 ];
 
 export function publicToolResultView(activity: PublicToolActivityProjection): PublicToolResultView {
+  if (activity.settledByTurnStatus === 'aborted') activity = { ...activity, status: 'aborted' };
   const payload = activity.payload;
   const carrier = record(payload.result ?? payload.partialResult);
   const carrierDetails = record(carrier.details);

@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button, Disclosure, Field, IconButton, Input, TextArea } from '@/components/primitives';
 import type { GoldenCase, GoldenCommand, GoldenSource, GoldenSuite } from './types';
-import { splitLabel } from './types';
+import { isRunnableGoldenModel, splitLabel } from './types';
+import { ModelFields } from './Shared';
 import { SavedProgress } from './WorkflowGuide';
 
 type Draft = Omit<GoldenCase, 'review' | 'samples'> & { note: string; reviewAuthor: 'human' | 'agent' };
@@ -14,12 +15,13 @@ const caseDraft = (item: GoldenCase): Draft => ({
   split: item.split, note: item.review.note, reviewAuthor: item.review.author ?? 'human',
 });
 
-export function CaseReview({ suite, disabled, onReview, onNext, onDraft, onDirtyChange }: {
+export function CaseReview({ suite, disabled, onReview, onNext, onDraft, onDirtyChange, onAgentReview }: {
   suite: GoldenSuite; disabled: boolean;
   onReview: (input: GoldenCommand['input']) => Promise<boolean>; onNext: () => void; onDraft?: () => void;
-  onDirtyChange?: (dirty: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void; onAgentReview?: (input: GoldenCommand['input']) => Promise<boolean>;
 }) {
   const id = useId();
+  const [reviewModel, setReviewModel] = useState(suite.judgeConfig);
   const [selectedId, setSelectedId] = useState('');
   const [filter, setFilter] = useState('all');
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -47,8 +49,9 @@ export function CaseReview({ suite, disabled, onReview, onNext, onDraft, onDirty
   return <section className="golden-section" aria-labelledby={`${id}-review-title`}>
     <header className="golden-section__heading"><div>
       <h3 id={`${id}-review-title`}>逐题确认标准与证据</h3>
-      <p>Agent 草稿需要你的明确审核。修改问题、必要事实与引用后，保存本题的审核结论。</p>
+      <p>先核对问题、必要事实与引用。可以逐题审核，或让独立 Agent 核对并标注样例；会保留审核来源。</p>
     </div><span className="golden-count">{approved.length} / {suite.cases.length} 题通过 · {pending} 题待审核</span></header>
+    {onAgentReview && pending > 0 ? <div className="golden-agent-review"><div><strong>独立 Agent 核对 · {pending} 题</strong><p className="golden-note">逐题检查来源与评分标准，并独立标注样例。调用所选模型，结果记录为 Agent 核对。</p></div><Disclosure summary="核对模型与推理设置"><ModelFields showPrompt={false} label="核对" value={reviewModel} onChange={setReviewModel} disabled={disabled} /></Disclosure><Button disabled={disabled || hasUnsaved || !isRunnableGoldenModel(reviewModel)} onClick={() => void onAgentReview({ model: reviewModel })}>让 Agent 核对待审题目</Button></div> : null}
     {suite.cases.length ? <SavedProgress label="审核已保存" value={suite.cases.length - pending} total={suite.cases.length} /> : null}
     {!suite.cases.length ? <div className="golden-empty"><h4>题目尚未就绪</h4><p>起草任务结束后，真实题目和引用会出现在这里。</p>{onDraft ? <Button size="small" onClick={onDraft}>返回起草题目</Button> : null}</div> : <div className="golden-notebook">
       <aside className="golden-case-list" aria-label="题目列表">

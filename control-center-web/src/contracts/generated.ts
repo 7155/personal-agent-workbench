@@ -155,6 +155,7 @@ import type { RunnerVerificationReceiptV2 } from './generated/runner-verificatio
 import type { SandboxRunV1 } from './generated/sandbox-run.v1';
 import type { SessionMemoryRecallV1 } from './generated/session-memory-recall.v1';
 import type { SessionRecallEffectReceiptV1 } from './generated/session-recall-effect-receipt.v1';
+import type { SpaceOrganizationCommandV1 } from './generated/space-organization-command.v1';
 import type { TraceDiagnosticInspectionV1 } from './generated/trace-diagnostic-inspection.v1';
 import type { TraceDiagnosticReportListV1 } from './generated/trace-diagnostic-report-list.v1';
 import type { TraceDiagnosticReportV1 } from './generated/trace-diagnostic-report.v1';
@@ -327,6 +328,7 @@ export type {
   SandboxRunV1,
   SessionMemoryRecallV1,
   SessionRecallEffectReceiptV1,
+  SpaceOrganizationCommandV1,
   TraceDiagnosticInspectionV1,
   TraceDiagnosticReportListV1,
   TraceDiagnosticReportV1,
@@ -500,6 +502,7 @@ export interface ContractTypeMap {
   'sandbox-run.v1': SandboxRunV1;
   'session-memory-recall.v1': SessionMemoryRecallV1;
   'session-recall-effect-receipt.v1': SessionRecallEffectReceiptV1;
+  'space-organization-command.v1': SpaceOrganizationCommandV1;
   'trace-diagnostic-inspection.v1': TraceDiagnosticInspectionV1;
   'trace-diagnostic-report-list.v1': TraceDiagnosticReportListV1;
   'trace-diagnostic-report.v1': TraceDiagnosticReportV1;

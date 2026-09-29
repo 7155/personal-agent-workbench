@@ -186,7 +186,7 @@
         "schemaVersion": {"type": "string", "const": "rag-ime.memory-curation-model-status.v1"},
         "ok": {"type": "boolean", "const": true},
         "profile": {"type": "string", "const": "MEMORY_CURATION"},
-        "requiredModel": {"type": "string", "const": "openai-codex/gpt-5.6-luna"},
+        "requiredModel": {"type": "string", "minLength": 3},
         "requiredThinkingLevel": {"type": "string", "const": "max"},
         "minimumContextTokens": {"type": "integer", "minimum": 272000},
         "stateCounts": {

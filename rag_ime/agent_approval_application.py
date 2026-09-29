@@ -17,7 +17,8 @@ from .agent_execution_policy import (
     unrestricted_workspace_policy_active,
 )
 from .agent_external_approval import ExternalApprovalFinalizer
-from .agent_approval_model import ApprovalModelArbiter
+from .agent_approval_model import ApprovalModelArbiter, requires_jev_approval
+from .jev_tasks.policy import tool_approval_mode
 from .agent_sessions import AgentSessionStore
 from .agent_events import AgentEventHub
 from .agent_memory_sources import AgentMemorySourceStore
@@ -885,6 +886,23 @@ class AgentApprovalApplicationService:
                 risk_level=current.get("riskLevel"),
             )
         )
+        jev_only = False
+        if room_binding_live:
+            turn_id = str(causal.get("turnId") or "")
+            with self.room_turns.lock:
+                key = (session_id, turn_id)
+                bound_turn_id = turn_id if (
+                    self.room_turns.turn_by_session_turn.get(key) == causal.get("rootId")
+                    and self.room_turns.dispatch_by_session_turn.get(key) == causal.get("dispatchId")
+                ) else ""
+                mode = tool_approval_mode(
+                    self.sessions.db_path, session_id=session_id,
+                    causal=causal, bound_turn_id=bound_turn_id,
+                )
+            if mode == "jev_dangerous" and strategy == APPROVAL_AUTO:
+                jev_only = requires_jev_approval(current, effective_session)
+                if jev_only:
+                    strategy = APPROVAL_MODEL
         if current.get("state") != "pending":
             return self._automatic_terminal_result(current)
         if (
@@ -900,11 +918,11 @@ class AgentApprovalApplicationService:
         model_decision: Mapping[str, object] | None = None
         approved = strategy == APPROVAL_AUTO
         if strategy == APPROVAL_MODEL:
-            model_decision = self.approval_model.decide(
-                current,
-                session,
+            model_decision = (
+                self.approval_model.decide(current, session, jev_only=True)
+                if jev_only else self.approval_model.decide(current, session)
             )
-            approved = model_decision.get("decision") == "approve"
+            approved = model_decision.get("decision") == "approve" and model_decision.get("status") == "decided"
             decided_by = (
                 "approval-model:"
                 + str(model_decision.get("receiptId") or "")
@@ -1041,7 +1059,10 @@ class AgentApprovalApplicationService:
                     model_decision.get("failureCode") or ""
                 )
         result["terminal"] = True
-        result["retryable"] = False
+        result["retryable"] = bool(jev_only and model_decision and model_decision.get("status") == "failed_closed")
+        if jev_only and not approved:
+            result["blocked"] = True
+            result["recoveryAction"] = "retry_with_new_preview"
         result["terminalReason"] = summary
         return result
 
@@ -1497,6 +1518,34 @@ class AgentApprovalApplicationService:
         payload: Mapping[str, object],
     ) -> dict[str, object]:
         session_id = _required_text(payload, "sessionId")
+        if payload.get("toolCallId"):
+            if payload.get("approvalId"):
+                raise ValueError("provide one lookup identity: approvalId or toolCallId")
+            approvals = self.sessions.find_tool_call_approvals(
+                session_id,
+                _required_text(payload, "toolCallId"),
+                _required_text(payload, "tool"),
+            )
+            response: dict[str, object] = {
+                "schemaVersion": "rag-ime.agent-approval-result.v1",
+                "ok": True,
+                "lookupState": "not_found" if not approvals else "ambiguous",
+            }
+            if len(approvals) == 1:
+                approval = approvals[0]
+                receipt = approval.get("receipt")
+                applied = (
+                    approval.get("state") == "applied"
+                    and isinstance(receipt, Mapping)
+                    and receipt.get("mutationApplied") is True
+                )
+                response.update({
+                    "lookupState": "applied" if applied else "pending" if approval.get("state") in {
+                        "pending", "approved", "external_pending",
+                    } else "unknown",
+                    "approval": approval,
+                })
+            return response
         approval_id = _required_text(payload, "approvalId")
         approval = self.sessions.get_approval(approval_id)
         if approval.get("sessionId") != session_id:

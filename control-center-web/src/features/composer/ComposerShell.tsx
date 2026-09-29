@@ -7,6 +7,7 @@ import {
 } from '@/contracts/attachment-policy';
 import { managedAgentMediaContentPath } from '@/platform/transport';
 import './composer-enhancements.css';
+import './composer-workbench.css';
 
 /**
  * UR-042: the one Composer skeleton Session and Room both render.
@@ -69,6 +70,7 @@ export function ComposerShell({
     <div
       className={['agent-composer', 'paw-unified-composer', className].filter(Boolean).join(' ')}
       data-surface={surface}
+      data-composer-design="workbench"
       data-busy={busy || undefined}
       data-jump-latest={jumpLatest || undefined}
       data-expanded={expanded || undefined}
@@ -99,7 +101,7 @@ export function ComposerShell({
                 type="button"
                 aria-label={`移除 ${attachment.name}`}
                 onClick={() => onRemoveAttachment(attachment.id)}
-              ><X size={12} /></button>
+              ><X size={13} aria-hidden /></button>
             </span>
           ))}
         </div>

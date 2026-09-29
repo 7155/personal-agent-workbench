@@ -128,6 +128,7 @@ function proxyControlRequest(request, response, controlUrl) {
   const headers = { ...request.headers };
   headers.host = controlUrl.host;
   if (headers.origin) headers.origin = controlUrl.origin;
+  let upstreamBody;
   const upstream = http.request({
     hostname: controlUrl.hostname,
     port: controlUrl.port,
@@ -135,10 +136,30 @@ function proxyControlRequest(request, response, controlUrl) {
     path: request.url,
     headers,
   }, (upstreamResponse) => {
+    upstreamBody = upstreamResponse;
+    upstreamResponse.on('error', () => response.destroy());
+    upstreamResponse.once('aborted', () => response.destroy());
+    if (response.destroyed) {
+      upstreamResponse.destroy();
+      return;
+    }
     response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers);
     upstreamResponse.pipe(response);
   });
+  const cancelUpstream = () => {
+    upstreamBody?.destroy();
+    upstream.destroy();
+  };
+  // pipe() does not cancel its source when the destination disappears. SSE
+  // subscriptions must release the Gateway socket when the renderer leaves.
+  // IncomingMessage 'close' also fires for a normally completed GET, so bind
+  // cancellation to the response lifetime and incomplete request bodies.
+  response.once('close', () => {
+    if (!response.writableFinished) cancelUpstream();
+  });
+  request.once('aborted', cancelUpstream);
   upstream.on('error', () => {
+    if (response.destroyed) return;
     if (response.headersSent) return response.destroy();
     response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
     response.end('{"ok":false,"error":"PAW local authority is unavailable"}\n');

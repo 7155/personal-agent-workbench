@@ -258,9 +258,11 @@ class AgentRoomStore:
             )
         return self.get(room_id)
 
-    def get(self, room_id: str) -> dict[str, object]:
-        with self._connect() as conn:
+    def get(self, room_id: str, *, conn: sqlite3.Connection | None = None) -> dict[str, object]:
+        if conn is not None:
             return self._get(conn, room_id)
+        with self._connect() as db:
+            return self._get(db, room_id)
 
     @staticmethod
     def _get(
@@ -874,8 +876,16 @@ class AgentRoomStore:
                 """,
                 (room_id,),
             ).fetchone()
-            if int(active_count[0] if active_count is not None else 0) <= 2:
-                raise ValueError("agent room requires at least two active participants")
+            pending_others = conn.execute(
+                "SELECT COUNT(*) FROM agent_jev_participant_removals r "
+                "JOIN agent_room_participants p ON p.id=r.participant_id "
+                "WHERE r.room_id=? AND r.status='pending' "
+                "AND r.participant_id<>? AND p.participant_status='active'",
+                (room_id, participant_id),
+            ).fetchone()
+            if (int(active_count[0] if active_count is not None else 0)
+                - int(pending_others[0] if pending_others is not None else 0) <= 2):
+                raise ValueError("agent room requires two active participants after pending removals")
             open_work = conn.execute(
                 """
                 SELECT COUNT(*) FROM agent_room_work_items
@@ -1175,6 +1185,24 @@ class AgentRoomStore:
         if row is None:
             raise AgentParticipantNotFound(participant_id)
         return _participant_payload(row)
+
+    def participants_by_id(
+        self, participant_ids: Sequence[str], *, conn: sqlite3.Connection,
+    ) -> dict[str, dict[str, object]]:
+        """Read exact identities within the caller's existing read transaction."""
+        ids = tuple(dict.fromkeys(participant_ids))
+        result = {}
+        for start in range(0, len(ids), 500):
+            batch = ids[start:start + 500]
+            placeholders = ",".join("?" for _ in batch)
+            rows = conn.execute(
+                f"SELECT * FROM agent_room_participants WHERE id IN ({placeholders})", batch,
+            ).fetchall()
+            result.update((row["id"], _participant_payload(row)) for row in rows)
+        for participant_id in ids:
+            if participant_id not in result:
+                raise AgentParticipantNotFound(participant_id)
+        return result
 
     def participant_for_session(
         self,
@@ -2690,7 +2718,8 @@ class AgentRoomEventHub:
     def publish(self, **values: object) -> dict[str, object]:
         with self._lock:
             event = self.store.append_event(**values)  # type: ignore[arg-type]
-        self._fanout(event)
+            self._enqueue_locked(event)
+        self._notify_observers(event)
         return event
 
     def publish_projection(
@@ -2704,10 +2733,12 @@ class AgentRoomEventHub:
                 projection_key=projection_key,
                 **values,  # type: ignore[arg-type]
             )
-        if created:
-            if event is None:
-                raise RuntimeError("created Room projection has no event")
-            self._fanout(event)
+            if created:
+                if event is None:
+                    raise RuntimeError("created Room projection has no event")
+                self._enqueue_locked(event)
+        if created and event is not None:
+            self._notify_observers(event)
         return event
 
     def publish_child_terminal(self, **values: object) -> dict[str, object] | None:
@@ -2715,10 +2746,12 @@ class AgentRoomEventHub:
             event, created = self.store.append_child_terminal_projection(
                 **values,  # type: ignore[arg-type]
             )
-        if created:
-            if event is None:
-                raise RuntimeError("created Room child terminal has no event")
-            self._fanout(event)
+            if created:
+                if event is None:
+                    raise RuntimeError("created Room child terminal has no event")
+                self._enqueue_locked(event)
+        if created and event is not None:
+            self._notify_observers(event)
         return event
 
     def has_projection(self, projection_key: str) -> bool:
@@ -2739,29 +2772,48 @@ class AgentRoomEventHub:
             dispatch_id=dispatch_id,
         )
 
-    def _fanout(self, event: dict[str, object]) -> None:
-        with self._lock:
-            subscribers = tuple(
-                self._subscribers.get(str(event["roomId"]), ())
-            )
-        for subscriber in subscribers:
+    def _enqueue_locked(self, event: dict[str, object]) -> None:
+        """Called under _lock together with the durable append.
+
+        Appending under a lock but enqueuing after releasing it allows sequence
+        N+1 to overtake N. Queue admission is cheap and non-blocking; observers
+        stay outside this critical section so slow/reentrant consumers cannot
+        block the Room's primary event stream.
+        """
+        for subscriber in tuple(self._subscribers.get(str(event["roomId"]), ())):
             try:
                 subscriber.put_nowait(event)
             except queue.Full:
                 try:
                     subscriber.get_nowait()
-                    subscriber.put_nowait(event)
-                except (queue.Empty, queue.Full):
+                except queue.Empty:
                     pass
+                try:
+                    subscriber.put_nowait(event)
+                except queue.Full:
+                    # The consumer detects any skipped sequence and requests
+                    # the authoritative snapshot; never label it completed.
+                    pass
+
+    def _notify_observers(self, event: dict[str, object]) -> None:
         with self._lock:
             observers = tuple(self._observers)
         for observer in observers:
             try:
                 observer(event)
             except Exception:
-                # Room projections are diagnostic side effects and must never
-                # interrupt the primary conversation or intercom delivery.
+                # Observers remain best-effort side effects, not SSE authority.
                 pass
+
+    def _fanout(self, event: dict[str, object]) -> None:
+        """Deliver an already-persisted event (legacy/internal test entry).
+
+        Normal publish paths enqueue atomically with their append above.
+        Recovery still handles external writers or explicit out-of-order input.
+        """
+        with self._lock:
+            self._enqueue_locked(event)
+        self._notify_observers(event)
 
     def add_observer(
         self,

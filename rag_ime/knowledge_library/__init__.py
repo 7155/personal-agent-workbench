@@ -14,6 +14,7 @@ from .models import (
     KnowledgeLibraryError,
     KnowledgeNotFoundError,
     ParsedAsset,
+    ParsedBlock,
     ParsedDocument,
     SearchHit,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "MlxQwen3KnowledgeReranker",
     "PARSER_MODES",
     "ParsedAsset",
+    "ParsedBlock",
     "ParsedDocument",
     "ParserRouter",
     "SearchHit",

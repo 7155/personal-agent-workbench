@@ -6,6 +6,7 @@ does not implement chunking, embeddings, retrieval, metrics or an Agent loop.
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import json
 import os
@@ -178,11 +179,55 @@ def collect_folder(path: Path, *, progress: Callable[[str], None], cancelled: Ca
                                        "supportedFormats": sorted(_TEXT_SUFFIXES)}
 
 
+def _reference_standard(row: Mapping, sources: list[str], documents: Mapping[str, dict]) -> dict:
+    """Preserve explicit source-grounded standards without importing approval."""
+    keys = {"answerable", "requiredFacts", "evidence", "rubric"}
+    if not keys.intersection(row):
+        return {}
+    if not keys.issubset(row) or not isinstance(row["answerable"], bool):
+        raise KnowledgeIntakeError("显式答案标准需要 answerable、requiredFacts、evidence 和 rubric。")
+    standard = {key: copy.deepcopy(row[key]) for key in keys}
+    for key in ("requiredFacts", "rubric"):
+        values = standard[key]
+        if not isinstance(values, list) or len(values) > 100:
+            raise KnowledgeIntakeError("必答事实和评分标准需要文本数组，最多 100 项。")
+        for value in values:
+            _text(value, "答案标准")
+    evidence = standard["evidence"]
+    if not isinstance(evidence, list) or len(evidence) > 100:
+        raise KnowledgeIntakeError("证据需要数组，最多 100 项。")
+    for item in evidence:
+        if not isinstance(item, dict):
+            raise KnowledgeIntakeError("每条证据需要来源 ID 和逐字引用。")
+        source = item.get("sourceId")
+        quote = _text(item.get("quote"), "证据引用")
+        if not isinstance(source, str) or source not in sources or quote not in documents[source]["text"]:
+            raise KnowledgeIntakeError("证据必须逐字存在于题目声明的参考来源中。")
+    # Sample labels and standard approval are always supplied by a later review.
+    if "samples" in row:
+        samples = row["samples"]
+        if not isinstance(samples, list) or len(samples) > 30:
+            raise KnowledgeIntakeError("诊断样本需要数组，最多 30 项。")
+        standard["samples"] = []
+        seen = set()
+        for sample in samples:
+            if not isinstance(sample, dict):
+                raise KnowledgeIntakeError("诊断样本格式无效。")
+            identifier = _text(sample.get("sampleId"), "样本 ID", maximum=240)
+            if identifier in seen or sample.get("category") not in ("correct", "incorrect", "boundary"):
+                raise KnowledgeIntakeError("诊断样本 ID 不能重复，类别必须为 correct、incorrect 或 boundary。")
+            seen.add(identifier)
+            standard["samples"].append({"sampleId": identifier, "answer": _text(sample.get("answer"), "样本答案"),
+                                        "category": sample["category"]})
+    return {"answerStandard": standard}
+
+
 def normalize_cases(rows: list[dict], documents: list[dict], fields: Mapping | None = None) -> tuple[list[dict], dict]:
     fields = dict(fields or {})
     if set(fields) - {"id", "question", "answer", "sources", "split"} or any(not isinstance(value, str) or not value for value in fields.values()):
         raise KnowledgeIntakeError("评测集字段映射仅支持 id、question、answer、sources 和 split。")
     known = {row["sourceId"] for row in documents}
+    by_source = {row["sourceId"]: row for row in documents}
     _, source_aliases = content_identities(documents)
     result, seen = [], set()
     for number, row in enumerate(rows, 1):
@@ -209,6 +254,7 @@ def normalize_cases(rows: list[dict], documents: list[dict], fields: Mapping | N
             raise KnowledgeIntakeError(f"第 {number} 题的分组需要是 development 或 holdout。")
         result.append({"caseId": case_id, "question": question, "answer": answer, "sourceIds": list(dict.fromkeys(ids)),
                        "sourceRow": number, "provenance": "imported_reference", "retrievalEvaluable": bool(ids),
+                       **_reference_standard(row, ids, by_source),
                        **({'sourceSplit': source_split} if source_split else {})})
     if not result or len(result) > MAX_CASES:
         raise KnowledgeIntakeError(f"评测集需要 1–{MAX_CASES:,} 条问题。")

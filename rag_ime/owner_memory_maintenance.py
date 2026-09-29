@@ -137,7 +137,10 @@ class GatewayMemoryMaintenanceJobs:
                     for job in self._jobs.values()
                     if self._matches_project(job, normalized_project)
                 ),
-                key=lambda item: int(item.get("updatedAtMs") or 0),
+                key=lambda item: (
+                    str(item.get("state")) in {"queued", "running"},
+                    int(item.get("updatedAtMs") or 0),
+                ),
                 reverse=True,
             )
             return (
@@ -151,9 +154,18 @@ class GatewayMemoryMaintenanceJobs:
 
         normalized_project = str(project or "").strip()
         with self._lock:
+            if not self._execution_owner:
+                # Observers never receive worker callbacks. Refresh durable
+                # receipts before consulting the cache populated by other views.
+                self._jobs = {
+                    str(job["jobId"]): job for job in self._load_recent_jobs()
+                }
             candidates = sorted(
                 self._jobs.values(),
-                key=lambda item: int(item.get("updatedAtMs") or 0),
+                key=lambda item: (
+                    str(item.get("state")) in {"queued", "running"},
+                    int(item.get("updatedAtMs") or 0),
+                ),
                 reverse=True,
             )
             active = self._jobs.get(self._active_job_id)
@@ -170,6 +182,8 @@ class GatewayMemoryMaintenanceJobs:
                     if isinstance(job.get("request"), Mapping)
                     else {}
                 )
+                if str(job.get("state")) in {"queued", "running"} and request.get("catalogOnly") is not True:
+                    return self._timeline_payload(job)
                 if request.get("timelineDate") or request.get("timelineThroughDate"):
                     return self._timeline_payload(job)
                 if self._automatic_timeline_result(job):
@@ -272,7 +286,11 @@ class GatewayMemoryMaintenanceJobs:
             timeline_through_date = str(
                 request.get("timelineThroughDate") or ""
             ).strip()
-            if timeline_through_date:
+            if isinstance(job.get("progress"), Mapping) and job["progress"]:
+                # Resuming the same request must keep its last observed source
+                # cursor/counts until the executor emits a fresh checkpoint.
+                pass
+            elif timeline_through_date:
                 job["progress"] = {
                     "phase": "activity_timeline_catch_up",
                     "throughDate": timeline_through_date,
@@ -451,8 +469,13 @@ class GatewayMemoryMaintenanceJobs:
                 """
                 SELECT * FROM memory_maintenance_jobs
                 WHERE job_id LIKE 'memory-maintenance:%'
+                  AND (state IN ('queued', 'running') OR job_id IN (
+                    SELECT job_id FROM memory_maintenance_jobs
+                    WHERE job_id LIKE 'memory-maintenance:%'
+                      AND state NOT IN ('queued', 'running')
+                    ORDER BY updated_at_ms DESC, job_id DESC LIMIT 64
+                  ))
                 ORDER BY updated_at_ms DESC
-                LIMIT 64
                 """
             ).fetchall()
             jobs = [self._job_from_row(row) for row in rows]

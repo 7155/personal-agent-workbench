@@ -9,6 +9,7 @@ import {
   roomFlowRefs,
   roomWorkReviewFlow,
 } from '@/features/rooms/room-flow-projection';
+import { projectRoomRoutes, type RoomRouteVisibility } from './room-route-visibility';
 import { roomPlanetName } from '@/features/rooms/room-copy';
 import type { RoomCollaborationRole, RoomSummary, RoomWorkItem, RoomWorkState } from '@/features/rooms/room-types';
 import { selectPublicRoomTurnOrder } from '@/features/rooms/runtime/room-execution-lanes';
@@ -174,6 +175,8 @@ export interface RoomFocusProjection {
   handoffs: RoomFocusHandoff[];
   flow: RoomFocusPacket[];
   rootEvidence: RoomFocusEvidence[];
+  /** Existing route receipts only; Jev is optional and never invoked here. */
+  routes?: RoomRouteVisibility[];
   counts: {
     active: number;
     review: number;
@@ -297,6 +300,7 @@ export function buildRoomFocusProjection(
     handoffs,
     flow,
     rootEvidence,
+    routes: projectRoomRoutes(activities, room, scope.turn),
     counts: {
       active: workItems.filter((item) => item.state === 'running' || item.state === 'waiting').length,
       review: workItems.filter((item) => item.state === 'review').length,
@@ -344,14 +348,15 @@ function currentRoomFocusScope(
     if (attempt?.logicalRootId) workRootIds.add(attempt.logicalRootId);
     cursor = attempt?.retryOfRootId;
   }
-  const scopedWorkItems = (room.workItems ?? []).filter((item) => workRootIds.has(item.rootTurnId));
+  // Keep genuinely unbound assignments during metadata skew, plus tasks on
+  // the recorded retry lineage; never inherit another Root's bound tasks.
+  const scopedWorkItems = (room.workItems ?? []).filter((item) => (
+    workRootIds.has(item.rootTurnId) || !item.rootTurnId
+  ));
   return {
     activities: activities.filter((activity) => activityIds.has(activity.id)),
     messages: messages.filter((message) => messageIds.has(message.id)),
-    // Keep genuinely unbound assignments during metadata skew, never another
-    // Root's tasks. An empty new round must not inherit yesterday's failures.
-    workItems: scopedWorkItems.length ? scopedWorkItems
-      : (room.workItems ?? []).filter((item) => !item.rootTurnId),
+    workItems: scopedWorkItems,
     turnId,
     turn,
   };

@@ -35,6 +35,8 @@ from .permissions import harden_knowledge_tree, secure_directory, secure_file
 from .rerank import KnowledgeReranker
 from .vault import MarkdownVault
 from .store import KnowledgeStore, decode_metadata, now_ms, rank_retrieval_hits as _rank_retrieval_hits
+from .structured import restore_blocks, serialize_blocks, structured_spans
+from .reader_artifacts import bound_tables, enrich_assets, structured_tables
 
 
 DEFAULT_CHUNKING_CONFIG: dict[str, Any] = {
@@ -59,7 +61,7 @@ DEFAULT_RETRIEVAL_CONFIG: dict[str, Any] = {
     "rerankCandidateDepth": 40,
 }
 AGENT_SEARCH_TOP_K_LIMIT = 12
-CHUNKING_STRATEGIES = ("general", "markdown", "book", "qa", "laws", "separator", "fixed")
+CHUNKING_STRATEGIES = ("general", "markdown", "paper", "book", "qa", "laws", "separator", "fixed")
 _IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"})
 _SOURCE_PREVIEW_MIME_TYPES = _IMAGE_MIME_TYPES | frozenset(
     {
@@ -110,6 +112,12 @@ class KnowledgeLibraryService:
         self._dense_error = ""
         self._ingest_lock = threading.Lock()
         self._vault_capture_future = None
+        # Job terminal transitions must be serialized with cancellation.  The
+        # ingest lock deliberately remains separate: cancellation should be
+        # able to interrupt a slow parser while a short final commit is being
+        # settled.
+        self._job_state_lock = threading.Lock()
+        self._document_revision_lock = threading.Lock()
         self._job_executor = (
             ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-ime-knowledge")
             if background_jobs
@@ -314,23 +322,31 @@ class KnowledgeLibraryService:
 
     def retry_document(self, document_id: str, *, parser_mode: str | None = None) -> dict[str, Any]:
         document_id = _identifier(document_id, "document id")
-        row = self.store.get_document(document_id)
-        base = self.store.get_base(str(row["base_id"]))
-        selected_mode = (
-            _parser_mode(parser_mode)
-            if parser_mode is not None
-            else _parser_mode_for_provider(str(row["parser_provider"] or ""), fallback=str(base["parser_mode"]))
-        )
-        row = self.store.update_document(
-            document_id,
-            {
-                "revision": int(row["revision"]) + 1,
-                "status": "queued",
-                "error_code": "",
-                "error_message": "",
-            },
-        )
-        return self._dispatch_document(row, parser_mode=selected_mode)
+        # Read, advance, and enqueue under one lock.  Without this, two
+        # concurrent retry requests can both observe the same revision and
+        # race into the UNIQUE(document_id, revision, kind) job constraint.
+        with self._document_revision_lock:
+            row = self.store.get_document(document_id)
+            base = self.store.get_base(str(row["base_id"]))
+            selected_mode = (
+                _parser_mode(parser_mode)
+                if parser_mode is not None
+                else self.store.latest_document_parser_mode(document_id) or _parser_mode_for_provider(
+                    str(row["parser_provider"] or ""),
+                    fallback=str(base["parser_mode"]),
+                )
+            )
+            with self._job_state_lock:
+                row = self.store.update_document(
+                    document_id,
+                    {
+                        "revision": int(row["revision"]) + 1,
+                        "status": "queued",
+                        "error_code": "",
+                        "error_message": "",
+                    },
+                )
+            return self._dispatch_document(row, parser_mode=selected_mode)
 
     def list_documents(self, base_id: str) -> dict[str, Any]:
         documents = [_document_to_dict(row) for row in self.store.list_documents(_identifier(base_id, "base id"))]
@@ -344,10 +360,37 @@ class KnowledgeLibraryService:
 
     def cancel_job(self, job_id: str, *, base_id: str = "") -> dict[str, Any]:
         job_id = _identifier(job_id, "job id")
-        row = self.store.get_job(job_id)
-        if base_id and str(row["base_id"]) != _identifier(base_id, "base id"):
-            raise KnowledgeNotFoundError(f"knowledge job {job_id!r} was not found")
-        cancelled = self.store.cancel_job(job_id)
+        # Keep cancellation and the worker's terminal success/failure write in
+        # one state transition.  Otherwise a cancellation arriving after the
+        # chunks are committed can be overwritten by ``succeeded``.
+        with self._job_state_lock:
+            row = self.store.get_job(job_id)
+            if base_id and str(row["base_id"]) != _identifier(base_id, "base id"):
+                raise KnowledgeNotFoundError(f"knowledge job {job_id!r} was not found")
+            cancelled = self.store.cancel_job(job_id)
+            # ``KnowledgeStore.cancel_job`` fences queued/parsing/indexing
+            # documents, but a worker can have committed chunks (status
+            # ``ready``) while its job is still in the projection stage.  Keep
+            # that late cancellation visible and fence the document here.
+            if str(cancelled["status"]) == "cancelled":
+                try:
+                    current = self.store.get_document(str(cancelled["document_id"]))
+                except KnowledgeNotFoundError:
+                    current = None
+                if (
+                    current is not None
+                    and int(current["revision"]) == int(row["revision"])
+                    and str(current["status"]) not in {"failed", "deleting"}
+                ):
+                    self.store.update_document(
+                        str(cancelled["document_id"]),
+                        {
+                            "revision": int(current["revision"]) + 1,
+                            "status": "failed",
+                            "error_code": "cancelled",
+                            "error_message": "processing cancelled by user",
+                        },
+                    )
         return {"schemaVersion": KNOWLEDGE_SCHEMA_VERSION, "job": _job_to_dict(cancelled)}
 
     def knowledge_graph(
@@ -480,8 +523,10 @@ class KnowledgeLibraryService:
         )
         parsed = ParsedDocument(
             text=artifact_path.read_text(encoding="utf-8"),
-            provider="artifact_preview",
+            provider=str(document["parser_provider"] or "artifact_preview"),
+            provider_version=str(document["parser_version"] or "1"),
             metadata=decode_metadata(document),
+            blocks=restore_blocks(decode_metadata(document).get("parsedBlocks")),
         )
         chunks = _chunk_document(
             parsed,
@@ -540,6 +585,7 @@ class KnowledgeLibraryService:
         chunk_rows, chunk_total = self.store.document_chunks(document_id, offset=chunk_offset, limit=chunk_limit)
         page_rows = self.store.document_pages(document_id)
         assets = [_asset_to_dict(row, base_id=base_id, document_id=document_id) for row in self.store.document_assets(document_id)]
+        assets = enrich_assets(assets, decode_metadata(document).get("parsedBlocks"))
         artifact = self._artifact_window(
             document,
             line_offset=max(0, int(line_offset)),
@@ -685,7 +731,7 @@ class KnowledgeLibraryService:
                     "error_message": "",
                 },
             )
-            selected_mode = _parser_mode_for_provider(
+            selected_mode = self.store.latest_document_parser_mode(str(existing["id"])) or _parser_mode_for_provider(
                 str(existing["parser_provider"] or ""),
                 fallback=str(base["parser_mode"]),
             )
@@ -864,23 +910,31 @@ class KnowledgeLibraryService:
                 requested_mode=requested_mode,
                 config=retrieval_config,
             )
-            ranked_candidates = [
-                hit for hit in ranked if hit.score >= float(retrieval_config["threshold"])
-            ]
             rerank_applied = bool(retrieval_config["rerankEnabled"])
             rerank_candidate_count = 0
             if rerank_applied:
+                # Reranking is the final score stage. Keep the complete
+                # bounded first-stage candidate window so a passage with a
+                # modest lexical/dense score can still win on direct
+                # query-passage relevance; applying the threshold here would
+                # silently discard it before the independent reranker sees it.
                 rerank_candidate_count = min(
-                    len(ranked_candidates),
+                    len(ranked),
                     int(retrieval_config["rerankCandidateDepth"]),
                 )
                 ranked = self._rerank_hits(
                     query,
-                    ranked_candidates[:rerank_candidate_count],
-                    limit=int(retrieval_config["topK"]),
+                    ranked[:rerank_candidate_count],
+                    limit=rerank_candidate_count,
                     candidate_limit=int(retrieval_config["rerankCandidateDepth"]),
                 )
+                ranked = [
+                    hit for hit in ranked if hit.score >= float(retrieval_config["threshold"])
+                ][: int(retrieval_config["topK"])]
             else:
+                ranked_candidates = [
+                    hit for hit in ranked if hit.score >= float(retrieval_config["threshold"])
+                ]
                 ranked = ranked_candidates[: int(retrieval_config["topK"])]
             all_hits.extend(ranked)
             library_diagnostics.append(
@@ -902,6 +956,7 @@ class KnowledgeLibraryService:
                     ),
                     "rerankApplied": rerank_applied,
                     "rerankCandidates": rerank_candidate_count,
+                    "thresholdStage": "rerank" if rerank_applied else "retrieval",
                     "returned": len(ranked),
                 }
             )
@@ -1017,6 +1072,7 @@ class KnowledgeLibraryService:
                         "matchLine": lines_before + line_index + 1,
                         "page": int(row["page"]) if row["page"] is not None else None,
                         "heading": str(row["heading"] or "") or None,
+                        "provenance": decode_metadata(row, field="provenance_json"),
                     }
                 )
                 # Pagination advances by matching chunk ordinal. One bounded
@@ -1058,6 +1114,7 @@ class KnowledgeLibraryService:
                 "content": str(row["content"]),
                 "page": int(row["page"]) if row["page"] is not None else None,
                 "heading": str(row["heading"] or "") or None,
+                    "provenance": decode_metadata(row, field="provenance_json"),
             }
             for row in rows
         ]
@@ -1111,6 +1168,7 @@ class KnowledgeLibraryService:
                     "content": str(row["content"]),
                     "page": int(row["page"]) if row["page"] is not None else None,
                     "heading": str(row["heading"] or "") or None,
+                    "provenance": decode_metadata(row, field="provenance_json"),
                 }
                 for row in rows
             ],
@@ -1151,6 +1209,7 @@ class KnowledgeLibraryService:
                     "content": "\n".join(lines[local_start:local_end]),
                     "page": int(row["page"]) if row["page"] is not None else None,
                     "heading": str(row["heading"] or "") or None,
+                    "provenance": decode_metadata(row, field="provenance_json"),
                     "lineStart": visible_start,
                     "lineEnd": visible_end,
                 }
@@ -1386,7 +1445,7 @@ class KnowledgeLibraryService:
         document_id = str(row["id"])
         base_id = str(row["base_id"])
         revision = int(row["revision"])
-        if self.store.job_is_cancelled(job_id):
+        if self._job_should_stop(job_id, revision):
             return self._document_result_or_deleted(document_id, base_id=base_id)
         base = self.store.get_base(base_id)
         chunking_config = _normalize_chunking_config(
@@ -1397,10 +1456,24 @@ class KnowledgeLibraryService:
             json.dumps({"mode": parser_mode, "chunking": chunking_config}, sort_keys=True).encode("utf-8")
         ).hexdigest()
         try:
-            self.store.update_document(document_id, {"status": "parsing", "parser_params_hash": params_hash})
-            self.store.update_job(job_id, {"status": "running", "stage": "parsing", "started_at_ms": now_ms()})
-            parsed = self.parsers.parse(Path(str(row["stored_path"])), mode=parser_mode)
-            if self.store.job_is_cancelled(job_id):
+            with self._job_state_lock:
+                if not self._job_is_active_locked(job_id, revision):
+                    return self._document_result_or_deleted(document_id, base_id=base_id)
+                self.store.update_document(document_id, {"status": "parsing", "parser_params_hash": params_hash})
+                self.store.update_job(job_id, {"status": "running", "stage": "parsing", "started_at_ms": now_ms()})
+            source_path = Path(str(row["stored_path"]))
+            # A paper profile explicitly asks for structure when a layout
+            # engine is configured; a long text layer is not a layout check.
+            effective_parser = (
+                "mineru" if parser_mode == "auto" and chunking_config["strategy"] == "paper"
+                and source_path.suffix.lower() == ".pdf" and self.config.mineru_enabled
+                else parser_mode
+            )
+            parsed = ParserRouter.validate_output(
+                self.parsers.parse(source_path, mode=effective_parser),
+                Path(str(row["stored_path"])),
+            )
+            if self._job_should_stop(job_id, revision):
                 return self._document_result_or_deleted(document_id, base_id=base_id)
             chunks = _chunk_document(
                 parsed,
@@ -1410,12 +1483,15 @@ class KnowledgeLibraryService:
             )
             if not chunks:
                 raise DocumentParseError("document produced no indexable chunks", code="empty_document")
-            self.store.update_document(document_id, {"status": "indexing"})
-            self.store.update_job(job_id, {"stage": "indexing"})
+            with self._job_state_lock:
+                if not self._job_is_active_locked(job_id, revision):
+                    return self._document_result_or_deleted(document_id, base_id=base_id)
+                self.store.update_document(document_id, {"status": "indexing"})
+                self.store.update_job(job_id, {"stage": "indexing"})
             asset_links = self._store_assets(parsed)
             output_hash = hashlib.sha256(parsed.text.encode("utf-8")).hexdigest()
             artifact_path = self._store_artifact(base_id, document_id, revision, parsed.text)
-            if self.store.job_is_cancelled(job_id):
+            if self._job_should_stop(job_id, revision):
                 _unlink_quietly(artifact_path)
                 self._remove_unreferenced_assets()
                 return self._document_result_or_deleted(document_id, base_id=base_id)
@@ -1431,51 +1507,116 @@ class KnowledgeLibraryService:
                     "chunk_count": len(chunks),
                     "error_code": "",
                     "error_message": "",
-                    "metadata_json": json.dumps(parsed.metadata, ensure_ascii=False, sort_keys=True),
+                    "metadata_json": json.dumps({**parsed.metadata, "parsedBlocks": serialize_blocks(parsed.blocks)}, ensure_ascii=False, sort_keys=True),
                     "artifact_path": str(artifact_path),
                     "indexed_config_revision": int(base["config_revision"]),
                 },
             )
             if not applied:
-                self.store.update_job(
-                    job_id,
-                    {"status": "superseded", "stage": "stale_result_dropped", "finished_at_ms": now_ms()},
-                )
+                with self._job_state_lock:
+                    if not self.store.job_is_cancelled(job_id):
+                        current_job = self.store.get_job(job_id)
+                        if str(current_job["status"]) in {"queued", "running"}:
+                            self.store.update_job(
+                                job_id,
+                                {
+                                    "status": "superseded",
+                                    "stage": "stale_result_dropped",
+                                    "finished_at_ms": now_ms(),
+                                },
+                            )
                 _unlink_quietly(artifact_path)
                 self._remove_unreferenced_assets()
                 return self._document_result_or_deleted(document_id, base_id=base_id)
             self.store.replace_document_asset_links(document_id, asset_links)
             self._remove_unreferenced_assets()
             self._remove_superseded_artifacts(base_id, document_id, keep=artifact_path)
+            # Keep the potentially slow projection write outside the state
+            # lock so cancellation remains responsive.  The short gate before
+            # and after it prevents a cancelled/stale attempt from publishing
+            # a successful terminal job state.
+            if self._job_should_stop(job_id, revision):
+                return self._document_result_or_deleted(document_id, base_id=base_id)
             try:
                 self.dense_index.replace_document(document_id, chunks)
                 self._dense_error = ""
             except Exception as exc:
                 self._dense_error = str(exc)
-            self.store.update_job(job_id, {"status": "succeeded", "stage": "ready", "finished_at_ms": now_ms()})
+            with self._job_state_lock:
+                if not self._job_is_active_locked(job_id, revision):
+                    return self._document_result_or_deleted(document_id, base_id=base_id)
+                self.store.update_job(job_id, {"status": "succeeded", "stage": "ready", "finished_at_ms": now_ms()})
         except Exception as exc:
             error = exc if isinstance(exc, KnowledgeLibraryError) else DocumentParseError(str(exc))
-            try:
-                current = self.store.get_document(document_id)
-            except KnowledgeNotFoundError:
-                current = None
-            if current is not None and int(current["revision"]) == revision:
-                self.store.update_document(
-                    document_id,
-                    {"status": "failed", "error_code": error.code, "error_message": str(error)[:2_000]},
-                )
-            if not self.store.job_is_cancelled(job_id):
-                self.store.update_job(
-                    job_id,
-                    {
-                        "status": "failed",
-                        "stage": "failed",
-                        "error_code": error.code,
-                        "error_message": str(error)[:2_000],
-                        "finished_at_ms": now_ms(),
-                    },
-                )
+            with self._job_state_lock:
+                try:
+                    current = self.store.get_document(document_id)
+                except KnowledgeNotFoundError:
+                    current = None
+                if current is not None and int(current["revision"]) == revision:
+                    if self._job_is_active_locked(job_id, revision):
+                        self.store.update_document(
+                            document_id,
+                            {"status": "failed", "error_code": error.code, "error_message": str(error)[:2_000]},
+                        )
+                if current is not None and int(current["revision"]) != revision:
+                    try:
+                        current_job = self.store.get_job(job_id)
+                    except KnowledgeNotFoundError:
+                        current_job = None
+                    if current_job is not None and str(current_job["status"]) in {"queued", "running"}:
+                        self.store.update_job(
+                            job_id,
+                            {
+                                "status": "superseded",
+                                "stage": "stale_result_dropped",
+                                "finished_at_ms": now_ms(),
+                            },
+                        )
+                elif not self.store.job_is_cancelled(job_id):
+                    self.store.update_job(
+                        job_id,
+                        {
+                            "status": "failed",
+                            "stage": "failed",
+                            "error_code": error.code,
+                            "error_message": str(error)[:2_000],
+                            "finished_at_ms": now_ms(),
+                        },
+                    )
         return self._document_result_or_deleted(document_id, base_id=base_id)
+
+    def _job_should_stop(self, job_id: str, revision: int) -> bool:
+        with self._job_state_lock:
+            return not self._job_is_active_locked(job_id, revision)
+
+    def _job_is_active_locked(self, job_id: str, revision: int) -> bool:
+        """Return whether a job still owns the document revision.
+
+        The document revision is the fencing token for retries and rebuilds.
+        A stale worker may still be executing a parser, but it must never
+        mutate the current document or turn its stale error into the current
+        attempt's failure.
+        """
+
+        try:
+            job = self.store.get_job(job_id)
+        except KnowledgeNotFoundError:
+            return False
+        status = str(job["status"])
+        if status not in {"queued", "running"}:
+            return False
+        if int(job["revision"]) != int(revision) or int(job["document_revision"]) != int(revision):
+            self.store.update_job(
+                job_id,
+                {
+                    "status": "superseded",
+                    "stage": "stale_result_dropped",
+                    "finished_at_ms": now_ms(),
+                },
+            )
+            return False
+        return True
 
     def _store_assets(self, parsed: ParsedDocument) -> list[tuple[str, str]]:
         links: list[tuple[str, str]] = []
@@ -1569,6 +1710,9 @@ class KnowledgeLibraryService:
         }
 
     def _artifact_tables(self, document: Any) -> list[dict[str, Any]]:
+        tables = structured_tables(decode_metadata(document).get("parsedBlocks"), _extract_table_artifacts)
+        if tables is not None:
+            return tables
         raw_path = str(document["artifact_path"] or "")
         if not raw_path:
             return []
@@ -1577,7 +1721,7 @@ class KnowledgeLibraryService:
             text = path.read_text(encoding="utf-8", errors="replace")
         except (OSError, KnowledgeLibraryError):
             return []
-        return _extract_table_artifacts(text)
+        return bound_tables(_extract_table_artifacts(text))
 
     def _delete_dense(self, document_id: str) -> None:
         try:
@@ -1640,6 +1784,11 @@ def _chunk_document(
     base_id: str,
     chunking_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    if (parsed.blocks and chunking_config["strategy"] in {"general", "markdown", "book"}) or chunking_config["strategy"] == "paper":
+        return [
+            {**_chunk_record(document_id, base_id, ordinal, span["content"], span["heading"], span["page"]), "provenance": span["provenance"]}
+            for ordinal, span in enumerate(structured_spans(parsed, chunking_config))
+        ]
     chunk_chars = int(chunking_config["size"])
     overlap_chars = int(chunking_config["overlap"])
     strategy = str(chunking_config["strategy"])
@@ -1834,7 +1983,9 @@ def _document_to_dict(row: Any, *, include_error: bool = True) -> dict[str, Any]
         "indexedConfigRevision": int(row["indexed_config_revision"]),
         "chunkCount": int(row["chunk_count"]),
         "pageCount": _metadata_page_count(metadata),
-        "metadata": metadata,
+        # Keep the reusable parse tree local. Listing documents must not ship
+        # every block (and duplicate table text) to each UI/Agent consumer.
+        "metadata": {key: value for key, value in metadata.items() if key != "parsedBlocks"},
         "createdAtMs": int(row["created_at_ms"]),
         "updatedAtMs": int(row["updated_at_ms"]),
     }
@@ -1856,6 +2007,7 @@ def _chunk_to_dict(row: Any) -> dict[str, Any]:
         "page": int(row["page"]) if row["page"] is not None else None,
         "heading": str(row["heading"] or "") or None,
         "sha256": str(row["content_hash"]),
+        "provenance": decode_metadata(row, field="provenance_json") if "provenance_json" in row.keys() else dict(row.get("provenance") or {}),
     }
 
 
@@ -1883,6 +2035,9 @@ class _BoundedHTMLTableParser(HTMLParser):
         self._cell_parts: list[str] | None = None
         self._cell_is_header = False
         self.rows: list[list[tuple[str, bool]]] = []
+        self.row_count = 0
+        self.truncated_columns = False
+        self.truncated_cells = False
 
     @property
     def caption(self) -> str:
@@ -1915,10 +2070,17 @@ class _BoundedHTMLTableParser(HTMLParser):
         if tag == "caption":
             self._in_caption = False
         elif tag in {"th", "td"} and self._cell_parts is not None and self._row is not None:
+            raw_value = " ".join(self._cell_parts)
+            if len(" ".join(raw_value.split())) > _MAX_TABLE_CELL_CHARS:
+                self.truncated_cells = True
             if len(self._row) < _MAX_TABLE_COLUMNS:
-                self._row.append((_bounded_table_cell(" ".join(self._cell_parts)), self._cell_is_header))
+                self._row.append((_bounded_table_cell(raw_value), self._cell_is_header))
+            else:
+                self.truncated_columns = True
             self._cell_parts = None
         elif tag == "tr" and self._row is not None:
+            if self._row:
+                self.row_count += 1
             if self._row and len(self.rows) <= _MAX_TABLE_ROWS:
                 self.rows.append(self._row)
             self._row = None
@@ -1952,8 +2114,16 @@ def _extract_table_artifacts(markdown: str) -> list[dict[str, Any]]:
                 "columns": item["columns"],
                 "rows": item["rows"],
                 "markdown": raw_markdown[:_MAX_TABLE_MARKDOWN_CHARS],
+                "kind": "table",
+                "sourceBlockOrders": [],
+                "totalRowCount": item.get("totalRowCount"),
+                "truncated": bool(item.get("truncationReasons")),
+                "truncationReasons": list(item.get("truncationReasons") or []),
             }
         )
+    if artifacts and (len(candidates) > _MAX_TABLE_ARTIFACTS or len(html_spans) > _MAX_TABLE_ARTIFACTS):
+        artifacts[-1]["truncated"] = True
+        artifacts[-1]["truncationReasons"].append("tables")
     return artifacts
 
 
@@ -1972,6 +2142,13 @@ def _extract_html_tables(markdown: str) -> tuple[list[dict[str, Any]], list[tupl
         except (ValueError, AssertionError):
             continue
         if not parser.rows:
+            if len(raw_table) < match.end() - match.start():
+                candidates.append({
+                    "_position": match.start(), "title": parser.caption or _nearest_markdown_heading(markdown, match.start()),
+                    "page": _artifact_page(markdown, match.start()), "columns": [], "rows": [],
+                    "markdown": raw_table[:_MAX_TABLE_MARKDOWN_CHARS], "totalRowCount": None,
+                    "truncationReasons": ["scan"],
+                })
             continue
         has_header = any(is_header for _, is_header in parser.rows[0])
         if has_header:
@@ -1984,6 +2161,15 @@ def _extract_html_tables(markdown: str) -> tuple[list[dict[str, Any]], list[tupl
             width = len(columns)
         if not width:
             continue
+        reasons = []
+        if parser.row_count > _MAX_TABLE_ROWS + 1:
+            reasons.append("rows")
+        if parser.truncated_columns:
+            reasons.append("columns")
+        if parser.truncated_cells:
+            reasons.append("cells")
+        if len(raw_table) < match.end() - match.start():
+            reasons.append("scan")
         candidates.append(
             {
                 "_position": match.start(),
@@ -1992,6 +2178,8 @@ def _extract_html_tables(markdown: str) -> tuple[list[dict[str, Any]], list[tupl
                 "columns": [_bounded_table_cell(value) for value in columns],
                 "rows": [_normalize_table_row(row, width=width) for row in data_rows],
                 "markdown": raw_table[:_MAX_TABLE_MARKDOWN_CHARS],
+                "totalRowCount": None if "scan" in reasons else max(0, parser.row_count - 1),
+                "truncationReasons": reasons,
             }
         )
     return candidates, spans
@@ -2031,6 +2219,10 @@ def _extract_pipe_tables(markdown: str, *, excluded_spans: Sequence[tuple[int, i
         width = min(len(header), _MAX_TABLE_COLUMNS)
         columns = [_bounded_table_cell(cell) or f"Column {column + 1}" for column, cell in enumerate(header[:width])]
         rows: list[list[str]] = []
+        total_rows = 0
+        reasons = ["columns"] if len(header) > _MAX_TABLE_COLUMNS else []
+        if any(len(cell) > _MAX_TABLE_CELL_CHARS for cell in header):
+            reasons.append("cells")
         raw_lines = [line, lines[index + 1].rstrip("\r\n")]
         next_index = index + 2
         while next_index < len(lines):
@@ -2040,6 +2232,13 @@ def _extract_pipe_tables(markdown: str, *, excluded_spans: Sequence[tuple[int, i
             cells = _split_markdown_table_row(raw[:_MAX_TABLE_LINE_CHARS])
             if not cells:
                 break
+            total_rows += 1
+            if len(cells) > _MAX_TABLE_COLUMNS:
+                reasons.append("columns")
+            if any(len(cell) > _MAX_TABLE_CELL_CHARS for cell in cells):
+                reasons.append("cells")
+            if len(raw) > _MAX_TABLE_LINE_CHARS:
+                reasons.append("scan")
             if len(rows) < _MAX_TABLE_ROWS:
                 rows.append(_normalize_table_row([(cell, False) for cell in cells], width=width))
                 raw_lines.append(raw[:_MAX_TABLE_LINE_CHARS])
@@ -2052,9 +2251,13 @@ def _extract_pipe_tables(markdown: str, *, excluded_spans: Sequence[tuple[int, i
                 "columns": columns,
                 "rows": rows,
                 "markdown": _bounded_table_markdown(raw_lines),
+                "totalRowCount": total_rows,
+                "truncationReasons": list(dict.fromkeys([*reasons, *(["rows"] if total_rows > _MAX_TABLE_ROWS else [])])),
             }
         )
         index = max(next_index, index + 2)
+    if candidates and len(candidates) >= _MAX_TABLE_ARTIFACTS and index + 1 < len(lines):
+        candidates[-1]["truncationReasons"].append("scan")
     return candidates
 
 

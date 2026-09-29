@@ -22,6 +22,7 @@ export function projectViewContext(project: LabProject, page: ProjectPage, selec
     read: { op: 'read', artifactId: selected.artifactId, artifactRevision: selected.revision },
   } : { kind: 'project_page', page };
   return {
+    contextId: JSON.stringify([project.projectId, page, node ? ['node', node.id] : showsArtifact ? ['artifact', selected.artifactId, selected.revision] : ['page']]),
     kind: 'project', label: node?.title ?? (showsArtifact ? selected.title : project.title),
     detail: `${showsArtifact ? `v${selected.revision} · ${matched ? '随消息发送' : '正文加载中，附带成果引用'}` : node ? '实验结果 · 随消息发送' : '项目概况 · 随消息发送'}`,
     text: JSON.stringify({ projectId: project.projectId, projectRevision: project.revision, page,

@@ -97,7 +97,14 @@ export function App({ frontendProduct }: { frontendProduct?: FrontendProduct } =
 }
 
 function ProductLoading() {
-  return <div aria-label="正在打开产品" className="route-loading" role="status" />;
+  // React replaces index.html's boot surface before the lazy product resolves.
+  // Carry the same visible status across that handoff instead of an empty node.
+  return <main aria-label="正在打开工作台" className="app-boot" role="status">
+    <div className="app-boot__status">
+      <span className="app-boot__indicator" aria-hidden="true" />
+      <span className="app-boot__copy"><strong>正在准备工作台</strong><span>正在载入界面</span></span>
+    </div>
+  </main>;
 }
 
 function FilePreviewLayer() {

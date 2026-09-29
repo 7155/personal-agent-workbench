@@ -39,6 +39,8 @@ export interface AgentActivityProjection {
   updatedAtMs: number;
   /** First source-event sequence, used only as a stable timeline tie-breaker. */
   timelineSequence?: number;
+  /** A turn ended before this activity supplied its own terminal receipt. */
+  settledByTurnStatus?: 'completed' | 'failed' | 'aborted';
 }
 
 export type AgentMessageProjection = UiAgentMessage & {
@@ -2337,6 +2339,7 @@ function completeTurn(
       state.activitiesById[activityId] = {
         ...activity,
         status: status === 'failed' ? 'failed' : 'completed',
+        settledByTurnStatus: status,
         updatedAtMs: nowMs,
       };
     }

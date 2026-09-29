@@ -730,6 +730,30 @@ class RoomTurnRegistry:
                 and dispatch_id in self.child_dispatch_ids
             )
 
+    def finish_exact_dispatch(
+        self, session_id: str, session_turn_id: str, room_turn_id: str, dispatch_id: str,
+    ) -> bool:
+        """Retire a proven drained projection without touching later Session work."""
+        key = (session_id, session_turn_id)
+        with self.lock:
+            if (self.turn_by_session_turn.get(key) != room_turn_id
+                or self.dispatch_by_session_turn.get(key) != dispatch_id):
+                return False
+            self.turn_by_session_turn.pop(key, None)
+            self.dispatch_by_session_turn.pop(key, None)
+            self.work_by_session_turn.pop(key, None)
+            self.child_dispatch_ids.discard(dispatch_id)
+            if (self.pending_turn_by_session.get(session_id) == room_turn_id
+                and self.pending_dispatch_by_session.get(session_id) == dispatch_id):
+                self.pending_turn_by_session.pop(session_id, None)
+                self.pending_dispatch_by_session.pop(session_id, None)
+                self.pending_child_dispatch_by_session.discard(session_id)
+                self.pending_work_by_session.pop(session_id, None)
+            self.pending_events_by_session_turn.pop(key, None)
+            self._pending_event_order = deque(item for item in self._pending_event_order if item != key)
+            self._drop_topic_if_idle(room_turn_id)
+            return True
+
     def finish(
         self,
         session_id: str,

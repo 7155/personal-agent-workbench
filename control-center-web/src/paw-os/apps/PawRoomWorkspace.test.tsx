@@ -27,10 +27,57 @@ vi.mock('./PawStarfield', async (importOriginal) => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.removeItem('pawos.room-observer-auto-open.v1');
+  window.localStorage.removeItem('pawos.room-work-status-visible.v1');
   useRoomLiveStore.getState().reset();
 });
 
 describe('PAWOS Room collaboration tools', () => {
+  it('remembers the composer popup choice and gates automatic observers without sending', async () => {
+    const user = userEvent.setup(); const openWindow = vi.fn();
+    window.localStorage.setItem('pawos.room-observer-auto-open.v1', 'off');
+    const { transport } = renderRoom(900, openWindow);
+    await screen.findByRole('textbox', { name: '协作消息' });
+    const toggle = screen.getByRole('switch', { name: '伙伴窗口自动弹出' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await user.click(screen.getByRole('button', { name: '协同模式' }));
+    expect(openWindow).not.toHaveBeenCalled();
+    await user.click(toggle);
+    await waitFor(() => expect(openWindow).toHaveBeenCalled());
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(window.localStorage.getItem('pawos.room-observer-auto-open.v1')).toBe('on');
+    openWindow.mockClear();
+    await user.click(toggle);
+    expect(openWindow).not.toHaveBeenCalled();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(0);
+    expect(window.localStorage.getItem('pawos.room-observer-auto-open.v1')).toBe('off');
+  });
+
+  it('hides and restores the task status dock independently of popup and execution controls', async () => {
+    const user = userEvent.setup(); const { transport } = renderRoom(900);
+    await screen.findByRole('textbox', { name: '协作消息' });
+    await waitFor(() => expect(screen.getByLabelText('协作状态')).toBeVisible());
+    const toggle = screen.getByRole('switch', { name: '显示任务状态栏' });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByLabelText('协作状态')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toBeEnabled();
+    expect(screen.getByRole('switch', { name: '伙伴窗口自动弹出' })).toHaveAttribute('aria-checked', 'true');
+    expect(window.localStorage.getItem('pawos.room-work-status-visible.v1')).toBe('off');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(0);
+    await user.click(toggle);
+    expect(screen.getByLabelText('协作状态')).toBeVisible();
+    expect(window.localStorage.getItem('pawos.room-work-status-visible.v1')).toBe('on');
+  });
+
+  it('restores the saved hidden status dock without hiding the composer', async () => {
+    window.localStorage.setItem('pawos.room-work-status-visible.v1', 'off');
+    renderRoom(900);
+    await screen.findByRole('textbox', { name: '协作消息' });
+    expect(screen.getByRole('switch', { name: '显示任务状态栏' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByLabelText('协作状态')).not.toBeInTheDocument();
+  });
+
   it('shows recovery rather than an empty first round before the initial snapshot arrives', async () => {
     renderRoom(900);
     expect(screen.queryByText('等待第一轮任务')).not.toBeInTheDocument();

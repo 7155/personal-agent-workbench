@@ -1229,6 +1229,14 @@ def _room_tool_disclosure(
                 for key in _ROOM_TOOL_RESULT_KEYS
                 if key in redacted_result
             }
+        if event_type == "tool_finished":
+            outcome = _room_gateway_outcome(raw_result)
+            # Keep execution certainty ahead of optional display fields when
+            # the bounded Room projection reaches its field-count limit.
+            result_source = {
+                **outcome,
+                **{key: value for key, value in result_source.items() if key not in outcome},
+            }
         bounded_result = _bounded_room_tool_value(result_source)
         if isinstance(bounded_result, Mapping) and bounded_result:
             disclosure["result"] = bounded_result
@@ -1248,6 +1256,43 @@ def _room_tool_disclosure(
             if error:
                 disclosure["error"] = error
     return disclosure
+
+
+def _room_gateway_outcome(raw_result: object) -> dict[str, object]:
+    """Carry the bridge's bounded certainty fields, never infer them from output."""
+
+    if not isinstance(raw_result, Mapping):
+        return {}
+    details = raw_result.get("details")
+    source = details if isinstance(details, Mapping) else raw_result
+    outcome = source.get("executionOutcome")
+    phase = source.get("gatewayRequestPhase")
+    if not isinstance(outcome, str) or not isinstance(phase, str) or (outcome, phase) not in {
+        ("unknown", "sent"), ("not_started", "queued"), ("applied", "sent"),
+    }:
+        return {}
+    result: dict[str, object] = {"executionOutcome": outcome, "gatewayRequestPhase": phase}
+    for key in ("replayAllowed", "retryable", "mutationApplied"):
+        if isinstance(source.get(key), bool):
+            result[key] = source[key]
+    for key in ("errorCode", "gatewayError", "error"):
+        if isinstance(source.get(key), str):
+            result[key] = _redacted_room_text(source[key], maximum=500)
+    timeout = source.get("gatewayTimeoutMs")
+    if isinstance(timeout, int) and not isinstance(timeout, bool) and timeout > 0:
+        result["gatewayTimeoutMs"] = timeout
+    recovery = source.get("gatewayRecovery")
+    if isinstance(recovery, Mapping) and isinstance(recovery.get("state"), str) and recovery.get("state") in {
+        "recovered", "pending", "not_found", "ambiguous", "unavailable",
+    }:
+        result["gatewayRecovery"] = {
+            "state": recovery["state"],
+            **{
+                key: _redacted_room_text(recovery[key], maximum=500)
+                for key in ("approvalId", "error") if isinstance(recovery.get(key), str)
+            },
+        }
+    return result
 
 
 def _bounded_room_tool_value(

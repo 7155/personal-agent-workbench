@@ -22,7 +22,10 @@ export function AssistantTurn({ message }: { message: AssistantMessage }) {
     <article className="ccui-turn ccui-assistant-turn" data-turn-id={message.turnId}>
       {message.actor ? (
         <header className="ccui-assistant-head">
-          <strong>{message.actor}</strong>
+          {surface.renderMessageIdentity?.(message) ?? <>
+            {surface.renderMessageAvatar?.(message)}
+            <strong>{message.actor}</strong>
+          </>}
           {message.actorRole ? <small>{message.actorRole}</small> : null}
           <time dateTime={new Date(message.timestamp).toISOString()}>{surface.formatTimestamp(message.timestamp)}</time>
         </header>
@@ -30,6 +33,7 @@ export function AssistantTurn({ message }: { message: AssistantMessage }) {
       <div className="ccui-assistant-body">
         {message.blocks.map((block) => {
           const override = surface.renderBlock?.(block, message);
+          if (override === null) return null;
           if (override !== undefined) return <div className="ccui-host-block" key={block.id}>{override}</div>;
           const detail = surface.renderBlockDetail?.(block, message);
           if (block.kind === 'thinking') {
@@ -48,6 +52,7 @@ export function AssistantTurn({ message }: { message: AssistantMessage }) {
             <div className="ccui-markdown" key={block.id}>
               <MarkdownBody
                 documentKey={`${message.id}:${block.id}`}
+                sessionId={surface.resolveMessageSessionId?.(message) ?? ''}
                 streamingTail={Boolean(block.streaming)}
                 text={block.text}
               />

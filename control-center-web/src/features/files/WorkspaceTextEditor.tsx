@@ -4,6 +4,8 @@ import type { ControlTransport } from '@/platform/transport';
 import './files-editor.css';
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+/** Reports may embed compressed map previews and charts; keep the editor limit separate. */
+export const MAX_HTML_REPORT_BYTES = 8 * 1024 * 1024;
 const encoder = new TextEncoder();
 type FileIdentity = { sessionId: string; path: string; name: string };
 export interface EditableWorkspacePreview {
@@ -165,10 +167,10 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
   return { panel, editing: Boolean(draft?.base), copyContent: draft?.base ? draft.content : null, resourcePath, draftPreview };
 }
 
-export async function readCompleteFile(transport: ControlTransport, file: FileIdentity, seed?: EditableWorkspacePreview): Promise<Snapshot> {
+export async function readCompleteFile(transport: ControlTransport, file: FileIdentity, seed?: EditableWorkspacePreview, maxBytes = MAX_TEXT_BYTES): Promise<Snapshot> {
   let snapshot = seed && seed.path === file.path ? { ...seed } : await readChunk(transport, file, 0);
   if (!validRevision(snapshot.resourceRevision)) throw new Error('文件服务未提供读取版本，无法安全保存。');
-  if (snapshot.byteSize > MAX_TEXT_BYTES) throw new Error('文本编辑支持最大 2 MiB 的文件。');
+  if (snapshot.byteSize > maxBytes) throw new Error(`文件超过当前读取上限（${Math.round(maxBytes / (1024 * 1024))} MiB）。`);
   const revision = snapshot.resourceRevision;
   const canonicalPath = snapshot.canonicalPath ?? snapshot.path;
   while (snapshot.truncated) {

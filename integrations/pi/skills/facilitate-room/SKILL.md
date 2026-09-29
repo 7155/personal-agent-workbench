@@ -119,3 +119,7 @@ Example: a Facilitator answering one bounded code question works directly. A
 feature with independently accountable runtime and UI outcomes may delegate
 those visible responsibilities, integrate their evidence, and return one Root
 result.
+
+## Jev-owned execution
+
+When the current execution pack identifies a Jev `purpose`, its task graph owns scheduling. Use `room_partner list` to read that bound purpose and its disclosed submission operation. For `plan`, submit a bounded typed plan with `plan_submit`; for `execute`, submit actual result/evidence with `result_submit`; for `verify`, independently inspect the fixed result then use `verification_submit`; for `synthesize`, use `final_submit`. These operations are available only to the matching live Pi execution. Do not use legacy delegate/retry/accept/return to bypass the graph. Stop remains the original Runtime stop. A submission receipt is not verification or execution drain; finish the turn after a successful submission.

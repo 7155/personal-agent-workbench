@@ -35,6 +35,8 @@ export interface RoomDispatchPlan {
   parallelIndex: number;
   parallelSize: number;
   workItemId: string;
+  subjectTaskId: string;
+  purpose: string;
   workItemState: string;
   candidates: RoomDispatchCandidate[];
 }
@@ -110,6 +112,8 @@ export function roomDispatchPlanFromPayload(payload: Record<string, unknown>): R
     parallelIndex: numberValue(payload.parallelIndex, -1),
     parallelSize: numberValue(payload.parallelSize, 0),
     workItemId: stringValue(payload.workItemId),
+    subjectTaskId: stringValue(payload.subjectTaskId),
+    purpose: stringValue(payload.purpose),
     workItemState: stringValue(payload.workItemState),
     candidates,
   };
@@ -184,6 +188,13 @@ const roomToolLabels: Record<string, string> = {
   skill_search: '检索 Skill',
   tool_search: '检索工具',
   tool_load: '加载工具',
+  workspace_shell: '终端命令',
+  workspace_read: '读取文件',
+  workspace_write: '写入文件',
+  workspace_edit: '编辑文件',
+  workspace_patch: '应用补丁',
+  workspace_list: '浏览目录',
+  workspace_search: '搜索内容',
   bash: '终端命令',
   read: '读取文件',
   write: '写入文件',
@@ -206,6 +217,10 @@ const roomToolOpLabels: Record<string, Record<string, string>> = {
     delegate_batch: '批量并行委派',
     message: '给伙伴留言',
     status: '查看伙伴状态',
+    plan_submit: '提交执行方案',
+    result_submit: '提交任务结果',
+    final_submit: '提交最终答复',
+    verification_submit: '提交复核结果',
   },
 };
 
@@ -230,6 +245,29 @@ export interface RoomToolEvidence {
   label: string;
   headline: string;
   facts: RoomToolFact[];
+}
+
+/** A managed-resource read whose public preview is an escaped machine-text
+ * fragment. The original receipt stays in Runtime; the conversation can show
+ * a readable excerpt without treating JSON escapes as a user document. */
+export function roomEscapedManagedRead(activity: RoomActivityProjection): { resourceRef: string; preview: string; truncated: boolean } | undefined {
+  if (stringValue(activity.payload.toolName) !== 'read') return undefined;
+  const resourceRef = /^已读取受管资源 (media:\/\/media_[A-Za-z0-9_-]+)$/u.exec(activity.summary)?.[1];
+  if (!resourceRef) return undefined;
+  const result = recordValue(activity.payload.result);
+  const output = stringValue(result.outputPreview);
+  if (!output.startsWith(`[resourceRef: ${resourceRef}]`)) return undefined;
+  const preview = output.replace(/^\[resourceRef: [^\]]+\]\s*\[resourceRevision: [^\]]+\]\s*/u, '');
+  const escapedLines = preview.match(/\\n/gu)?.length ?? 0;
+  if (!/\\u001b\[/iu.test(preview) && !(escapedLines >= 3 && !preview.includes('\n'))) return undefined;
+  return { resourceRef, preview, truncated: result.outputTruncated === true };
+}
+
+export function readableManagedReadExcerpt(preview: string): string {
+  return preview
+    .replace(/(?:\\u001b|\u001b)\[[0-9;]*[A-Za-z]/giu, '')
+    .replace(/\\r\\n|\\n/gu, '\n')
+    .replace(/\\t/gu, '  ');
 }
 
 export function roomToolEvidence(payload: Record<string, unknown>): RoomToolEvidence | undefined {

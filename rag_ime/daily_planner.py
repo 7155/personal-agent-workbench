@@ -4,7 +4,7 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Mapping, Sequence
 
 from .memory_ingest import normalize_text

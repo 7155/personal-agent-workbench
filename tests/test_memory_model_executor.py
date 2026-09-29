@@ -330,6 +330,41 @@ class GovernedMemoryModelExecutorTests(unittest.TestCase):
         self.assertEqual(response["receipt"]["catalogMaxTokens"], 128_000)
         self.assertNotIn('"messages"', str(runtime.prompts[0]["message"])[:300])
 
+    def test_configured_gpt6_luna_uses_the_verified_live_catalog_profile(self) -> None:
+        runtime = FakeMemoryRuntime(
+            self.sessions,
+            self.events,
+            models=[{
+                "provider": "openai-codex",
+                "id": "gpt-6-luna",
+                "thinkingLevels": ["off", "high", "max"],
+                "contextWindow": 272_000,
+                "maxTokens": 128_000,
+            }],
+        )
+        executor = build_governed_memory_model_executor(
+            runtime,
+            "openai-codex/gpt-6-luna",
+            "max",
+            db_path=self.db_path,
+        )
+        executor.begin_run("memory_book_configured_gpt6")
+        response = executor.complete(
+            messages=[{"role": "user", "content": '{"v":2,"e":[]}'}],
+        )
+
+        self.assertEqual(runtime.model_requests[0]["modelId"], "gpt-6-luna")
+        self.assertEqual(runtime.thinking_requests[0]["level"], "max")
+        self.assertEqual(response["receipt"]["modelId"], "gpt-6-luna")
+        self.assertEqual(response["receipt"]["contextWindow"], 272_000)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            status = memory_curation_model_status(
+                conn,
+                required_model="openai-codex/gpt-6-luna",
+            )
+        self.assertEqual(status["requiredModel"], "openai-codex/gpt-6-luna")
+
     def test_provider_output_budget_is_capped_by_catalog_and_runtime_protocol(self) -> None:
         runtime = FakeMemoryRuntime(
             self.sessions,
@@ -898,6 +933,64 @@ class GovernedMemoryModelExecutorTests(unittest.TestCase):
         self.assertEqual(resumed["state"], "completed")
         self.assertEqual(third_runtime.prompts, [])
 
+    def test_model_change_uses_successor_without_replaying_old_frozen_run(self) -> None:
+        frozen = hashlib.sha256(b"activity-day-under-old-model").hexdigest()
+        old_runtime = FakeMemoryRuntime(self.sessions, self.events)
+        old = self._executor(old_runtime)
+        old_run = old.begin_run(
+            "activity-organization:model-change",
+            frozen_input_sha256=frozen,
+        )
+        old.complete(messages=[{"role": "user", "content": '{"v":2,"e":[]}'}])
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE memory_curation_model_runs SET state = 'running' WHERE run_id = ?",
+                (old_run["runId"],),
+            )
+
+        new_runtime = FakeMemoryRuntime(
+            self.sessions,
+            self.events,
+            models=[{
+                "provider": "openai-codex",
+                "id": "gpt-6-luna",
+                "thinkingLevels": ["off", "high", "max"],
+                "contextWindow": 272_000,
+                "maxTokens": 128_000,
+            }],
+        )
+        changed = build_governed_memory_model_executor(
+            new_runtime,
+            "openai-codex/gpt-6-luna",
+            "max",
+            db_path=self.db_path,
+        )
+        with self.assertRaisesRegex(MemoryModelUnavailable, "active under a different"):
+            changed.begin_run(
+                "activity-organization:model-change",
+                frozen_input_sha256=frozen,
+            )
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE memory_curation_model_runs SET state = 'resumable' WHERE run_id = ?",
+                (old_run["runId"],),
+            )
+        successor = changed.begin_run(
+            "activity-organization:model-change",
+            frozen_input_sha256=frozen,
+        )
+        response = changed.complete(
+            messages=[{"role": "user", "content": '{"v":2,"e":[]}'}],
+        )
+
+        self.assertEqual(successor["runId"], f"{old_run['runId']}:attempt:2")
+        self.assertNotEqual(successor["sessionId"], old_run["sessionId"])
+        self.assertEqual(response["receipt"]["modelId"], "gpt-6-luna")
+        self.assertEqual(old.run_status(old_run["runId"])["state"], "resumable")
+        self.assertEqual(old.run_status(old_run["runId"])["requests"][0]["state"], "completed")
+        self.assertEqual(len(old_runtime.prompts), 1)
+        self.assertEqual(len(new_runtime.prompts), 1)
+
     def test_interrupted_running_run_is_recovered_as_resumable(self) -> None:
         frozen = hashlib.sha256(b"interrupted-batch").hexdigest()
         first_runtime = FakeMemoryRuntime(self.sessions, self.events)
@@ -947,6 +1040,86 @@ class GovernedMemoryModelExecutorTests(unittest.TestCase):
         self.assertEqual(status["requests"][0]["state"], "resumable")
         self.assertEqual(self.sessions.get(str(run["sessionId"]))["status"], "idle")
         self.assertEqual(runtime.closed, [])
+
+    def test_retry_replays_only_a_confirmed_timeout_abort(self) -> None:
+        runtime = FakeMemoryRuntime(self.sessions, self.events, settle=False)
+        executor = self._executor(runtime, timeout_seconds=0.01)
+        executor.begin_run("memory_book_confirmed_timeout_abort")
+        messages = [{"role": "user", "content": '{"v":2,"e":[]}'}]
+        original_abort = runtime.abort
+
+        def abort_with_settlement(session_id: str) -> dict[str, object]:
+            original_abort(session_id)
+            prompt = runtime.prompts[-1]
+            turn_id = str(prompt["turnId"])
+            runtime.settlements[turn_id] = {
+                "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                "sessionId": session_id,
+                "runtimeSessionId": f"pi-{session_id}",
+                "turnId": turn_id,
+                "clientMessageId": prompt["clientMessageId"],
+                "receipt": {
+                    "schemaVersion": "pi.agent-settled.v2",
+                    "sessionId": f"pi-{session_id}",
+                    "disposition": "aborted",
+                    "stopReason": "aborted",
+                },
+            }
+            return {
+                "schemaVersion": "rag-ime.pi-session-abort-receipt.v1",
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "lifecycle": {"drained": True, "idle": True},
+            }
+
+        runtime.abort = abort_with_settlement  # type: ignore[method-assign]
+        with self.assertRaises(MemoryModelTimeout):
+            executor.complete(messages=messages)
+        first = executor.run_status("memory_book_confirmed_timeout_abort")["requests"][0]
+        self.assertEqual(first["state"], "resumable")
+        self.assertEqual(len(runtime.prompts), 1)
+
+        runtime.settle = True
+        completed = executor.complete(messages=messages)
+        self.assertEqual(len(runtime.prompts), 2)
+        self.assertEqual(
+            runtime.prompts[1]["clientMessageId"], first["requestId"]
+        )
+        self.assertNotEqual(
+            runtime.prompts[1]["sessionId"], runtime.prompts[0]["sessionId"]
+        )
+        self.assertEqual(completed["receipt"]["replayRecovery"]["reasonCode"], "own_timeout_abort")
+        self.assertEqual(
+            executor.run_status("memory_book_confirmed_timeout_abort")["requests"][0]["attemptCount"],
+            2,
+        )
+
+    def test_aborted_turn_without_matching_abort_receipt_is_not_replayed(self) -> None:
+        runtime = FakeMemoryRuntime(self.sessions, self.events, settle=False)
+        executor = self._executor(runtime, timeout_seconds=0.01)
+        executor.begin_run("memory_book_unproven_abort")
+        messages = [{"role": "user", "content": '{"v":2,"e":[]}'}]
+
+        with self.assertRaises(MemoryModelTimeout):
+            executor.complete(messages=messages)
+        prompt = runtime.prompts[0]
+        runtime.settlements[str(prompt["turnId"])] = {
+            "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+            "sessionId": prompt["sessionId"],
+            "runtimeSessionId": f"pi-{prompt['sessionId']}",
+            "turnId": prompt["turnId"],
+            "clientMessageId": prompt["clientMessageId"],
+            "receipt": {
+                "schemaVersion": "pi.agent-settled.v2",
+                "sessionId": f"pi-{prompt['sessionId']}",
+                "disposition": "aborted",
+                "stopReason": "aborted",
+            },
+        }
+
+        with self.assertRaisesRegex(MemoryModelUnavailable, "not replayed: aborted"):
+            executor.complete(messages=messages)
+        self.assertEqual(len(runtime.prompts), 1)
 
     def test_settlement_read_timeout_keeps_the_accepted_turn_live_and_resumable(self) -> None:
         runtime = FakeMemoryRuntime(self.sessions, self.events)

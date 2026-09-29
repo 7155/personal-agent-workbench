@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
@@ -11,6 +11,7 @@ import { PawOsAppSurfaceProvider, PawOsDesktopProvider } from '@/features/paw-os
 import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
 import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
 import { PawAgentApp } from './PawAgentApp';
+import { agentModeStore } from '@/features/semantic-workspace/agent-mode-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { parseRoomEvent } from '@/contracts/validators';
 
@@ -37,6 +38,9 @@ vi.mock('./PawRoomWorkspace', () => ({
 }));
 vi.mock('@/features/roles', () => ({ RolesFeature: () => <div>角色工作区</div> }));
 
+// These are the retained traditional workflows; first-use Jev is covered in
+// PawAgentModes and PawAgentHome with no stored preference.
+beforeEach(() => agentModeStore.select('traditional'));
 afterEach(() => {
   cleanup();
   useRoomLiveStore.getState().reset();
@@ -44,6 +48,62 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('opens a selected Room without starting the hidden Session catalog', async () => {
+    const sessions = deferred<unknown>();
+    const transport = createTransport({ sessionCatalogHandler: () => sessions.promise });
+    renderAgent(transport, { initialRoute: '/agent?room=room-old' });
+
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('room-record-title')).toHaveTextContent('迁移作战室'));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.list')).toBe(false);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.roles.list')).toBe(true);
+  });
+
+  it('shows Room directory results while a visible multi-page Session catalog is slow', async () => {
+    const laterPage = deferred<unknown>();
+    const transport = createTransport({ sessionCatalogHandler: (request) => (
+      request.query?.beforeId
+        ? laterPage.promise
+        : { items: [{ id: 'session-old', title: '发布检查', mode: 'coordinator', status: 'idle', updatedAtMs: 2 }], hasMore: true, nextBeforeUpdatedAtMs: 2, nextBeforeId: 'session-old' }
+    ) });
+    renderAgent(transport);
+
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.sessions.list')).toHaveLength(2));
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^迁移作战室/ })).toBeInTheDocument();
+    expect(rail.querySelector('.paw-agent-recents')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('aborts an abandoned Session page when switching to a closed Room directory', async () => {
+    const firstPage = deferred<unknown>();
+    const transport = createTransport({ sessionCatalogHandler: () => firstPage.promise });
+    const view = renderAgent(transport);
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.list')).toBe(true));
+    const pending = transport.requests.find(({ request }) => request.pathId === 'agent.sessions.list')!.request;
+
+    view.rerender(agentTree(transport, { initialRoute: '/agent?room=room-old' }));
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(pending.signal?.aborted).toBe(true);
+    await act(async () => {
+      firstPage.resolve({ items: [], hasMore: true, nextBeforeUpdatedAtMs: 42, nextBeforeId: 'oldest-page' });
+      await firstPage.promise;
+    });
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.sessions.list')).toHaveLength(1);
+  });
+
+  it('loads the complete Session directory when the selected Room rail opens', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport();
+    renderAgent(transport, { initialRoute: '/agent?room=room-old' });
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.list')).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: '打开工作记录' }));
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^发布检查/ })).toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.list')).toBe(true);
+  });
+
   it('commits the new-work shell before catalog hydration starts on the next frame', async () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -111,7 +171,7 @@ describe('PAWOS Agent App', () => {
       </PawOsAppSurfaceProvider>,
     );
 
-    expect(screen.getByTestId('room-record-title')).toHaveTextContent('missing');
+    expect(await screen.findByTestId('room-record-title')).toHaveTextContent('missing');
     expect(catalogRequestPaths(transport)).toEqual([]);
     await user.click(screen.getByRole('button', { name: '接收 Room 快照' }));
 
@@ -851,6 +911,7 @@ function createTransport(options: {
   preferencesHandler?: () => unknown | Promise<unknown>;
   rooms?: RoomSummary[];
   sessions?: MockSessionSummary[];
+  sessionCatalogHandler?: (request: ControlRequest) => unknown | Promise<unknown>;
 } = {}) {
   let sessions: MockSessionSummary[] = options.sessions ?? [{
     id: 'session-old', title: '发布检查', mode: 'coordinator', status: 'idle', updatedAtMs: 2,
@@ -866,11 +927,13 @@ function createTransport(options: {
   }];
   return new MockControlTransport({
     routes: {
-      'agent.sessions.list': (request: ControlRequest) => ({
+      'agent.sessions.list': options.sessionCatalogHandler ?? ((request: ControlRequest) => ({
         ok: true,
         items: request.query?.includeArchived ? sessions : sessions.filter((session) => session.status !== 'archived'),
-      }),
+      })),
       'agent.rooms.list': () => ({ ok: true, items: rooms }),
+      'agent.room.get': (request: ControlRequest) => ({ ok: true, room: rooms.find(room => room.id === request.params?.roomId) ?? roomFixture({ id: request.params?.roomId }) }),
+      'agent.jev.get': { ok: true, mode: 'jev', items: [] },
       'agent.roles.list': {
         ok: true,
         items: options.personas ?? [persona('builder', '构建者'), persona('reviewer', '审阅者')],

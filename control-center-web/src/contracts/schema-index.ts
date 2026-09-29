@@ -5905,7 +5905,7 @@ export const contractSchemas = {
           },
           "requiredModel": {
             "type": "string",
-            "const": "openai-codex/gpt-5.6-luna"
+            "minLength": 3
           },
           "requiredThinkingLevel": {
             "type": "string",
@@ -8159,7 +8159,8 @@ export const contractSchemas = {
               "sequential",
               "natural",
               "parallel",
-              "invite_only"
+              "invite_only",
+              "jev"
             ]
           },
           "routingConfig": {
@@ -8708,7 +8709,8 @@ export const contractSchemas = {
           "sequential",
           "natural",
           "parallel",
-          "invite_only"
+          "invite_only",
+          "jev"
         ]
       },
       "routingConfig": {
@@ -17253,6 +17255,7 @@ export const contractSchemas = {
             "enum": [
               "general",
               "markdown",
+              "paper",
               "book",
               "qa",
               "laws",
@@ -25930,6 +25933,51 @@ export const contractSchemas = {
             "minLength": 1
           }
         }
+      }
+    }
+  },
+  "space-organization-command.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "rag-ime.space-organization-command.v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "commandId",
+      "spaceKey",
+      "expectedRevision",
+      "operation",
+      "value"
+    ],
+    "properties": {
+      "commandId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "spaceKey": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 300
+      },
+      "expectedRevision": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "operation": {
+        "enum": [
+          "category",
+          "placement",
+          "pinned",
+          "group",
+          "proposal"
+        ]
+      },
+      "value": {
+        "type": [
+          "string",
+          "boolean"
+        ],
+        "maxLength": 100
       }
     }
   },

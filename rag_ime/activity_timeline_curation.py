@@ -14,9 +14,9 @@ from .text_utils import compact_whitespace
 ACTIVITY_ORGANIZATION_INPUT_VERSION = "rag-ime.activity-organization-input.v1"
 ACTIVITY_ORGANIZATION_OUTPUT_VERSION = "rag-ime.activity-organization-output.v1"
 ACTIVITY_ORGANIZATION_VERDICT_VERSION = "rag-ime.activity-organization-verdict.v1"
-ACTIVITY_ORGANIZATION_PROMPT_VERSION = "activity-organizer-luna-v4"
+ACTIVITY_ORGANIZATION_PROMPT_VERSION = "activity-organizer-luna-v5"
 ACTIVITY_ORGANIZATION_VERIFIER_PROMPT_VERSION = "activity-organizer-verifier-luna-v2"
-ACTIVITY_ORGANIZATION_REPAIR_PROMPT_VERSION = "activity-organizer-repair-luna-v2"
+ACTIVITY_ORGANIZATION_REPAIR_PROMPT_VERSION = "activity-organizer-repair-luna-v3"
 ACTIVITY_ORGANIZATION_CONTRACT_REPAIR_PROMPT_VERSION = (
     "activity-organizer-contract-repair-luna-v2"
 )
@@ -484,6 +484,16 @@ Hard rules:
 13. Return only the structured output required by the supplied JSON schema.
 14. schemaVersion must be exactly {ACTIVITY_ORGANIZATION_OUTPUT_VERSION}. Never shorten it
    to a numeric or generic version such as 1 or 1.0.
+15. A single ref may mix an explicit continuing work thread with a secondary request.
+   Keep that ref exactly once with its supported primary work thread; preserve the
+   secondary request as unresolved in the summary when useful. Do not discard clear
+   primary work merely because the same ref also contains another topic.
+16. The same model or Tool name across different projects is not evidence of one
+   Activity. Explicit corrections naming separate projects, work objects, or next
+   steps override a shared name.
+17. A content-free command or exit-code receipt does not prove what was executed.
+   Without a reliable link to an explicit work sequence, consistently place such
+   receipts in unclassified, even when nearby receipts were attached elsewhere.
 
 BEGIN_TRUSTED_OUTPUT_SCHEMA
 {schema_text}
@@ -590,6 +600,15 @@ Hard rules:
 8. Return only the supplied Activity organization JSON schema, not a review or explanation.
 9. schemaVersion must be exactly {ACTIVITY_ORGANIZATION_OUTPUT_VERSION}; every Activity must
    use eventRefs, confidence, and boundaryBasis exactly as named by the trusted schema.
+10. When a challenged ref mixes ongoing work and another request, retain its explicit
+    primary work with the continuing Activity and qualify the secondary request.
+    Never copy one atomic ref into two Activities or abandon its clear primary work.
+11. Separate explicitly different projects or independently resumable outcomes even
+    when they mention the same model or Tool. Treat a correction of project scope as
+    stronger evidence than a shared product or model name.
+12. Apply one consistent rule to content-free exit-code receipts: without a reliable
+    execution link, leave all comparable receipts unclassified. Do not infer what
+    an unknown command accomplished from its exit code.
 
 BEGIN_TRUSTED_OUTPUT_SCHEMA
 {schema_text}

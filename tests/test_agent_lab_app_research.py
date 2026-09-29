@@ -66,6 +66,28 @@ class AppResearchTests(unittest.TestCase):
         self.search.assert_not_called()
         self.assertFalse((self.root / '.knowledge-cache').exists())
 
+    def test_discover_opaque_filename_uses_frozen_first_page_identity(self):
+        self.snapshot['documents'][0]['title'] = 'semantic_opaque'
+        self.snapshot['sources']['one']['title'] = 'semantic_opaque'
+        chunk = self.snapshot['chunks'][0]
+        chunk['content'] = 'On recent mass balance changes. M. R. van den Broeke. Abstract.'
+        chunk['contentHash'] = hashlib.sha256(chunk['content'].encode()).hexdigest()
+        raw = json.dumps(self.snapshot).encode()
+        (self.root / 'snapshot.json').write_bytes(raw)
+        self.knowledge['snapshotSha256'] = hashlib.sha256(raw).hexdigest()
+        self.reader = self.make_reader()
+        found = self.execute({'op': 'discover', 'query': 'van den Broeke'})
+        self.assertEqual([row['sourceId'] for row in found['documents']], ['source-one'])
+        self.assertEqual(found['documents'][0]['matchBasis'], 'first_page_text')
+        self.assertEqual(found['sources'], [])
+        self.assertEqual(found['budget']['executedSourceReadCalls'], 0)
+        self.search.assert_not_called()
+
+    def test_discover_does_not_use_later_references_as_author_identity(self):
+        found = self.execute({'op': 'discover', 'query': 'other papers'})
+        self.assertEqual(found['documents'], [])
+        self.search.assert_not_called()
+
     def test_paged_small_read_of_large_chunk_never_requires_full_chunk_budget(self):
         result = self.execute({'op': 'open', 'sourceId': 'source-one', 'offset': 1, 'maxChars': 80})
         self.assertEqual(sum(len(x['text']) for x in result['sources']), 80)

@@ -27,7 +27,7 @@ export interface DocumentKnowledgeBase {
 }
 
 export interface KnowledgeChunkingConfig {
-  strategy: 'general' | 'markdown' | 'book' | 'qa' | 'laws' | 'separator' | 'fixed';
+  strategy: 'general' | 'markdown' | 'paper' | 'book' | 'qa' | 'laws' | 'separator' | 'fixed';
   size: number;
   overlap: number;
   separator: string;
@@ -80,6 +80,20 @@ export interface KnowledgeChunk {
   lineStart: number | null;
   lineEnd: number | null;
   tokenCount: number;
+  provenance?: KnowledgeProvenance;
+}
+
+export interface KnowledgeProvenance {
+  kind: string;
+  parser: string;
+  headingPath: string[];
+  split: boolean;
+  sourceBlocks: Array<{
+    page: number | null; bbox: number[] | null; coordinateSystem: string;
+    id?: string; order?: number | null; assetSha256?: string; imagePath?: string;
+    sheetName?: string; sourcePart?: string; ocrApplied?: boolean | null;
+    chartDataAvailable?: boolean | null;
+  }>;
 }
 
 export interface KnowledgePageSummary {
@@ -96,6 +110,11 @@ export interface KnowledgeAsset {
   readPath: string;
   page: number | null;
   caption: string;
+  pages?: number[];
+  sourcePaths?: string[];
+  locations?: Array<{ sourceBlockOrder: number; page: number | null; caption: string }>;
+  locationCount?: number;
+  locationsTruncated?: boolean;
 }
 
 export interface KnowledgeTableArtifact {
@@ -105,6 +124,11 @@ export interface KnowledgeTableArtifact {
   columns: string[];
   rows: string[][];
   markdown: string;
+  kind?: string;
+  sourceBlockOrders?: number[];
+  dataAvailable?: boolean;
+  truncated?: boolean;
+  totalRowCount?: number | null;
 }
 
 export interface KnowledgeDocumentDetail {
@@ -260,6 +284,7 @@ export interface KnowledgeSearchHit {
   heading: string;
   lineStart: number | null;
   lineEnd: number | null;
+  provenance?: KnowledgeProvenance;
   diagnostics: {
     effectiveMode: 'hybrid' | 'lexical' | 'dense' | 'unknown';
     lexicalRank: number | null;
@@ -760,6 +785,7 @@ export async function previewKnowledgeChunking(
       lineStart: null,
       lineEnd: null,
       tokenCount: number(row.tokenCount),
+      provenance: normalizeProvenance(row.provenance),
     } satisfies KnowledgeChunk;
   });
   return {
@@ -797,7 +823,7 @@ export async function searchKnowledgeBase(
       mode: config.mode,
       threshold: config.threshold,
       rerank: config.rerankEnabled,
-      rerankCandidateDepth: config.rerankCandidateDepth,
+      ...(config.rerankEnabled ? { rerankCandidateDepth: config.rerankCandidateDepth } : {}),
     },
     ...(signal ? { signal } : {}),
   });
@@ -827,7 +853,7 @@ export function chooseKnowledgeFiles(maxFiles = 20): Promise<File[]> {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.webp';
+    input.accept = '.pdf,.epub,.docx,.pptx,.xlsx,.doc,.ppt,.xls,.txt,.md,.markdown,.rst,.csv,.tsv,.json,.html,.htm,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp';
     input.addEventListener('change', () => resolve([...(input.files ?? [])].slice(0, maxFiles)), { once: true });
     input.addEventListener('cancel', () => resolve([]), { once: true });
     input.click();
@@ -996,6 +1022,7 @@ function normalizeDocumentDetail(value: unknown, baseId: string, documentId: str
       lineStart: nullableNumber(row.lineStart ?? row.startLine),
       lineEnd: nullableNumber(row.lineEnd ?? row.endLine),
       tokenCount: number(row.tokenCount ?? row.tokens),
+      provenance: normalizeProvenance(row.provenance),
     } satisfies KnowledgeChunk;
   });
   return {
@@ -1018,6 +1045,14 @@ function normalizeDocumentDetail(value: unknown, baseId: string, documentId: str
         readPath: safeAssetPath(text(row.readPath)),
         page: nullableNumber(row.page),
         caption: text(row.caption),
+        pages: list(row.pages).filter((value): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0),
+        sourcePaths: stringList(row.sourcePaths, 64),
+        locations: list(row.locations).slice(0, 64).map((location) => {
+          const item = record(location);
+          return { sourceBlockOrder: typeof item.sourceBlockOrder === 'number' ? item.sourceBlockOrder : -1, page: nullableNumber(item.page), caption: text(item.caption) };
+        }).filter((location) => Number.isSafeInteger(location.sourceBlockOrder) && location.sourceBlockOrder >= 0),
+        locationCount: number(row.locationCount),
+        locationsTruncated: row.locationsTruncated === true || list(row.locations).length > 64,
       } satisfies KnowledgeAsset;
     }),
     tables: list(envelope.tables).map((item, index) => {
@@ -1026,9 +1061,14 @@ function normalizeDocumentDetail(value: unknown, baseId: string, documentId: str
         id: text(row.tableId, text(row.id, `table-${index + 1}`)),
         title: text(row.title, `表格 ${index + 1}`),
         page: nullableNumber(row.page),
-        columns: stringList(row.columns, 64),
-        rows: list(row.rows).map((cells) => stringList(cells, 64)).slice(0, 500),
+        columns: stringList(row.columns, 256),
+        rows: list(row.rows).slice(0, 500).map((cells) => stringList(cells, 256)),
         markdown: text(row.markdown),
+        kind: text(row.kind, 'table'),
+        sourceBlockOrders: list(row.sourceBlockOrders).filter((order): order is number => typeof order === 'number' && Number.isSafeInteger(order) && order >= 0),
+        dataAvailable: typeof row.dataAvailable === 'boolean' ? row.dataAvailable : list(row.columns).length > 0,
+        truncated: row.truncated === true || list(row.rows).length > 500 || list(row.columns).length > 256 || list(row.rows).some((cells) => list(cells).length > 256),
+        totalRowCount: nullableNumber(row.totalRowCount),
       } satisfies KnowledgeTableArtifact;
     }),
     artifact: normalizeArtifact(envelope.artifact),
@@ -1073,7 +1113,7 @@ function normalizeChunkingConfig(value: unknown): KnowledgeChunkingConfig {
   const rawStrategy = text(row.strategy, 'markdown');
   const strategy = rawStrategy === 'paragraph' ? 'general' : rawStrategy;
   return {
-    strategy: ['general', 'markdown', 'book', 'qa', 'laws', 'separator', 'fixed'].includes(strategy)
+    strategy: ['general', 'markdown', 'paper', 'book', 'qa', 'laws', 'separator', 'fixed'].includes(strategy)
       ? strategy as KnowledgeChunkingConfig['strategy']
       : 'markdown',
     size: boundedNumber(row.size, 200, 8_000, 1_200),
@@ -1285,6 +1325,7 @@ function normalizeSearchHits(value: unknown): KnowledgeSearchHit[] {
       heading: text(row.heading, text(citation.heading)),
       lineStart: nullableNumber(row.lineStart ?? citation.lineStart),
       lineEnd: nullableNumber(row.lineEnd ?? citation.lineEnd),
+      provenance: normalizeProvenance(row.provenance ?? citation),
       diagnostics: {
         effectiveMode: effectiveMode === 'hybrid' || effectiveMode === 'lexical' || effectiveMode === 'dense' ? effectiveMode : 'unknown',
         lexicalRank: nullableNumber(diagnostics.lexicalRank),
@@ -1306,6 +1347,27 @@ function normalizeSearchHits(value: unknown): KnowledgeSearchHit[] {
       },
     };
   });
+}
+
+function normalizeProvenance(value: unknown): KnowledgeProvenance | undefined {
+  const row = record(value);
+  if (!row.kind && !Array.isArray(row.sourceBlocks)) return undefined;
+  return {
+    kind: text(row.kind), parser: text(row.parser), split: row.split === true,
+    headingPath: list(row.headingPath).map((item) => text(item)).filter(Boolean),
+    sourceBlocks: list(row.sourceBlocks).map((item) => {
+      const block = record(item);
+      const metadata = record(block.metadata);
+      const bbox = list(block.bbox);
+      return {
+        id: text(block.id), order: typeof block.order === 'number' && Number.isSafeInteger(block.order) && block.order >= 0 ? block.order : null,
+        page: nullableNumber(block.page), coordinateSystem: text(metadata.coordinateSystem), bbox: bbox.length === 4 && bbox.every((value) => typeof value === 'number' && Number.isFinite(value)) ? bbox as number[] : null,
+        assetSha256: text(metadata.assetSha256), imagePath: text(metadata.imagePath), sheetName: text(metadata.sheetName), sourcePart: text(metadata.sourcePart),
+        ocrApplied: typeof metadata.ocrApplied === 'boolean' ? metadata.ocrApplied : null,
+        chartDataAvailable: typeof metadata.chartDataAvailable === 'boolean' ? metadata.chartDataAvailable : null,
+      };
+    }),
+  };
 }
 
 function normalizeSearchRetrieval(value: unknown): KnowledgeSearchRetrieval | null {

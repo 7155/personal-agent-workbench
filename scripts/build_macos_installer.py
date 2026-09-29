@@ -20,6 +20,7 @@ INSTALLER_FILES = (
     'scripts/build_control_center_web.sh', 'scripts/build_paw_os_electron_host.sh',
     'scripts/build_voice_input.sh', 'scripts/build_desktop_bridge.sh',
     'scripts/install_sidecar_launch_agent.sh',
+    'scripts/build_ego_browser_runtime.py',
     'scripts/install_memory_book_maintenance_launch_agent.sh',
     'scripts/support/prebuilt_product.sh',
 )
@@ -89,6 +90,10 @@ def main() -> None:
     if not all((portable_ui / name).is_file() for name in ('agent-ui.js', 'agent-ui.css')):
         raise SystemExit('Build portable Agent UI controls before packaging the installer.')
     run('/usr/bin/ditto', portable_ui, source / 'control-center-web/.generated/portable-agent-ui')
+    if git('rev-parse', 'HEAD') != commit:
+        raise SystemExit('Browser runtime must be packaged from the desktop product source revision.')
+    run(sys.executable, ROOT / 'scripts/build_ego_browser_runtime.py',
+        '--output', source / 'integrations/ego-browser/upstream', '--replace')
     run('/usr/bin/ditto', args.pi_payload, payload / 'pi-runtime')
     pi_manifest_path = payload / 'pi-runtime/manifest.json'
     pi = json.loads(pi_manifest_path.read_text())

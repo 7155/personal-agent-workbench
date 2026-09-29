@@ -374,6 +374,25 @@ class PiRuntimeHostManager:
             },
         }
 
+    def is_turn_active(self, session_id: str, turn_id: str, *, client_message_id: str) -> bool:
+        """Observe this Host's exact live turn without opening or querying Pi.
+
+        Persisted activity and a restored idle binding do not prove that a
+        Provider run survived a Host restart. False means unconfirmed, not
+        physically drained; settlement remains the separate authority.
+        """
+        if not session_id or not turn_id or not client_message_id:
+            return False
+        with self._lock:
+            state = self._states.get(session_id)
+            return bool(
+                self._client is not None and self._client.running
+                and session_id in self._open_sessions and state is not None
+                and state.turn_id == turn_id
+                and state.client_message_id == client_message_id
+                and state.abort_requested_turn_id != turn_id
+            )
+
     def panic_kill(self, *, requested_by: str, reason: str) -> dict[str, object]:
         """Immediately kill the registered Host process tree after admin auth."""
         with self._lifecycle_lock:
@@ -558,12 +577,30 @@ class PiRuntimeHostManager:
                         "Pi Runtime Host returned an invalid Session control state"
                     )
                 self._sync_idle_snapshot(session_id, snapshot)
+                recovered_turn_retirement = None
+                restored_turn_id = str(
+                    as_mapping(snapshot.get("activeTurn")).get("turnId") or ""
+                ).strip()
+                if (
+                    retire_recovered_turn
+                    and snapshot.get("isIdle") is True
+                    and restored_turn_id
+                ):
+                    # Catalog/preflight reads may already have opened this
+                    # Session without retiring its restored durable binding.
+                    # Reuse must honor the same exact-idle recovery as open.
+                    recovered_turn_retirement = self.retire_recovered_turn(
+                        session_id, restored_turn_id,
+                    )
+                    snapshot = dict(as_mapping(recovered_turn_retirement.get("state")))
                 with self._lock:
                     self._schedule_idle_locked()
                 return {
                     "state": snapshot,
                     "resourceSnapshot": resource_snapshot,
                     "reused": True,
+                    **({"recoveredTurnRetirement": recovered_turn_retirement}
+                       if recovered_turn_retirement is not None else {}),
                 }
 
             roots = [
@@ -1015,7 +1052,7 @@ class PiRuntimeHostManager:
                 state.prompt_dispatched = False
                 state.prompt_dispatch_signal.clear()
             self._cancel_idle_locked()
-        self.sessions.set_status(session_id, "busy")
+            self.sessions.set_status(session_id, "busy")
         return {
             "reserved": True,
             "reused": same_reservation,
@@ -1062,11 +1099,16 @@ class PiRuntimeHostManager:
             if (
                 state is None
                 or state.turn_id
+                or state.prompt_dispatched
                 or not state.prompt_admission_in_flight
                 or state.admission_client_message_id
                 != normalized_client_message_id
             ):
                 return False
+            # Persist under the same identity fence. If persistence fails the
+            # exact reservation remains retryable; an old release must not mark
+            # a newly reserved or already dispatched Session idle.
+            self.sessions.set_status(session_id, "idle")
             state.prompt_admission_in_flight = False
             state.admission_client_message_id = ""
             state.abort_pending_admission = False
@@ -1074,8 +1116,82 @@ class PiRuntimeHostManager:
             state.prompt_dispatched = False
             state.prompt_dispatch_signal.set()
             self._schedule_idle_locked()
-        self.sessions.set_status(session_id, "idle")
         return True
+
+    def prepare_accepted_turn_projection(
+        self, session_id: str, turn_id: str, *, client_message_id: str,
+    ) -> Callable[[Callable[[str], None]], str]:
+        """Observe the real Host, then return a local projection-only guard.
+
+        Observe before taking a Room lock: ensure can itself consult Room
+        context. Invoke the returned callback under the Room lock so the
+        existing Room -> Runtime admission lock order is preserved. The guard
+        holds Runtime's lock through the projection, rejects a newer admission
+        or Host instance, and never sends prompt or cancellation commands.
+        Its active/settled/retired value is not descendant-drain evidence.
+        """
+        if not session_id or not turn_id or not client_message_id:
+            raise ValueError("accepted projection requires exact turn identity")
+        with self._lifecycle_lock:
+            observed = as_mapping(self.ensure(session_id, retire_recovered_turn=False).get("state"))
+            client = self._require_client()
+        if observed.get("sessionId") != session_id or not isinstance(observed.get("isIdle"), bool):
+            raise PiRuntimeError("Pi returned an invalid projection control state")
+        active = as_mapping(observed.get("activeTurn"))
+        if active and (active.get("turnId") != turn_id or active.get("clientMessageId") != client_message_id):
+            raise PiRuntimeTurnConflict("Pi projection belongs to another active turn")
+        settlement = None
+        candidate = as_mapping(observed.get("turnSettlement"))
+        if candidate and as_mapping(candidate.get("receipt")).get("disposition") != "suspended":
+            settlement = self._validate_turn_settlement(candidate, session_id=session_id,
+                turn_id=turn_id, client_message_id=client_message_id)
+            if not str(as_mapping(settlement.get("receipt")).get("receiptId") or ""):
+                raise PiRuntimeError("Pi projection settlement has no receipt identity")
+        if not active and settlement is None:
+            raise PiRuntimeError("Pi has no exact active or settled turn for this projection")
+
+        def guarded_project(project: Callable[[str], None]) -> str:
+            with self._lock:
+                if self._client is not client or not client.running or session_id not in self._open_sessions:
+                    raise PiRuntimeTurnConflict("Pi Host changed after projection observation")
+                state = self._states.setdefault(session_id, _HostedSessionState())
+                if (state.turn_id and (state.turn_id != turn_id or state.client_message_id != client_message_id)) or (
+                    state.prompt_admission_in_flight and state.admission_client_message_id != client_message_id
+                ):
+                    raise PiRuntimeTurnConflict("Pi acquired another turn or admission before projection")
+                retired = turn_id in state.retired_turn_ids or (session_id, turn_id) in self._retired_host_turns
+                mode = "retired" if retired else "settled" if settlement is not None else "active"
+                if not retired:
+                    if mode == "active":
+                        # Restore only the active identity observed at Pi,
+                        # fencing a direct prompt whose Room preflight passed
+                        # while this accepted mapping was still missing.
+                        state.turn_id = turn_id
+                        state.client_message_id = client_message_id
+                    if state.abort_pending_admission and state.turn_id:
+                        state.abort_requested_turn_id = turn_id
+                    state.prompt_admission_in_flight = False
+                    state.admission_client_message_id = ""
+                    state.abort_pending_admission = False
+                    state.admission_abort_dispatched = False
+                    state.prompt_dispatched = False
+                    state.prompt_dispatch_signal.set()
+                    if settlement is not None and state.turn_id:
+                        self._reconcile_turn_settlement(settlement)
+                    elif mode == "active":
+                        self._status = "busy"
+                        self._cancel_idle_locked()
+                        self.sessions.set_status(session_id, "busy")
+                    else:
+                        # Historical receipt with no live local turn: release
+                        # its exact unknown admission without re-emitting old
+                        # transcript events or manufacturing a live turn.
+                        self.sessions.set_status(session_id, "idle")
+                        self._schedule_idle_locked()
+                project(mode)
+                return mode
+
+        return guarded_project
 
     def prompt(
         self,
@@ -1193,6 +1309,10 @@ class PiRuntimeHostManager:
                 and state.admission_client_message_id
                 == normalized_client_message_id
             )
+            if pre_reserved and state.prompt_dispatched:
+                raise PiRuntimeCommandAcceptanceUnknown(
+                    "Pi prompt acceptance is unresolved; inspect the exact command before retrying"
+                )
             if state.turn_id or (
                 state.prompt_admission_in_flight and not pre_reserved
             ):
@@ -1260,6 +1380,11 @@ class PiRuntimeHostManager:
             dispatch_attempted = True
 
         try:
+            # A resident Session can serve a different Room responsibility on
+            # its next turn. Its native execution schema was registered at
+            # session.open, so refresh the current catalog while this exact
+            # prompt admission still owns the Session, before any model work.
+            self._sync_prompt_tool_manifest(session_id, normalized_client_message_id, client)
             # The Runtime Host resolves `session.prompt` after Pi accepts the
             # turn preflight. Stop and Steer remain responsive through the
             # Host's concurrent request dispatcher while that ACK is pending.
@@ -1280,24 +1405,19 @@ class PiRuntimeHostManager:
                     session_id,
                     _HostedSessionState(),
                 )
-                if not acceptance_unknown:
+                if (not acceptance_unknown and not state.turn_id
+                    and state.prompt_admission_in_flight
+                    and state.admission_client_message_id == normalized_client_message_id):
+                    self.sessions.set_status(session_id, "idle", **(
+                        {"last_message_preview": "已停止。"} if isinstance(exc, PiRuntimeCommandRejected)
+                        and exc.host_error_code == "PROMPT_ADMISSION_CANCELLED" else {}))
                     state.prompt_admission_in_flight = False
                     state.admission_client_message_id = ""
                     state.abort_pending_admission = False
                     state.admission_abort_dispatched = False
                     state.prompt_dispatched = False
                     state.prompt_dispatch_signal.set()
-            if (
-                isinstance(exc, PiRuntimeCommandRejected)
-                and exc.host_error_code
-                == "PROMPT_ADMISSION_CANCELLED"
-            ):
-                self.sessions.set_status(
-                    session_id,
-                    "idle",
-                    last_message_preview="已停止。",
-                )
-            elif acceptance_unknown:
+            if acceptance_unknown:
                 # The Host can complete the real turn before this call notices
                 # that its ACK was lost.  Keep the exact admission alive until
                 # a Host event binds it (or application recovery finds the
@@ -1305,37 +1425,39 @@ class PiRuntimeHostManager:
                 if isinstance(exc, PiRuntimeCommandAcceptanceUnknown):
                     raise
                 raise PiRuntimeCommandAcceptanceUnknown(str(exc)) from exc
-            else:
-                # No Pi turn exists for a proven rejection.  The HTTP command
-                # receipt owns the failed optimistic message; publishing a
-                # turn_failed with an empty id would create an unrelated
-                # `unscoped` failure in every connected frontend.
-                self.sessions.set_status(session_id, "idle")
+            # A proven rejection has no Pi turn. Its exact admission was
+            # released above; a delayed failure must not clear a newer owner.
             raise
         turn_id = str(accepted.get("turnId") or "")
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
-            abort_after_admission = state.abort_pending_admission
-            state.prompt_admission_in_flight = False
-            state.admission_client_message_id = ""
-            state.abort_pending_admission = False
-            state.admission_abort_dispatched = False
-            state.prompt_dispatched = False
+            owns_admission = (state.prompt_admission_in_flight
+                and state.admission_client_message_id == normalized_client_message_id
+                and self._client is client)
+            newer_owner = (self._client is not client
+                or (state.prompt_admission_in_flight and not owns_admission)
+                or bool(state.turn_id and state.turn_id != turn_id)
+                or bool(state.turn_id == turn_id and state.client_message_id
+                        and state.client_message_id != normalized_client_message_id))
+            abort_after_admission = owns_admission and state.abort_pending_admission
+            if owns_admission:
+                state.prompt_admission_in_flight = False
+                state.admission_client_message_id = ""
+                state.abort_pending_admission = False
+                state.admission_abort_dispatched = False
+                state.prompt_dispatched = False
             already_retired = (
                 turn_id in state.retired_turn_ids
                 or (session_id, turn_id) in self._retired_host_turns
             )
             already_aborting = state.abort_requested_turn_id == turn_id
-            if not already_retired:
+            project_accepted = not already_retired and not newer_owner
+            if project_accepted:
                 state.turn_id = turn_id
                 state.client_message_id = normalized_client_message_id
                 self._status = "busy"
-        if not already_retired:
-            self.sessions.set_status(
-                session_id,
-                "busy",
-                last_message_preview=public_prompt_preview,
-            )
+                self.sessions.set_status(session_id, "busy", last_message_preview=public_prompt_preview)
+        if project_accepted:
             if not already_aborting and not abort_after_admission:
                 self.events.publish(
                     session_id,
@@ -1349,15 +1471,14 @@ class PiRuntimeHostManager:
                 # through the ordinary Pi Session abort path. Its timer owns
                 # the existing one-second escalation if the Host never settles.
                 try:
-                    self.abort(session_id)
+                    self.abort_turn(session_id, turn_id=turn_id,
+                        client_message_id=normalized_client_message_id,
+                        cancel_id="prompt-stop:" + normalized_client_message_id)
                 except Exception:
                     pass
-        else:
-            self.sessions.set_status(
-                session_id,
-                "idle",
-                last_message_preview="已停止。",
-            )
+        # A retired turn's delayed ACK is still an acceptance receipt, but
+        # terminal reconciliation owns its status. It must not clear or publish
+        # idle over a subsequent reservation/turn, including a pending Stop.
         result: dict[str, object] = {
             "accepted": True,
             "turnId": turn_id,
@@ -2088,16 +2209,17 @@ class PiRuntimeHostManager:
             return {
                 "messages": cached_messages,
                 "toolHistoryEvents": cached_tool_history,
+                "projectionCurrent": bool(exact and projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
             }
 
         recent_candidate = self._recent_durable_history_messages(session_id)
         if recent_candidate is None:
             durable = self._durable_history_snapshot(session_id)
             if durable is None:
-                return {"messages": []}
+                return {"messages": [], "projectionCurrent": False}
             raw_messages = durable.get("messages")
             if not isinstance(raw_messages, list):
-                return {"messages": []}
+                return {"messages": [], "projectionCurrent": False}
             raw_entries = (
                 list(durable.get("entries") or [])
                 if isinstance(durable.get("entries"), list)
@@ -2125,6 +2247,7 @@ class PiRuntimeHostManager:
                 return {
                     "messages": messages,
                     "toolHistoryEvents": tool_history_events,
+                    "projectionCurrent": bool(projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
                 }
         messages = recent_public_message_window(
             raw_messages,
@@ -2147,6 +2270,7 @@ class PiRuntimeHostManager:
         return {
             "messages": messages,
             "toolHistoryEvents": tool_history_events,
+            "projectionCurrent": bool(projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
         }
 
     def _recent_projection_identity(
@@ -2755,6 +2879,34 @@ class PiRuntimeHostManager:
             )
         return commands
 
+    def skill_catalog(self, session_id: str) -> list[dict[str, object]]:
+        """Read the effective Pi Skill loader without projecting transcript history.
+
+        Opening an idle Session loads its frozen resource policy, but this read
+        never starts a turn or retires a recovered one. The Host's command list
+        is built from that Session's actual resource loader after Skill routing.
+        """
+        self.ensure(session_id, retire_recovered_turn=False)
+        response = self._require_client().send(
+            "session.commands", {"sessionId": session_id}
+        )
+        raw_commands = response.get("commands")
+        if not isinstance(raw_commands, list) or len(raw_commands) > 512:
+            raise PiRuntimeError("Pi returned an invalid Session Skill catalog")
+        skills: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for value in raw_commands:
+            if not isinstance(value, Mapping) or value.get("source") != "skill":
+                continue
+            name = str(value.get("name") or "")
+            if not re.fullmatch(r"skill:[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+                continue
+            if name in seen:
+                raise PiRuntimeError("Pi returned duplicate Session Skills")
+            seen.add(name)
+            skills.append({"name": name, "source": "skill"})
+        return skills
+
     def invoke_command(self, session_id: str, command: str) -> dict[str, object]:
         text = str(command).strip()
         if not text.startswith("/") or "\n" in text or "\r" in text:
@@ -3130,6 +3282,39 @@ class PiRuntimeHostManager:
             return []
         return [dict(item) for item in self._tool_manifest_provider(session)]
 
+    def _sync_prompt_tool_manifest(
+        self, session_id: str, client_message_id: str, client: PiRuntimeHostClient,
+    ) -> None:
+        if self._tool_manifest_provider is None:
+            return
+
+        def require_exact_admission() -> None:
+            with self._lock:
+                if self._client is not client:
+                    raise PiRuntimeCommandRejected("Pi Host changed during tool preparation",
+                        host_error_code="TOOL_MANIFEST_SYNC_FAILED")
+                self.require_prompt_admission_active(session_id, client_message_id=client_message_id)
+
+        try:
+            require_exact_admission()
+            session = self.sessions.get(session_id)
+            tools = ([] if session.get("toolProfileVersion") == MEMORY_CURATION_TOOL_PROFILE
+                     else self.tool_catalog(session_id))
+            # Manifest construction may consult Room state. Do it outside the
+            # Runtime lock, then recheck at the actual JSONL write boundary.
+            response = client.send("tools.sync", {"sessionId": session_id, "tools": tools},
+                before_write=require_exact_admission)
+            if not isinstance(response.get("tools"), list):
+                raise PiRuntimeError("Pi returned an invalid tool synchronization receipt")
+            require_exact_admission()
+        except Exception as exc:
+            if isinstance(exc, PiRuntimeCommandRejected) and exc.host_error_code == "PROMPT_ADMISSION_CANCELLED":
+                raise
+            # Even a lost tools.sync ACK cannot have sent this prompt. Report
+            # that proven boundary instead of quarantining it as model work.
+            raise PiRuntimeCommandRejected("Pi tool manifest refresh failed before prompt: " + str(exc),
+                host_error_code="TOOL_MANIFEST_SYNC_FAILED") from exc
+
     def _mark_prompt_dispatched(
         self,
         session_id: str,
@@ -3146,10 +3331,9 @@ class PiRuntimeHostManager:
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
             if (
-                state.prompt_admission_in_flight
-                and state.admission_client_message_id
-                == admission_client_message_id
-                and state.abort_pending_admission
+                state.turn_id or not state.prompt_admission_in_flight
+                or state.admission_client_message_id != admission_client_message_id
+                or state.abort_pending_admission
             ):
                 raise PiRuntimeCommandRejected(
                     "当前消息已停止，未发送给 Pi",
@@ -3189,6 +3373,88 @@ class PiRuntimeHostManager:
                     "escalated": True,
                 },
             )
+
+    def abort_turn(
+        self,
+        session_id: str,
+        turn_id: str,
+        *,
+        client_message_id: str,
+        cancel_id: str,
+        lookup_only: bool = False,
+        recover_retired_only: bool = False,
+        recover_interrupted_only: bool = False,
+    ) -> dict[str, object]:
+        """Compare-and-cancel at the actual Host owner, or query that command.
+
+        A Session-wide abort can target a newer turn between a local lookup and
+        the RPC. This method requires the Host's exact contract and never falls
+        back to ordinary abort, idle inference, or shared-process termination.
+        Cancellation acceptance and exact physical settlement remain separate.
+        """
+        if recover_retired_only and recover_interrupted_only:
+            raise ValueError("choose one exact recovery phase")
+        identity = {
+            "sessionId": str(session_id or "").strip(),
+            "turnId": str(turn_id or "").strip(),
+            "clientMessageId": str(client_message_id or "").strip(),
+            "cancelId": str(cancel_id or "").strip(),
+        }
+        if any(not value for value in identity.values()):
+            raise ValueError("exact cancellation requires session, turn, command and cancel identities")
+        with self._lifecycle_lock:
+            with self._lock:
+                resident = (identity["sessionId"] in self._open_sessions
+                    and self._client is not None and self._client.running)
+            if not resident:
+                self.ensure(identity["sessionId"], retire_recovered_turn=False)
+            primitives = as_mapping(self._host_capabilities.get("runtimePrimitives"))
+            if primitives.get("sessionExactTurnCancel") is not True:
+                raise PiRuntimeError("Pi Runtime Host does not support exact turn cancellation")
+            if recover_retired_only and primitives.get("sessionRetiredTurnRecovery") is not True:
+                raise PiRuntimeError("Pi Runtime Host does not support exact retired turn recovery")
+            if recover_interrupted_only and primitives.get("sessionInterruptedTurnRecovery") is not True:
+                raise PiRuntimeError("Pi Runtime Host does not support exact interrupted turn recovery")
+            client = self._require_client()
+        params = {
+            "sessionId": identity["sessionId"], "expectedTurnId": identity["turnId"],
+            "clientMessageId": identity["clientMessageId"], "cancelId": identity["cancelId"],
+            "lookupOnly": bool(lookup_only),
+        }
+        if recover_retired_only:
+            params["recoverRetiredOnly"] = True
+        if recover_interrupted_only:
+            params["recoverInterruptedOnly"] = True
+        result = client.send("session.abort", params, timeout=1.0)
+        if (result.get("schemaVersion") != "rag-ime.pi-exact-turn-cancel.v1"
+            or any(result.get(key) != value for key, value in identity.items())
+            or result.get("state") not in {"accepted", "rejected", "unknown"}
+            or (result.get("state") != "unknown" and not str(result.get("receiptId") or "")
+                and not ((recover_retired_only or recover_interrupted_only) and result.get("state") == "rejected"))):
+            raise PiRuntimeError("Pi Runtime Host returned an invalid exact cancellation receipt")
+        value = dict(result)
+        if value["state"] == "accepted":
+            if value.get("phase") not in {"requested", "settled", "failed"}:
+                raise PiRuntimeError("Pi Runtime exact cancellation phase is invalid")
+            runtime_receipt = value.get("runtimeReceipt")
+            if runtime_receipt is not None and (
+                not isinstance(runtime_receipt, Mapping)
+                or runtime_receipt.get("schemaVersion") != "rag-ime.pi-session-abort-receipt.v1"
+                or runtime_receipt.get("sessionId") != identity["sessionId"]
+                or runtime_receipt.get("turnId") != identity["turnId"]
+            ):
+                raise PiRuntimeError("Pi Runtime exact cancellation carries another turn receipt")
+            with self._lock:
+                state = self._states.get(identity["sessionId"])
+                if (not recover_retired_only and not recover_interrupted_only and state is not None and state.turn_id == identity["turnId"]
+                    and state.client_message_id == identity["clientMessageId"]):
+                    state.abort_requested_turn_id = identity["turnId"]
+                    try:
+                        self.events.publish(identity["sessionId"], "status_changed",
+                            {"status": "aborting", "cancelId": identity["cancelId"]}, turn_id=identity["turnId"])
+                    except Exception:
+                        value["projectionSync"] = {"state": "pending", "failedOperations": ["status_changed"]}
+        return value
 
     def abort(self, session_id: str) -> dict[str, object]:
         with self._lock:

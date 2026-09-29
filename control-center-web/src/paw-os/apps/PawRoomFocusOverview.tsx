@@ -1,3 +1,5 @@
+import { roomPublicAction } from './room-visual-progress';
+import { roomWorkStatusLabel, roomPartnerStatusLabel } from './room-work-status';
 import {
   ArrowRight,
   CircleHelp,
@@ -663,7 +665,7 @@ function FocusInspector({
     <section aria-label="焦点详情" className="paw-room-focus-overview__inspector" data-state={state} key={`${work?.id ?? ''}:${partner?.participantId ?? ''}`} role="region">
       <header>
         <span><FileCheck2 aria-hidden="true" size={14} /><strong>焦点详情</strong></span>
-        <span className="paw-room-focus-overview__state"><i aria-hidden="true" />{roomFocusStateLabel(state)}</span>
+        <span className="paw-room-focus-overview__state"><i aria-hidden="true" />{work ? roomWorkStatusLabel(work) : roomPartnerStatusLabel(state)}</span>
       </header>
       <div className="paw-room-focus-overview__inspector-copy">
         <small>{work ? '当前任务' : '当前伙伴'}</small>
@@ -683,7 +685,7 @@ function FocusInspector({
       ) : null}
       {partner ? (
         <dl>
-          <div><dt>负责人</dt><dd>{partner.celestialName} · {roomFocusStateLabel(partner.state)}</dd></div>
+          <div><dt>负责人</dt><dd>{partner.celestialName} · {roomPartnerStatusLabel(partner.state)}</dd></div>
           {partner.latestReceipt ? <div><dt>最近回执</dt><dd>{readableActivity(partner.latestReceipt, '已收到工作回执')}</dd></div> : null}
         </dl>
       ) : null}
@@ -789,7 +791,7 @@ function packetSummary(packet: RoomFocusPacket): string {
 }
 
 function readableActivity(value: string, fallback: string): string {
-  return /^(?:participant_activity|approval_[a-z_]+|tool_[a-z_]+|route_decision)$/.test(value.trim()) ? fallback : value;
+  return /^(?:participant_activity|approval_[a-z_]+|tool_[a-z_]+|route_decision)$/.test(value.trim()) ? fallback : roomPublicAction(value, fallback);
 }
 
 function packetClock(timestamp: number): string {

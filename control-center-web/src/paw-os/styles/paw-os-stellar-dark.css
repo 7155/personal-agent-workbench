@@ -375,6 +375,25 @@
   --an-rose: #e18db6;
 }
 
+/* Match the workspace-level light tokens: ancestor overrides cannot replace
+   a custom property declared directly on the conversation workspace. */
+:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace, .paw-room-workspace--migrated-v1),
+:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-window-shell[data-app='agent'] .paw-window-titlebar[data-window-chrome] {
+  --paw-chat-surface: var(--paw-stellar-surface);
+  --paw-chat-surface-subtle: var(--paw-stellar-process);
+  --paw-chat-surface-hover: #1b3154;
+  --paw-chat-user-bubble: color-mix(in srgb, var(--paw-stellar-accent) 16%, var(--paw-stellar-surface));
+  --paw-chat-text: var(--paw-stellar-ink);
+  --paw-chat-text-secondary: var(--paw-stellar-muted);
+  --paw-chat-text-tertiary: #8193b3;
+  --paw-chat-icon: var(--paw-stellar-muted);
+  --paw-chat-border: var(--paw-stellar-line);
+  --paw-chat-accent: var(--paw-stellar-accent);
+  --paw-chat-ok: var(--paw-stellar-success);
+  --paw-chat-warn: var(--paw-stellar-warning);
+  --paw-chat-danger: var(--paw-stellar-danger);
+}
+
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-window-shell[data-app='agent'] :is(.paw-agent-app, .paw-agent-stage, .paw-session-workspace, .paw-room-workspace, .paw-session-workspace__body, .paw-session-workspace__primary, .paw-session-workspace__conversation, .paw-session-workspace__trace, .paw-session-workspace__loading) {
   color: var(--paw-stellar-ink);
   background: var(--paw-stellar-surface);

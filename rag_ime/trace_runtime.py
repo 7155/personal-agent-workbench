@@ -1742,7 +1742,6 @@ def validate_eval_run(payload: Mapping[str, object]) -> None:
 def _validated_evaluator(value: object) -> dict[str, str]:
     if not isinstance(value, Mapping):
         raise TraceContractError("evaluator provenance must be a mapping")
-    required = ("provider", "model", "thinking", "displayName")
     if set(value) != _EVALUATOR_KEYS:
         raise TraceContractError("evaluator provenance must name provider, model, thinking, and displayName")
     return {

@@ -664,6 +664,57 @@ describe('buildRoomFocusProjection', () => {
     ]);
   });
 
+  it('keeps unbound assignments with current and retry-lineage work while excluding unrelated Roots', () => {
+    const unrelated = work({
+      id: 'work-unrelated-root',
+      objective: '另一 Root 的任务',
+      rootTurnId: 'turn-unrelated',
+      createdAtMs: 10,
+    });
+    const retryLineage = work({
+      id: 'work-retry-lineage',
+      objective: '重试链上的工作项',
+      rootTurnId: 'turn-previous',
+      createdAtMs: 20,
+    });
+    const unbound = work({
+      id: 'work-unbound',
+      objective: '元数据尚未绑定的工作项',
+      rootTurnId: '',
+      createdAtMs: 30,
+    });
+    const current = work({
+      id: 'work-current-bound',
+      objective: '当前 Root 的工作项',
+      rootTurnId: 'turn-current',
+      createdAtMs: 40,
+    });
+    const projection = createRoomProjection('room-sol');
+    projection.turnOrder = ['turn-unrelated', 'turn-previous', 'turn-current'];
+    projection.turnsById = {
+      'turn-unrelated': {
+        id: 'turn-unrelated', rootId: 'turn-unrelated', status: 'completed',
+        messageIds: [], activityIds: [], participantIds: [], createdAtMs: 1, updatedAtMs: 10,
+      },
+      'turn-previous': {
+        id: 'turn-previous', rootId: 'turn-previous', status: 'failed',
+        messageIds: [], activityIds: [], participantIds: [], createdAtMs: 11, updatedAtMs: 20,
+      },
+      'turn-current': {
+        id: 'turn-current', rootId: 'turn-current', retryOfRootId: 'turn-previous', status: 'running',
+        messageIds: [], activityIds: [], participantIds: [], createdAtMs: 21, updatedAtMs: 40,
+      },
+    };
+
+    const focus = buildRoomFocusProjection(room([unrelated, retryLineage, unbound, current]), projection);
+
+    expect(focus.workItems.map((item) => item.id)).toEqual([
+      'work-retry-lineage',
+      'work-unbound',
+      'work-current-bound',
+    ]);
+  });
+
   it.each([
     { turnStatus: 'running' as const, expected: 'running' as const },
     { turnStatus: 'completed' as const, expected: 'completed' as const },

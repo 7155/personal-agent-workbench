@@ -196,7 +196,7 @@ def validated_application_method(value: object) -> dict:
     return copy.deepcopy(method)
 
 
-def _sources(value: object) -> list[dict[str, str]]:
+def _sources(value: object, *, total_limit: int = 2_000_000) -> list[dict[str, str]]:
     result = []
     identifiers = set()
     for item in _array(value, "来源", minimum=1, limit=100):
@@ -211,7 +211,7 @@ def _sources(value: object) -> list[dict[str, str]]:
             "uri": _text(item.get("uri"), "来源引用", limit=4000),
             "text": _text(item.get("text"), "来源正文", limit=500_000),
         })
-    if sum(len(item["text"]) for item in result) > 2_000_000:
+    if sum(len(item["text"]) for item in result) > total_limit:
         raise AgentLabGoldenValidationError("来源正文总量过大，请拆分套件。")
     return result
 
@@ -543,7 +543,7 @@ class AgentLabGoldenStore:
             "title": _text(value.get("title"), "套件名称", limit=500),
             "scenario": _text(value.get("scenario"), "任务场景", limit=10_000),
             "revision": 1, "targetCount": _integer(value.get("targetCount", 30), "题目数量", 2, 100),
-            "sources": _sources(value.get("sources")), "cases": [],
+            "sources": _sources(value.get("sources"), total_limit=8_000_000 if "knowledge" in value and "importedCases" in value else 2_000_000), "cases": [],
             "judgeConfig": copy.deepcopy(self._default_model), "calibration": None, "snapshot": None,
             "createdAtMs": now, "updatedAtMs": now,
         }

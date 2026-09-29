@@ -42,6 +42,32 @@ function mount(transport: MockControlTransport, props: { initialProjectId?: stri
 }
 
 describe('Agent-led Lab project container', () => {
+  it('opens a parallel test in its own suite when an older suite is bound first', async () => {
+    const bindings = ['old-suite', 'new-suite'].map((id) => ({ bindingId: id, adapterId: 'golden', materialSetId: '', briefVersion: 1, artifactId: '', artifactRevision: 1, ownerRef: { kind: 'golden_suite', id }, summary: '', createdAtMs: 1, input: {} }));
+    const current = project({ bindings, workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
+      nodes: [{ id: 'review-new', kind: 'dataset', title: '新题集核对', status: 'running', summary: '正在核对', dependencies: [], source: 'runtime', ref: { kind: 'golden_job', id: 'review-new' }, evidenceRefs: [{ kind: 'golden_suite', id: 'new-suite' }] }],
+      edges: [], counts: { running: 1, queued: 0, completed: 0, failed: 0 }, currentNodeId: 'review-new' } });
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.eval-lab.golden.get': { ok: true, items: [], suite: null },
+    } });
+    mount(transport, { initialProjectId: current.projectId });
+    fireEvent.click(await screen.findByRole('button', { name: '查看新题集核对的运行记录' }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'new-suite')).toBe(true));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'old-suite')).toBe(false);
+  });
+  it('stages the selected objective and method in the existing Guide without sending or running', async () => {
+    const current = project({ guideSessionId: 'guide-one' });
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': read(current, [current]) } });
+    mount(transport, { initialProjectId: current.projectId });
+    fireEvent.click(await screen.findByRole('button', { name: /成本优先/ }, { timeout: 10000 }));
+    fireEvent.click(screen.getByRole('button', { name: '选择优化参数' }));
+    fireEvent.change(screen.getByLabelText('下一轮想改什么'), { target: { value: '比较一个更小的向量模型' } });
+    fireEvent.click(screen.getByRole('button', { name: '带入 Agent 草稿' }));
+    expect((screen.getByLabelText('Agent 输入草稿') as HTMLTextAreaElement).value).toContain('优化倾向：成本优先');
+    expect((screen.getByLabelText('Agent 输入草稿') as HTMLTextAreaElement).value).toContain('实现手段：Embedding 模型');
+    expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+  });
   it('routes a completed App graph node to its exact version and call while retaining the Guide', async () => {
     const appId = 'extension:lab-11111111111111111111111111111111';
     const current = project({ guideSessionId: 'guide-one', workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
@@ -156,9 +182,9 @@ describe('Agent-led Lab project container', () => {
       'agent.session.prompt': (request: ControlRequest) => { messages.push(request); return new Promise((resolve) => { settle = resolve; }); },
     } });
     mount(transport, { initialProjectId: current.projectId });
-    await screen.findByRole('button', { name: '实验闭环' });
+    await screen.findByRole('combobox', { name: '更多项目视图' });
     expect(messages).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button', { name: '实验闭环' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '更多项目视图' }), { target: { value: 'lifecycle' } });
     fireEvent.click(screen.getByRole('button', { name: '自动推进优化' }));
     fireEvent.click(screen.getByRole('button', { name: '自动推进优化' }));
     await waitFor(() => expect(messages).toHaveLength(1));
@@ -480,10 +506,10 @@ it('links selected artifact contents and refreshed revisions to the Guide withou
   const context = await screen.findByLabelText('Agent 将收到的上下文');
   await waitFor(() => expect(context).toHaveTextContent('FIRST_BODY'));
   const guide = screen.getByRole('region', { name: '项目 Agent' });
-  fireEvent.click(screen.getByRole('button', { name: /第二份结果/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: '查看项目内容' }), { target: { value: `artifact:${second.artifactId}` } });
   await waitFor(() => expect(context).toHaveTextContent('SECOND_BODY'));
   expect(context).not.toHaveTextContent('FIRST_BODY');
-  fireEvent.click(screen.getByRole('button', { name: /第一份结果/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: '查看项目内容' }), { target: { value: `artifact:${first.artifactId}` } });
   first = { ...first, revision: 2, content: 'UPDATED_BODY' };
   current = { ...current, revision: 2, artifacts: [first, second] };
   fireEvent.click(screen.getByRole('button', { name: '模拟 Agent 结束' }));
@@ -505,7 +531,7 @@ it('links selected experiment receipts and restores artifact context when return
   expect(context).toHaveTextContent('EXPERIMENT_FAILURE');
   expect(context).toHaveTextContent('job-context');
   expect(context).not.toHaveTextContent(item.content as string);
-  fireEvent.click(screen.getByRole('button', { name: '返回当前成果' }));
+  fireEvent.click(screen.getByRole('button', { name: '全部优化' }));
   await waitFor(() => expect(context).toHaveTextContent(item.content as string));
   expect(context).not.toHaveTextContent('EXPERIMENT_FAILURE');
 });

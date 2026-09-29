@@ -3663,11 +3663,16 @@ class WorkspaceHarness:
             raise WorkspaceHarnessError(
                 "background workspace jobs are not available in read-only mode"
             )
-        command = str(args.get("command") or "").strip()
+        raw_command = str(args.get("command") or "")
+        if "\x00" in raw_command or "\r" in raw_command:
+            raise WorkspaceHarnessError("workspace command contains NUL or carriage return")
+        command = raw_command.strip()
         if not command:
             raise WorkspaceHarnessError(f"command is required for {tool_name}")
-        if len(command) > 2_000 or "\x00" in command or "\r" in command:
-            raise WorkspaceHarnessError("workspace command is malformed or too long")
+        if len(command) > 2_000:
+            raise WorkspaceHarnessError(
+                "workspace command exceeds 2000 characters; split it into shorter commands"
+            )
         if any(ord(character) < 32 and character not in "\n\t" for character in command):
             raise WorkspaceHarnessError("workspace command contains unsupported control characters")
         if not unrestricted and _FORBIDDEN_COMMAND.search(command):

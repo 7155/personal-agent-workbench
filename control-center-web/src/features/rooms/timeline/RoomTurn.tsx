@@ -2308,6 +2308,7 @@ function describeRoomActivity(
     // the real owner of the dispatch after this projection fix ships.
     const reason = payload.child === true ? 'partner_delegate' : textValue(payload.reason);
     const detailByReason: Record<string, string> = {
+      jev: 'Jev 已按当前消息与伙伴责任选择本轮负责人',
       explicit_invite: '由用户直接邀请发言',
       partner_delegate: '由主持伙伴委派本次任务',
       mention: '根据明确提及开始处理',
@@ -2319,7 +2320,7 @@ function describeRoomActivity(
     };
     return {
       title: `${target} 已接手`,
-      detail: detailByReason[reason] ?? '已确定本轮负责角色',
+      detail: (typeof payload.jev === 'object' && payload.jev !== null && 'status' in payload.jev) && payload.jev.status === 'unavailable' ? 'Jev 暂时不可用，已使用原主控路由' : (typeof payload.jev === 'object' && payload.jev !== null && 'status' in payload.jev) && payload.jev.status === 'abstained' ? 'Jev 暂未确定负责人，已使用原主控路由' : detailByReason[reason] ?? '已确定本轮负责角色',
     };
   }
   if (activity.kind === 'participant_status') {

@@ -4,6 +4,15 @@ import { createPreviewTransport } from './preview-control-transport';
 import { previewAgentSnapshot } from '@/features/agent/preview-data';
 
 describe('preview control transport', () => {
+  it('exposes Jev preview cards without fabricating provider decisions or writes', async () => {
+    const transport = createPreviewTransport();
+    const result = record(await transport.request({ pathId: 'agent.organization.read', body: { keys: ['session:session-preview'] } }));
+    expect(result.items).toEqual([expect.objectContaining({ key: 'session:session-preview', category: 'unknown', revision: 0 })]);
+    expect(result.readOnlyReason).toContain('演示数据');
+    expect(record(await transport.request({ pathId: 'agent.organization.suggest', body: { spaceKey: 'session:session-preview' } })).proposal).toBeNull();
+    await expect(transport.request({ pathId: 'agent.organization.undo', body: { receiptId: 'missing' } })).rejects.toThrow('演示模式不能写入');
+  });
+
   it('hydrates each preview session snapshot from its session fixture', async () => {
     const transport = createPreviewTransport();
 
@@ -198,6 +207,17 @@ describe('preview control transport', () => {
     }));
     expect(JSON.stringify(curationRun)).toContain('不再用于伙伴上下文或长期记忆');
     expect(JSON.stringify(curationRun)).not.toContain('Agent 上下文');
+  });
+
+  it('projects the latest Memory job without starting a new preview task', async () => {
+    const transport = createPreviewTransport();
+    const empty = record(await transport.request({ pathId: 'agent.memoryMaintenance.run', query: { projectionOnly: true } }));
+    expect(empty.job).toEqual({});
+    const started = record(await transport.request({ pathId: 'agent.memoryMaintenance.trigger', body: { manual: true } }));
+    const projection = record(await transport.request({ pathId: 'agent.memoryMaintenance.run', query: { projectionOnly: true } }));
+    expect(record(projection.job)).toMatchObject({ jobId: started.jobId, state: 'completed' });
+    const refreshed = record(await transport.request({ pathId: 'agent.memoryMaintenance.run', query: { projectionOnly: true } }));
+    expect(refreshed.job).toEqual(projection.job);
   });
 
   it('imports real browser clipboard Files into owner-scoped preview media receipts', async () => {
@@ -848,6 +868,19 @@ describe('preview control transport', () => {
         progress: 1,
       }),
     ]);
+  });
+
+  it('honors temporary Knowledge retrieval budgets without mutating the saved base', async () => {
+    const transport = createPreviewTransport();
+    const params = { kbId: 'kb:preview-project-docs' };
+    const before = await transport.request({ pathId: 'knowledgeBases.get', params });
+    const result = record(await transport.request({ pathId: 'knowledgeBases.search', params, body: { query: '工具', mode: 'lexical', topK: 3, threshold: .95, rerank: false } }));
+    expect(result.items).toEqual([]);
+    expect(record(result.retrieval)).toMatchObject({ mode: 'lexical', config: { mode: 'lexical', topK: 3, threshold: .95 }, libraries: [{ returned: 0, denseCandidates: 0 }] });
+    expect(await transport.request({ pathId: 'knowledgeBases.get', params })).toEqual(before);
+    await expect(transport.request({ pathId: 'knowledgeBases.search', params, body: { query: '工具', rerank: true } })).rejects.toThrow('未配置重排模型');
+    const other = record(await transport.request({ pathId: 'knowledgeBases.search', params: { kbId: 'kb:preview-antarctic-papers' }, body: { query: '工具' } }));
+    expect(other.items).toEqual([]);
   });
 
   it('uses the current Antarctic corpus fixture instead of the retired RL fixture', async () => {

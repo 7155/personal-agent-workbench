@@ -17,6 +17,17 @@ afterEach(() => {
 });
 
 describe('MemoryFeature relations', () => {
+  it('keeps the organize title independent from a stale summary backlog', async () => {
+    const transport = new MockControlTransport({ routes: {
+      'memory.summary': { pendingCompileEvents: 0, pendingGovernedEvidenceCount: 0 },
+      'agent.memoryMaintenance.run': { ok: true, policy: 'auto_governed', autoApply: true, ownerCuration: { pendingSourceCount: 310 }, runs: [] },
+    } });
+    renderMemory(transport, '/memory?view=organize');
+    expect(await screen.findByText('310 条待整理')).toBeInTheDocument();
+    expect(screen.getByText('核对来源、继续整理和查看本批结果')).toBeInTheDocument();
+    expect(screen.queryByText('0 条待整理')).not.toBeInTheDocument();
+  });
+
   it('opens the topic library on active topics and keeps historical filters available', async () => {
     const user = userEvent.setup();
     const transport = new MockControlTransport({ routes: {
@@ -311,7 +322,10 @@ describe('MemoryFeature relations', () => {
           governedNeedsReviewEvidenceCount: 10,
         },
         'memory.pages': { ok: true, items: [], nextCursor: '', limit: 50 },
-        'agent.memoryMaintenance.run': memoryCurationStatus(),
+        'agent.memoryMaintenance.run': {
+          ...memoryCurationStatus(),
+          ownerCuration: { pendingSourceCount: 777, needsReviewSourceCount: 10, scopes: [] },
+        },
       },
     });
     renderMemory(transport);
@@ -410,7 +424,7 @@ describe('MemoryFeature relations', () => {
 
     await user.click(await screen.findByRole('tab', { name: '让Agent整理' }));
 
-    expect(await screen.findByText('244 条来源分布在 0 天、0 个应用中。')).toBeInTheDocument();
+    expect(await screen.findByText('244 条来源待整理；日期和应用分布尚未提供。')).toBeInTheDocument();
     expect(screen.getByText('原始输入不会被改写；每次只处理一批，形成草案后停下来等你审核。')).toBeInTheDocument();
     const technicalSummary = screen.getByText('运行与索引详情').closest('summary');
     expect(technicalSummary).not.toBeNull();
@@ -547,8 +561,8 @@ describe('MemoryFeature relations', () => {
     await user.click(await screen.findByRole('tab', { name: '让Agent整理' }));
     await user.click(await screen.findByRole('button', { name: '开始整理' }));
     expect(await screen.findByText('整理任务已过期')).toBeInTheDocument();
-    expect(screen.getByText('Gateway 重启后旧的整理任务已过期，无法恢复；请重新整理。')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开始整理' })).not.toBeDisabled();
+    expect(screen.getByText('没有找到这个任务的可恢复回执；已有记忆仍保留，可以重新整理。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '继续整理' })).not.toBeDisabled();
   });
 
   it('opens a backlog day in the matching activity timeline', async () => {

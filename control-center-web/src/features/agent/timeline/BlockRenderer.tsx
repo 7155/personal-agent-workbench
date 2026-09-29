@@ -126,6 +126,8 @@ function groupFileResults(blocks: readonly UiAgentBlock[]): BlockDisplayEntry[] 
 
 function collectibleFileBlock(block: UiAgentBlock): boolean {
   if (block.type !== 'file') return false;
+  // Native video playback retains a dedicated entry instead of becoming a generic file tile.
+  if (string(block.data.mimeType).startsWith('video/')) return false;
   const fileName = string(block.data.fileName ?? block.data.name ?? block.data.title);
   return !isHtmlReport(fileName, string(block.data.mimeType));
 }

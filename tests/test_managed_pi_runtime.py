@@ -42,6 +42,12 @@ from rag_ime.pi.runtime import PiRuntimeHostManager
 
 
 class ManagedPiRuntimeTests(unittest.TestCase):
+    def test_tool_catalog_accepts_current_product_and_rejects_invalid_entries(self) -> None:
+        self.assertEqual(managed_runtime._validate_tools(CONTROL_TOOL_IDS), CONTROL_TOOL_IDS)
+        for invalid in (["tool"] * 2, ["invalid-name"], [f"tool_{i}" for i in range(129)]):
+            with self.subTest(invalid=invalid), self.assertRaises(ManagedPiRuntimeError):
+                managed_runtime._validate_tools(invalid)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-managed-pi-")
         self.root = Path(self.tmp.name)

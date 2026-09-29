@@ -1,5 +1,5 @@
 import { GitBranch, MessageCircle, Satellite, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import type { PawOsWindowRequest } from '@/features/paw-os/surface-context';
 import { useControlTransport } from '@/app/control-transport';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
@@ -13,6 +13,8 @@ import { useRoomLiveFocusData } from './PawRoomLiveFocusOverview';
 import { buildRoomFocusProjection, roomFocusHasCoordinator, roomFocusOriginLabel, type RoomFocusProjection } from './room-focus-projection';
 import { roomPlanetObserverWindowRequest } from './room-satellite-auto-open';
 import type { RoomSatelliteSnapshots } from './room-message-flow';
+import { presentRoomParticipant } from './room-participant-presentation';
+import '../styles/paw-os-room-progress.css';
 import { roomPartnerStatusLabel } from './room-work-status';
 import '../styles/paw-os-room-work-status.css';
 import '../styles/paw-os-room-focus.css';
@@ -106,11 +108,13 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
   // The composer dock owns the primary task view. This header map remains an
   // explicit overview, rather than consuming the conversation on every open.
   const [graphOpen, setGraphOpen] = useState(false);
+  const [graphEverOpened, setGraphEverOpened] = useState(false);
+  const instanceId = useId();
   const graphTrigger = useRef<HTMLButtonElement>(null);
-  const graphId = `room-focus-assignments-${focus.goal.rootId}`;
+  const graphId = `room-focus-assignments-${instanceId}`;
   const closeGraph = () => { setGraphOpen(false); graphTrigger.current?.focus({ preventScroll: true }); };
   const trafficTrigger = useRef<HTMLButtonElement>(null);
-  const trafficId = `room-focus-traffic-${focus.goal.rootId}`;
+  const trafficId = `room-focus-traffic-${instanceId}`;
   const closeTraffic = () => {
     setTrafficOpen(false);
     trafficTrigger.current?.focus({ preventScroll: true });
@@ -124,6 +128,7 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
     <nav aria-label="Room 伙伴" className="paw-room-focus-participants" data-live={live}>
       <div className="paw-room-focus-participants__track">
         {focus.partners.map((partner) => {
+          const actor = presentRoomParticipant(partner, focus, live ? 'live' : recoveryState === 'failed' ? 'offline' : 'recovering');
           const snapshot = satellitesByParticipant[partner.participantId];
           const satelliteLabel = snapshot?.status === 'ready' ? `卫星 ${snapshot.satellites.length}`
             : snapshot?.status === 'error' ? '卫星暂不可用' : '卫星读取中';
@@ -135,29 +140,29 @@ export function PawRoomFocusParticipantBar({ focus, satellitesByParticipant, sel
             className="paw-room-focus-participant"
             key={partner.participantId}
             onClick={() => inspect(partner.participantId)}
-            title={`${partner.displayName} · ${partner.currentAction}`}
+            title={`${actor.roles.join(' / ')} · ${actor.task} · ${actor.action}`}
             type="button"
           >
             <i aria-hidden="true" data-state={partner.state} />
-            <strong>{partner.celestialName}</strong>
-            <span>{stateLabel}</span>
-            <small><Satellite aria-hidden="true" size={12} />{satelliteLabel}</small>
+            <span className="paw-room-partner-chip__identity"><b>{actor.roles.join(' / ')}</b><strong>{partner.celestialName}</strong></span>
+            <span className="paw-room-partner-chip__work"><span>{actor.task}</span><small>{stateLabel}{actor.total ? ` · 执行项 ${actor.completed}/${actor.total}` : ''}{actor.offered ? ` · ${actor.offered} 项待接收` : ''}</small></span>
+            <small className="paw-room-partner-chip__satellites"><Satellite aria-hidden="true" size={12} />{satelliteLabel}</small>
           </button>;
         })}
         {!focus.partners.length ? <span className="paw-room-focus-participants__empty">还没有伙伴加入</span> : null}
       </div>
       <button aria-controls={graphId} aria-expanded={graphOpen} className="paw-room-focus-participants__traffic" ref={graphTrigger} type="button" onClick={() => {
         if (graphOpen) closeGraph();
-        else { onCloseInspector(); setTrafficOpen(false); setGraphOpen(true); }
+        else { onCloseInspector(); setTrafficOpen(false); setGraphEverOpened(true); setGraphOpen(true); }
       }}><GitBranch aria-hidden="true" size={16} /><span>任务关系</span></button>
       <button aria-controls={trafficId} aria-expanded={trafficOpen} className="paw-room-focus-participants__traffic" onClick={() => {
         if (trafficOpen) closeTraffic();
         else { onCloseInspector(); setGraphOpen(false); setTrafficOpen(true); }
       }} ref={trafficTrigger} type="button"><MessageCircle aria-hidden="true" size={15} /><span>消息流</span></button>
     </nav>
-    {graphOpen ? <section aria-label="Room 任务关系" className="paw-room-focus-traffic paw-room-focus-overview paw-room-focus-assignments" id={graphId} onKeyDown={(event) => {
+    {graphEverOpened ? <section hidden={!graphOpen} aria-label="Room 任务关系" className="paw-room-focus-traffic paw-room-focus-overview paw-room-focus-assignments" id={graphId} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); closeGraph(); }
-    }}><header className="paw-room-focus-traffic__header"><strong>任务分派与协作关系</strong><button type="button" aria-label="关闭任务关系" onClick={closeGraph}><X size={16} aria-hidden="true" /></button></header><PawRoomAssignmentMap focus={focus} live={live} onOpenParticipant={inspect} /></section> : null}
+    }}><header className="paw-room-focus-traffic__header"><strong>任务分派与协作关系</strong><button type="button" aria-label="关闭任务关系" onClick={closeGraph}><X size={16} aria-hidden="true" /></button></header><PawRoomAssignmentMap key={focus.goal.rootId} focus={focus} live={live && graphOpen} freshness={live ? 'live' : recoveryState === 'failed' ? 'offline' : recoveryState === 'recovering' ? 'recovering' : 'paused'} onOpenParticipant={inspect} /></section> : null}
     {trafficOpen ? <section aria-label="Room 消息流" className="paw-room-focus-traffic paw-room-focus-overview" id={trafficId} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); closeTraffic(); }
     }}>

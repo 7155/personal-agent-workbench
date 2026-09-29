@@ -8,6 +8,8 @@ export function canApplyRoomSnapshot(state: RoomProjectionState, sequence: numbe
   if (!Number.isSafeInteger(sequence) || sequence < 0) return false;
   if (state.needsSnapshot && state.recoveryCursor !== undefined
     && sequence < state.recoveryCursor) return false;
+  if (state.needsSnapshot && state.recoveryCursor === undefined && state.gap
+    && sequence < state.gap.receivedSequence) return false;
   if (sequence >= state.lastSequence) return true;
   return state.needsSnapshot
     && state.recoveryCursor !== undefined
@@ -15,14 +17,25 @@ export function canApplyRoomSnapshot(state: RoomProjectionState, sequence: numbe
     && sequence >= state.recoveryCursor;
 }
 
+/** A reset remains a reset even if the replacement snapshot has already
+ * advanced past our old cursor. Old prefix rows belong to the previous history. */
+export function isRoomCursorReset(state: RoomProjectionState): boolean {
+  return state.needsSnapshot && state.recoveryCursor !== undefined
+    && state.recoveryCursor < state.lastSequence;
+}
+
 /** Cache only the contiguous domain prefix actually accepted by the reducer.
  * Rejected tails and recovery controls must never become a later snapshot. */
 export function acceptedRoomEvents(
   before: RoomProjectionState, after: RoomProjectionState, events: readonly UiRoomEvent[],
 ): UiRoomEvent[] {
-  return events.filter((event) => event.roomId === before.roomId
-    && event.eventType !== 'snapshot_required'
-    && event.sequence > before.lastSequence && event.sequence <= after.lastSequence);
+  const accepted = new Map<number, UiRoomEvent>();
+  for (const event of events) {
+    if (event.roomId === before.roomId && event.eventType !== 'snapshot_required'
+      && event.sequence > before.lastSequence && event.sequence <= after.lastSequence
+      && !accepted.has(event.sequence)) accepted.set(event.sequence, event);
+  }
+  return [...accepted.values()].sort((a, b) => a.sequence - b.sequence);
 }
 
 /** Merge a validated snapshot with its buffered live tail. Leave holes visible

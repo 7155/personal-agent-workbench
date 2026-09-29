@@ -2739,7 +2739,7 @@ def _sha256_text(value: object, *, label: str) -> str:
 
 
 def _validate_tools(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)) or len(value) > 32:
+    if not isinstance(value, (list, tuple)) or len(value) > 128:
         raise ManagedPiRuntimeError("managed Pi tool list is invalid")
     tools = tuple(str(item or "").strip() for item in value)
     if len(set(tools)) != len(tools) or any(not _TOOL_PATTERN.fullmatch(tool) for tool in tools):

@@ -41,11 +41,11 @@ export function useKnowledgeMutationBoundary() {
       knowledgeMutationPathIds.databaseRollback,
     ];
     if (required.some((pathId) => !routeIds.has(pathId))) {
-      return { state: 'unsupported', reason: '当前版本还不能安全应用知识库整理草案；没有请求被发送。' };
+      return { state: 'unsupported', reason: '当前版本还不能安全应用记忆整理草案；没有请求被发送。' };
     }
     const flags = capabilities.data?.features ?? {};
     if (!flags.managementWorkContract || !flags.knowledgeDatabaseWorkContract) {
-      return { state: 'unsupported', reason: '当前版本还不能安全应用知识库整理草案；没有请求被发送。' };
+      return { state: 'unsupported', reason: '当前版本还不能安全应用记忆整理草案；没有请求被发送。' };
     }
     return blockedReason ? { state: 'blocked', reason: blockedReason } : { state: 'available' };
   };

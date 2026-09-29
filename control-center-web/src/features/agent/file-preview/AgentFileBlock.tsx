@@ -7,6 +7,11 @@ import {
   FileDiff,
   FileImage,
   FileText,
+  FileSpreadsheet,
+  FileArchive,
+  FileAudio,
+  Film,
+  Presentation,
   Globe2,
   LoaderCircle,
   RefreshCw,
@@ -21,6 +26,8 @@ import { filePreviewRequestFromBlock, fileSizeLabel, isHtmlReport } from './file
 import { FilePreviewRenderer } from './renderer-registry';
 import { useFilePreviewStore } from './file-preview-store';
 import './file-preview.css';
+import { richFileKind, RICH_FILE_LABELS, type RichFileKind } from '../timeline/rich/rich-data';
+import '../timeline/rich/rich-conversation.css';
 
 export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, unknown>; sessionId?: string }) {
   const transport = useOptionalControlTransport();
@@ -35,7 +42,7 @@ export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, 
   const error = useFilePreviewStore((state) => state.error);
   const request = filePreviewRequestFromBlock(data, sessionId);
   const fileName = request?.fileNameHint || string(data.fileName ?? data.name ?? data.title) || '文件产物';
-  const meta = [request?.mimeTypeHint || string(data.mimeType), fileSizeLabel(request?.byteSizeHint ?? 0)].filter(Boolean).join(' · ');
+  const meta = [RICH_FILE_LABELS[richFileKind(fileName, request?.mimeTypeHint || string(data.mimeType))], fileSizeLabel(request?.byteSizeHint ?? 0)].filter(Boolean).join(' · ');
   const available = Boolean(request && transport);
   const expanded = Boolean(
     request
@@ -140,22 +147,20 @@ function inlinePreviewCaption(
   return scope;
 }
 
-function fileKind(fileName: string, mimeType: string): 'code' | 'diff' | 'document' | 'image' | 'file' {
-  const lower = fileName.toLowerCase();
-  if (mimeType.startsWith('image/')) return 'image';
-  if (/\.(?:diff|patch)$/u.test(lower)) return 'diff';
-  if (/\.(?:md|markdown|mdx|pdf|docx?)$/u.test(lower)) return 'document';
-  if (mimeType.startsWith('text/') || /\.[a-z0-9]{1,8}$/u.test(lower)) return 'code';
-  return 'file';
-}
+function fileKind(fileName: string, mimeType: string): RichFileKind { return richFileKind(fileName, mimeType); }
 
 function fileIcon(fileName: string, mimeType: string): ReactNode {
-  const lower = fileName.toLowerCase();
-  if (mimeType.startsWith('image/')) return <FileImage size={18} />;
-  if (/\.(?:md|markdown|mdx)$/u.test(lower)) return <FileText size={18} />;
-  if (/\.(?:diff|patch)$/u.test(lower)) return <FileDiff size={18} />;
-  if (/\.(?:html|htm)$/u.test(lower)) return <Globe2 size={18} />;
-  if (mimeType.startsWith('text/') || /\.[a-z0-9]{1,8}$/u.test(lower)) return <FileCode2 size={18} />;
+  const kind = richFileKind(fileName, mimeType);
+  if (kind === 'image') return <FileImage size={18} />;
+  if (kind === 'document') return <FileText size={18} />;
+  if (kind === 'sheet') return <FileSpreadsheet size={18} />;
+  if (kind === 'presentation') return <Presentation size={18} />;
+  if (kind === 'archive') return <FileArchive size={18} />;
+  if (kind === 'audio') return <FileAudio size={18} />;
+  if (kind === 'video') return <Film size={18} />;
+  if (kind === 'diff') return <FileDiff size={18} />;
+  if (/\.(html|htm)$/iu.test(fileName)) return <Globe2 size={18} />;
+  if (kind === 'code') return <FileCode2 size={18} />;
   return <File size={18} />;
 }
 

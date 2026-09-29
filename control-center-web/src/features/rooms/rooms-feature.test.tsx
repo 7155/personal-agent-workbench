@@ -3353,7 +3353,9 @@ describe('Rooms experience', () => {
       },
       'agent.room.get': () => {
         roomGetCalls += 1;
-        return { ok: true, room: refreshed };
+        // The metadata is read after events 2 and 3; an older cursor must be
+        // rejected by the shared live-session owner instead of overwriting it.
+        return { ok: true, room: { ...refreshed, lastEventSequence: 3 } };
       },
       'agent.room.message': { ok: true },
       'agent.rooms.create': { ok: true },

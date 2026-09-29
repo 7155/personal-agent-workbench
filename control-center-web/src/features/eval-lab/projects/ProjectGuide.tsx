@@ -1,3 +1,4 @@
+import { CompactActivityContext } from '@/features/agent/timeline/CompactActivityContext';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
@@ -19,6 +20,7 @@ export function ProjectGuide({ project, draftRequest, viewContext, onNewProject,
   onProjectActivity: () => void; onEnsure: () => void;
 }) {
   const [dismissedContext, setDismissedContext] = useState('');
+  const contextId = viewContext?.contextId ?? JSON.stringify([viewContext?.label, viewContext?.detail]);
   const transport = useControlTransport(); const [updated, setUpdated] = useState<SessionSummary>();
   const query = useQuery({ queryKey: ['lab-project-guide', labConnectionKey(transport), project.projectId, project.guideSessionId],
     enabled: Boolean(project.guideSessionId), retry: false, refetchOnWindowFocus: false,
@@ -35,10 +37,10 @@ export function ProjectGuide({ project, draftRequest, viewContext, onNewProject,
   return <section className="lab-project-guide" aria-label="项目 Agent">
     <header><span className="lab-project-agent-mark" aria-hidden="true" /><div><strong>项目 Agent</strong><small>围绕当前项目继续工作</small></div>{project.guideSessionId ? <LabGuideWorkflow key={project.guideSessionId} sessionId={project.guideSessionId} /> : null}</header>
     {!project.guideSessionId ? <div className="lab-project-guide__empty"><p>连接项目 Agent 后，就可以围绕材料和成果继续工作。</p><Button onClick={onEnsure}>连接项目 Agent</Button></div>
-      : session ? <PawSessionWorkspace key={session.id} record={session} recordId={session.id} appearance="embedded" showComposerControls
-        composerContext={viewContext && dismissedContext !== viewContext.text ? { ...viewContext, onClear: () => setDismissedContext(viewContext.text) } : undefined}
+      : session ? <CompactActivityContext.Provider value><PawSessionWorkspace key={session.id} record={session} recordId={session.id} appearance="embedded" showComposerControls
+        composerContext={viewContext && dismissedContext !== contextId ? { ...viewContext, onClear: () => setDismissedContext(contextId) } : undefined}
         composerPlaceholder="继续描述、修正成果，或让我尝试下一步…" draftRequest={draftRequest}
-        onNewWork={onNewProject} onSessionCreated={setUpdated} onSessionUpdated={setUpdated} onSessionActivity={onProjectActivity} />
+        onNewWork={onNewProject} onSessionCreated={setUpdated} onSessionUpdated={setUpdated} onSessionActivity={onProjectActivity} /></CompactActivityContext.Provider>
         : <div className="lab-project-guide__empty" role={query.isError ? 'alert' : 'status'}><p>{query.isError ? publicAgentErrorText(query.error, '项目 Agent 暂时无法读取。') : '正在恢复项目对话…'}</p>{query.isError ? <Button onClick={() => void query.refetch()}>重新读取对话</Button> : null}</div>}
   </section>;
 }

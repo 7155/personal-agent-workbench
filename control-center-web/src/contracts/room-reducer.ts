@@ -26,6 +26,7 @@ export interface RoomMessageProjection {
   status: 'queued' | 'streaming' | 'completed' | 'failed' | 'aborted';
   text: string;
   message?: UiAgentMessage;
+  attachmentReceipts?: RoomAttachmentReceipt[];
   clientMessageId?: string;
   projectionKind?: 'optimistic' | 'execution' | 'post';
   rootId?: string;
@@ -110,6 +111,8 @@ export interface RoomParticipantPublicProgressProjection {
 }
 export interface RoomTurnProjection {
   id: string;
+  /** Explicit server marker: purpose dispatches do not own this Root's end. */
+  lifecycleOwner?: 'jev';
   /**
    * UI-only identity for a turn that was first rendered optimistically. The
    * Room event stream remains keyed by `id`; this alias lets projections keep
@@ -502,6 +505,7 @@ export function appendOptimisticRoomMessage(
     role: 'user',
     status: 'queued',
     text: input.text,
+    attachmentReceipts: input.attachments ?? [],
     message: roomUserMessage({
       id,
       roomId: state.roomId,
@@ -1025,6 +1029,7 @@ function applyUserMessage(
     role: 'user',
     status: 'completed',
     text: answerText,
+    attachmentReceipts: attachments,
     message: roomUserMessage({
       id: text(payload.messageId) || `${event.eventId}:user`,
       roomId: event.roomId,
@@ -1044,6 +1049,9 @@ function applyUserMessage(
     completedAtMs: event.createdAtMs,
   };
   upsertMessage(state, message, clientMessageId);
+  if (payload.mode === 'jev' && text(payload.graphId)) {
+    ensureTurn(state, message.rootId || event.turnId, event.createdAtMs).lifecycleOwner = 'jev';
+  }
 }
 
 function roomAttachmentReceipts(value: unknown, roomId: string): RoomAttachmentReceipt[] {
@@ -1839,6 +1847,9 @@ function upsertActivity(
   state.activitiesById[id] = activity;
   const turn = ensureTurn(state, event.turnId, event.createdAtMs);
   turn.rootId = text(payload.rootId) || turn.rootId || event.turnId;
+  if (event.eventType === 'participant_status' && payload.status === 'jev_updated' && text(payload.graphId)) {
+    turn.lifecycleOwner = 'jev';
+  }
   const dispatchId = text(payload.dispatchId);
   const introducesDispatch = event.eventType === 'route_decision'
     || (
@@ -2080,7 +2091,8 @@ function completeParticipantTurn(
   if (!participantId && !dispatchId) {
     const turn = ensureTurn(state, event.turnId, nowMs);
     if (
-      status === 'completed'
+      turn.lifecycleOwner !== 'jev'
+      && status === 'completed'
       && hasFormalWorkResultEvidence(state, turn.rootId || turn.id)
       && !formalRootReady(state, turn)
     ) {
@@ -2187,7 +2199,8 @@ function settleRootWhenAllDispatchesTerminal(
   const dispatchIds = turn.dispatchIds ?? [];
   const terminalDispatchIds = new Set(turn.terminalDispatchIds ?? []);
   if (
-    dispatchIds.length === 0
+    turn.lifecycleOwner === 'jev'
+    || dispatchIds.length === 0
     || !dispatchIds.every((dispatchId) => terminalDispatchIds.has(dispatchId))
   ) {
     turn.status = 'running';

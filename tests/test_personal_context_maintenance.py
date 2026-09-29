@@ -601,6 +601,104 @@ class PersonalContextMaintenanceRunnerTests(unittest.TestCase):
             (),
         )
 
+    def test_activity_catch_up_does_not_count_a_review_warning_as_organized(self) -> None:
+        timestamp = int(
+            datetime(2026, 8, 12, 11, 30, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+            * 1_000
+        )
+        LocalSqliteCoreClient(self.db_path).record_event(
+            InputEvent(
+                event_id=None,
+                created_at_ms=timestamp,
+                source="voice_final",
+                committed_text="这条活动仍需独立复核",
+                privacy_disposition="allowed",
+                app="RagImeControl",
+                project="project-a",
+            )
+        )
+        runner = PersonalContextMaintenanceRunner(
+            self.db_path,
+            config=PersonalContextMaintenanceConfig(
+                project="project-a",
+                consolidate_roles=False,
+                build_timelines=True,
+                auto_publish_timelines=True,
+            ),
+            activity_organizer=_MaintenanceActivityOrganizer(semantic_fail=True),
+        )
+
+        report = runner.build_activity_timelines_through("2026-08-12")
+
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["completedDayCount"], 0)
+        self.assertEqual(report["remainingDayCount"], 1)
+        self.assertEqual(report["warningCount"], 1)
+        self.assertEqual(report["failedDate"], "2026-08-12")
+        self.assertEqual(
+            DailyActivityTimelineStore(self.db_path, project="project-a")
+            .dates_requiring_model_organization("2026-08-12"),
+            ("2026-08-12",),
+        )
+
+    def test_activity_catch_up_continues_past_review_warning_without_claiming_success(self) -> None:
+        for day in (11, 12):
+            timestamp = int(
+                datetime(2026, 8, day, 11, 30, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+                * 1_000
+            )
+            LocalSqliteCoreClient(self.db_path).record_event(
+                InputEvent(
+                    event_id=None,
+                    created_at_ms=timestamp,
+                    source="voice_final",
+                    committed_text=f"第 {day} 天的活动来源",
+                    privacy_disposition="allowed",
+                    app="RagImeControl",
+                    project="project-a",
+                )
+            )
+
+        class FirstDayNeedsReview(_MaintenanceActivityOrganizer):
+            def __init__(self) -> None:
+                super().__init__()
+                self.calls = 0
+
+            def organize_activity_timeline(self, *, packet: object) -> dict[str, object]:
+                self.calls += 1
+                self.semantic_fail = self.calls == 1
+                return super().organize_activity_timeline(packet=packet)
+
+        runner = PersonalContextMaintenanceRunner(
+            self.db_path,
+            config=PersonalContextMaintenanceConfig(
+                project="project-a",
+                consolidate_roles=False,
+                build_timelines=True,
+                auto_publish_timelines=True,
+            ),
+            activity_organizer=FirstDayNeedsReview(),
+        )
+        progress: list[dict[str, object]] = []
+
+        report = runner.build_activity_timelines_through(
+            "2026-08-12",
+            progress=lambda value: progress.append(dict(value)),
+        )
+
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["completedDayCount"], 1)
+        self.assertEqual(report["remainingDayCount"], 1)
+        self.assertEqual(report["failedDate"], "2026-08-11")
+        self.assertEqual(report["warningCount"], 1)
+        self.assertEqual([item["ok"] for item in report["activityTimelines"]], [False, True])
+        self.assertEqual(progress[-1]["completedDayCount"], 1)
+        self.assertEqual(
+            DailyActivityTimelineStore(self.db_path, project="project-a")
+            .dates_requiring_model_organization("2026-08-12"),
+            ("2026-08-11",),
+        )
+
     def test_activity_catch_up_excludes_earlier_month_and_preserves_its_backlog(self) -> None:
         for value in ("2026-07-31T09:00:00", "2026-08-01T09:00:00", "2026-08-12T09:00:00"):
             timestamp = int(datetime.fromisoformat(value).replace(tzinfo=ZoneInfo("Asia/Shanghai")).timestamp() * 1_000)

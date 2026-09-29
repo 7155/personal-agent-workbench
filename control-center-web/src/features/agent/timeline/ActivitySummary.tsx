@@ -1,4 +1,5 @@
 import { publicReasoningSummaryText } from './public-reasoning-summary';
+import { ToolStatusMark, toolReceiptStatus } from '@/features/conversation-ui/components/ToolStatusMark';
 import {
   BookOpenText,
   Bot,
@@ -473,7 +474,7 @@ const ActivityRow = memo(function ActivityRow({
         onClick={(event) => toggleDisclosurePreservingAnchor(event, setRowOpen)}
         onKeyDown={(event) => toggleDisclosureOnKeyPreservingAnchor(event, setRowOpen)}
       >
-        <span className="agent-activity-row__icon" data-kind={presentation.kind}><Icon size={15} /></span>
+        <span className="agent-activity-row__icon" data-kind={presentation.kind}>{isToolActivity ? <ToolStatusMark status={toolReceiptStatus(activity.status, activity.settledByTurnStatus)} /> : <Icon size={15} />}</span>
         <span>
           <strong>{presentation.title}</strong>
           <small>
@@ -482,7 +483,7 @@ const ActivityRow = memo(function ActivityRow({
         </span>
         <i data-status={activity.status}>
           {toolView?.sources.length ? `来源 ${toolView.sources.length} · ` : ''}
-          {statusLabel(activity.status)}
+          {activity.settledByTurnStatus === 'aborted' ? '已停止' : statusLabel(activity.status)}
           {receiptMeta ? ` · ${receiptMeta}` : ''}
         </i>
       </summary>
@@ -1591,9 +1592,11 @@ export function FxActivityStack({
   if (!activities.length) return null;
   const waiting = activities.some((activity) => activity.status === 'waiting');
   const failedCount = activities.filter((activity) => activity.status === 'failed').length;
+  const stoppedCount = activities.filter((activity) => activity.settledByTurnStatus === 'aborted').length;
   const compactStatus = [
-    running ? '进行中' : waiting ? '等待确认' : '已完成',
+    running ? '进行中' : waiting ? '等待确认' : stoppedCount ? '已结束' : '已完成',
     failedCount ? `${failedCount} 项失败` : '',
+    stoppedCount ? `${stoppedCount} 项停止` : '',
     `${activities.length} 个步骤`,
   ].filter(Boolean).join(' · ');
   return (
@@ -1699,8 +1702,9 @@ function FxActivityDisclosure({
   /* Subagent receipts land after background work; the violet tone separates
      "another Agent finished this for you" from the parent's own tool calls. */
   const subagent = isSubagentActivity(activity);
-  const tone = failed ? 'danger' : waiting ? 'wait' : running ? 'run' : subagent ? 'vio' : 'ok';
-  const statusText = failed ? '失败' : waiting ? '等待确认' : running ? '进行中' : subagent ? '后台完成' : '完成';
+  const stopped = activity.settledByTurnStatus === 'aborted';
+  const tone = failed ? 'danger' : waiting || stopped ? 'wait' : running ? 'run' : subagent ? 'vio' : 'ok';
+  const statusText = stopped ? '已停止' : failed ? '失败' : waiting ? '等待确认' : running ? '进行中' : subagent ? '后台完成' : '完成';
   const nowMs = useActivityClock(running && motionActive);
   // A Tool receipt with an explicit duration stays authoritative; otherwise a
   // live row shows its real elapsed clock and a settled row its measured span.
@@ -1732,11 +1736,11 @@ function FxActivityDisclosure({
                 motionActive={motionActive}
                 state={activity.kind === 'reasoning_summary' ? 'thinking' : 'running'}
               />
-            ) : <span className="paw-activity__glyph" data-kind={glyphKind}><Glyph size={14} /></span>}
+            ) : <span className="paw-activity__glyph" data-kind={glyphKind}>{isToolRow ? <ToolStatusMark status={toolReceiptStatus(activity.status, activity.settledByTurnStatus)} size={14} active={motionActive} /> : <Glyph size={14} />}</span>}
           </span>
           <span className="paw-activity__label">{action || label}</span>
           {hint ? <span className="paw-activity__hint">{hint}</span> : null}
-          <span className={`fx-pill ${tone}`} data-redundant={Boolean(action) && !failed && !waiting || undefined}>
+          <span className={`fx-pill ${tone}`} data-redundant={Boolean(action) && !failed && !waiting && !stopped || undefined}>
             {statusText}
           </span>
           {meta ? <span className="fx-meta">{meta}</span> : null}
@@ -1814,6 +1818,7 @@ const toolActionVerbs: Record<string, string> = {
 
 function fxActivityAction(activity: AgentActivityProjection, view: PublicToolResultView | null): string {
   if (!view) return '';
+  if (activity.settledByTurnStatus === 'aborted') return '已停止';
   const verb = toolActionVerbs[view.toolId];
   if (!verb) return '';
   return activity.status === 'running' ? `正在${verb}`

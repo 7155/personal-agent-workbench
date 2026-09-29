@@ -19,6 +19,89 @@ from rag_ime.owner_memory_maintenance import (
 
 
 class GatewayMemoryMaintenanceJobsTests(unittest.TestCase):
+    def test_restart_preserves_last_source_progress_until_executor_reports_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paw.sqlite"
+            started, release = threading.Event(), threading.Event()
+            progress = {"phase": "owner_memory_curation", "totalSourceCount": 20,
+                        "completedSourceCount": 12, "pendingSourceCount": 8,
+                        "sourceCursor": {"toSourceId": "source-12"}}
+
+            def execute(_payload: Mapping[str, object]) -> dict[str, object]:
+                started.set()
+                release.wait(timeout=2)
+                return {"ok": True}
+
+            jobs = GatewayMemoryMaintenanceJobs(execute, db_path=db_path)
+            job_id = "memory-maintenance:resuming"
+            jobs._persist_job({"jobId": job_id, "state": "running", "request": {},
+                               "progress": progress, "createdAtMs": 1, "updatedAtMs": 2})
+            jobs.resume_persisted_jobs()
+            try:
+                self.assertTrue(started.wait(timeout=2))
+                self.assertEqual(jobs.status(job_id)["progress"], progress)
+            finally:
+                release.set()
+                self._wait_for_terminal(jobs, job_id)
+
+    def test_observer_timeline_refresh_does_not_return_cached_running_job(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paw.sqlite"
+            owner = GatewayMemoryMaintenanceJobs(lambda _: {"ok": True}, db_path=db_path)
+            job = {"jobId": "memory-maintenance:timeline", "state": "running",
+                   "request": {"timelineDate": "2026-09-19"}, "createdAtMs": 1,
+                   "updatedAtMs": 2, "progress": {"completedDayCount": 0}}
+            owner._persist_job(job)
+            observer = GatewayMemoryMaintenanceJobs(lambda _: self.fail("observer executed"), db_path=db_path, execution_owner=False)
+            observer.latest_status()
+            self.assertEqual(observer.activity_timeline_status()["state"], "running")
+            owner._persist_job({**job, "state": "completed", "updatedAtMs": 3,
+                                "result": {"ok": True}, "progress": {"completedDayCount": 1}})
+            refreshed = observer.activity_timeline_status()
+            self.assertEqual(refreshed["state"], "completed")
+            self.assertEqual(refreshed["progress"]["completedDayCount"], 1)
+
+    def test_observer_projects_active_automatic_timeline_without_starting_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            jobs = GatewayMemoryMaintenanceJobs(lambda _: self.fail("observer executed"),
+                                               db_path=Path(directory) / "paw.sqlite", execution_owner=False)
+            jobs._persist_job({"jobId": "memory-maintenance:automatic", "state": "running",
+                               "request": {"manual": False}, "createdAtMs": 1, "updatedAtMs": 2,
+                               "progress": {"phase": "activity_timeline_catch_up", "completedDayCount": 2}})
+            status = jobs.activity_timeline_status()
+            self.assertEqual(status.get("state"), "running")
+            self.assertEqual(status.get("mode"), "automatic_catch_up")
+
+    def test_recovery_finds_active_receipt_older_than_recent_history_window(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            jobs = GatewayMemoryMaintenanceJobs(lambda _: {"ok": True}, db_path=Path(directory) / "paw.sqlite")
+            active_id = "memory-maintenance:older-active"
+            jobs._persist_job({"jobId": active_id, "state": "queued", "request": {},
+                               "createdAtMs": 1, "updatedAtMs": 2})
+            for index in range(65):
+                jobs._persist_job({"jobId": f"memory-maintenance:history-{index}", "state": "completed", "request": {},
+                                   "createdAtMs": index + 10, "updatedAtMs": index + 10})
+            with patch("rag_ime.owner_memory_maintenance.threading.Thread.start") as start:
+                jobs.resume_persisted_jobs()
+                start.assert_called_once()
+                self.assertEqual(jobs.latest_status()["jobId"], active_id)
+
+    def test_observer_prioritizes_active_receipt_over_newer_terminal_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            jobs = GatewayMemoryMaintenanceJobs(lambda _: self.fail("observer executed"),
+                                               db_path=Path(directory) / "paw.sqlite", execution_owner=False)
+            active_id = "memory-maintenance:older-active"
+            request = {"timelineDate": "2026-09-19"}
+            jobs._persist_job({"jobId": active_id, "state": "queued", "request": request,
+                               "createdAtMs": 1, "updatedAtMs": 2})
+            for index in range(65):
+                jobs._persist_job({"jobId": f"memory-maintenance:history-{index}", "state": "completed", "request": request,
+                                   "createdAtMs": index + 10, "updatedAtMs": index + 10})
+            with patch("rag_ime.owner_memory_maintenance.threading.Thread.start") as start:
+                self.assertEqual(jobs.latest_status()["jobId"], active_id)
+                self.assertEqual(jobs.activity_timeline_status()["jobId"], active_id)
+                start.assert_not_called()
+
     def test_cli_defaults_to_continuity_batch_and_clamps_only_at_hard_limit(self) -> None:
         self.assertEqual(build_parser().parse_args([]).max_sources, 1_000)
         self.assertEqual(
