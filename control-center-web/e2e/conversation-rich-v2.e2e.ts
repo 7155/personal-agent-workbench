@@ -9,14 +9,15 @@ test('rich conversation renders math, data, diagrams and controlled media', asyn
   await expect(page.locator('math').first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('reading-light.png') });
   const downloadEvent = page.waitForEvent('download');
-  await page.getByRole('button', { name: '导出可见行 CSV' }).first().click();
+  await page.getByRole('button', { name: '导出当前显示的行和列；文本公式已转义' }).first().click();
   const download = await downloadEvent;
   expect(download.suggestedFilename()).toMatch(/\.csv$/);
   expect(await download.failure()).toBeNull();
   const code = page.locator('figure.paw-rich-code').filter({ hasText: 'receipt.ts' }).first();
-  await code.getByRole('button', { name: '自动换行' }).click();
+  await code.getByText('显示', { exact: true }).click();
+  await code.getByRole('button', { name: /^自动换行/ }).click();
   await expect(code).toHaveAttribute('data-wrap', 'true');
-  await code.getByRole('button', { name: '显示行号' }).click();
+  await code.getByRole('button', { name: /^行号/ }).click();
   await expect(code).toHaveAttribute('data-line-numbers', 'true');
   await page.getByRole('tab', { name: '结构', exact: true }).click();
   await expect(page.getByRole('region', { name: 'JSON 结构' })).toContainText('blocks');

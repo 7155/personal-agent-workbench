@@ -29,11 +29,11 @@
 
 /* Readable prose is not another card. Surface contrast belongs to inserted objects. */
 .agent-markdown.paw-rich-prose, .paw-desktop-root :is(.paw-room-workspace--jev, .paw-session-workspace[data-design='workbench']) .agent-markdown.paw-rich-prose {
-  color: var(--rc-ink); font-size: 16px; line-height: 1.86; letter-spacing: .003em; overflow-wrap: anywhere;
+  color: var(--rc-ink); font-size: var(--reading-body-size, 16px); line-height: var(--reading-line-height, 1.86); letter-spacing: .003em; overflow-wrap: anywhere;
 }
 .paw-rich-prose > :first-child, .paw-rich-prose .agent-markdown__active-tail > :first-child { margin-top: 0; }
 .paw-rich-prose > :last-child { margin-bottom: 0; }
-.paw-rich-prose :is(p, ul, ol) { margin: 0 0 1em; }
+.paw-rich-prose :is(p, ul, ol) { margin: 0 0 var(--reading-paragraph-gap, 1em); }
 .paw-rich-prose :is(ul, ol) { padding-inline-start: 1.65em; }
 .paw-rich-prose li { padding-left: .18em; margin-block: .28em; }
 .paw-rich-prose li > :last-child { margin-bottom: 0; }
@@ -60,7 +60,7 @@
 .paw-rich-toolbar__label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .paw-rich-toolbar__label > small { color: var(--rc-faint); font-size: 11px; white-space: nowrap; }
 .paw-rich-toolbar__actions { display: flex; align-items: center; gap: 2px; flex: none; }
-.agent-code-block.paw-rich-code { display: block; position: relative; overflow: hidden; width: 100%; margin: 20px 0; border: 1px solid var(--rc-line); border-radius: var(--rc-radius); box-shadow: none; background: var(--rc-soft); }
+.agent-code-block.paw-rich-code { display: block; position: relative; overflow: visible; width: 100%; margin: 20px 0; border: 1px solid var(--rc-line); border-radius: var(--rc-radius); box-shadow: none; background: var(--rc-soft); }
 .agent-code-block.paw-rich-code > figcaption { margin: 0; }
 .paw-rich-code .paw-rich-toolbar { background: transparent; }
 .paw-rich-code__tabs { display: flex; align-items: center; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--rc-line); background: var(--rc-paper); }
@@ -68,7 +68,7 @@
 .paw-rich-code__tabs button[aria-selected='true'] { color: var(--rc-ink); border-bottom-color: currentColor; }
 .paw-rich-code__tabs button:disabled { opacity: .45; cursor: not-allowed; }
 .paw-rich-code__tabs small { margin-left: auto; color: var(--rc-faint); font-size: 11px; }
-.paw-rich-code .paw-rich-code__scroll { max-height: 390px; overflow: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; scrollbar-color: var(--rc-line) transparent; }
+.paw-rich-code .paw-rich-code__scroll { max-height: 390px; overflow: auto; border-radius: 0 0 var(--rc-radius) var(--rc-radius); overscroll-behavior-inline: contain; scrollbar-width: thin; scrollbar-color: var(--rc-line) transparent; }
 .paw-rich-code[data-expanded] .paw-rich-code__scroll { max-height: min(72dvh, 850px); }
 .paw-rich-code :is(pre, pre.shiki), .paw-desktop-root :is(.paw-room-workspace--jev, .paw-session-workspace[data-design='workbench']) .paw-rich-code :is(pre, pre.shiki) {
   box-sizing: border-box; margin: 0; padding: 17px 19px; border: 0; border-radius: 0; background: transparent !important; box-shadow: none; font: 13px/1.75 var(--rc-mono); tab-size: 2; white-space: pre;
@@ -82,10 +82,39 @@
 .paw-rich-code__expand:hover { color: var(--rc-ink); background: var(--rc-soft); }
 .paw-rich-code[data-streaming] .paw-rich-toolbar__label::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--rc-accent); animation: paw-rich-breathe 1.5s ease-in-out infinite; }
 
+/* Controls acknowledge real local actions; none implies a file was saved by the OS. */
+.paw-rich-action[data-feedback='done'] { color: var(--wb-success, var(--rc-accent)); }
+.paw-rich-action[data-feedback='done'][data-motion='active'] > svg { animation: paw-rich-feedback 240ms ease-out; }
+.paw-rich-action[data-motion='active'] > .paw-rich-action__spin { animation: paw-rich-spin 900ms linear infinite; }
+.paw-rich-code__options { position: relative; flex: none; color: var(--rc-muted); font: 12px/1.5 var(--rc-sans); }
+.paw-rich-code__options > summary { display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 7px; box-sizing: border-box; cursor: pointer; list-style: none; border-radius: 5px; }
+.paw-rich-code__options > summary::-webkit-details-marker { display: none; }
+.paw-rich-code__options > summary:hover, .paw-rich-code__options[open] > summary { background: var(--rc-soft); color: var(--rc-ink); }
+.paw-rich-code__options > div { position: absolute; z-index: 5; right: 0; top: calc(100% + 7px); width: 180px; padding: 6px; border: 1px solid var(--rc-line); border-radius: 8px; background: var(--rc-paper); box-shadow: 0 8px 24px rgb(0 0 0 / 10%); }
+.paw-rich-code__options button { display: flex; align-items: center; gap: 9px; min-height: 35px; padding: 6px 8px; width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--rc-ink); font: inherit; cursor: pointer; }
+.paw-rich-code__options button > small { margin-left: auto; color: var(--rc-muted); }
+.paw-rich-code__options button:hover { background: var(--rc-soft); }
+.paw-rich-code__options button:disabled { opacity: .45; cursor: not-allowed; }
+.paw-rich-code__options :is(button,summary):focus-visible { outline: 2px solid var(--rc-accent); outline-offset: 2px; }
+@keyframes paw-rich-feedback { 0% { transform: scale(.75); opacity: .55; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: none; } }
+@keyframes paw-rich-spin { to { transform: rotate(360deg); } }
+
+/* Measured overflow, not a permanent instruction to scroll when nothing overflows. */
+.paw-rich-table__viewport { position: relative; overflow: hidden; }
+.paw-rich-table__viewport::before, .paw-rich-table__viewport::after { content: ''; position: absolute; top: 0; bottom: 0; width: 17px; pointer-events: none; z-index: 1; opacity: 0; transition: opacity 140ms; }
+.paw-rich-table__viewport::before { left: 0; background: linear-gradient(90deg, var(--rc-soft), transparent); }
+.paw-rich-table__viewport::after { right: 0; background: linear-gradient(-90deg, var(--rc-soft), transparent); }
+.paw-rich-table[data-overflow-left] .paw-rich-table__viewport::before, .paw-rich-table[data-overflow-right] .paw-rich-table__viewport::after { opacity: 1; }
+.paw-rich-table__caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 32px; padding: 5px 12px; border-top: 1px solid var(--rc-line); color: var(--rc-faint); font: 11px/1.6 var(--rc-sans); }
+.paw-rich-table__navigate { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.paw-rich-table__navigate small { font: inherit; margin-right: 5px; }
+.paw-rich-table__navigate .paw-rich-action { min-height: 26px; min-width: 26px; padding: 4px; }
+@media (max-width: 460px) { .paw-rich-table__navigate small { display: none; } .paw-rich-toolbar { gap: 5px; padding-left: 10px; } .paw-rich-toolbar__label { gap: 5px; } }
+
 /* Native table layout keeps multi-line Chinese and long identifiers readable. */
 .paw-rich-table { display: block; overflow: hidden; width: 100%; margin: 20px 0; border: 1px solid var(--rc-line); border-radius: var(--rc-radius); background: var(--rc-paper); }
 .paw-rich-table__scroll { overflow: auto; max-height: 380px; overscroll-behavior-inline: contain; scrollbar-width: thin; scrollbar-color: var(--rc-line) transparent; }
-.paw-rich-table[data-expanded] > .paw-rich-table__scroll { max-height: 72dvh; }
+.paw-rich-table[data-expanded] .paw-rich-table__scroll { max-height: 72dvh; }
 .paw-rich-table table, .paw-rich-prose .paw-rich-table table { width: 100%; min-width: 420px; margin: 0; border-collapse: separate; border-spacing: 0; border: 0; font: 13px/1.75 var(--rc-sans); }
 .paw-rich-table :is(th, td), .paw-rich-prose .paw-rich-table :is(th, td) { min-width: 90px; max-width: 360px; padding: 11px 15px; border: 0; border-bottom: 1px solid var(--rc-line); color: var(--rc-ink); background: transparent; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .paw-rich-table th, .paw-rich-prose .paw-rich-table th { position: sticky; top: 0; z-index: 1; background: var(--rc-soft); font-size: 12px; font-weight: 600; color: var(--rc-muted); }
@@ -220,3 +249,5 @@
 }
 @media (prefers-reduced-motion: reduce) { :is(.paw-rich-code, .paw-rich-image) *, :is(.paw-rich-code, .paw-rich-image) *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 [data-reduce-motion='true'] :is(.paw-rich-code, .paw-rich-image) *, [data-reduce-motion='true'] :is(.paw-rich-code, .paw-rich-image) *::after { animation: none !important; transition: none !important; }
+
+.paw-rich-code[data-reduce-motion="true"] *, .paw-rich-code[data-reduce-motion="true"] *::before { animation:none!important;transition:none!important; }

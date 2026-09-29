@@ -5,6 +5,14 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Add Workspace V3 reading navigation and local text/motion preferences, task
+  and delivered-file filters, collapsed ended-task history, and explicit
+  copy/download feedback without changing execution or file authority.
+- Add an on-demand Multi-Agent V4 collaboration panorama: stable dependency
+  layout, partner responsibilities and revision-bound execution/review receipts.
+  Keep reference edges separate from blocking dependencies, use readable lists
+  in narrow windows, and reuse the existing task Dialog and operations.
+
 - Add TypeSafe / Jev credentials and scenario status to Model accounts, and an
   opt-in Knowledge reranker that preserves source content and citations. Keep
   approval fallback explicit and reject malformed typed decisions.

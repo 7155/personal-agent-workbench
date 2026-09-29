@@ -13,8 +13,8 @@
 }
 .paw-desktop-root .agent-composer[data-composer-design='workbench']:focus-within,
 .agent-composer[data-composer-design='workbench']:focus-within {
-  border-color: color-mix(in srgb, var(--wb-accent) 58%, var(--wb-line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wb-accent) 7%, transparent), 0 9px 28px rgb(18 32 49 / 5%);
+  border-color: color-mix(in srgb, var(--wb-ink) 30%, var(--wb-line));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--wb-ink) 4%, transparent), 0 9px 28px rgb(18 32 49 / 5%);
 }
 /* A busy editor is not itself a progress meter. The task status and Stop stay visible. */
 .agent-composer[data-composer-design='workbench'] > .agent-composer__busy-frame { display: none; }

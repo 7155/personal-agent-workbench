@@ -79,8 +79,10 @@ describe('Jev equal partner windows', () => {
       tasks: raw.tasks.map(task => ({ ...task, state: 'done' })), effects: [] }, 'graph');
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
     expect(screen.getByLabelText('任务与成果')).toHaveAttribute('data-summary', 'true');
-    expect(screen.getByRole('progressbar', { name: '任务验收数' })).toHaveAttribute('value', '2');
+    expect(screen.getByText('已验收 2/2')).toBeVisible();
+    expect(screen.queryByRole('progressbar', { name: '任务验收数' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '展开伙伴卡片' })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByText('已结束', { exact: true }));
     await userEvent.setup().click(screen.getByRole('button', { name: /Earth.*核对读取/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent('核对读取');
   });
@@ -203,11 +205,15 @@ describe('Jev equal partner windows', () => {
     expect(screen.getByRole('region', { name: 'Venus 当前工作' })).toHaveTextContent('结果复核');
     expect(screen.queryByRole('region', { name: 'Earth 当前工作' })).not.toBeInTheDocument();
   });
-  it('moves completed work to delivery history and removes active windows after final', () => {
+  it('moves completed work to delivery history and removes active windows after final', async () => {
     const graph = parseJevSnapshot({ ...raw, final: { status: 'completed', content: '完成' }, tasks: raw.tasks.map(task => ({ ...task, state: 'done', result: '已核对' })) }, 'graph');
     expect(jevPartnerWork(graph, room)).toEqual([]);
     render(<PawJevTeamPanels graph={graph} room={room} onOpenParticipant={vi.fn()} />);
-    expect(screen.getByRole('heading', { name: '已结束' })).toBeVisible();
+    const ended = screen.getByText('已结束', { exact: true });
+    expect(ended).toBeVisible();
+    expect(ended.closest('details')).not.toHaveAttribute('open');
+    await userEvent.setup().click(ended);
+    expect(ended.closest('details')).toHaveAttribute('open');
     expect(screen.queryByRole('region', { name: /当前工作/ })).not.toBeInTheDocument();
     expect(screen.getByText('已验收 2/2')).toBeVisible();
     expect(screen.getAllByText('已验收', { exact: true })).toHaveLength(2);
@@ -404,10 +410,8 @@ describe('Jev equal partner windows', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     const controlled = document.getElementById(toggle.getAttribute('aria-controls')!);
     expect(controlled).toContainElement(screen.getByRole('region', { name: 'Venus 当前工作' }));
-    const progress = screen.getByRole('progressbar', { name: '任务验收数' });
-    expect(progress).toHaveAttribute('value', '1');
-    expect(progress).toHaveAttribute('max', '2');
-    expect(progress).toHaveAttribute('aria-valuetext', '1 项已验收，共 2 项任务；不是预计耗时进度');
+    expect(screen.getByText('已验收 1/2')).toBeVisible();
+    expect(screen.queryByRole('progressbar', { name: '任务验收数' })).not.toBeInTheDocument();
     const user = userEvent.setup();
     toggle.focus();
     await user.keyboard('{Enter}');

@@ -126,16 +126,12 @@
 .paw-jev-rail__head > div { display: grid; gap: 3px; min-width: 0; }
 .paw-jev-rail__head strong { font-size: 16px; font-weight: 650; letter-spacing: -.02em; }
 .paw-jev-rail__head small { color: var(--jev-warn); font-size: 12px; }
-.paw-jev-rail__eyebrow { color: var(--jev-faint); font-size: 9px; letter-spacing: .13em; font-weight: 600; line-height: 1.5; }
+.paw-jev-rail__eyebrow { color: var(--jev-faint); font-size: 11px; letter-spacing: .02em; font-weight: 400; line-height: 1.5; }
 .paw-jev-rail__collapse { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--jev-muted); cursor: pointer; }
 .paw-jev-rail__collapse:hover { background: var(--jev-hover); color: var(--jev-ink); }
 .paw-desktop-root .paw-room-workspace--jev .paw-jev-team__progress { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; flex: none; margin: 0; padding: 0 21px 15px; border: 0; color: var(--jev-muted); font-size: 12px; line-height: 1.5; }
 .paw-jev-team__progress strong { font-weight: 500; color: var(--jev-ink); font-variant-numeric: tabular-nums; }
 .paw-jev-team__progress > span { display: inline-flex; align-items: center; gap: 5px; }
-.paw-desktop-root .paw-room-workspace--jev .paw-jev-team__progress progress { display: block; flex-basis: 100%; width: 100%; height: 3px; margin: 3px 0 0; border: 0; border-radius: 2px; background: var(--jev-line); color: var(--jev-done); appearance: none; overflow: hidden; }
-.paw-jev-team__progress progress::-webkit-progress-bar { background: var(--jev-line); }
-.paw-jev-team__progress progress::-webkit-progress-value { background: var(--jev-done); }
-.paw-jev-team__progress progress::-moz-progress-bar { background: var(--jev-done); }
 .paw-jev-rail__tabs { display: grid; grid-template-columns: 1fr 1fr; flex: none; gap: 3px; margin: 0 16px 9px; padding: 3px; border: 1px solid var(--jev-line); border-radius: 9px; background: var(--jev-sunken); }
 .paw-jev-rail__tabs > button { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 33px; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--jev-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
 .paw-jev-rail__tabs > button > span { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .65; }
@@ -215,7 +211,7 @@
 .paw-jev-file-mark[data-kind='code'] { color: var(--jev-review); background: color-mix(in srgb, var(--jev-review) 9%, var(--jev-surface)); }
 .paw-jev-file-mark[data-kind='data'] { color: var(--jev-done); background: color-mix(in srgb, var(--jev-done) 8%, var(--jev-surface)); }
 .paw-jev-file-mark[data-kind='image'] { color: var(--jev-warn); background: color-mix(in srgb, var(--jev-warn) 9%, var(--jev-surface)); }
-.paw-jev-files .paw-jev-record-row strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; }
+.paw-jev-files .paw-jev-record-row strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 14px; font-weight: 550; }
 .paw-jev-files .paw-jev-files__path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10.5px/1.6 var(--jev-mono); color: var(--jev-faint); }
 .paw-jev-files .paw-jev-record-row small { font-size: 11px; }
 .paw-jev-files__evidence { display: grid; place-items: center; flex: 0 0 27px; height: 28px; margin: 7px 2px 0 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--jev-faint); cursor: pointer; }
@@ -233,6 +229,23 @@
 .paw-jev-rail__no-match { color: var(--jev-muted); font-size: 13px; line-height: 1.7; }
 .paw-jev-rail__no-match > button, .paw-jev-records__more { display: inline-flex; align-items: center; gap: 4px; border: 0; padding: 6px 0; color: var(--jev-accent); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
 
+/* A small index narrows existing tasks; it never changes their order or lifecycle. */
+.paw-jev-rail-filters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 3px; flex: none; margin: 0 17px 3px; padding-bottom: 9px; border-bottom: 1px solid var(--jev-line); }
+.paw-jev-rail-filters > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; padding: 4px 3px; border: 0; border-radius: 5px; background: transparent; color: var(--jev-muted); font: 12px/1.4 var(--wb-font); cursor: pointer; transition: background 140ms,color 140ms; }
+.paw-jev-rail-filters > button small { font-size: 10px; font-variant-numeric: tabular-nums; opacity: .8; }
+.paw-jev-rail-filters > button:hover { background: var(--jev-sunken); }
+.paw-jev-rail-filters > button[aria-pressed='true'] { color: var(--jev-ink); background: var(--jev-sunken); box-shadow: inset 0 0 0 1px var(--jev-line); }
+.paw-jev-rail-filters > button[data-attention] { color: var(--jev-warn); }
+.paw-jev-ended-group > summary { display: flex; align-items: center; gap: 8px; min-height: 31px; cursor: pointer; list-style: none; font-size: 12px; color: var(--jev-muted); }
+.paw-jev-ended-group > summary::-webkit-details-marker { display: none; }
+.paw-jev-ended-group > summary > small { font-size: 11px; }
+.paw-jev-ended-group > summary > svg:last-child { margin-left: auto; transition: transform 140ms; }
+.paw-jev-ended-group[open] > summary > svg:last-child { transform: rotate(180deg); }
+.paw-jev-ended-group[open] > ul { padding-top: 7px; }
+.paw-jev-file-scope { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0 14px; color: var(--jev-muted); font-size: 11px; }
+.paw-jev-file-scope > button { min-height: 28px; padding: 4px 8px; background: transparent; border: 1px solid var(--jev-line); border-radius: 5px; color: inherit; font: inherit; cursor: pointer; }
+.paw-jev-file-scope > button[aria-pressed='true'] { color: var(--jev-ink); background: var(--jev-sunken); border-color: var(--jev-line-strong); }
+
 /* Portalled sheets define their own aliases; they do not depend on a Room ancestor. */
 :is(.paw-jev-inspector, .jev-plan-review__dialog, .paw-jev-objective-detail, .paw-jev-partner-settings, .room-composer-dialog) {
   --jev-ink: var(--wb-ink); --jev-muted: var(--wb-muted); --jev-faint: var(--wb-faint); --jev-surface: var(--wb-surface);
@@ -241,7 +254,7 @@
   --paw-panel: var(--wb-surface); --paw-ink: var(--color-text, #202c3a); --paw-muted: var(--wb-muted); --paw-line: var(--wb-line);
   background: var(--jev-surface); color: var(--jev-ink); font-family: var(--wb-font);
 }
-.paw-jev-inspector.ui-dialog { position: fixed; top: 16px; right: 16px; bottom: 16px; left: auto; display: flex; flex-direction: column; gap: 0; width: min(580px, calc(100vw - 32px)); height: auto; max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; transform: none; border: 1px solid var(--jev-line); border-radius: 15px; box-shadow: 0 22px 90px rgb(8 18 35 / 24%); animation: jev-sheet-in 240ms var(--jev-ease) both; }
+.paw-jev-inspector.ui-dialog { position: fixed; top: 16px; right: 16px; bottom: 16px; left: auto; display: flex; flex-direction: column; gap: 0; width: min(580px, calc(100vw - 32px)); height: auto; max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; transform: none; border: 1px solid var(--jev-line); border-radius: 15px; box-shadow: 0 22px 90px rgb(8 18 35 / 24%); animation: jev-sheet-in 180ms var(--jev-ease) both; }
 .paw-jev-inspector .ui-dialog-header, .paw-jev-inspector > header { flex: none; margin: 0; padding: 26px 28px 21px; border-bottom: 1px solid var(--jev-line); }
 .paw-jev-inspector .ui-dialog-title { padding-right: 24px; font-size: 20px; line-height: 1.45; letter-spacing: -.025em; font-weight: 650; }
 .paw-jev-inspector .ui-dialog-description { margin: 7px 0 0; font-size: 13px; line-height: 1.7; color: var(--jev-muted); }
@@ -422,7 +435,7 @@
 @keyframes jev-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes jev-pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @keyframes jev-rail-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
-@keyframes jev-sheet-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+@keyframes jev-sheet-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
 @keyframes jev-receipt-arrive { from { background-color: var(--jev-accent-soft); } to { background-color: transparent; } }
 @keyframes jev-accepted { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--jev-done) 38%, transparent); } 100% { box-shadow: 0 0 0 5px transparent; } }
 @keyframes jev-sync-spin { to { transform: rotate(360deg); } }
@@ -436,3 +449,8 @@
 }
 [data-reduce-motion='true'] .paw-room-workspace--jev *, [data-reduce-motion='true'] .paw-room-workspace--jev *::before, [data-reduce-motion='true'] .paw-room-workspace--jev *::after,
 [data-reduce-motion='true'] .paw-jev-inspector.ui-dialog { animation: none !important; transition: none !important; }
+
+.paw-jev-rail[data-reduce-motion='true'] *, .paw-jev-rail[data-reduce-motion='true'] *::before, .paw-jev-rail[data-reduce-motion='true'] *::after,
+.paw-jev-inspector[data-reduce-motion='true'], .paw-jev-inspector[data-reduce-motion='true'] * { animation: none !important; transition: none !important; }
+
+.paw-jev-rail__attention > .paw-jev-rail__section-head h3 { display:flex;align-items:center;gap:6px;color:var(--paw-warning,#9a682c); }

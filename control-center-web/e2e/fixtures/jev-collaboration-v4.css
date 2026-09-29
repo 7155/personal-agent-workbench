@@ -1,0 +1,101 @@
+body { margin: 0; }
+.collab-demo { --paw-panel: #fffefa; --paw-ink: #2c302d; --paw-muted: #858981; --paw-line: #e4e6df; --paw-hover: #f2f3ee; height: 100dvh; min-height: 600px; box-sizing: border-box; display: flex; flex-direction: column; background: #efeee9; color: var(--paw-ink); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
+.collab-demo *, .collab-demo *::before, .collab-demo *::after { box-sizing: border-box; }
+.collab-demo[data-theme='dark'] { --paw-panel: #222724; --paw-ink: #e4e8de; --paw-muted: #929c92; --paw-line: #384039; --paw-hover: #2d342f; background: #171d19; }
+.collab-demo button, .collab-demo select { font: inherit; color: inherit; cursor: pointer; }
+.collab-demo button:disabled { cursor: default; opacity: .45; }
+.collab-demo-top { display: flex; align-items: center; gap: 24px; min-height: 55px; padding: 9px 28px; }
+.collab-demo-brand { display: flex; align-items: center; gap: 11px; flex: 1; }
+.collab-demo-brand > span { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; background: var(--paw-ink); color: var(--paw-panel); }
+.collab-demo-brand strong { font-size: 17px; }
+.collab-demo-brand small { color: var(--paw-muted); font: 9px ui-monospace, monospace; letter-spacing: .14em; margin-left: 6px; }
+.collab-demo-top nav { display: flex; align-items: center; gap: 5px; }
+.collab-demo-top nav button { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 16px; color: var(--paw-muted); font-size: 12px; }
+.collab-demo-top nav button[aria-pressed='true'] { color: var(--paw-ink); border-color: var(--paw-line); background: var(--paw-panel); box-shadow: 0 1px 3px rgb(20 30 20 / 3%); }
+.collab-demo-label { font-size: 10px; color: var(--paw-muted); flex: 1; text-align: right; }
+.collab-demo-window { min-height: 0; display: flex; flex: 1; flex-direction: column; margin: 0 24px; border: 1px solid var(--paw-line); border-radius: 12px; background: var(--paw-panel); overflow: hidden; box-shadow: 0 13px 38px rgb(20 30 20 / 4%); }
+.collab-demo-chrome { display: flex; align-items: center; gap: 20px; padding: 8px 18px; min-height: 30px; background: color-mix(in srgb, var(--paw-hover) 50%, var(--paw-panel)); border-bottom: 1px solid var(--paw-line); font-size: 10px; color: var(--paw-muted); }
+.collab-demo-chrome small { margin-left: auto; font-size: 9px; }
+.collab-demo-dots { display: flex; gap: 6px; }
+.collab-demo-dots i { width: 6px; height: 6px; border-radius: 50%; background: #ceb9a7; }
+.collab-demo-dots i:nth-child(2) { background: #c8c5a3; }
+.collab-demo-dots i:nth-child(3) { background: #afc6b5; }
+.collab-demo-heading { display: flex; align-items: center; gap: 20px; justify-content: space-between; padding: 13px 26px 12px; border-bottom: 1px solid var(--paw-line); }
+.collab-demo-eyebrow { color: var(--paw-muted); font-size: 10px; letter-spacing: .045em; }
+.collab-demo-heading h1 { font-size: 22px; line-height: 1.4; margin: 5px 0 5px; font-weight: 550; letter-spacing: -.03em; }
+.collab-demo-heading p { font-size: 12px; color: var(--paw-muted); margin: 0; }
+.collab-demo-people { display: flex; align-items: center; gap: 9px; }
+.collab-demo-people small { margin-left: 5px; font-size: 10px; color: var(--paw-muted); white-space: nowrap; }
+.collab-demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 6px 24px; min-height: 39px; border-bottom: 1px solid var(--paw-line); font-size: 11px; }
+.collab-demo-controls label { display: flex; align-items: center; gap: 9px; color: var(--paw-muted); }
+.collab-demo-controls select { padding: 5px 8px; border: 1px solid var(--paw-line); border-radius: 5px; background: var(--paw-panel); color: var(--paw-ink); font-size: 11px; }
+.collab-demo-controls button { padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--paw-muted); font-size: 11px; }
+.collab-demo-controls button[aria-pressed='true'] { background: var(--paw-hover); color: var(--paw-ink); }
+.collab-demo-controls .collab-demo-receipt { display: inline-flex; gap: 5px; align-items: center; color: var(--paw-ink); }
+.collab-demo-controls-right { margin-left: auto; display: flex; gap: 4px; }
+.collab-demo-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.collab-demo-real-view { flex: 1; min-height: 0; }
+.collab-demo-real-view[hidden] { display: none; }
+.collab-demo-foot { min-height: 26px; display: flex; align-items: center; justify-content: space-between; padding: 6px 28px; font-size: 9px; color: var(--paw-muted); }
+.collab-demo-toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; max-width: min(640px, calc(100vw - 30px)); padding: 12px 17px; border-radius: 8px; border: 1px solid var(--paw-line); background: var(--paw-ink); color: var(--paw-panel); font-size: 12px; box-shadow: 0 8px 26px rgb(10 20 10 / 15%); z-index: 3; }
+.collab-demo-toast button { border: 0; background: transparent; color: inherit; }
+.collab-demo[data-narrow] .collab-demo-window { width: min(470px, calc(100% - 24px)); margin-inline: auto; }
+.collab-demo[data-narrow] .collab-demo-heading { padding: 14px 18px; }
+.collab-demo[data-narrow] .collab-demo-heading h1 { font-size: 17px; }
+.collab-demo[data-narrow] .collab-demo-heading p, .collab-demo[data-narrow] .collab-demo-people, .collab-demo[data-narrow] .collab-demo-chrome small { display: none; }
+.collab-demo[data-narrow] .collab-demo-controls { gap: 4px; padding: 8px 12px; }
+.collab-demo[data-narrow] .collab-demo-controls-right { margin-left: 0; }
+.collab-demo-detail { padding: 24px 36px; overflow: auto; max-width: 780px; margin-inline: auto; width: 100%; }
+.collab-demo-detail > button { display: block; border: 0; background: transparent; padding: 0 0 22px; color: var(--paw-muted); }
+.collab-demo-detail > span { color: var(--paw-muted); font-size: 11px; }
+.collab-demo-detail h2 { font-size: 22px; font-weight: 500; line-height: 1.5; }
+.collab-demo-detail h3 { font-size: 12px; color: var(--paw-muted); margin-top: 28px; }
+.collab-demo-detail p, .collab-demo-detail li { font-size: 15px; line-height: 1.9; }
+.collab-demo-detail pre { padding: 12px; background: var(--paw-hover); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.collab-demo-chat { display: flex; min-height: 0; flex: 1; }
+.collab-demo-conversation { flex: 1; min-width: 0; padding: 27px clamp(24px,6vw,94px) 20px; overflow: auto; display: flex; flex-direction: column; }
+.collab-demo-user { align-self: flex-end; max-width: 70%; background: var(--paw-hover); padding: 13px 17px; border-radius: 12px; line-height: 1.8; font-size: 14px; margin-bottom: 34px; }
+.collab-demo-conversation article { line-height: 1.9; font-size: 16px; }
+.collab-demo-conversation article > header { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; font-size: 13px; }
+.collab-demo-conversation article small { font-size: 10px; color: var(--paw-muted); }
+.collab-demo-inline { display: flex; align-items: center; gap: 13px; border-block: 1px solid var(--paw-line); padding: 19px 0; margin: 24px 0; }
+.collab-demo-inline > span { display: grid; flex: 1; }
+.collab-demo-inline strong { font-size: 14px; font-weight: 550; }
+.collab-demo-inline button { border: 0; background: transparent; font-size: 11px; }
+.collab-demo-quiet { display: flex; gap: 9px; align-items: center; font-size: 12px; color: var(--paw-muted); margin-top: 26px; }
+.collab-demo-composer { display: grid; gap: 34px; padding: 18px; margin-top: auto; border: 1px solid var(--paw-line); border-radius: 13px; color: var(--paw-muted); font-size: 14px; }
+.collab-demo-composer small { font-size: 10px; }
+.collab-demo-rail { flex: 0 0 308px; width: 308px; padding: 18px; border-left: 1px solid var(--paw-line); overflow: auto; }
+.collab-demo-rail > header { display: flex; justify-content: space-between; align-items: center; padding: 0 0 16px; }
+.collab-demo-rail > header small { font-size: 10px; color: var(--paw-muted); }
+.collab-demo-peek { display: grid; gap: 7px; width: 100%; padding: 15px; border: 1px solid var(--paw-line); border-radius: 8px; background: var(--paw-hover); text-align: left; margin-bottom: 17px; }
+.collab-demo-peek > span { display: flex; gap: 7px; }
+.collab-demo-peek > strong { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.collab-demo-peek > small { font-size: 11px; color: var(--paw-muted); }
+.collab-demo-task { display: flex; align-items: center; gap: 9px; padding: 13px 0; border: 0; border-top: 1px solid var(--paw-line); background: transparent; width: 100%; text-align: left; }
+.collab-demo-task > span:nth-child(2) { display: grid; gap: 4px; flex: 1; }
+.collab-demo-task strong { font-size: 12px; font-weight: 500; }
+.collab-demo-task small { font-size: 10px; color: var(--paw-muted); }
+.collab-demo button:focus-visible, .collab-demo select:focus-visible { outline: 2px solid #628a96; outline-offset: 3px; }
+@media (max-width: 760px) {
+ .collab-demo { min-height: 660px; }
+ .collab-demo-top { padding: 10px 15px; gap: 9px; min-height: 55px; }
+ .collab-demo-brand { gap: 8px; }
+ .collab-demo-brand small, .collab-demo-label { display: none; }
+ .collab-demo-top nav button { font-size: 11px; padding: 7px 10px; }
+ .collab-demo-window { margin: 0 8px; border-radius: 9px; }
+ .collab-demo-heading { padding: 14px 16px; }
+ .collab-demo-heading h1 { font-size: 17px; }
+ .collab-demo-heading p, .collab-demo-people, .collab-demo-chrome small { display: none; }
+ .collab-demo-controls { padding: 7px 12px; gap: 5px; }
+ .collab-demo-controls-right { margin-left: 0; }
+ .collab-demo-chrome { min-height: 30px; padding: 8px 12px; font-size: 9px; gap: 13px; }
+ .collab-demo-foot { padding: 6px 12px; font-size: 8px; }
+ .collab-demo-rail { display: none; }
+ .collab-demo-conversation { padding: 19px; }
+ .collab-demo-user { max-width: 92%; margin-bottom: 22px; }
+ .collab-demo-inline { flex-wrap: wrap; }
+ .collab-demo-inline button { margin-left: 30px; }
+ .collab-demo-composer { margin-top: 22px; }
+ .collab-demo-detail { padding: 22px; }
+}

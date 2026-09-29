@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePresentationMotion } from '../conversation-ui/reading/reading-preferences';
 
 const EMPTY: ReadonlySet<string> = new Set();
 
@@ -9,6 +10,7 @@ export function useReceiptHighlight(
   observing: boolean,
   duration = 1200,
 ): ReadonlySet<string> {
+  observing = usePresentationMotion(observing);
   const signature = JSON.stringify([...new Set(keys)].sort());
   const previous = useRef<{ scope: string; keys: Set<string> } | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());

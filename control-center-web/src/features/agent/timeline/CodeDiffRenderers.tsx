@@ -9,6 +9,7 @@ import { CopyAction, DownloadAction } from './rich/RichBlockTools';
 import { RichCodePreview } from './rich/RichCodePreview';
 import { fencedPreviewKind } from './rich/rich-data';
 import './rich/rich-conversation.css';
+import { usePresentationMotion } from '../../conversation-ui/reading/reading-preferences';
 
 const HIGHLIGHT_CHAR_LIMIT = 60_000;
 
@@ -31,6 +32,7 @@ export function CodeContentBlock({ code, language, fileName, streamingTail = fal
   code: string; language: string; fileName?: string; streamingTail?: boolean;
 }) {
   const id = useId();
+  const motionAllowed = usePresentationMotion();
   const kind = fencedPreviewKind(language);
   const [view, setView] = useState<'source' | 'preview'>(() => kind && kind !== 'json' && !streamingTail ? 'preview' : 'source');
   const [wrap, setWrap] = useState(false);
@@ -53,16 +55,21 @@ export function CodeContentBlock({ code, language, fileName, streamingTail = fal
   }, [code, language, highlightable]);
   const html = highlightable && highlighted?.code === code && highlighted.language === language ? highlighted.html : '';
   return <figure className="agent-code-block paw-rich-code" data-streaming={streamingTail || undefined} data-wrap={wrap || undefined}
-    data-line-numbers={numbers || undefined} data-expanded={expanded || undefined} data-long={long || undefined}>
+    data-reduce-motion={!motionAllowed || undefined} data-line-numbers={numbers || undefined} data-expanded={expanded || undefined} data-long={long || undefined}>
     <figcaption className="paw-rich-toolbar">
       <span className="paw-rich-toolbar__label"><Code2 size={14} aria-hidden /><span title={fileName}>{fileName || language}</span><small>{streamingTail ? '正在生成' : `${lineCount} 行`}</small></span>
-      <span className="paw-rich-toolbar__actions">
-        {!showPreview ? <>
-          <button type="button" className="paw-rich-action" aria-label="自动换行" title="自动换行" aria-pressed={wrap} onClick={() => setWrap(!wrap)}><WrapText size={14} aria-hidden /></button>
-          <button type="button" className="paw-rich-action" aria-label="显示行号" title="显示行号" aria-pressed={numbers} disabled={streamingTail || lines.length > 2_000} onClick={() => setNumbers(!numbers)}><ListOrdered size={14} aria-hidden /></button>
-        </> : null}
+      <div className="paw-rich-toolbar__actions">
+        {!showPreview ? <details className="paw-rich-code__options"
+          onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}
+          onBlur={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+          <summary title="代码显示选项"><WrapText size={14} aria-hidden /><span>显示</span></summary>
+          <div role="group" aria-label="代码显示选项">
+            <button type="button" aria-pressed={wrap} onClick={() => setWrap(!wrap)}><WrapText size={14} aria-hidden /><span>自动换行</span><small>{wrap ? '开' : '关'}</small></button>
+            <button type="button" aria-pressed={numbers} disabled={streamingTail || lines.length > 2_000} onClick={() => setNumbers(!numbers)}><ListOrdered size={14} aria-hidden /><span>行号</span><small>{numbers ? '开' : '关'}</small></button>
+          </div>
+        </details> : null}
         <CopyAction label="复制代码" value={code} compact /><DownloadAction value={code} fileName={downloadName} />
-      </span>
+      </div>
     </figcaption>
     {kind ? <div className="paw-rich-code__tabs" role="tablist" aria-label="内容展示方式">
       <button id={`${id}-source`} type="button" role="tab" aria-controls={`${id}-panel`} aria-selected={!showPreview} tabIndex={!showPreview ? 0 : -1} onClick={() => setView('source')}

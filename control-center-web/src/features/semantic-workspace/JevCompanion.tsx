@@ -1,6 +1,7 @@
 import { ChevronDown, CircleAlert, GitBranch, Hand, Layers2, RefreshCw, Square, Workflow } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useReceiptHighlight } from './use-receipt-highlight';
+import { usePresentationMotion } from '@/features/conversation-ui/reading/reading-preferences';
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { roomPlanetName } from '@/features/rooms/room-copy';
@@ -80,11 +81,11 @@ function JevMissionHeader({ execution, room, connected, active, onStop, lead, tr
   const headline = jevStatusLabel(graph, execution.loading);
   const { tasks, counts } = jevMission(graph);
   const historical = Boolean(graph && execution.liveSnapshot && graph.graphId !== execution.liveSnapshot.graphId);
-  const fresh = useReceiptHighlight(graph?.graphId ?? '', graph?.tasks.filter(task => task.state === 'done').map(task => task.id) ?? [], active && !stale && !historical && !graph?.stopped, 900);
+  const fresh = useReceiptHighlight(graph?.graphId ?? '', graph?.tasks.filter(task => task.state === 'done').map(task => `${task.id}:${task.revision}`) ?? [], active && !stale && !historical && !graph?.stopped, 900);
   const attention = historical ? null : jevAttention(graph);
   const canRetryRoute = Boolean(abstention && graph?.phase === 'route' && graph.graphId === execution.liveSnapshot?.graphId);
   const running = Boolean(graph && !graph.stopped && !graph.final && graph.effects.some(effect => effect.operation === 'dispatch' && effect.executionStatus === 'running' && graph.tasks.some(task => task.id === effect.request.taskId && task.revision === effect.request.taskRevision)));
-  const motion = active && !stale && !historical && !abstention && running;
+  const motion = usePresentationMotion(active && !stale && !historical && !abstention && running);
   const planTasks = graph?.planApproval && jevAwaitingPlan(graph) ? graph.planApproval.tasks.length : 0;
   const tone = stale ? 'stale' : !graph ? 'idle' : graph.stopped ? 'stopped' : graph.final ? graph.final.status === 'completed' ? 'done' : 'failed'
     : jevAwaitingPlan(graph) ? 'waiting' : abstention ? 'waiting' : running ? 'running' : 'active';
@@ -122,7 +123,7 @@ function JevMissionHeader({ execution, room, connected, active, onStop, lead, tr
       {graph ? <JevPhaseRail graph={graph} active={active && !stale && graph.graphId === execution.liveSnapshot?.graphId} /> : null}
       {counts.total ? <button className="jev-mission__meter" type="button" onClick={onOpenTasks} disabled={!onOpenTasks}
         aria-label={`已验收 ${counts.accepted}/${counts.total}${summary.length ? `，${summary.join('，')}` : ''}。打开任务栏`}>
-        <ol aria-hidden>{tasks.map(item => <li key={item.task.id} data-tone={item.tone} data-fresh={fresh.has(item.task.id) || undefined} title={`${item.task.objective.split(/[。\n]/u)[0].slice(0, 60)} · ${JEV_TASK_STAGE_LABELS[item.stage]}`} />)}</ol>
+        <ol aria-hidden>{tasks.map(item => <li key={item.task.id} data-tone={item.tone} data-fresh={fresh.has(`${item.task.id}:${item.task.revision}`) || undefined} title={`${item.task.objective.split(/[。\n]/u)[0].slice(0, 60)} · ${JEV_TASK_STAGE_LABELS[item.stage]}`} />)}</ol>
         <span><strong>已验收 {counts.accepted}/{counts.total}</strong>{summary.map(item => <small key={item}>{item}</small>)}</span>
       </button> : planTasks ? <span className="jev-mission__meter-note">{planTasks} 项拟分工 · 确认后开始</span>
         : graph && jevPhaseStep(graph.phase) === 'plan' && running ? <span className="jev-mission__meter-note">正在拆分任务与依赖</span> : null}

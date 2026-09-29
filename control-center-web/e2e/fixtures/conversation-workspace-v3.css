@@ -1,0 +1,22 @@
+body { margin:0;background:var(--color-surface,#f7f6f2); }
+.v3-fixture { --paw-line:var(--color-border,#deddd6);--paw-ink:var(--color-text,#292b28);--paw-muted:var(--color-text-secondary,#787970);--paw-panel:var(--color-surface,#fffefb);--paw-hover:var(--color-surface-subtle,#f3f2ef);color:var(--paw-ink);font:14px/1.8 system-ui,sans-serif; }
+.v3-fixture button { font:inherit;cursor:pointer;min-height:34px;padding:5px 10px;border:1px solid var(--paw-line);border-radius:6px;background:var(--paw-panel);color:inherit; }
+.v3-fixture button:disabled { cursor:default;opacity:.5; }
+.v3-fixture__controls { display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:16px 24px;border-bottom:1px solid var(--paw-line); }
+.v3-fixture__controls > strong { margin-right:auto; }
+.v3-fixture__layout { display:grid;grid-template-columns:minmax(0,760px) minmax(260px,320px);gap:50px;max-width:1150px;padding:40px 24px;margin:auto; }
+.v3-fixture__prose { min-width:0; }
+.v3-fixture__prose > header { display:flex;align-items:center;gap:12px; }
+.v3-fixture h1 { font-size:24px;font-weight:550; }
+.v3-fixture__rail { padding-left:20px;border-left:1px solid var(--paw-line); }
+.v3-fixture__rail h2 { font-size:16px; }
+.v3-fixture__rail p { color:var(--paw-muted);font-size:12px; }
+.v3-fixture__rail ul { list-style:none;padding:0; }
+.v3-fixture__rail li { padding:14px 8px;border-bottom:1px solid var(--paw-line); }
+.v3-fixture__rail li strong { display:block;font-size:13px; }
+.v3-fixture__rail li small { display:block;color:var(--paw-muted); }
+.v3-fixture__rail li[data-fresh] { animation:v3-receipt 1100ms ease-out; }
+.v3-fixture__actions { display:flex;gap:10px; }
+@keyframes v3-receipt { from {background:color-mix(in srgb,#6b987d 18%,transparent);} to {background:transparent;} }
+@media(max-width:850px) { .v3-fixture__layout { grid-template-columns:minmax(0,1fr);gap:25px;padding:24px 18px; }.v3-fixture__rail { padding:0;border:0; } }
+@media(prefers-reduced-motion:reduce) { .v3-fixture * { animation:none!important;transition:none!important; } }

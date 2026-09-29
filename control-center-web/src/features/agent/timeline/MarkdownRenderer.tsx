@@ -3,6 +3,7 @@ import { createContext, memo, useContext, useMemo, type ComponentProps, type Rea
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkMath from 'remark-math';
 import { RichTableFrame } from './rich/RichBlockTools';
+import { RichReadingSurface } from './rich/RichReadingSurface';
 import { RichMath } from './rich/RichMath';
 import { MarkdownImage } from './rich/RichImage';
 import './rich/rich-conversation.css';
@@ -44,7 +45,22 @@ export function TextBlockRenderer({
   );
 }
 
-export function MarkdownBody({
+/** Shared reading controls wrap one public message body, never each streaming chunk. */
+export function MarkdownBody(props: {
+  allowTraceDiagnosticReceipt?: boolean;
+  documentKey?: string;
+  sessionId?: string;
+  streamingTail?: boolean;
+  text: string;
+}) {
+  if (!props.text) return null;
+  return <RichReadingSurface source={props.text} documentKey={props.documentKey ?? ''} streaming={Boolean(props.streamingTail)}>
+    <MarkdownBodyContent {...props} />
+  </RichReadingSurface>;
+}
+
+function MarkdownBodyContent({
+
   allowTraceDiagnosticReceipt = true,
   documentKey = '',
   sessionId = '',

@@ -20,7 +20,10 @@
   --wb-danger: var(--paw-danger, #b14456);
   --wb-ease: cubic-bezier(.22, 1, .36, 1);
   --wb-fast: 140ms;
-  --wb-medium: 220ms;
+  --wb-medium: 200ms;
+  --wb-radius-control: 6px;
+  --wb-radius-content: 10px;
+  --wb-motion-feedback: 240ms;
   --wb-read: 760px;
   font-family: var(--wb-font);
   -webkit-font-smoothing: antialiased;

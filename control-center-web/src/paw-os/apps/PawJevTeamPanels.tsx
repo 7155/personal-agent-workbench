@@ -15,6 +15,9 @@ import { JEV_TASK_STAGE_LABELS, JEV_TASK_STAGE_LABELS as TASK_STATES, jevCurrent
 import { useReceiptHighlight } from '@/features/semantic-workspace/use-receipt-highlight';
 import { jevMission, type JevMissionTask } from '@/features/semantic-workspace/jev-mission';
 import './paw-jev-team.css';
+import { JevCollaborationPanel } from './JevCollaborationPanel';
+import { JevRailFilters, matchesJevRailFilter, type JevRailFilter } from './JevRailFilters';
+import { usePresentationMotion } from '@/features/conversation-ui/reading/reading-preferences';
 
 const PURPOSES: Record<string, string> = { plan: '对话与规划', execute: '执行任务', verify: '结果复核', synthesize: '汇总交付' };
 const STATUS: Record<string, string> = { prepared: '等待派发', admitted: '已接收', running: '正在进行', unknown: '回执待核实' };
@@ -65,7 +68,7 @@ export function jevPartnerProjection(projection: RoomProjectionState, rootId: st
 }
 
 type PanelKind = 'current' | 'records' | 'plan';
-type Inspector = { kind: 'panel'; panel: PanelKind } | { kind: 'task'; task: JevTask } | { kind: 'plan'; task: JevPlanTask };
+type Inspector = { kind: 'collaboration' } | { kind: 'panel'; panel: PanelKind } | { kind: 'task'; task: JevTask } | { kind: 'plan'; task: JevPlanTask };
 const PANEL_TITLES: Record<PanelKind, string> = { current: '正在进行', records: '结果与交付', plan: '拟执行分工' };
 
 /** Keep source text intact in the inspector; the rail only carries a short excerpt. */
@@ -145,21 +148,32 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
 }) {
   const recentCompletions = useRecentTaskCompletions(graph, active && observeCompletions && !historical && !graph?.stopped);
   const [inspector, setInspector] = useState<Inspector | null>(null);
+  const [collaborationVisited, setCollaborationVisited] = useState(false);
+  useEffect(() => { if (!inspector) setCollaborationVisited(false); }, [inspector]);
+  const openCollaboration = () => { setCollaborationVisited(true); setInspector({ kind: 'collaboration' }); };
   const [expandedPartners, setExpandedPartners] = useState(false);
   const [railView, setRailView] = useState<'tasks' | 'files'>('tasks');
   const [fileQuery, setFileQuery] = useState('');
+  const [taskFilter, setTaskFilter] = useState<JevRailFilter>('all');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [openableOnly, setOpenableOnly] = useState(false);
+  const motionAllowed = usePresentationMotion(active && !historical);
   const tabsRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { setRailView('tasks'); setFileQuery(''); }, [graph?.graphId]);
+  useEffect(() => { setRailView('tasks'); setFileQuery(''); setTaskFilter('all'); setHistoryExpanded(false); setOpenableOnly(false); }, [graph?.graphId]);
   const inspectorContent = useRef<HTMLDivElement>(null);
   const inspectorKey = inspector?.kind === 'task' ? `task:${inspector.task.id}`
     : inspector?.kind === 'plan' ? `plan:${inspector.task.key}`
-    : inspector?.kind === 'panel' ? `panel:${inspector.panel}` : '';
+    : inspector?.kind === 'panel' ? `panel:${inspector.panel}` : inspector?.kind === 'collaboration' ? 'collaboration' : '';
   useEffect(() => {
     const content = inspectorContent.current;
     if (!content || !inspectorKey) return;
     content.scrollTop = 0;
     content.querySelectorAll<HTMLElement>('.paw-jev-inspector__details, .paw-jev-inspector__list').forEach(node => { node.scrollTop = 0; });
-    content.focus({ preventScroll: true });
+    // Returning to the explorer keeps the selected-task action in focus.
+    // The original inspector remains the only dialog owner.
+    const explorerAction = inspectorKey === 'collaboration'
+      ? content.querySelector<HTMLButtonElement>('.jcv-detail .jcv-button--primary') : null;
+    (explorerAction ?? content).focus({ preventScroll: true });
   }, [inspectorKey]);
   const panelId = useId();
   const partners = jevPartnerWork(graph, room);
@@ -168,7 +182,9 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
   const files = fileEvidence(tasks, graph, room);
   const freshFiles = useReceiptHighlight(graph?.graphId ?? '', files.map(file => file.key), active && observeCompletions && !historical && !graph?.stopped);
   const query = fileQuery.trim().toLocaleLowerCase();
-  const visibleFiles = query ? files.filter(file => [file.name, file.path, file.ownerName].join(' ').toLocaleLowerCase().includes(query)) : files;
+  const visibleFiles = files.filter(file => (!query || [file.name, file.path, file.ownerName].join(' ').toLocaleLowerCase().includes(query))
+    && (!openableOnly || Boolean(onOpenFile && file.sessionId)));
+  const openableCount = files.filter(file => onOpenFile && file.sessionId).length;
   const openFile = (file: (typeof files)[number]) => {
     if (onOpenFile && file.sessionId) { setInspector(null); onOpenFile(file.sessionId, file.path); }
     else setInspector({ kind: 'task', task: file.task });
@@ -178,6 +194,13 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
   const pending = mission.filter(item => item.lane !== 'ended' && !partners.some(work => work.effects.some(effect => effect.request.taskId === item.task.id)));
   const assignments = graph?.planApproval && ['awaiting_approval', 'awaiting_input', 'deferred'].includes(graph.planApproval.status) ? graph.planApproval.tasks : [];
   const taskCount = tasks.length || assignments.length;
+  const railMission = mission.filter(item => matchesJevRailFilter(item, taskFilter));
+  const shownIds = new Set(railMission.map(item => item.task.id));
+  const railPartners = taskFilter === 'all' ? partners : partners.filter(work => work.effects.some(effect => shownIds.has(String(effect.request.taskId))));
+  const railPending = pending.filter(item => shownIds.has(item.task.id));
+  const railHistory = history.filter(item => shownIds.has(item.task.id));
+  const historyIssues = railHistory.filter(item => matchesJevRailFilter(item, 'attention'));
+  const quietHistory = railHistory.filter(item => !matchesJevRailFilter(item, 'attention'));
   const planningEffect = graph?.effects.find(effect => effect.operation === 'dispatch' && effect.request.purpose === 'plan'
     && graph.tasks.some(task => task.id === effect.request.taskId && task.revision === effect.request.taskRevision));
   const planningActive = active && !graph?.stopped && !graph?.final && graph?.phase === 'plan' && planningEffect?.executionStatus === 'running';
@@ -199,10 +222,10 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
       <h3>{PANEL_TITLES[kind]}</h3><span>{count}</span><ChevronRight size={13} aria-hidden />
     </button>{extra}
   </div>;
-  const renderCurrent = () => partners.length ? <AnimatePresence initial={false}>{partners.map(work => <PartnerWindow
+  const renderCurrent = (filtered = false) => (filtered ? railPartners : partners).length ? <AnimatePresence initial={false}>{(filtered ? railPartners : partners).map(work => <PartnerWindow
     key={work.participant.id} work={work} graph={graph!} active={active && !historical} compact={!expandedPartners} projection={projection ? jevPartnerProjection(projection, graph!.rootId, work) : undefined}
     onOpenParticipant={openParticipant} onInspect={task => setInspector({ kind: 'task', task })} />)}</AnimatePresence> : null;
-  const renderPending = () => pending.length ? <ul className="paw-jev-rail__list">{pending.map(item => {
+  const renderPending = (filtered = false) => (filtered ? railPending : pending).length ? <ul className="paw-jev-rail__list">{(filtered ? railPending : pending).map(item => {
     const owner = ownerOf(item.task.ownerId);
     return <li key={item.task.id}><button className="paw-jev-record-row" data-tone={item.tone} onClick={() => setInspector({ kind: 'task', task: item.task })} type="button">
       <JevActivityIcon state={item.stage} active={false} size={15} />
@@ -212,7 +235,7 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
       <ChevronRight size={14} aria-hidden />
     </button></li>;
   })}</ul> : null;
-  const renderHistory = (expanded: boolean) => history.length ? <ul className="paw-jev-rail__list">{(expanded ? history : history.slice(0, 4)).map(({ task, tone }) => {
+  const renderHistory = (expanded: boolean, entries = history) => entries.length ? <ul className="paw-jev-rail__list">{(expanded ? entries : entries.slice(0, 4)).map(({ task, tone }) => {
     const owner = ownerOf(task.ownerId);
     const activity = !active || historical ? 'static' : task.state === 'failed' ? 'error' : task.state === 'cancelled' ? 'stopped' : recentCompletions.has(task.id) ? 'done' : 'static';
     return <li key={task.id}><button className="paw-jev-record-row" onClick={() => setInspector({ kind: 'task', task })} type="button" data-state={task.state} data-tone={tone}>
@@ -263,12 +286,12 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
   const currentVersion = inspectedTask && graph ? jevCurrentTaskVersion(graph, inspectedTask.id) : undefined;
   const inspectedPlan = inspector?.kind === 'plan' ? assignments.find(task => task.key === inspector.task.key) ?? inspector.task : undefined;
   const owner = ownerOf(inspectedTask?.ownerId ?? inspectedPlan?.ownerParticipantId ?? '');
-  const title = inspector?.kind === 'panel' ? PANEL_TITLES[inspector.panel] : `${owner ? roomPlanetName(owner.ordinal) + ' · ' : ''}${inspectedPlan ? '拟执行任务' : '任务与交付'}`;
+  const title = inspector?.kind === 'collaboration' ? '协作全景' : inspector?.kind === 'panel' ? PANEL_TITLES[inspector.panel] : `${owner ? roomPlanetName(owner.ordinal) + ' · ' : ''}${inspectedPlan ? '拟执行任务' : '任务与交付'}`;
   const ended = Boolean(graph?.final || graph?.stopped);
   return <>
-    <aside className="paw-jev-rail paw-jev-team" aria-label="任务与成果" data-motion={active && !historical ? 'active' : 'paused'} data-view={railView} data-summary={!partners.length && ended || undefined}>
+    <aside className="paw-jev-rail paw-jev-team" aria-label="任务与成果" data-motion={active && !historical ? 'active' : 'paused'} data-view={railView} data-reduce-motion={!motionAllowed || undefined} data-summary={!partners.length && ended || undefined}>
       <header className="paw-jev-rail__head">
-        <div><span className="paw-jev-rail__eyebrow">JEV WORKSPACE</span><strong>任务与成果</strong>{historical ? <small>历史记录 · 非当前任务</small> : null}</div>
+        <div><span className="paw-jev-rail__eyebrow">{historical ? '保留的工作记录' : '本轮工作'}</span><strong>任务与成果</strong>{historical ? <small>历史记录 · 非当前任务</small> : null}</div>
         {onCollapse ? <button type="button" className="paw-jev-rail__collapse" aria-label="收起任务栏" title="收起任务栏" onClick={onCollapse}><PanelRightClose size={16} aria-hidden /></button> : null}
       </header>
       <div className="paw-jev-team__progress" aria-label="任务完成进度">
@@ -278,9 +301,11 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
             {executingCount > 0 ? <span>{active ? '执行中' : '上次执行中'} {executingCount}</span> : null}
             {counts.reviewing > 0 ? <span>待复核 {counts.reviewing}</span> : null}
             {counts.waiting ? <span>等待 {counts.waiting}</span> : null}
-            <progress aria-label="任务验收数" aria-valuetext={`${counts.accepted} 项已验收，共 ${taskCount} 项任务；不是预计耗时进度`} value={counts.accepted} max={taskCount} />
           </> : <span>{planningActive ? <LoaderCircle className="paw-jev-partner__spinner" size={12} aria-hidden /> : null}{planningLabel}</span>}
       </div>
+      <JevCollaborationPanel graph={graph} room={room} projection={projection} active={active} historical={historical}
+        observeCompletions={observeCompletions} presentation="peek" onExpand={openCollaboration}
+        onInspectTask={node => { if (node.task) setInspector({ kind: 'task', task: node.task }); else if (node.proposal) setInspector({ kind: 'plan', task: node.proposal }); }} />
       <div className="paw-jev-rail__tabs" role="tablist" aria-label="任务栏内容" ref={tabsRef}
         onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -292,30 +317,44 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
         <button type="button" role="tab" id={`${panelId}-tasks-tab`} data-tab="tasks" aria-selected={railView === 'tasks'} aria-controls={`${panelId}-tasks-panel`} tabIndex={railView === 'tasks' ? 0 : -1} onClick={() => setRailView('tasks')}><ListChecks size={15} aria-hidden />任务<span>{taskCount}</span></button>
         <button type="button" role="tab" id={`${panelId}-files-tab`} data-tab="files" aria-selected={railView === 'files'} aria-controls={`${panelId}-files-panel`} tabIndex={railView === 'files' ? 0 : -1} onClick={() => setRailView('files')}><FolderOpen size={15} aria-hidden />成果<span>{files.length}</span>{freshFiles.size ? <i aria-label="有新交付文件" /> : null}</button>
       </div>
+      {railView === 'tasks' && mission.length ? <JevRailFilters items={mission} value={taskFilter} onChange={setTaskFilter} /> : null}
       <div className="paw-jev-team__content" role="tabpanel" id={`${panelId}-tasks-panel`} aria-labelledby={`${panelId}-tasks-tab`} hidden={railView !== 'tasks'} tabIndex={0}>
         {!active && partners.length ? <p className="paw-jev-team__sync">显示上次同步，动态已暂停</p> : null}
         {assignments.length ? <section className="paw-jev-rail__section">{sectionHead('plan', assignments.length)}<p className="paw-jev-rail__note">确认完整方案后，再按依赖开始。</p>{renderPlan()}</section> : null}
-        {partners.length ? <section className="paw-jev-rail__section" id={`${panelId}-current`}>{sectionHead('current', partners.length, toggleCards(`${panelId}-current`))}{renderCurrent()}</section> : null}
-        {pending.length ? <section className="paw-jev-rail__section"><div className="paw-jev-rail__section-head"><h3>等待与待处理</h3><span>{pending.length}</span></div>{renderPending()}</section> : null}
-        {history.length ? <section className="paw-jev-rail__section"><div className="paw-jev-rail__section-head"><h3>已结束</h3><span>{history.length}</span></div>{renderHistory(true)}</section> : null}
+        {railPartners.length ? <section className="paw-jev-rail__section" id={`${panelId}-current`}>{sectionHead('current', railPartners.length, toggleCards(`${panelId}-current`))}{renderCurrent(true)}</section> : null}
+        {railPending.length ? <section className="paw-jev-rail__section"><div className="paw-jev-rail__section-head"><h3>等待与待处理</h3><span>{railPending.length}</span></div>{renderPending(true)}</section> : null}
+        {historyIssues.length ? <section className="paw-jev-rail__section paw-jev-rail__attention"><div className="paw-jev-rail__section-head"><h3><CircleAlert size={14} aria-hidden />需要关注</h3><span>{historyIssues.length}</span></div>{renderHistory(true, historyIssues)}</section> : null}
+        {quietHistory.length ? <section className="paw-jev-rail__section"><details className="paw-jev-ended-group"
+          open={historyExpanded || taskFilter === 'ended' || taskFilter === 'attention'}
+          onToggle={event => { if (taskFilter !== 'ended' && taskFilter !== 'attention') setHistoryExpanded(event.currentTarget.open); }}>
+          <summary><Check size={14} aria-hidden /><span>已结束</span><small>{quietHistory.length}</small><ChevronDown size={13} aria-hidden /></summary>
+          {renderHistory(true, quietHistory)}</details></section> : null}
+        {taskFilter !== 'all' && !railMission.length ? <div className="paw-jev-rail__empty"><ListChecks size={25} aria-hidden /><strong>这类任务暂无记录</strong><p>筛选只影响列表，不改变任务运行。</p><button type="button" onClick={() => setTaskFilter('all')}>显示全部任务</button></div> : null}
         {!assignments.length && !partners.length && !pending.length && !history.length ? <div className="paw-jev-rail__empty"><ListChecks size={28} aria-hidden /><strong>等待任务回执</strong><p>分工和结果会出现在这里。当前没有可展示的执行任务。</p></div> : null}
-        {graph?.historicalTasks?.length ? <section className="paw-jev-rail__section"><details><summary>旧版本任务 · {graph.historicalTasks.length}</summary><ul className="paw-jev-rail__list">{graph.historicalTasks.map(task => <li key={task.id}><button type="button" className="paw-jev-record-row" onClick={() => setInspector({ kind: 'task', task })}><Layers2 size={15} aria-hidden /><span><strong>{excerpt(task.objective, 60)}</strong><small>修订 {task.revision} · 查看历史依据</small></span><ChevronRight size={14} aria-hidden /></button></li>)}</ul></details></section> : null}
+        {taskFilter === 'all' && graph?.historicalTasks?.length ? <section className="paw-jev-rail__section"><details><summary>旧版本任务 · {graph.historicalTasks.length}</summary><ul className="paw-jev-rail__list">{graph.historicalTasks.map(task => <li key={task.id}><button type="button" className="paw-jev-record-row" onClick={() => setInspector({ kind: 'task', task })}><Layers2 size={15} aria-hidden /><span><strong>{excerpt(task.objective, 60)}</strong><small>修订 {task.revision} · 查看历史依据</small></span><ChevronRight size={14} aria-hidden /></button></li>)}</ul></details></section> : null}
         {files.length ? <button className="paw-jev-rail__deliveries" type="button" onClick={() => setRailView('files')}><FolderOpen size={17} aria-hidden /><span><strong>{files.length} 项交付文件</strong><small>查看文件、来源和验收依据</small></span><ChevronRight size={15} aria-hidden /></button> : null}
       </div>
       <div className="paw-jev-team__content paw-jev-rail__files-panel" role="tabpanel" id={`${panelId}-files-panel`} aria-labelledby={`${panelId}-files-tab`} hidden={railView !== 'files'} tabIndex={0}>
         {files.length ? <label className="paw-jev-file-search"><Search size={15} aria-hidden /><input type="search" aria-label="筛选交付文件" placeholder="查找文件或路径" value={fileQuery} onChange={event => setFileQuery(event.target.value)} />{fileQuery ? <button type="button" aria-label="清除文件筛选" onClick={() => setFileQuery('')}><X size={14} aria-hidden /></button> : null}</label> : null}
         {graph?.final ? <div className="paw-jev-delivery-summary" data-complete={graph.final.status === 'completed' || undefined}>{graph.final.status === 'completed' ? <Check size={18} aria-hidden /> : <CircleAlert size={18} aria-hidden />}<span><strong>{graph.final.status === 'completed' ? '结果已汇总' : '任务尚未完整交付'}</strong><small>最终答复保留在对话中，文件和依据保留在这里。</small></span></div> : null}
+        {files.length ? <div className="paw-jev-file-scope"><span>{query || openableOnly ? `显示 ${visibleFiles.length}/${files.length} 项` : `${files.length} 项交付记录`}</span>
+          {onOpenFile ? <button type="button" aria-pressed={openableOnly} onClick={() => setOpenableOnly(!openableOnly)} title="只显示能打开当前工作区文件的交付记录">可打开 {openableCount}</button> : null}</div> : null}
         {renderFiles(true, true)}
-        {query && !visibleFiles.length ? <p className="paw-jev-rail__no-match" role="status">没有匹配的交付文件。<button type="button" onClick={() => setFileQuery('')}>清除筛选</button></p> : null}
+        {(query || openableOnly) && !visibleFiles.length ? <p className="paw-jev-rail__no-match" role="status">没有匹配的交付文件。<button type="button" onClick={() => { setFileQuery(''); setOpenableOnly(false); }}>清除筛选</button></p> : null}
         {!files.length ? <div className="paw-jev-rail__empty"><FolderOpen size={30} aria-hidden /><strong>还没有交付文件</strong><p>伙伴实际提交文件后会出现在这里，计划中的文件不会提前显示。</p><button type="button" onClick={() => setRailView('tasks')}>查看任务进展<ChevronRight size={14} aria-hidden /></button></div> : null}
       </div>
     </aside>
-    <Dialog open={Boolean(inspector)} onOpenChange={open => { if (!open) setInspector(null); }}><DialogContent ref={inspectorContent} tabIndex={-1} className="paw-jev-inspector" data-motion={active ? 'active' : 'paused'} onOpenAutoFocus={event => {
+    <Dialog open={Boolean(inspector)} onOpenChange={open => { if (!open) setInspector(null); }}><DialogContent ref={inspectorContent} tabIndex={-1} className="paw-jev-inspector" data-collaboration={inspector?.kind === 'collaboration' || undefined} data-reduce-motion={!motionAllowed || undefined} data-motion={active ? 'active' : 'paused'} onOpenAutoFocus={event => {
         event.preventDefault();
         inspectorContent.current?.focus({ preventScroll: true });
       }}>
-      <DialogHeader><span className="paw-jev-inspector__eyebrow">任务板 / {inspector?.kind === 'panel' ? '全部记录' : inspectedPlan ? '执行方案' : '任务详情'}</span><DialogTitle>{title}</DialogTitle><DialogDescription>{inspector?.kind === 'panel' ? '来自当前方案、任务状态与执行回执。' : '完整责任、验收与交付依据；执行历史可在伙伴 Session 中查看。'}</DialogDescription></DialogHeader>
-      {inspector?.kind === 'panel' ? <>{inspector.panel === 'current' ? <div className="paw-jev-inspector__display">{toggleCards(`${panelId}-dialog-current`)}</div> : null}<div className="paw-jev-inspector__list" id={`${panelId}-dialog-current`}>{renderPanel(inspector.panel, true)}{inspector.panel === 'current' && pending.length ? <><h4>等待与待处理</h4>{renderPending()}</> : null}</div></> : <div className="paw-jev-inspector__details">
+      <DialogHeader><span className="paw-jev-inspector__eyebrow">任务板 / {inspector?.kind === 'collaboration' ? '分工与依赖' : inspector?.kind === 'panel' ? '全部记录' : inspectedPlan ? '执行方案' : '任务详情'}</span><DialogTitle>{title}</DialogTitle><DialogDescription>{inspector?.kind === 'collaboration' ? '查看当前任务、依赖关系、执行者与复核者。不会改变任务调度。' : inspector?.kind === 'panel' ? '来自当前方案、任务状态与执行回执。' : '完整责任、验收与交付依据；执行历史可在伙伴 Session 中查看。'}</DialogDescription></DialogHeader>
+      {collaborationVisited && inspector ? <div className="paw-jev-collaboration-mount" hidden={inspector.kind !== 'collaboration'}>
+        <JevCollaborationPanel graph={graph} room={room} projection={projection} active={active && inspector.kind === 'collaboration'}
+          historical={historical} observeCompletions={observeCompletions} onOpenParticipant={openParticipant}
+          onInspectTask={node => { if (node.task) setInspector({ kind: 'task', task: node.task }); else if (node.proposal) setInspector({ kind: 'plan', task: node.proposal }); }} />
+      </div> : null}
+      {inspector?.kind === 'collaboration' ? null : inspector?.kind === 'panel' ? <>{inspector.panel === 'current' ? <div className="paw-jev-inspector__display">{toggleCards(`${panelId}-dialog-current`)}</div> : null}<div className="paw-jev-inspector__list" id={`${panelId}-dialog-current`}>{renderPanel(inspector.panel, true)}{inspector.panel === 'current' && pending.length ? <><h4>等待与待处理</h4>{renderPending()}</> : null}</div></> : <div className="paw-jev-inspector__details">
         <section className="paw-jev-inspector__objective"><h3>任务目标</h3><p>{inspectedTask?.objective ?? inspectedPlan?.objective}</p></section>
         {inspectedTask && !graph ? <p className="paw-jev-inspector__status">状态待同步</p> : null}
         {inspectedTask && graph ? <JevTaskProgress task={inspectedTask} graph={graph} active={active && !historical} /> : null}
@@ -339,44 +378,17 @@ export function PawJevTeamPanels({ graph, room, projection, onOpenParticipant, o
             const file = inspectedFiles.find(item => item.ref === ref);
             return <li key={ref}><code>{ref}</code>{file?.sessionId && onOpenFile ? <button className="paw-jev-inspector__open-file" type="button" onClick={() => openFile(file)} aria-label={`打开当前文件 ${file.name}`}><FileText size={13} aria-hidden />打开文件</button> : null}</li>;
           })}</ul></section> : null}
-        <footer><Button variant="quiet" onClick={() => setInspector({ kind: 'panel', panel: inspectedPlan ? 'plan' : partners.some(work => work.effects.some(effect => effect.request.taskId === inspectedTask?.id)) ? 'current' : 'records' })} leadingIcon={<ArrowLeft size={14} />}>返回列表</Button>{owner ? <Button onClick={() => openParticipant(owner.id)} leadingIcon={<ExternalLink size={14} />}>打开 {roomPlanetName(owner.ordinal)} Session</Button> : null}</footer>
+        <footer><Button variant="quiet" onClick={() => collaborationVisited ? setInspector({ kind: 'collaboration' }) : setInspector({ kind: 'panel', panel: inspectedPlan ? 'plan' : partners.some(work => work.effects.some(effect => effect.request.taskId === inspectedTask?.id)) ? 'current' : 'records' })} leadingIcon={<ArrowLeft size={14} />}>{collaborationVisited ? '返回协作全景' : '返回列表'}</Button>{owner ? <Button onClick={() => openParticipant(owner.id)} leadingIcon={<ExternalLink size={14} />}>打开 {roomPlanetName(owner.ordinal)} Session</Button> : null}</footer>
       </div>}
     </DialogContent></Dialog>
   </>;
 }
 
-const NO_RECENT_COMPLETIONS: ReadonlySet<string> = new Set();
-
-/** A brief expression for a new receipt, never for an initial/history snapshot. */
+/** Revision-qualified completion keys distinguish a new accepted revision from old history. */
 function useRecentTaskCompletions(graph: JevSnapshot | null, observing: boolean): ReadonlySet<string> {
-  const previous = useRef<{ graphId: string; tasks: Map<string, string> } | null>(null);
-  const timers = useRef(new Map<string, number>());
-  const [recent, setRecent] = useState<{ graphId: string; tasks: Set<string> }>({ graphId: '', tasks: new Set() });
-  useEffect(() => {
-    const before = previous.current;
-    previous.current = graph && observing ? { graphId: graph.graphId, tasks: new Map(graph.tasks.map(task => [task.id, task.state])) } : null;
-    if (!graph || !observing || before?.graphId !== graph.graphId) {
-      for (const timer of timers.current.values()) window.clearTimeout(timer);
-      timers.current.clear();
-      setRecent(current => current.tasks.size ? { graphId: '', tasks: new Set() } : current);
-      return;
-    }
-    for (const task of graph.tasks) {
-      if (task.state !== 'done' || !before.tasks.has(task.id) || before.tasks.get(task.id) === 'done') continue;
-      window.clearTimeout(timers.current.get(task.id));
-      setRecent(current => ({ graphId: graph.graphId, tasks: new Set(current.graphId === graph.graphId ? current.tasks : []).add(task.id) }));
-      timers.current.set(task.id, window.setTimeout(() => {
-        timers.current.delete(task.id);
-        setRecent(current => {
-          if (current.graphId !== graph.graphId || !current.tasks.has(task.id)) return current;
-          const tasks = new Set(current.tasks); tasks.delete(task.id);
-          return { graphId: current.graphId, tasks };
-        });
-      }, 1000));
-    }
-  }, [graph, observing]);
-  useEffect(() => () => { for (const timer of timers.current.values()) window.clearTimeout(timer); }, []);
-  return observing && recent.graphId === graph?.graphId ? recent.tasks : NO_RECENT_COMPLETIONS;
+  const fresh = useReceiptHighlight(graph?.graphId ?? '', graph?.tasks.filter(task => task.state === 'done')
+    .map(task => `${task.id}:${task.revision}`) ?? [], observing, 1000);
+  return new Set(graph?.tasks.filter(task => fresh.has(`${task.id}:${task.revision}`)).map(task => task.id) ?? []);
 }
 
 function PartnerWindow({ work, graph, projection, active, compact, onOpenParticipant, onInspect }: {
@@ -384,7 +396,9 @@ function PartnerWindow({ work, graph, projection, active, compact, onOpenPartici
   onOpenParticipant: (id: string) => void; onInspect: (task: JevTask) => void;
 }) {
   const current = work.effects[0];
-  const reduced = useReducedMotion();
+  const systemReduced = useReducedMotion();
+  const motionAllowed = usePresentationMotion(active);
+  const reduced = systemReduced || !motionAllowed;
   const present = useIsPresent();
   const purpose = String(current.request.purpose || 'execute');
   const running = current.executionStatus === 'running';
@@ -398,7 +412,7 @@ function PartnerWindow({ work, graph, projection, active, compact, onOpenPartici
   const outcome = latest?.kind === 'tool' ? toolExecutionOutcome(latest.data ?? {}) : undefined;
   const latestState = outcome === 'unknown' ? '回执待核实' : outcome === 'not_started' ? '尚未执行' : outcome === 'applied' ? '已完成' : latest ? { running: '执行中', waiting: '等待中', completed: '已完成', failed: '失败', aborted: '已停止' }[latest.status] : '';
   return <motion.section className="paw-jev-partner" aria-label={`${name} 当前工作`} data-state={current.executionStatus} data-purpose={purpose} data-compact={compact || undefined} data-exiting={!present || undefined} data-motion={spinning ? 'active' : 'paused'}
-    initial={{ opacity: 0, y: reduced || !active ? 0 : 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reduced || !active ? 0 : -3 }} transition={{ duration: reduced ? .12 : .18, ease: [.23, 1, .32, 1] }}>
+    initial={{ opacity: 0, y: reduced || !active ? 0 : 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reduced || !active ? 0 : -3 }} transition={{ duration: reduced ? 0 : .18, ease: [.23, 1, .32, 1] }}>
     <header><RoomPlanetAvatar ordinal={work.participant.ordinal} size={32} activity={activity} decorative /><div><strong>{name}</strong>{model ? <span title={model}>{model}</span> : null}</div><button type="button" aria-label={`打开 ${name} Session`} onClick={() => onOpenParticipant(work.participant.id)}><ExternalLink size={14} aria-hidden /></button></header>
     {firstTask ? <button className="paw-jev-partner__task-title" type="button" onClick={() => onInspect(firstTask)}><span>{taskTitle(firstTask, graph)}</span>{tasks.length > 1 ? <small> +{tasks.length - 1}</small> : null}<ChevronRight size={13} aria-hidden /></button> : null}
     <p className="paw-jev-partner__state"><JevActivityIcon size={15} state={graph.stopped ? 'reclaiming' : current.executionStatus === 'unknown' ? 'unknown' : running ? purpose === 'plan' ? 'planning' : purpose === 'verify' ? 'verifying' : purpose === 'synthesize' ? 'synthesizing' : 'running' : current.state === 'sending' ? 'dispatching' : 'queued'} active={spinning || active && present && current.state === 'sending' && !graph.stopped} />

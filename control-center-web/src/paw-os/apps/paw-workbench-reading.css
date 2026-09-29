@@ -24,8 +24,8 @@
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 12px 30px 21px; border: 0; background: var(--wb-surface); }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer > .agent-composer-wrap { width: min(var(--wb-read), 100%); margin-inline: auto; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation { --ccui-font-size: 16px; --ccui-line-height: 1.8; font-family: var(--wb-font); }
-.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) { font-size: 16px; line-height: 1.85; letter-spacing: .003em; }
-.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) :is(p, ul, ol) { margin-block: 0 1em; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) { font-size: var(--reading-body-size, 16px); line-height: var(--reading-line-height, 1.85); letter-spacing: .003em; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) :is(p, ul, ol) { margin-block: 0 var(--reading-paragraph-gap, 1em); }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) :is(h2, h3) { margin-block: 1.65em .65em; font-size: 1.1em; line-height: 1.5; font-weight: 600; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-user-bubble { border: 0; border-radius: 14px; padding: 14px 18px; background: var(--wb-sunken); box-shadow: none; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .ccui-user-text { font-size: 15px; line-height: 1.8; }
@@ -40,7 +40,7 @@
 /* AgentTimeline's production FX DOM, alongside shared conversation blocks. */
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn { width: 100%; max-width: var(--wb-read); box-sizing: border-box; margin-inline: auto; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn + .agent-turn { margin-top: 30px; }
-.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-assistant-text { padding-inline: 0; color: var(--wb-ink); font-size: 16px; line-height: 1.85; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-assistant-text { padding-inline: 0; color: var(--wb-ink); font-size: var(--reading-body-size, 16px); line-height: var(--reading-line-height, 1.85); }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-user-message { max-width: min(94%, 660px); margin-left: 28px; padding: 14px 18px; border: 0; border-radius: 14px; background: var(--wb-sunken); color: var(--wb-ink); font-size: 15px; line-height: 1.8; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.fx-user-meta, .fx-meta) { color: var(--wb-faint); font-size: 11px; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .fx-context-chips { gap: 7px; padding-block: 5px 26px; }
