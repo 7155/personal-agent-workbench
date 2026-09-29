@@ -38,6 +38,14 @@ class JevPlanApprovalTests(JevHostFixture):
         planner = self.effects(created, "plan")[0]
         return created, planner
 
+    def test_plan_does_not_invent_an_unbound_named_verifier(self):
+        _, planner = self.start_planner()
+        instructions = planner["request"]["taskBrief"]["objective"].split("\nExecutionPack:\n")[0]
+        self.assertIn("plan_submit没有指定verify伙伴的字段", instructions)
+        self.assertIn("不得自行在objective或acceptanceCriteria中追加", instructions)
+        self.assertIn("如果用户明确要求具名独立检查", instructions)
+        self.assertIn("单独交付任务", instructions)
+
     def test_auto_approval_routes_greeting_before_planning(self):
         created = self.app.create(self.room["id"], {"clientMessageId": "hello-auto", "message": "hi",
             "strategy": "auto", "modelRouting": "participant", "executionApproval": True})

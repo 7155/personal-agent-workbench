@@ -69,13 +69,15 @@ function subscribeEnvironment(listener: () => void) {
   if (environmentListeners.size === 1 && typeof window !== 'undefined') {
     document.addEventListener('visibilitychange', notifyEnvironment);
     media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    media?.addEventListener('change', notifyEnvironment);
+    if (media?.addEventListener) media.addEventListener('change', notifyEnvironment);
+    else media?.addListener?.(notifyEnvironment);
   }
   return () => {
     environmentListeners.delete(listener);
     if (!environmentListeners.size && typeof window !== 'undefined') {
       document.removeEventListener('visibilitychange', notifyEnvironment);
-      media?.removeEventListener('change', notifyEnvironment);
+      if (media?.removeEventListener) media.removeEventListener('change', notifyEnvironment);
+      else media?.removeListener?.(notifyEnvironment);
       media = undefined;
     }
   };

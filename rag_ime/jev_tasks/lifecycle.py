@@ -405,8 +405,10 @@ class JevLifecycle:
                 "验收描述用户要求的效果与真实证据；除非用户明确指定工具身份，不额外限定某个工具名或排除其授权原生映射。"
                 "仅当用户明确要求某 Skill 时，可用 skill:<精确名称> 表达必需 Skill，当前 Pi 目录须由 Host 核验，不得猜测名称或授权；"
                 "writeTargets 为授权工作区内的实际绝对文件路径，不修改文件时为空。contextRefs 只选本任务确需的已有资料引用。"
-                "按责任从workspaceParticipants指定ownerParticipantId；要求非实现者独立检查的任务，"
-                "须明确分配给未承担对应实现责任的另一位伙伴，不能只在objective中写‘独立’而省略负责人。"
+                "按责任从workspaceParticipants指定ownerParticipantId。普通任务的独立verify由Jev按实际执行绑定选择非执行者，"
+                "plan_submit没有指定verify伙伴的字段；不得自行在objective或acceptanceCriteria中追加某个具名伙伴必须核验的条件。"
+                "如果用户明确要求具名独立检查，须把该检查作为单独交付任务，ownerParticipantId分配给未承担对应实现责任的指定伙伴，"
+                "用dependsOn表达交付顺序；不能仅在其他任务正文中承诺Jev会让指定伙伴执行自动verify。"
             )
             approval = self.plan_approval(snapshot.graph_id)
             if approval is not None:

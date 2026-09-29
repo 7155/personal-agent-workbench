@@ -1,15 +1,30 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RichReadingSurface } from './RichReadingSurface';
-import { updateReadingPreferences } from '../../../conversation-ui/reading/reading-preferences';
+import { updateReadingPreferences, usePresentationMotion } from '../../../conversation-ui/reading/reading-preferences';
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   updateReadingPreferences({ size: 'standard', spacing: 'comfortable', motion: 'system' });
 });
 const prose = (title = '正文一') => <div className="paw-rich-prose"><h2>{title}</h2><h2>正文二</h2><h2>正文三</h2></div>;
 
 describe('V3 reading surface', () => {
+  it('supports legacy media listeners and non-subscribable preview environments', () => {
+    const media = { matches: false, addListener: vi.fn(), removeListener: vi.fn() };
+    vi.stubGlobal('matchMedia', vi.fn(() => media));
+    const view = renderHook(() => usePresentationMotion());
+    expect(media.addListener).toHaveBeenCalledOnce();
+    act(() => { media.matches = true; media.addListener.mock.calls[0]![0](); });
+    expect(view.result.current).toBe(false);
+    view.unmount();
+    expect(media.removeListener).toHaveBeenCalledWith(media.addListener.mock.calls[0]![0]);
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const preview = renderHook(() => usePresentationMotion());
+    expect(preview.result.current).toBe(false);
+    preview.unmount();
+  });
   it('adds no reading toolbar to a short answer or streaming tail', () => {
     const view = render(<RichReadingSurface source="short" documentKey="a"><div className="paw-rich-prose"><p>简短回答</p></div></RichReadingSurface>);
     expect(screen.queryByRole('button', { name: '阅读' })).toBeNull();

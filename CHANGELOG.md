@@ -14,6 +14,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 - Route Pi native `read` callbacks for managed resource references to their
   authorized owners, preserving line-based pagination and bounded output.
   Jev verifier instructions now use the actual native read contract.
+- Keep planner-assigned work owners separate from runtime-selected independent
+  verifiers; represent explicitly requested named inspections as owned tasks
+  rather than unsupported promises in another task's acceptance text.
+- Keep reading-motion preferences usable with legacy media-query listeners or
+  preview environments without media-query subscriptions.
 
 - Add Workspace V3 reading navigation and local text/motion preferences, task
   and delivered-file filters, collapsed ended-task history, and explicit
