@@ -359,6 +359,10 @@ _RUNTIME_HOST_SOURCE_OVERLAYS: dict[
     ),
 }
 _OAUTH_RUNTIME_MODULES = {
+    "openai-chatgpt.ts": (
+        "packages/ai/src/auth/oauth/openai-chatgpt.ts",
+        "openaiChatGPTOAuth",
+    ),
     "anthropic.ts": (
         "packages/ai/src/auth/oauth/anthropic.ts",
         "anthropicOAuth",
@@ -2110,6 +2114,8 @@ def main(argv: list[str] | None = None) -> int:
         ).encode("utf-8")
         packager_digest = hashlib.sha256(
             provider_bridge_source.read_bytes()
+            + (ROOT / "rag_ime" / "node" / "pi_chatgpt_accounts.mjs").read_bytes()
+            + (ROOT / "licenses" / "jose-LICENSE").read_bytes()
             + Path(__file__).read_bytes()
             + (ROOT / "scripts" / "runtime-host-session-resource-policy.ts").read_bytes()
             + _hash_tree(product_skills)
@@ -2228,11 +2234,15 @@ def main(argv: list[str] | None = None) -> int:
                     f"--alias:rag-ime-pi-auth-storage={pi_root / 'packages' / 'coding-agent' / 'src' / 'core' / 'auth-storage.ts'}",
                     f"--alias:rag-ime-pi-model-runtime={pi_root / 'packages' / 'coding-agent' / 'src' / 'core' / 'model-runtime.ts'}",
                     f"--alias:rag-ime-pi-openai-codex-oauth={pi_root / 'packages' / 'ai' / 'src' / 'auth' / 'oauth' / 'openai-codex.ts'}",
+                    f"--alias:rag-ime-pi-openai-chatgpt-oauth={pi_root / 'packages' / 'ai' / 'src' / 'auth' / 'oauth' / 'openai-chatgpt.ts'}",
                     '--banner:js=import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
                 ],
                 cwd=pi_root,
             )
             provider_bridge.chmod(0o755)
+            licenses_dir = runtime_dir / "licenses"
+            licenses_dir.mkdir(exist_ok=True)
+            shutil.copy2(ROOT / "licenses" / "jose-LICENSE", licenses_dir / "jose-LICENSE")
             _bundle_oauth_runtime_modules(
                 esbuild=esbuild,
                 pi_root=pi_root,

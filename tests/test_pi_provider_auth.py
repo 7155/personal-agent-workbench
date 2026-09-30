@@ -206,12 +206,42 @@ class PiProviderAuthTests(unittest.TestCase):
         with self.assertRaises(PiProviderAuthError):
             self.service.preview({"provider": "test-provider", "action": "read_secret"})
 
+    def test_siwc_preview_binds_account_and_consent_without_accepting_tokens(self) -> None:
+        service = PiProviderAuthService(self.service.config)
+        provider = {"id": "openai-chatgpt", "name": "ChatGPT", "auth": {
+            "oauthBrowserSupported": True, "oauthDeviceCodeSupported": False, "apiKeySupported": False,
+            "accounts": [{"id": "account-fixture", "label": "Fixture"}],
+        }}
+        with patch.object(service, "_provider", return_value=provider), patch.object(service, "_start_oauth", return_value={"loginId": "fixture"}) as start:
+            preview = service.preview({"provider": "openai-chatgpt", "action": "oauth_browser", "accountId": "account-fixture", "requestConsent": True})
+            service.apply({"previewToken": preview["previewToken"], "confirmText": "connect", "accountId": "different"})
+            start.assert_called_once_with("openai-chatgpt", "ChatGPT", method="browser", account_id="account-fixture", request_consent=True)
+            for action in ("set_api_key", "oauth_device_code"):
+                with self.assertRaises(PiProviderAuthError):
+                    service.preview({"provider": "openai-chatgpt", "action": action})
+            with self.assertRaises(PiProviderAuthError):
+                service.preview({"provider": "openai-chatgpt", "action": "oauth_browser", "accountId": "unknown"})
+
+    def test_siwc_logout_reports_unconfirmed_remote_revocation(self) -> None:
+        service = PiProviderAuthService(self.service.config)
+        with patch.object(service, "_provider", return_value={"id": "openai-chatgpt", "auth": {"accounts": [{"id": "account"}]}}), patch.object(
+            service, "_call", return_value={"beforeType": "oauth", "remoteRevocationConfirmed": False, "warning": "远程撤销未确认"}
+        ) as bridge:
+            preview = service.preview({"provider": "openai-chatgpt", "action": "logout", "accountId": "account"})
+            result = service.apply({"previewToken": preview["previewToken"], "confirmText": "logout"})
+            self.assertFalse(result["remoteRevocationConfirmed"])
+            self.assertEqual(result["warning"], "远程撤销未确认")
+            bridge.assert_called_once_with({"action": "logout", "provider": "openai-chatgpt", "accountId": "account"})
+
     def test_browser_login_url_is_restricted_to_openai_oauth_routes(self) -> None:
         authorize = (
             "https://auth.openai.com/oauth/authorize"
             "?client_id=test&state=test&code_challenge=test"
         )
         self.assertEqual(_openai_codex_login_uri(authorize), authorize)
+        siwc_authorize = "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=test"
+        self.assertEqual(_openai_codex_login_uri(siwc_authorize), siwc_authorize)
+        self.assertEqual(_openai_codex_login_uri(siwc_authorize + "&id_token_hint=secret"), "")
         self.assertEqual(
             _openai_codex_login_uri("https://auth.openai.com/codex/device"),
             "https://auth.openai.com/codex/device",

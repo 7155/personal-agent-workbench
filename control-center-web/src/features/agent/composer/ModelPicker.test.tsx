@@ -70,6 +70,14 @@ function renderPicker(onChange = vi.fn()) {
 }
 
 describe('merged model and reasoning control', () => {
+  it('shows ChatGPT plan usage next to the selected SIWC model', () => {
+    const value = catalog();
+    value.selected = { ...value.selected, provider: 'openai-chatgpt' };
+    value.providers[0] = { ...value.providers[0], id: 'openai-chatgpt' };
+    render(<ModelPicker catalog={value} disabled={false} pending={false} requestOpen={0} onChange={vi.fn()} />);
+    expect(screen.getByText(/正在使用 ChatGPT 套餐/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '管理用量' })).toHaveAttribute('href', 'https://chatgpt.com/settings/usage');
+  });
   it('searches models in the merged popover and preserves a legal level when switching models', async () => {
     const onChange = renderPicker();
     const user = userEvent.setup();

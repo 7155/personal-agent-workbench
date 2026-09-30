@@ -23,6 +23,11 @@ proof: the manifest-listed files must exist and their SHA-256 values must match.
 
 ## Bundled Source
 
+The managed Pi SIWC provider uses [jose](https://github.com/panva/jose) 6.2.12
+for JWT signature/claims validation and JWKS caching. It is an MIT-licensed npm
+dependency, copyright (c) 2018 Filip Skokan. The complete upstream license is
+retained at `licenses/jose-LICENSE` and must accompany redistributed bundles.
+
 Earth Agent uses [Leaflet-Geoman Free](https://github.com/geoman-io/leaflet-geoman)
 2.20.1 for map drawing, vertex editing, snapping, and polygon cutting. It is an
 MIT-licensed npm dependency, copyright (c) 2017 Sumit Kumar. Its complete license

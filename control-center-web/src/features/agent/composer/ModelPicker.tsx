@@ -121,6 +121,10 @@ export function ModelPicker({
   }, [focusSection, open]);
 
   return (
+    <>
+    {selection?.provider === 'openai-chatgpt' ? <span className="mgmt-muted">
+      正在使用 ChatGPT 套餐 · <a href="https://chatgpt.com/settings/usage" rel="noreferrer" target="_blank">管理用量</a>
+    </span> : null}
     <Popover
       open={open}
       onOpenChange={(nextOpen) => {
@@ -243,6 +247,7 @@ export function ModelPicker({
         ) : null}
       </PopoverContent>
     </Popover>
+    </>
   );
 }
 

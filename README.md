@@ -254,6 +254,19 @@ flowchart TD
 
 ## 开发与文档
 
+### ChatGPT 套餐登录
+
+设置 → 模型账号中选择 **ChatGPT plan (Sign in with ChatGPT)**，点击
+**Continue with ChatGPT**。PAW 以自己的名称完成 OpenAI 开源应用动态注册，
+不使用共享 Codex client ID，也不自动复用旧版 `openai-codex` 凭据。
+完成授权后刷新账号模型列表，再明确选择新 Provider 下的模型；既有会话配置不会自动改写。
+套餐用量与 ChatGPT 及其他获准应用共享，额外余额使用取决于 ChatGPT 中的授权，
+PAW 不会自动切换到 API Key 计费。
+
+登录浏览器与 loopback 回调必须运行在同一台电脑。自托管 VM 应先完成本机登录，
+再安全传入选定注册的凭据，参见[登录与 VM 操作说明](release/chatgpt-sign-in.md)。
+身份登录成功不保证套餐资格、模型权限或实际推理成功；这些由 OpenAI 的授权和响应决定。
+
 [CONTRIBUTING.md](CONTRIBUTING.md) 包含环境、测试与贡献流程；[release/README.md](release/README.md) 包含源码构建、安装、升级和回滚。源码开发需要 Python 3.12+、uv，以及前端要求的 Node / pnpm；完整 Agent 执行还需要符合合约的 managed Pi Runtime。
 
 | 文档 | 用途 |

@@ -14,7 +14,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from rag_ime.keychain_secrets import (
     MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT, read_keychain_secret, write_keychain_secret,
@@ -115,6 +115,8 @@ class _Preview:
     action: str
     expires_at_ms: int
     consumed: bool = False
+    account_id: str = ""
+    request_consent: bool = False
 
 
 @dataclass
@@ -132,6 +134,9 @@ class _OAuthJob:
     expires_at_ms: int = 0
     timeout_at_ms: int = 0
     error: str = ""
+    plan_enabled: bool | None = None
+    first_sign_in: bool = False
+    catalog_warning: str = ""
 
 
 class PiProviderAuthService:
@@ -231,7 +236,24 @@ class PiProviderAuthService:
         if provider == "typesafe" and str(os.environ.get("TYPESAFE_API_KEY") or "").strip():
             raise PiProviderAuthError("Jev 当前使用 TYPESAFE_API_KEY 环境变量；请先移除环境变量并重启服务，再在这里管理密钥。")
         provider_item = self._provider(provider)
-        auth = provider_item.get("auth") if isinstance(provider_item.get("auth"), Mapping) else {}
+        provider_auth = provider_item.get("auth")
+        auth: Mapping[str, object] = provider_auth if isinstance(provider_auth, Mapping) else {}
+        if action == "set_api_key" and auth.get("apiKeySupported") is False:
+            raise PiProviderAuthError("这个服务不使用 API 密钥，请选择对应的登录方式。")
+        account_id = str(payload.get("accountId") or "").strip()
+        request_consent = payload.get("requestConsent") is True
+        if provider == "openai-chatgpt":
+            accounts = auth.get("accounts")
+            account_ids = {
+                str(item.get("id")) for item in (accounts if isinstance(accounts, list) else [])
+                if isinstance(item, Mapping)
+            }
+            if account_id and account_id not in account_ids and not (
+                action == "oauth_browser" and account_id == "new"
+            ):
+                raise PiProviderAuthError("ChatGPT 账号选择已失效，请刷新后重试。")
+        elif account_id or request_consent:
+            raise PiProviderAuthError("这个服务不支持 ChatGPT 账号选择。")
         if action == "oauth_browser" and not bool(auth.get("oauthBrowserSupported")):
             raise PiProviderAuthError("这个 Provider 暂不支持浏览器登录。")
         if (
@@ -247,6 +269,8 @@ class PiProviderAuthService:
             provider_name=str(provider_item.get("name") or provider),
             action=action,
             expires_at_ms=expires_at_ms,
+            account_id=account_id,
+            request_consent=request_consent,
         )
         with self._lock:
             self._prune_locked()
@@ -297,19 +321,25 @@ class PiProviderAuthService:
             self._write_jev_key(None)
             return self._receipt(preview, before_type="api_key")
         if preview.action == "logout":
-            result = self._call({"action": "logout", "provider": preview.provider})
-            return self._receipt(preview, before_type=str(result.get("beforeType") or ""))
+            result = self._call({"action": "logout", "provider": preview.provider,
+                                 **({"accountId": preview.account_id} if preview.account_id else {})})
+            return {**self._receipt(preview, before_type=str(result.get("beforeType") or "")),
+                    **({"remoteRevocationConfirmed": result.get("remoteRevocationConfirmed"),
+                        "warning": _public_error(result.get("warning"))}
+                       if preview.provider == "openai-chatgpt" else {})}
         if preview.action in {"oauth_browser", "oauth_device_code"}:
             method = (
                 "browser"
                 if preview.action == "oauth_browser"
                 else "device_code"
             )
-            login = self._start_oauth(
-                preview.provider,
-                preview.provider_name,
-                method=method,
-            )
+            if preview.provider == "openai-chatgpt":
+                login = self._start_oauth(
+                    preview.provider, preview.provider_name, method=method,
+                    account_id=preview.account_id, request_consent=preview.request_consent,
+                )
+            else:
+                login = self._start_oauth(preview.provider, preview.provider_name, method=method)
             return self._receipt(preview, before_type="", login=login)
         raise PiProviderAuthError("不支持这项凭据操作。")
 
@@ -364,7 +394,8 @@ class PiProviderAuthService:
             raise PiProviderAuthError(str(catalog.get("unavailableReason") or "凭据管理暂不可用。"))
         if not catalog.get("ok"):
             raise PiProviderAuthError(str(catalog.get("error") or "无法读取 Provider。"))
-        for item in catalog.get("providers", []):
+        providers = catalog.get("providers")
+        for item in (providers if isinstance(providers, list) else []):
             if isinstance(item, Mapping) and item.get("id") == provider:
                 return item
         raise PiProviderAuthError("Provider 不在 Pi 模型目录中。")
@@ -430,6 +461,8 @@ class PiProviderAuthService:
         provider_name: str,
         *,
         method: str = "browser",
+        account_id: str = "",
+        request_consent: bool = False,
     ) -> dict[str, object]:
         if method not in {"browser", "device_code"}:
             raise PiProviderAuthError("不支持这项登录方式。")
@@ -450,6 +483,8 @@ class PiProviderAuthService:
                         else "oauth_device_code"
                     ),
                     "provider": provider,
+                    **({"accountId": account_id, "requestConsent": request_consent}
+                       if provider == "openai-chatgpt" else {}),
                 }
             )
             process: subprocess.Popen[str] | None = None
@@ -533,7 +568,7 @@ class PiProviderAuthService:
                     if not isinstance(event, Mapping):
                         continue
                     with self._lock:
-                        if job.state == "cancelled":
+                        if job.state in {"completed", "failed", "cancelled"}:
                             break
                         now = int(time.time() * 1000)
                         job.updated_at_ms = now
@@ -557,6 +592,10 @@ class PiProviderAuthService:
                             job.state = "completed"
                             job.user_code = ""
                             job.verification_uri = ""
+                            if job.provider == "openai-chatgpt":
+                                job.plan_enabled = event.get("planEnabled") is True
+                                job.first_sign_in = event.get("firstSignIn") is True
+                                job.catalog_warning = _public_error(event.get("catalogWarning"))
                         elif kind == "failed":
                             job.state = "failed"
                             job.error = _public_error(event.get("error"))
@@ -684,7 +723,8 @@ def _openai_codex_login_uri(value: object) -> str:
         or parsed.username
         or parsed.password
         or parsed.port not in {None, 443}
-        or parsed.path not in {"/oauth/authorize", "/codex/device"}
+        or parsed.path not in {"/oauth/authorize", "/api/accounts/authorize", "/codex/device"}
+        or any(key in parse_qs(parsed.query) for key in ("id_token_hint", "access_token", "refresh_token"))
     ):
         return ""
     return uri
@@ -706,6 +746,9 @@ def _oauth_payload(job: _OAuthJob) -> dict[str, object]:
         "updatedAtMs": job.updated_at_ms,
         "error": job.error,
         "requiresAgentRestart": job.state == "completed",
+        **({"planEnabled": job.plan_enabled, "firstSignIn": job.first_sign_in,
+            "catalogWarning": job.catalog_warning}
+           if job.provider == "openai-chatgpt" and job.state == "completed" else {}),
     }
 
 
@@ -735,6 +778,8 @@ def _public_error(value: object) -> str:
 
 
 def _bounded_int(value: object, minimum: int, maximum: int) -> int:
+    if not isinstance(value, (str, int, float, bytes, bytearray)):
+        return minimum
     try:
         parsed = int(value)
     except (TypeError, ValueError):

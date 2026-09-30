@@ -14,6 +14,57 @@ import { PiProviderCredentials } from './PiProviderCredentials';
 afterEach(cleanup);
 
 describe('Pi provider credential UI', () => {
+  it('offers official SIWC accounts, avoids API/device-code inputs, and shows the first-use disclosure once', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({
+      capabilities: { features: { piProviderCredentials: true } },
+      routes: {
+        'agent.providers.get': { ...providerCatalog(), providers: [{
+          id: 'openai-chatgpt', name: 'ChatGPT plan (Sign in with ChatGPT)',
+          auth: { configured: false, apiKeySupported: false, oauthBrowserSupported: true, oauthDeviceCodeSupported: false,
+            accounts: [{ id: 'saved-registration', label: 'same@example.invalid · distinct-id', active: false }] },
+          availableModels: [],
+        }] },
+        'agent.provider.auth.preview': { ok: true, previewToken: 'siwc-preview', requiredConfirm: 'connect',
+          provider: 'openai-chatgpt', action: 'oauth_browser' },
+        'agent.provider.auth.apply': { ok: true, receiptId: 'siwc-receipt', provider: 'openai-chatgpt',
+          action: 'oauth_browser', receiptState: 'login_started', login: { loginId: 'siwc-login',
+            provider: 'openai-chatgpt', loginMethod: 'browser', state: 'waiting_for_user',
+            verificationUri: 'https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=test' } },
+        'agent.provider.oauth.status': { loginId: 'siwc-login', provider: 'openai-chatgpt', state: 'completed', planEnabled: true, firstSignIn: true },
+      },
+    });
+    renderProvider(transport);
+    await user.click(await screen.findByRole('button', { name: 'Continue with ChatGPT' }));
+    expect(screen.queryByLabelText('API 密钥')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '使用设备码' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /继续浏览器登录/ })).toHaveAttribute('href', 'https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=test');
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.provider.auth.preview')?.request.body)
+      .toEqual({ provider: 'openai-chatgpt', action: 'oauth_browser', accountId: 'new', requestConsent: false });
+    await user.click(screen.getByRole('button', { name: '检查状态' }));
+    expect(await screen.findByRole('dialog', { name: '正在使用你的 ChatGPT 套餐' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('discloses unconfirmed remote revocation after local sign-out', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ capabilities: { features: { piProviderCredentials: true } }, routes: {
+      'agent.providers.get': { ...providerCatalog(), providers: [{ id: 'openai-chatgpt', name: 'ChatGPT',
+        auth: { configured: true, apiKeySupported: false, activeAccount: 'saved', planEnabled: true,
+          accounts: [{ id: 'saved', label: 'Fixture · saved', active: true }] } }] },
+      'agent.provider.auth.preview': { ok: true, previewToken: 'logout', requiredConfirm: 'logout', provider: 'openai-chatgpt', action: 'logout' },
+      'agent.provider.auth.apply': { ok: true, receiptId: 'logout', receiptState: 'applied', provider: 'openai-chatgpt', action: 'logout',
+        remoteRevocationConfirmed: false, warning: '本机已退出，但未确认远程撤销；请到 ChatGPT 设置中断开此应用。' },
+    } });
+    renderProvider(transport);
+    await user.click(await screen.findByRole('button', { name: '断开账号' }));
+    await user.click(screen.getByRole('button', { name: '确认断开' }));
+    expect(await screen.findByText('请检查远程授权')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '管理用量与授权' })).toHaveAttribute('href', 'https://chatgpt.com/settings/usage');
+  });
   it('explains that model account support is still being checked', async () => {
     const transport = new MockControlTransport({
       capabilities: { features: { piProviderCredentials: true } },

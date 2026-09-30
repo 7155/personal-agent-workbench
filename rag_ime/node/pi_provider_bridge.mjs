@@ -1,7 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { createRequire } from 'node:module';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { CHATGPT_PROVIDER, chatGPTAccountStatus, loginChatGPT, logoutChatGPT, transferChatGPT } from './pi_chatgpt_accounts.mjs';
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_MODELS_PER_PROVIDER = 120;
@@ -61,12 +63,20 @@ async function loadPi(request) {
     return { agentDir, mode: 'legacy', auth, registry };
   }
   if (typeof imported.ModelRuntime === 'function' && typeof imported.ModelRuntime.create === 'function') {
+    const { AuthStorage } = await import(new URL('./core/auth-storage.js', pathToFileURL(packageEntry)).href);
+    const auth = AuthStorage.create(`${agentDir}/auth.json`);
     const runtime = await imported.ModelRuntime.create({
-      authPath: `${agentDir}/auth.json`,
+      credentials: auth,
       modelsPath: `${agentDir}/models.json`,
       allowModelNetwork: false,
     });
-    return { agentDir, mode: 'runtime', runtime };
+    let siwc;
+    if (runtime.getProvider(CHATGPT_PROVIDER)) {
+      const require = createRequire(pathToFileURL(packageEntry));
+      const aiPackage = require.resolve('@earendil-works/pi-ai/package.json');
+      siwc = await import(new URL('./dist/auth/oauth/openai-chatgpt.js', pathToFileURL(aiPackage)).href);
+    }
+    return { agentDir, mode: 'runtime', runtime, auth, siwc };
   }
   throw new Error('managed Pi package does not export credential services');
 }
@@ -132,7 +142,7 @@ function legacyProviderCatalog(auth, registry, configuredIds) {
   return providers;
 }
 
-async function runtimeProviderCatalog(runtime, configuredIds) {
+async function runtimeProviderCatalog(runtime, configuredIds, auth, siwc) {
   const credentialInfo = await runtime.listCredentials();
   const credentialTypes = new Map(
     credentialInfo.map((item) => [item.providerId, item.type]),
@@ -157,6 +167,7 @@ async function runtimeProviderCatalog(runtime, configuredIds) {
     const models = runtime.getModels(id);
     const available = availableByProvider.get(id) ?? [];
     const status = runtime.getProviderAuthStatus(id);
+    const chatgptStatus = id === CHATGPT_PROVIDER && siwc ? await chatGPTAccountStatus(auth, siwc) : {};
     providers.push({
       id,
       name: provider?.name ?? id,
@@ -166,9 +177,10 @@ async function runtimeProviderCatalog(runtime, configuredIds) {
         source: status?.source ?? '',
         sourceLabel: status?.label ?? '',
         oauthSupported: Boolean(provider?.auth?.oauth),
-        oauthBrowserSupported: id === 'openai-codex' && Boolean(provider?.auth?.oauth),
+        oauthBrowserSupported: (id === CHATGPT_PROVIDER || id === 'openai-codex') && Boolean(provider?.auth?.oauth),
         oauthDeviceCodeSupported: id === 'openai-codex' && Boolean(provider?.auth?.oauth),
         apiKeySupported: Boolean(provider?.auth?.apiKey),
+        ...chatgptStatus,
       },
       configuredInCatalog: configuredIds.has(id),
       modelCount: models.length,
@@ -187,14 +199,19 @@ async function runtimeProviderCatalog(runtime, configuredIds) {
 
 async function catalog(request) {
   const pi = await loadPi(request);
+  let catalogError = '';
+  if (pi.siwc) {
+    const refreshed = await pi.runtime.refresh({ providers: [CHATGPT_PROVIDER], allowNetwork: true, force: true, signal: AbortSignal.timeout(12_000) });
+    catalogError = refreshed.errors.get(CHATGPT_PROVIDER)?.message || '';
+  }
   const configuredIds = await configuredProviderIds(request);
   return {
     event: 'result',
     ok: true,
     providers: pi.mode === 'runtime'
-      ? await runtimeProviderCatalog(pi.runtime, configuredIds)
+      ? await runtimeProviderCatalog(pi.runtime, configuredIds, pi.auth, pi.siwc)
       : legacyProviderCatalog(pi.auth, pi.registry, configuredIds),
-    catalogError: (pi.mode === 'runtime' ? pi.runtime.getError() : pi.registry.getError()) || '',
+    catalogError: (pi.mode === 'runtime' ? pi.runtime.getError() : pi.registry.getError()) || catalogError,
   };
 }
 
@@ -246,6 +263,7 @@ async function setApiKey(request) {
 async function logout(request) {
   const provider = providerId(request);
   const pi = await loadPi(request);
+  if (provider === CHATGPT_PROVIDER && pi.siwc) return logoutChatGPT({ auth: pi.auth, siwc: pi.siwc, accountId: request.accountId, signal: AbortSignal.timeout(10_000) });
   if (!(await knownProviderIds(request, pi)).has(provider)) {
     throw new Error('provider is not in the Pi model catalog');
   }
@@ -289,6 +307,19 @@ function waitForBrowserCallback(signal) {
 
 async function oauthLogin(request) {
   const provider = providerId(request);
+  if (provider === CHATGPT_PROVIDER) {
+    if (request.action !== 'oauth_browser') throw new Error('SIWC does not offer the legacy Codex device-code flow');
+    const pi = await loadPi(request);
+    if (!pi.siwc) throw new Error('Update the managed Pi runtime to use Sign in with ChatGPT');
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    process.once('SIGTERM', cancel);
+    process.once('SIGINT', cancel);
+    try { await loginChatGPT({ auth: pi.auth, runtime: pi.runtime, siwc: pi.siwc, agentDir: pi.agentDir,
+      accountId: request.accountId, requestConsent: request.requestConsent, emit, signal: controller.signal }); }
+    finally { process.off('SIGTERM', cancel); process.off('SIGINT', cancel); }
+    return;
+  }
   if (provider !== 'openai-codex') throw new Error('OAuth login is unavailable for this provider');
   const method = request.action === 'oauth_browser' ? 'browser' : 'device_code';
   if (method === 'browser') await assertBrowserCallbackAvailable();
@@ -343,6 +374,15 @@ async function oauthLogin(request) {
 async function main() {
   const request = await readRequest();
   switch (request.action) {
+    case 'chatgpt_prepare_host':
+    case 'chatgpt_import':
+    case 'chatgpt_export': {
+      const pi = await loadPi(request);
+      if (!pi.siwc) throw new Error('Update the managed Pi runtime to use Sign in with ChatGPT');
+      emit(await transferChatGPT({ action: request.action, auth: pi.auth, siwc: pi.siwc,
+        agentDir: pi.agentDir, path: request.path, accountId: request.accountId }));
+      return;
+    }
     case 'catalog':
       emit(await catalog(request));
       return;

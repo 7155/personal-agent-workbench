@@ -369,7 +369,7 @@ export const CONTROL_ROUTES = {
   'agent.provider.auth.preview': {
     method: 'POST',
     path: '/api/agent/providers/auth/preview',
-    body: ['provider', 'action'],
+    body: ['provider', 'action', 'accountId', 'requestConsent'],
     requiredBody: ['provider', 'action'],
   },
   'agent.provider.auth.apply': {

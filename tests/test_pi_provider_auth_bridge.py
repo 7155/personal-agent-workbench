@@ -63,6 +63,7 @@ export const openaiCodexOAuth = {
                 f"--alias:rag-ime-pi-auth-storage={fixture}",
                 f"--alias:rag-ime-pi-model-runtime={fixture}",
                 f"--alias:rag-ime-pi-openai-codex-oauth={fixture}",
+                f"--alias:rag-ime-pi-openai-chatgpt-oauth={fixture}",
             ],
             check=True, capture_output=True, text=True, timeout=20,
         )

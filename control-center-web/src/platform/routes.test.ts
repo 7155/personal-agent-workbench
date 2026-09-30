@@ -325,6 +325,9 @@ describe('control route policy', () => {
   });
 
   it('keeps Pi credentials behind preview/apply and never accepts secrets on preview', () => {
+    expect(() => assertControlRequest({ pathId: 'agent.provider.auth.preview',
+      body: { provider: 'openai-chatgpt', action: 'oauth_browser', accountId: 'saved-registration', requestConsent: true },
+    })).not.toThrow();
     expect(() =>
       assertControlRequest({
         pathId: 'agent.provider.auth.preview',

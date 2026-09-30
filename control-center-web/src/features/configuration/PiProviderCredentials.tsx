@@ -50,12 +50,23 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   const [loginStatusError, setLoginStatusError] = useState('');
   const [statusChecking, setStatusChecking] = useState(false);
   const [modelsExpanded, setModelsExpanded] = useState(false);
+  const [accountId, setAccountId] = useState('');
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const welcomedLoginRef = useRef('');
   const loginEpochRef = useRef(0);
   const modelListId = useId();
   const loginId = stringValue(login?.loginId);
   const loginState = stringValue(login?.state);
   const loginWaiting = isPendingLoginState(loginState);
   const refetchCatalog = catalog.refetch;
+
+  useEffect(() => {
+    if (loginState === 'completed' && login?.planEnabled === true && login.firstSignIn === true
+      && welcomedLoginRef.current !== loginId) {
+      welcomedLoginRef.current = loginId;
+      setWelcomeOpen(true);
+    }
+  }, [login, loginId, loginState]);
 
   useEffect(() => {
     if (!providers.length || providers.some((item) => stringValue(item.id) === providerId)) return;
@@ -95,6 +106,9 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
 
   const selected = providers.find((item) => stringValue(item.id) === providerId) ?? providers[0] ?? {};
   const auth = asRecord(selected.auth);
+  const isChatGPT = providerId === 'openai-chatgpt';
+  const accounts = arrayRecords(auth.accounts);
+  const selectedAccountId = accountId || stringValue(auth.activeAccount) || 'new';
   const models = arrayRecords(selected.availableModels);
   const modelPreviewLimit = 8;
   const declaredModelCount = finiteNonNegativeNumber(selected.availableModelCount);
@@ -122,16 +136,19 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
     setError('');
     setLoginStatusError('');
     setModelsExpanded(false);
+    setAccountId('');
   }
 
-  async function openPreview(action: ProviderAction): Promise<void> {
+  async function openPreview(action: ProviderAction, requestConsent = false): Promise<void> {
     if (!providerId || !authChangesSupported || loginWaiting) return;
     setWorking(true);
     setError('');
     try {
       const value = await transport.request({
         pathId: 'agent.provider.auth.preview',
-        body: { provider: providerId, action },
+        body: { provider: providerId, action,
+          ...(isChatGPT ? { accountId: selectedAccountId, requestConsent } : {}),
+        },
       });
       const nextPreview = parseProviderPreview(value, providerId, action);
       setPreviewAction(action);
@@ -300,14 +317,32 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
             {stringValue(auth.type) ? <StatusBadge label={stringValue(auth.type) === 'oauth' ? 'ChatGPT 登录' : 'API 密钥'} tone="info" /> : null}
           </div>
           {providerId === 'typesafe' ? <InlineNotice title="Jev 工具审批" tone="info">配置密钥后，需要模型判断的工具审批优先使用 Jev；服务失败回退 Luna Max。当前权限模式仍决定是否需要审批。密钥保存在 macOS 钥匙串中，全局生效。</InlineNotice> : null}
-          <Field description="输入内容只会在保存时交给本机安全存储；页面不会读回现有密钥。" htmlFor="pi-api-key" label="API 密钥">
+          {isChatGPT ? <>
+            <InlineNotice title={auth.planEnabled === true ? '正在使用 ChatGPT 套餐' : '使用你的 ChatGPT 套餐'} tone="info">
+              符合资格的请求会计入你的 ChatGPT 套餐或获准使用的余额，与 ChatGPT 及其他应用共享额度。PAW 不会在额度耗尽时自动改用付费 API。
+              <a href="https://chatgpt.com/settings/usage" rel="noreferrer" target="_blank">管理用量</a>
+            </InlineNotice>
+            <Field htmlFor="chatgpt-account" label="ChatGPT 账号 / 工作区">
+              <Select disabled={working || loginWaiting} id="chatgpt-account" onValueChange={setAccountId}
+                options={[...accounts.map(item => ({ value: stringValue(item.id), label: `${stringValue(item.label)}${item.active === true ? '（当前）' : ''}` })),
+                  { value: 'new', label: '添加另一个账号或工作区' }]}
+                value={selectedAccountId} />
+            </Field>
+            <p className="mgmt-muted">浏览器必须与登录回调运行在同一台电脑。自托管 VM 请先在本机完成 PAW 登录，再通过安全通道传入凭据；VM 的主机标识保持独立。</p>
+            {auth.configured === true && auth.planEnabled !== true ? <InlineNotice title="套餐使用尚未启用" tone="warning">
+              登录身份已经保存，但当前授权不能用于推理。你可以启用套餐使用，或另选 API 密钥服务。
+              <Button disabled={loginWaiting} loading={working} onClick={() => void openPreview('oauth_browser', true)} size="small">启用 ChatGPT 套餐使用</Button>
+            </InlineNotice> : null}
+          </> : null}
+          {providerId === 'openai-codex' ? <InlineNotice title="旧版 Codex 登录" tone="warning">这是旧版独立连接。升级后请选择 ChatGPT plan (Sign in with ChatGPT) 重新授权；旧凭据不会迁移或用作新授权。</InlineNotice> : null}
+          {auth.apiKeySupported !== false ? <Field description="输入内容只会在保存时交给本机安全存储；页面不会读回现有密钥。" htmlFor="pi-api-key" label="API 密钥">
             <Input autoComplete="new-password" disabled={!authChangesSupported || loginWaiting} id="pi-api-key" onChange={(event) => setApiKey(event.target.value)} placeholder={authChangesSupported ? '输入新的 API 密钥' : '当前版本仅支持查看状态'} type="password" value={apiKey} />
-          </Field>
+          </Field> : null}
           <div className="mgmt-toolbar">
-            <Button disabled={!authChangesSupported || !apiKey.trim() || loginWaiting} leadingIcon={<KeyRound size={15} />} loading={working} onClick={() => void openPreview('set_api_key')} size="small" variant="primary">{auth.configured === true ? '替换密钥' : '保存密钥'}</Button>
-            {canUseBrowserOAuth ? <Button disabled={loginWaiting} leadingIcon={<UserRoundCheck size={15} />} loading={working} onClick={() => void openPreview('oauth_browser')} size="small">{auth.configured === true && stringValue(auth.type) === 'oauth' ? '重新连接 ChatGPT' : '连接 ChatGPT'}</Button> : null}
+            {auth.apiKeySupported !== false ? <Button disabled={!authChangesSupported || !apiKey.trim() || loginWaiting} leadingIcon={<KeyRound size={15} />} loading={working} onClick={() => void openPreview('set_api_key')} size="small" variant="primary">{auth.configured === true ? '替换密钥' : '保存密钥'}</Button> : null}
+            {canUseBrowserOAuth ? <Button disabled={loginWaiting} leadingIcon={<UserRoundCheck size={15} />} loading={working} onClick={() => void openPreview('oauth_browser')} size="small">{isChatGPT ? 'Continue with ChatGPT' : auth.configured === true && stringValue(auth.type) === 'oauth' ? '重新连接 ChatGPT' : '连接 ChatGPT'}</Button> : null}
             {canUseDeviceOAuth ? <Button disabled={loginWaiting} loading={working} onClick={() => void openPreview('oauth_device_code')} size="small" variant="quiet">使用设备码</Button> : null}
-            {auth.configured === true ? <Button disabled={!authChangesSupported || loginWaiting} leadingIcon={<LogOut size={15} />} loading={working} onClick={() => void openPreview('logout')} size="small" variant="quiet">断开账号</Button> : null}
+            {auth.configured === true ? <Button disabled={!authChangesSupported || loginWaiting || (isChatGPT && selectedAccountId === 'new')} leadingIcon={<LogOut size={15} />} loading={working} onClick={() => void openPreview('logout')} size="small" variant="quiet">断开账号</Button> : null}
             <Button leadingIcon={<RefreshCw size={15} />} loading={catalog.isFetching} onClick={refresh} size="small" variant="quiet">刷新</Button>
           </div>
           {!authChangesSupported ? <InlineNotice title="当前仅能查看" tone="warning">安全保存与退出功能尚未接入，所以不会发送凭据。</InlineNotice> : null}
@@ -364,6 +399,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
         )}
       </div>
       {error ? <InlineNotice title="操作没有完成" tone="danger">{error}</InlineNotice> : null}
+      {stringValue(receipt?.warning) ? <InlineNotice title="请检查远程授权" tone="warning">{stringValue(receipt?.warning)} <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">管理用量与授权</a></InlineNotice> : null}
       {receiptNotice ? (
         <InlineNotice title={receiptNotice.title} tone={receiptNotice.tone}>
           {receiptNotice.body}
@@ -382,6 +418,12 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
         />
       ) : null}
 
+      <Dialog open={welcomeOpen} onOpenChange={setWelcomeOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>正在使用你的 ChatGPT 套餐</DialogTitle><DialogDescription>PAW 中符合资格的 AI 请求会使用你的 ChatGPT 套餐。你可以在 ChatGPT 设置中查看用量和调整此应用的限制。</DialogDescription></DialogHeader>
+          <DialogFooter><Button onClick={() => setWelcomeOpen(false)}>知道了</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={preview !== null} onOpenChange={(open) => { if (!open && !working) setPreview(null); }}>
         <DialogContent>
           <DialogHeader>
@@ -434,6 +476,8 @@ function OAuthStatus({
         {stringValue(login.userCode) ? <strong>设备码：{stringValue(login.userCode)}</strong> : null}
         {safeLoginUrl(login.verificationUri) ? <a href={safeLoginUrl(login.verificationUri)} rel="noreferrer" target="_blank">{stringValue(login.userCode) ? '输入设备码' : '继续浏览器登录'} <ExternalLink aria-hidden="true" size={14} /></a> : null}
         {stringValue(login.error) ? <span>{errorText(login.error)}</span> : null}
+        {state === 'completed' && login.planEnabled === false ? <span>身份已连接，但套餐使用尚未授权。请在账号设置中启用后再选择模型。</span> : null}
+        {stringValue(login.catalogWarning) ? <span>{stringValue(login.catalogWarning)}</span> : null}
         {error ? <span role="alert">{error}</span> : null}
         <div className="mgmt-toolbar">
           {waiting && canRefresh ? <Button leadingIcon={<RefreshCw size={15} />} loading={working} onClick={() => void onRefresh()} size="small" variant="quiet">检查状态</Button> : null}
@@ -576,7 +620,8 @@ function safeLoginUrl(value: unknown): string {
     const url = new URL(raw);
     return url.protocol === 'https:'
       && url.hostname === 'auth.openai.com'
-      && ['/oauth/authorize', '/codex/device'].includes(url.pathname)
+      && ['/oauth/authorize', '/api/accounts/authorize', '/codex/device'].includes(url.pathname)
+      && !['id_token_hint', 'access_token', 'refresh_token'].some(key => url.searchParams.has(key))
       && !url.username
       && !url.password
       && (!url.port || url.port === '443')
@@ -589,6 +634,13 @@ function safeLoginUrl(value: unknown): string {
 
 function errorText(error: unknown, secret = ''): string {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (/ChatGPT sign-in:/.test(message)) {
+    if (/access_denied/.test(message)) return '你没有同意这次授权，现有账号未改变。需要时可重新登录。';
+    if (/cancelled|login_timeout/.test(message)) return '登录已取消或超时，请重新登录。';
+    if (/network_unavailable/.test(message)) return '暂时无法连接 OpenAI，请检查网络后重试。现有账号未改变。';
+    if (/permission_required/.test(message)) return '当前账号未启用 ChatGPT 套餐使用，请重新授权。';
+    return 'ChatGPT 授权校验失败，未替换现有账号。请重新登录；若仍失败，请检查运行时版本。';
+  }
   if (/enable device code authorization for codex in chatgpt security settings/i.test(message)) {
     return '请先在 ChatGPT「设置 → 安全」中开启设备码授权，然后重新连接。';
   }

@@ -857,6 +857,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                 "anthropic.ts",
                 "github-copilot.ts",
                 "openai-codex.ts",
+                "openai-chatgpt.ts",
                 "openrouter.ts",
                 "kimi-coding.ts",
                 "xai.ts",

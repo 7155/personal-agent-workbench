@@ -841,7 +841,7 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_RUNTIME_GET, ControlMethod.GET, "/api/agent/runtime", "/control/v1/agent/runtime", scopes=[ControlScope.AGENT_READ], remote_safe=True),
         _route(ControlPathId.AGENT_RUNTIME_ENSURE, ControlMethod.POST, "/api/agent/runtime/ensure", "/control/v1/agent/runtime/ensure", body={"sessionId"}, required_body={"sessionId"}),
         _route(ControlPathId.AGENT_PROVIDERS_GET, ControlMethod.GET, "/api/agent/providers", "/control/v1/agent/providers"),
-        _route(ControlPathId.AGENT_PROVIDER_AUTH_PREVIEW, ControlMethod.POST, "/api/agent/providers/auth/preview", "/control/v1/agent/providers/auth/preview", body={"provider", "action"}, required_body={"provider", "action"}),
+        _route(ControlPathId.AGENT_PROVIDER_AUTH_PREVIEW, ControlMethod.POST, "/api/agent/providers/auth/preview", "/control/v1/agent/providers/auth/preview", body={"provider", "action", "accountId", "requestConsent"}, required_body={"provider", "action"}),
         _route(ControlPathId.AGENT_PROVIDER_AUTH_APPLY, ControlMethod.POST, "/api/agent/providers/auth/apply", "/control/v1/agent/providers/auth/apply", body={"previewToken", "confirmText", "apiKey"}, required_body={"previewToken", "confirmText"}),
         _route(ControlPathId.AGENT_PROVIDER_OAUTH_STATUS, ControlMethod.GET, "/api/agent/providers/oauth/status", "/control/v1/agent/providers/oauth/status", query={"loginId"}, required_query={"loginId"}),
         _route(ControlPathId.AGENT_PROVIDER_OAUTH_CANCEL, ControlMethod.POST, "/api/agent/providers/oauth/cancel", "/control/v1/agent/providers/oauth/cancel", body={"loginId"}, required_body={"loginId"}),
