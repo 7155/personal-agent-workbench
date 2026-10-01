@@ -1,7 +1,8 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appendOptimisticRoomMessage, createRoomProjection } from '@/contracts/room-reducer';
+import { appendOptimisticRoomMessage, createRoomProjection, reduceRoomEvent } from '@/contracts/room-reducer';
+import { roomEventFixture } from '@/test/fixtures/events';
 import { clearConversationScrollMemory } from '@/features/conversation-ui';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
@@ -482,6 +483,47 @@ describe('PawRoomConversation', () => {
     renderRoom({ collaborationMode: 'jev', graph, projection: fixture.projection, room: fixture.room, readOnly: true });
     expect(screen.queryByRole('region', { name: 'Room 最终汇报' })).not.toBeInTheDocument();
     expect(screen.getByText('另一轮的结果。')).toBeVisible();
+  });
+
+  it('keeps the previous failed report wide after a new Jev Root starts using its exact terminal publication', () => {
+    const fixture = roomConversation();
+    fixture.room.moderatorParticipantId = 'participant-a';
+    fixture.projection.moderatorParticipantId = 'participant-a';
+    fixture.projection.messagesById['message-agent'] = {
+      ...fixture.projection.messagesById['message-agent']!,
+      rootId: 'root-a', postKind: 'blocked', text: '# 上轮报告\n\n集成仍未通过。',
+    };
+    const terminal = {
+      ...roomEventFixture(1, 'turn_failed', { rootId: 'root-a', finalizationId: 'message-agent', status: 'failed' }),
+      roomId: fixture.room.id, turnId: 'root-a', participantId: null, sourceSessionId: '',
+    };
+    const projection = reduceRoomEvent(fixture.projection, terminal).state;
+    const graph: JevSnapshot = {
+      graphId: 'graph-new', roomId: fixture.room.id, rootId: 'root-new', version: 'new', phase: 'plan', stopped: false,
+      requirementsRevision: 1, tasks: [], edges: [], ready: [], running: [], review: [], blocked: [], effects: [], events: [],
+      final: null, modelCards: [], planApproval: null,
+    };
+    renderRoom({ collaborationMode: 'jev', graph, projection, room: fixture.room, readOnly: true });
+    const report = screen.getByRole('region', { name: 'Room 最终汇报' });
+    expect(report).toHaveAttribute('data-report-layout', 'wide');
+    expect(report).toHaveAttribute('data-state', 'failed');
+    expect(report).toHaveTextContent('集成仍未通过。');
+  });
+
+  it('does not promote a historical blocked progress post whose terminal names a different publication', () => {
+    const fixture = roomConversation();
+    fixture.room.moderatorParticipantId = 'participant-a';
+    fixture.projection.messagesById['message-agent'] = {
+      ...fixture.projection.messagesById['message-agent']!, rootId: 'root-a', postKind: 'blocked', text: '过程受阻，尚未汇报。',
+    };
+    const terminal = {
+      ...roomEventFixture(1, 'turn_failed', { rootId: 'root-a', finalizationId: 'different-report' }),
+      roomId: fixture.room.id, turnId: 'root-a', participantId: null, sourceSessionId: '',
+    };
+    const projection = reduceRoomEvent(fixture.projection, terminal).state;
+    renderRoom({ collaborationMode: 'jev', projection, room: fixture.room, readOnly: true });
+    expect(screen.queryByRole('region', { name: 'Room 最终汇报' })).not.toBeInTheDocument();
+    expect(screen.getByText('过程受阻，尚未汇报。')).toBeVisible();
   });
 
   it('names a tool by its reader label and keeps the raw call one click away', async () => {

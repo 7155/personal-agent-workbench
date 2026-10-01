@@ -465,28 +465,30 @@ function authoritativeRoomFinalReport(
     || message.role !== 'assistant'
     || message.projectionKind !== 'post'
   ) return undefined;
-  const graphFinalMatches = context.graph?.final?.content === message.text;
-  if (message.postKind !== 'result' && !(message.postKind === 'blocked' && graphFinalMatches)) return undefined;
   const messageRoot = message.rootId || message.turnId;
-  const expectedRoot = context.graph?.rootId || context.rootId;
-  if (expectedRoot && messageRoot !== expectedRoot) return undefined;
-  if (context.graph?.roomId && context.graph.roomId !== context.room.id) return undefined;
-  if (context.graph && messageRoot !== context.graph.rootId) return undefined;
-  /* A Jev final is authoritative only once the graph has published the exact
-   * final content. A plain Room result post remains authoritative through its
-   * typed post kind and root binding. */
-  if (context.collaborationMode === 'jev' && context.graph?.final?.content !== message.text) return undefined;
-  if (context.graph?.final && context.graph.final.content !== message.text) return undefined;
+  const graph = context.graph?.rootId === messageRoot ? context.graph : undefined;
+  if (context.rootId && messageRoot !== context.rootId) return undefined;
+  if (graph?.roomId && graph.roomId !== context.room.id) return undefined;
+  const turn = context.projection.turnsById[messageRoot];
+  const terminalFinalMatches = turn?.rootTerminalAtMs != null
+    && turn.finalizationPostId === message.id;
+  const graphFinalMatches = graph?.final?.content === message.text;
+  if (message.postKind !== 'result'
+    && !(message.postKind === 'blocked' && (graphFinalMatches || terminalFinalMatches))) return undefined;
+  /* The current Jev final uses the exact graph content. Historical finals
+   * use their Root terminal's exact publication ID after the picker moves to
+   * a new graph; a blocked progress post is never enough on its own. */
+  if (context.collaborationMode === 'jev' && !graphFinalMatches && !terminalFinalMatches) return undefined;
+  if (graph?.final && !graphFinalMatches) return undefined;
   const moderatorId = context.projection.moderatorParticipantId || context.room.moderatorParticipantId;
   if (moderatorId && message.participantId !== moderatorId) return undefined;
 
-  const turn = context.projection.turnsById[messageRoot];
   const turnState = normalizeRoomFinalReportState(turn?.status);
   const messageState = normalizeRoomFinalReportState(message.status);
-  const graphState = normalizeRoomFinalReportState(context.graph?.final?.status);
+  const graphState = normalizeRoomFinalReportState(graph?.final?.status);
   const state = graphState ?? turnState ?? messageState ?? 'running';
   const evidence = uniqueStrings([
-    ...(context.graph?.rootId === messageRoot ? context.graph.final?.evidence ?? [] : []),
+    ...(graph?.final?.evidence ?? []),
     ...(context.room.workItems ?? [])
       .filter((work) => work.roomId === context.room.id
         && (work.rootTurnId === messageRoot || work.acceptedTurnId === message.turnId))

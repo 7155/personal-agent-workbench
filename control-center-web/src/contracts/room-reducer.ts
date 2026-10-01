@@ -133,6 +133,8 @@ export interface RoomTurnProjection {
   abortedDispatchIds?: string[];
   dispatchParticipantIds?: Record<string, string>;
   rootTerminalAtMs?: number;
+  /** Exact publication named by the canonical Root terminal receipt. */
+  finalizationPostId?: string;
   createdAtMs: number;
   updatedAtMs: number;
   failure?: string;
@@ -378,6 +380,7 @@ export function reduceRoomEvent(
           : 'completed',
         event.createdAtMs,
       );
+      recordRootFinalization(next, event, payload);
       break;
     case 'turn_failed':
       {
@@ -392,6 +395,7 @@ export function reduceRoomEvent(
           event.createdAtMs,
           failure,
         );
+        recordRootFinalization(next, event, payload);
         upsertActivity(next, event, payload, 'failed');
         break;
       }
@@ -2077,6 +2081,22 @@ function ensureTurn(
     state.turnOrder.push(turnId);
   }
   return turn;
+}
+
+function recordRootFinalization(
+  state: RoomProjectionState,
+  event: UiRoomEvent,
+  payload: Record<string, unknown>,
+): void {
+  const finalizationId = text(payload.finalizationId);
+  const rootId = text(payload.rootId) || event.turnId;
+  if (
+    !finalizationId || rootId !== event.turnId
+    || event.participantId || event.sourceSessionId || text(payload.dispatchId)
+  ) return;
+  const turn = state.turnsById[rootId];
+  if (turn?.rootTerminalAtMs !== event.createdAtMs) return;
+  turn.finalizationPostId = finalizationId;
 }
 
 function completeParticipantTurn(
