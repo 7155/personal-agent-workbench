@@ -9,6 +9,8 @@ source checkpoint is not a signed and notarized macOS binary release.
   capability browser, with owner-supplied connection state, per-tool exposure,
   refresh and idle login/reconnect actions. Merge codemode child receipts by
   identity and expand their arguments without inventing missing nested results.
+  Drain Browser CLI stdout and stderr before exit so large piped results retain
+  their JSON and UTF-8 tails, including failed commands.
 
 - Read exact Pi turn arguments for task verification instead of shortened UI
   previews. Preserve long credential-masked scripts and more than 64 completed

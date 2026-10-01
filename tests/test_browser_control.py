@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import plistlib
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -842,6 +844,42 @@ class FakeEgoProcess:
             encoding="utf-8",
         )
         return '{"taskSpaceId":2}\n', ""
+
+
+class BrowserCliOutputTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for the CLI pipe check")
+    def test_cli_drains_large_stdout_and_stderr_before_exiting(self) -> None:
+        entrypoint = Path(__file__).resolve().parents[1] / (
+            "integrations/ego-browser/upstream/package/ego-linux-host/bin/ego-browser.mjs"
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "bin").mkdir()
+            (root / "dist").mkdir()
+            shutil.copy2(entrypoint, root / "bin/ego-browser.mjs")
+            (root / "package.json").write_text('{"type":"module"}')
+            # Exercise the real CLI exit path without opening a browser. Keep an
+            # unrelated handle alive so draining cannot depend on natural exit.
+            (root / "dist/cli.js").write_text(
+                'export async function runCli(args) {\n'
+                '  process.stdout.write(JSON.stringify({text:"植物".repeat(18000)})+"\\n");\n'
+                '  process.stderr.write("diagnostic ".repeat(10000)+"\\n");\n'
+                '  setInterval(() => {}, 30000);\n'
+                '  return Number(args[0]);\n'
+                '}\n'
+            )
+            for exit_code in (0, 3):
+                with self.subTest(exit_code=exit_code):
+                    result = subprocess.run(
+                        [shutil.which("node"), str(root / "bin/ego-browser.mjs"), str(exit_code)],
+                        capture_output=True, timeout=10, check=False,
+                    )
+                    self.assertEqual(result.returncode, exit_code)
+                    self.assertEqual(
+                        result.stdout.decode("utf-8"),
+                        json.dumps({"text": "植物" * 18000}, ensure_ascii=False, separators=(",", ":")) + "\n",
+                    )
+                    self.assertEqual(result.stderr, ("diagnostic " * 10000 + "\n").encode())
 
 
 if __name__ == "__main__":
