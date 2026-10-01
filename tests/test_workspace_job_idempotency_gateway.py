@@ -154,6 +154,30 @@ class WorkspaceJobIdempotencyGatewayTests(unittest.TestCase):
         self.assertEqual(replay["job"]["jobId"], first["job"]["jobId"])
         self.assertEqual(len(jobs.started), 1)
 
+        # A Room partner may have started the declared script with a real port.
+        # The result button must open that existing owner, not spawn a duplicate.
+        jobs.items[0]["command"] = "npm run start -- --port 8787"
+        with_port = gateway.start_project_quick_action(
+            str(session["id"]),
+            {"action": "preview", "projectId": project_id, "cwd": str(self.workspace)},
+        )
+        self.assertTrue(with_port["deduplicated"])
+        self.assertEqual(with_port["job"]["jobId"], first["job"]["jobId"])
+        self.assertEqual(with_port["job"]["command"], "npm run start -- --port 8787")
+        self.assertEqual(len(jobs.started), 1)
+
+        # Similar prefixes and shell compound commands are separate work.
+        for command in ("npm run startup", "npm run start -- --port 8787; echo other", "npm run start\necho other"):
+            with self.subTest(command=command):
+                jobs.items[0]["command"] = command
+                previous_count = len(jobs.started)
+                new = gateway.start_project_quick_action(
+                    str(session["id"]),
+                    {"action": "preview", "projectId": project_id, "cwd": str(self.workspace)},
+                )
+                self.assertFalse(new.get("deduplicated", False))
+                self.assertEqual(len(jobs.started), previous_count + 1)
+
         with self.assertRaisesRegex(ValueError, "preview or checks"):
             gateway.start_project_quick_action(
                 str(session["id"]),

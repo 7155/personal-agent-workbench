@@ -7,7 +7,7 @@ import type { AgentBackgroundJobV1 } from '@/contracts/generated/agent-backgroun
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
-import { loopbackPreviewUrlFromLogs, ProjectQuickActions, projectQuickActionCommand } from './ProjectQuickActions';
+import { loopbackPreviewUrlFromLogs, ProjectQuickActions, projectQuickActionCommand, isActiveProjectQuickAction } from './ProjectQuickActions';
 
 afterEach(() => {
   cleanup();
@@ -104,6 +104,30 @@ describe('ProjectQuickActions', () => {
     expect(transport.requests.some((call) => call.request.pathId === 'agent.session.backgroundJob.start')).toBe(false);
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'terminal' }));
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'browser', target: expect.objectContaining({ url: context.previewUrl }) }));
+  });
+
+  it('reuses the bound Room preview with explicit script arguments', async () => {
+    const active = job('running', 'npm run start -- --port 8787');
+    const transport = new MockControlTransport({ routes: {
+      'agent.session.backgroundJobs.list': {
+        schemaVersion: 'rag-ime.agent-background-job-list.v1', ok: true, sessionId, items: [active], activeCount: 1,
+      },
+    } });
+    const openWindow = renderActions(transport);
+    await screen.findByText('后台任务运行中');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Run Preview' }));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.backgroundJob.start')).toBe(false);
+    expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'terminal' }));
+    expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'browser' }));
+  });
+
+  it('matches only a single declared preview command and keeps checks exact', () => {
+    expect(isActiveProjectQuickAction(job('running', 'npm run start -- --port 8787'), 'preview')).toBe(true);
+    for (const command of ['npm run startup', 'npm run start -- --port 8787; echo other', 'npm run start\necho other']) {
+      expect(isActiveProjectQuickAction(job('running', command), 'preview')).toBe(false);
+    }
+    expect(isActiveProjectQuickAction(job('running', 'npm run test -- tests/unit.test.js'), 'checks')).toBe(false);
+    expect(isActiveProjectQuickAction({ ...job('running', 'npm run start -- --port 8787'), cwd: '/tmp/another-project' }, 'preview', context.cwd)).toBe(false);
   });
 
   it('does not poll background jobs for an inactive owning mount', async () => {

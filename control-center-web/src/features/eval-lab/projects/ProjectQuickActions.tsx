@@ -42,8 +42,13 @@ export function projectQuickActionLabel(action: ProjectQuickAction): string {
   return action === 'preview' ? '项目预览' : '项目检核';
 }
 
-export function isActiveProjectQuickAction(job: AgentBackgroundJobV1, action: ProjectQuickAction): boolean {
-  return ACTIVE_STATUSES.has(job.status) && job.command === projectQuickActionCommand(action);
+export function isActiveProjectQuickAction(job: AgentBackgroundJobV1, action: ProjectQuickAction, cwd?: string): boolean {
+  if (!ACTIVE_STATUSES.has(job.status) || cwd && job.cwd !== cwd) return false;
+  if (job.command === projectQuickActionCommand(action)) return true;
+  // A Room partner can use explicit port flags on the declared start script.
+  // Shell chains and filtered test commands are separate jobs, not full actions.
+  return action === 'preview' && !/[\r\n]/u.test(job.command)
+    && /^[ \t]*npm[ \t]+run[ \t]+start(?:[ \t]+--(?:[ \t]+[A-Za-z0-9_.:/=-]+)+)?[ \t]*$/u.test(job.command);
 }
 
 export function projectPreviewUrl(value: unknown): string {
@@ -209,7 +214,7 @@ export function ProjectQuickActions({ project, context, compact = false, active 
 
   const start = async (action: ProjectQuickAction) => {
     if (busy) return;
-    const active = items.find((job) => isActiveProjectQuickAction(job, action));
+    const active = items.find((job) => isActiveProjectQuickAction(job, action, cwd));
     if (active) {
       openJob(active);
       if (action === 'preview') {
@@ -267,8 +272,9 @@ export function ProjectQuickActions({ project, context, compact = false, active 
     }
   };
 
-  const latest = items.find(job => job.command === projectQuickActionCommand('preview') || job.command === projectQuickActionCommand('checks'));
-  const hasActive = items.some((job) => ACTIVE_STATUSES.has(job.status));
+  const projectItems = items.filter(job => job.cwd === cwd);
+  const latest = projectItems.find(job => job.command === projectQuickActionCommand('preview') || job.command === projectQuickActionCommand('checks'));
+  const hasActive = projectItems.some(job => isActiveProjectQuickAction(job, 'preview', cwd) || isActiveProjectQuickAction(job, 'checks', cwd));
 
   return (
     <section aria-label="项目快速动作" className={`project-quick-actions${compact ? ' project-quick-actions--compact' : ''}`}>

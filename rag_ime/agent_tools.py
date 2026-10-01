@@ -7508,7 +7508,10 @@ class ControlToolGateway:
                 if (
                     isinstance(job, Mapping)
                     and str(job.get("status") or "") in {"queued", "running", "cancelling"}
-                    and str(job.get("command") or "") == prepared.command
+                    and (
+                        str(job.get("command") or "") == prepared.command
+                        or script == "start" and _project_preview_command(job.get("command"))
+                    )
                     and str(job.get("cwd") or "") == str(prepared.cwd)
                 ):
                     return {
@@ -10532,6 +10535,20 @@ def _bounded_text(value: object, *, maximum: int) -> str:
     text = " ".join(str(value or "").split())
     text = re.sub(r"\[L:[^\]]+\]", "", text)
     return " ".join(text.split())[:maximum]
+
+
+def _project_preview_command(value: object) -> bool:
+    """Recognize a single declared start invocation, including literal flags.
+
+    Reuse its existing job and actual URL; do not treat a shell chain or a
+    different npm script as a preview. Check actions stay exact because a
+    filtered test invocation does not cover the full project test script.
+    """
+
+    return isinstance(value, str) and re.fullmatch(
+        r"[ \t]*npm[ \t]+run[ \t]+start(?:[ \t]+--(?:[ \t]+[A-Za-z0-9_.:/=-]+)+)?[ \t]*",
+        value,
+    ) is not None
 
 
 def _project_preview_url(value: object) -> str:
