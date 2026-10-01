@@ -25,8 +25,8 @@ export type CdpBridge = {
   sendRaw(payload: object): void;
   onEvent(handler: (msg: any) => void): () => void;
   /**
-   * Every successfully parsed incoming CDP message (responses + events).
-   * Used by the daemon to forward raw messages to CLI `onCDPMessage`.
+   * Raw caller responses (with their original ids) and CDP events.
+   * Internal send() responses stay private to their owning promise.
    */
   onMessage?(handler: (msg: any) => void): () => void;
   close(): Promise<void>;
@@ -43,13 +43,15 @@ export type CdpTransport = {
 export type CdpSessionOptions = {
   /** Request timeout in ms (default 15_000). Injectable for unit tests. */
   timeoutMs?: number;
+  /** Forwarded responses may outlive the internal timeout (PAW run: <=120s). */
+  forwardedTimeoutMs?: number;
 };
 
 export type CdpSession = {
   send(method: string, params?: object, sessionId?: string): Promise<any>;
   sendRaw(payload: object): void;
   onEvent(handler: (msg: any) => void): () => void;
-  /** All parsed incoming messages (id responses and events). */
+  /** Forwarded caller responses and events; never internal send() responses. */
   onMessage(handler: (msg: any) => void): () => void;
   handleIncoming(text: string): void;
   /** Reject all pending requests (e.g. on close / transport drop). */
@@ -74,6 +76,7 @@ export function createCdpSession(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let nextId = 1;
   const pending = new Map<number, Pending>();
+  const forwarded = new Map<number, { callerId: number; timer: ReturnType<typeof setTimeout> }>();
   const eventHandlers = new Set<(msg: any) => void>();
   const messageHandlers = new Set<(msg: any) => void>();
   let disposed = false;
@@ -84,14 +87,6 @@ export function createCdpSession(
       msg = JSON.parse(text);
     } catch {
       return;
-    }
-
-    for (const handler of messageHandlers) {
-      try {
-        handler(msg);
-      } catch {
-        // Listener errors must not break the session
-      }
     }
 
     if (msg && msg.id != null && pending.has(msg.id)) {
@@ -113,6 +108,23 @@ export function createCdpSession(
         entry.resolve(msg.result);
       }
       return;
+    }
+
+    if (msg && msg.id != null) {
+      const entry = forwarded.get(msg.id);
+      // A late or duplicate response cannot satisfy a later script that reused
+      // its caller id. All ids on this browser socket are allocated here.
+      if (!entry) return;
+      forwarded.delete(msg.id);
+      clearTimeout(entry.timer);
+      msg = { ...msg, id: entry.callerId };
+    }
+    for (const handler of messageHandlers) {
+      try {
+        handler(msg);
+      } catch {
+        // Listener errors must not break the session
+      }
     }
 
     // Events: messages with a method and no correlated pending id
@@ -182,9 +194,25 @@ export function createCdpSession(
         "CDP session is closed",
       );
     }
+    const raw = payload as Record<string, unknown>;
+    if (raw.id != null && (typeof raw.id !== "number" || !Number.isSafeInteger(raw.id))) {
+      throw makeEgoError("EGO_INVALID_ARGUMENT", "CDP request id must be a safe integer");
+    }
+    const wireId = raw.id == null ? undefined : nextId++;
+    if (wireId !== undefined) {
+      const timer = setTimeout(() => forwarded.delete(wireId),
+        options.forwardedTimeoutMs ?? Math.max(timeoutMs, 150_000));
+      timer.unref();
+      forwarded.set(wireId, { callerId: raw.id as number, timer });
+    }
     try {
-      transport.send(JSON.stringify(payload));
+      transport.send(JSON.stringify(wireId === undefined ? raw : { ...raw, id: wireId }));
     } catch (err) {
+      if (wireId !== undefined) {
+        const entry = forwarded.get(wireId);
+        if (entry) clearTimeout(entry.timer);
+        forwarded.delete(wireId);
+      }
       throw makeEgoError(
         "EGO_CDP_SEND_FAILED",
         `CDP sendRaw failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -217,6 +245,8 @@ export function createCdpSession(
       entry.reject(err);
     }
     pending.clear();
+    for (const entry of forwarded.values()) clearTimeout(entry.timer);
+    forwarded.clear();
     eventHandlers.clear();
     messageHandlers.clear();
   }

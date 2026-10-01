@@ -328,13 +328,72 @@ test("createCdpBridge attach returns sessionId with flatten", async () => {
 test("createCdpBridge sendRaw emits JSON without waiting", () => {
   const t = mockTransport();
   const bridge = createCdpBridge(t);
+  const forwarded: any[] = [];
+  bridge.onMessage!((msg) => forwarded.push(msg));
   bridge.sendRaw({ id: 99, method: "Foo", params: {} });
   assert.equal(t.sent.length, 1);
   assert.deepEqual(JSON.parse(t.sent[0]), {
-    id: 99,
+    id: 1,
     method: "Foo",
     params: {},
   });
+  t.deliver({ id: 1, result: { ok: true } });
+  assert.deepEqual(forwarded, [{ id: 99, result: { ok: true } }]);
+});
+
+test("raw script ids cannot consume an internal target attachment response", async () => {
+  const t = mockTransport();
+  const session = createCdpSession(t);
+  const forwarded: any[] = [];
+  session.onMessage((msg) => forwarded.push(msg));
+  session.sendRaw({ id: 1, method: "Runtime.evaluate", params: { expression: "true" }, sessionId: "page-a" });
+  const raw = JSON.parse(t.sent[0]);
+  const attaching = session.send("Target.attachToTarget", { targetId: "page-a", flatten: true });
+  const internal = JSON.parse(t.sent[1]);
+  assert.notEqual(raw.id, internal.id, "one browser socket must allocate unique wire ids");
+  t.deliver({ id: raw.id, result: {}, sessionId: "page-a" });
+  t.deliver({ id: internal.id, result: { sessionId: "attached-a" } });
+  assert.deepEqual(await attaching, { sessionId: "attached-a" });
+  assert.deepEqual(forwarded, [{ id: 1, result: {}, sessionId: "page-a" }]);
+  session.dispose();
+});
+
+test("internal responses are not forwarded into a script using the same caller id", async () => {
+  const t = mockTransport();
+  const session = createCdpSession(t);
+  const forwarded: any[] = [];
+  session.onMessage((msg) => forwarded.push(msg));
+  const internalResult = session.send("Target.getTargets");
+  const internal = JSON.parse(t.sent[0]);
+  session.sendRaw({ id: 1, method: "Page.enable", sessionId: "page-b" });
+  const raw = JSON.parse(t.sent[1]);
+  assert.notEqual(raw.id, internal.id);
+  t.deliver({ id: internal.id, result: { targetInfos: [] } });
+  assert.deepEqual(await internalResult, { targetInfos: [] });
+  assert.deepEqual(forwarded, []);
+  t.deliver({ id: raw.id, result: {}, sessionId: "page-b" });
+  assert.deepEqual(forwarded, [{ id: 1, result: {}, sessionId: "page-b" }]);
+  session.dispose();
+});
+
+test("a later script may reuse caller ids without receiving a duplicate old reply", () => {
+  const t = mockTransport();
+  const session = createCdpSession(t);
+  const forwarded: any[] = [];
+  session.onMessage((msg) => forwarded.push(msg));
+  session.sendRaw({ id: 1, method: "Page.enable" });
+  const first = JSON.parse(t.sent[0]);
+  t.deliver({ id: first.id, result: { enabled: true } });
+  session.sendRaw({ id: 1, method: "Target.attachToTarget", params: { targetId: "fresh", flatten: true } });
+  const second = JSON.parse(t.sent[1]);
+  assert.notEqual(first.id, second.id);
+  t.deliver({ id: first.id, result: { stale: true } });
+  t.deliver({ id: second.id, error: { message: "target closed" } });
+  assert.deepEqual(forwarded, [
+    { id: 1, result: { enabled: true } },
+    { id: 1, error: { message: "target closed" } },
+  ]);
+  session.dispose();
 });
 
 test("connectCdp opens WebSocket from /json/version and rounds trips", async () => {
