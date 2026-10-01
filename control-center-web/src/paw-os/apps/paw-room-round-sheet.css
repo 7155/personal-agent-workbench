@@ -1049,6 +1049,81 @@
   padding: 4px 4px 8px;
 }
 
+/* A final Room answer is the reading surface. Keep its outcome beside the
+   authoritative state, then disclose the complete Markdown and evidence on
+   demand without retaining the old 760px inner column. */
+.paw-room-round__report--final {
+  width: 100%;
+  max-width: none;
+  gap: 10px;
+  padding: 0 0 6px;
+}
+
+.paw-room-round__report--final .paw-room-round__prose {
+  max-width: none;
+}
+
+.paw-room-round__final-outcome {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  gap: 6px 12px;
+  padding: 10px 14px;
+  border-left: 3px solid color-mix(in srgb, var(--paw-accent) 62%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--color-surface-subtle) 72%, transparent);
+}
+
+.paw-room-round__final-outcome[data-state='completed'] { border-left-color: var(--paw-success, #268263); }
+.paw-room-round__final-outcome[data-state='failed'] { border-left-color: var(--paw-danger, #c64f55); }
+.paw-room-round__final-outcome[data-state='aborted'] { border-left-color: #806d91; }
+.paw-room-round__final-outcome > small {
+  color: var(--paw-text-secondary, #58677d);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.paw-room-round__final-outcome > p {
+  min-width: 0;
+  margin: 0;
+  color: var(--paw-text-primary, #26364a);
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.paw-room-round__final-details {
+  min-width: 0;
+  border-top: 1px solid color-mix(in srgb, var(--paw-border, #ccd6e3) 72%, transparent);
+}
+.paw-room-round__final-details > summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  color: var(--paw-accent, #236eba);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+.paw-room-round__final-details > summary::-webkit-details-marker { display: none; }
+.paw-room-round__final-details > summary > svg { transition: transform var(--paw-room-motion-fast) var(--paw-room-motion-ease); }
+.paw-room-round__final-details[open] > summary > svg { transform: rotate(90deg); }
+.paw-room-round__final-details-body {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 2px 0 4px;
+}
+.paw-room-round__final-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .paw-room-round__report-heading,
 .paw-room-round__report-title,
 .paw-room-round__report-author,

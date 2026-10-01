@@ -21,6 +21,35 @@ from rag_ime.debug_server import DebugRequestHandler
 
 
 class AgentRouteTests(unittest.TestCase):
+    def test_codemode_route_decodes_the_existing_session_identity(self) -> None:
+        self.assertEqual(
+            agent_session_route("/api/agent/sessions/agent%3Aptc/codemode"),
+            ("agent:ptc", "codemode"),
+        )
+
+    def test_codemode_http_post_reaches_the_session_policy_owner(self) -> None:
+        calls: list[tuple[str, object]] = []
+
+        def select_mode(session_id, payload):
+            calls.append((session_id, payload))
+            return {"ok": True, "sessionId": session_id, "codemodeMode": "only"}
+
+        handler = DebugRequestHandler.__new__(DebugRequestHandler)
+        handler.service = SimpleNamespace(
+            agent=SimpleNamespace(select_codemode_mode=select_mode)
+        )
+        handler._authorize_gateway_request = lambda _method, _parsed: True
+        handler._management_post_security_error = lambda _path, require_json=True: None
+        handler._read_json = lambda: {"mode": "only"}
+        written: list[tuple[HTTPStatus, dict[str, object]]] = []
+        handler._write_json = lambda status, body: written.append((status, body))
+        handler.path = "/api/agent/sessions/agent%3Aptc/codemode"
+        handler.do_POST()
+
+        self.assertEqual(calls, [("agent:ptc", {"mode": "only"})])
+        self.assertEqual(written[0][0], HTTPStatus.OK)
+        self.assertEqual(written[0][1]["codemodeMode"], "only")
+
     def test_trace_diagnostic_report_routes_are_strict_and_url_decoded(self) -> None:
         report_id = "trace-report:" + "a" * 32
         encoded = report_id.replace(":", "%3A")

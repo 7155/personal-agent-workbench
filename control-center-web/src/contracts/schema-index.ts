@@ -9655,6 +9655,17 @@ export const contractSchemas = {
               "stale"
             ]
           },
+          "codemodeAvailable": {
+            "type": "boolean"
+          },
+          "codemodeMode": {
+            "type": "string",
+            "enum": [
+              "on",
+              "only",
+              "off"
+            ]
+          },
           "createdAtMs": {
             "type": "integer",
             "minimum": 0
@@ -9691,6 +9702,14 @@ export const contractSchemas = {
         "enum": [
           "conversation",
           "subagent_runtime"
+        ]
+      },
+      "codemodeMode": {
+        "type": "string",
+        "enum": [
+          "on",
+          "only",
+          "off"
         ]
       },
       "evaluationSnapshot": {

@@ -6,6 +6,7 @@ import {
   type EvidenceEchoEntity,
 } from '@/features/evidence-echo/evidence-echo';
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
+import { CopyAction } from '@/features/agent/timeline/rich/RichBlockTools';
 import { usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { usePageVisibility } from '@/platform/use-page-visibility';
@@ -901,23 +902,73 @@ function StandaloneResultPlanet({
   row: RoomRoundTaskRow;
   selected: boolean;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const result = row.result ?? '';
   return (
     <section
       aria-label={`${row.celestialName} 最终结果`}
       className="paw-room-round__report paw-room-round__report--final"
       data-coordinator="true"
       data-row-key={row.key}
+      data-report-layout="wide"
       data-result-ready="true"
       data-selected={selected || undefined}
+      data-state={row.state}
       role="region"
     >
       <ReportHeading final onOpenParticipant={onOpenParticipant} row={row} title="最终结果" />
-      <div className="paw-room-round__prose">
-        <MarkdownBody documentKey={`${row.key}:result`} sessionId={row.sessionId} text={row.result ?? ''} />
+      <div className="paw-room-round__final-outcome" data-state={row.state}>
+        <small>报告摘要</small>
+        <p>{reportOutcomePreview(result) || '完整报告可展开查看。'}</p>
       </div>
-      <ResultReferences desktop={desktop} room={room} row={row} />
+      <details className="paw-room-round__final-details" onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
+        <summary>
+          <span>查看完整汇报与运行证据</span>
+          <ChevronRight aria-hidden="true" size={14} />
+        </summary>
+        {detailsOpen ? <div className="paw-room-round__final-details-body">
+          <div className="paw-room-round__prose">
+            <MarkdownBody documentKey={`${row.key}:result`} sessionId={row.sessionId} text={result} />
+          </div>
+          <div className="paw-room-round__final-actions">
+            <CopyAction compact label="复制完整汇报" value={result} />
+          </div>
+          <ResultReferences desktop={desktop} room={room} row={row} />
+        </div> : null}
+      </details>
     </section>
   );
+}
+
+/**
+ * Keep the first readable part of the stored report visible without making a
+ * second claim about its outcome. The full source remains owned by
+ * MarkdownBody and is rendered unchanged in the explicit disclosure below.
+ */
+function reportOutcomePreview(source: string): string {
+  const lines = source.replace(/\r\n?/gu, '\n').split('\n');
+  const parts: string[] = [];
+  let fenced = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || !trimmed) continue;
+    const readable = trimmed
+      .replace(/^#{1,6}\s+/u, '')
+      .replace(/^[-*+]\s+/u, '')
+      .replace(/^\d+[.)]\s+/u, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/gu, '$1')
+      .replace(/[`*_~]/gu, '')
+      .trim();
+    if (!readable) continue;
+    parts.push(readable);
+    const preview = parts.join(' ');
+    if (preview.length >= 240) return `${preview.slice(0, 237).trimEnd()}…`;
+  }
+  return parts.join(' ');
 }
 
 function ReportHeading({
@@ -936,7 +987,7 @@ function ReportHeading({
       <div className="paw-room-round__report-title">
         <h3>{title}</h3>
         <span className="paw-room-round__row-state" data-state={row.state} role="status">
-          <i aria-hidden="true" />{final ? '已提交' : row.state === 'completed' ? '已回复' : rowStateLabels[row.state]}
+          <i aria-hidden="true" />{final ? rowStateLabels[row.state] : row.state === 'completed' ? '已回复' : rowStateLabels[row.state]}
         </span>
       </div>
       <button

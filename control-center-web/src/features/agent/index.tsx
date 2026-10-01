@@ -264,6 +264,9 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
     live: sessionMetadataKnown && !evaluationSnapshot,
     snapshotView: evaluationSnapshot ? 'full' : 'recent',
     onSnapshot: (snapshot) => {
+      if (isRecord(snapshot.value)) {
+        reconcileSessionCodemode(snapshot.sessionId, snapshot.value.codemodeMode);
+      }
       if (snapshot.view === 'recent') {
         setContextSnapshot({ sessionId: snapshot.sessionId, state: 'partial' });
       } else {
@@ -323,6 +326,9 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
       }
       if (event.eventType === 'session_configuration_changed') {
         modelSelection.applyConfigurationEvent(event.sessionId, event.payload);
+        if (event.payload.kind === 'codemode') {
+          reconcileSessionCodemode(event.sessionId, event.payload.codemodeMode);
+        }
       }
     },
     onConnectionRestored: (activeSessionId) => {
@@ -333,6 +339,18 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
     },
   });
   loadAgentSnapshotRef.current = loadAgentSnapshot;
+
+  function reconcileSessionCodemode(sessionId: string, mode: unknown): void {
+    if (mode !== 'on' && mode !== 'only' && mode !== 'off') return;
+    setSessions((current) => {
+      if (!current.some((item) => item.id === sessionId && item.codemodeMode !== mode)) {
+        return current;
+      }
+      return current.map((item) => item.id === sessionId
+        ? { ...item, codemodeMode: mode }
+        : item);
+    });
+  }
 
   function selectSessionId(sessionId: string): void {
     selectedIdRef.current = sessionId;

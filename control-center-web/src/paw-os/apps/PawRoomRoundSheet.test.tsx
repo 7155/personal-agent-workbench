@@ -752,7 +752,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(screen.queryByRole('log')).not.toBeInTheDocument();
   });
 
-  it('moves an accepted result into a standalone result planet instead of a table row', async () => {
+  it('moves an accepted result into a compact standalone report with full raw details', async () => {
+    const user = userEvent.setup();
     const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
     const running = projectionWithProgress('正在验收功能路径');
     const { rerender } = render(
@@ -795,15 +796,51 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
 
     const result = await screen.findByRole('region', { name: 'Earth 最终结果' });
     expect(result).toHaveAttribute('data-result-ready', 'true');
+    expect(result).toHaveAttribute('data-report-layout', 'wide');
     expect(result).toHaveTextContent('验收完成');
-    expect(result).toHaveTextContent('最终保留的结论。');
+    expect(within(result).getByText('报告摘要')).toBeVisible();
+    expect(within(result).queryByText('最终保留的结论。')).not.toBeInTheDocument();
     expect(result).not.toHaveAttribute('aria-live');
-    expect(within(result).getByRole('status')).toHaveTextContent('已提交');
-    expect(within(result).getByRole('status')).not.toHaveTextContent('详细验收依据');
+    expect(within(result).getByRole('status')).toHaveTextContent('已完成');
+    expect(within(result).getByText('查看完整汇报与运行证据')).toBeVisible();
+    const details = result.querySelector<HTMLDetailsElement>('details');
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute('open');
+    await user.click(within(result).getByText('查看完整汇报与运行证据'));
+    expect(details).toHaveAttribute('open');
+    expect(within(result).getByText('最终保留的结论。')).toBeVisible();
+    expect(within(result).getByRole('button', { name: '复制完整汇报' })).toBeInTheDocument();
     expect(within(result).getByRole('link', { name: '打开文件 final-result.md' })).toBeInTheDocument();
     expect(within(result).getByRole('button', { name: '打开文件 final-result.md' })).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '收起 Earth 详情' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a failed Room report failed while preserving its complete public text', () => {
+    const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
+    const projection = projectionWithProgress('校验失败，保留完整公开报告');
+    projection.turnsById['turn-1'] = {
+      ...projection.turnsById['turn-1']!,
+      status: 'failed',
+    };
+    projection.activitiesById['activity-earth'] = {
+      ...projection.activitiesById['activity-earth']!,
+      status: 'failed',
+    };
+    appendCoordinatorPost(
+      projection,
+      'result',
+      '校验失败，下面保留实际运行记录。\n\n## 下一步\n\n继续核对真实失败原因。',
+    );
+
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={room} />);
+
+    const report = screen.getByRole('region', { name: 'Earth 主控回复' });
+    expect(report).toHaveAttribute('data-state', 'failed');
+    expect(within(report).getByRole('status')).toHaveTextContent('需要关注');
+    expect(within(report).getByRole('heading', { name: '下一步' })).toBeVisible();
+    expect(report).toHaveTextContent('继续核对真实失败原因。');
+    expect(screen.queryByRole('region', { name: 'Earth 最终结果' })).not.toBeInTheDocument();
   });
 
   it('keeps one unfinished collaborator standalone while presenting a submitted planet result separately', async () => {
@@ -1075,10 +1112,11 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       </TooltipProvider>,
     );
 
+    const result = screen.getByRole('region', { name: 'Earth 最终结果' });
+    await user.click(within(result).getByText('查看完整汇报与运行证据'));
     await user.click(screen.getByRole('button', { name: '打开文件 report.md' }));
     expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Freport.md');
 
-    const result = screen.getByRole('region', { name: 'Earth 最终结果' });
     await user.click(within(result).getByRole('link', { name: '打开文件 summary.md' }));
     expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Fsummary.md');
   });
@@ -1126,6 +1164,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     );
 
     const result = screen.getByRole('region', { name: 'Earth 最终结果' });
+    await user.click(within(result).getByText('查看完整汇报与运行证据'));
     expect(within(result).getByRole('button', { name: '打开文件 final-result.md' })).toBeInTheDocument();
     const resultLink = within(result).getByRole('link', { name: '打开文件 final-result.md' });
     await user.click(resultLink);
@@ -1180,6 +1219,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     );
 
     const detail = screen.getByRole('region', { name: 'Earth 最终结果' });
+    await user.click(within(detail).getByText('查看完整汇报与运行证据'));
     expect(within(detail).getByRole('link', { name: '打开文件 report.md' })).toHaveTextContent('报告');
     expect(within(detail).getByText('docs/inline.md').tagName).toBe('CODE');
     expect(within(detail).getByText('docs/fenced.md')).toBeInTheDocument();

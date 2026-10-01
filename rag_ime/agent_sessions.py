@@ -81,6 +81,7 @@ SELECT
     b.binding_state AS runtime_binding_state,
     b.created_at_ms AS runtime_binding_created_at_ms,
     b.updated_at_ms AS runtime_binding_updated_at_ms,
+    b.metadata_json AS runtime_binding_metadata_json,
     tp.allowed_tools_json AS allowed_tools_json,
     tp.disclosure_preferences_json AS disclosure_preferences_json,
     tp.policy_revision AS policy_revision,
@@ -123,8 +124,10 @@ SELECT
     s.updated_at_ms,
     s.message_count,
     s.last_message_preview,
-    s.workspace_roots_json
+    s.workspace_roots_json,
+    b.metadata_json AS runtime_binding_metadata_json
 FROM agent_sessions AS s
+LEFT JOIN agent_runtime_bindings AS b ON b.session_id = s.id
 """
 
 
@@ -4404,13 +4407,16 @@ def _session_payload(
     }
     if runtime_binding is not None:
         payload["runtimeBinding"] = dict(runtime_binding)
+        codemode_mode = _runtime_binding_codemode_mode(runtime_binding)
+        if codemode_mode is not None:
+            payload["codemodeMode"] = codemode_mode
     validate_contract(payload, "agent-session.v1.json")
     return payload
 
 
 def _session_directory_payload(row: sqlite3.Row) -> dict[str, object]:
     roots = json.loads(str(row["workspace_roots_json"] or "[]"))
-    return {
+    payload: dict[str, object] = {
         "schemaVersion": "rag-ime.agent-session-directory-entry.v1",
         "id": str(row["id"]),
         "title": str(row["title"]),
@@ -4429,12 +4435,18 @@ def _session_directory_payload(row: sqlite3.Row) -> dict[str, object]:
             str(value) for value in roots if str(value).strip()
         ],
     }
+    codemode_mode = _runtime_binding_codemode_mode(
+        row["runtime_binding_metadata_json"]
+    )
+    if codemode_mode is not None:
+        payload["codemodeMode"] = codemode_mode
+    return payload
 
 
 def _joined_runtime_binding(row: sqlite3.Row) -> dict[str, object] | None:
     if row["runtime_driver_id"] is None:
         return None
-    return {
+    payload: dict[str, object] = {
         "schemaVersion": "rag-ime.agent-runtime-binding.v1",
         "driverId": str(row["runtime_driver_id"]),
         "runtimeKind": str(row["runtime_kind"]),
@@ -4443,6 +4455,35 @@ def _joined_runtime_binding(row: sqlite3.Row) -> dict[str, object] | None:
         "createdAtMs": int(row["runtime_binding_created_at_ms"]),
         "updatedAtMs": int(row["runtime_binding_updated_at_ms"]),
     }
+    codemode_mode = _runtime_binding_codemode_mode(
+        row["runtime_binding_metadata_json"]
+    )
+    if codemode_mode is not None:
+        # Keep the public Session binding projection bounded. The persisted
+        # binding metadata may contain runtime details that must stay private.
+        payload["codemodeAvailable"] = True
+        payload["codemodeMode"] = codemode_mode
+    return payload
+
+
+def _runtime_binding_codemode_mode(value: object) -> str | None:
+    """Return only a verified native codemode selection from binding metadata."""
+
+    if isinstance(value, Mapping):
+        metadata = value.get("metadata") if "metadata" in value else value
+    else:
+        try:
+            decoded = json.loads(str(value or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        metadata = decoded
+    if not isinstance(metadata, Mapping) or metadata.get("codemodeAvailable") is not True:
+        return None
+    raw = metadata.get("codemodeMode")
+    if not isinstance(raw, str):
+        return None
+    mode = raw.strip().lower()
+    return mode if mode in {"on", "only", "off"} else None
 
 
 def _runtime_binding_payload(row: sqlite3.Row) -> dict[str, object]:

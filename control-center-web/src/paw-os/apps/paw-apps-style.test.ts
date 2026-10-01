@@ -16,6 +16,7 @@ import satelliteCss from '../../features/paw-os/paw-os-satellite.css?raw';
 import terminalCss from '../../features/terminal/paw-os-terminal-app.css?raw';
 import appCss from './paw-apps.css?raw';
 import roundSheetCss from './paw-room-round-sheet.css?raw';
+import roomConversationCss from './paw-room-conversation-navigation.css?raw';
 import pawOsAppSource from '../PawOsApp.tsx?raw';
 import primitiveCss from '../../components/primitives/primitives.css?raw';
 import workspaceCss from '../../design/workspace.css?raw';
@@ -804,6 +805,11 @@ describe('PAWOS semantic type roles', () => {
     expect(roomMigratedCss).toMatch(/\.ccui-assistant-body\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*24px;/s);
     expect(roomMigratedCss).toMatch(/\.paw-room-workspace--migrated-v1 \.ccui-conversation-surface\s*\{[^}]*--ccui-text:\s*var\(--paw-chat-text\);/s);
     expect(roomMigratedCss).not.toContain('.paw-room-chronology');
+    expect(roomConversationCss).toMatch(/\.ccui-assistant-turn:has\(\.paw-room-conversation__final-report\)\s*\{[^}]*width:\s*calc\(100%\s*-\s*40px\);/s);
+    expect(roomConversationCss).toMatch(/\.paw-room-conversation__final-report\s*\{[^}]*width:\s*100%;/s);
+    expect(roomConversationCss).toMatch(/\.paw-room-conversation__final-report-head\s*\{[^}]*grid-template-columns:/s);
+    expect(roomConversationCss).toMatch(/\.paw-room-conversation__final-report-prose \.paw-reading-surface\s*\{[^}]*--reading-paragraph-gap:\s*\.65em;/s);
+    expect(roomConversationCss).toMatch(/\.paw-room-conversation__final-report-prose \.paw-rich-prose :is\(h1, h2, h3, h4\)\s*\{[^}]*margin-block:\s*\.9em\s+\.4em;/s);
     expect(roomMigratedCss).toMatch(/@container paw-room-workspace \(max-width: 520px\)[\s\S]*?\.paw-room-workspace__objective > div > small\s*\{[^}]*font-size:\s*12px;/s);
     expect(roomFocusCss).toMatch(/\.paw-room-focus-overview__inspector\s*\{[^}]*animation:\s*paw-room-focus-inspector-enter 180ms cubic-bezier\(\.23, 1, \.32, 1\)/s);
     expect(roomFocusCss).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.paw-room-focus-overview__inspector\s*\{\s*animation:\s*none;/s);
@@ -839,6 +845,8 @@ describe('PAWOS semantic type roles', () => {
     expect(roundSheetCss).not.toMatch(/font(?:-size)?:[^;]*(?:10|10\.5|11|11\.5)px/);
     expect(roundSheetCss).toMatch(/\.paw-room-rounds\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
     expect(roundSheetCss).toMatch(/\.paw-room-round\s*\{[^}]*height:\s*max-content;[^}]*overflow:\s*hidden;/s);
+    expect(roundSheetCss).toMatch(/\.paw-room-round__report--final\s*\{[^}]*width:\s*100%;/s);
+    expect(roundSheetCss).toMatch(/\.paw-room-round__report--final \.paw-room-round__prose\s*\{[^}]*max-width:\s*none;/s);
     expect(roundSheetCss).toMatch(/\.paw-room-round__table-scroll\s*\{[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*clip;/s);
     expect(roundSheetCss).toMatch(/\.paw-room-round table\s*\{[^}]*min-width:\s*720px;/s);
     expect(appCss).toMatch(/\.paw-room-workspace\[data-window-chrome='portal'\]\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/s);

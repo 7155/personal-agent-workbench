@@ -32,6 +32,7 @@ def agent_session_route(path: str) -> tuple[str, str]:
         "models",
         "model",
         "thinking",
+        "codemode",
         "intercom",
         "debug-context",
         "workflow",

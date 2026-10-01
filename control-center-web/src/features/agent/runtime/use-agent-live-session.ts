@@ -186,10 +186,12 @@ function createSharedAgentLiveSession(
   let snapshotController: AbortController | undefined;
   let snapshotGeneration = 0;
   let streamGeneration = 0;
+  let initialSnapshotStarted = false;
   let unsubscribe: (() => void) | undefined;
   let snapshotNeedsRepair = false;
   let recoveryAttempt = 0;
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  let recentCacheEligible = false;
 
   const broadcast = (notify: (listener: AgentLiveSessionCallbacks) => void) => {
     for (const { listener } of listeners.values()) {
@@ -344,6 +346,7 @@ function createSharedAgentLiveSession(
     request: AgentLiveSnapshotRequest,
     requestId: number,
     controller: AbortController,
+    allowRecentCache: boolean,
   ): Promise<boolean> {
     let requestedView = request.view ?? preferredSnapshotView();
     let value: unknown = undefined;
@@ -353,7 +356,7 @@ function createSharedAgentLiveSession(
           value = await requestSnapshotValue(
             requestedView,
             controller.signal,
-            request.preserveAfterSequence === undefined,
+            allowRecentCache,
           );
         } catch (error) {
           if (requestedView === 'recent' && preferredSnapshotView() === 'full') {
@@ -480,12 +483,14 @@ function createSharedAgentLiveSession(
     if (!active) return Promise.resolve(false);
     // Historical reads must not suspend the live subscription while Pi works.
     if (request.view !== 'full' || !snapshotAttempted || agentProjection(sessionId).needsSnapshot) clearStream();
+    const allowRecentCache = !initialSnapshotStarted && recentCacheEligible;
+    initialSnapshotStarted = true;
     const requestId = ++snapshotGeneration;
     const controller = new AbortController();
     snapshotController = controller;
     setRecoveryState('recovering');
     setLoading(true);
-    return performSnapshot(request, requestId, controller).finally(() => {
+    return performSnapshot(request, requestId, controller, allowRecentCache).finally(() => {
       if (snapshotController === controller) snapshotController = undefined;
     });
   }
@@ -600,6 +605,11 @@ function createSharedAgentLiveSession(
       listeners.set(listener, { listener, ...options });
       if (!alreadyRunning) {
         active = true;
+        const existingProjection = useAgentLiveStore.getState().projections[sessionId];
+        recentCacheEligible = Boolean(
+          existingProjection
+          && (existingProjection.lastSequence > 0 || existingProjection.messageOrder.length > 0)
+        );
         useAgentLiveStore.getState().ensure(sessionId);
         void loadSnapshot({ view: preferredSnapshotView() });
       } else {

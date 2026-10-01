@@ -414,6 +414,76 @@ describe('PawRoomConversation', () => {
     expect(container.querySelector('.room-turn, .room-agent-lane, .paw-room-chronology')).toBeNull();
   });
 
+  it('renders an exact failed Room final as a compact report with the full source behind disclosure', async () => {
+    const user = userEvent.setup();
+    const fixture = roomConversation();
+    const report = [
+      '# 迁移结果',
+      '',
+      '失败：验收检查仍有一项未通过。',
+      '',
+      '运行入口：trace:report-final。',
+      '',
+      '细节证据：完整运行原文仍然保留，展开后可以继续核对。',
+    ].join('\n');
+    fixture.room.moderatorParticipantId = 'participant-a';
+    fixture.projection.moderatorParticipantId = 'participant-a';
+    fixture.projection.messagesById['message-agent'] = {
+      ...fixture.projection.messagesById['message-agent']!,
+      participantId: 'participant-a', rootId: 'root-a', postKind: 'blocked', text: report,
+    };
+    fixture.projection.turnOrder.push('root-a');
+    fixture.projection.turnsById['root-a'] = {
+      id: 'root-a', rootId: 'root-a', status: 'completed', messageIds: ['message-user', 'message-agent'],
+      activityIds: ['tool-a', 'approval-a'], participantIds: ['participant-a'],
+      createdAtMs: 100, updatedAtMs: 150, failure: '验收检查失败。',
+    };
+    const graph: JevSnapshot = {
+      graphId: 'graph-final', roomId: fixture.room.id, rootId: 'root-a', version: 'final', phase: 'final', stopped: false,
+      requirementsRevision: 1, tasks: [], edges: [], ready: [], running: [], review: [], blocked: [], effects: [], events: [],
+      final: { content: report, status: 'failed', evidence: ['trace:report-final'] }, modelCards: [], planApproval: null,
+    };
+
+    const { container } = renderRoom({ collaborationMode: 'jev', graph, projection: fixture.projection, room: fixture.room, readOnly: true });
+    const final = screen.getByRole('region', { name: 'Room 最终汇报' });
+    expect(final).toHaveAttribute('data-report-layout', 'wide');
+    expect(final).toHaveAttribute('data-state', 'failed');
+    expect(final).toHaveTextContent('需要处理');
+    expect(final).toHaveTextContent('失败：验收检查仍有一项未通过。');
+    expect(within(final).queryByText('细节证据：完整运行原文仍然保留，展开后可以继续核对。')).not.toBeInTheDocument();
+    expect(container.querySelector('.ccui-assistant-turn:has(.paw-room-conversation__final-report)')).not.toBeNull();
+
+    await user.click(within(final).getByText('查看完整汇报与运行证据'));
+    expect(within(final).getByText('细节证据：完整运行原文仍然保留，展开后可以继续核对。')).toBeVisible();
+    expect(within(final).getByRole('button', { name: '复制完整汇报' })).toBeVisible();
+    expect(within(final).getByRole('region', { name: '报告证据' })).toHaveTextContent('trace:report-final');
+  });
+
+  it('does not classify ordinary prose or a result from another Root as the final report', () => {
+    const fixture = roomConversation();
+    fixture.projection.messagesById['message-agent'] = {
+      ...fixture.projection.messagesById['message-agent']!,
+      text: '# 迁移结果\n\n这只是过程中的说明。',
+    };
+    renderRoom({ projection: fixture.projection, room: fixture.room, readOnly: true });
+    expect(screen.queryByRole('region', { name: 'Room 最终汇报' })).not.toBeInTheDocument();
+
+    cleanup();
+    clearConversationScrollMemory();
+    fixture.projection.messagesById['message-agent'] = {
+      ...fixture.projection.messagesById['message-agent']!,
+      rootId: 'other-root', postKind: 'blocked', text: '另一轮的结果。',
+    };
+    const graph: JevSnapshot = {
+      graphId: 'graph-final', roomId: fixture.room.id, rootId: 'root-a', version: 'final', phase: 'final', stopped: false,
+      requirementsRevision: 1, tasks: [], edges: [], ready: [], running: [], review: [], blocked: [], effects: [], events: [],
+      final: { content: '另一轮的结果。', status: 'completed', evidence: [] }, modelCards: [], planApproval: null,
+    };
+    renderRoom({ collaborationMode: 'jev', graph, projection: fixture.projection, room: fixture.room, readOnly: true });
+    expect(screen.queryByRole('region', { name: 'Room 最终汇报' })).not.toBeInTheDocument();
+    expect(screen.getByText('另一轮的结果。')).toBeVisible();
+  });
+
   it('names a tool by its reader label and keeps the raw call one click away', async () => {
     const user = userEvent.setup();
     const { container } = renderRoom();

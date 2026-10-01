@@ -1,8 +1,10 @@
 import { ArrowUpRight, Check, ChevronRight, Copy, GitBranch, ListChecks } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import type { RoomActivityProjection, RoomProjectionState } from '@/contracts/room-reducer';
+import type { RoomActivityProjection, RoomMessageProjection, RoomProjectionState } from '@/contracts/room-reducer';
 import { writeClipboardText } from '@/platform/clipboard';
 import { publicAgentErrorText } from '@/features/agent/public-error';
+import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
+import { CopyAction } from '@/features/agent/timeline/rich/RichBlockTools';
 import { PublicToolOutput } from '@/features/agent/timeline/ActivitySummary';
 import {
   publicToolOutputText,
@@ -273,11 +275,33 @@ export function PawRoomConversation({
   const openToolRecords = useCallback((blocks: ToolCallBlock[]) => {
     setToolInspection({ blocks, details: Object.fromEntries(blocks.map(block => [block.id, renderBlockDetail(block)])) });
   }, [renderBlockDetail]);
-  const renderBlock = useCallback((block: AssistantBlock) => {
+  const finalReports = useMemo(() => {
+    const reports = new Map<string, RoomFinalReport>();
+    for (const id of projection.messageOrder) {
+      const source = projection.messagesById[id];
+      if (!source) continue;
+      const report = authoritativeRoomFinalReport(source, {
+        graph,
+        collaborationMode,
+        projection,
+        rootId,
+        room,
+      });
+      if (report) reports.set(source.id, report);
+    }
+    return reports;
+  }, [collaborationMode, graph, projection, rootId, room]);
+  const renderBlock = useCallback((block: AssistantBlock, message: AssistantMessage) => {
+    if (block.kind === 'text' && block.id.startsWith('text:')) {
+      const report = finalReports.get(block.id.slice('text:'.length));
+      if (report && report.text === block.text) {
+        return <RoomFinalReport report={report} sessionId={message.actorSessionId ?? ''} />;
+      }
+    }
     const group = toolGroups.get(block.id);
     if (group === null) return null;
     return group ? <PawJevToolRecords blocks={group} onOpen={openToolRecords} /> : undefined;
-  }, [toolGroups, openToolRecords]);
+  }, [finalReports, openToolRecords, toolGroups]);
   const currentTools = useMemo(() => new Map(transcript.messages.flatMap(message => message.role === 'assistant'
     ? message.blocks.filter((block): block is ToolCallBlock => block.kind === 'tool').map(block => [block.id, block] as const) : [])), [transcript.messages]);
 
@@ -409,6 +433,164 @@ export function PawRoomConversation({
     onClose={() => setToolInspection(null)}
     renderDetail={block => renderBlockDetail(block) ?? toolInspection?.details[block.id]}
   /></>;
+}
+
+type RoomFinalReportState = 'running' | 'completed' | 'failed' | 'aborted';
+
+interface RoomFinalReport {
+  text: string;
+  state: RoomFinalReportState;
+  evidence: string[];
+}
+
+const ROOM_FINAL_REPORT_LABELS: Record<RoomFinalReportState, string> = {
+  running: '进行中',
+  completed: '已完成',
+  failed: '需要处理',
+  aborted: '已停止',
+};
+
+function authoritativeRoomFinalReport(
+  message: RoomMessageProjection,
+  context: {
+    collaborationMode: 'room' | 'jev';
+    graph?: JevSnapshot | null;
+    projection: RoomProjectionState;
+    rootId?: string;
+    room: RoomSummary;
+  },
+): RoomFinalReport | undefined {
+  if (
+    message.roomId !== context.room.id
+    || message.role !== 'assistant'
+    || message.projectionKind !== 'post'
+  ) return undefined;
+  const graphFinalMatches = context.graph?.final?.content === message.text;
+  if (message.postKind !== 'result' && !(message.postKind === 'blocked' && graphFinalMatches)) return undefined;
+  const messageRoot = message.rootId || message.turnId;
+  const expectedRoot = context.graph?.rootId || context.rootId;
+  if (expectedRoot && messageRoot !== expectedRoot) return undefined;
+  if (context.graph?.roomId && context.graph.roomId !== context.room.id) return undefined;
+  if (context.graph && messageRoot !== context.graph.rootId) return undefined;
+  /* A Jev final is authoritative only once the graph has published the exact
+   * final content. A plain Room result post remains authoritative through its
+   * typed post kind and root binding. */
+  if (context.collaborationMode === 'jev' && context.graph?.final?.content !== message.text) return undefined;
+  if (context.graph?.final && context.graph.final.content !== message.text) return undefined;
+  const moderatorId = context.projection.moderatorParticipantId || context.room.moderatorParticipantId;
+  if (moderatorId && message.participantId !== moderatorId) return undefined;
+
+  const turn = context.projection.turnsById[messageRoot];
+  const turnState = normalizeRoomFinalReportState(turn?.status);
+  const messageState = normalizeRoomFinalReportState(message.status);
+  const graphState = normalizeRoomFinalReportState(context.graph?.final?.status);
+  const state = graphState ?? turnState ?? messageState ?? 'running';
+  const evidence = uniqueStrings([
+    ...(context.graph?.rootId === messageRoot ? context.graph.final?.evidence ?? [] : []),
+    ...(context.room.workItems ?? [])
+      .filter((work) => work.roomId === context.room.id
+        && (work.rootTurnId === messageRoot || work.acceptedTurnId === message.turnId))
+      .flatMap((work) => [...work.artifactRefs, ...work.evidenceRefs]),
+  ]);
+  return { text: message.text, state, evidence };
+}
+
+function normalizeRoomFinalReportState(value: unknown): RoomFinalReportState | undefined {
+  if (typeof value !== 'string') return undefined;
+  switch (value.toLowerCase()) {
+    case 'running':
+    case 'pending':
+    case 'streaming':
+      return 'running';
+    case 'completed':
+    case 'complete':
+    case 'success':
+    case 'succeeded':
+    case 'ok':
+    case 'passed':
+      return 'completed';
+    case 'failed':
+    case 'error':
+    case 'rejected':
+      return 'failed';
+    case 'aborted':
+    case 'cancelled':
+    case 'canceled':
+    case 'stopped':
+      return 'aborted';
+    default:
+      return undefined;
+  }
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim()))];
+}
+
+function RoomFinalReport({ report, sessionId }: { report: RoomFinalReport; sessionId: string }) {
+  const preview = reportOutcomePreview(report.text);
+  const [open, setOpen] = useState(false);
+  return <section
+    aria-label="Room 最终汇报"
+    className="paw-room-conversation__final-report"
+    data-report-layout="wide"
+    data-state={report.state}
+    role="region"
+  >
+    <header className="paw-room-conversation__final-report-head">
+      <div>
+        <small>最终汇报</small>
+        <strong data-state={report.state}>{ROOM_FINAL_REPORT_LABELS[report.state]}</strong>
+      </div>
+      <p>{preview || '完整汇报可展开查看。'}</p>
+    </header>
+    <details className="paw-room-conversation__final-report-details" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary><ChevronRight aria-hidden="true" size={15} />查看完整汇报与运行证据</summary>
+      {open ? <div className="paw-room-conversation__final-report-body">
+        <div className="paw-room-conversation__final-report-prose">
+          <MarkdownBody documentKey={`room-final-report:${report.text.length}`} sessionId={sessionId} text={report.text} />
+        </div>
+        <div className="paw-room-conversation__final-report-actions">
+          <CopyAction compact label="复制完整汇报" value={report.text} />
+        </div>
+        {report.evidence.length ? <section aria-label="报告证据" className="paw-room-conversation__final-report-evidence">
+          <strong>运行证据</strong>
+          <ul>{report.evidence.map((reference) => <li key={reference}><code>{reference}</code></li>)}</ul>
+        </section> : null}
+      </div> : null}
+    </details>
+  </section>;
+}
+
+/** Keep only the first readable outcome in the compact header; MarkdownBody
+ * remains the sole owner of the unmodified report inside the disclosure. */
+function reportOutcomePreview(source: string): string {
+  const lines = source.replace(/\r\n?/gu, '\n').split('\n');
+  let fenced = false;
+  const parts: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || !trimmed) continue;
+    if (/^#{1,6}\s+/u.test(trimmed)) continue;
+    const readable = trimmed
+      .replace(/^[-*+]\s+/u, '')
+      .replace(/^\d+[.)]\s+/u, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/gu, '$1')
+      .replace(/[`*_~]/gu, '')
+      .trim();
+    if (!readable) continue;
+    parts.push(readable);
+    const preview = parts.join(' ');
+    if (preview.length >= 240 || parts.length >= 2) {
+      return preview.length > 240 ? `${preview.slice(0, 237).trimEnd()}…` : preview;
+    }
+  }
+  const preview = parts.join(' ');
+  return preview.length > 240 ? `${preview.slice(0, 237).trimEnd()}…` : preview;
 }
 
 function taskReferences(task: RoomWorkItem | JevTask): string[] {

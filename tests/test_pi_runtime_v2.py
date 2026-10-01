@@ -2129,7 +2129,11 @@ class PiRuntimeV2Tests(unittest.TestCase):
             transcript_ref=transcript.as_posix(),
             branch_anchor="recent-dangling-user",
             binding_state="active",
-            metadata={"protocolVersion": "2"},
+            metadata={
+                "protocolVersion": "2",
+                "codemodeAvailable": True,
+                "codemodeMode": "only",
+            },
             message_count=17,
         )
 
@@ -2164,6 +2168,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
             ],
         )
         self.assertEqual(snapshot["toolHistoryEvents"], [])
+        self.assertEqual(snapshot["codemodeMode"], "only")
         self.assertNotIn("未选择的分支", json.dumps(snapshot, ensure_ascii=False))
 
     def test_recent_snapshot_parses_only_a_bounded_tail_of_a_large_linear_transcript(
@@ -4425,11 +4430,17 @@ class PiRuntimeV2Tests(unittest.TestCase):
         after = self.store.runtime_binding(session_id)
         assert after is not None
         self.assertEqual(after["generation"], before["generation"])
+        self.assertTrue(after["metadata"]["codemodeAvailable"])
         self.assertEqual(after["metadata"]["codemodeMode"], "only")
         self.assertEqual(
             self.runtime.session_snapshot(session_id)["codemodeMode"],
             "only",
         )
+        self.assertEqual(self.store.get(session_id)["codemodeMode"], "only")
+        self.assertTrue(self.runtime.close_session(session_id))
+        reopened = self.runtime.ensure(session_id)
+        self.assertEqual(reopened["codemodeMode"], "only")
+        self.assertEqual(self.store.get(session_id)["codemodeMode"], "only")
         requests = [
             json.loads(line)
             for line in (self.root / "agent" / "host-requests.jsonl").read_text().splitlines()
@@ -4438,6 +4449,41 @@ class PiRuntimeV2Tests(unittest.TestCase):
             [request["method"] for request in requests].count("session.codemode.set"),
             1,
         )
+
+    def test_unsupported_host_never_projects_configured_or_snapshot_codemode(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        binding = self.store.runtime_binding(session_id)
+        assert binding is not None
+        self.runtime._host_capabilities["codemode"] = {
+            "available": False,
+            "modes": [],
+            "defaultMode": "",
+        }
+        self.store.update_runtime_binding_metadata(
+            session_id,
+            {"codemodeAvailable": False, "codemodeMode": "on"},
+            expected_generation=int(binding["generation"]),
+            expected_external_session_id=str(binding["externalSessionId"]),
+            expected_transcript_ref=str(binding["transcriptRef"]),
+            expected_branch_anchor=str(binding["branchAnchor"]),
+        )
+
+        self.assertNotIn("codemodeMode", self.store.get(session_id))
+        self.assertNotIn("codemodeMode", self.store.list()[0])
+        self.assertNotIn(
+            "codemodeMode",
+            self.store.list_page(projection_only=True)["items"][0],
+        )
+        with patch.object(
+            self.runtime,
+            "_inspection_snapshot",
+            return_value={"messages": [], "codemodeMode": "on"},
+        ):
+            self.assertNotIn(
+                "codemodeMode",
+                self.runtime.session_snapshot(session_id),
+            )
 
     def test_warm_ensure_applies_changed_codemode_preference_only_when_idle(self) -> None:
         session_id = str(self.first["id"])

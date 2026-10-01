@@ -17,6 +17,8 @@ export type AgentSessionV1 = {
     runtimeKind: string;
     generation: number;
     state: 'prepared' | 'active' | 'stale';
+    codemodeAvailable?: boolean;
+    codemodeMode?: 'on' | 'only' | 'off';
     createdAtMs: number;
     updatedAtMs: number;
     [k: string]: unknown;
@@ -25,6 +27,7 @@ export type AgentSessionV1 = {
   mode: 'assistant' | 'coordinator';
   status: 'idle' | 'active' | 'busy' | 'faulted' | 'archived';
   sessionKind?: 'conversation' | 'subagent_runtime';
+  codemodeMode?: 'on' | 'only' | 'off';
   evaluationSnapshot?: boolean;
   surfaceKind?: 'agent' | 'extension_app' | 'builtin_app';
   ownerAppId?: string;

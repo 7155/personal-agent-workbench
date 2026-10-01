@@ -191,6 +191,62 @@ class AgentSessionStoreTests(unittest.TestCase):
         self.assertNotIn("runtimeBinding", item)
         self.assertNotIn("allowedTools", item)
 
+    def test_public_codemode_projection_is_verified_and_survives_reload(self) -> None:
+        session = self.store.create(title="codemode projection")
+        session_id = str(session["id"])
+        bound = self.store.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-codemode",
+            metadata={
+                "codemodeAvailable": True,
+                "codemodeMode": "on",
+                "privateHostDetail": "must not be projected",
+            },
+        )
+        self.assertEqual(bound["codemodeMode"], "on")
+        self.assertEqual(bound["runtimeBinding"]["codemodeMode"], "on")
+        self.assertNotIn("privateHostDetail", bound["runtimeBinding"])
+        self.assertEqual(self.store.list()[0]["codemodeMode"], "on")
+        self.assertEqual(
+            self.store.list_page(projection_only=True)["items"][0]["codemodeMode"],
+            "on",
+        )
+
+        generation = int(self.store.runtime_binding(session_id)["generation"])
+        updated = self.store.update_runtime_binding_metadata(
+            session_id,
+            {"codemodeAvailable": True, "codemodeMode": "only"},
+            expected_generation=generation,
+            expected_external_session_id="pi-codemode",
+            expected_transcript_ref="",
+            expected_branch_anchor="",
+        )
+        self.assertEqual(updated["generation"], generation)
+        self.assertEqual(self.store.get(session_id)["codemodeMode"], "only")
+
+        reloaded = AgentSessionStore(self.db_path)
+        reloaded.initialize()
+        self.addCleanup(reloaded.close)
+        self.assertEqual(reloaded.get(session_id)["codemodeMode"], "only")
+
+        unsupported = reloaded.update_runtime_binding_metadata(
+            session_id,
+            {"codemodeAvailable": False, "codemodeMode": "only"},
+            expected_generation=generation,
+            expected_external_session_id="pi-codemode",
+            expected_transcript_ref="",
+            expected_branch_anchor="",
+        )
+        self.assertEqual(unsupported["generation"], generation)
+        self.assertNotIn("codemodeMode", reloaded.get(session_id))
+        self.assertNotIn("codemodeMode", reloaded.list()[0])
+        self.assertNotIn(
+            "codemodeMode",
+            reloaded.list_page(projection_only=True)["items"][0],
+        )
+
     def test_evaluation_snapshot_is_a_visible_read_only_session_kind(self) -> None:
         snapshot = self.store.create(
             title="EnterpriseOps Validation · Task 1",

@@ -108,6 +108,66 @@ afterEach(() => {
 });
 
 describe('Agent experience', () => {
+  it('restores verified native codemode from the active snapshot when directory metadata is still cold', async () => {
+    const transport = productionTransport({
+      'agent.session.snapshot': {
+        ...previewAgentSnapshot('session-preview'),
+        codemodeMode: 'only',
+      },
+      'agent.session.codemode.select': { ok: true, codemodeMode: 'off' },
+    });
+    const user = userEvent.setup();
+    renderAgent(transport, '/agent?session=session-preview&tools=memory');
+
+    const mode = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    expect(mode).toHaveValue('only');
+    await user.selectOptions(mode, 'off');
+    await waitFor(() => expect(transport.requests).toContainEqual(expect.objectContaining({
+      pathId: 'agent.session.codemode.select',
+      params: { sessionId: 'session-preview' },
+      body: { mode: 'off' },
+    })));
+    await waitFor(() => expect(mode).toHaveValue('off'));
+  });
+
+  it('reconciles native codemode changes from another window without issuing another selection', async () => {
+    const baseline = previewAgentSnapshot('session-preview');
+    const transport = productionTransport({
+      'agent.sessions.list': {
+        ok: true,
+        activeSessionId: 'session-preview',
+        items: previewSessions.map((item) => item.id === 'session-preview'
+          ? { ...item, codemodeMode: 'on' }
+          : item),
+      },
+    });
+    renderAgent(transport, '/agent?session=session-preview&tools=memory');
+    const mode = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    expect(mode).toHaveValue('on');
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => transport.emit('agent.session.events', {
+      schemaVersion: 'rag-ime.agent-event.v1',
+      eventId: 'codemode-other-window',
+      sessionId: 'session-preview',
+      turnId: '',
+      sequence: baseline.lastSequence + 1,
+      createdAtMs: Date.now(),
+      streamKind: 'agent',
+      eventType: 'session_configuration_changed',
+      payload: { kind: 'codemode', codemodeMode: 'only' },
+      resumeToken: 'codemode-other-window',
+    }));
+    await waitFor(() => expect(mode).toHaveValue('only'));
+    expect(transport.requests.some((request) => request.pathId === 'agent.session.codemode.select')).toBe(false);
+  });
+
+  it('keeps native codemode controls hidden when the captured host did not report support', async () => {
+    const transport = productionTransport();
+    renderAgent(transport, '/agent?session=session-preview&tools=memory');
+    await screen.findByRole('textbox', { name: '搜索当前对话功能' });
+    expect(screen.queryByRole('combobox', { name: '代码执行编排方式' })).not.toBeInTheDocument();
+  });
+
   it('starts restoring a deep-linked conversation before the session rail finishes loading', async () => {
     const pendingSessions = deferred<unknown>();
     const pendingSnapshot = deferred<unknown>();

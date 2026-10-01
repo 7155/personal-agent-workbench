@@ -296,14 +296,42 @@ class PiRuntimeHostManager:
         *,
         binding: Mapping[str, object] | None = None,
         snapshot: Mapping[str, object] | None = None,
-    ) -> str:
-        """Resolve the native mode without treating a stale Host as authority."""
+    ) -> str | None:
+        """Resolve a mode only after native codemode support is verified.
 
+        The configured preference is an input to a future open, not evidence
+        that an older Host actually supports native codemode. A persisted
+        binding marker or the current Host capability handshake must authorize
+        this public projection.
+        """
+
+        capability_available = (
+            codemode_capability(self._host_capabilities.get("codemode")).get(
+                "available"
+            )
+            is True
+        )
+        host_negotiated = self._client is not None and self._client.running
+        if host_negotiated and not capability_available:
+            # A live Host handshake that omits or rejects codemode supersedes
+            # an older binding marker. Cold/recent reads without a live Host
+            # may still use the persisted verified marker.
+            return None
+        metadata = as_mapping((binding or {}).get("metadata"))
+        binding_available = metadata.get("codemodeAvailable") is True
         for source in (snapshot or {},):
             raw = source.get("codemodeMode")
-            if isinstance(raw, str) and raw.strip().lower() in {"on", "only", "off"}:
+            if (
+                isinstance(raw, str)
+                and raw.strip().lower() in CODEMODE_MODES
+                and (capability_available or binding_available)
+            ):
                 return raw.strip().lower()
-        return self._requested_codemode_mode(session, binding=binding)
+        if binding_available:
+            raw = metadata.get("codemodeMode")
+            if isinstance(raw, str) and raw.strip().lower() in CODEMODE_MODES:
+                return raw.strip().lower()
+        return None
 
     def _requested_codemode_mode(
         self,
@@ -315,10 +343,19 @@ class PiRuntimeHostManager:
         if isinstance(raw, str) and raw.strip().lower() in {"on", "only", "off"}:
             return raw.strip().lower()
         metadata = as_mapping((binding or {}).get("metadata"))
-        raw = metadata.get("codemodeMode")
-        if isinstance(raw, str) and raw.strip().lower() in {"on", "only", "off"}:
-            return raw.strip().lower()
+        if metadata.get("codemodeAvailable") is not False:
+            raw = metadata.get("codemodeMode")
+            if isinstance(raw, str) and raw.strip().lower() in CODEMODE_MODES:
+                return raw.strip().lower()
         return self.config.resolved_codemode_mode(session)
+
+    @staticmethod
+    def _codemode_payload(mode: str | None) -> dict[str, object]:
+        return (
+            {"codemodeMode": mode}
+            if isinstance(mode, str) and mode in CODEMODE_MODES
+            else {}
+        )
 
     def runtime_status(self) -> dict[str, object]:
         installed = self.config.executable is not None and self.config.executable.expanduser().is_file()
@@ -672,9 +709,9 @@ class PiRuntimeHostManager:
                     self._schedule_idle_locked()
                 return {
                     "state": snapshot,
-                    "codemodeMode": effective_codemode_mode,
                     "resourceSnapshot": resource_snapshot,
                     "reused": True,
+                    **self._codemode_payload(effective_codemode_mode),
                     **({"recoveredTurnRetirement": recovered_turn_retirement}
                        if recovered_turn_retirement is not None else {}),
                 }
@@ -844,6 +881,12 @@ class PiRuntimeHostManager:
                 ),
             )
             snapshot = dict(as_mapping(result.get("snapshot")))
+            codemode_available = (
+                codemode_capability(self._host_capabilities.get("codemode")).get(
+                    "available"
+                )
+                is True
+            )
             effective_codemode_mode = self._effective_codemode_mode(
                 session,
                 binding=binding,
@@ -860,9 +903,13 @@ class PiRuntimeHostManager:
                 {
                     "protocolVersion": PI_HOST_PROTOCOL_VERSION,
                     "resourceSnapshot": resource_snapshot,
-                    "codemodeMode": effective_codemode_mode,
+                    "codemodeAvailable": codemode_available,
                 }
             )
+            if effective_codemode_mode is not None:
+                binding_metadata["codemodeMode"] = effective_codemode_mode
+            else:
+                binding_metadata.pop("codemodeMode", None)
             bound = self.sessions.bind_runtime_session(
                 session_id,
                 driver_id=self.driver_id,
@@ -951,11 +998,11 @@ class PiRuntimeHostManager:
                 )
             return {
                 "state": snapshot,
-                "codemodeMode": effective_codemode_mode,
                 "session": bound,
                 "resourceSnapshot": resource_snapshot,
                 "evictedSessionId": evicted or None,
                 "reused": False,
+                **self._codemode_payload(effective_codemode_mode),
                 **(
                     {
                         "recoveredTurnRetirement": (
@@ -2416,9 +2463,9 @@ class PiRuntimeHostManager:
         return {
             "messages": result,
             "toolHistoryEvents": tool_history_events,
-            "codemodeMode": effective_codemode_mode,
             "telemetry": dict(telemetry) if isinstance(telemetry, Mapping) else None,
             "messageQueue": message_queue,
+            **self._codemode_payload(effective_codemode_mode),
         }
 
     def recent_session_snapshot(self, session_id: str) -> dict[str, object]:
@@ -2463,8 +2510,8 @@ class PiRuntimeHostManager:
                     return {
                         "messages": cached_messages,
                         "toolHistoryEvents": cached_tool_history,
-                        "codemodeMode": effective_codemode_mode,
                         "projectionCurrent": True,
+                        **self._codemode_payload(effective_codemode_mode),
                     }
                 recent_candidate = self._recent_durable_history_messages(session_id)
                 refreshed_identity = self._recent_projection_identity(session_id)
@@ -2472,8 +2519,8 @@ class PiRuntimeHostManager:
                     return {
                         "messages": cached_messages,
                         "toolHistoryEvents": cached_tool_history,
-                        "codemodeMode": effective_codemode_mode,
                         "projectionCurrent": True,
+                        **self._codemode_payload(effective_codemode_mode),
                     }
                 projection_identity = refreshed_identity
                 cache_identity_changed = True
@@ -2495,8 +2542,8 @@ class PiRuntimeHostManager:
                 return {
                     "messages": cached_messages,
                     "toolHistoryEvents": cached_tool_history,
-                    "codemodeMode": effective_codemode_mode,
                     "projectionCurrent": False,
+                    **self._codemode_payload(effective_codemode_mode),
                 }
             projection_identity = refreshed_identity
 
@@ -2538,8 +2585,8 @@ class PiRuntimeHostManager:
                 return {
                     "messages": messages,
                     "toolHistoryEvents": tool_history_events,
-                    "codemodeMode": effective_codemode_mode,
                     "projectionCurrent": bool(projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
+                    **self._codemode_payload(effective_codemode_mode),
                 }
         messages = recent_public_message_window(
             raw_messages,
@@ -2562,8 +2609,8 @@ class PiRuntimeHostManager:
         return {
             "messages": messages,
             "toolHistoryEvents": tool_history_events,
-            "codemodeMode": effective_codemode_mode,
             "projectionCurrent": bool(projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
+            **self._codemode_payload(effective_codemode_mode),
         }
 
     def _recent_projection_identity(
@@ -3657,6 +3704,7 @@ class PiRuntimeHostManager:
                 "Pi codemode changed without a durable runtime binding"
             )
         metadata = dict(as_mapping(binding.get("metadata")))
+        metadata["codemodeAvailable"] = True
         metadata["codemodeMode"] = effective
         updater = getattr(self.sessions, "update_runtime_binding_metadata", None)
         if not callable(updater):

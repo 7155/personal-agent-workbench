@@ -15,6 +15,13 @@ import { PawRoomWorkspace } from './PawRoomWorkspace';
 
 afterEach(() => { cleanup(); useRoomLiveStore.getState().reset(); });
 
+async function openRoomControls(user: ReturnType<typeof userEvent.setup>) {
+  const toggle = await screen.findByRole('button', { name: '展开 Room 控件' });
+  await user.click(toggle);
+  const rail = screen.queryByRole('button', { name: '展开任务栏' });
+  if (rail) await user.click(rail);
+}
+
 describe('Jev room-backed conversation flow', () => {
   it('opens a delivered file in Files with its producing Session without sending work or losing the draft', async () => {
     const user = userEvent.setup();
@@ -39,6 +46,7 @@ describe('Jev room-backed conversation flow', () => {
     </PawOsDesktopProvider></TooltipProvider></ControlTransportProvider></QueryClientProvider>);
     const input = await screen.findByRole('textbox', { name: '协作消息' });
     await user.type(input, '还要核对报告');
+    await openRoomControls(user);
     await user.click(await screen.findByRole('tab', { name: /成果/ }));
     await user.click(await screen.findByRole('button', { name: '打开文件 验收报告.md' }));
     expect(openRoute).toHaveBeenCalledWith(`/files?session=agent%3Aoriginal-file-owner&path=${encodeURIComponent('docs/验收报告.md')}`);
@@ -113,7 +121,7 @@ describe('Jev room-backed conversation flow', () => {
     const commands: Record<string, unknown>[] = [];
     transport.request = async <Response,>(request: ControlRequest): Promise<Response> => {
       if (request.pathId === 'agent.room.get') return { ok: true, room } as Response;
-      if (request.pathId === 'agent.room.snapshot') return previewRoomSnapshot(room.id) as Response;
+      if (request.pathId === 'agent.room.snapshot') return previewRoomSnapshotForRoot(room.id, 'planned-root') as Response;
       if (request.pathId === 'agent.jev.get') return (request.query?.graphId
         ? { ok: true, mode: 'jev', graphId: 'planned', rootId: 'planned-root', snapshotVersion: String(approved), phase: approved ? 'execute' : 'awaiting_approval', tasks: [{ id: 'goal', objective: '核对恢复', state: 'queued' }], planApproval: { status: approved ? 'approved' : 'awaiting_approval', planHash: 'exact-plan', requirementsRevision: 1, proposal: { tasks: [{ key: 'task', objective: '核对附件读取', expectedOutput: '验证结果', acceptanceCriteria: ['附件正确读取'] }] } } }
         : { ok: true, mode: 'jev', items: [{ graph_id: 'planned', room_id: room.id, phase: approved ? 'execute' : 'awaiting_approval' }] }) as Response;
@@ -126,7 +134,9 @@ describe('Jev room-backed conversation flow', () => {
     await user.type(input, '稍后讨论另一个问题');
     expect(commands).toEqual([]);
     expect(screen.queryByRole('button', { name: '停止 Jev 执行' })).not.toBeInTheDocument();
-    await user.click(await screen.findByRole('button', { name: '开始执行' }));
+    const approvePlan = await screen.findByRole('button', { name: '开始执行' });
+    expect(approvePlan).toBeVisible();
+    await user.click(approvePlan);
     await screen.findByText('执行方案已确认 · 版本 1');
     expect(commands).toEqual([expect.objectContaining({ action: 'approve_plan', graphId: 'planned', rootId: 'planned-root', planHash: 'exact-plan' })]);
     expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(input);
@@ -199,6 +209,7 @@ describe('Jev room-backed conversation flow', () => {
       <PawRoomWorkspace interfaceMode="jev" personas={[]} record={room} recordId={room.id} onRoomUpdated={vi.fn()} />
     </TooltipProvider></ControlTransportProvider></QueryClientProvider>);
     const input = await screen.findByRole('textbox', { name: '协作消息' });
+    await openRoomControls(user);
     await waitFor(() => expect(screen.getByRole('button', { name: '同步 Jev 任务' })).toBeEnabled());
     await user.click(screen.getAllByRole('button', { name: 'Jev 模型与工具设置' })[0]);
     await user.click(within(screen.getByRole('menu')).getByRole('menuitemradio', { name: '始终由其他伙伴复核' }));
@@ -232,3 +243,24 @@ describe('Jev room-backed conversation flow', () => {
     expect(oldCommands).toEqual([]);
   });
 });
+
+function previewRoomSnapshotForRoot(roomId: string, rootId: string) {
+  const snapshot = previewRoomSnapshot(roomId);
+  return {
+    ...snapshot,
+    events: snapshot.events.map((event) => {
+      const post = event.payload.post;
+      return {
+        ...event,
+        turnId: rootId,
+        payload: {
+          ...event.payload,
+          rootId,
+          ...(post && typeof post === 'object' && !Array.isArray(post)
+            ? { post: { ...post, rootId } }
+            : {}),
+        },
+      };
+    }),
+  };
+}

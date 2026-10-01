@@ -6379,8 +6379,13 @@ class AgentServiceTests(unittest.TestCase):
         recent_snapshot.assert_called_once_with(session_id)
         self.assertEqual(response["snapshotScope"], "recent")
         self.assertTrue(response["partial"])
-        self.assertEqual(len(response["liveEvents"]), 48)
-        self.assertEqual(response["recentFromSequence"], 33)
+        # This history fits the expanded recent window. Restoring it must keep
+        # the earlier records without loading the full Pi archive.
+        self.assertEqual(
+            [event["sequence"] for event in response["liveEvents"]],
+            list(range(1, 81)),
+        )
+        self.assertEqual(response["recentFromSequence"], 1)
         self.assertEqual(response["lastSequence"], 80)
         self.assertEqual(response["resumeToken"], f"{session_id}:80")
         self.assertEqual(
