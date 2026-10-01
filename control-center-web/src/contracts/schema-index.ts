@@ -9020,6 +9020,75 @@ export const contractSchemas = {
       }
     }
   },
+  "agent-session-codemode-selection.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "rag-ime.contract.agent-session-codemode-selection.v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schemaVersion",
+      "ok",
+      "sessionId",
+      "codemodeMode",
+      "capability"
+    ],
+    "properties": {
+      "schemaVersion": {
+        "type": "string",
+        "const": "rag-ime.agent-session-codemode-selection.v1"
+      },
+      "ok": {
+        "type": "boolean",
+        "const": true
+      },
+      "sessionId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "codemodeMode": {
+        "type": "string",
+        "enum": [
+          "on",
+          "only",
+          "off"
+        ]
+      },
+      "capability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "available",
+          "modes",
+          "defaultMode"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "off",
+                "on",
+                "only"
+              ]
+            }
+          },
+          "defaultMode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "on",
+              "only",
+              ""
+            ]
+          }
+        }
+      }
+    }
+  },
   "agent-session-fork-candidates.v1": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "rag-ime.contract.agent-session-fork-candidates.v1",

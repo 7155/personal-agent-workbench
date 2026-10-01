@@ -52,6 +52,7 @@ import type { AgentRoomWorkItemV1 } from './generated/agent-room-work-item.v1';
 import type { AgentRoomV1 } from './generated/agent-room.v1';
 import type { AgentRuntimeBindingV1 } from './generated/agent-runtime-binding.v1';
 import type { AgentRuntimeV1 } from './generated/agent-runtime.v1';
+import type { AgentSessionCodemodeSelectionV1 } from './generated/agent-session-codemode-selection.v1';
 import type { AgentSessionForkCandidatesV1 } from './generated/agent-session-fork-candidates.v1';
 import type { AgentSessionForkCreateV1 } from './generated/agent-session-fork-create.v1';
 import type { AgentSessionTelemetryV1 } from './generated/agent-session-telemetry.v1';
@@ -225,6 +226,7 @@ export type {
   AgentRoomV1,
   AgentRuntimeBindingV1,
   AgentRuntimeV1,
+  AgentSessionCodemodeSelectionV1,
   AgentSessionForkCandidatesV1,
   AgentSessionForkCreateV1,
   AgentSessionTelemetryV1,
@@ -399,6 +401,7 @@ export interface ContractTypeMap {
   'agent-room.v1': AgentRoomV1;
   'agent-runtime-binding.v1': AgentRuntimeBindingV1;
   'agent-runtime.v1': AgentRuntimeV1;
+  'agent-session-codemode-selection.v1': AgentSessionCodemodeSelectionV1;
   'agent-session-fork-candidates.v1': AgentSessionForkCandidatesV1;
   'agent-session-fork-create.v1': AgentSessionForkCreateV1;
   'agent-session-telemetry.v1': AgentSessionTelemetryV1;
