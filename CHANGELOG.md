@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the committed Room history prefix readable while new events append.
+  Read its database bounds and anchors from one snapshot, and recheck only
+  the captured prefix bytes when the archive grows; reject changed prefixes.
+
 - Connect the managed Pi native MCP and tool-search extensions to the Session
   capability browser, with owner-supplied connection state, per-tool exposure,
   refresh and idle login/reconnect actions. Merge codemode child receipts by

@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from rag_ime.agent_service import AgentService
@@ -281,6 +283,100 @@ class RoomControlRetentionTests(unittest.TestCase):
         self.assertEqual(recovered[0]["payload"]["mode"], "jev")
         self.assertEqual(recovered[0]["payload"]["graphId"], "jev-graph:sidecar")
         self.assertEqual(snapshot["deferredEventCount"], 120)
+
+    def test_full_history_survives_append_after_reading_committed_prefix(self) -> None:
+        for index in range(105):
+            self.append("root:live-history", "participant_activity",
+                        {"summary": str(index)}, retain_per_room=100)
+        high_water = int(self.service.rooms.get(self.room_id)["lastEventSequence"])
+        room_file = self.service.rooms._room_file(self.room_id)
+        original_stat = Path.stat
+        calls = 0
+
+        def append_before_final_stat(path, *args, **kwargs):
+            nonlocal calls
+            if path == room_file:
+                calls += 1
+                if calls == 2:
+                    self.append("root:live-history", "participant_activity",
+                                {"summary": "new live event"}, retain_per_room=100)
+            return original_stat(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", new=append_before_final_stat):
+            page = self.service.room_history(self.room_id, {"limit": 5})
+        self.assertGreaterEqual(calls, 2)
+        self.assertFalse(page["retainedPrefixTruncated"])
+        self.assertEqual(page["retainedFirstSequence"], 1)
+        self.assertEqual(page["retainedLastSequence"], high_water)
+        self.assertEqual([event["sequence"] for event in page["items"]],
+                         list(range(high_water - 4, high_water + 1)))
+        self.assertGreater(self.service.rooms.get(self.room_id)["lastEventSequence"], high_water)
+
+    def test_full_history_rejects_changed_prefix_even_if_file_grows(self) -> None:
+        for index in range(105):
+            self.append("root:live-history", "participant_activity",
+                        {"summary": str(index)}, retain_per_room=100)
+        room_file = self.service.rooms._room_file(self.room_id)
+        original_stat = Path.stat
+        calls = 0
+
+        def rewrite_before_final_stat(path, *args, **kwargs):
+            nonlocal calls
+            if path == room_file:
+                calls += 1
+                if calls == 2:
+                    lines = room_file.read_text(encoding="utf-8").splitlines()
+                    first = json.loads(lines[0])
+                    first["payload"] = {"summary": "changed unretained prefix"}
+                    lines[0] = json.dumps(first, ensure_ascii=False)
+                    room_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                    self.append("root:live-history", "participant_activity",
+                                {"summary": "new event after rewrite"}, retain_per_room=100)
+            return original_stat(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", new=rewrite_before_final_stat):
+            page = self.service.room_history(self.room_id, {"limit": 5})
+        self.assertTrue(page["retainedPrefixTruncated"])
+        self.assertGreater(page["retainedFirstSequence"], 1)
+
+    def test_full_history_uses_one_database_snapshot_during_live_append(self) -> None:
+        for index in range(105):
+            self.append("root:live-history", "participant_activity",
+                        {"summary": str(index)}, retain_per_room=100)
+        store = self.service.rooms
+        high_water = int(store.get(self.room_id)["lastEventSequence"])
+        # Permit the controlled writer to commit while the history reader
+        # holds its snapshot; rollback-journal locking would serialize it.
+        with store._connect() as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
+        connect = store._connect
+        appended = False
+        owner = self
+
+        @contextmanager
+        def append_after_high_water_query():
+            with connect() as connection:
+                class Connection:
+                    def execute(self, sql, parameters=()):
+                        nonlocal appended
+                        cursor = connection.execute(sql, parameters)
+                        if "SELECT room_file, last_event_sequence" in sql and not appended:
+                            row = cursor.fetchone()
+                            cursor.close()
+                            appended = True
+                            owner.append("root:live-history", "participant_activity",
+                                         {"summary": "between snapshot queries"}, retain_per_room=100)
+                            return SimpleNamespace(fetchone=lambda: row)
+                        return cursor
+                yield Connection()
+
+        with patch.object(store, "_connect", new=append_after_high_water_query):
+            page = self.service.room_history(self.room_id, {"limit": 5})
+        self.assertTrue(appended)
+        self.assertFalse(page["retainedPrefixTruncated"])
+        self.assertEqual(page["retainedFirstSequence"], 1)
+        self.assertEqual(page["retainedLastSequence"], high_water)
+        self.assertEqual(page["lastSequence"], high_water)
 
     def test_full_history_page_uses_validated_sidecar_and_ignores_rolled_back_tail(self) -> None:
         for index in range(120):

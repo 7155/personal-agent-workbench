@@ -2264,8 +2264,10 @@ class AgentRoomStore:
             return list(cached)
         events: list[dict[str, object]] = []
         expected_sequence = 1
+        prefix_bytes = 0
+        prefix_digest = hashlib.sha256()
         try:
-            with path.open("r", encoding="utf-8") as stream:
+            with path.open("r", encoding="utf-8", newline="") as stream:
                 for line in stream:
                     if expected_sequence > high_water:
                         break
@@ -2291,6 +2293,9 @@ class AgentRoomStore:
                         validate_contract(event, "agent-room-event.v1.json")
                     except Exception:
                         return []
+                    encoded_line = line.encode("utf-8")
+                    prefix_bytes += len(encoded_line)
+                    prefix_digest.update(encoded_line)
                     events.append(event)
                     expected_sequence += 1
         except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
@@ -2304,10 +2309,35 @@ class AgentRoomStore:
         if (
             int(final_stat.st_dev) != int(initial_stat.st_dev)
             or int(final_stat.st_ino) != int(initial_stat.st_ino)
-            or int(final_stat.st_mtime_ns) != int(initial_stat.st_mtime_ns)
-            or int(final_stat.st_size) != int(initial_stat.st_size)
+            or int(final_stat.st_size) < int(initial_stat.st_size)
+            or prefix_bytes > int(initial_stat.st_size)
         ):
             return []
+        if (final_stat.st_mtime_ns != initial_stat.st_mtime_ns
+            or final_stat.st_size != initial_stat.st_size):
+            # A live append beyond this SQLite snapshot does not invalidate
+            # its committed prefix. Verify those exact bytes again so an
+            # in-place prefix rewrite plus growth still fails closed.
+            try:
+                verified_digest = hashlib.sha256()
+                with path.open("rb") as stream:
+                    opened_stat = os.fstat(stream.fileno())
+                    if (opened_stat.st_dev, opened_stat.st_ino) != (initial_stat.st_dev, initial_stat.st_ino):
+                        return []
+                    remaining = prefix_bytes
+                    while remaining:
+                        chunk = stream.read(min(65536, remaining))
+                        if not chunk:
+                            return []
+                        remaining -= len(chunk)
+                        verified_digest.update(chunk)
+                current_stat = path.stat()
+                if ((current_stat.st_dev, current_stat.st_ino) != (initial_stat.st_dev, initial_stat.st_ino)
+                    or current_stat.st_size < initial_stat.st_size
+                    or verified_digest.digest() != prefix_digest.digest()):
+                    return []
+            except OSError:
+                return []
         for row in anchor_rows:
             sequence = int(row["sequence"])
             if sequence < 1 or sequence > high_water:
@@ -2531,6 +2561,9 @@ class AgentRoomStore:
         self.get(room_id)
         bounded = max(1, min(int(limit), ROOM_HISTORY_PAGE_LIMIT))
         with self._connect() as conn:
+            # The committed high-water mark, retained bounds and anchors must
+            # belong to one snapshot while other Room events keep arriving.
+            conn.execute("BEGIN")
             room_row = conn.execute(
                 "SELECT room_file, last_event_sequence FROM agent_rooms WHERE id = ?",
                 (room_id,),
