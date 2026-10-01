@@ -1438,6 +1438,7 @@ def inspectable_tool_result(value: object) -> object:
 
 def public_codemode_nested_calls(
     raw_result: object,
+    *, inspectable_arguments: bool = False,
 ) -> list[dict[str, object]]:
     """Project Pi's bounded nested-call receipt for a public timeline.
 
@@ -1486,10 +1487,13 @@ def public_codemode_nested_calls(
             if raw.get("args") is not None
             else detail.get("arguments")
             if detail.get("arguments") is not None
-            else detail.get("args")
+            else detail.get("args"),
+            inspectable=inspectable_arguments and bool(nested_calls),
         )
         if arguments:
             projected["args"] = arguments
+            if inspectable_arguments and nested_calls and isinstance(raw.get("arguments", raw.get("args")), Mapping):
+                projected["argumentSource"] = "native_nested_call_arguments"
         arguments_bytes = raw.get("argumentsBytes")
         if not isinstance(arguments_bytes, int) or isinstance(arguments_bytes, bool):
             arguments_bytes = detail.get("argumentsBytes")
@@ -1536,16 +1540,16 @@ def _public_nested_call_status(value: object) -> str:
     }.get(normalized, "running")
 
 
-def _public_nested_call_arguments(value: object) -> dict[str, object]:
+def _public_nested_call_arguments(value: object, *, inspectable: bool = False) -> dict[str, object]:
     if isinstance(value, Mapping):
-        return redact_mapping(value)
+        return cast(dict[str, object], inspectable_tool_result(value)) if inspectable else redact_mapping(value)
     if isinstance(value, str) and value.strip():
         try:
             decoded = json.loads(value)
         except (TypeError, ValueError, json.JSONDecodeError):
             decoded = None
         if isinstance(decoded, Mapping):
-            return redact_mapping(decoded)
+            return cast(dict[str, object], inspectable_tool_result(decoded)) if inspectable else redact_mapping(decoded)
         text = _public_tool_text(value, maximum=500)
         return {"value": text} if text else {}
     return {}

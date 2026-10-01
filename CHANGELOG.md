@@ -5,6 +5,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Read exact Pi turn arguments for task verification instead of shortened UI
+  previews. Preserve long credential-masked scripts and more than 64 completed
+  calls in the paginated media archive; keep missing, oversized and failed
+  evidence explicit without expanding public history or replaying tools.
+
 - Upgrade the managed Pi adapter to native 0.99.2 codemode, with idle-only
   mode controls and expandable code/nested-call cards in Session and Room.
   Preserve Gateway ownership, exact parameters, failure/cancellation status,

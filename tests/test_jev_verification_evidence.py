@@ -149,6 +149,35 @@ class WorkerEvidenceTests(unittest.TestCase):
         for hidden in (b"never-share", b"old-turn", b"next-turn"):
             self.assertNotIn(hidden, archived)
 
+    def test_scoped_native_evidence_preserves_large_browser_scripts_and_all_completed_calls(self):
+        script = "const legal = " + json.dumps(["种植，购买，暂停" * 100] * 70) + "; console.log(legal.length)"
+        source = [event for event in self.browser_events() if event["turnId"] == "turn:a"
+                  and event["payload"].get("toolName") == "browser"]
+        events = []
+        for index in range(70):
+            for item in source:
+                item = copy.deepcopy(item)
+                item["eventId"] = f"browser-{index}:{item['eventType']}"
+                item["payload"]["toolCallId"] = f"browser-{index}"
+                if item["eventType"] == "tool_started":
+                    item["payload"].update(argumentSource="native_transcript_arguments",
+                        args={"op": "run", "script": script if index in (0, 69) else "console.log('ok')", "timeoutMs": 120000})
+                events.append(item)
+        self.runtime.session_tool_evidence = Mock(return_value={"toolHistoryEvents": events})
+        evidence = self.project(inline_byte_budget=6000)
+        self.runtime.session_tool_evidence.assert_called_once_with(self.worker["id"], turn_id="turn:a")
+        self.runtime.session_snapshot.assert_not_called()
+        self.assertLessEqual(len(canonical(evidence).encode()), 6000)
+        _receipt, body = self.read_media(evidence["readRef"].removeprefix("media://"), session_id=self.verifier["id"])
+        archive = json.loads(body)
+        self.assertEqual(archive["status"], "available")
+        self.assertEqual(archive["omittedToolResults"], 0)
+        self.assertEqual(len(archive["tools"]), 70)
+        self.assertEqual(archive["tools"][0]["arguments"]["script"], script)
+        self.assertEqual(archive["tools"][-1]["arguments"]["script"], script)
+        self.assertEqual(archive["tools"][0]["argumentSource"], "native_transcript_arguments")
+
+
     def test_browser_discovery_is_excluded_and_failed_command_is_preserved(self):
         for operation in ("status", "tabs", "trace", "snapshot", "stop"):
             with self.subTest(operation=operation):
@@ -289,6 +318,22 @@ class WorkerEvidenceTests(unittest.TestCase):
         self.assertNotIn("private host failure", canonical(result))
         self.assertNotIn("definitely", canonical(result))
 
+    def test_native_reader_failure_does_not_fall_back_to_shortened_arguments(self):
+        self.runtime.session_tool_evidence = Mock(side_effect=RuntimeError("source unavailable"))
+        evidence = self.project()
+        self.assertEqual(evidence["status"], "unavailable")
+        self.runtime.session_snapshot.assert_not_called()
+
+    def test_completed_nested_call_without_result_is_partial_not_unfinished(self):
+        events = self.events()
+        finished = next(e for e in events if e["turnId"] == "turn:a" and e["eventType"] == "tool_finished"
+                        and e["payload"]["toolName"] == "bash")
+        finished["payload"].pop("result")
+        self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
+        evidence = self.project()
+        self.assertEqual(evidence["status"], "partial")
+        self.assertEqual(evidence["unfinishedToolCalls"], 0)
+
     def test_exact_owner_command_is_used_only_with_matching_causal_receipt(self):
         events = self.events()
         bash = next(e for e in events if e["turnId"] == "turn:a" and e["eventType"] == "tool_finished"
@@ -358,11 +403,11 @@ class WorkerEvidenceTests(unittest.TestCase):
         events = self.events()
         read = next(e for e in events if e["turnId"] == "turn:a" and e["eventType"] == "tool_finished"
                     and e["payload"]["toolName"] == "read")
-        read["payload"]["result"]["content"] = [{"type": "text", "text": "证据" * 20000}]
+        read["payload"]["result"]["content"] = [{"type": "text", "text": "证据" * 360000}]
         self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
         result = self.project()
         self.assertEqual(result["status"], "partial")
-        self.assertLessEqual(result["archiveBytes"], 256000)
+        self.assertLessEqual(result["archiveBytes"], 2 * 1024 * 1024)
         _receipt, body = self.read_media(result["readRef"].removeprefix("media://"), session_id=self.verifier["id"])
         archived = json.loads(body)
         self.assertTrue(archived["tools"][0]["result"]["truncated"])
@@ -388,21 +433,21 @@ class WorkerEvidenceTests(unittest.TestCase):
                     events.append(pending)
                 self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
                 result = self.project()
-                self.assertEqual(result["status"], "partial")
-                self.assertEqual(result["omittedToolResults"], 1)
+                self.assertEqual(result["status"], "partial" if unfinished else "available")
+                self.assertEqual(result["omittedToolResults"], 0)
                 self.assertEqual(result["unfinishedToolCalls"], unfinished)
                 _receipt, body = self.read_media(result["readRef"].removeprefix("media://"),
                                                 session_id=self.verifier["id"])
                 archived = json.loads(body)
-                self.assertEqual(len(archived["tools"]), 64)
-                self.assertEqual(archived["status"], "partial")
-                self.assertEqual(archived["omittedToolResults"], 1)
+                self.assertEqual(len(archived["tools"]), 65)
+                self.assertEqual(archived["status"], "partial" if unfinished else "available")
+                self.assertEqual(archived["omittedToolResults"], 0)
                 self.assertEqual(archived["unfinishedToolCalls"], unfinished)
 
     def test_archive_budget_retains_latest_results_in_execution_order(self):
         source = [event for event in self.events() if event["turnId"] == "turn:a"
                   and event["payload"].get("toolName") == "read"]
-        for count, content in ((65, "small"), (7, "读取" * 8000)):
+        for count, content, budget in ((65, "small", 24000), (7, "读取" * 8000, 64000)):
             with self.subTest(count=count):
                 events = []
                 for index in range(count):
@@ -414,7 +459,8 @@ class WorkerEvidenceTests(unittest.TestCase):
                             item["payload"]["result"]["content"] = [{"type": "text", "text": content + str(index)}]
                         events.append(item)
                 self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
-                result = self.project()
+                with patch("rag_ime.jev_tasks.materials._EVIDENCE_ARCHIVE_BYTES", budget):
+                    result = self.project()
                 _, body = self.read_media(result["readRef"].removeprefix("media://"),
                                           session_id=self.verifier["id"])
                 archive = json.loads(body)
@@ -425,7 +471,7 @@ class WorkerEvidenceTests(unittest.TestCase):
                 self.assertEqual(ids, [f"read-{index}" for index in range(omitted, count)])
                 self.assertEqual(archive["status"], "partial")
                 self.assertEqual(archive["unfinishedToolCalls"], 0)
-                self.assertLessEqual(len(body), 256000)
+                self.assertLessEqual(len(body), budget)
                 self.assertEqual(archive["tools"][-1]["result"]["content"][0]["text"], content + str(count - 1))
 
 
@@ -453,7 +499,7 @@ class VerificationPreparationTests(host.JevHostFixture):
         ], session_id=request["sessionId"])
         terminal = {"eventId": "terminal:a", "eventType": "turn_completed", "status": "completed"}
         with patch.object(self.app, "execution_terminal", side_effect=lambda e, **kw: terminal if e["effectId"] == effect["effectId"] else None), \
-             patch.object(self.service.runtime, "session_snapshot", return_value={"toolHistoryEvents": events}):
+             patch.object(self.service.runtime, "session_tool_evidence", return_value={"toolHistoryEvents": events}):
             self.app.tick()
         verifier = next(e for e in self.app.projection(self.room["id"], created["graphId"])["effects"]
                         if e["operation"] == "dispatch" and e["request"].get("purpose") == "verify")

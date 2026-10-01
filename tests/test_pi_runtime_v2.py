@@ -545,6 +545,37 @@ class PiRuntimeV2Tests(unittest.TestCase):
             "status": "checkpointed",
         }
 
+    def test_turn_tool_evidence_reads_exact_durable_binding_without_starting_host(self):
+        session_id = self.first["id"]
+        transcript = self.runtime.config.session_dir / "bound-evidence.jsonl"
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        script = "console.log(" + json.dumps("公开合法操作" * 900) + ")"
+        entries = [{"type": "session", "id": "physical-evidence"},
+            {"type": "custom", "id": "binding", "parentId": "physical-evidence",
+                "customType": "rag-ime.pi-turn-binding", "data": {
+                    "schemaVersion": "rag-ime.pi-turn-binding.v1", "turnId": "bound-turn"}},
+            {"type": "message", "id": "user", "parentId": "binding",
+                "message": {"role": "user", "content": "private task"}},
+            {"type": "message", "id": "call", "parentId": "user",
+                "message": {"role": "assistant", "content": [{"type": "toolCall", "name": "browser",
+                    "id": "browser-call", "arguments": {"op": "run", "script": script}}]}},
+            {"type": "message", "id": "result", "parentId": "call",
+                "message": {"role": "toolResult", "toolCallId": "browser-call", "toolName": "browser",
+                    "details": {"schemaVersion": "rag-ime.browser-control.v1", "status": "completed"}}}]
+        transcript.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+        self.store.bind_runtime_session(session_id, driver_id="managed-pi", runtime_kind="pi_rpc",
+            external_session_id="physical-evidence", transcript_ref=str(transcript), branch_anchor="result",
+            binding_state="active", metadata={"protocolVersion": "2"}, message_count=3)
+        with patch.object(self.runtime, "_host_locked", side_effect=AssertionError("Host started")):
+            evidence = self.runtime.session_tool_evidence(session_id, turn_id="bound-turn")
+            self.assertEqual(len(evidence["toolHistoryEvents"]), 2)
+            self.assertEqual(evidence["toolHistoryEvents"][0]["payload"]["args"]["script"], script)
+            self.assertEqual(self.runtime.session_tool_evidence(session_id, turn_id="other-turn")["toolHistoryEvents"], [])
+            with self.assertRaises(AgentRuntimeError):
+                self.runtime.session_tool_evidence(self.second["id"], turn_id="bound-turn")
+        self.assertNotIn("private task", json.dumps(evidence))
+        self.assertIsNone(self.runtime._client)
+
     def test_runtime_status_is_a_local_projection_and_does_not_start_host(
         self,
     ) -> None:

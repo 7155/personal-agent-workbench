@@ -44,7 +44,10 @@ _EVIDENCE_RESULT_FIELDS = frozenset({"schemaVersion", "summary", "path", "relati
     "resourceRevision", "readOrigin", "startLine", "endLine", "nextLineOffset", "nextOffset",
     "offset", "size", "contentBytes", "truncated", "receipt", "output", "stdout", "stderr",
     "exitCode", "timedOut", "outputLimited", "outputBytes", "terminal", "retryable", "terminalReason"})
-_EVIDENCE_ARCHIVE_BYTES = 256000
+# Full scoped receipts live in the existing paginated media owner, not the
+# bounded inline context. Stay within that owner's text attachment limit.
+_EVIDENCE_ARCHIVE_BYTES = _ARTIFACT_FILE_BYTES
+_EVIDENCE_RECORD_BYTES = 512000
 _COMMAND_RECEIPT_SEMANTICS = {
     "schemaVersion": "rag-ime.workspace-command-receipt.v1",
     "owner": "WorkspaceHarness._run_sandboxed",
@@ -257,7 +260,9 @@ class JevMaterialService:
             if (actor.get("status") != "active" or actor.get("roomId") != snapshot.room_id
                 or actor.get("sessionId") != request.get("sessionId")):
                 return missing
-            history = self.service.runtime.session_snapshot(request["sessionId"])
+            reader = getattr(self.service.runtime, "session_tool_evidence", None)
+            history = (reader(request["sessionId"], turn_id=receipt["turnId"]) if callable(reader)
+                       else self.service.runtime.session_snapshot(request["sessionId"]))
         except (AttributeError, KeyError, ValueError, RuntimeError, OSError):
             return missing
         if not isinstance(history, Mapping) or not isinstance(history.get("toolHistoryEvents"), list):
@@ -291,12 +296,13 @@ class JevMaterialService:
             if start and start["payload"].get("toolName") != name:
                 partial = True
                 continue
+            # A completion without an inspectable result (such as a cold PTC
+            # child receipt) is missing evidence, not a still-running tool.
+            finished_ids.add(call_id)
             raw = payload.get("result")
             if not isinstance(raw, Mapping):
                 partial = True
                 continue
-            # Archive limits do not turn an observed completion into a pending call.
-            finished_ids.add(call_id)
             result = {key: value for key, value in raw.items() if key in _EVIDENCE_RESULT_FIELDS}
             # Never forward image bytes, private assistant messages, reasoning,
             # Room lists, governance internals or memory checkpoint metadata.
@@ -322,7 +328,9 @@ class JevMaterialService:
                 result["content"] = raw["content"]
             result = inspectable_tool_result(result)
             arguments = start.get("payload", {}).get("args", {})
-            argument_source = "runtime_redacted_arguments"
+            argument_source = start.get("payload", {}).get("argumentSource", "runtime_redacted_arguments")
+            if argument_source not in {"native_transcript_arguments", "native_nested_call_arguments"}:
+                argument_source = "runtime_redacted_arguments"
             # Native bash's public args intentionally shorten paths. Its applied
             # owner receipt retains the exact request, with its own causal binding.
             approval = raw.get("approval", {})
@@ -348,7 +356,7 @@ class JevMaterialService:
                 record["receiptSemantics"] = {**_COMMAND_RECEIPT_SEMANTICS, "receiptPath": "result"}
             if not start or _source_truncated(raw):
                 partial = True
-            bounded = _bounded_evidence(record, 64000)
+            bounded = _bounded_evidence(record, _EVIDENCE_RECORD_BYTES)
             if bounded is not record:
                 record = {key: value for key, value in record.items() if key not in {"arguments", "result"}}
                 record["result"] = bounded
@@ -357,7 +365,7 @@ class JevMaterialService:
             # Keep the latest bounded execution suffix: final tests and readback
             # receipts must not lose their place to earlier large file reads.
             # Eviction remains explicit partial evidence, never a success signal.
-            while records and (len(records) >= 64 or archive_bytes + size > _EVIDENCE_ARCHIVE_BYTES):
+            while records and archive_bytes + size > _EVIDENCE_ARCHIVE_BYTES:
                 records.pop(0)
                 archive_bytes -= record_sizes.pop(0)
                 omitted += 1

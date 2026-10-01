@@ -21,6 +21,49 @@ from rag_ime.pi.transcript import (
 
 
 class PiRuntimeTranscriptTests(unittest.TestCase):
+    def test_bound_evidence_keeps_full_arguments_without_expanding_public_history(self):
+        script = "const steps = " + json.dumps(["公开操作" * 100] * 80) + "; console.log(steps.length)"
+        messages = []
+        for turn in ("old", "accepted", "next"):
+            messages.extend([
+                {"role": "user", DURABLE_TURN_ID_KEY: turn, "content": "private prompt"},
+                {"role": "assistant", "content": [{"type": "toolCall", "id": turn + ":browser",
+                    "name": "browser", "arguments": {"op": "run", "script": script,
+                        "timeoutMs": 120000, "apiKey": "private-credential"}}]},
+                {"role": "toolResult", "toolCallId": turn + ":browser", "toolName": "browser",
+                    "details": {"stdout": "done"}},
+            ])
+        original = deepcopy(messages)
+        public = durable_tool_history_events(messages, session_id="worker", maximum_tools=None,
+                                            maximum_public_chars=None)
+        evidence = durable_tool_history_events(messages, session_id="worker", maximum_tools=None,
+            maximum_public_chars=None, evidence_turn_id="accepted")
+        self.assertEqual({e["turnId"] for e in evidence}, {"accepted"})
+        started = next(e for e in evidence if e["eventType"] == "tool_started")
+        self.assertEqual(started["payload"]["args"]["script"], script)
+        self.assertEqual(started["payload"]["args"]["timeoutMs"], 120000)
+        self.assertEqual(started["payload"]["argumentSource"], "native_transcript_arguments")
+        self.assertNotIn("private-credential", json.dumps(evidence))
+        self.assertNotIn("private prompt", json.dumps(evidence))
+        public_started = next(e for e in public if e["eventId"] == started["eventId"])
+        self.assertEqual(len(public_started["payload"]["args"]["script"]), 500)
+        self.assertEqual(started.get("timelineSequence"), public_started.get("timelineSequence"))
+        self.assertEqual(messages, original)
+
+    def test_bound_codemode_arguments_are_full_but_missing_nested_results_stay_missing(self):
+        script = "console.log(" + json.dumps("合法操作" * 1000) + ")"
+        messages = [{"role": "user", DURABLE_TURN_ID_KEY: "ptc-turn", "content": "task"},
+            {"role": "toolResult", "toolCallId": "outer", "toolName": "codemode", "nestedCalls": {
+                "calls": [{"id": "inner", "name": "browser", "status": "ok",
+                    "arguments": {"op": "run", "script": script, "authorization": "private-secret"}}]}}]
+        events = durable_tool_history_events(messages, session_id="worker", evidence_turn_id="ptc-turn")
+        child = [e for e in events if e["payload"].get("toolCallId") == "inner"]
+        self.assertEqual(len(child), 2)
+        self.assertEqual(child[0]["payload"]["args"]["script"], script)
+        self.assertEqual(child[0]["payload"]["argumentSource"], "native_nested_call_arguments")
+        self.assertNotIn("result", child[1]["payload"])
+        self.assertNotIn("private-secret", json.dumps(events))
+
     def test_projection_can_import_and_run_without_starting_host_or_opening_storage(
         self,
     ) -> None:

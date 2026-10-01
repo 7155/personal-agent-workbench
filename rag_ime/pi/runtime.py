@@ -2308,6 +2308,25 @@ class PiRuntimeHostManager:
                 )
             )
 
+    def session_tool_evidence(self, session_id: str, *, turn_id: str) -> dict[str, object]:
+        """Read one bound turn's durable tools without starting a model or Host.
+
+        Callers validate task/dispatch authority before asking for this internal
+        projection. Original arguments survive UI preview limits; credentials
+        remain masked and private conversation/reasoning is never returned.
+        """
+        if not isinstance(turn_id, str) or not turn_id:
+            raise ValueError("tool evidence requires an exact turn")
+        snapshot = self._durable_history_snapshot(session_id)
+        if snapshot is None:
+            raise AgentRuntimeError("durable tool evidence is unavailable")
+        messages, entries = durable_branch_messages(snapshot.get("entries") or [],
+            leaf_id=str(snapshot.get("leafId") or ""))
+        events = durable_tool_history_events(messages, session_id=session_id, raw_entries=entries,
+            maximum_tools=None, maximum_public_chars=None, evidence_turn_id=turn_id)
+        return {"sessionId": session_id, "turnId": turn_id, "toolHistoryEvents": [
+            event for event in events if event.get("eventType") in {"tool_started", "tool_finished"}]}
+
     def session_snapshot(self, session_id: str) -> dict[str, object]:
         session = self.sessions.get(session_id)
         binding = self.sessions.runtime_binding(session_id)

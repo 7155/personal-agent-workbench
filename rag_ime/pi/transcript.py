@@ -567,14 +567,15 @@ def durable_tool_history_events(
     raw_entries: Sequence[object] | None = None,
     maximum_tools: int | None = 256,
     maximum_public_chars: int | None = 48_000,
+    evidence_turn_id: str = "",
 ) -> list[dict[str, object]]:
     """Rebuild the public tool timeline from Pi's durable transcript.
 
     The conversation transcript intentionally hides protocol messages, but the
     tool activity strip still needs to survive a Gateway restart or replay
     eviction. Only the same redacted projection used by live events is rebuilt
-    here; full arguments and results remain available solely through the
-    local-only transient Debug endpoint.
+    here. The internal evidence reader may select one exact turn and preserve
+    its credential-masked arguments; this does not expand public history.
     """
 
     events: list[tuple[str, str, str, int, dict[str, object], float | None]] = []
@@ -667,9 +668,13 @@ def durable_tool_history_events(
                 payload: dict[str, object] = {
                     "toolCallId": tool_call_id,
                     "toolName": tool_name,
-                    "args": redact_mapping(raw_args),
+                    "args": (inspectable_tool_result(raw_args)
+                             if evidence_turn_id and turn_id == evidence_turn_id
+                             else redact_mapping(raw_args)),
                     "isError": False,
                 }
+                if evidence_turn_id and turn_id == evidence_turn_id:
+                    payload["argumentSource"] = "native_transcript_arguments"
                 public_result = public_code_tool_activity(tool_name, raw_args)
                 public_result.update(
                     public_knowledge_tool_activity(tool_name, raw_args)
@@ -711,7 +716,8 @@ def durable_tool_history_events(
         tool_names[tool_call_id] = tool_name
         raw_result = _pi_tool_result(raw)
         raw_args = tool_arguments.get(tool_call_id, {})
-        nested_calls = public_codemode_nested_calls(raw)
+        nested_calls = public_codemode_nested_calls(raw,
+            inspectable_arguments=bool(evidence_turn_id and turn_id == evidence_turn_id))
         for nested_index, nested_call in enumerate(nested_calls):
             nested_id = str(nested_call.get("id") or "").strip()
             nested_name = str(nested_call.get("name") or "").strip() or "tool"
@@ -729,7 +735,7 @@ def durable_tool_history_events(
                 "isError": nested_status in {"error", "cancelled"},
                 "status": nested_status,
             }
-            for key in ("durationMs", "error", "cost", "result"):
+            for key in ("durationMs", "error", "cost", "result", "argumentSource"):
                 if nested_call.get(key) is not None:
                     nested_payload[key] = nested_call[key]
             events.append(
@@ -845,7 +851,8 @@ def durable_tool_history_events(
         allowed_order.append(activity_id)
         used_chars += activity_chars
     allowed_ids = set(allowed_order)
-    selected = [event for event in events if event[0] in allowed_ids]
+    selected = [event for event in events if event[0] in allowed_ids
+                and (not evidence_turn_id or event[2] == evidence_turn_id)]
     result: list[dict[str, object]] = []
     for sequence, (
         tool_call_id,
