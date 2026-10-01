@@ -198,6 +198,79 @@ class CausalDescendantTests(unittest.TestCase):
         self.assertIn("delegation_forced_unproven:child", proof["pending"])
         self.assertIn("background_job:job", proof["pending"])
 
+    def preview(self):
+        self.request.update(purpose="execute", roomId="room", rootId="root", ownerId="partner",
+                            taskRevision=0, assignmentKey="assignment")
+        self.job(turn="turn")
+        self.jobs["job"].update(jobId="job", sessionId="session", command="npm run start -- --port 8787",
+            cwd="/tmp/project", pid=123, startedAtMs=1,
+            causalMetadata={"turnId": "turn", "roomBound": True},
+            roomLineage={"roomId": "room", "rootId": "root", "dispatchId": "dispatch", "taskId": ""})
+        self.submission = {"id": "task", "roomId": "room", "rootTurnId": "root", "state": "review",
+            "revision": 0, "acceptedTurnId": "dispatch", "currentOwnerParticipantId": "partner",
+            "assignmentKey": "assignment", "resultSummary": "Delivered preview retained by its normal job owner",
+            "artifactRefs": [], "evidenceRefs": ["job"]}
+        self.service.room_work = SimpleNamespace(get=Mock(side_effect=lambda identity: copy.deepcopy(self.submission)))
+
+    def test_submitted_owned_live_preview_does_not_block_completed_pi_turn(self):
+        self.preview()
+        proof = self.proof()
+        self.assertTrue(proof["settled"], proof)
+        resource = proof["resources"][0]
+        self.assertEqual(resource["state"], "running")
+        self.assertEqual(resource["endedAtMs"], 0)
+        self.assertEqual(resource["retention"]["kind"], "retained_preview")
+        self.assertTrue(resource["retention"]["submissionRef"].startswith("work-submission:"))
+        self.assertTrue(execution_drained(self.service, self.request, self.accepted)["effectsReconciled"])
+        self.service.runtime.abort_turn.assert_not_called()
+
+    def test_preview_reference_does_not_release_other_live_jobs_or_children(self):
+        self.preview()
+        self.job("unfinished-test", turn="turn")
+        self.child()
+        proof = self.proof()
+        self.assertFalse(proof["settled"])
+        self.assertNotIn("background_job:job", proof["pending"])
+        self.assertIn("background_job:unfinished-test", proof["pending"])
+        self.assertIn("delegation:child", proof["pending"])
+
+    def test_missing_or_stale_submission_and_wrong_preview_identity_remain_blocking(self):
+        self.preview()
+        original_job, original_submission = copy.deepcopy(self.jobs["job"]), copy.deepcopy(self.submission)
+        variants = [
+            ("submission", "evidenceRefs", []), ("submission", "state", "active"),
+            ("submission", "acceptedTurnId", "other-dispatch"), ("submission", "revision", 1),
+            ("submission", "assignmentKey", "other-assignment"),
+            ("job", "command", "npm run test"), ("job", "command", "npm run start; echo other"),
+            ("job", "status", "cancelling"), ("job", "status", "orphaned"),
+            ("job", "sessionId", "other-session"),
+            ("job", "roomLineage", {**original_job["roomLineage"], "dispatchId": "other-dispatch"}),
+            ("job", "causalMetadata", {"turnId": "other-turn", "roomBound": True}),
+        ]
+        for target, key, value in variants:
+            with self.subTest(target=target, key=key, value=value):
+                self.jobs["job"] = copy.deepcopy(original_job)
+                self.submission = copy.deepcopy(original_submission)
+                (self.jobs["job"] if target == "job" else self.submission)[key] = value
+                self.assertIn("background_job:job", self.proof()["pending"])
+
+    def test_failed_or_aborted_pi_turn_cannot_retain_preview_as_successful_delivery(self):
+        self.preview()
+        for disposition in ("failed", "aborted"):
+            with self.subTest(disposition=disposition):
+                self.service.runtime.await_turn_settled.return_value["receipt"].update(
+                    disposition=disposition, aborted=disposition == "aborted")
+                self.assertIn("background_job:job", self.proof()["pending"])
+
+    def test_preview_submission_changed_during_snapshot_prevents_immutable_drain(self):
+        self.preview()
+        self.service.room_work.get.side_effect = [copy.deepcopy(self.submission),
+            {**self.submission, "acceptedTurnId": "new-dispatch"}]
+        proof = self.proof()
+        self.assertFalse(proof["settled"])
+        self.assertIn("retained_preview_submission_changed:job", proof["pending"])
+        self.assertEqual(proof["proofRef"], "")
+
     def test_actual_terminal_owner_resources_allow_drain(self):
         self.child(state="completed")
         self.job(state="cancelled")

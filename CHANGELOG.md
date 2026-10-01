@@ -14,6 +14,11 @@ source checkpoint is not a signed and notarized macOS binary release.
   collaboration phases from actual events and include truthful delivery
   reports and quick run/check actions.
 
+- Keep explicitly submitted local preview jobs running under their background
+  owner after a successful Pi turn settles. Preserve live job status and Root
+  cancellation, require the exact submission and dispatch, and keep unfinished
+  checks and child executions blocking; preview handoff never accepts the task.
+
 - Add Pi Content V5: result-first tool records with separate argument tabs,
   stable adjacent-image galleries, local draft previews, zoom/comparison, and
   a searchable Session-bound capability catalog. Keep installation, disclosure,
