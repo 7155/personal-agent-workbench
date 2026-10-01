@@ -11,6 +11,9 @@ source checkpoint is not a signed and notarized macOS binary release.
   identity and expand their arguments without inventing missing nested results.
   Drain Browser CLI stdout and stderr before exit so large piped results retain
   their JSON and UTF-8 tails, including failed commands.
+  Reconcile cold codemode Browser children with a unique existing receipt from
+  the same Session, original parameters and native parent execution window;
+  keep missing, ambiguous and failed evidence explicit without replaying calls.
 
 - Read exact Pi turn arguments for task verification instead of shortened UI
   previews. Preserve long credential-masked scripts and more than 64 completed

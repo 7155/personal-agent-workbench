@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -487,6 +487,59 @@ class BrowserControlService:
             payload=command_payload,
         )
 
+    @classmethod
+    def receipt_for_native_run(
+        cls, db_path: str | Path, *, session_id: str, arguments: Mapping[str, object],
+        started_at_ms: int, finished_at_ms: int, status: str,
+    ) -> dict[str, object] | None:
+        """Read one existing receipt for a proven native nested call.
+
+        Pi's cold nested record has arguments and status but no result. The
+        caller supplies its selected turn's parent execution window; accept
+        only one matching command from this Session, never a global trace or
+        a new execution. Ambiguous or incomplete bindings stay unavailable.
+        """
+        if (not session_id or arguments.get("op") != "run"
+            or set(arguments) - {"op", "script", "timeoutMs"}
+            or not isinstance(arguments.get("script"), str)
+            or not arguments["script"] or started_at_ms <= 0
+            or finished_at_ms < started_at_ms
+            or status not in {"ok", "error", "cancelled"}):
+            return None
+        timeout = arguments.get("timeoutMs", 60_000)
+        if isinstance(timeout, bool) or not isinstance(timeout, int):
+            return None
+        expected = {"script": arguments["script"], "timeoutMs": min(max(timeout or 60_000, 1000), 120_000)}
+        expected_status = {"ok": "completed", "error": "failed", "cancelled": "cancelled"}[status]
+        try:
+            with closing(sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    "SELECT * FROM browser_control_commands WHERE session_id=? AND action='run' "
+                    "AND status=? AND created_at_ms>=? AND completed_at_ms<=? LIMIT 257",
+                    (session_id, expected_status, started_at_ms, finished_at_ms),
+                ).fetchall()
+            if len(rows) > 256:
+                return None
+            matches = [row for row in rows if cls._json_object(row['payload_json']) == expected]
+            if len(matches) != 1:
+                return None
+            return cls._command_receipt(matches[0])
+        except (OSError, ValueError, sqlite3.Error):
+            return None
+
+    @classmethod
+    def _command_receipt(cls, row: sqlite3.Row) -> dict[str, object]:
+        result = cls._json_object(row['result_json'])
+        return {
+            "schemaVersion": SCHEMA_VERSION,
+            "ok": row['status'] == 'completed' and result.get('ok', True) is not False,
+            "commandId": row['command_id'], "action": row['action'], "status": row['status'],
+            "durationMs": max(0, int(row['completed_at_ms'] or row['created_at_ms']) - int(row['created_at_ms'])),
+            "failureReason": str(row['failure_reason'] or ''), "result": result,
+            "summary": cls._command_summary(row['action'], row['status'], result),
+        }
+
     def complete_command(self, payload: Mapping[str, object]) -> dict[str, object]:
         command_id = self._identifier(payload.get("commandId"), field="commandId")
         result = payload.get("result") if isinstance(payload.get("result"), Mapping) else {}
@@ -869,18 +922,7 @@ class BrowserControlService:
                 (command_id,),
             ).fetchone()
         assert row is not None
-        result = self._json_object(row["result_json"])
-        return {
-            "schemaVersion": SCHEMA_VERSION,
-            "ok": row["status"] == "completed" and result.get("ok", True) is not False,
-            "commandId": command_id,
-            "action": action,
-            "status": str(row["status"]),
-            "durationMs": max(0, int(row["completed_at_ms"] or self._now_ms()) - int(row["created_at_ms"])),
-            "failureReason": str(row["failure_reason"] or ""),
-            "result": result,
-            "summary": self._command_summary(action, row["status"], result),
-        }
+        return self._command_receipt(row)
 
     def _run_ego_script(
         self,

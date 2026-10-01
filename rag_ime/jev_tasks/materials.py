@@ -16,6 +16,7 @@ from urllib.parse import unquote, urlsplit
 
 from rag_ime.agent_execution_policy import read_only_policy_active, unrestricted_workspace_policy_active
 from rag_ime.agent_workspace_roots import system_wide_workspace_roots
+from rag_ime.browser_control import BrowserControlService
 from rag_ime.pi.public import inspectable_tool_result
 
 from .context import ContextManifest, Material, build_manifest, choose_reading_depth
@@ -268,11 +269,13 @@ class JevMaterialService:
         if not isinstance(history, Mapping) or not isinstance(history.get("toolHistoryEvents"), list):
             return missing
         binding = {**expected, "sessionId": request["sessionId"], "turnId": receipt["turnId"]}
-        events = [event for event in history["toolHistoryEvents"] if isinstance(event, Mapping)
+        bound_events = [event for event in history["toolHistoryEvents"] if isinstance(event, Mapping)
                   and event.get("sessionId") == binding["sessionId"] and event.get("turnId") == binding["turnId"]
                   and event.get("eventType") in {"tool_started", "tool_finished"}
-                  and isinstance(event.get("payload"), Mapping)
-                  and event["payload"].get("toolName") in _EVIDENCE_TOOLS]
+                  and isinstance(event.get("payload"), Mapping)]
+        bound_starts = {event['payload'].get('toolCallId'): event for event in bound_events
+                        if event['eventType'] == 'tool_started'}
+        events = [event for event in bound_events if event['payload'].get('toolName') in _EVIDENCE_TOOLS]
         # Browser discovery/trace can contain unrelated Task Spaces. Share only
         # commands actually invoked by this exact worker turn, not global views.
         browser_calls = {event["payload"].get("toolCallId") for event in events
@@ -300,6 +303,23 @@ class JevMaterialService:
             # child receipt) is missing evidence, not a still-running tool.
             finished_ids.add(call_id)
             raw = payload.get("result")
+            result_source = None
+            if not isinstance(raw, Mapping) and name == 'browser' and start:
+                native = start['payload']
+                parent = bound_starts.get(native.get('parentToolCallId'), {})
+                parent_payload = parent.get('payload', {})
+                if (native.get('argumentSource') == 'native_nested_call_arguments'
+                    and parent_payload.get('toolName') == 'codemode'
+                    and parent_payload.get('argumentSource') == 'native_transcript_arguments'
+                    and isinstance(native.get('args'), Mapping)
+                    and getattr(self.service, 'db_path', None)):
+                    raw = BrowserControlService.receipt_for_native_run(self.service.db_path,
+                        session_id=binding['sessionId'], arguments=native['args'],
+                        started_at_ms=int(parent.get('createdAtMs') or 0),
+                        finished_at_ms=int(event.get('createdAtMs') or 0),
+                        status=str(payload.get('status') or ''))
+                    if raw is not None:
+                        result_source = 'bound_browser_control_receipt'
             if not isinstance(raw, Mapping):
                 partial = True
                 continue
@@ -348,6 +368,8 @@ class JevMaterialService:
                       "finishedAtMs": event.get("createdAtMs"), "timelineSequence": event.get("timelineSequence"),
                       "arguments": arguments, "argumentSource": argument_source,
                       "isError": payload.get("isError"), "result": result}
+            if result_source:
+                record['resultSource'] = result_source
             command_receipt = result.get("receipt") if isinstance(result, Mapping) else None
             if (isinstance(command_receipt, Mapping)
                 and command_receipt.get("schemaVersion") == _COMMAND_RECEIPT_SEMANTICS["schemaVersion"]):

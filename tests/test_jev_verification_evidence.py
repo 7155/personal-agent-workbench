@@ -14,6 +14,7 @@ from unittest.mock import patch
 from rag_ime.agent_media import AgentMediaStore
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.agent_tools import ControlToolGateway
+from rag_ime.browser_control import BrowserControlService
 from rag_ime.jev_tasks.materials import JevMaterialService
 from rag_ime.jev_tasks.types import Task, canonical
 from rag_ime.pi.transcript import durable_branch_messages, durable_tool_history_events
@@ -52,7 +53,7 @@ class WorkerEvidenceTests(unittest.TestCase):
         self.media = AgentMediaStore(db)
         self.media.initialize()
         self.runtime = SimpleNamespace(session_snapshot=Mock(return_value={"toolHistoryEvents": self.events()}))
-        self.service = SimpleNamespace(rooms=self.rooms, sessions=self.sessions, runtime=self.runtime,
+        self.service = SimpleNamespace(db_path=db, rooms=self.rooms, sessions=self.sessions, runtime=self.runtime,
                                        media=self.media, read_media_resource=self.read_media)
         self.materials = JevMaterialService(self.service)
 
@@ -333,6 +334,83 @@ class WorkerEvidenceTests(unittest.TestCase):
         evidence = self.project()
         self.assertEqual(evidence["status"], "partial")
         self.assertEqual(evidence["unfinishedToolCalls"], 0)
+
+    def nested_browser_events(self):
+        args = {"op": "run", "script": "console.log('original execution')", "timeoutMs": 3000}
+        def event(kind, call, name, at, **payload):
+            return {"eventId": call + ':' + kind, "sessionId": self.worker['id'],
+                    "turnId": "turn:a", "eventType": kind, "createdAtMs": at,
+                    "payload": {"toolCallId": call, "toolName": name, **payload}}
+        return [event('tool_started', 'outer', 'codemode', 1000,
+                      argumentSource='native_transcript_arguments', args={'code': 'private orchestration'}),
+                event('tool_started', 'outer/1', 'browser', 2100,
+                      parentToolCallId='outer', argumentSource='native_nested_call_arguments', args=args),
+                event('tool_finished', 'outer/1', 'browser', 2100,
+                      parentToolCallId='outer', status='ok', isError=False),
+                event('tool_finished', 'outer', 'codemode', 2100, result={'private': 'not-shared'})]
+
+    def seed_nested_browser_receipt(self):
+        browser = BrowserControlService(self.sessions.db_path, app_support_root=self.root / 'browser')
+        with browser._connection() as conn:
+            conn.execute("""INSERT INTO browser_control_commands(
+                command_id,device_id,session_id,action,payload_json,status,created_at_ms,completed_at_ms,result_json)
+                VALUES ('bcmd_native','paw-browser',?,'run',?,'completed',1200,2000,?)""",
+                (self.worker['id'], json.dumps({'script': "console.log('original execution')", 'timeoutMs': 3000}),
+                 json.dumps({'ok': True, 'stdout': '{"observed":42}', 'exitCode': 0})))
+        return browser
+
+    def test_cold_nested_browser_result_uses_one_exact_existing_owner_receipt(self):
+        self.seed_nested_browser_receipt()
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': self.nested_browser_events()})
+        evidence = self.project()
+        self.assertEqual(evidence['status'], 'available')
+        tool = evidence['tools'][0]
+        self.assertEqual(tool['toolCallId'], 'outer/1')
+        self.assertEqual(tool['result']['commandId'], 'bcmd_native')
+        self.assertEqual(tool['result']['result']['stdout'], '{"observed":42}')
+        self.assertEqual(tool['resultSource'], 'bound_browser_control_receipt')
+        self.assertNotIn('private orchestration', canonical(evidence))
+
+    def test_cold_nested_browser_receipt_rejects_mismatch_and_ambiguity(self):
+        browser = self.seed_nested_browser_receipt()
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': self.nested_browser_events()})
+        for field, value in [('session_id', self.outsider['id']), ('created_at_ms', 999),
+                             ('completed_at_ms', 2200), ('status', 'claimed'),
+                             ('payload_json', '{"script":"different","timeoutMs":3000}')]:
+            with self.subTest(field=field), browser._connection() as conn:
+                original = conn.execute('SELECT '+field+' FROM browser_control_commands').fetchone()[0]
+                conn.execute('UPDATE browser_control_commands SET '+field+'=?', (value,))
+                conn.commit()
+                try:
+                    self.assertIn(self.project()['status'], {'partial', 'unavailable'})
+                finally:
+                    conn.execute('UPDATE browser_control_commands SET '+field+'=?', (original,))
+        with browser._connection() as conn:
+            conn.execute("""INSERT INTO browser_control_commands(
+                command_id,device_id,session_id,action,payload_json,status,created_at_ms,
+                claimed_at_ms,claimed_by,result_json,failure_reason,completed_at_ms)
+                SELECT 'bcmd_ambiguous', device_id, session_id, action, payload_json, status,
+                       created_at_ms, claimed_at_ms, claimed_by, result_json, failure_reason, completed_at_ms
+                FROM browser_control_commands WHERE command_id='bcmd_native'""")
+        self.assertIn(self.project()['status'], {'partial', 'unavailable'})
+
+    def test_cold_nested_browser_failure_is_retained_and_unproven_parent_is_rejected(self):
+        browser = self.seed_nested_browser_receipt()
+        with browser._connection() as conn:
+            conn.execute("UPDATE browser_control_commands SET status='failed',result_json=?,failure_reason='script_failed'",
+                         (json.dumps({'ok': False, 'stderr': 'original failure', 'exitCode': 1}),))
+        events = self.nested_browser_events()
+        events[2]['payload'].update(status='error', isError=True)
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': events})
+        tool = self.project()['tools'][0]
+        self.assertTrue(tool['isError'])
+        self.assertEqual(tool['result']['status'], 'failed')
+        self.assertEqual(tool['result']['result']['stderr'], 'original failure')
+        for event_index in (0, 1):
+            unbound = copy.deepcopy(events)
+            unbound[event_index]['payload'].pop('argumentSource')
+            self.runtime.session_tool_evidence.return_value = {'toolHistoryEvents': unbound}
+            self.assertIn(self.project()['status'], {'partial', 'unavailable'})
 
     def test_exact_owner_command_is_used_only_with_matching_causal_receipt(self):
         events = self.events()
