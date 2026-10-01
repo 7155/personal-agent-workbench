@@ -431,7 +431,10 @@ class WorkerEvidenceTests(unittest.TestCase):
 
 class VerificationPreparationTests(host.JevHostFixture):
     def test_prepared_verifier_persists_exact_results_and_readable_media(self):
-        created = self.create()
+        created = self.app.create(self.room["id"], {
+            "clientMessageId": "inspect-evidence", "message": "独立检查计算结果",
+            "strategy": "direct", "modelRouting": "participant", "verificationMode": "independent",
+        })
         self.app.tick()
         effect = next(e for e in self.app.projection(self.room["id"], created["graphId"])["effects"]
                       if e["operation"] == "dispatch")
@@ -459,7 +462,9 @@ class VerificationPreparationTests(host.JevHostFixture):
         instructions = verifier["request"]["taskBrief"]["objective"].split("\nExecutionPack:\n")[0]
         self.assertIn("现有read工具", instructions)
         self.assertIn("offset=1、limit=2000", instructions)
-        self.assertIn("行号，不是字节偏移", instructions)
+        self.assertIn("按返回的nextLineOffset继续读取", instructions)
+        self.assertIn("长JSON行会无损分段", instructions)
+        self.assertIn("offset/limit不是字节偏移", instructions)
         self.assertNotIn("用workspace_read", instructions)
         evidence = pack["workerToolEvidence"]
         self.assertEqual(evidence["binding"]["dispatchId"], effect["effectId"])

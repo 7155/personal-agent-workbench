@@ -306,6 +306,36 @@ class AgentSessionPolicyService:
         )
         return response
 
+    def select_codemode_mode(
+        self,
+        session_id: str,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        selected = self.runtime.set_codemode_mode(
+            session_id,
+            mode=_required_text(payload, "mode"),
+        )
+        response = {
+            "schemaVersion": "rag-ime.agent-session-codemode-selection.v1",
+            "ok": True,
+            "sessionId": session_id,
+            "codemodeMode": str(selected.get("codemodeMode") or ""),
+            "capability": dict(selected.get("capability") or {}),
+        }
+        self.events.publish(
+            session_id,
+            "session_configuration_changed",
+            {
+                "kind": "codemode",
+                "codemodeMode": response["codemodeMode"],
+            },
+        )
+        validate_contract(
+            response,
+            "agent-session-codemode-selection.v1.json",
+        )
+        return response
+
     def update_session(
         self,
         session_id: str,

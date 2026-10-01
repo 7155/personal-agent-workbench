@@ -716,6 +716,13 @@ export const CONTROL_ROUTES = {
     body: ['level'],
     requiredBody: ['level'],
   },
+  'agent.session.codemode.select': {
+    method: 'POST',
+    path: '/api/agent/sessions/:sessionId/codemode',
+    params: { sessionId: null },
+    body: ['mode'],
+    requiredBody: ['mode'],
+  },
   'agent.session.events': {
     method: 'GET',
     path: '/api/agent/sessions/:sessionId/events',
@@ -729,6 +736,13 @@ export const CONTROL_ROUTES = {
     path: '/api/agent/sessions/:sessionId/background-jobs',
     params: { sessionId: null },
     query: ['limit', 'status'],
+  },
+  'agent.session.backgroundJob.start': {
+    method: 'POST',
+    path: '/api/agent/sessions/:sessionId/background-jobs/start',
+    params: { sessionId: null },
+    body: ['action', 'projectId', 'cwd', 'label', 'idempotencyKey', 'previewUrl', 'timeoutSeconds'],
+    requiredBody: ['action', 'projectId', 'cwd'],
   },
   'agent.session.backgroundJob.get': {
     method: 'GET',

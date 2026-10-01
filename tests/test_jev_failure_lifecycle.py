@@ -19,6 +19,8 @@ from tests import test_jev_host_application as host
 def choose_valid_progress(state, questions):
     """Deterministically pick a valid offered action, never invent a transition."""
     actions = json.loads(state)["actions"]
+    if json.loads(state).get("work", {}).get("context", {}).get("verificationRoute"):
+        actions = [action for action in actions if action["operation"] == "verify"]
     order = {name: rank for rank, name in enumerate(("accept", "return", "claim_dispatch", "retry", "reassign", "direct", "plan", "wait"))}
     chosen = min(actions, key=lambda action: (order.get(action["operation"], 99), action["id"]))["id"]
     criteria = questions["decision"]["criteria"]
@@ -260,6 +262,29 @@ class JevFailureLifecycleTests(host.JevHostFixture):
         children = [task for task in self.snapshot(created).tasks if task.id != created["workItemId"]]
         self.assertEqual(len(children), 2)
         self.assertTrue(all(task.state == "done" and task.evidence for task in children))
+
+    def test_long_final_report_settles_and_publishes_without_overflowing_work_summary(self):
+        created = self.planned(dependent=True)
+        for label in ("a", "b"):
+            worker = self.active_effect(created, "execute")
+            self.submit(worker, "result_submit", self.result(label))
+            self.finish(worker)
+            verifier = self.active_effect(created, "verify")
+            self.submit(verifier, "verification_submit", self.verdict())
+            self.finish(verifier)
+        synthesizer = self.active_effect(created, "synthesize")
+        narrative = "真实验证与成果说明。" * 500 + "报告末尾保留"
+        self.submit(synthesizer, "final_submit", {"content": narrative, "evidenceRefs": ["test:full-report"]})
+        self.finish(synthesizer)
+        for _ in range(3):
+            self.app.tick(limit=16)
+        view = self.app.projection(self.room["id"], created["graphId"])
+        self.assertEqual(view["phase"], "final")
+        self.assertEqual(view["final"]["status"], "completed")
+        self.assertIn(narrative, view["final"]["content"])
+        self.assertLessEqual(len(self.service.room_work.get(created["workItemId"])["resultSummary"]), 4000)
+        with self.app.ledger.connection() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_jev_executor_claims WHERE graph_id=?", (created["graphId"],)).fetchone()[0], 0)
 
     def test_failed_dependency_is_never_dispatched(self):
         created = self.planned(dependent=True)

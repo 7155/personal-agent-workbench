@@ -1,3 +1,4 @@
+import './paw-chat-priority.css';
 import {
   Archive,
   ArchiveRestore,
@@ -34,6 +35,9 @@ import { parsePiModelCatalogOptions, type PiModelOption } from '@/features/agent
 import { roleItems, sessionItems, type SessionSummary } from '@/features/agent/types';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
+import type { RoomProjectionState } from '@/contracts/room-reducer';
+import { buildRoomCollabTimeline } from '@/features/collab-timeline/room-timeline';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { selectActivePublicRoomTurn, selectPublicRoomTurnOrder } from '@/features/rooms/runtime/room-execution-lanes';
 import { publicAgentErrorText } from '@/features/agent/public-error';
 import { evidenceEchoFocusFromRoute } from '@/features/evidence-echo/evidence-echo';
@@ -337,7 +341,7 @@ export function PawAgentApp({
         kind: 'room',
         id: selectedRoom.id,
         title: selectedRoom.title,
-        subtitle: selectedRoom.description,
+        subtitle: selectedRoom.description === selectedRoom.title ? undefined : selectedRoom.description,
       });
     }
   }, [desktop, selectedRoom, selectedSessionRecord, selection.kind, surfaceIdentity?.windowId]);
@@ -387,27 +391,20 @@ export function PawAgentApp({
     }
   }
 
+  const workspaceOptions = <Menu><MenuTrigger asChild><button ref={organizationToggleRef} aria-label="工作台选项" type="button"><MoreHorizontal size={16} /></button></MenuTrigger><MenuContent align="start">
+    <MenuItem onSelect={() => setSelection({ kind: 'new' })}>返回复工首页</MenuItem>
+    <MenuItem onSelect={() => setOrganizationOpen(open => !open)}>工作空间</MenuItem>
+    <MenuSeparator />
+    <MenuItem onSelect={() => setInterfaceMode(interfaceMode === 'jev' ? 'traditional' : 'jev')}>切换到{interfaceMode === 'jev' ? '传统' : 'Jev'}界面</MenuItem>
+  </MenuContent></Menu>;
   const railToggle = <button aria-controls="paw-agent-work-records" aria-expanded={railOpen} aria-label={railOpen ? '收起工作记录' : '打开工作记录'} className="paw-agent-rail-toggle" onClick={() => setRailOpen((open) => !open)} ref={railToggleRef} type="button"><PanelLeft size={16} /></button>;
   return (
-    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} role="region">
-      <header className="paw-agent-modebar" inert={railOpen}>
-        {interfaceMode === 'jev' && selection.kind === 'room' ? <Menu>
-          <MenuTrigger asChild><button ref={organizationToggleRef} aria-label="工作台选项" title="工作台选项" type="button"><MoreHorizontal size={18} /></button></MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem onSelect={() => setSelection({ kind: 'new' })}>返回复工首页</MenuItem>
-            <MenuItem onSelect={() => setOrganizationOpen(open => !open)}>工作空间</MenuItem>
-            <MenuSeparator />
-            <MenuItem onSelect={() => setInterfaceMode('traditional')}>切换到传统界面</MenuItem>
-            {roomEntry.error ? <MenuItem onSelect={roomEntry.refresh}>工作记录待同步 · 重试</MenuItem> : null}
-          </MenuContent>
-        </Menu> : <>
-        {selection.kind === 'room' && roomEntry.mode && roomEntry.error ? <button type="button" title={roomEntry.error} onClick={roomEntry.refresh}>工作记录待同步 · 重试</button> : null}
-        {interfaceMode === 'jev' && selection.kind !== 'new' ? <button type="button" onClick={() => setSelection({ kind: 'new' })}>返回复工首页</button> : null}
+    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} data-compact-work={selection.kind !== 'new' || undefined} role="region">
+      {selection.kind === 'new' ? <header className="paw-agent-modebar" inert={railOpen}>
         <AgentModeSwitch mode={interfaceMode} onChange={setInterfaceMode} />
         {interfaceMode === 'jev' ? <button ref={organizationToggleRef} aria-expanded={organizationOpen} onClick={() => setOrganizationOpen(open => !open)} type="button">工作空间</button> : null}
-        </>}
-      </header>
-      {windowChromeTarget ? <PawWindowLeadingPortal>{railToggle}</PawWindowLeadingPortal> : null}
+      </header> : !windowChromeTarget ? <div className="paw-workspace-options">{workspaceOptions}</div> : null}
+      {windowChromeTarget ? <PawWindowLeadingPortal>{railToggle}{selection.kind !== 'new' ? workspaceOptions : null}</PawWindowLeadingPortal> : null}
       <aside aria-label="Agent 工作记录" className="paw-agent-rail" id="paw-agent-work-records" inert={!railOpen}>
         <header>
           <span><strong>工作记录</strong></span>
@@ -469,6 +466,7 @@ export function PawAgentApp({
         <div className="paw-agent-content">
         {selection.kind === 'new' ? (
           <PawAgentHome
+            active={surfaceActive ?? true}
             interfaceMode={interfaceMode}
             catalogError={loadError}
             catalogLoading={loading}
@@ -667,11 +665,24 @@ function RoomWorkRow({ active, onClick, room }: { active: boolean; onClick: () =
     projection.state = running ? 'working' : latest.status === 'failed' ? 'attention'
       : ['completed', 'aborted'].includes(latest.status) ? 'complete' : 'neutral';
   }
-  return <WorkRow active={active} onClick={onClick} projection={projection} title={room.title} />;
+  return <WorkRow active={active} onClick={onClick} projection={projection} title={room.title}
+    extra={<RoomPlanetStrip room={room} projection={live && !live.needsSnapshot ? live : undefined} />} />;
 }
 
-function WorkRow({ active, onClick, projection, title, trailing }: { active: boolean; onClick: () => void; projection: WorkFileProjection; title: string; trailing?: ReactNode }) {
-  return <div className="paw-agent-row-shell" data-active={active || undefined} data-work-state={projection.state}><button aria-current={active ? 'page' : undefined} className="paw-agent-row" onClick={onClick} title={title} type="button"><FileText aria-hidden="true" size={15} /><span><strong>{title}</strong><small>{projection.meta}</small><small className="paw-agent-row__detail">{projection.detail}</small></span></button>{trailing}</div>;
+/** Tiny per-planet state strip: who worked this round and who is working now. */
+function RoomPlanetStrip({ room, projection }: { room: RoomSummary; projection?: RoomProjectionState }) {
+  const timeline = useMemo(() => (projection ? buildRoomCollabTimeline({ room, projection }) : undefined), [room, projection]);
+  const lanes = (timeline?.lanes ?? []).filter((lane) => lane.kind === 'partner').slice(0, 6);
+  if (!timeline || !lanes.length) return null;
+  return <span className="paw-agent-row__planets" aria-label={lanes.map((lane) => `${lane.label} ${lane.status}`).join('，')}>
+    {lanes.map((lane) => <span key={lane.id} data-state={lane.state} title={`${lane.label} · ${lane.status}`}>
+      <RoomPlanetAvatar ordinal={lane.ordinal ?? 0} size={16} decorative activity={['working', 'thinking', 'reviewing'].includes(lane.state) ? 'working' : lane.state === 'done' ? 'static' : 'static'} />
+    </span>)}
+  </span>;
+}
+
+function WorkRow({ active, onClick, projection, title, trailing, extra }: { active: boolean; onClick: () => void; projection: WorkFileProjection; title: string; trailing?: ReactNode; extra?: ReactNode }) {
+  return <div className="paw-agent-row-shell" data-active={active || undefined} data-work-state={projection.state}><button aria-current={active ? 'page' : undefined} className="paw-agent-row" onClick={onClick} title={title} type="button"><FileText aria-hidden="true" size={15} /><span><strong>{title}</strong><small>{projection.meta}</small><small className="paw-agent-row__detail">{projection.detail}</small>{extra}</span></button>{trailing}</div>;
 }
 
 function SessionActions({ onArchive, onDelete, session }: { onArchive: () => void; onDelete: () => void; session: SessionSummary }) {

@@ -3182,8 +3182,24 @@ class ControlToolGatewayTests(unittest.TestCase):
         collaboration.read_media_resource = lambda *args, **kwargs: (
             {"mimeType": "text/plain"}, b"x" * (40 * 1024 + 1),
         )
-        with self.assertRaisesRegex(ValueError, "exceeds native read limit"):
-            native_read("media://media_abcdefghijkl", lineOffset=1)
+        page = native_read("media://media_abcdefghijkl", lineOffset=1)
+        self.assertEqual(page["lineLayout"], "bounded_segments")
+        self.assertEqual(page["nextLineOffset"], 2)
+        continuation = native_read("media://media_abcdefghijkl", lineOffset=page["nextLineOffset"])
+        self.assertEqual(page["content"] + continuation["content"], "x" * (40 * 1024 + 1))
+        self.assertIsNone(continuation["nextLineOffset"])
+        self.assertEqual(page["resourceRevision"], continuation["resourceRevision"])
+        original = '{"text":"' + "证据🌱" * 20000 + '"}\nnext\n'
+        collaboration.read_media_resource = lambda *args, **kwargs: (
+            {"mimeType": "text/plain"}, original.encode(),
+        )
+        pieces, offset = [], 1
+        while offset is not None:
+            page = native_read("media://media_abcdefghijkl", lineOffset=offset)
+            self.assertLessEqual(page["contentBytes"], 40 * 1024)
+            pieces.append(page["content"])
+            offset = page["nextLineOffset"]
+        self.assertEqual("".join(pieces), original)
 
     def test_workspace_job_starts_only_after_hash_bound_approval_and_exposes_logs(self) -> None:
         workspace = Path(self.tmp.name) / "background-workspace"

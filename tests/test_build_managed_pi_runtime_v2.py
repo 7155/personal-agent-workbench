@@ -25,6 +25,7 @@ from scripts.build_managed_pi_runtime_v2 import (
     SESSION_RUNTIME_CONTRACT,
     _SESSION_RUNTIME_SOURCE_KEYS,
     _copy_bundled_pi_packages,
+    _bundle_codemode_runtime_assets,
     _hash_extension_app_pi_packages,
     _copy_product_skills,
     _normalize_bundled_overlay_paths,
@@ -524,6 +525,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                 "session.abort",
                 "session.compact",
                 "session.model.set",
+                "session.codemode.set",
                 "session.thinking.set",
                 "session.close",
                 "room.dispatch",
@@ -817,6 +819,29 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                     "must be under integrations/rag-ime-runtime-host",
                 ):
                     _verified_session_runtime_contract(root)
+
+    def test_codemode_payload_preserves_native_worker_and_wasm(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "packages/coding-agent/src/extensions/codemode/worker.ts"
+            source.parent.mkdir(parents=True)
+            source.write_text("native worker source")
+            package = root / "node_modules/quickjs-wasi"
+            package.mkdir(parents=True)
+            (package / "quickjs.wasm").write_bytes(b"native-wasm-fixture")
+            runtime = root / "payload/runtime-host"
+            runtime.mkdir(parents=True)
+            with patch("scripts.build_managed_pi_runtime_v2._run") as run:
+                self.assertTrue(_bundle_codemode_runtime_assets(
+                    esbuild=root / "esbuild", pi_root=root, runtime_dir=runtime))
+            self.assertEqual((runtime / "node_modules/quickjs-wasi/quickjs.wasm").read_bytes(), b"native-wasm-fixture")
+            command = run.call_args.args[0]
+            self.assertIn(str(source), command)
+            self.assertIn(f"--outfile={runtime / 'codemode-worker.js'}", command)
+            self.assertEqual(json.loads((runtime / "package.json").read_text()), {"type": "module"})
+            (package / "quickjs.wasm").unlink()
+            with self.assertRaises(ManagedPiRuntimeError):
+                _bundle_codemode_runtime_assets(esbuild=root / "esbuild", pi_root=root, runtime_dir=root / "missing")
 
     def test_oauth_runtime_smoke_loads_every_lazy_module_and_derives_codex_auth(
         self,

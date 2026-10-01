@@ -1,5 +1,11 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
-import type { ComponentProps } from 'react';
+import { useMemo, type ComponentProps } from 'react';
+import type { AgentSubagentRunV1 } from '@/contracts/generated/agent-subagent-run.v1';
+import type { RoomProjectionState } from '@/contracts/room-reducer';
+import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
+import { RoomCollabTimeline } from '@/features/collab-timeline/RoomCollabTimeline';
+import { usePawOsDesktop } from '@/features/paw-os/surface-context';
+import type { RoomSummary } from '@/features/rooms/room-types';
 import { useControlTransport } from '@/app/control-transport';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import { hasActiveSubagentRuns, subagentRuns } from '@/features/agent/status/subagent-data';
@@ -13,8 +19,32 @@ export function PawRoomLiveFocusOverview({
   active = true,
   ...props
 }: ComponentProps<typeof PawRoomFocusOverview> & { roomId: string; active?: boolean }) {
-  const data = useRoomLiveFocusData(roomId, props.focus, active);
+  const { rawSatellites: _raw, ...data } = useRoomLiveFocusData(roomId, props.focus, active);
   return <PawRoomFocusOverview {...props} {...data} />;
+}
+
+/** Room timeline with each partner's retained Tool Agent satellites joined in. */
+export function RoomCollabTimelineLive({ roomId, focus, room, projection, graph, active = true, onOpenParticipant, onSelectRoot }: {
+  roomId: string;
+  focus?: RoomFocusProjection;
+  room: RoomSummary;
+  projection?: RoomProjectionState;
+  graph?: JevSnapshot | null;
+  onSelectRoot?: (rootId: string) => void;
+  active?: boolean;
+  onOpenParticipant?: (participantId: string) => void;
+}) {
+  const desktop = usePawOsDesktop();
+  const empty = useMemo<RoomFocusProjection>(() => ({ goal: { title: '', description: '', rootId: '', state: 'idle' }, workItems: [], partners: [], handoffs: [], flow: [], rootEvidence: [], counts: { active: 0, review: 0, blocked: 0, completed: 0 } }), []);
+  const data = useRoomLiveFocusData(roomId, focus ?? empty, active);
+  const satellites = useMemo(() => Object.fromEntries((focus?.partners ?? []).map((partner) => [partner.sessionId, data.rawSatellites[partner.participantId] ?? []])), [focus, data.rawSatellites]);
+  return <RoomCollabTimeline room={room} projection={projection} graph={graph} onSelectRoot={onSelectRoot} satellites={satellites} active={active}
+    {...(onOpenParticipant ? { onOpenParticipant } : {})}
+    onOpenSatellite={(lane) => {
+      const owner = room.participants.find((participant) => participant.id === lane.parentId);
+      if (!owner || !desktop || !lane.runId) return;
+      desktop.openWindow({ appId: 'agent', target: { kind: 'subagent', id: lane.runId, sessionId: owner.sessionId, title: lane.label, subtitle: `卫星 · ${room.title}` } });
+    }} />;
 }
 
 /** Shared read-only data for the overview and the compact collaboration bar. */
@@ -68,9 +98,14 @@ export function useRoomLiveFocusData(roomId: string, focus: RoomFocusProjection,
     }];
   }));
   const flow = mergeRoomMessageFlow(focus.flow, roomIntercomMessages(intercomQuery.data, roomId));
+  const rawSatellites: Record<string, AgentSubagentRunV1[]> = Object.fromEntries(partners.map((partner, index) => {
+    const query = satelliteQueries[index]!;
+    return [partner.participantId, query.data ? subagentRuns(query.data).filter((run) => !sessionIds.includes(run.childSessionId)) : []];
+  }));
   return {
     focus: { ...focus, flow },
     satellitesByParticipant,
+    rawSatellites,
     intercomStatus: (!reader || intercomQuery.isError ? 'error' : intercomQuery.isSuccess ? 'ready' : 'loading') as 'loading' | 'ready' | 'error',
     onRefreshTraffic: () => { void intercomQuery.refetch(); satelliteQueries.forEach((query) => { void query.refetch(); }); },
   };

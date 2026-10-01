@@ -96,6 +96,10 @@ class RuntimeSessionControls(Protocol):
         self, session_id: str, *, level: str
     ) -> dict[str, object]: ...
 
+    def set_codemode_mode(
+        self, session_id: str, *, mode: str
+    ) -> dict[str, object]: ...
+
 
 class RuntimeSessionBranching(Protocol):
     def model_catalog(self, session_id: str) -> dict[str, object]: ...

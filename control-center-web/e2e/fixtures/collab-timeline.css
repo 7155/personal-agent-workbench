@@ -1,0 +1,16 @@
+body { margin: 0; background: var(--color-canvas); color: var(--color-text); font-family: var(--font-ui); }
+* { box-sizing: border-box; }
+.collab-demo { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; padding: 16px; gap: 16px; }
+.collab-demo-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.collab-demo-header h1 { margin: 0; font-size: var(--text-subsection); }
+.collab-demo-header span { color: var(--color-text-secondary); font-size: var(--text-label); }
+.collab-demo-header button { margin-left: auto; min-height: 36px; padding: 6px 12px; color: inherit; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; font: inherit; }
+.collab-demo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; min-height: 0; }
+.collab-demo-stage { min-width: 0; min-height: 0; overflow: hidden; border-radius: 12px; background: var(--color-paper); }
+.collab-demo-aside { min-width: 0; display: flex; flex-direction: column; gap: 16px; font-size: var(--text-label); }
+.collab-demo-aside label { display: grid; gap: 8px; }
+.collab-demo-aside p { line-height: var(--line-height-ui); }
+@media (max-width: 900px) {
+  .collab-demo-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(580px, 1fr) auto; overflow-y: auto; }
+  .collab-demo-header button { margin-left: 0; }
+}

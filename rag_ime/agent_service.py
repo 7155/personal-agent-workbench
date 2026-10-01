@@ -3860,6 +3860,13 @@ class AgentService:
             payload,
         )
 
+    def select_codemode_mode(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        self._require_mutable_session(session_id)
+        return self.session_policy.select_codemode_mode(
+            session_id,
+            payload,
+        )
+
     def update_session(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         self._require_mutable_session(session_id)
         return self.session_policy.update_session(session_id, payload)
@@ -3912,6 +3919,60 @@ class AgentService:
     def _forkable_session(self, session_id: str) -> dict[str, object]:
         return self.session_branching.forkable_session(session_id)
 
+    @staticmethod
+    def _room_public_projection_events(
+        events: Sequence[Mapping[str, object]],
+        *,
+        session_id: str,
+        participant_id: str,
+    ) -> list[Mapping[str, object]]:
+        """Keep route bindings beside public mirrors for Session projection.
+
+        ``user_message`` is the Room-side fast mirror and the Pi transcript
+        uses the later dispatch client id.  ``route_decision`` is the durable
+        join: it binds that dispatch to exactly one participant Session/root.
+        Without carrying it into the snapshot projector, the downstream layer
+        falls back to a short text/timestamp guess and duplicates long runs.
+        """
+
+        projected: list[Mapping[str, object]] = []
+        for event in events:
+            event_type = str(event.get("eventType") or "")
+            if event_type == "user_message":
+                projected.append(event)
+                continue
+            if (
+                event_type == "room_post"
+                and str(event.get("participantId") or "") == participant_id
+            ):
+                projected.append(event)
+                continue
+            if event_type != "route_decision":
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            target_session_id = str(
+                payload.get("targetSessionId")
+                or event.get("sourceSessionId")
+                or ""
+            )
+            target_participant_id = str(
+                payload.get("targetParticipantId")
+                or event.get("participantId")
+                or ""
+            )
+            if (
+                target_session_id == session_id
+                and (
+                    not target_participant_id
+                    or not participant_id
+                    or target_participant_id == participant_id
+                )
+            ):
+                projected.append(event)
+        return projected
+
     def _room_public_messages_for_session(
         self,
         session_id: str,
@@ -3932,16 +3993,11 @@ class AgentService:
         )
         return {
             "participantId": participant_id,
-            "events": [
-                event
-                for event in events
-                if event.get("eventType") == "user_message"
-                or (
-                    event.get("eventType") == "room_post"
-                    and str(event.get("participantId") or "")
-                    == participant_id
-                )
-            ],
+            "events": self._room_public_projection_events(
+                events,
+                session_id=session_id,
+                participant_id=participant_id,
+            ),
         }
 
     def _recent_room_public_messages_for_session(
@@ -3962,18 +4018,38 @@ class AgentService:
             room_id,
             limit=100,
         )
+        # ``recent_public_messages`` intentionally omits control events.  Read
+        # only the route decisions for the bounded user-message turns so the
+        # recent Session mirror carries the same dispatch identity as Pi's
+        # transcript without loading the full Room event history.
+        route_events: list[Mapping[str, object]] = []
+        seen_turn_ids: set[str] = set()
+        for event in events:
+            if not isinstance(event, Mapping):
+                continue
+            if str(event.get("eventType") or "") != "user_message":
+                continue
+            turn_id = str(event.get("turnId") or "")
+            if not turn_id or turn_id in seen_turn_ids:
+                continue
+            seen_turn_ids.add(turn_id)
+            route_events.extend(
+                self.rooms.list_events_for_turn(
+                    room_id,
+                    turn_id,
+                    event_types=("route_decision",),
+                    limit=100,
+                )
+            )
+        if route_events:
+            events = [*events, *route_events]
         return {
             "participantId": participant_id,
-            "events": [
-                event
-                for event in events
-                if event.get("eventType") == "user_message"
-                or (
-                    event.get("eventType") == "room_post"
-                    and str(event.get("participantId") or "")
-                    == participant_id
-                )
-            ],
+            "events": self._room_public_projection_events(
+                events,
+                session_id=session_id,
+                participant_id=participant_id,
+            ),
         }
 
 

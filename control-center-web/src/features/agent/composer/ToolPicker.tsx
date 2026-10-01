@@ -3,7 +3,7 @@ import { Button, Popover, PopoverContent, PopoverTrigger } from '@/components/pr
 import type { CapabilityCatalog, CapabilityPreference } from '@/features/plugins/capability-policy';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { CapabilityMark } from '../marks/ConversationMarks';
-import type { SessionSummary, ToolManifest } from '../types';
+import type { CodemodeMode, SessionSummary, ToolManifest } from '../types';
 import { countAvailableTools, countRegisteredTools, toolAvailableForConversation } from './tool-policy';
 import { buildCapabilityRows, type CapabilityFilter, type CapabilitySection } from './capability-display';
 import { usePresentationMotion } from '@/features/conversation-ui/reading/reading-preferences';
@@ -12,13 +12,16 @@ import './pi-capabilities.css';
 
 /** One entry for Session and Room. The parent retains reads, writes and confirmation. */
 export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPolicyPending,
+  codemodeMode, codemodeModePending = false,
   tools, status: receivedStatus, session, sessionId = session?.id, disabled, requestOpen, requestQuery = '',
-  onCapabilityPreferenceChange, onSelect,
+  onCapabilityPreferenceChange, onCodemodeModeChange, onSelect,
 }: {
   adjustmentDisabled: boolean; capabilityCatalog?: CapabilityCatalog; capabilityPolicyPending: boolean;
+  codemodeMode?: CodemodeMode; codemodeModePending?: boolean;
   tools: ToolManifest[]; status: 'loading' | 'ready' | 'failed'; session?: SessionSummary; sessionId?: string;
   disabled: boolean; requestOpen: number; requestQuery?: string;
   onCapabilityPreferenceChange: (canonicalId: string, preference: CapabilityPreference) => void;
+  onCodemodeModeChange?: (mode: CodemodeMode) => void;
   onSelect: (tool: ToolManifest) => void;
 }) {
   const desktop = usePawOsDesktop(); const titleId = useId();
@@ -56,6 +59,7 @@ export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPo
       onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }}>
       <div ref={browserRef}><PiCapabilityBrowser rows={rows} query={query} section={section} filter={filter} selectedKey={selectedKey}
         status={status} motion={motion} locked={adjustmentDisabled || disabled} pending={capabilityPolicyPending} titleId={titleId} searchRef={searchRef}
+        codemodeMode={codemodeMode} codemodeModePending={codemodeModePending} onCodemodeModeChange={onCodemodeModeChange}
         onQuery={setQuery} onSection={value => { setSection(value); setSelectedKey(''); }} onFilter={setFilter} onSelect={key => {
           const previous = selectedKey; setSelectedKey(key);
           requestAnimationFrame(() => {

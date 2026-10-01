@@ -949,3 +949,40 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', Uint8Array.from(bytes).buffer);
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
 }
+
+it('honors an explicit request deadline while a response body is stalled', async () => {
+  vi.useFakeTimers();
+  let signal: AbortSignal | undefined;
+  let rejected: unknown;
+  const transport = new HttpControlTransport({ baseUrl: 'http://127.0.0.1:8768', fetch: (async (_input, init) => {
+    signal = init?.signal as AbortSignal;
+    return { ok: true, headers: new Headers({ 'Content-Type': 'application/json' }), text: () => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(signal?.reason), { once: true });
+    }) } as Response;
+  }) as typeof fetch });
+  const request = transport.request({ pathId: 'agent.sessions.list', timeoutMs: 15000 }).catch(error => { rejected = error; });
+  try {
+    await vi.advanceTimersByTimeAsync(15001);
+    expect(signal?.aborted).toBe(true);
+    expect(rejected).toMatchObject({ name: 'TimeoutError' });
+    await request;
+  } finally { vi.useRealTimers(); }
+});
+
+it('preserves caller cancellation and clears the deadline after the request settles', async () => {
+  vi.useFakeTimers();
+  const caller = new AbortController();
+  let signal: AbortSignal | undefined;
+  const transport = new HttpControlTransport({ baseUrl: 'http://127.0.0.1:8768', fetch: ((_input, init) => {
+    signal = init?.signal as AbortSignal;
+    return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal?.reason), { once: true }));
+  }) as typeof fetch });
+  try {
+    const pending = transport.request({ pathId: 'agent.sessions.list', timeoutMs: 15000, signal: caller.signal });
+    const rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    caller.abort();
+    await rejection;
+    expect(signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
+});

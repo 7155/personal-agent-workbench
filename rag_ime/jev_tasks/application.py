@@ -686,6 +686,10 @@ class JevRoomApplication:
             ),
         }
         specifications = self.lifecycle.specifications(snapshot.graph_id)
+        executions = {key: value for key, value in self.executions(snapshot).items()
+                      if snapshot.is_active(key)}
+        frontier = snapshot.graph().frontier(executions)
+        ready = set(frontier.ready)
         room = self.service.rooms.get(snapshot.room_id)
         actors = []
         for participant in room["participants"]:
@@ -708,6 +712,11 @@ class JevRoomApplication:
             if task.id == snapshot.root_work_id and len(snapshot.active_tasks) > 1:
                 continue  # Aggregation is a synthesize purpose, never worker execution.
             if self.revisions.is_target_for(snapshot.graph_id, task.id):
+                continue
+            if task.id not in ready and task.state not in {"blocked", "failed"}:
+                # Running, dependent and submitted tasks are not dispatch
+                # candidates. Do not repeatedly load their documents or export
+                # upstream Pi histories just to choose wait/accept elsewhere.
                 continue
             if task.state == "active":
                 manifests[task.id] = self.manifest(snapshot, task)
@@ -772,9 +781,6 @@ class JevRoomApplication:
                            "change-owner role, and both participants meet current capability "
                            "and workspace eligibility."),
                 )
-        executions = {key: value for key, value in self.executions(snapshot).items()
-                      if snapshot.is_active(key)}
-        frontier = snapshot.graph().frontier(executions)
         verifications = self.lifecycle.verifications(snapshot)
         recovery = frozenset(
             t.id
@@ -1235,11 +1241,22 @@ class JevRoomApplication:
                     # Settle only the old dispatch record. Its late result or
                     # abort must not mutate a reclaimed or superseded responsibility.
                     self.service.room_partner_dispatches.settle(
-                        record["childDispatchId"], status=phase,
-                        result=str(record.get("result") or ""), completion_source="session_terminal")
+                        record["childDispatchId"], status="returned" if phase == "completed" else phase,
+                        result=str(record.get("result") or ""), completion_source="session_terminal",
+                        error="旧执行已结束，结果未计入已修改或交接的任务。" if phase == "completed" else "")
                 else:
+                    terminal_result = str(record.get("result") or "")
+                    if not terminal_result and phase in {"failed", "aborted"}:
+                        # Cold recovery proves this exact executor drained; it
+                        # does not replace the original crash with a generic
+                        # "missing result" failure. Read only its scoped event.
+                        failure = self.service.sessions.runtime_turn_terminal_event(
+                            request["sessionId"], effect["receipt"]["turnId"],
+                        )
+                        if failure and failure["eventType"] == "turn_failed":
+                            terminal_result = str(failure.get("status") or "")[:2000]
                     self.settle_dispatch(
-                        record, phase=phase, result=str(record.get("result") or ""),
+                        record, phase=phase, result=terminal_result,
                         completion_source="session_terminal")
             # A recovered durable settlement need not replay live events. Drop
             # only its exact Room projection, preserving a newer Session turn.
@@ -1416,7 +1433,24 @@ class JevRoomApplication:
                 bindings = [
                     dict(r)
                     for r in conn.execute(
-                        "SELECT * FROM agent_jev_graphs WHERE graph_id IN (SELECT graph_id FROM agent_jev_runtime_effects WHERE state IN ('sending','unknown','accepted'))"
+                        """WITH candidate_effects AS (
+                            SELECT e.graph_id,
+                                   MAX(e.state IN ('sending','unknown')
+                                       OR (e.state='accepted' AND e.operation='dispatch'
+                                           AND d.dispatch_id IS NULL)) AS unsettled
+                            FROM agent_jev_runtime_effects e
+                            LEFT JOIN agent_jev_execution_drains d ON d.dispatch_id=e.effect_id
+                            WHERE e.state IN ('sending','unknown','accepted')
+                            GROUP BY e.graph_id
+                        ), claims AS (
+                            SELECT graph_id FROM agent_jev_executor_claims GROUP BY graph_id
+                        )
+                        SELECT g.*
+                        FROM candidate_effects e
+                        JOIN agent_jev_graphs g USING(graph_id)
+                        JOIN agent_jev_host_roots h USING(graph_id)
+                        LEFT JOIN claims c USING(graph_id)
+                        WHERE h.final_json='{}' OR c.graph_id IS NOT NULL OR e.unsettled"""
                     )
                 ]
             for binding in bindings:
@@ -1430,7 +1464,13 @@ class JevRoomApplication:
                     break
                 event = claim.event
                 try:
-                    self.publish_input(self.binding_by_graph(event.graph_id))
+                    binding = self.binding_by_graph(event.graph_id)
+                    # Pi can settle while earlier events in this batch are
+                    # handled. Observe its exact receipt before another choice;
+                    # otherwise every queued event sees the same stale claim
+                    # until the entire batch (including Provider waits) ends.
+                    self.reconcile_graph(binding)
+                    self.publish_input(binding)
                     result = (self.resume_reclaim(event) if event.kind == "reclaim_requested"
                               else self.revisions.advance_pending(event.graph_id)
                               if event.kind == "revision_requested" else self.lifecycle.advance(event))

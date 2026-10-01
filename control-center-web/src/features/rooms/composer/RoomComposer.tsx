@@ -133,7 +133,7 @@ export function RoomComposer({
   const roomCanSend = roomCanCompose;
   // Once Send snapshots its attachments, a pending network request must not
   // prevent preparing the next draft. Runtime execution still has its own gate.
-  const canAttach = Boolean(roomCanCompose && !pendingAnswerMode && (!taskBusyState || submitting) && attachments.length < 8);
+  const canAttach = Boolean(roomCanCompose && !pendingAnswerMode && attachments.length < 8);
   const pastedText = usePastedTextAttachments({ ownerId: room?.id ?? '', canImport: canAttach, onImport: onPasteImages });
   useComposerEditor(textareaRef, composerDraft, expanded);
   const participants = room?.participants.filter(
@@ -269,6 +269,15 @@ export function RoomComposer({
     }
     if (!files.length && !hasFileItem) {
       const text = event.clipboardData.getData?.('text/plain') ?? '';
+      // Finder may expose a local file as text/uri-list (or as a plain local
+      // path) while WebKit hides the File object. Keep ordinary links/text in
+      // the editor, but hand a local reference to the native pasteboard owner.
+      const uriList = event.clipboardData.getData?.('text/uri-list') ?? '';
+      if (canAttach && isLocalClipboardFileReference(uriList || text)) {
+        event.preventDefault();
+        onPasteFromClipboard();
+        return;
+      }
       if (pastedText.pasteText(text, 8000 - composerDraft.length + (event.currentTarget.selectionEnd - event.currentTarget.selectionStart))) { event.preventDefault(); return; }
       if (text) return;
       event.preventDefault();
@@ -540,6 +549,20 @@ export function RoomComposer({
       {expanded ? editor : null}
     </DialogContent>
   </Dialog>;
+}
+
+function isLocalClipboardFileReference(value: string): boolean {
+  const entries = value.split(/\r?\n/u)
+    .map(item => item.trim())
+    .filter(item => item && !item.startsWith('#'));
+  if (!entries.length) return false;
+  return entries.every(item => (
+    /^file:\/\/(?:localhost\/)?(?:\/|%2f)/iu.test(item)
+    || /^\/(?:Users|Volumes|private|tmp|var|Applications|Library)\//u.test(item)
+    || /^~\//u.test(item)
+    || /^[A-Za-z]:[\\/]/u.test(item)
+    || /^\\\\/u.test(item)
+  ));
 }
 
 export function roomMentionedParticipants<T extends ComposerParticipant>(

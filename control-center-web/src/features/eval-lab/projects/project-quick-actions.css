@@ -1,0 +1,52 @@
+.project-quick-actions {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--lab-accent, #0e7490) 24%, var(--lab-line, #d7dde4));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--lab-accent, #0e7490) 5%, var(--lab-surface, #fff));
+}
+
+.project-quick-actions__heading,
+.project-quick-actions__buttons {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.project-quick-actions__heading { justify-content: space-between; }
+.project-quick-actions__heading > div { display: grid; gap: 2px; }
+.project-quick-actions__heading small { color: var(--lab-accent, #0e7490); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.project-quick-actions__heading strong { color: var(--lab-ink, #1f2937); font-size: 13px; }
+.project-quick-actions__heading > span { color: var(--lab-muted, #64748b); font-size: 11px; }
+.project-quick-actions__heading > span[data-active] { color: var(--lab-accent, #0e7490); font-weight: 700; }
+.project-quick-actions__buttons { margin-top: 1px; }
+.project-quick-actions__status,
+.project-quick-actions__notice,
+.project-quick-actions__hint { align-items: center; display: flex; gap: 6px; margin: 0; font-size: 11px; line-height: 1.45; }
+.project-quick-actions__status { color: var(--lab-accent, #0e7490); }
+.project-quick-actions__notice { color: #a13a2f; }
+.project-quick-actions__hint { color: var(--lab-muted, #64748b); }
+
+.project-quick-actions--compact {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.project-quick-actions--compact .project-quick-actions__buttons { margin: 0; gap: 5px; }
+.project-quick-actions--compact .project-quick-actions__buttons > button { min-height: 28px; }
+.project-quick-actions--compact .project-quick-actions__status,
+.project-quick-actions--compact .project-quick-actions__notice { font-size: 10px; }
+
+@media (max-width: 620px) {
+  .project-quick-actions__buttons { align-items: stretch; }
+  .project-quick-actions__buttons > button { flex: 1 1 46%; }
+}

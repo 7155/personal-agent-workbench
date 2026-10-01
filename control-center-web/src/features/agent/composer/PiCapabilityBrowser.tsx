@@ -1,16 +1,20 @@
 import { ArrowUpRight, BookOpen, BrainCircuit, ChevronRight, Package, Puzzle, Search, ShieldCheck, SlidersHorizontal, Wrench, X } from 'lucide-react';
 import type { Ref } from 'react';
 import type { CapabilityPreference } from '@/features/plugins/capability-policy';
+import type { CodemodeMode } from '../types';
 import { filterCapabilityRows, type CapabilityDisplayRow, type CapabilityFilter, type CapabilitySection } from './capability-display';
 import './pi-capabilities.css';
 
 export interface PiCapabilityBrowserProps {
   rows: readonly CapabilityDisplayRow[]; query: string; section: CapabilitySection; filter: CapabilityFilter;
   selectedKey: string; status: 'loading' | 'ready' | 'failed'; locked: boolean; pending: boolean;
+  /** Omitted until the Session snapshot confirms the native Pi setting. */
+  codemodeMode?: CodemodeMode; codemodeModePending?: boolean;
   titleId?: string; searchRef?: Ref<HTMLInputElement>; motion?: boolean;
   onQuery: (value: string) => void; onSection: (value: CapabilitySection) => void;
   onFilter: (value: CapabilityFilter) => void; onSelect: (key: string) => void;
   onPreference: (key: string, preference: CapabilityPreference) => void;
+  onCodemodeModeChange?: (mode: CodemodeMode) => void;
   onInsert: (row: CapabilityDisplayRow) => void; onClose?: () => void; onManage?: () => void;
 }
 const sections: Array<{ id: CapabilitySection; label: string; icon: typeof Wrench }> = [
@@ -19,9 +23,10 @@ const sections: Array<{ id: CapabilitySection; label: string; icon: typeof Wrenc
 ];
 const kindLabels = { tool: '工具', skill: '技能', extension: '扩展' };
 export function PiCapabilityBrowser(props: PiCapabilityBrowserProps) {
-  const { rows, query, section, filter, selectedKey, status, locked, pending } = props;
+  const { rows, query, section, filter, selectedKey, status, locked, pending, codemodeMode, codemodeModePending } = props;
   const visible = filterCapabilityRows(rows, section, filter, query);
   const selected = status === 'ready' ? visible.find(row => row.key === selectedKey) : undefined;
+  const memory = status === 'ready' && section === 'memory' ? rows.find(row => row.id === 'memory') : undefined;
   const usable = rows.filter(row => row.kind === 'tool' && row.state === 'usable').length;
   return <section className="pi-capabilities" data-status={status} data-detail={Boolean(selected)} data-motion={props.motion !== false} aria-label="当前对话能力">
     <header className="pi-capabilities__head">
@@ -41,6 +46,25 @@ export function PiCapabilityBrowser(props: PiCapabilityBrowserProps) {
         <option value="all">所有状态</option><option value="usable">当前可用</option><option value="unavailable">未开启 / 不可用</option>
       </select>
     </div>
+    {memory ? <div className="pi-capabilities__memory-switch">
+      <div><strong>本对话记忆召回</strong><small>{memory.stateLabel} · {memory.scope}</small></div>
+      <label>此对话如何使用<select aria-label="本对话记忆召回" value={memory.preference} disabled={locked || pending || !memory.configurable} onChange={event => props.onPreference(memory.key, event.currentTarget.value as CapabilityPreference)}>
+        <option value="inherit">跟随默认设置</option><option value="enabled">在此对话启用</option><option value="disabled">在此对话关闭</option>
+      </select></label>
+      <small role="status">{pending ? '正在保存…' : locked ? '本轮结束后可调整，从下一轮生效' : '从下一轮生效；不会重新处理历史消息'}</small>
+    </div> : null}
+    {codemodeMode !== undefined ? <div className="pi-capabilities__codemode-switch">
+      <div><strong>代码执行编排</strong><small>Pi 原生 codemode · 从下一轮生效</small></div>
+      <label>调用方式<select aria-label="代码执行编排方式" value={codemodeMode}
+        disabled={locked || pending || codemodeModePending || !props.onCodemodeModeChange}
+        onChange={event => {
+          const mode = event.currentTarget.value;
+          if (mode === 'on' || mode === 'only' || mode === 'off') props.onCodemodeModeChange?.(mode);
+        }}>
+        <option value="on">保留直接工具</option><option value="only">仅通过代码执行</option><option value="off">关闭代码执行</option>
+      </select></label>
+      <small role="status">{codemodeModePending ? '正在保存…' : locked ? '本轮结束后可调整' : '只影响后续调用；历史回执保持不变'}</small>
+    </div> : null}
     {locked ? <p className="pi-capabilities__notice"><ShieldCheck size={15} aria-hidden />当前暂不能调整功能；可以继续查看，现有任务不受影响。</p> : null}
     <div className="pi-capabilities__body" data-detail={Boolean(selected)}>
       {status !== 'ready' ? <div className="pi-capabilities__empty" role="status"><Package size={27} aria-hidden /><strong>{status === 'failed' ? '能力目录暂不可用' : '正在读取能力目录'}</strong><p>{status === 'failed' ? '请通过原设置入口重新读取。不会用旧目录代替当前伙伴。' : '工具、技能与扩展会按当前 Session 的配置显示。'}</p></div>

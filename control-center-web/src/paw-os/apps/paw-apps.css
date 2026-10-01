@@ -122,6 +122,17 @@
 .paw-agent-row strong { color: inherit; font-weight: 610; }
 .paw-agent-row small { color: var(--paw-muted); }
 .paw-agent-row__detail { color: color-mix(in srgb, var(--paw-ink) 72%, var(--paw-muted)); }
+.paw-agent-row__planets { display: flex; align-items: center; gap: 3px; margin-top: 1px; }
+.paw-agent-row__planets > span { position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; transition: filter .3s, transform .3s; }
+.paw-agent-row__planets > span[data-state='idle'] { filter: grayscale(.85) opacity(.5); }
+.paw-agent-row__planets > span:is([data-state='working'], [data-state='thinking'], [data-state='reviewing'])::after { content: ''; position: absolute; inset: -2px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--paw-accent); animation: paw-agent-planet-spin 1.1s linear infinite; }
+.paw-agent-row__planets > span[data-state='waiting']::after { content: ''; position: absolute; inset: -2px; border-radius: 50%; border: 1.5px dashed var(--paw-warning, #b07c34); animation: paw-agent-planet-breathe 2s ease-in-out infinite; }
+.paw-agent-row__planets > span[data-state='done']::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 6px; height: 6px; border-radius: 50%; background: var(--paw-success); box-shadow: 0 0 0 1.5px var(--paw-panel-bg, #fff); }
+.paw-agent-row__planets > span[data-state='error']::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 6px; height: 6px; border-radius: 50%; background: var(--paw-danger); box-shadow: 0 0 0 1.5px var(--paw-panel-bg, #fff); }
+.paw-agent-row:hover .paw-agent-row__planets > span { transform: translateY(-1px); }
+@keyframes paw-agent-planet-spin { to { transform: rotate(360deg); } }
+@keyframes paw-agent-planet-breathe { 50% { opacity: .4; transform: scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .paw-agent-row__planets > span::after { animation: none !important; } }
 .paw-agent-row-shell[data-work-state='attention'] > .paw-agent-row > svg { color: var(--paw-danger); }
 .paw-agent-row-shell[data-work-state='working'] > .paw-agent-row > svg { color: var(--paw-accent); }
 .paw-agent-row-shell[data-work-state='complete'] > .paw-agent-row > svg { color: var(--paw-success); }

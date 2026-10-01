@@ -31,11 +31,11 @@ export function useRoomReadingRecovery(ref: RefObject<HTMLDivElement | null>, sp
 }
 
 
-type RoomView = 'rounds' | 'conversation' | 'messages' | 'starfield';
+type RoomView = 'rounds' | 'conversation' | 'messages' | 'starfield' | 'timeline';
 const readView = (key: string): RoomView => {
   try {
     const value = key && localStorage.getItem(key + ':view');
-    if (value === 'conversation' || value === 'messages' || value === 'starfield') return value;
+    if (value === 'conversation' || value === 'messages' || value === 'starfield' || value === 'timeline') return value;
   } catch { /* A default view remains usable. */ }
   return 'rounds';
 };

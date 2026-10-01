@@ -125,7 +125,8 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
 
   useEffect(() => {
     let alive = true; setLoading(true);
-    transport.request({ pathId: 'agent.sessions.list', query: { limit: 100, includeArchived: false, surfaceKind: 'extension_app', ownerAppId: manifest.id } })
+    const controller = new AbortController();
+    transport.request({ pathId: 'agent.sessions.list', timeoutMs: 15000, signal: controller.signal, query: { limit: 100, projectionOnly: true, includeArchived: false, surfaceKind: 'extension_app', ownerAppId: manifest.id } })
       .then(value => {
         if (!alive) return;
         const restored = sessionItems(value, { includeAppOwned: true }).filter(x => x.surfaceKind === 'extension_app' && x.ownerAppId === manifest.id && x.surfaceKey === SURFACE)
@@ -137,7 +138,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
         else if (!next) setProjectPickerOpen(true);
         setError('');
       }).catch(reason => { if (alive) setError(message(reason)); }).finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
+    return () => { alive = false; controller.abort(); };
   }, [transport, manifest.id, historyRevision, newSession]);
 
   useEffect(() => {

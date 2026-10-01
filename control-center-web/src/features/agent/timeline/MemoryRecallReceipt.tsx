@@ -29,6 +29,7 @@ export type MemoryRecallReceiptView = {
 
 export function MemoryRecallReceipt({ receipt }: { receipt: MemoryRecallReceiptView }) {
   const desktop = usePawOsDesktop();
+  if (receipt.status === 'disabled' || receipt.status === 'unavailable') return null;
   return (
     <Disclosure
       className="agent-memory-recall-receipt"
@@ -94,6 +95,7 @@ export function memoryRecallReceiptFromTrace(
         : node.disposition === 'included' ? count === 0 ? 'empty' : 'included'
           : 'unavailable'
   );
+  if (status === 'disabled' || status === 'unavailable') return undefined;
   const duration = finiteInteger(node.durationMs);
   return {
     sessionId: trace.sessionId,

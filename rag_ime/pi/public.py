@@ -50,6 +50,7 @@ __all__ = [
     "provider_request_receipt",
     "provider_retry_status",
     "public_code_tool_activity",
+    "public_codemode_nested_calls",
     "public_knowledge_tool_activity",
     "public_reasoning_summaries",
     "public_file_name",
@@ -1433,6 +1434,121 @@ def inspectable_tool_result(value: object) -> object:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return _redact_tool_result_credentials(str(value))
+
+
+def public_codemode_nested_calls(
+    raw_result: object,
+) -> list[dict[str, object]]:
+    """Project Pi's bounded nested-call receipt for a public timeline.
+
+    Pi 0.99 stores two related views on the outer ToolResult: the generic
+    ``nestedCalls`` record keeps real argument objects, while codemode's own
+    ``details.calls`` record keeps compact previews, cancellation and model
+    cost fields. Prefer the generic record and enrich it by id from details so
+    a replay has one child identity per call. Nested results are intentionally
+    absent here: live ``tool_execution_*`` events carry those real results and
+    a cold transcript does not contain them. A missing terminal status remains
+    running instead of being promoted to success.
+    """
+
+    root = as_mapping(raw_result)
+    nested = as_mapping(root.get("nestedCalls"))
+    details = as_mapping(root.get("details"))
+    detail_calls = _nested_call_items(details.get("calls"))
+    nested_calls = _nested_call_items(nested.get("calls"))
+    source = nested_calls or detail_calls
+    if not source:
+        return []
+    by_id = {
+        str(item.get("id") or ""): item
+        for item in detail_calls
+        if str(item.get("id") or "")
+    }
+    result: list[dict[str, object]] = []
+    for raw in source[:256]:
+        detail = by_id.get(str(raw.get("id") or ""), {})
+        call_id = str(raw.get("id") or detail.get("id") or "").strip()[:512]
+        name = str(raw.get("name") or detail.get("name") or "").strip()[:120]
+        if not call_id or not name:
+            continue
+        detail = by_id.get(call_id, detail)
+        projected: dict[str, object] = {
+            "id": call_id,
+            "name": name,
+            "status": _public_nested_call_status(
+                raw.get("status") or detail.get("status")
+            ),
+        }
+        arguments = _public_nested_call_arguments(
+            raw.get("arguments")
+            if raw.get("arguments") is not None
+            else raw.get("args")
+            if raw.get("args") is not None
+            else detail.get("arguments")
+            if detail.get("arguments") is not None
+            else detail.get("args")
+        )
+        if arguments:
+            projected["args"] = arguments
+        arguments_bytes = raw.get("argumentsBytes")
+        if not isinstance(arguments_bytes, int) or isinstance(arguments_bytes, bool):
+            arguments_bytes = detail.get("argumentsBytes")
+        if isinstance(arguments_bytes, int) and not isinstance(arguments_bytes, bool):
+            projected["argumentsBytes"] = max(0, min(arguments_bytes, 1_000_000))
+        duration = raw.get("durationMs")
+        if not isinstance(duration, (int, float)) or isinstance(duration, bool):
+            duration = detail.get("durationMs")
+        if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            projected["durationMs"] = max(0, min(int(duration), 2_147_483_647))
+        error = raw.get("error") or detail.get("error")
+        if error:
+            error_text = _public_tool_text(error, maximum=500)
+            if error_text:
+                projected["error"] = error_text
+        cost = raw.get("cost")
+        if not isinstance(cost, (int, float)) or isinstance(cost, bool):
+            cost = detail.get("cost")
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            try:
+                finite_cost = math.isfinite(float(cost))
+            except (OverflowError, ValueError):
+                finite_cost = False
+            if finite_cost:
+                projected["cost"] = max(0.0, min(float(cost), 1_000_000.0))
+        result.append(projected)
+    return result
+
+
+def _nested_call_items(value: object) -> list[Mapping[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value[:256] if isinstance(item, Mapping)]
+
+
+def _public_nested_call_status(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    return {
+        "unfinished": "running",
+        "running": "running",
+        "ok": "ok",
+        "error": "error",
+        "cancelled": "cancelled",
+    }.get(normalized, "running")
+
+
+def _public_nested_call_arguments(value: object) -> dict[str, object]:
+    if isinstance(value, Mapping):
+        return redact_mapping(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            decoded = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            decoded = None
+        if isinstance(decoded, Mapping):
+            return redact_mapping(decoded)
+        text = _public_tool_text(value, maximum=500)
+        return {"value": text} if text else {}
+    return {}
 
 
 def _redact_tool_result_credentials(value: str) -> str:

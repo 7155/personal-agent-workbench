@@ -111,6 +111,7 @@ REQUIRED_RUNTIME_METHODS = (
     "session.abort",
     "session.compact",
     "session.model.set",
+    "session.codemode.set",
     "session.thinking.set",
     "session.close",
     "room.dispatch",
@@ -342,6 +343,45 @@ _RUNTIME_HOST_SOURCE_OVERLAYS: dict[
     ),
     "src/tool-bridge.ts": (
         (
+            "const TOOL_NAME_PATTERN =",
+            '''type GatewayImageContent = { type: "image"; data: string; mimeType: string };
+function takeModelImages(result: Record<string, unknown>, toolName: string): GatewayImageContent[] {
+    const images = result._modelImages;
+    delete result._modelImages;
+    if (toolName !== "browser" && toolName !== "workspace_read") return [];
+    if (!Array.isArray(images)) return [];
+    let remaining = 12 * 1024 * 1024;
+    return images.slice(0, 8).map((image) => {
+        if (!image || image.type !== "image" || typeof image.data !== "string"
+            || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(image.mimeType)
+            || !image.data.length || image.data.length > remaining
+            || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) {
+            throw new Error("Invalid governed tool image content");
+        }
+        remaining -= image.data.length;
+        return { type: "image", data: image.data, mimeType: image.mimeType };
+    });
+}
+
+const TOOL_NAME_PATTERN =''',
+        ),
+        (
+            'content: Array<{ type: "text"; text: string }>;\n\tdetails: unknown;',
+            'content: Array<{ type: "text"; text: string } | GatewayImageContent>;\n\tdetails: unknown;',
+        ),
+        (
+            '\tif (result.reviewRequired === true) {',
+            '\tconst modelImages = takeModelImages(result, tool.name);\n\tif (result.reviewRequired === true) {',
+        ),
+        (
+            '\tconst agentBlocks = artifacts.capture(result);\n\treturn {\n\t\tcontent: [',
+            '\tconst agentBlocks = artifacts.capture(result);\n\treturn {\n\t\tcontent: [\n\t\t\t...modelImages,',
+        ),
+        (
+            '\t\t\t\t...executed,\n\t\t\t\tcontent: [',
+            '\t\t\t\t...executed,\n\t\t\t\tcontent: [\n\t\t\t\t\t...executed.content.filter((item) => item.type === "image"),',
+        ),
+        (
             "const ROOM_DELEGATION_GATEWAY_REQUEST_TIMEOUT_MS = 300_000;",
             "const DELEGATION_GATEWAY_REQUEST_TIMEOUT_MS = 300_000;",
         ),
@@ -439,6 +479,14 @@ _SDK_PROMPT_OVERLAYS_V087 = {
     ),
 }
 
+_SDK_PROMPT_OVERLAYS_V099 = {
+    **_SDK_PROMPT_OVERLAYS_V087,
+    "dist/core/agent-session.js": ((
+        'return compact(preparation, request.model, request.apiKey, request.headers, customInstructions, signal, request.thinkingLevel, this.agent.streamFunction, request.env, this.settingsManager.getRetrySettings(), this._summarizationRetryCallbacks({ source: "compaction", reason }), undefined);',
+        'const instructions = [this.settingsManager.getCompactionSettings().instructions, customInstructions].filter(value => typeof value === "string" && value.trim()).join("\\n\\n") || undefined;\n        return compact(preparation, request.model, request.apiKey, request.headers, instructions, signal, request.thinkingLevel, this.agent.streamFunction, request.env, this.settingsManager.getRetrySettings(), this._summarizationRetryCallbacks({ source: "compaction", reason }), undefined);',
+    ),),
+}
+
 
 def _prepare_sdk_prompt_overlay(pi_root: Path, destination: Path) -> Path:
     """Copy built SDK resources and keep the pinned Pi checkout untouched."""
@@ -449,6 +497,8 @@ def _prepare_sdk_prompt_overlay(pi_root: Path, destination: Path) -> Path:
     (destination / "node_modules").symlink_to(pi_root / "node_modules", target_is_directory=True)
     settings_source = (source / "dist/core/settings-manager.js").read_text(encoding="utf-8")
     overlays = _SDK_PROMPT_OVERLAYS_V087 if "getCompactionSettings(model)" in settings_source else _SDK_PROMPT_OVERLAYS
+    if "_runDefaultCompaction(preparation, model, customInstructions, signal, reason)" in (source / "dist/core/agent-session.js").read_text(encoding="utf-8"):
+        overlays = _SDK_PROMPT_OVERLAYS_V099
     for relative_path, replacements in overlays.items():
         path = destination / relative_path
         content = path.read_text(encoding="utf-8")
@@ -1917,6 +1967,27 @@ def _bundle_oauth_runtime_modules(
         shutil.copy2(output, output.with_suffix(".js"))
 
 
+def _bundle_codemode_runtime_assets(
+    *, esbuild: Path, pi_root: Path, runtime_dir: Path,
+) -> bool:
+    """Keep native Pi's worker and WASM available in the relocated payload."""
+    source = pi_root / "packages/coding-agent/src/extensions/codemode/worker.ts"
+    if not source.is_file():
+        return False  # Older supported Pi releases do not contain codemode.
+    wasm_package = pi_root / "node_modules/quickjs-wasi"
+    if not (wasm_package / "quickjs.wasm").is_file():
+        raise ManagedPiRuntimeError("native codemode QuickJS WASM is missing")
+    shutil.copytree(wasm_package, runtime_dir / "node_modules/quickjs-wasi")
+    (runtime_dir / "package.json").write_text('{"type":"module"}\n', encoding="ascii")
+    _run([
+        str(esbuild), str(source), "--bundle", "--platform=node",
+        "--format=esm", "--target=node22", "--define:PI_BUNDLED_NODE=true",
+        f"--outfile={runtime_dir / 'codemode-worker.js'}",
+        '--banner:js=import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+    ], cwd=pi_root)
+    return True
+
+
 def _smoke_oauth_runtime_modules(node: Path, runtime_dir: Path) -> dict[str, object]:
     module_specs = [
         {
@@ -2177,6 +2248,7 @@ def main(argv: list[str] | None = None) -> int:
                         "--platform=node",
                         "--format=esm",
                         "--target=node22",
+                        "--define:PI_BUNDLED_NODE=true",
                         "--external:jiti",
                         f"--alias:@earendil-works/pi-coding-agent={sdk_overlay / 'dist' / 'index.js'}",
                         f"--outfile={bundled_entrypoint}",
@@ -2204,6 +2276,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--platform=node",
                     "--format=esm",
                     "--target=node22",
+                    "--define:PI_BUNDLED_NODE=true",
                     f"--outfile={bundled_pi_cli}",
                     "--external:jiti",
                     f'--banner:js={_runtime_host_banner(product_skills, routing_catalog["collisionPolicy"])}',
@@ -2237,6 +2310,9 @@ def main(argv: list[str] | None = None) -> int:
                 esbuild=esbuild,
                 pi_root=pi_root,
                 runtime_dir=runtime_dir,
+            )
+            _bundle_codemode_runtime_assets(
+                esbuild=esbuild, pi_root=pi_root, runtime_dir=runtime_dir,
             )
             packaged_node = bin_dir / "node"
             shutil.copy2(node, packaged_node)

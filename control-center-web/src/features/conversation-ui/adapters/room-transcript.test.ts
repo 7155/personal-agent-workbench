@@ -22,6 +22,42 @@ const options = {
 };
 
 describe('roomTranscript', () => {
+  it('labels a failed model request as a recovered attempt after exact same-turn tool activity', () => {
+    const projection = roomProjection();
+    const failed = projection.messagesById['message-agent']!;
+    Object.assign(failed, { status: 'completed', rootId: 'root-a', dispatchId: 'dispatch-a', sourceTurnId: 'pi-turn-a',
+      text: '模型服务未能生成最终回复。请继续当前对话，或切换模型后继续。',
+      message: { status: 'failed', blocks: [{ type: 'error', data: {
+        message: 'Codex error: Our servers are currently overloaded. Please try again later.',
+      } }] } });
+    const later = { ...projection.activitiesById['tool-a']!, id: 'retry-tool', sequence: 5, createdAtMs: 140,
+      payload: { sourceEventType: 'tool_finished', toolName: 'read', rootId: 'root-a',
+        dispatchId: 'dispatch-a', sourceTurnId: 'pi-turn-a' } };
+    projection.activityOrder.push(later.id);
+    projection.activitiesById[later.id] = later;
+    const text = (roomTranscript(projection, options).messages[1] as AssistantMessage).blocks.find(block => block.kind === 'text');
+    expect(text).toMatchObject({ kind: 'text', text: '本次模型请求失败；同一轮已继续执行，后续结果见下方。' });
+    expect(failed.message?.status).toBe('failed');
+    expect(failed.text).toContain('模型服务未能生成最终回复');
+    for (const key of ['rootId', 'dispatchId', 'sourceTurnId'] as const) {
+      later.payload[key] = 'unrelated';
+      expect((roomTranscript(projection, options).messages[1] as AssistantMessage).blocks.find(block => block.kind === 'text'))
+        .toMatchObject({ text: failed.text });
+      later.payload[key] = key === 'rootId' ? 'root-a' : key === 'dispatchId' ? 'dispatch-a' : 'pi-turn-a';
+    }
+    later.sourceSessionId = 'other-session';
+    expect((roomTranscript(projection, options).messages[1] as AssistantMessage).blocks.find(block => block.kind === 'text'))
+      .toMatchObject({ text: failed.text });
+    later.sourceSessionId = failed.sourceSessionId;
+    later.participantId = 'participant-b';
+    expect((roomTranscript(projection, options).messages[1] as AssistantMessage).blocks.find(block => block.kind === 'text'))
+      .toMatchObject({ text: failed.text });
+    later.participantId = failed.participantId;
+    later.sequence = 3;
+    expect((roomTranscript(projection, options).messages[1] as AssistantMessage).blocks.find(block => block.kind === 'text'))
+      .toMatchObject({ text: failed.text });
+  });
+
   it('shows Room files and restores the original Jev attachment on an older input event', () => {
     const receipt = { mediaId: 'media_abcdefghijklmnop', roomId: 'room-live', fileName: 'comparison.md',
       mimeType: 'text/markdown', byteSize: 40182, sha256: 'a'.repeat(64) };
@@ -202,6 +238,43 @@ describe('roomTranscript', () => {
     expect(tool?.kind === 'tool' && tool.input).toContain('PawWindowLayer.tsx');
   });
 
+  it('keeps a codemode result as one outer card with nested receipts and final output', () => {
+    const projection = roomProjection();
+    const activity = projection.activitiesById['tool-a']!;
+    activity.status = 'completed';
+    activity.summary = 'codemode';
+    activity.payload = {
+      sourceEventType: 'tool_finished',
+      toolName: 'codemode',
+      arguments: { code: "const result = await read('README.md'); return result;" },
+      result: {
+        details: {
+          calls: [
+            { id: 'tool-call/1', name: 'read', args: '{"path":"README.md"}', status: 'ok', durationMs: 18, cost: 0.001 },
+            { id: 'tool-call/2', name: 'bash', args: '{"command":"pnpm test"}', status: 'error', durationMs: 42, error: 'exit 1' },
+          ],
+          fullOutputPath: '/tmp/codemode-output.txt',
+        },
+        content: [{ type: 'text', text: 'Script completed\nWall time 0.12s\nOutput:\nfinal output' }],
+      },
+    };
+
+    const card = roomTranscript(projection, options).messages[1] as AssistantMessage;
+    expect(card.blocks.find((block) => block.id === 'tool:tool-a')).toMatchObject({
+      kind: 'tool',
+      name: 'codemode',
+      input: JSON.stringify(activity.payload.arguments),
+      output: 'final output',
+      codeMode: {
+        calls: [
+          { id: 'tool-call/1', name: 'read', status: 'ok', durationMs: 18, cost: 0.001 },
+          { id: 'tool-call/2', name: 'bash', status: 'error', durationMs: 42, error: 'exit 1' },
+        ],
+        fullOutputPath: '/tmp/codemode-output.txt',
+      },
+    });
+  });
+
   it('keeps a dispatch planet-only when Runtime persona names have no public alias', () => {
     const projection = roomProjection();
     projection.activityOrder = ['dispatch-persona-name'];
@@ -243,7 +316,7 @@ describe('roomTranscript', () => {
     }]));
     const blocks = roomTranscript(projection, { ...options, workItemObjective: id => id === 'task-files' ? '让 PAW 点击查看文件' : '' })
       .messages.flatMap(message => message.role === 'assistant' ? message.blocks : []);
-    expect(blocks.find(block => block.id === 'dispatch:execute-route')).toMatchObject({ name: 'Sol → Mars · 执行分派', summary: '执行：让 PAW 点击查看文件' });
+    expect(blocks.find(block => block.id === 'dispatch:execute-route')).toMatchObject({ name: 'Sol → Mars · 执行分派', summary: '执行：让 PAW 点击查看文件', receiptKind: 'dispatch' });
     expect(blocks.find(block => block.id === 'dispatch:verify-route-1')).toMatchObject({ name: 'Sol → Mars · 复核分派', summary: '复核：让 PAW 点击查看文件' });
     expect(blocks.find(block => block.id === 'dispatch:verify-route-2')).toMatchObject({ name: 'Sol → Mars · 复核分派', summary: '第 2 次复核：让 PAW 点击查看文件' });
   });

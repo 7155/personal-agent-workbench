@@ -25,9 +25,10 @@ or that every scenario has been activated.
   use the existing Room/WorkStore owners. An admission receipt means admitted,
   not running or completed; release waits for the actual turn and its causal
   resources to settle.
-- **Room model routing:** the balanced profile uses GPT-6 Astra max for planning
-  and critical tasks, GPT-6 Sol max for complex work, and GPT-6 Luna max for
-  simple and routine work. The participant profile keeps the chosen Session
+- **Room model routing:** the balanced profile uses GPT-6.1 Sol medium for routine
+  execution, xhigh for planning, verification and complex integration, and
+  GPT-6 Luna max only for explicitly simple execution or synthesis. Astra is
+  selected only by an explicit model lock. The participant profile keeps the chosen Session
   models. Each dispatch checks the configured Provider's actual model catalog;
   an unavailable model produces a recoverable error instead of a silent
   downgrade. Role-card community notes are anecdotal guidance, not PAW scores.
@@ -36,12 +37,19 @@ or that every scenario has been activated.
   `jev_dangerous` policy automatically evaluates dangerous prepared operations
   through the existing approval owner. A failed Jev evaluation leaves the
   operation unexecuted and retryable; it does not fall back to another model.
-- **Room verification:** new roots default to `verificationMode=auto`. A
-  single direct responsibility prefers another available partner for review;
-  when only its executor is available, that partner may inspect the fixed result
-  in a separate verification turn. A bound structured verdict is still required.
-  `independent` always requires a different partner, as do planned tasks. Stored
-  roots without this policy retain independent verification.
+- **Room verification:** new roots default to `verificationMode=auto`. Jev
+  assesses the submitted result and current evidence after the executor drains.
+  It can deliver a sufficient result directly, or request an additional Pi
+  inspection when evidence is missing or the user requires it. Both choices are
+  recorded against the exact task and artifact revisions. `independent` always
+  requires a different partner. Stored roots without this policy retain
+  independent verification. Planning favors independent deliverables assigned
+  to different partners; dependencies represent actual prerequisites, not a
+  mandatory sequence of stages. Completed multi-task and file-delivery work
+  publishes a results report with deliverables, recorded verification and open
+  items in the public Room conversation. This uses the existing finalization
+  receipt and does not create another model turn; short text-only replies remain
+  direct answers.
 - **Tool approval:** configured Jev is preferred on the next new approval.
   Confidence below 0.70 yields a denial without asking Luna to override it.
   Transport/provider/response failures use the existing Luna Max fallback.

@@ -17,9 +17,26 @@ from rag_ime.pi.config import PiRuntimeConfig, _deepseek_pi_provider
 from rag_ime.pi.public import pi_message_payload, public_pi_model
 from rag_ime.pi.values import PiRuntimeError
 from rag_ime.pi.runtime import PiRuntimeHostManager
+from rag_ime.pi.model_additions import with_current_codex_models
 
 
 class PiRuntimeConfigTests(unittest.TestCase):
+    def test_codex_sol_61_catalog_addition_preserves_transport_and_explicit_models(self):
+        providers = {"other": {"models": [{"id": "keep"}]}}
+        extended = with_current_codex_models(providers)
+        self.assertEqual(providers, {"other": {"models": [{"id": "keep"}]}})
+        self.assertEqual(extended["other"], providers["other"])
+        model = extended["openai-codex"]["models"][0]
+        self.assertEqual(model["id"], "gpt-6.1-sol")
+        self.assertEqual(model["api"], "openai-codex-responses")
+        self.assertIsNone(model["thinkingLevelMap"]["off"])
+        self.assertIsNone(model["thinkingLevelMap"]["minimal"])
+        self.assertEqual(model["thinkingLevelMap"]["max"], "max")
+        self.assertNotIn("apiKey", extended["openai-codex"])
+        self.assertNotIn("baseUrl", extended["openai-codex"])
+        model["contextWindow"] = 123456
+        self.assertEqual(with_current_codex_models(extended), extended)
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="paw-pi-config-")
         self.addCleanup(temporary.cleanup)
@@ -84,6 +101,32 @@ class PiRuntimeConfigTests(unittest.TestCase):
             }
         )
         self.assertEqual(room_environment["RAG_IME_AGENT_ROOM_BOUND"], "1")
+
+    def test_codemode_mode_defaults_on_and_normalizes_environment_override(self) -> None:
+        self.assertEqual(self.config.codemode_mode, "on")
+        with mock.patch.dict(
+            os.environ,
+            {
+                "RAG_IME_PI_EXECUTABLE": str(self.fake_pi),
+                "RAG_IME_PI_ENABLED": "1",
+                "RAG_IME_PI_CODEMODE_MODE": "only",
+            },
+            clear=True,
+        ):
+            configured = PiRuntimeConfig.from_environment()
+        self.assertEqual(configured.codemode_mode, "only")
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "RAG_IME_PI_EXECUTABLE": str(self.fake_pi),
+                "RAG_IME_PI_ENABLED": "1",
+                "RAG_IME_PI_CODEMODE_MODE": "invalid",
+            },
+            clear=True,
+        ):
+            with self.assertRaises(ValueError):
+                PiRuntimeConfig.from_environment()
 
     def test_managed_pi_config_extends_transient_provider_retry_window(self) -> None:
         self.config.prepare_agent_config()

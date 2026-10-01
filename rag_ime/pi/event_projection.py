@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from .public import (
     inspectable_tool_result,
+    public_codemode_nested_calls,
     public_code_tool_activity,
     public_knowledge_tool_activity,
     redact_mapping,
@@ -13,11 +14,44 @@ from .public import (
 from .values import as_integer, as_mapping, redact_runtime_text
 
 __all__ = [
+    "codemode_capability",
     "failed_settlement_receipt",
     "runtime_primitive_capabilities",
     "tool_event_payload",
     "text_delta_payload",
 ]
+
+
+_CODEMODE_MODES = ("off", "on", "only")
+
+
+def codemode_capability(value: object) -> dict[str, object]:
+    """Normalize the Host's optional native codemode capability disclosure."""
+
+    source = as_mapping(value)
+    if isinstance(value, bool):
+        available = value
+        raw_modes: object = _CODEMODE_MODES if value else []
+        raw_default: object = "on"
+    else:
+        available = source.get("available") is True
+        raw_modes = source.get("modes")
+        raw_default = source.get("defaultMode")
+    modes = [
+        mode
+        for mode in _CODEMODE_MODES
+        if isinstance(raw_modes, (list, tuple)) and mode in raw_modes
+    ]
+    if available and not modes:
+        modes = list(_CODEMODE_MODES)
+    default_mode = str(raw_default or "on").strip().lower()
+    if default_mode not in modes:
+        default_mode = "on" if "on" in modes else (modes[0] if modes else "")
+    return {
+        "available": available,
+        "modes": modes,
+        "defaultMode": default_mode,
+    }
 
 
 def failed_settlement_receipt(
@@ -110,6 +144,9 @@ def tool_event_payload(
         "isError": bool(raw.get("isError")),
         **({"sourceLoopId": source_loop_id} if source_loop_id else {}),
     }
+    parent_tool_call_id = str(raw.get("parentToolCallId") or "").strip()
+    if parent_tool_call_id:
+        payload["parentToolCallId"] = parent_tool_call_id[:512]
     # Preserve a Host-measured end-to-end duration when available;
     # Observation/Trace must continue to represent missing timing as
     # unavailable rather than deriving it from unrelated timestamps.
@@ -142,6 +179,14 @@ def tool_event_payload(
     if raw_result is not None:
         if event_type == "tool_execution_end":
             payload[result_key] = inspectable_tool_result(raw_result)
+            nested_calls = public_codemode_nested_calls(raw_result)
+            if nested_calls:
+                payload["nestedCalls"] = nested_calls
+                nested_receipt = as_mapping(raw_result).get("nestedCalls")
+                if isinstance(nested_receipt, Mapping) and isinstance(
+                    nested_receipt.get("complete"), bool
+                ):
+                    payload["nestedCallsComplete"] = nested_receipt["complete"]
         elif not public_result:
             payload[result_key] = redact_mapping(as_mapping(raw_result))
     return mapped_type, payload

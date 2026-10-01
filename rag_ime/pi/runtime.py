@@ -22,7 +22,11 @@ from rag_ime.agent_runtime_driver import (
     SkillAllowlistProvider,
 )
 from rag_ime.agent_sessions import AgentSessionStore
-from rag_ime.pi.config import PiRuntimeConfig
+from rag_ime.pi.config import (
+    CODEMODE_MODES,
+    PiRuntimeConfig,
+    normalize_codemode_mode,
+)
 from rag_ime.pi.host_client import PiRuntimeHostClient
 from rag_ime.pi.protocols import PI_HOST_PROTOCOL_VERSION
 from rag_ime.pi.ui_requests import grouped_question_request, public_ui_request, resolve_ui_response
@@ -31,6 +35,7 @@ from rag_ime.pi.transcript_io import (
     DURABLE_TRANSCRIPT_MAX_LINE_BYTES,
 )
 from rag_ime.pi.event_projection import (
+    codemode_capability,
     failed_settlement_receipt, runtime_primitive_capabilities,
     tool_event_payload, text_delta_payload,
 )
@@ -62,6 +67,9 @@ from rag_ime.pi.transcript import (
     recent_messages_from_proven_tail,
     recent_public_message_window,
     recent_tool_history_events,
+    latest_terminal_descendant_leaf,
+    terminal_branch_anchor,
+    unambiguous_descendant_leaf,
     history_entry_timestamps,
     history_entry_ordinals,
     durable_public_assistant_counts,
@@ -282,6 +290,36 @@ class PiRuntimeHostManager:
         model = str(self.config.model or "").strip()
         return f"{provider}/{model}" if provider and model else "pi/default"
 
+    def _effective_codemode_mode(
+        self,
+        session: Mapping[str, object],
+        *,
+        binding: Mapping[str, object] | None = None,
+        snapshot: Mapping[str, object] | None = None,
+    ) -> str:
+        """Resolve the native mode without treating a stale Host as authority."""
+
+        for source in (snapshot or {},):
+            raw = source.get("codemodeMode")
+            if isinstance(raw, str) and raw.strip().lower() in {"on", "only", "off"}:
+                return raw.strip().lower()
+        return self._requested_codemode_mode(session, binding=binding)
+
+    def _requested_codemode_mode(
+        self,
+        session: Mapping[str, object],
+        *,
+        binding: Mapping[str, object] | None = None,
+    ) -> str:
+        raw = session.get("codemodeMode")
+        if isinstance(raw, str) and raw.strip().lower() in {"on", "only", "off"}:
+            return raw.strip().lower()
+        metadata = as_mapping((binding or {}).get("metadata"))
+        raw = metadata.get("codemodeMode")
+        if isinstance(raw, str) and raw.strip().lower() in {"on", "only", "off"}:
+            return raw.strip().lower()
+        return self.config.resolved_codemode_mode(session)
+
     def runtime_status(self) -> dict[str, object]:
         installed = self.config.executable is not None and self.config.executable.expanduser().is_file()
         latest_kill_receipt = None
@@ -362,6 +400,9 @@ class PiRuntimeHostManager:
                 "persistentDebugContext": bool(capabilities.get("persistentDebugContext")),
                 "runtimePrimitives": runtime_primitive_capabilities(
                     capabilities.get("runtimePrimitives")
+                ),
+                "codemode": codemode_capability(
+                    capabilities.get("codemode")
                 ),
                 "imageAttachments": True,
                 "coordinator": True,
@@ -528,6 +569,7 @@ class PiRuntimeHostManager:
         session_id: str,
         *,
         retire_recovered_turn: bool = True,
+        _sync_codemode: bool = True,
     ) -> dict[str, object]:
         with self._lifecycle_lock:
             if not self.config.model_configured:
@@ -593,10 +635,44 @@ class PiRuntimeHostManager:
                         session_id, restored_turn_id,
                     )
                     snapshot = dict(as_mapping(recovered_turn_retirement.get("state")))
+                effective_codemode_mode = self._effective_codemode_mode(
+                    session,
+                    binding=binding,
+                    snapshot=snapshot,
+                )
+                requested_codemode_mode = self._requested_codemode_mode(
+                    session,
+                    binding=binding,
+                )
+                binding_mode = str(
+                    as_mapping((binding or {}).get("metadata")).get("codemodeMode")
+                    or ""
+                ).strip().lower()
+                if (
+                    _sync_codemode
+                    and snapshot.get("isIdle") is True
+                    and not as_mapping(snapshot.get("activeTurn"))
+                    and requested_codemode_mode != binding_mode
+                    and codemode_capability(self._host_capabilities.get("codemode")).get(
+                        "available"
+                    ) is True
+                ):
+                    changed = self._set_codemode_mode_after_ensure(
+                        session_id,
+                        requested_codemode_mode,
+                        state=snapshot,
+                        binding=binding,
+                    )
+                    snapshot = dict(as_mapping(changed.get("state")))
+                    binding = self.sessions.runtime_binding(session_id)
+                    effective_codemode_mode = str(
+                        changed.get("codemodeMode") or requested_codemode_mode
+                    )
                 with self._lock:
                     self._schedule_idle_locked()
                 return {
                     "state": snapshot,
+                    "codemodeMode": effective_codemode_mode,
                     "resourceSnapshot": resource_snapshot,
                     "reused": True,
                     **({"recoveredTurnRetirement": recovered_turn_retirement}
@@ -725,6 +801,13 @@ class PiRuntimeHostManager:
                     else bool(session.get("codexSkillsEnabled", False))
                 ),
             }
+            if codemode_capability(self._host_capabilities.get("codemode")).get(
+                "available"
+            ) is True:
+                params["codemodeMode"] = self._requested_codemode_mode(
+                    session,
+                    binding=binding,
+                )
             if skill_allowlist is not None:
                 params["skillAllowlist"] = skill_allowlist
             resource_policy = as_mapping(session.get("resourceDisclosurePolicy"))
@@ -761,6 +844,11 @@ class PiRuntimeHostManager:
                 ),
             )
             snapshot = dict(as_mapping(result.get("snapshot")))
+            effective_codemode_mode = self._effective_codemode_mode(
+                session,
+                binding=binding,
+                snapshot=snapshot,
+            )
             model = as_mapping(snapshot.get("model"))
             if model.get("provider") and model.get("id"):
                 self.sessions.set_model_profile(
@@ -772,6 +860,7 @@ class PiRuntimeHostManager:
                 {
                     "protocolVersion": PI_HOST_PROTOCOL_VERSION,
                     "resourceSnapshot": resource_snapshot,
+                    "codemodeMode": effective_codemode_mode,
                 }
             )
             bound = self.sessions.bind_runtime_session(
@@ -862,6 +951,7 @@ class PiRuntimeHostManager:
                 )
             return {
                 "state": snapshot,
+                "codemodeMode": effective_codemode_mode,
                 "session": bound,
                 "resourceSnapshot": resource_snapshot,
                 "evictedSessionId": evicted or None,
@@ -1806,6 +1896,36 @@ class PiRuntimeHostManager:
     def messages(self, session_id: str) -> list[dict[str, object]]:
         return list(self.session_snapshot(session_id).get("messages") or [])
 
+    def _persist_terminal_branch_cursor(
+        self,
+        session_id: str,
+        binding: Mapping[str, object],
+        branch_anchor: str,
+    ) -> Mapping[str, object]:
+        """Persist one exact settlement cursor without rotating its epoch."""
+
+        if str(binding.get("branchAnchor") or "") == str(branch_anchor or ""):
+            return binding
+        updater = getattr(self.sessions, "advance_runtime_branch_cursor", None)
+        if not callable(updater):
+            return binding
+        try:
+            updated = updater(
+                session_id,
+                branch_anchor=str(branch_anchor),
+                expected_generation=as_integer(binding.get("generation")),
+                expected_external_session_id=str(
+                    binding.get("externalSessionId") or ""
+                ),
+                expected_transcript_ref=str(
+                    binding.get("transcriptRef") or ""
+                ),
+                expected_branch_anchor=str(binding.get("branchAnchor") or ""),
+            )
+        except (KeyError, OSError, ValueError, sqlite3.Error):
+            return binding
+        return updated if isinstance(updated, Mapping) else binding
+
     def _durable_history_snapshot(
         self,
         session_id: str,
@@ -1864,18 +1984,33 @@ class PiRuntimeHostManager:
                 return None
             leaf_id = str(binding.get("branchAnchor") or "")
             binding_updated_at_ms = as_integer(binding.get("updatedAtMs"))
-            # The binding is refreshed when the Session opens or rewinds. If
-            # Pi appended newer entries after that point, the append-only
-            # transcript's final entry is the current selected leaf and avoids
-            # projecting a stale pre-turn anchor.
             if stat.st_mtime_ns // 1_000_000 > binding_updated_at_ms:
-                leaf_id = next(
-                    (
-                        str(entry.get("id") or "")
-                        for entry in reversed(entries)
-                        if str(entry.get("id") or "")
-                    ),
-                    leaf_id,
+                terminal_leaf = latest_terminal_descendant_leaf(
+                    entries,
+                    ancestor_id=leaf_id,
+                )
+                if terminal_leaf:
+                    leaf_id = terminal_leaf
+                    binding = self._persist_terminal_branch_cursor(
+                        session_id,
+                        binding,
+                        leaf_id,
+                    )
+                else:
+                    advanced_leaf = unambiguous_descendant_leaf(
+                        entries,
+                        ancestor_id=leaf_id,
+                    )
+                    if advanced_leaf:
+                        leaf_id = advanced_leaf
+            if not leaf_id:
+                header_id = str(header.get("id") or "")
+                leaf_id = latest_terminal_descendant_leaf(
+                    entries,
+                    ancestor_id=header_id,
+                ) or unambiguous_descendant_leaf(
+                    entries,
+                    ancestor_id=header_id,
                 )
             messages, _selected_entries = durable_branch_messages(
                 entries,
@@ -1959,14 +2094,40 @@ class PiRuntimeHostManager:
             leaf_id = str(binding.get("branchAnchor") or "")
             binding_updated_at_ms = as_integer(binding.get("updatedAtMs"))
             if stat.st_mtime_ns // 1_000_000 > binding_updated_at_ms:
-                leaf_id = _latest_entry_id(entries)
-            elif leaf_id and not any(
+                terminal_leaf = latest_terminal_descendant_leaf(
+                    entries,
+                    ancestor_id=leaf_id,
+                )
+                if terminal_leaf:
+                    leaf_id = terminal_leaf
+                    binding = self._persist_terminal_branch_cursor(
+                        session_id,
+                        binding,
+                        leaf_id,
+                    )
+                else:
+                    advanced_leaf = unambiguous_descendant_leaf(
+                        entries,
+                        ancestor_id=leaf_id,
+                    )
+                    if advanced_leaf:
+                        leaf_id = advanced_leaf
+            if not leaf_id:
+                header_id = str(header.get("id") or "")
+                leaf_id = latest_terminal_descendant_leaf(
+                    entries,
+                    ancestor_id=header_id,
+                ) or unambiguous_descendant_leaf(
+                    entries,
+                    ancestor_id=header_id,
+                )
+            if leaf_id and not any(
                 str(entry.get("id") or "") == leaf_id
                 for entry in entries
             ):
                 return None
             if not leaf_id:
-                leaf_id = _latest_entry_id(entries)
+                return None
             return recent_messages_from_proven_tail(
                 entries,
                 leaf_id=leaf_id,
@@ -1974,6 +2135,74 @@ class PiRuntimeHostManager:
             )
         except (KeyError, OSError, ValueError):
             return None
+
+    def _refresh_terminal_recent_projection(
+        self,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Advance Pi's branch cursor from the exact terminal settlement.
+
+        A terminal event is the first point at which the current turn's
+        durable branch is known.  Do not infer it from the last JSONL row: an
+        append-only transcript can contain a later fork.  The settlement entry
+        for this turn is itself the canonical branch anchor; refreshing the
+        binding and bounded projection together prevents a first recent read
+        from reusing the prior branch's window.
+        """
+
+        normalized_turn_id = str(turn_id or "").strip()
+        if not normalized_turn_id:
+            return
+        identity = self._recent_projection_identity(session_id)
+        if identity is None:
+            return
+        try:
+            transcript = Path(str(identity["transcriptRef"]))
+            tail = read_recent_transcript_tail(
+                transcript,
+                int(identity["transcriptSize"]),
+            )
+            if tail is None:
+                return
+            _header, entries = tail
+            anchor = terminal_branch_anchor(
+                entries,
+                turn_id=normalized_turn_id,
+            )
+            if not anchor:
+                return
+            binding = self.sessions.runtime_binding(session_id)
+            if binding is None:
+                return
+            if str(binding.get("branchAnchor") or "") != anchor:
+                self.sessions.advance_runtime_branch_cursor(
+                    session_id,
+                    branch_anchor=anchor,
+                    expected_generation=as_integer(binding.get("generation")),
+                    expected_external_session_id=str(
+                        binding.get("externalSessionId") or ""
+                    ),
+                    expected_transcript_ref=str(
+                        binding.get("transcriptRef") or ""
+                    ),
+                    expected_branch_anchor=str(
+                        binding.get("branchAnchor") or ""
+                    ),
+                )
+                identity = self._recent_projection_identity(session_id)
+                if identity is None:
+                    return
+            # Re-enter the bounded reader so a large transcript can return a
+            # proven suffix immediately and leave any full-history repair on
+            # its existing background lane.  Small/complete tails persist the
+            # exact projection here; incomplete tails still align the first
+            # visible window with the refreshed branch cursor.
+            self.recent_session_snapshot(session_id)
+        except (KeyError, OSError, ValueError, sqlite3.Error):
+            # Terminal projection is an acceleration.  The durable transcript
+            # remains the recovery source if the bounded refresh races a write.
+            return
 
     def _inspection_snapshot(
         self,
@@ -2034,6 +2263,7 @@ class PiRuntimeHostManager:
 
     def session_snapshot(self, session_id: str) -> dict[str, object]:
         session = self.sessions.get(session_id)
+        binding = self.sessions.runtime_binding(session_id)
         if session.get("evaluationSnapshot") is True:
             # Imported evaluation transcripts are immutable evidence.  Reading
             # one must never start, resume, or rebind a Provider Runtime; the
@@ -2178,9 +2408,15 @@ class PiRuntimeHostManager:
             "steeringMode": str(raw_queue.get("steeringMode") or ""),
             "followUpMode": str(raw_queue.get("followUpMode") or ""),
         }
+        effective_codemode_mode = self._effective_codemode_mode(
+            session,
+            binding=binding,
+            snapshot=snapshot,
+        )
         return {
             "messages": result,
             "toolHistoryEvents": tool_history_events,
+            "codemodeMode": effective_codemode_mode,
             "telemetry": dict(telemetry) if isinstance(telemetry, Mapping) else None,
             "messageQueue": message_queue,
         }
@@ -2194,27 +2430,82 @@ class PiRuntimeHostManager:
         Host or the full historical Tool-event reconstruction.
         """
 
+        session = self.sessions.get(session_id)
+        binding = self.sessions.runtime_binding(session_id)
+        effective_codemode_mode = self._effective_codemode_mode(
+            session,
+            binding=binding,
+        )
         projection_identity = self._recent_projection_identity(session_id)
         cached_projection = self._recent_projected_messages(
             session_id,
             projection_identity,
         )
+        recent_candidate = None
+        cache_identity_changed = False
         if cached_projection is not None:
             cached_messages, cached_tool_history, exact = cached_projection
-            if not exact:
+            if exact:
+                # Even an exact cache can be stale when a prior repair saved
+                # the old branch against the post-append file identity. The
+                # bounded reader is the only cheap way to notice a durable
+                # terminal settlement before trusting that cache.
+                try:
+                    binding = self.sessions.runtime_binding(session_id) or {}
+                    probe_terminal = (
+                        int(projection_identity.get("transcriptMtimeNs") or 0)
+                        // 1_000_000
+                        > as_integer(binding.get("updatedAtMs"))
+                    )
+                except (KeyError, OSError, ValueError, sqlite3.Error):
+                    probe_terminal = False
+                if not probe_terminal:
+                    return {
+                        "messages": cached_messages,
+                        "toolHistoryEvents": cached_tool_history,
+                        "codemodeMode": effective_codemode_mode,
+                        "projectionCurrent": True,
+                    }
+                recent_candidate = self._recent_durable_history_messages(session_id)
+                refreshed_identity = self._recent_projection_identity(session_id)
+                if refreshed_identity == projection_identity:
+                    return {
+                        "messages": cached_messages,
+                        "toolHistoryEvents": cached_tool_history,
+                        "codemodeMode": effective_codemode_mode,
+                        "projectionCurrent": True,
+                    }
+                projection_identity = refreshed_identity
+                cache_identity_changed = True
+            # A stale cache may predate a terminal settlement. Give the
+            # bounded tail reader one chance to recover that exact cursor
+            # before returning the old provisional window. Ordinary appends
+            # keep the existing non-blocking cache path.
+            if not cache_identity_changed:
+                if recent_candidate is None:
+                    recent_candidate = self._recent_durable_history_messages(session_id)
+                refreshed_identity = self._recent_projection_identity(session_id)
+            else:
+                refreshed_identity = projection_identity
+            if not cache_identity_changed and refreshed_identity == projection_identity:
                 self._schedule_recent_projection_refresh(
                     session_id,
                     projection_identity,
                 )
-            return {
-                "messages": cached_messages,
-                "toolHistoryEvents": cached_tool_history,
-                "projectionCurrent": bool(exact and projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
-            }
+                return {
+                    "messages": cached_messages,
+                    "toolHistoryEvents": cached_tool_history,
+                    "codemodeMode": effective_codemode_mode,
+                    "projectionCurrent": False,
+                }
+            projection_identity = refreshed_identity
 
-        recent_candidate = self._recent_durable_history_messages(session_id)
+        if recent_candidate is None:
+            recent_candidate = self._recent_durable_history_messages(session_id)
+            projection_identity = self._recent_projection_identity(session_id)
         if recent_candidate is None:
             durable = self._durable_history_snapshot(session_id)
+            projection_identity = self._recent_projection_identity(session_id)
             if durable is None:
                 return {"messages": [], "projectionCurrent": False}
             raw_messages = durable.get("messages")
@@ -2247,6 +2538,7 @@ class PiRuntimeHostManager:
                 return {
                     "messages": messages,
                     "toolHistoryEvents": tool_history_events,
+                    "codemodeMode": effective_codemode_mode,
                     "projectionCurrent": bool(projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
                 }
         messages = recent_public_message_window(
@@ -2270,6 +2562,7 @@ class PiRuntimeHostManager:
         return {
             "messages": messages,
             "toolHistoryEvents": tool_history_events,
+            "codemodeMode": effective_codemode_mode,
             "projectionCurrent": bool(projection_identity is not None and projection_identity == self._recent_projection_identity(session_id)),
         }
 
@@ -3276,6 +3569,124 @@ class PiRuntimeHostManager:
         self.sessions.set_thinking_level(session_id, effective)
         return {"thinkingLevel": effective}
 
+    def set_codemode_mode(
+        self,
+        session_id: str,
+        *,
+        mode: str,
+    ) -> dict[str, object]:
+        """Change native codemode only after proving the Session is idle.
+
+        Re-opening an already resident Pi Session does not apply new open
+        options. The dedicated Host mutation is therefore the only warm-path
+        setter, and its idle fence prevents a preference change from
+        restarting or altering an active paid turn.
+        """
+
+        requested = normalize_codemode_mode(mode)
+        prepared = self.ensure(
+            session_id,
+            retire_recovered_turn=False,
+            _sync_codemode=False,
+        )
+        return self._set_codemode_mode_after_ensure(
+            session_id,
+            requested,
+            state=as_mapping(prepared.get("state")),
+        )
+
+    def _set_codemode_mode_after_ensure(
+        self,
+        session_id: str,
+        requested: str,
+        *,
+        state: Mapping[str, object],
+        binding: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Apply one validated idle codemode mutation without re-opening Pi."""
+
+        if state.get("isIdle") is not True or as_mapping(state.get("activeTurn")):
+            raise PiRuntimeTurnConflict(
+                "Pi codemode mode can only change while the Session is idle"
+            )
+        capability = codemode_capability(
+            self._host_capabilities.get("codemode")
+        )
+        if capability.get("available") is not True:
+            raise PiRuntimeError(
+                "Pi Runtime Host does not support native codemode"
+            )
+        modes = {
+            str(value).strip().lower()
+            for value in capability.get("modes") or []
+            if str(value).strip().lower() in CODEMODE_MODES
+        }
+        if requested not in modes:
+            raise PiRuntimeError(
+                f"Pi Runtime Host does not support codemode mode: {requested}"
+            )
+        response = self._require_client().send(
+            "session.codemode.set",
+            {"sessionId": session_id, "mode": requested},
+        )
+        response_snapshot = as_mapping(response.get("snapshot"))
+        response_mode = response.get("mode")
+        if response_mode is None:
+            response_mode = response.get("codemodeMode")
+        if response_mode is None:
+            response_mode = response_snapshot.get("codemodeMode")
+        try:
+            effective = normalize_codemode_mode(response_mode, default=requested)
+        except ValueError as exc:
+            raise PiRuntimeError(
+                "Pi Runtime Host returned an invalid codemode mode"
+            ) from exc
+        if effective not in modes:
+            raise PiRuntimeError(
+                "Pi Runtime Host returned an unsupported codemode mode"
+            )
+        if response_snapshot:
+            state = dict(response_snapshot)
+        else:
+            state = dict(state)
+        state["codemodeMode"] = effective
+
+        binding = binding or self.sessions.runtime_binding(session_id)
+        if binding is None:
+            raise PiRuntimeError(
+                "Pi codemode changed without a durable runtime binding"
+            )
+        metadata = dict(as_mapping(binding.get("metadata")))
+        metadata["codemodeMode"] = effective
+        updater = getattr(self.sessions, "update_runtime_binding_metadata", None)
+        if not callable(updater):
+            raise PiRuntimeError(
+                "Agent Session store cannot persist codemode preferences"
+            )
+        try:
+            updated_binding = updater(
+                session_id,
+                metadata,
+                expected_generation=as_integer(binding.get("generation")),
+                expected_external_session_id=str(
+                    binding.get("externalSessionId") or ""
+                ),
+                expected_transcript_ref=str(binding.get("transcriptRef") or ""),
+                expected_branch_anchor=str(binding.get("branchAnchor") or ""),
+            )
+        except (KeyError, OSError, ValueError, sqlite3.Error) as exc:
+            raise PiRuntimeError(
+                "Pi codemode changed but the preference could not be persisted"
+            ) from exc
+        return {
+            "sessionId": session_id,
+            "codemodeMode": effective,
+            "capability": capability,
+            "state": state,
+            "binding": dict(updated_binding),
+            "session": self.sessions.get(session_id),
+        }
+
     def tool_catalog(self, session_id: str) -> list[dict[str, object]]:
         session = dict(self.sessions.get(session_id))
         if self._tool_manifest_provider is None:
@@ -3410,7 +3821,19 @@ class PiRuntimeHostManager:
                 self.ensure(identity["sessionId"], retire_recovered_turn=False)
             primitives = as_mapping(self._host_capabilities.get("runtimePrimitives"))
             if primitives.get("sessionExactTurnCancel") is not True:
-                raise PiRuntimeError("Pi Runtime Host does not support exact turn cancellation")
+                # A capability refusal happens before any abort RPC. Keep it
+                # distinct from a lost acknowledgement: the Room may wait for
+                # this exact turn's natural settlement, then apply its revision.
+                # This is a PAW preflight rejection, never a Host cancel/drain
+                # receipt and never permission to issue a broad Session abort.
+                return {
+                    "schemaVersion": "rag-ime.pi-exact-turn-cancel.v1",
+                    **identity,
+                    "receiptId": "pi-cancel-unsupported:" + identity["cancelId"],
+                    "state": "rejected",
+                    "source": "paw_runtime_capability_preflight",
+                    "reason": "sessionExactTurnCancel_unsupported",
+                }
             if recover_retired_only and primitives.get("sessionRetiredTurnRecovery") is not True:
                 raise PiRuntimeError("Pi Runtime Host does not support exact retired turn recovery")
             if recover_interrupted_only and primitives.get("sessionInterruptedTurnRecovery") is not True:
@@ -4572,8 +4995,18 @@ class PiRuntimeHostManager:
                 raw,
                 allow_aborted=False,
             )
+            terminal_turn_id = turn_id or state.turn_id
+            with self._lock:
+                owns_terminal_turn = bool(
+                    terminal_turn_id
+                    and state.turn_id == terminal_turn_id
+                )
+            if owns_terminal_turn:
+                self._refresh_terminal_recent_projection(
+                    session_id,
+                    terminal_turn_id,
+                )
             if failed_settlement is not None:
-                terminal_turn_id = turn_id or state.turn_id
                 if failed_settlement[0] and terminal_turn_id:
                     self._turn_failed_once(
                         session_id,
@@ -5265,18 +5698,3 @@ class PiRuntimeHostManager:
         self._idle_timer = None
         if timer is not None:
             timer.cancel()
-
-
-
-
-
-
-def _latest_entry_id(entries: list[dict[str, object]]) -> str:
-    return next(
-        (
-            str(entry.get("id") or "")
-            for entry in reversed(entries)
-            if str(entry.get("id") or "")
-        ),
-        "",
-    )

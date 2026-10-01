@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -452,8 +453,8 @@ _TOOL_SPECS: tuple[dict[str, object], ...] = (
             "操作用户日常 Chrome/Edge，或通过 desktop_semantic 打开第二个浏览器",
         ),
         "input": "ego-browser JavaScript、标签页、快照 ref、URL、文本或滚动参数",
-        "output": "页面快照、截图、轨迹或带回执的操作结果",
-        "does": "在同一 PAW Chromium 和 Task Space 上观察并受控操作网页。",
+        "output": "页面快照、截图像素及受管图片读取引用、轨迹或带回执的操作结果",
+        "does": "在同一 PAW Chromium 和 Task Space 上观察并受控操作网页。需要目视检查时用 screenshot；imagePath 是访问地址，imageReadRef 可交给 read 再读，均不是本地文件路径。",
         "operations": (
             "status",
             "tabs",
@@ -3132,6 +3133,10 @@ class ControlToolGateway:
         self._memory_governance_store: MemoryGovernanceProposalStore | None = None
         self._desktop_cursor_lock = threading.Lock()
         self._desktop_snapshot_cursors: dict[tuple[str, str, int, int], str] = {}
+        # Quick-action preflight and admission share one fence so two Room
+        # surfaces cannot both observe an empty active-job set and launch the
+        # same project script in this supervisor.
+        self._project_quick_action_lock = threading.RLock()
         self._auto_approval_executor: (
             Callable[[Mapping[str, object]], Mapping[str, object]] | None
         ) = None
@@ -4058,6 +4063,25 @@ class ControlToolGateway:
                 raise ValueError("managed media reader is unavailable")
             receipt, raw = reader(resource_id, session_id=session_id)
             metadata = {"owner": "AgentMediaStore", "media": receipt}
+            if str(receipt.get("mimeType") or "") in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+                encoded = base64.b64encode(raw).decode("ascii")
+                if receipt.get("ownerType") == "room":
+                    # The authorized Room read becomes part of this Session's
+                    # durable Pi transcript, whose image resolver is Session-scoped.
+                    store = self.collaboration.media
+                    if not store.resolve_pi_image(session_id, receipt["mimeType"], encoded):
+                        store.import_bytes(session_id=session_id, data=raw, mime_type=receipt["mimeType"],
+                                           file_name=str(receipt.get("fileName") or "image"),
+                                           origin="tool_result", origin_tool="workspace_read",
+                                           origin_receipt_id=resource_id)
+                return {
+                    "summary": f"已读取受管图片 {resource_ref}",
+                    "resourceRef": resource_ref, "resourceKind": "media",
+                    "resourceId": resource_id, "metadata": metadata,
+                    "content": "图片像素随本次工具结果提供。", "truncated": False,
+                    "_modelImages": [{"type": "image", "mimeType": receipt["mimeType"],
+                                      "data": encoded}],
+                }
             if str(receipt.get("mimeType") or "").startswith("text/"):
                 content = raw.decode("utf-8")
             else:
@@ -4096,7 +4120,8 @@ class ControlToolGateway:
         if "lineOffset" in args or "lineLimit" in args:
             start = _bounded_int(args.get("lineOffset"), default=1, minimum=1, maximum=50_000_000)
             limit = _bounded_int(args.get("lineLimit"), default=2_000, minimum=1, maximum=2_000)
-            lines = content.splitlines(keepends=True)
+            from .managed_resource_text import readable_lines
+            lines, segmented = readable_lines(content)
             if start > max(1, len(lines)):
                 raise ValueError("managed resource lineOffset is beyond end of content")
             selected: list[str] = []
@@ -4104,8 +4129,6 @@ class ControlToolGateway:
             for line in lines[start - 1:start - 1 + limit]:
                 line_size = len(line.encode("utf-8"))
                 if size + line_size > 40 * 1024:
-                    if not selected:
-                        raise ValueError("managed resource line exceeds native read limit; use resourceRef byte pagination")
                     break
                 selected.append(line)
                 size += line_size
@@ -4118,6 +4141,7 @@ class ControlToolGateway:
                 "content": "".join(selected), "contentBytes": size,
                 "size": len(content.encode("utf-8")),
                 "startLine": start, "endLine": end_line,
+                "lineLayout": "bounded_segments" if segmented else "physical_lines",
                 "nextLineOffset": next_line, "truncated": next_line is not None,
                 "resourceRevision": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             }
@@ -4244,12 +4268,13 @@ class ControlToolGateway:
                 limit=_bounded_int(args.get("limit"), default=20, minimum=1, maximum=100)
             )
         if operation == "screenshot":
-            return service.submit_command(
+            result = service.submit_command(
                 "screenshot",
                 args,
                 session_id=_bounded_text(args.get("_sessionId"), maximum=240),
                 timeout_seconds=20.0,
             )
+            return self._browser_image_result(result, args)
         if operation == "stop":
             return service.stop()
         if operation == "run":
@@ -4275,6 +4300,33 @@ class ControlToolGateway:
                 timeout_seconds=25.0 if operation in {"navigate", "wait"} else 15.0,
             )
         raise ValueError(f"unsupported browser operation: {operation}")
+
+    def _browser_image_result(self, result, args):
+        """Deliver captured pixels through Pi content, with an owned durable ref."""
+        capture = result.get("result", {})
+        snapshot_id = capture.get("snapshotId") if isinstance(capture, Mapping) else None
+        if not snapshot_id or result.get("status") == "failed":
+            return result
+        session_id = _bounded_text(args.get("_sessionId"), maximum=240)
+        mime, raw = self.browser_control.snapshot_image(snapshot_id)
+        media = self.collaboration.media.import_bytes(
+            session_id=session_id, data=raw, mime_type=mime,
+            file_name=f"{snapshot_id}.png", origin="tool_result", origin_tool="browser",
+            origin_receipt_id=str(result.get("commandId") or snapshot_id),
+        )
+        dispatch = self._room_dispatch_context(session_id)
+        if dispatch:
+            # The Session copy lets its Pi transcript resolve image bytes. The
+            # Room copy is the explicit shared artifact other partners can read.
+            media = self.collaboration.media.import_bytes(
+                room_id=dispatch["roomId"], data=raw, mime_type=mime,
+                file_name=f"{snapshot_id}.png", origin="tool_result", origin_tool="browser",
+                origin_receipt_id=str(result.get("commandId") or snapshot_id),
+            )
+        return {**result, "imageReadRef": "media://" + str(media["mediaId"]),
+                "imageMedia": media,
+                "_modelImages": [{"type": "image", "mimeType": mime,
+                                  "data": base64.b64encode(raw).decode("ascii")}]}
 
     def _desktop(self, operation: str, args: Mapping[str, object]) -> dict[str, object]:
         if operation == "status":
@@ -7374,6 +7426,120 @@ class ControlToolGateway:
             "auditId": str(approval.get("approvalId") or ""),
         }
 
+    def start_project_quick_action(
+        self,
+        session_id: str,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Start one of the project-result actions through the durable job owner.
+
+        The result surface sends an action name, never a shell command.
+        The canonical Session workspace scope remains the authority for the
+        working directory; the package manifest is checked before the fixed
+        ``npm run`` command is handed to the existing harness. Lab sessions
+        retain their project binding, while ordinary Room/Session results may
+        use the same seam with the Room's project identity.
+        """
+
+        service = self._background_job_service()
+        normalized_session_id = _bounded_text(session_id, maximum=240)
+        session = self.sessions.get(normalized_session_id)
+        if str(session.get("status") or "") == "archived":
+            raise ValueError("archived sessions cannot execute project actions")
+
+        action = _bounded_text(payload.get("action"), maximum=32).lower()
+        script = {"preview": "start", "checks": "test"}.get(action)
+        if script is None:
+            raise ValueError("project quick action must be preview or checks")
+
+        project_id = _bounded_text(payload.get("projectId"), maximum=240)
+        if not project_id:
+            raise ValueError("projectId is required for a project quick action")
+        surface_key = str(session.get("surfaceKey") or "")
+        if surface_key.startswith("project.") and surface_key.endswith(".guide"):
+            expected_surface_key = f"project.{project_id}.guide"
+            if (
+                str(session.get("surfaceKind") or "") != "extension_app"
+                or str(session.get("ownerAppId") or "") != "extension:agent-lab"
+                or surface_key != expected_surface_key
+            ):
+                raise ValueError("project quick action does not match the bound Lab project")
+
+        raw_cwd = _bounded_text(payload.get("cwd"), maximum=2_000)
+        if not raw_cwd or not Path(raw_cwd).expanduser().is_absolute():
+            raise ValueError("project quick action cwd must be an absolute path")
+        cwd = Path(raw_cwd).expanduser()
+        package_path = cwd / "package.json"
+        if package_path.is_symlink() or not package_path.is_file():
+            raise ValueError("project quick actions require package.json in the project directory")
+        try:
+            package = json.loads(package_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("project package.json could not be read") from exc
+        scripts = package.get("scripts") if isinstance(package, Mapping) else None
+        script_value = scripts.get(script) if isinstance(scripts, Mapping) else None
+        if not isinstance(script_value, str) or not script_value.strip():
+            raise ValueError(f"project package.json does not declare the {script!r} script")
+
+        prepared = self.workspace_harness.prepare_background_command(
+            session,
+            {
+                "command": f"npm run {script}",
+                "cwd": str(cwd),
+                "timeoutSeconds": payload.get("timeoutSeconds", 3_600),
+                "allowNetwork": False,
+            },
+        )
+        quick_action = {
+            "action": action,
+            "script": script,
+            "projectId": project_id,
+            "cwd": str(prepared.cwd),
+        }
+        preview_url = _project_preview_url(payload.get("previewUrl"))
+        if preview_url:
+            if action != "preview":
+                raise ValueError("previewUrl is only valid for the preview quick action")
+            quick_action["previewUrl"] = preview_url
+
+        with self._project_quick_action_lock:
+            existing = service.list(normalized_session_id, limit=100)["items"]
+            for job in existing:
+                if (
+                    isinstance(job, Mapping)
+                    and str(job.get("status") or "") in {"queued", "running", "cancelling"}
+                    and str(job.get("command") or "") == prepared.command
+                    and str(job.get("cwd") or "") == str(prepared.cwd)
+                ):
+                    return {
+                        "schemaVersion": "rag-ime.agent-background-job-start-receipt.v1",
+                        "ok": True,
+                        "summary": f"项目《{project_id}》的{action}任务已在运行",
+                        "replayed": True,
+                        "deduplicated": True,
+                        "mutationApplied": False,
+                        "job": dict(job),
+                        "quickAction": quick_action,
+                    }
+
+            label = _bounded_text(payload.get("label"), maximum=120) or (
+                "项目预览" if action == "preview" else "项目检核"
+            )
+            idempotency_key = _bounded_text(payload.get("idempotencyKey"), maximum=240)
+            receipt = service.start(
+                normalized_session_id,
+                prepared,
+                label=label,
+                approval_id="",
+                causal_metadata={},
+                **({"idempotency_key": idempotency_key} if idempotency_key else {}),
+            )
+            return {
+                **receipt,
+                "mutationApplied": not bool(receipt.get("replayed")),
+                "quickAction": quick_action,
+            }
+
     def _prepare_background_job_cancel(
         self,
         *,
@@ -10366,6 +10532,29 @@ def _bounded_text(value: object, *, maximum: int) -> str:
     text = " ".join(str(value or "").split())
     text = re.sub(r"\[L:[^\]]+\]", "", text)
     return " ".join(text.split())[:maximum]
+
+
+def _project_preview_url(value: object) -> str:
+    """Accept only an explicit loopback URL for a project Browser handoff."""
+
+    url = _bounded_text(value, maximum=2_000)
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"} or hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        raise ValueError("previewUrl must be an explicit loopback HTTP URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("previewUrl must not contain credentials, query, or fragment data")
+    if not parsed.path.startswith("/") or ".." in parsed.path.split("/"):
+        raise ValueError("previewUrl must target a safe loopback path")
+    if parsed.port is None or not 1 <= parsed.port <= 65_535:
+        raise ValueError("previewUrl must include a valid loopback port")
+    return url
 
 
 _TRACE_DIAGNOSTIC_TARGET_FIELDS = frozenset(

@@ -97,6 +97,7 @@ class JevLifecycleTests(host.JevHostFixture):
                 "clientMessageId": "plan-1",
                 "message": "先分析再实现并验证",
                 "strategy": "plan",
+                "verificationMode": "independent",
                 "modelRouting": "participant",
             },
         )
@@ -142,6 +143,60 @@ class JevLifecycleTests(host.JevHostFixture):
         self.assertEqual(len(snapshot.tasks), 3)
         self.assertEqual(len(snapshot.edges), 1)
         self.assertEqual(snapshot.task(root.id).accepted_turn_id, "")
+
+    def test_observation_reads_materials_only_for_ready_work(self):
+        created, planner, proposal = self.planned()
+        self.submit(planner, "plan_submit", proposal)
+        self.finish(planner)
+        snapshot = self.snapshot(created)
+        ready = set(snapshot.graph().frontier(self.app.executions(snapshot)).ready)
+        self.assertEqual(len(ready), 1)
+        with patch.object(self.app, "manifest", wraps=self.app.manifest) as manifest:
+            self.app.observe(snapshot, None)
+        self.assertEqual({call.args[1].id for call in manifest.call_args_list}, ready)
+        self.app.tick(limit=1)
+        with patch.object(self.app, "manifest", wraps=self.app.manifest) as manifest:
+            self.app.observe(self.snapshot(created), None)
+        manifest.assert_not_called()
+
+    def test_terminal_arriving_mid_batch_releases_claim_before_next_decision(self):
+        created = self.create()
+        self.app.tick()
+        worker = self.effects(created, "execute")[0]
+        self.submit(worker, "result_submit", {
+            "resultSummary": "已完成本次核验", "evidenceRefs": ["test:result"],
+            "artifactRefs": [],
+        })
+        with self.app.ledger.connection(write=True) as conn:
+            for index in range(2):
+                self.app._enqueue(conn, created["graphId"], f"mid-batch:{index}", "executor_drained")
+        observations = []
+
+        def advance(event):
+            with self.app.ledger.connection() as conn:
+                claimed = conn.execute(
+                    "SELECT 1 FROM agent_jev_executor_claims WHERE effect_id=?",
+                    (worker["effectId"],),
+                ).fetchone() is not None
+            observations.append(claimed)
+            if len(observations) == 1:
+                # Pi finishes while the event batch is already being handled.
+                # No manual reconcile, extra tick, or reissued prompt follows.
+                self.terminals[worker["effectId"]] = {
+                    "eventId": "terminal:" + worker["effectId"],
+                    "eventType": "turn_completed", "status": "completed",
+                }
+                request = worker["request"]
+                self.service.runtime.release_prompt_admission(
+                    request["sessionId"], client_message_id=request["dispatchId"])
+                self.service.room_turns.finish(
+                    request["sessionId"], worker["receipt"]["turnId"], request["rootId"])
+            return {"status": "waiting", "effects": []}
+
+        with patch.object(self.app.lifecycle, "advance", side_effect=advance):
+            self.app.tick(limit=2)
+        self.assertEqual(observations, [True, False])
+        self.assertEqual(len(self.calls), 1)
 
     def test_plan_execute_verify_dependencies_and_single_final(self):
         created, planner, proposal = self.planned()

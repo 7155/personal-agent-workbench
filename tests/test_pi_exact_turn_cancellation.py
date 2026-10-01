@@ -78,8 +78,13 @@ class ExactTurnCancellationTests(unittest.TestCase):
 
     def test_unsupported_host_never_falls_back_to_broad_abort(self):
         self.runtime._host_capabilities = {}
-        with self.assertRaisesRegex(PiRuntimeError, "exact turn cancellation"):
-            self.cancel()
+        result = self.cancel()
+        self.assertEqual(result["state"], "rejected")
+        self.assertEqual(result["source"], "paw_runtime_capability_preflight")
+        self.assertEqual(result["reason"], "sessionExactTurnCancel_unsupported")
+        self.assertNotIn("runtimeReceipt", result)
+        self.assertNotIn("drained", result)
+        self.assertEqual(self.cancel(lookup_only=True), result)
         self.client.send.assert_not_called()
         self.runtime.abort.assert_not_called()
 

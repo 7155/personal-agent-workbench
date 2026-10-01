@@ -7,6 +7,7 @@ import type { LabProject } from './types';
 import './lab-project-space.css';
 import { LabProjectFlow } from './LabProjectFlow';
 import { LabOptimizationCompare } from './LabOptimizationCompare';
+import { ProjectQuickActions } from './ProjectQuickActions';
 
 export { testedDimensions } from './optimization-parameters';
 
@@ -35,6 +36,7 @@ export function LabProjectSpace({ project, artifactId, artifactContent, onSelect
   const selectArtifact = (id: string) => { setShowArtifact(true); setSelection(''); onSelectArtifact(id); };
   return <section className="lab-space" aria-label="项目成果工作面">
     <div className="lab-space__activity"><button aria-expanded={activityOpen} onClick={() => setActivityOpen(!activityOpen)}><span className="lab-space__activity-mark" data-active={Boolean(counts?.running)} /><strong>{counts?.running ? `${counts.running} 项后台工作正在运行` : counts?.queued ? `${counts.queued} 项后台工作排队中` : '后台工作'}</strong>{counts ? <span>{counts.completed} 已完成{counts.failed ? ` · ${counts.failed} 失败` : ''}</span> : <span>状态尚未返回</span>}<ChevronRight size={14} /></button><div className="lab-space__actions"><select aria-label="查看项目内容" value={showArtifact ? `artifact:${artifactId}` : 'compare'} onChange={(event) => { if (event.target.value === 'compare') { setShowArtifact(false); setSelection(''); } else selectArtifact(event.target.value.slice('artifact:'.length)); }}><option value="compare">优化对比 · {experiments.length} 轮</option>{project.artifacts.map((artifact) => <option key={artifact.artifactId} value={`artifact:${artifact.artifactId}`}>{artifact.title} · v{artifact.revision}</option>)}</select><button aria-expanded={flowOpen} onClick={() => setFlowOpen(!flowOpen)}>项目流程与材料状态</button><Button size="small" onClick={onOpenGraph}><GitBranch size={14} />项目总览</Button><button aria-label="项目文件夹" title="项目文件夹" disabled={!project.directory?.path} onClick={() => project.directory && onOpenFile(project.directory.path)}><FolderOpen size={15} /></button></div></div>
+    {project.guideSessionId ? <ProjectQuickActions project={project} /> : null}
     {project.workflow?.complete === false ? <p className="lab-project-notice" role="status">部分后台记录暂不可读取，当前只展示已返回的工作。</p> : null}
     {activityOpen ? <section className="lab-space-activity" aria-label="全部后台工作"><header><h3>后台工作与需要处理的任务</h3><Button size="small" onClick={onOpenRuns}>打开执行与恢复</Button></header>{active.length ? active.map((node) => <button key={node.id} onClick={() => selectNode(node)}>{node.status === 'running' ? <LoaderCircle size={15} /> : node.status === 'queued' ? <Clock3 size={15} /> : <CircleAlert size={15} />}<span><strong>{node.title}</strong><small>{node.summary}</small></span><b>{workflowNodeStatus(node)}</b></button>) : <p>{project.workflow ? '没有返回正在运行、排队或需恢复的后台任务。' : '当前后台状态尚未返回，可以打开执行页面重新读取。'}</p>}</section> : null}
     {flowOpen ? <LabProjectFlow project={project} onSelectNode={selectNode} onOpenApps={onOpenApps} onOpenGraph={onOpenGraph} /> : null}

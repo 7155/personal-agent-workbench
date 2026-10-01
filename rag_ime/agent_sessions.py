@@ -1007,6 +1007,173 @@ class AgentSessionStore:
             updated_at_ms=updated_at_ms,
         )
 
+    def advance_runtime_branch_cursor(
+        self,
+        session_id: str,
+        *,
+        branch_anchor: str,
+        expected_generation: int,
+        expected_external_session_id: str,
+        expected_transcript_ref: str,
+        expected_branch_anchor: str,
+        updated_at_ms: int | None = None,
+    ) -> dict[str, object]:
+        """Advance a known Pi branch without opening a new runtime epoch.
+
+        Terminal transcript settlement is a cursor update, not a new Pi
+        binding.  Keep Room dispatch and pending approval generation fences
+        stable while guarding the update against a concurrent rebind or
+        transcript switch.
+        """
+
+        anchor = _runtime_binding_text(
+            branch_anchor,
+            field="branchAnchor",
+            maximum=240,
+        )
+        expected_external_id = _runtime_binding_text(
+            expected_external_session_id,
+            field="expectedExternalSessionId",
+            maximum=240,
+        )
+        expected_transcript = _runtime_binding_text(
+            expected_transcript_ref,
+            field="expectedTranscriptRef",
+            maximum=4096,
+            required=False,
+        )
+        expected_anchor = _runtime_binding_text(
+            expected_branch_anchor,
+            field="expectedBranchAnchor",
+            maximum=240,
+            required=False,
+        )
+        generation = int(expected_generation)
+        if generation <= 0:
+            raise ValueError("expected runtime binding generation must be positive")
+        timestamp = _timestamp(updated_at_ms)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_runtime_bindings
+                SET branch_anchor = ?, updated_at_ms = ?
+                WHERE session_id = ?
+                  AND generation = ?
+                  AND external_session_id = ?
+                  AND transcript_ref = ?
+                  AND branch_anchor = ?
+                """,
+                (
+                    anchor,
+                    timestamp,
+                    session_id,
+                    generation,
+                    expected_external_id,
+                    expected_transcript,
+                    expected_anchor,
+                ),
+            )
+            if cursor.rowcount != 1:
+                if conn.execute(
+                    "SELECT 1 FROM agent_sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone() is None:
+                    raise AgentSessionNotFound(session_id)
+                raise ValueError("runtime binding branch cursor precondition changed")
+            row = conn.execute(
+                "SELECT * FROM agent_runtime_bindings WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:  # pragma: no cover - guarded by the update
+            raise AgentSessionNotFound(session_id)
+        return _runtime_binding_payload(row)
+
+    def update_runtime_binding_metadata(
+        self,
+        session_id: str,
+        metadata: Mapping[str, object],
+        *,
+        expected_generation: int,
+        expected_external_session_id: str,
+        expected_transcript_ref: str,
+        expected_branch_anchor: str,
+        updated_at_ms: int | None = None,
+    ) -> dict[str, object]:
+        """Update binding metadata without rotating the runtime generation.
+
+        Session preference changes such as native Pi codemode are idle control
+        mutations. They must survive a later cold open while keeping the
+        existing Room/turn generation fence intact.
+        """
+
+        try:
+            metadata_json = json.dumps(
+                dict(metadata),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("runtime binding metadata must be JSON serializable") from exc
+        if len(metadata_json.encode("utf-8")) > 16_384:
+            raise ValueError("runtime binding metadata is too large")
+        generation = int(expected_generation)
+        if generation <= 0:
+            raise ValueError("expected runtime binding generation must be positive")
+        external_id = _runtime_binding_text(
+            expected_external_session_id,
+            field="expectedExternalSessionId",
+            maximum=240,
+        )
+        transcript = _runtime_binding_text(
+            expected_transcript_ref,
+            field="expectedTranscriptRef",
+            maximum=4096,
+            required=False,
+        )
+        branch_anchor = _runtime_binding_text(
+            expected_branch_anchor,
+            field="expectedBranchAnchor",
+            maximum=240,
+            required=False,
+        )
+        timestamp = _timestamp(updated_at_ms)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_runtime_bindings
+                SET metadata_json = ?, updated_at_ms = ?
+                WHERE session_id = ?
+                  AND generation = ?
+                  AND external_session_id = ?
+                  AND transcript_ref = ?
+                  AND branch_anchor = ?
+                """,
+                (
+                    metadata_json,
+                    timestamp,
+                    session_id,
+                    generation,
+                    external_id,
+                    transcript,
+                    branch_anchor,
+                ),
+            )
+            if cursor.rowcount != 1:
+                if conn.execute(
+                    "SELECT 1 FROM agent_sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone() is None:
+                    raise AgentSessionNotFound(session_id)
+                raise ValueError("runtime binding metadata precondition changed")
+            row = conn.execute(
+                "SELECT * FROM agent_runtime_bindings WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:  # pragma: no cover - guarded by the update
+            raise AgentSessionNotFound(session_id)
+        return _runtime_binding_payload(row)
+
     def rename(self, session_id: str, title: str, *, updated_at_ms: int | None = None) -> dict[str, object]:
         normalized = " ".join(str(title).split())[:120]
         if not normalized:

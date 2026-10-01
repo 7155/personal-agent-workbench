@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { GlobalFeedbackProvider } from '@/components/feedback';
@@ -210,6 +210,31 @@ describe('PawBackgroundActivity', () => {
     fireEvent.click(screen.getByRole('button', { name: '刷新后台目录' }));
 
     expect(await screen.findByRole('button', { name: '通知中心，2 条通知' })).toBeInTheDocument();
+  });
+
+  it.each(['queued', 'active', 'review'])('waits for %s Room work across idle partner handoffs before notifying completion', async (initialWorkState) => {
+    let status = 'busy';
+    let workState = initialWorkState;
+    renderActivity(new MockControlTransport({ routes: {
+      'agent.sessions.list': () => ({ ok: true, items: [
+        session('room-partner', '并行协作 · Agent 1', status, { roomId: 'room-running' }),
+      ] }),
+      'agent.rooms.list': () => ({ ok: true, items: [{
+        id: 'room-running', title: '并行协作', status: 'active', updatedAtMs: 30,
+        workspaceRoots: ['/work/paw'], participants: [],
+        workItems: [{ state: workState, objective: '集成交付', updatedAtMs: 30 }],
+      }] }),
+    } }));
+    await screen.findByRole('button', { name: '1 个后台工作正在运行' });
+    status = 'idle';
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新后台目录' })); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: '1 个后台工作正在运行' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: '通知中心，1 条通知' })).not.toBeInTheDocument();
+    workState = 'done';
+    fireEvent.click(screen.getByRole('button', { name: '刷新后台目录' }));
+    const trigger = await screen.findByRole('button', { name: '通知中心，1 条通知' });
+    fireEvent.click(trigger);
+    expect(await screen.findByText('并行协作 已结束运行')).toBeInTheDocument();
   });
 
   it('warns when a running Room participant faults instead of reporting a normal finish', async () => {

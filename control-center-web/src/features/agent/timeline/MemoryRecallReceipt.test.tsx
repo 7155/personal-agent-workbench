@@ -102,7 +102,6 @@ describe('MemoryRecallReceipt', () => {
   it.each([
     ['empty', 0, '未找到相关记忆'],
     ['failed', undefined, '本轮未能召回'],
-    ['disabled', undefined, '已关闭'],
     ['reused', 3, '复用已载入记忆'],
   ] as const)('shows the recorded %s outcome without manufacturing a new search', (status, count, label) => {
     const trace = memoryTrace({ hitCount: count });
@@ -114,6 +113,15 @@ describe('MemoryRecallReceipt', () => {
     render(<MemoryRecallReceipt receipt={receipt!} />);
     expect(screen.getByText(new RegExp(label))).toBeInTheDocument();
     expect(screen.queryByText(/0 ms/)).not.toBeInTheDocument();
+  });
+
+  it.each(['disabled', 'unavailable'] as const)('hides %s memory without a recall or use', (status) => {
+    const trace = memoryTrace({ disposition: 'omitted', hitCount: undefined });
+    trace.nodes[0].metadata.recallStatus = status;
+    expect(memoryRecallReceiptFromTrace(trace)).toBeUndefined();
+    const previous = memoryRecallReceiptFromTrace(memoryTrace())!;
+    const { container } = render(<MemoryRecallReceipt receipt={{ ...previous, status }} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('does not let an omitted steer trace erase the original recall in the same turn', async () => {

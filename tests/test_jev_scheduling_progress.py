@@ -12,12 +12,22 @@ from unittest.mock import Mock, patch
 
 from rag_ime.jev_tasks.candidates import Verification, build_candidates
 from rag_ime.jev_tasks.decider import ABSTAIN, JevChoices
+from rag_ime.jev_tasks.context import ContextManifest
 from rag_ime.jev_tasks.ledger import Snapshot
 from rag_ime.jev_tasks.types import Edge, ExecutionFact, Task, canonical, digest
 from tests.test_jev_host_application import JevHostFixture
 
 
 class SchedulingCandidateTests(unittest.TestCase):
+    def test_ready_integration_reports_missing_materials_instead_of_a_silent_noop(self):
+        snapshot = replace(self.snapshot, tasks=tuple(replace(t, state='done') if t.id in {'A', 'B'} else t
+                                                     for t in self.snapshot.tasks))
+        candidates = build_candidates(snapshot, event_id='context-budget', executions=self.executions,
+            executors=(), eligible_pairs=frozenset(), verifications={},
+            manifests={'C': ContextManifest('C', 0, (), ('dependency:A: required input exceeds context budget',), 'digest')})
+        self.assertEqual(candidates.actions, ())
+        self.assertIn('C: dependency:A: required input exceeds context budget', candidates.missing)
+
     def setUp(self):
         def task(identity, state="active", parent=""):
             return Task(identity, "root", "room", state, 0, "owner-" + identity,

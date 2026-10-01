@@ -1,0 +1,46 @@
+/* Chat owns the vertical space; supporting controls expand on request. */
+.paw-desktop-root .paw-agent-app.paw-agent-app--dual-mode[data-compact-work] { position: relative; grid-template-rows: minmax(0, 1fr); }
+.paw-desktop-root .paw-agent-app[data-compact-work] > .paw-agent-stage { grid-row: 1; }
+.paw-workspace-options { position: absolute; top: 4px; right: 8px; z-index: 20; }
+.paw-chat-controls-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.paw-chat-controls-toggle[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.paw-session-workspace__header[data-controls-expanded='false'] .paw-session-workspace__tools > button > span { display: none; }
+.paw-desktop-root .paw-room-window-chrome[data-controls-expanded='false'] > nav,
+.paw-desktop-root .paw-room-window-chrome[data-controls-expanded='false'] > .paw-room-workspace__mode { display: none; }
+.paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] { grid-template-rows: minmax(0, 1fr); grid-template-areas: 'room-main'; }
+.paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-rail='open'] { grid-template-areas: 'room-main jev-rail'; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] { --wb-read: 1480px !important; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 4px 12px 6px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn { max-width: min(var(--wb-read), 100%); }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-user-message { max-width: 94%; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer > .agent-composer-wrap { width: min(var(--wb-read), 100%) !important; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-first-response { width: min(var(--wb-read), 100%); }
+.paw-desktop-root .paw-room-workspace__composer { padding: 4px 12px 6px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { width: 100%; max-width: 1520px; padding: 8px 16px 0; box-sizing: border-box; }
+@media (max-width: 620px) { .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { padding-inline: 12px; } }
+
+.agent-first-response { display: flex; align-items: center; gap: 8px; width: min(var(--wb-read, 1480px), 100%); margin: 0 auto 6px; padding-inline: 8px; box-sizing: border-box; color: var(--paw-muted); font-size: 13px; }
+.agent-first-response strong { font-weight: 500; }
+.paw-room-response-status span { font-size: 12px; }
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench']:not([data-expanded]) textarea { min-height: 40px; padding: 8px 42px 6px 12px; }
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench']:not([data-expanded]) .agent-composer__toolbar { min-height: 36px; padding: 0 8px 5px; gap: 8px; }
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench'] .agent-composer__editor > button { top: 7px; right: 8px; }
+
+/* These rules intentionally come after the migrated Room skin. That skin
+ * keeps a 760px/742px legacy reading column; the workbench layout uses one
+ * wider column for transcript, status and input so Thinking cannot drift away
+ * from the messages it describes. */
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 {
+  --wb-read: 1480px !important;
+}
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-timeline > .ccui-conversation-surface {
+  --ccui-reading-width: var(--wb-read) !important;
+}
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-workspace__composer > .room-composer-shell,
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-workspace__composer .ccui-queue-tray,
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-workspace__composer .ccui-queue-panel {
+  width: min(var(--wb-read), 100%) !important;
+}
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-response-status {
+  width: min(var(--wb-read), 100%) !important;
+}

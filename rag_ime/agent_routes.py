@@ -47,6 +47,9 @@ def agent_background_job_route(path: str) -> tuple[str, str, str]:
     if not path.startswith(prefix):
         return "", "", ""
     parts = path[len(prefix) :].strip("/").split("/")
+    if len(parts) == 3 and parts[1] == "background-jobs" and parts[2] == "start":
+        session_id = unquote(parts[0]).strip()
+        return (session_id, "", "start") if session_id else ("", "", "")
     if len(parts) == 2 and parts[1] == "background-jobs":
         session_id = unquote(parts[0]).strip()
         return (session_id, "", "collection") if session_id else ("", "", "")

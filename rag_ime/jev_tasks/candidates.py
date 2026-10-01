@@ -142,6 +142,9 @@ def build_candidates(
         ):
             missing.append(task_id + ": context not prepared for current revision")
             continue
+        if manifest.missing:
+            missing.extend(task_id + ": " + reason for reason in manifest.missing)
+            continue
         current = actors.get(task.owner_id)
         owner_ready = (
             current is not None
@@ -243,7 +246,7 @@ def build_candidates(
                 (f"验收通过责任「{task.objective}」的当前提交，推进依赖该结果的责任。"
                  if operation == "accept" else
                  f"退回返修责任「{task.objective}」的当前提交；沿用同一任务并增加版本，补齐核验未满足的要求。")
-                + f"已有匹配当前提交的独立核验：{proof.operability}/{proof.requirement}。",
+                + f"已有匹配当前提交的核验结论：{proof.operability}/{proof.requirement}。",
                 {
                     "reason": proof.reason,
                     "evidenceRefs": list(proof.evidence_refs),

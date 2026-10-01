@@ -26,6 +26,7 @@ export function toolDisplayName(tool: ToolManifest): { name: string; description
 }
 function rowState(item: CapabilityCatalogItem | undefined, available: boolean): CapabilityDisplayState {
   if (item?.status === 'removed') return 'unavailable';
+  if (item?.disclosure.effective === 'disabled' && item.effectiveScope !== 'scenario') return 'disabled';
   if (item?.authorization.state === 'denied') return 'denied';
   if (item?.disclosure.effective === 'disabled') return 'disabled';
   if (available) return 'usable';
@@ -48,7 +49,7 @@ export function buildCapabilityRows(tools: readonly ToolManifest[], session: Ses
       scope: item ? capabilityScopeLabel(item.effectiveScope) : '使用范围未提供',
       preference: item ? catalog?.sessionPolicy?.disclosurePreferences.session[item.canonicalId] ?? 'inherit' : 'inherit',
       disclosure: item ? item.disclosure.state === 'disclosed' ? '已披露' : '未披露' : '未提供',
-      authorization: item ? item.authorization.state === 'authorized' ? '已授权' : item.authorization.state === 'denied' ? '未获授权' : '不涉及单独授权' : '未提供',
+      authorization: state === 'disabled' ? '已关闭，启用后核对可用性' : item ? item.authorization.state === 'authorized' ? '已授权' : item.authorization.state === 'denied' ? '未获授权' : '不涉及单独授权' : '未提供',
       risk: riskLabel(item?.risk || tool?.riskLevel || ''), permissions: item?.requiredPermissions ?? [],
       reasons: Array.from(new Set([...(item?.reasons ?? []), item?.authorization.reason, item?.disclosure.reason].filter((v): v is string => Boolean(v)))),
       revision: item?.revision ?? '', configurable: confirmed && Boolean(item) && item?.status !== 'removed',

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from rag_ime.agent_event_projection import AgentEventProjectionService, room_event_projection
+from rag_ime.agent_event_projection import (
+    AgentEventProjectionService,
+    room_event_projection,
+    runtime_event_metrics,
+)
 from rag_ime.agent_protocol import AgentEventEnvelope
 from rag_ime.pi.event_projection import tool_event_payload
 
@@ -10,9 +14,11 @@ from rag_ime.pi.event_projection import tool_event_payload
 class _Sessions:
     def __init__(self) -> None:
         self.event_types: list[str] = []
+        self.runtime_events: list[dict[str, object]] = []
 
     def record_runtime_event(self, **values: object) -> None:
         self.event_types.append(str(values["event_type"]))
+        self.runtime_events.append(dict(values))
 
 
 class _Rooms:
@@ -294,6 +300,114 @@ class AgentEventProjectionTests(unittest.TestCase):
         self.assertEqual(data["workItemRevision"], 2)
         self.assertEqual(data["attemptId"], "attempt:2")
 
+    def test_child_session_failure_keeps_sanitized_terminal_details(self) -> None:
+        service, _sessions, room_events = self._service(child=True)
+        service.mirror_to_room(AgentEventEnvelope(
+            event_id="event:child-failure",
+            session_id="session:1",
+            turn_id="turn:child",
+            sequence=8,
+            created_at_ms=8,
+            event_type="turn_failed",
+            payload={
+                "error": (
+                    "FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - "
+                    "JavaScript heap out of memory"
+                ),
+                "failureKind": "runtime_host_exit",
+                "exitCode": -6,
+                "nextStep": "重启 Runtime 后重试当前任务。",
+            },
+            resume_token="event:child-failure",
+        ))
+
+        data = room_events.items[0]["payload"]["data"]
+        self.assertEqual(data["activityKind"], "child")
+        self.assertEqual(data["phase"], "failed")
+        self.assertEqual(data["status"], "failed")
+        self.assertTrue(data["isError"])
+        self.assertEqual(data["error"], data["summary"])
+        self.assertIn("重启 Runtime", data["nextStep"])
+        self.assertNotIn("FATAL ERROR", str(data))
+
+    def test_runtime_failure_metrics_keep_bounded_typed_classification(self) -> None:
+        metrics = runtime_event_metrics(AgentEventEnvelope(
+            event_id="event:runtime-failure",
+            session_id="session:1",
+            turn_id="turn:1",
+            sequence=1,
+            created_at_ms=1,
+            event_type="turn_failed",
+            payload={
+                "failureKind": "runtime_host_exit",
+                "reasonCode": "runtime_host_exit",
+                "exitCode": -6,
+                "hadToolActivity": False,
+                "retryable": True,
+                "error": "private runtime detail",
+            },
+            resume_token="event:runtime-failure",
+        ))
+
+        self.assertEqual(
+            metrics,
+            {
+                "failureKind": "runtime_host_exit",
+                "reasonCode": "runtime_host_exit",
+                "exitCode": -6,
+                "hadToolActivity": False,
+                "retryable": True,
+            },
+        )
+        self.assertEqual(
+            runtime_event_metrics(AgentEventEnvelope(
+                event_id="event:invalid-runtime-failure",
+                session_id="session:1",
+                turn_id="turn:1",
+                sequence=2,
+                created_at_ms=2,
+                event_type="turn_failed",
+                payload={
+                    "failureKind": "secret value " + ("x" * 80),
+                    "reasonCode": {"private": "detail"},
+                    "exitCode": True,
+                    "hadToolActivity": "false",
+                    "retryable": 1,
+                },
+                resume_token="event:invalid-runtime-failure",
+            )),
+            {},
+        )
+
+        service, sessions, _room_events = self._service()
+        service.record(AgentEventEnvelope(
+            event_id="event:runtime-failure",
+            session_id="session:1",
+            turn_id="turn:1",
+            sequence=1,
+            created_at_ms=1,
+            event_type="turn_failed",
+            payload={
+                "failureKind": "runtime_host_exit",
+                "reasonCode": "runtime_host_exit",
+                "exitCode": -6,
+                "hadToolActivity": False,
+                "retryable": True,
+                "error": "private runtime detail",
+            },
+            resume_token="event:runtime-failure",
+        ))
+        self.assertEqual(
+            sessions.runtime_events[0]["metrics"],
+            {
+                "failureKind": "runtime_host_exit",
+                "reasonCode": "runtime_host_exit",
+                "exitCode": -6,
+                "hadToolActivity": False,
+                "retryable": True,
+            },
+        )
+
     def test_gateway_outcome_survives_pi_and_room_projection_in_live_and_history_shapes(self) -> None:
         for tool_name in ("write", "workspace_write", "custom_tool"):
             for outcome, phase, replay in (("unknown", "sent", False), ("not_started", "queued", True), ("applied", "sent", False)):
@@ -413,6 +527,71 @@ class AgentEventProjectionTests(unittest.TestCase):
 
         self.assertEqual(event_type, "participant_activity")
         self.assertEqual(payload["error"], "Room work must be in review")
+
+    def test_nested_tool_event_preserves_parent_and_terminal_result(self) -> None:
+        event_type, payload = tool_event_payload(
+            {
+                "toolCallId": "codemode:1/2",
+                "parentToolCallId": "codemode:1",
+                "toolName": "workspace_read",
+                "args": {"path": "/Users/private/project/README.md"},
+                "result": {
+                    "content": [{"type": "text", "text": "hello"}],
+                    "details": {"summary": "读取完成"},
+                },
+                "isError": False,
+            },
+            event_type="tool_execution_end",
+            source_loop_id="loop:codemode",
+        )
+
+        self.assertEqual(event_type, "tool_finished")
+        self.assertEqual(payload["parentToolCallId"], "codemode:1")
+        self.assertEqual(payload["toolCallId"], "codemode:1/2")
+        self.assertEqual(payload["result"]["details"]["summary"], "读取完成")
+        _room_type, room = room_event_projection(AgentEventEnvelope(
+            event_id="event:nested-tool",
+            session_id="session:1",
+            turn_id="turn:1",
+            sequence=1,
+            created_at_ms=1,
+            event_type=event_type,
+            payload=payload,
+            resume_token="event:nested-tool",
+        ))
+        self.assertEqual(room["parentToolCallId"], "codemode:1")
+
+    def test_nested_calls_are_safe_public_metadata_without_result_duplication(self) -> None:
+        _event_type, payload = tool_event_payload(
+            {
+                "toolCallId": "codemode:1",
+                "toolName": "codemode",
+                "args": {"code": "await tools.workspace_read({path: 'README.md'})"},
+                "result": {
+                    "details": {
+                        "calls": [
+                            {
+                                "id": "codemode:1/1",
+                                "name": "workspace_read",
+                                "args": '{"path":"README.md"}',
+                                "status": "ok",
+                                "durationMs": 12,
+                            },
+                        ],
+                    },
+                },
+                "isError": False,
+            },
+            event_type="tool_execution_end",
+            source_loop_id="loop:codemode",
+        )
+
+        self.assertEqual(payload["nestedCalls"][0]["id"], "codemode:1/1")
+        self.assertEqual(payload["nestedCalls"][0]["args"], {"path": "README.md"})
+        self.assertEqual(payload["nestedCalls"][0]["status"], "ok")
+        # The outer receipt retains its own result; nested rows are represented
+        # by parent-linked live events rather than copied into another result.
+        self.assertNotIn("result", payload["nestedCalls"][0])
 
 
 if __name__ == "__main__":

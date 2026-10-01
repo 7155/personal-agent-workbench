@@ -73,17 +73,16 @@ describe('Agent traditional / Jev modes', () => {
     const { transport } = mount(route);
     const draft = await screen.findByRole('textbox', { name: '测试中的工作草稿' });
     await user.type(draft, '尚未发送的修正');
-    const jevSwitch = screen.queryByRole('button', { name: 'Jev' });
-    if (jevSwitch) await user.click(jevSwitch);
-    if (route.includes('room=')) {
+    await user.click(screen.getByRole('button', { name: '工作台选项' }));
+    const switchToJev = screen.queryByRole('menuitem', { name: '切换到Jev界面' });
+    if (switchToJev) {
+      await user.click(switchToJev);
       await user.click(screen.getByRole('button', { name: '工作台选项' }));
-      await user.click(screen.getByRole('menuitem', { name: '工作空间' }));
-    } else await user.click(screen.getByRole('button', { name: '工作空间' }));
+    }
+    await user.click(screen.getByRole('menuitem', { name: '工作空间' }));
     await screen.findByRole('complementary', { name: 'Jev 工作空间目录' });
-    if (route.includes('room=')) {
-      await user.click(screen.getByRole('button', { name: '工作台选项' }));
-      await user.click(screen.getByRole('menuitem', { name: '切换到传统界面' }));
-    } else await user.click(screen.getByRole('button', { name: '传统' }));
+    await user.click(screen.getByRole('button', { name: '工作台选项' }));
+    await user.click(screen.getByRole('menuitem', { name: '切换到传统界面' }));
     expect(screen.getByRole('textbox', { name: '测试中的工作草稿' })).toBe(draft);
     expect(draft).toHaveValue('尚未发送的修正');
     expect(lifetime.mounts).toBe(1); expect(lifetime.unmounts).toBe(0);
@@ -123,7 +122,7 @@ describe('Agent traditional / Jev modes', () => {
     expect(screen.getByRole('heading', { name: '继续工作' })).toBeInTheDocument();
     expect(input.compareDocumentPosition(screen.getByRole('region', { name: '项目复工' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(input).toHaveValue('先不要开始，保留草稿'); expect(input.isConnected).toBe(true);
-    view.unmount(); mount();
-    expect(within(screen.getByRole('group', { name: 'Agent 界面模式' })).getByRole('button', { name: 'Jev' })).toHaveAttribute('aria-pressed', 'true');
+    view.unmount(); mount('/agent');
+    await waitFor(() => expect(within(screen.getByRole('group', { name: 'Agent 界面模式' })).getByRole('button', { name: 'Jev' })).toHaveAttribute('aria-pressed', 'true'));
   });
 });

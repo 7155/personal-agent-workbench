@@ -6,6 +6,7 @@ import {
   Brain,
   Check,
   CheckCircle2,
+  Code2,
   ChevronRight,
   CircleDashed,
   Clock4,
@@ -731,6 +732,9 @@ function PublicToolResult({ activityId, sessionId, view }: { activityId: string;
   let outputRendered = false;
   if (view.resultKind === 'semantic' && view.preview) {
     primary = <SemanticToolPreview preview={view.preview} />;
+  } else if (view.resultKind === 'codemode') {
+    primary = <PublicCodeModeResult view={view} />;
+    outputRendered = true;
   } else if (view.resultKind === 'terminal' && view.output) {
     primary = <PublicTerminalResult view={view} />;
     outputRendered = true;
@@ -836,6 +840,68 @@ function PublicCodeResult({ sessionId = '', view }: { sessionId?: string; view: 
       {state === 'failed' ? <small role="alert">无法复制代码，请手动选择内容。</small> : null}
     </section>
   );
+}
+
+function PublicCodeModeResult({ view }: { view: PublicToolResultView }) {
+  const calls = view.codeMode?.calls ?? [];
+  return (
+    <section
+      aria-label="代码执行回执"
+      className="agent-tool-result-view agent-tool-codemode-result"
+      data-result-kind="codemode"
+    >
+      <header>
+        <strong><Code2 size={14} />代码执行</strong>
+        <small>{calls.length
+          ? `${calls.length} 个嵌套调用${view.codeMode?.nestedCallsComplete === false ? ' · 部分恢复' : ''}`
+          : `Pi 执行回执${view.codeMode?.nestedCallsComplete === false ? ' · 部分恢复' : ''}`}</small>
+      </header>
+      {view.code ? <div className="agent-tool-codemode__section">
+        <strong>执行代码</strong>
+        <pre aria-label="代码执行源代码" tabIndex={0}><code>{view.code}</code></pre>
+      </div> : null}
+      {calls.length ? <div className="agent-tool-codemode__section">
+        <strong>嵌套工具调用</strong>
+        <ol aria-label="嵌套工具调用">
+          {calls.map((call) => <li key={call.id} data-status={call.status}>
+            <span className="agent-tool-codemode__call-status" aria-label={codeModeCallStatusLabel(call.status)}>{codeModeCallStatusMark(call.status)}</span>
+            <span className="agent-tool-codemode__call-main">
+              <strong>{call.name}</strong>
+              <code>{call.args || '{}'}</code>
+              {call.error ? <small role="alert">{call.error}</small> : null}
+            </span>
+            <span className="agent-tool-codemode__call-meta">
+              {call.durationMs !== undefined ? formatCodeModeDuration(call.durationMs) : null}
+              {call.cost !== undefined ? formatCodeModeCost(call.cost) : null}
+            </span>
+          </li>)}
+        </ol>
+      </div> : null}
+      {view.output ? <div className="agent-tool-codemode__section">
+        <strong>最终输出</strong>
+        <pre aria-label="代码执行最终输出" tabIndex={0}><code>{view.output.text}</code></pre>
+        {view.output.truncated ? <small>输出已截断；完整返回仍由本机回执保留。</small> : null}
+      </div> : null}
+      {view.codeMode?.fullOutputPath ? <small className="agent-tool-codemode__path">完整输出：<code>{view.codeMode.fullOutputPath}</code></small> : null}
+    </section>
+  );
+}
+
+function codeModeCallStatusLabel(status: NonNullable<PublicToolResultView['codeMode']>['calls'][number]['status']): string {
+  return ({ running: '运行中', ok: '成功', error: '失败', cancelled: '已取消' } as Record<typeof status, string>)[status];
+}
+
+function codeModeCallStatusMark(status: NonNullable<PublicToolResultView['codeMode']>['calls'][number]['status']): string {
+  return ({ running: '…', ok: '✓', error: '!', cancelled: '×' } as Record<typeof status, string>)[status];
+}
+
+function formatCodeModeDuration(value: number): string {
+  if (value < 1_000) return `${Math.round(value)}ms`;
+  return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}s`;
+}
+
+function formatCodeModeCost(value: number): string {
+  return `$${value < 0.01 ? value.toFixed(3) : value.toFixed(2)}`;
 }
 
 function PublicResultList({
@@ -1594,7 +1660,7 @@ export function FxActivityStack({
   const failedCount = activities.filter((activity) => activity.status === 'failed').length;
   const stoppedCount = activities.filter((activity) => activity.settledByTurnStatus === 'aborted').length;
   const compactStatus = [
-    running ? '进行中' : waiting ? '等待确认' : stoppedCount ? '已结束' : '已完成',
+    running ? '步骤进行中' : waiting ? '步骤等待确认' : failedCount || stoppedCount ? '步骤已结束' : '步骤已完成',
     failedCount ? `${failedCount} 项失败` : '',
     stoppedCount ? `${stoppedCount} 项停止` : '',
     `${activities.length} 个步骤`,

@@ -23,6 +23,7 @@ from rag_ime.agent_context_runtime import RUNTIME_PROMPT_ENVELOPE_PREFIX
 from rag_ime.agent_execution_policy import workspace_scope_sha256
 from rag_ime.agent_prompt_delivery import AgentPromptAcceptanceUnknown
 from rag_ime.agent_sessions import AgentSessionStore
+from rag_ime.agent_message_snapshot import _project_room_public_messages
 from rag_ime.agent_service import AgentService, pi_runtime_config_from_settings
 from rag_ime.agent_tools import ControlToolGateway
 from rag_ime.agent_workspace import WorkspaceHarness
@@ -6017,9 +6018,9 @@ class AgentServiceTests(unittest.TestCase):
         ]
         self.assertEqual(response["snapshotScope"], "recent")
         self.assertTrue(response["partial"])
-        self.assertEqual(len(response["liveEvents"]), 48)
-        self.assertEqual(sequences, list(range(33, 81)))
-        self.assertEqual(response["recentFromSequence"], 33)
+        self.assertEqual(len(response["liveEvents"]), 80)
+        self.assertEqual(sequences, list(range(1, 81)))
+        self.assertEqual(response["recentFromSequence"], 1)
         self.assertEqual(response["lastSequence"], 80)
         self.assertEqual(response["resumeToken"], f"{session_id}:80")
         self.assertEqual(
@@ -7014,6 +7015,382 @@ class AgentServiceTests(unittest.TestCase):
         self.assertEqual(
             {message["turnId"] for message in response["items"]},
             {"history:pi-user", "room-turn:tui-repeat"},
+        )
+
+    def test_room_message_snapshot_uses_route_binding_beyond_text_window(self) -> None:
+        room = self.service.create_room(
+            {
+                "title": "Room route identity snapshot",
+                "workspaceRoots": [str(self.root)],
+                "participants": [
+                    {"roleId": "companion-present-v1", "roleVersion": "1"},
+                    {"roleId": "companion-firstlight-v1", "roleVersion": "1"},
+                ],
+            }
+        )["room"]
+        target = room["participants"][0]
+        room_id = str(room["id"])
+        session_id = str(target["sessionId"])
+        participant_id = str(target["id"])
+        root_id = "jev-root:route-identity"
+        dispatch_id = "jev-dispatch:route-identity"
+        later_root_id = "jev-root:route-identity-later"
+        later_dispatch_id = "jev-dispatch:route-identity-later"
+
+        first_user_event = self.service.rooms.append_event(
+            room_id=room_id,
+            event_type="user_message",
+            payload={
+                "text": "同一条请求",
+                "clientMessageId": "room-client:first",
+            },
+            turn_id=root_id,
+            created_at_ms=10_000,
+        )
+        self.service.rooms.append_event(
+            room_id=room_id,
+            event_type="route_decision",
+            payload={
+                "dispatchId": dispatch_id,
+                "rootId": root_id,
+                "targetParticipantId": participant_id,
+                "targetSessionId": session_id,
+            },
+            turn_id=root_id,
+            participant_id=participant_id,
+            source_session_id=session_id,
+            created_at_ms=15_000,
+        )
+        later_user_event = self.service.rooms.append_event(
+            room_id=room_id,
+            event_type="user_message",
+            payload={
+                "text": "同一条请求",
+                "clientMessageId": "room-client:later",
+            },
+            turn_id=later_root_id,
+            created_at_ms=200_000,
+        )
+        self.service.rooms.append_event(
+            room_id=room_id,
+            event_type="route_decision",
+            payload={
+                "dispatchId": later_dispatch_id,
+                "rootId": later_root_id,
+                "targetParticipantId": participant_id,
+                "targetSessionId": session_id,
+            },
+            turn_id=later_root_id,
+            participant_id=participant_id,
+            source_session_id=session_id,
+            created_at_ms=205_000,
+        )
+        pi_user = {
+            "schemaVersion": "rag-ime.agent-message.v1",
+            "id": "message:route-user",
+            "sessionId": session_id,
+            "turnId": "pi-turn:route-identity",
+            "role": "user",
+            "status": "completed",
+            "clientMessageId": dispatch_id,
+            "blocks": [{
+                "id": "message:route-user:text",
+                "type": "text",
+                "status": "completed",
+                "presentationKind": "markdown",
+                "data": {"text": "同一条请求"},
+            }],
+            "attachments": [],
+            "citations": [],
+            "createdAtMs": 100_000,
+            "completedAtMs": 100_000,
+        }
+        pi_assistant = {
+            "schemaVersion": "rag-ime.agent-message.v1",
+            "id": "message:route-answer",
+            "sessionId": session_id,
+            "turnId": "pi-turn:route-identity",
+            "role": "assistant",
+            "status": "completed",
+            "blocks": [{
+                "id": "message:route-answer:text",
+                "type": "text",
+                "status": "completed",
+                "presentationKind": "markdown",
+                "data": {"text": "已处理"},
+            }],
+            "attachments": [],
+            "citations": [],
+            "createdAtMs": 101_000,
+            "completedAtMs": 101_000,
+        }
+        with patch.object(
+            self.service.runtime,
+            "session_snapshot",
+            create=True,
+            return_value={
+                "messages": [pi_user, pi_assistant],
+                "toolHistoryEvents": [],
+                "telemetry": None,
+                "messageQueue": None,
+            },
+        ):
+            response = self.service.messages(session_id)
+            recent = self.service.message_snapshot.messages(session_id, view="recent")
+
+        self.assertEqual(
+            [message["id"] for message in response["items"]],
+            ["message:route-user", "message:route-answer", f"room-event:{later_user_event['eventId']}"],
+        )
+        self.assertEqual(response["items"][0]["clientMessageId"], dispatch_id)
+        self.assertEqual(
+            response["items"][0]["blocks"][0]["data"]["roomClientMessageId"],
+            "room-client:first",
+        )
+        self.assertEqual(
+            response["items"][-1]["clientMessageId"],
+            "room-client:later",
+        )
+        self.assertEqual(
+            recent["items"][0]["clientMessageId"],
+            "room-client:first",
+        )
+        self.assertEqual(
+            recent["items"][-1]["clientMessageId"],
+            "room-client:later",
+        )
+        self.assertEqual(
+            sum(item["id"] == f"room-event:{first_user_event['eventId']}" for item in response["items"]),
+            0,
+        )
+
+    def test_room_route_identity_keeps_different_child_text(self) -> None:
+        session_id = "agent:route-text"
+        participant_id = "participant:route-text"
+        projection = {
+            "participantId": participant_id,
+            "events": [
+                {
+                    "eventId": "room:root:1",
+                    "eventType": "user_message",
+                    "turnId": "jev-root:shared",
+                    "sequence": 1,
+                    "createdAtMs": 10_000,
+                    "payload": {
+                        "text": "原始 Room 请求",
+                        "clientMessageId": "paw-jev:original",
+                    },
+                },
+                {
+                    "eventId": "room:route:1",
+                    "eventType": "route_decision",
+                    "turnId": "jev-root:shared",
+                    "participantId": participant_id,
+                    "sourceSessionId": session_id,
+                    "sequence": 2,
+                    "createdAtMs": 10_100,
+                    "payload": {
+                        "dispatchId": "jev-dispatch:child",
+                        "rootId": "jev-root:shared",
+                        "targetParticipantId": participant_id,
+                        "targetSessionId": session_id,
+                    },
+                },
+            ],
+        }
+        private = [{
+            "schemaVersion": "rag-ime.agent-message.v1",
+            "id": "message:child",
+            "sessionId": session_id,
+            "turnId": "child-turn",
+            "role": "user",
+            "status": "completed",
+            "clientMessageId": "jev-dispatch:child",
+            "blocks": [{
+                "id": "message:child:text",
+                "type": "text",
+                "status": "completed",
+                "presentationKind": "markdown",
+                "data": {"text": "不同的 Pi 子任务输入"},
+            }],
+            "attachments": ["media:child"],
+            "citations": [],
+            "createdAtMs": 100_000,
+            "completedAtMs": 100_000,
+        }]
+
+        messages = _project_room_public_messages(
+            session_id=session_id,
+            private_messages=private,
+            projection=projection,
+        )
+
+        self.assertEqual(
+            [message["id"] for message in messages],
+            ["room-event:room:root:1", "message:child"],
+        )
+        self.assertEqual(
+            messages[0]["clientMessageId"],
+            "paw-jev:original",
+        )
+        self.assertEqual(
+            messages[1]["clientMessageId"],
+            "jev-dispatch:child",
+        )
+        self.assertEqual(messages[1]["attachments"], ["media:child"])
+
+    def test_room_route_identity_does_not_choose_between_same_root_dispatches(
+        self,
+    ) -> None:
+        session_id = "agent:route-ambiguous"
+        participant_id = "participant:route-ambiguous"
+        root_id = "jev-root:planning-execute"
+        projection = {
+            "participantId": participant_id,
+            "events": [
+                {
+                    "eventId": "room:root:ambiguous",
+                    "eventType": "user_message",
+                    "turnId": root_id,
+                    "sequence": 1,
+                    "createdAtMs": 10_000,
+                    "payload": {
+                        "text": "同一条根请求",
+                        "clientMessageId": "paw-jev:ambiguous",
+                    },
+                },
+                *[
+                    {
+                        "eventId": f"room:route:{suffix}",
+                        "eventType": "route_decision",
+                        "turnId": root_id,
+                        "participantId": participant_id,
+                        "sourceSessionId": session_id,
+                        "sequence": sequence,
+                        "createdAtMs": 10_000 + sequence,
+                        "payload": {
+                            "dispatchId": dispatch_id,
+                            "rootId": root_id,
+                            "targetParticipantId": participant_id,
+                            "targetSessionId": session_id,
+                        },
+                    }
+                    for suffix, sequence, dispatch_id in (
+                        ("planning", 2, "jev-dispatch:planning"),
+                        ("execute", 3, "jev-dispatch:execute"),
+                    )
+                ],
+            ],
+        }
+
+        def private_message(message_id: str, client_message_id: str, created_at_ms: int) -> dict[str, object]:
+            return {
+                "schemaVersion": "rag-ime.agent-message.v1",
+                "id": message_id,
+                "sessionId": session_id,
+                "turnId": message_id,
+                "role": "user",
+                "status": "completed",
+                "clientMessageId": client_message_id,
+                "blocks": [{
+                    "id": f"{message_id}:text",
+                    "type": "text",
+                    "status": "completed",
+                    "presentationKind": "markdown",
+                    "data": {"text": "同一条根请求"},
+                }],
+                "attachments": [],
+                "citations": [],
+                "createdAtMs": created_at_ms,
+                "completedAtMs": created_at_ms,
+            }
+
+        messages = _project_room_public_messages(
+            session_id=session_id,
+            private_messages=[
+                private_message("message:planning", "jev-dispatch:planning", 100_000),
+                private_message("message:execute", "jev-dispatch:execute", 100_001),
+            ],
+            projection=projection,
+        )
+
+        self.assertEqual(
+            [message["id"] for message in messages],
+            [
+                "room-event:room:root:ambiguous",
+                "message:planning",
+                "message:execute",
+            ],
+        )
+        self.assertEqual(
+            messages[0]["clientMessageId"],
+            "paw-jev:ambiguous",
+        )
+
+    def test_room_legacy_fallback_chooses_nearest_private_row_not_transcript_order(
+        self,
+    ) -> None:
+        session_id = "agent:legacy-nearest"
+        room_event_id = "room:legacy-nearest"
+        room_projection = {
+            "participantId": "participant:legacy-nearest",
+            "events": [{
+                "eventId": room_event_id,
+                "eventType": "user_message",
+                "turnId": "room-turn:legacy-nearest",
+                "sequence": 1,
+                "createdAtMs": 100_000,
+                "payload": {
+                    "text": "无 route 的重复请求",
+                    "clientMessageId": "paw-jev:legacy-nearest",
+                },
+            }],
+        }
+
+        def private_message(message_id: str, client_message_id: str, created_at_ms: int) -> dict[str, object]:
+            return {
+                "schemaVersion": "rag-ime.agent-message.v1",
+                "id": message_id,
+                "sessionId": session_id,
+                "turnId": message_id,
+                "role": "user",
+                "status": "completed",
+                "clientMessageId": client_message_id,
+                "blocks": [{
+                    "id": f"{message_id}:text",
+                    "type": "text",
+                    "status": "completed",
+                    "presentationKind": "markdown",
+                    "data": {"text": "无 route 的重复请求"},
+                }],
+                "attachments": [],
+                "citations": [],
+                "createdAtMs": created_at_ms,
+                "completedAtMs": created_at_ms,
+            }
+
+        # The transcript arrives in reverse proximity order. The nearest row
+        # is second in the list and must still absorb the Room mirror.
+        messages = _project_room_public_messages(
+            session_id=session_id,
+            private_messages=[
+                private_message("message:later", "pi:later", 115_000),
+                private_message("message:near", "pi:near", 110_000),
+            ],
+            projection=room_projection,
+        )
+
+        self.assertEqual(
+            [message["id"] for message in messages],
+            ["message:near", "message:later"],
+        )
+        self.assertEqual(
+            messages[0]["blocks"][0]["data"]["roomClientMessageId"],
+            "paw-jev:legacy-nearest",
+        )
+        self.assertNotIn(
+            "roomClientMessageId",
+            messages[1]["blocks"][0]["data"],
         )
 
 

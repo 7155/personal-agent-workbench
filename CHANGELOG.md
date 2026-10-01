@@ -5,6 +5,15 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Upgrade the managed Pi adapter to native 0.99.2 codemode, with idle-only
+  mode controls and expandable code/nested-call cards in Session and Room.
+  Preserve Gateway ownership, exact parameters, failure/cancellation status,
+  and historical nested calls across restart.
+- Keep Session/Room history available through background preload, show
+  Thinking immediately, and give content a compact reading surface. Derive
+  collaboration phases from actual events and include truthful delivery
+  reports and quick run/check actions.
+
 - Add Pi Content V5: result-first tool records with separate argument tabs,
   stable adjacent-image galleries, local draft previews, zoom/comparison, and
   a searchable Session-bound capability catalog. Keep installation, disclosure,

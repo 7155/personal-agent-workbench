@@ -42,8 +42,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
       personas: [persona('planner', '规划者'), persona('builder', '执行者')] });
     await user.click(screen.getByRole('button', { name: 'Jev 模型与工具设置' }));
     const menu = screen.getByRole('menu');
-    expect(within(menu).getByRole('menuitemradio', { name: '简单任务允许原伙伴复核' })).toHaveAttribute('aria-checked', 'true');
-    expect(menu).toHaveTextContent('多步骤计划仍由其他伙伴复核');
+    expect(within(menu).getByRole('menuitemradio', { name: '由 Jev 按任务与证据决定' })).toHaveAttribute('aria-checked', 'true');
+    expect(menu).toHaveTextContent('自动模式会直接接受证据，或按需要启动 Pi 复核');
     await user.click(within(menu).getByRole('menuitemradio', { name: '始终由其他伙伴复核' }));
     await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '核对一项简单任务');
     await user.click(screen.getByRole('button', { name: '开始 Jev 任务' }));
@@ -80,6 +80,27 @@ describe('PAWOS Agent Home 首屏合同', () => {
 
     // 继续工作挂在弹性滚动区上，是首屏内唯一的内部滚动面。
     expect(container.querySelector('.an-home-recents .an-recent-list')).not.toBeNull();
+  });
+
+  it('warms only the visible recent projections without opening Runtime streams or a heavy catalog', async () => {
+    const { transport } = renderHome();
+    await waitFor(() => expect(transport.requests.some(({ request }) => (
+      request.pathId === 'agent.session.snapshot'
+      || request.pathId === 'agent.room.conversationSnapshot'
+    ))).toBe(true));
+    const warmupReads = transport.requests.filter(({ request }) => (
+      request.pathId === 'agent.session.snapshot'
+      || request.pathId === 'agent.room.conversationSnapshot'
+    ));
+    expect(warmupReads.length).toBeGreaterThan(0);
+    expect(warmupReads.every(({ request }) => (
+      request.pathId === 'agent.room.conversationSnapshot'
+      || request.query?.view === 'recent'
+    ))).toBe(true);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.models')).toBe(false);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.snapshot' && request.query?.view !== 'recent')).toBe(false);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.runtime.ensure')).toBe(false);
+    expect(transport.subscriptionCalls).toHaveLength(0);
   });
 
   it('owns its viewport like a desktop app: the page never scrolls, only the recent list does', () => {

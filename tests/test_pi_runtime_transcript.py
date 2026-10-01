@@ -11,9 +11,12 @@ from rag_ime.pi.transcript import (
     DURABLE_TURN_ID_KEY,
     durable_branch_messages,
     durable_tool_history_events,
+    latest_terminal_descendant_leaf,
     recent_messages_from_proven_tail,
     recent_public_message_window,
     recent_tool_history_events,
+    terminal_branch_anchor,
+    unambiguous_descendant_leaf,
 )
 
 
@@ -190,6 +193,90 @@ with patch('sqlite3.connect', side_effect=AssertionError('database opened')), \
         self.assertIsNone(
             recent_messages_from_proven_tail(entries, leaf_id="user", header_id="root")
         )
+
+    def test_branch_cursor_does_not_follow_a_forked_physical_last_row(self) -> None:
+        entries = [
+            {"type": "session", "id": "root"},
+            {
+                "type": "message",
+                "id": "user",
+                "parentId": "root",
+                "message": {"role": "user", "content": "旧问题"},
+            },
+            {
+                "type": "message",
+                "id": "old-answer",
+                "parentId": "user",
+                "message": {"role": "assistant", "content": "旧回答"},
+            },
+            {
+                "type": "message",
+                "id": "current-user",
+                "parentId": "old-answer",
+                "message": {"role": "user", "content": "当前问题"},
+            },
+            {
+                "type": "custom",
+                "id": "current-settlement",
+                "parentId": "current-user",
+                "customType": "rag-ime.pi-turn-settlement",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                    "turnId": "current-turn",
+                },
+            },
+            {
+                "type": "message",
+                "id": "fork-user",
+                "parentId": "old-answer",
+                "message": {"role": "user", "content": "分叉问题"},
+            },
+            {
+                "type": "message",
+                "id": "fork-answer",
+                "parentId": "fork-user",
+                "message": {"role": "assistant", "content": "分叉回答"},
+            },
+        ]
+
+        self.assertEqual(
+            unambiguous_descendant_leaf(entries, ancestor_id="old-answer"),
+            "old-answer",
+        )
+        self.assertEqual(
+            terminal_branch_anchor(entries, turn_id="current-turn"),
+            "current-settlement",
+        )
+        self.assertEqual(
+            latest_terminal_descendant_leaf(entries, ancestor_id="old-answer"),
+            "current-settlement",
+        )
+        forked_terminal = [
+            *entries,
+            {
+                "type": "custom",
+                "id": "fork-settlement",
+                "parentId": "fork-answer",
+                "customType": "rag-ime.pi-turn-settlement",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                    "turnId": "fork-turn",
+                },
+            },
+        ]
+        self.assertEqual(
+            latest_terminal_descendant_leaf(
+                forked_terminal,
+                ancestor_id="old-answer",
+            ),
+            "",
+        )
+        messages, selected = durable_branch_messages(
+            entries,
+            leaf_id="old-answer",
+        )
+        self.assertEqual([entry["id"] for entry in selected], ["user", "old-answer"])
+        self.assertEqual([message["id"] for message in messages], ["user", "old-answer"])
 
     def test_transcript_tool_failure_keeps_pi_error_content_in_public_receipt(
         self,
@@ -553,6 +640,102 @@ with patch('sqlite3.connect', side_effect=AssertionError('database opened')), \
                 ],
                 ["tool_started", "tool_finished"],
             )
+
+    def test_nested_calls_restore_parent_link_and_do_not_invent_unfinished_terminal(self) -> None:
+        raw_messages = [
+            {
+                "id": "user-codemode",
+                "role": "user",
+                "timestamp": 100,
+                "content": [{"type": "text", "text": "批量检查"}],
+            },
+            {
+                "id": "assistant-codemode",
+                "role": "assistant",
+                "timestamp": 101,
+                "content": [
+                    {
+                        "type": "toolCall",
+                        "id": "codemode:1",
+                        "name": "codemode",
+                        "arguments": {"code": "await tools.workspace_read({path: 'README.md'})"},
+                    }
+                ],
+            },
+            {
+                "role": "toolResult",
+                "timestamp": 102,
+                "toolCallId": "codemode:1",
+                "toolName": "codemode",
+                "isError": True,
+                "content": [{"type": "text", "text": "Script failed"}],
+                "nestedCalls": {
+                    "complete": False,
+                    "calls": [
+                        {
+                            "id": "codemode:1/1",
+                            "name": "workspace_read",
+                            "arguments": {"path": "README.md"},
+                            "status": "ok",
+                            "durationMs": 12,
+                        },
+                        {
+                            "id": "codemode:1/2",
+                            "name": "workspace_write",
+                            "arguments": {"path": "out.txt"},
+                            "status": "unfinished",
+                        },
+                        {
+                            "id": "codemode:1/3",
+                            "name": "workspace_delete",
+                            "args": "{\"path\":\"out.txt\"}",
+                            "status": "cancelled",
+                            "error": "user stopped the script",
+                        },
+                    ],
+                },
+            },
+        ]
+
+        events = durable_tool_history_events(
+            raw_messages,
+            session_id="session-codemode-history",
+        )
+        nested = [
+            event
+            for event in events
+            if event["payload"].get("parentToolCallId") == "codemode:1"
+        ]
+
+        self.assertEqual(
+            [(event["eventType"], event["payload"]["toolCallId"]) for event in nested],
+            [
+                ("tool_started", "codemode:1/1"),
+                ("tool_finished", "codemode:1/1"),
+                ("tool_started", "codemode:1/2"),
+                ("tool_started", "codemode:1/3"),
+                ("tool_finished", "codemode:1/3"),
+            ],
+        )
+        finished = next(event for event in nested if event["eventType"] == "tool_finished")
+        self.assertEqual(finished["payload"]["args"], {"path": "README.md"})
+        self.assertEqual(finished["payload"]["durationMs"], 12)
+        cancelled = next(
+            event
+            for event in nested
+            if event["payload"]["toolCallId"] == "codemode:1/3"
+            and event["eventType"] == "tool_finished"
+        )
+        self.assertTrue(cancelled["payload"]["isError"])
+        self.assertEqual(cancelled["payload"]["error"], "user stopped the script")
+        outer = next(
+            event
+            for event in events
+            if event["payload"].get("toolCallId") == "codemode:1"
+            and "nestedCallsComplete" in event["payload"]
+        )
+        self.assertFalse(outer["payload"]["nestedCallsComplete"])
+        self.assertTrue(events[-1]["payload"]["isError"])
 
 
 if __name__ == "__main__":

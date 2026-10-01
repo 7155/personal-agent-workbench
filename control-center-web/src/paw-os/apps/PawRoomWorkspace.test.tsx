@@ -226,6 +226,7 @@ describe('PAWOS Room collaboration tools', () => {
     await screen.findByRole('textbox', { name: '协作消息' });
     await waitFor(() => expect(useRoomLiveStore.getState().projections[source.room.id]?.lastSequence).toBe(13));
     expect(document.querySelector('.paw-room-workspace__runtime')).toHaveTextContent('1 个工作项等待复核');
+    if (screen.queryByRole('button', { name: '展开 Room 控件' })) fireEvent.click(screen.getByRole('button', { name: '展开 Room 控件' }));
     expect(screen.getByRole('region', { name: 'Room 当前协作' })).toHaveTextContent('2 伙伴执行结束');
     expect(screen.queryByText('本轮执行已结束')).not.toBeInTheDocument();
     const rounds = screen.getByRole('region', { name: 'Room 行星任务表' });
@@ -255,6 +256,7 @@ describe('PAWOS Room collaboration tools', () => {
     await waitFor(() => expect(document.querySelector('.paw-room-workspace__runtime')).toHaveTextContent('连接中断 · 显示上次状态'));
     expect(document.querySelector('.paw-room-workspace')).toHaveAttribute('data-status', 'failed');
     expect(screen.getByRole('alert')).toBeInTheDocument();
+    if (screen.queryByRole('button', { name: '展开 Room 控件' })) fireEvent.click(screen.getByRole('button', { name: '展开 Room 控件' }));
     expect(screen.getByRole('region', { name: 'Room 当前协作' })).toHaveTextContent('任务图依赖验证');
     expect(screen.queryByRole('status', { name: '正在恢复 Room 协作现场' })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Room 记录暂时不可用' })).toHaveTextContent('重新同步');
@@ -379,7 +381,7 @@ describe('PAWOS Room collaboration tools', () => {
     await screen.findByRole('textbox', { name: '协作消息' });
 
     const primaryNavigation = screen.getByRole('navigation', { name: 'Room 工作台视图' });
-    expect(within(primaryNavigation).getAllByRole('button')).toHaveLength(5);
+    expect(within(primaryNavigation).getAllByRole('button')).toHaveLength(6);
     for (const label of ['对话与结果', '消息流', '协同模式', '完整记录', '星空']) {
       expect(within(primaryNavigation).getByRole('button', { name: label })).toHaveAttribute('aria-label', label);
     }
@@ -407,6 +409,7 @@ describe('PAWOS Room collaboration tools', () => {
     const tools = screen.getByRole('complementary', { name: 'Room 协作态势' });
     expect(within(tools).getAllByRole('tab')).toHaveLength(2);
     expect(within(tools).getByRole('tab', { name: '态势' })).toHaveAttribute('aria-selected', 'true');
+    if (screen.queryByRole('button', { name: '展开 Room 控件' })) fireEvent.click(screen.getByRole('button', { name: '展开 Room 控件' }));
     expect(screen.getByRole('region', { name: 'Room 当前协作' })).toHaveTextContent('任务图依赖验证');
     expect(within(tools).getByRole('group', { name: '协作网状图' })).toHaveTextContent('实现 Room 依赖数据投影');
     /* Entering after settlement still opens the current round's real results. */
@@ -549,8 +552,9 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByRole('button', { name: '协同模式' })).toHaveAttribute('aria-pressed', 'false');
     expect(rendered.container.querySelector('.paw-room-workspace')).toHaveAttribute('data-collaboration-mode', 'false');
     const navigation = screen.getByRole('navigation', { name: 'Room 工作台视图' });
-    expect(within(navigation).getAllByRole('button')).toHaveLength(5);
+    expect(within(navigation).getAllByRole('button')).toHaveLength(6);
     expect(rendered.container.querySelector('.paw-window-title')).toHaveTextContent('Room 934');
+    if (screen.queryByRole('button', { name: '展开 Room 控件' })) fireEvent.click(screen.getByRole('button', { name: '展开 Room 控件' }));
     expect(screen.getByRole('region', { name: 'Room 当前协作' })).toBeInTheDocument();
     await user.click(within(navigation).getByRole('button', { name: '完整记录' }));
     expect(rendered.container.querySelector('.paw-room-workspace')).toHaveAttribute('data-view', 'conversation');
@@ -957,6 +961,7 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByLabelText('Agent 中的 Sol 协作模式')).toBeInTheDocument();
     expect(hosted.container.querySelector('.paw-room-window-chrome'))
       .toHaveAttribute('data-coordinator', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '展开 Room 控件' }));
     expect(screen.getByLabelText('Sol 当前状态')).toBeInTheDocument();
 
     cleanup();
@@ -977,6 +982,7 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.queryByLabelText('Agent 中的 Sol 协作模式')).not.toBeInTheDocument();
     expect(container.querySelector('.paw-room-window-chrome')).not.toHaveAttribute('data-coordinator');
     expect(screen.queryByLabelText('Sol 当前状态')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '展开 Room 控件' }));
     expect(screen.getByLabelText('主 Room 当前状态')).toBeInTheDocument();
   });
 
@@ -1127,6 +1133,9 @@ describe('PAWOS Room collaboration tools', () => {
       )).toHaveLength(1);
       expect(controlTransport.activeSubscriptionCount()).toBe(1);
     });
+    expect(transport.requests.filter(
+      ({ request }) => request.pathId === 'agent.session.backgroundJobs.list',
+    )).toHaveLength(0);
   });
 
   it('does not initialize a Room surface while the document is hidden', async () => {
@@ -1138,6 +1147,7 @@ describe('PAWOS Room collaboration tools', () => {
         await Promise.resolve();
       });
       expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.snapshot')).toHaveLength(0);
+      expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.backgroundJobs.list')).toHaveLength(0);
     } finally {
       setDocumentVisibility('visible');
     }

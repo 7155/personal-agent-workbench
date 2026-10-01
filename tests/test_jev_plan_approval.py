@@ -1,6 +1,7 @@
 """Real Store/gateway approval transactions; Pi drain remains an explicit test boundary."""
 from __future__ import annotations
 
+import sqlite3
 from unittest.mock import patch
 
 from rag_ime.agent_tools import ControlToolGateway
@@ -149,6 +150,48 @@ class JevPlanApprovalTests(JevHostFixture):
         self.assertEqual(result["planApproval"]["status"], "approved")
         self.app.tick()
         self.assertEqual(len(self.effects(created, "execute")), 1)
+
+    def test_approval_discloses_tools_outside_the_canonical_writer(self):
+        created, _, _ = self.planned()
+        with sqlite3.connect(self.service.db_path) as conn:
+            conn.execute("CREATE TABLE test_catalog_probe(value TEXT)")
+        original = self.service._runtime_tool_manifest
+
+        def manifest(session):
+            # A cold extension/runtime catalog can persist its initialization.
+            # It must not wait on the approval's own SQLite writer.
+            with sqlite3.connect(self.service.db_path, timeout=0) as conn:
+                conn.execute("INSERT INTO test_catalog_probe VALUES(?)", (session['id'],))
+            return original(session)
+
+        with patch.object(self.service, '_runtime_tool_manifest', side_effect=manifest):
+            result = self.command(created, 'approve_plan')
+            self.assertEqual(result['planApproval']['status'], 'approved')
+            calls = self.service._runtime_tool_manifest.call_count
+            replay = self.command(created, 'approve_plan')
+            self.assertTrue(replay['idempotentReplay'])
+            self.assertEqual(self.service._runtime_tool_manifest.call_count, calls)
+        self.assertEqual(len(self.snapshot(created).tasks), 2)
+
+    def test_policy_change_during_disclosure_rejects_approval_without_children(self):
+        created, _, _ = self.planned()
+        original = self.app.eligible_participants
+
+        def changing(snapshot, specification, **kwargs):
+            targets = original(snapshot, specification, **kwargs)
+            session_id = targets[0]['sessionId']
+            session = self.service.sessions.get(session_id)
+            self.service.sessions.set_runtime_policy(session_id,
+                mode=session['mode'], tool_profile_version=session['toolProfileVersion'],
+                execution_mode='read_only', allowed_tools=None)
+            return targets
+
+        with patch.object(self.app, 'eligible_participants', side_effect=changing):
+            with self.assertRaisesRegex(GraphConflict, 'executor policy changed'):
+                self.command(created, 'approve_plan')
+        self.assertEqual(len(self.snapshot(created).tasks), 1)
+        self.assertEqual(self.view(created)['planApproval']['status'], 'awaiting_approval')
+        self.assertEqual(self.effects(created, 'execute'), [])
 
     def test_duplicate_approval_is_atomic_and_replays_the_same_receipt(self):
         created, _, _ = self.planned()

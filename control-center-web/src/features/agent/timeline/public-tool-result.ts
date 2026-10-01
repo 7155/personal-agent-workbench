@@ -1,6 +1,12 @@
 import type { AgentActivityProjection } from '@/contracts/agent-reducer';
 import { approvalDecisionReasonLabel, approvalDecisionView, approvalNeedsHumanDecision } from '@/contracts/approval-decision';
 import { publicToolName } from '../tool-presentation';
+import {
+  codeModeDetailsFromPayload,
+  codeModeOutputFromPayload,
+  codeModeSourceFromInput,
+  type CodeModeDetails,
+} from '@/features/conversation-ui/model/codemode';
 const PUBLIC_TOOL_OUTPUT_MAX_CHARS = 6_000;
 const PUBLIC_TOOL_OUTPUT_MAX_LINES = 40;
 const INSPECTABLE_TOOL_RESULT_MAX_CHARS = 24_000;
@@ -42,6 +48,10 @@ export interface PublicToolResultView {
     text: string;
     truncated: boolean;
   };
+  /** Native Pi codemode receipt, kept inside the historical outer Tool row. */
+  codeMode?: CodeModeDetails;
+  /** The submitted JavaScript source, when the codemode argument is public. */
+  code?: string;
   /** Header label when the output block is not a tool return, e.g. the
    * concrete content a collaboration tool sent on the user's behalf. */
   outputLabel?: string;
@@ -66,6 +76,7 @@ export interface PublicToolResultView {
 
 export type PublicToolResultKind =
   | 'terminal'
+  | 'codemode'
   | 'code'
   | 'matches'
   | 'files'
@@ -237,6 +248,16 @@ export function publicToolResultView(activity: PublicToolActivityProjection): Pu
   const toolLabel = publicToolLabel(toolId);
   const expectedNoop = payload.expectedNoop === true;
   const args = record(payload.args);
+  const codeMode = toolId === 'codemode' ? codeModeDetailsFromPayload(payload) : undefined;
+  const codeModeInput = toolId === 'codemode'
+    ? (typeof payload.args === 'string'
+      ? payload.args
+      : typeof payload.arguments === 'string'
+        ? payload.arguments
+        : JSON.stringify(args))
+    : '';
+  const code = toolId === 'codemode' ? codeModeSourceFromInput(codeModeInput) : '';
+  const codeOutput = toolId === 'codemode' ? codeModeOutputFromPayload(payload) : '';
   // Collaboration receipts keep their op inside the call arguments; lifting it
   // here lets the generic 操作 field carry the precise public label instead of
   // settling on "受控操作".
@@ -421,7 +442,9 @@ export function publicToolResultView(activity: PublicToolActivityProjection): Pu
     ? publicToolError(layers, carrier)
     : '';
   const recovery = error ? publicToolRecovery(error, payload) : undefined;
-  const output = collaboration?.output ?? subagentResult?.output ?? codeResult.output;
+  const output = collaboration?.output ?? subagentResult?.output ?? (toolId === 'codemode' && codeOutput
+    ? { text: publicToolOutputText(codeOutput), truncated: publicToolOutputWasTruncated(codeOutput) }
+    : codeResult.output);
   const outputLabel = collaboration?.output
     ? collaboration.outputLabel
     : !subagentResult?.output && codeResult.output
@@ -435,6 +458,8 @@ export function publicToolResultView(activity: PublicToolActivityProjection): Pu
     operation,
     summary: subagentResult?.summary || summary || collaboration?.summary || codeResult.summary || `${toolLabel} ${activity.status === 'running' ? '正在处理' : activity.status === 'failed' ? '执行失败' : activity.status === 'aborted' ? '已停止' : '已完成'}`,
     resultKind,
+    ...(codeMode ? { codeMode } : {}),
+    ...(code ? { code } : {}),
     ...(codeResult.file ? { target: codeResult.file } : {}),
     ...(codeResult.filePath ? { targetPath: codeResult.filePath } : {}),
     ...(codeResult.additions !== undefined || codeResult.deletions !== undefined ? {
@@ -1019,6 +1044,7 @@ const changeResultTools = new Set([
 
 function publicToolResultKind(toolId: string, semantic: boolean): PublicToolResultKind {
   if (semantic) return 'semantic';
+  if (toolId === 'codemode') return 'codemode';
   if (terminalResultTools.has(toolId)) return 'terminal';
   if (codeResultTools.has(toolId)) return 'code';
   if (matchResultTools.has(toolId)) return 'matches';

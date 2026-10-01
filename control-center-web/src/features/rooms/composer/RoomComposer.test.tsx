@@ -222,6 +222,29 @@ describe('RoomComposer macOS input methods', () => {
     expect(onPasteFromClipboard).toHaveBeenCalledTimes(1);
   });
 
+  it('hands Finder local references to the native pasteboard fallback while leaving links as text', () => {
+    const onPasteFromClipboard = vi.fn();
+    render(<TooltipProvider><RoomComposer
+      room={{ id: 'room-finder-paste', status: 'active', participants: [] }} personas={[]} draft=""
+      attachments={[]} sending={false} onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()}
+      onPasteImages={vi.fn()} onPasteFromClipboard={onPasteFromClipboard} onPickAttachments={vi.fn()} onSend={vi.fn()}
+    /></TooltipProvider>);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+
+    fireEvent.paste(editor, { clipboardData: {
+      files: [], items: [],
+      getData: (kind: string) => kind === 'text/uri-list' ? 'file:///Users/example/Desktop/brief.pdf' : 'brief.pdf',
+    } });
+    expect(onPasteFromClipboard).toHaveBeenCalledTimes(1);
+    expect(editor).toHaveValue('');
+
+    fireEvent.paste(editor, { clipboardData: {
+      files: [], items: [],
+      getData: (kind: string) => kind === 'text/uri-list' ? 'https://example.test/brief.pdf' : 'https://example.test/brief.pdf',
+    } });
+    expect(onPasteFromClipboard).toHaveBeenCalledTimes(1);
+  });
+
   it('renders a removable managed attachment chip', () => {
     const onAttachmentsChange = vi.fn();
     render(
@@ -409,14 +432,14 @@ it('moves the one JEV draft into a dialog and restores it and focus without send
   expect(onSend).not.toHaveBeenCalled();
 });
 
-it('keeps one add menu, stop and expanded editing and blocks file drops during execution', async () => {
+it('keeps one add menu, stop and expanded editing and stages file drops during execution', async () => {
   const onStop = vi.fn(); const onInvite = vi.fn(); const onFiles = vi.fn();
   render(<TooltipProvider><RoomComposer room={{ id: 'room-controls', status: 'active', participants: [] }} personas={[]} draft="长文本" attachments={[]} sending={false} taskBusyState="running" onStop={onStop} onInvitePartners={onInvite} onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()} onPasteImages={onFiles} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={vi.fn()} /></TooltipProvider>);
   fireEvent.click(screen.getByRole('button', { name: '停止当前协作' }));
   expect(screen.queryByRole('button', { name: '邀请新伙伴' })).not.toBeInTheDocument();
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: '添加内容' }));
-  expect(screen.getByRole('menuitem', { name: /选择附件/ })).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.getByRole('menuitem', { name: /选择附件/ })).not.toHaveAttribute('aria-disabled', 'true');
   await user.click(screen.getByRole('menuitem', { name: '邀请新伙伴' }));
   expect(onStop).toHaveBeenCalledTimes(1); expect(onInvite).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: '展开长文本编辑' }));
@@ -425,7 +448,9 @@ it('keeps one add menu, stop and expanded editing and blocks file drops during e
   fireEvent.keyDown(editor, { key: 'Escape' });
   expect(screen.getByRole('button', { name: '展开长文本编辑' })).toHaveAttribute('aria-expanded', 'false');
   fireEvent.drop(editor, { dataTransfer: { types: ['Files'], files: [new File(['a'], 'test.txt')] } });
-  expect(onFiles).not.toHaveBeenCalled();
+  expect(onFiles).toHaveBeenCalledTimes(1);
+  fireEvent.paste(editor, { clipboardData: { files: [new File(['pdf'], 'reference.pdf', { type: 'application/pdf' })] } });
+  expect(onFiles).toHaveBeenCalledTimes(2);
   expect(editor).toHaveValue('长文本');
 });
 

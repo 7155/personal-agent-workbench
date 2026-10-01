@@ -6,6 +6,7 @@ import {
   agentSnapshotFromResponse,
   appendOptimisticAgentMessage,
   applyAgentSnapshot,
+  mergeAgentSnapshotHistory,
   createAgentProjection,
   discardOptimisticAgentMessage,
   failOptimisticAgentMessage,
@@ -84,7 +85,12 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
   },
   hydrateSnapshot(sessionId, snapshot) {
     const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
-    if (snapshot.lastSequence < current.lastSequence) return false;
+    if (snapshot.lastSequence < current.lastSequence) {
+      const projection = mergeAgentSnapshotHistory(current, normalizeLegacyHistoryTurns(snapshot));
+      if (projection === current) return false;
+      set((state) => ({ projections: { ...state.projections, [sessionId]: projection } }));
+      return true;
+    }
     // A snapshot with no messages can only be a transient/partial projection
     // failure for a Session that already has durable history. Rebuild the
     // cursor and terminal/status metadata against the last confirmed

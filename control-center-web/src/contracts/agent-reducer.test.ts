@@ -15,6 +15,7 @@ import {
   rewriteOptimisticAgentMessage,
   resolveAgentTurnUserMessage,
   reduceAgentEvents,
+  mergeAgentSnapshotHistory,
   type AgentTodoProjection,
 } from './agent-reducer';
 import { parseAgentEvent } from './validators';
@@ -1103,6 +1104,20 @@ describe('AgentEventReducer', () => {
     expect(restored.messagesById['pi-completed-app'].blocks.some((block) => block.id==='app-source')).toBe(true);
   });
 
+  it('absorbs a completed Pi row and its unfinished live alias while tools continue', () => {
+    const turnId = 'turn-1';
+    const answer = '已读取项目，继续检查。';
+    const durable = { ...serverMessage('pi-progress', 'assistant', turnId, answer), createdAtMs: 80_000 };
+    const restored = applyAgentSnapshot(createAgentProjection('session-1'), {
+      messages: [durable],
+      liveEvents: [{ ...agentEvent(1, 'text_delta', { messageId: `${turnId}:assistant`, delta: answer }), createdAtMs: 1_000 }],
+      status: 'busy', lastSequence: 1, resumeToken: 'session-1:1',
+    });
+    expect(restored.messageOrder).toEqual(['pi-progress']);
+    expect(restored.messagesById['pi-progress'].status).toBe('completed');
+    expect(restored.turnsById[turnId].status).toBe('running');
+  });
+
   it('keeps an equal answer in a different turn outside the short replay window', () => {
     const answer = '同一条回答也可能被独立请求两次。';
     const live = reduceAgentEvent(createAgentProjection('session-1'), {
@@ -1935,6 +1950,190 @@ describe('AgentEventReducer', () => {
     expect(received.messageOrder).toEqual(['pi-user']);
     expect(received.messagesById['room-event:room-a:2']).toBeUndefined();
     expect(received.messagesById['pi-user']?.clientMessageId).toBe(clientMessageId);
+  });
+
+  it('replaces a bound Room mirror across recent to full history outside the time window', () => {
+    const dispatchId = 'jev-dispatch:bound-long-turn';
+    const roomClientMessageId = 'paw-jev:room-input';
+    const mirrorBase = serverMessage(
+      'room-event:room-bound:2',
+      'user',
+      'room-root:bound-long-turn',
+      '同一条跨快照请求',
+    );
+    const mirror = {
+      ...mirrorBase,
+      clientMessageId: dispatchId,
+      createdAtMs: 10_000,
+      completedAtMs: 10_000,
+      blocks: [{
+        ...mirrorBase.blocks[0],
+        source: { kind: 'room_event', ref: 'room-bound:2' },
+        data: {
+          ...mirrorBase.blocks[0].data,
+          roomClientMessageId,
+          roomEventId: 'room-bound:2',
+        },
+      }],
+    };
+    const current = applyAgentSnapshot(createAgentProjection('session-1'), {
+      messages: [mirror],
+      liveEvents: [],
+      lastSequence: 0,
+      resumeToken: '',
+      snapshotScope: 'recent',
+      partial: true,
+      status: 'busy',
+    });
+    const durable = {
+      ...serverMessage('pi-bound-user', 'user', 'pi-turn:bound-long-turn', '同一条跨快照请求'),
+      clientMessageId: dispatchId,
+      createdAtMs: 100_000,
+      completedAtMs: 100_000,
+      blocks: [{
+        ...serverMessage('pi-bound-user', 'user', 'pi-turn:bound-long-turn', '同一条跨快照请求').blocks[0],
+        data: { text: '同一条跨快照请求', roomClientMessageId, roomEventId: 'room-bound:2' },
+      }],
+    };
+
+    const merged = mergeAgentSnapshotHistory(current, {
+      messages: [durable],
+      liveEvents: [],
+      lastSequence: 99,
+      resumeToken: 'session-1:99',
+      status: 'idle',
+    });
+
+    expect(merged.messageOrder).toEqual(['pi-bound-user']);
+    expect(merged.messagesById['room-event:room-bound:2']).toBeUndefined();
+    expect(merged.messagesById['pi-bound-user']).toMatchObject({
+      clientMessageId: dispatchId,
+      turnId: 'pi-turn:bound-long-turn',
+    });
+    expect(merged.messagesById['pi-bound-user'].blocks[0].data.roomClientMessageId)
+      .toBe(roomClientMessageId);
+  });
+
+  it('keeps the durable Pi row when a recent snapshot repeats its Room mirror', () => {
+    const dispatchId = 'jev-dispatch:recent-mirror';
+    const roomClientMessageId = 'paw-jev:recent-mirror';
+    const durable = {
+      ...serverMessage('pi-recent-user', 'user', 'pi-turn:recent-mirror', '跨视图同一条请求'),
+      clientMessageId: dispatchId,
+      createdAtMs: 100_000,
+      blocks: [{
+        ...serverMessage('pi-recent-user', 'user', 'pi-turn:recent-mirror', '跨视图同一条请求').blocks[0],
+        data: { text: '跨视图同一条请求', roomClientMessageId, roomEventId: 'room-recent:2' },
+      }],
+    };
+    const current = applyAgentSnapshot(createAgentProjection('session-1'), {
+      messages: [durable],
+      liveEvents: [],
+      lastSequence: 10,
+      resumeToken: 'session-1:10',
+      status: 'idle',
+    });
+    const mirror = {
+      ...serverMessage('room-event:room-recent:2', 'user', 'room-root:recent-mirror', '跨视图同一条请求'),
+      clientMessageId: dispatchId,
+      createdAtMs: 10_000,
+      blocks: [{
+        ...serverMessage('room-event:room-recent:2', 'user', 'room-root:recent-mirror', '跨视图同一条请求').blocks[0],
+        source: { kind: 'room_event', ref: 'room-recent:2' },
+        data: { text: '跨视图同一条请求', roomClientMessageId, roomEventId: 'room-recent:2' },
+      }],
+    };
+
+    const refreshed = applyAgentSnapshot(current, {
+      messages: [mirror],
+      liveEvents: [],
+      lastSequence: 10,
+      resumeToken: 'session-1:10',
+      snapshotScope: 'recent',
+      partial: true,
+      status: 'idle',
+    });
+
+    expect(refreshed.messageOrder).toEqual(['pi-recent-user']);
+    expect(refreshed.messagesById['room-event:room-recent:2']).toBeUndefined();
+    expect(refreshed.messagesById['pi-recent-user'].turnId).toBe('pi-turn:recent-mirror');
+    expect(refreshed.messagesById['pi-recent-user'].blocks[0].data.roomClientMessageId)
+      .toBe(roomClientMessageId);
+  });
+
+  it('does not correlate a Room alias across message roles', () => {
+    const roomClientMessageId = 'paw-jev:role-boundary';
+    const user = {
+      ...serverMessage('room-event:role-boundary', 'user', 'room-root:role-boundary', '用户请求'),
+      clientMessageId: roomClientMessageId,
+      blocks: [{
+        ...serverMessage('room-event:role-boundary', 'user', 'room-root:role-boundary', '用户请求').blocks[0],
+        source: { kind: 'room_event', ref: 'room-role-boundary:1' },
+        data: { text: '用户请求', roomClientMessageId, roomEventId: 'room-role-boundary:1' },
+      }],
+    };
+    const current = applyAgentSnapshot(createAgentProjection('session-1'), {
+      messages: [user],
+      liveEvents: [],
+      lastSequence: 1,
+      resumeToken: 'session-1:1',
+      status: 'idle',
+    });
+    const assistant = {
+      ...serverMessage('assistant-role-boundary', 'assistant', 'turn:role-boundary', '工具完成'),
+      blocks: [{
+        ...serverMessage('assistant-role-boundary', 'assistant', 'turn:role-boundary', '工具完成').blocks[0],
+        data: { text: '工具完成', roomClientMessageId },
+      }],
+    };
+
+    const refreshed = applyAgentSnapshot(current, {
+      messages: [assistant],
+      liveEvents: [],
+      lastSequence: 1,
+      resumeToken: 'session-1:1',
+      snapshotScope: 'recent',
+      partial: true,
+      status: 'idle',
+    });
+
+    expect(refreshed.messageOrder).toEqual([
+      'room-event:role-boundary',
+      'assistant-role-boundary',
+    ]);
+    expect(refreshed.messagesById['room-event:role-boundary']).toBeDefined();
+    expect(refreshed.messagesById['assistant-role-boundary']).toBeDefined();
+  });
+
+  it('keeps a pending optimistic user when an assistant reuses its Room alias', () => {
+    const clientMessageId = 'paw-jev:pending-role-boundary';
+    const optimistic = appendOptimisticAgentMessage(createAgentProjection('session-1'), {
+      clientMessageId,
+      text: '用户请求',
+      nowMs: 10,
+    });
+    const assistant = {
+      ...serverMessage('assistant-pending-role-boundary', 'assistant', 'turn:pending-role-boundary', '已完成'),
+      blocks: [{
+        ...serverMessage('assistant-pending-role-boundary', 'assistant', 'turn:pending-role-boundary', '已完成').blocks[0],
+        data: { text: '已完成', roomClientMessageId: clientMessageId },
+      }],
+    };
+
+    const received = reduceAgentEvent(
+      optimistic,
+      agentEvent(1, 'message_completed', { message: assistant }),
+    ).state;
+
+    expect(received.messageOrder).toEqual([
+      'local:paw-jev:pending-role-boundary',
+      'assistant-pending-role-boundary',
+    ]);
+    expect(received.messagesById['local:paw-jev:pending-role-boundary']).toBeDefined();
+    expect(received.messagesById['assistant-pending-role-boundary']).toBeDefined();
+    expect(received.optimisticByClientMessageId).toEqual({
+      [clientMessageId]: 'local:paw-jev:pending-role-boundary',
+    });
   });
 
   it('settles a synthetic busy snapshot turn when the real turn completes', () => {

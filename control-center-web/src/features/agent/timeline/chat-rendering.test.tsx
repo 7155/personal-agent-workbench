@@ -6,6 +6,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { UiAgentBlock, UiAgentMessage } from '@/contracts/ui-events';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
+import { messageWithWorkspaceContext } from '@/paw-os/apps/workspace-draft';
 import { agentEventFixture } from '@/test/fixtures/events';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { useAgentLiveStore } from '../state/live-store';
@@ -15,7 +16,7 @@ import {
   activityDisplayRuns,
   agentDeliveryFeedback,
   agentTurnMarkerKind,
-  estimatedStreamingTokens,
+  initialAgentResponseTurnId,
   interleavedTurnEntries,
   projectUserMessageBlocks,
   visibleAssistantMessages,
@@ -37,6 +38,32 @@ afterEach(() => {
 });
 
 describe('Agent chat rendering', () => {
+  it.each([
+    ['tool_started', { toolCallId: 'first-tool', toolName: 'read', args: { path: 'README.md' } }],
+    ['text_delta', { delta: '已收到' }],
+    ['turn_completed', { status: 'completed' }],
+    ['turn_failed', { message: '请求失败' }],
+  ])('hands immediate feedback off when %s arrives', (eventType, payload) => {
+    useAgentLiveStore.getState().appendOptimistic('session-1', {
+      clientMessageId: 'first-response', text: '开始', nowMs: 1, turnId: 'turn-1',
+    });
+    const projection = () => useAgentLiveStore.getState().projections['session-1'];
+    expect(initialAgentResponseTurnId(projection())).toBe('turn-1');
+    const view = render(<AgentTurn sessionId="session-1" turnId="turn-1" showWorkingIndicator={false} onApprovalDecision={() => {}} />);
+    expect(screen.queryByText(/Thinking/)).not.toBeInTheDocument();
+    useAgentLiveStore.getState().applyEvents('session-1', [agentEventFixture(1, eventType as string, payload as Record<string, unknown>)]);
+    expect(initialAgentResponseTurnId(projection())).toBe('');
+    view.unmount();
+  });
+
+  it('does not claim Thinking during uncertain admission or cancellation', () => {
+    useAgentLiveStore.getState().appendOptimistic('session-1', { clientMessageId: 'uncertain', text: '开始', nowMs: 1 });
+    const projection = useAgentLiveStore.getState().projections['session-1']!;
+    expect(initialAgentResponseTurnId({ ...projection, status: 'aborting' })).toBe('');
+    const message = projection.messagesById['local:uncertain']!;
+    expect(initialAgentResponseTurnId({ ...projection, messagesById: { ...projection.messagesById, [message.id]: { ...message, admissionState: 'unresolved' } } })).toBe('');
+  });
+
   it('folds only completed embedded history, keeps failures visible, and expands the original sequence', () => {
     useAgentLiveStore.getState().hydrateSnapshot('session-1', { messages: [userMessage('session-1', 'turn-1')], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle' });
     let sequence = 0;
@@ -75,11 +102,6 @@ describe('Agent chat rendering', () => {
     const empty = screen.getByRole('status', { name: '空 Session' });
     expect(empty).toHaveTextContent('还没有消息');
     expect(empty).toHaveTextContent('在下方输入第一条消息');
-  });
-
-  it('estimates streamed CJK and Latin text for the visible token-rate indicator', () => {
-    expect(estimatedStreamingTokens([{ id: 'empty', type: 'text', status: 'running', presentationKind: 'markdown', data: {} }])).toBe(0);
-    expect(estimatedStreamingTokens([{ id: 'mixed', type: 'text', status: 'running', presentationKind: 'markdown', data: { text: '你好abcdefgh' } }])).toBe(4);
   });
 
   it('keeps a Provider attempt failure in evidence without rendering it as a second answer', () => {
@@ -124,7 +146,26 @@ describe('Agent chat rendering', () => {
     expect(projectUserMessageBlocks(original, 'full')).toBe(original);
   });
 
-  it('shows the live token-rate indicator on an actually streaming assistant message', () => {
+  it('shows the request instead of the attached Lab snapshot while retaining the exact sent content', () => {
+    const snapshot = JSON.stringify({ projectId: 'lab-1', projectRevision: 2, page: 'workspace', current: { kind: 'artifact', content: '<html>完整页面</html>' }, artifacts: [], artifactCount: 0 });
+    const sent = messageWithWorkspaceContext('请优化左侧页面', { kind: 'project', label: '报告', detail: 'v2 · 随消息发送', text: snapshot, onClear: () => {} });
+    const blocks = userMessage('session-1', 'turn-1').blocks.map((block) => ({ ...block, data: { ...block.data, text: sent } }));
+    expect(sent).toContain(snapshot);
+    const visible = projectUserMessageBlocks(blocks, 'project-context');
+    expect(visible[0]?.data.text).toBe('请优化左侧页面\n\n已关联项目上下文');
+    expect(blocks[0]?.data.text).toBe(sent);
+    expect(projectUserMessageBlocks(blocks, 'full')).toBe(blocks);
+    const unverified = [{ ...blocks[0]!, data: { ...blocks[0]!.data, text: '请优化左侧页面\n\n项目工作面上下文：报告\n用户手写 JSON' } }];
+    expect(projectUserMessageBlocks(unverified, 'project-context')[0]?.data.text).toBe(unverified[0]?.data.text);
+    const message = userMessage('session-1', 'turn-1');
+    useAgentLiveStore.getState().hydrateSnapshot('session-1', { messages: [{ ...message, blocks }], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle' });
+    const view = render(<AgentTurn sessionId="session-1" turnId="turn-1" userMessagePresentation="project-context" onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-user-message')).toHaveTextContent('请优化左侧页面');
+    expect(view.container.querySelector('.agent-user-message')).toHaveTextContent('已关联项目上下文');
+    expect(view.container.querySelector('.agent-user-message')).not.toHaveTextContent('完整页面');
+  });
+
+  it('does not invent a token-rate indicator on streaming assistant text', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     const sessionId = 'session-1';
@@ -146,7 +187,7 @@ describe('Agent chat rendering', () => {
       vi.advanceTimersByTime(900);
     });
 
-    expect(screen.getByLabelText(/前端估算生成速度 .* tokens 每秒/)).toHaveTextContent(/t\/s/);
+    expect(screen.queryByLabelText(/前端估算生成速度/)).not.toBeInTheDocument();
   });
 
   it('derives the visible turn order once per projection commit and shares it across selectors', () => {

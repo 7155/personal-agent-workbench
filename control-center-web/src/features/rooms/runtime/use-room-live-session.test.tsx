@@ -2,9 +2,10 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { roomEventFixture } from '@/test/fixtures/events';
 import { MockControlTransport } from '@/test/mock-transport';
-import type { ControlEventObserver, ControlSubscription } from '@/platform/transport';
+import type { ControlEventObserver, ControlSubscription, ControlRequest } from '@/platform/transport';
 import { HttpControlTransport } from '@/platform/http-transport';
 import type { UiRoomEvent } from '@/contracts/ui-events';
+import { preloadRecentConversations } from '@/features/conversation-ui/conversation-preload';
 import { roomProjection, useRoomLiveStore } from '../state/live-store';
 import { useRoomLiveSession } from './use-room-live-session';
 
@@ -17,6 +18,73 @@ afterEach(() => {
 });
 
 describe('useRoomLiveSession snapshot recovery', () => {
+  it('opens from a warmed conversation projection without duplicating the light read or keeping an offscreen stream', async () => {
+    const conversation = roomConversationSnapshot([], 0, 0);
+    const transport = new MockControlTransport({ routes: {
+      'agent.room.conversationSnapshot': conversation,
+      'agent.room.snapshot': roomSnapshot([]),
+    } });
+    const warmup = preloadRecentConversations(transport, [{ kind: 'room', id: 'room-1' }]);
+    await expect(warmup.promise).resolves.toEqual([
+      expect.objectContaining({ kind: 'room', id: 'room-1', status: 'ready' }),
+    ]);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.conversationSnapshot')).toHaveLength(1);
+    expect(transport.subscriptionCalls).toHaveLength(0);
+
+    const onSnapshot = vi.fn();
+    const window = renderHook(() => useRoomLiveSession({
+      roomId: 'room-1',
+      transport,
+      onLoadingChange: vi.fn(),
+      onSnapshot,
+      onMetadata: vi.fn(),
+      onConnectionRestored: vi.fn(),
+      onConnectionError: vi.fn(),
+      onRecoveryState: vi.fn(),
+      onEvents: vi.fn(),
+    }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.conversationSnapshot')).toHaveLength(1);
+    expect(onSnapshot).toHaveBeenCalledWith('room-1', expect.objectContaining({ schemaVersion: 'rag-ime.agent-room-conversation-snapshot.v1' }));
+    window.unmount();
+  });
+
+  it('automatically fills a long Room prefix before replacing its visible Jev conversation', async () => {
+    vi.useFakeTimers();
+    const events = [roomEventFixture(1, 'user_message', {
+      messageId: 'original-request', clientMessageId: 'original-client', text: '完整复杂任务', mode: 'jev', graphId: 'graph:long',
+    }), ...Array.from({ length: 2200 }, (_, i) => roomEventFixture(i + 2, 'participant_activity', {
+      activityKind: 'tool', status: 'completed', toolCallId: `tool-${i}`, summary: `工具 ${i}`,
+    }))];
+    const tail = roomSnapshot(events.slice(-1000));
+    const transport = new MockControlTransport({ routes: {
+      'agent.room.conversationSnapshot': roomConversationSnapshot([events[0]!], 2201, 2200),
+      'agent.room.snapshot': { ...tail, truncated: true },
+      'agent.room.history': (request: ControlRequest) => {
+        const before = Number(request.query?.beforeSequence);
+        const items = events.filter(event => event.sequence < before).slice(-200);
+        const first = items[0]?.sequence ?? 0;
+        return { schemaVersion: 'rag-ime.agent-room-event-page.v1', ok: true, roomId: 'room-1',
+          items: items.map(({ streamKind: _streamKind, ...event }) => event),
+          firstSequence: first, lastSequence: items.at(-1)?.sequence ?? 0,
+          nextBeforeSequence: first > 1 ? first : 0, hasMore: first > 1,
+          retainedFirstSequence: 1, retainedLastSequence: 2201, retainedPrefixTruncated: false };
+      },
+    } });
+    renderHook(() => useRoomLiveSession({ roomId: 'room-1', transport,
+      onLoadingChange: vi.fn(), onSnapshot: vi.fn(), onMetadata: vi.fn(), onConnectionRestored: vi.fn(),
+      onConnectionError: vi.fn(), onRecoveryState: vi.fn(), onEvents: vi.fn(),
+    }));
+    await flushAsyncWork();
+    expect(roomProjection('room-1').messagesById['original-request']?.text).toBe('完整复杂任务');
+    await act(async () => vi.advanceTimersByTimeAsync(ROOM_DEFERRED_TEST_DELAY_MS));
+    await flushAsyncWork();
+    expect(useRoomLiveStore.getState().historyByRoomId['room-1']?.events).toHaveLength(2201);
+    expect(roomProjection('room-1').messagesById['original-request']?.text).toBe('完整复杂任务');
+    expect(roomProjection('room-1').activityOrder).toHaveLength(2200);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.history')).toHaveLength(7);
+  });
+
   it('does not initialize an inactive Room and resumes exactly one stream when activated', async () => {
     const transport = new MockControlTransport({
       routes: {

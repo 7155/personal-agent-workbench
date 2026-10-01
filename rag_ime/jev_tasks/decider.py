@@ -196,7 +196,7 @@ class JevChoices:
                 "多个独立任务都可执行时可任选一项先派遣，优先延续合格且空闲的当前负责人；不能仅因其他任务尚未执行就等待。"
                 "dependencyFacts 是当前版本真实前置的宿主状态；accepted=true 表示前置已验收，不因缺少仍在进行的 verificationFacts 再次等待复核。"
                 "resultAvailable 只说明原成果可供执行者使用，不等于下游任务已执行；参考上下文关系不作为等待条件。"
-                "verificationFacts 是独立核验者对当前 taskHash 绑定提交的正式结论，执行结束由 executionFacts 证明。"
+                "verificationFacts 是对当前 taskHash 绑定的正式核验结论，可来自 Pi 检查或 Jev 对现有证据的判断；执行结束由 executionFacts 证明。"
                 "你负责选择这些已检查动作的提交先后，不重复充当 verifier，不要求调度包重复提供原始 Tool 记录。"
                 "accept 提交已有 passed/satisfied 核验为任务完成；return 提交已有失败或未验证结论以返修。"
                 "逐项判断每个动作自己的前提，一个任务的缺失信息不阻止另一个具备前提的独立动作。"

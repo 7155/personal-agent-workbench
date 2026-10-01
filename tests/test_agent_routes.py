@@ -323,6 +323,12 @@ class AgentRouteTests(unittest.TestCase):
             ),
             ("agent:123", "", "collection"),
         )
+        self.assertEqual(
+            agent_background_job_route(
+                "/api/agent/sessions/agent%3A123/background-jobs/start"
+            ),
+            ("agent:123", "", "start"),
+        )
         for path in (
             f"/api/agent/sessions/agent:123/background-jobs/{job_id}/unknown",
             "/api/agent/sessions/agent:123/background-jobs/not-a-job",

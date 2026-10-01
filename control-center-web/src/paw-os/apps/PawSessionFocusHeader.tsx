@@ -17,7 +17,7 @@ export interface PawSessionFocusHeaderProps {
 
 /** A view of the existing Session. This header never starts or resumes work. */
 export function PawSessionFocusHeader({
-  title, busy, stopping, active, hasMessages, needsAttention, readOnly = false,
+  busy, stopping, active, hasMessages, needsAttention, readOnly = false,
   panel, onOpenTasks, onOpenFiles, onOpenSubagents,
 }: PawSessionFocusHeaderProps) {
   const status = readOnly ? '只读评测记录'
@@ -28,8 +28,6 @@ export function PawSessionFocusHeader({
   const tone = readOnly ? 'idle' : stopping ? 'stopping' : needsAttention ? 'attention' : busy ? 'running' : 'idle';
   return <header className="paw-session-focus" data-tone={tone} data-motion={active && busy && !stopping && !readOnly ? 'active' : 'paused'}>
     <div className="paw-session-focus__identity">
-      <span className="paw-session-focus__eyebrow">{readOnly ? 'EVALUATION' : 'SESSION'}</span>
-      <h2 title={title}>{title}</h2>
       <p>{needsAttention && !readOnly ? <CircleAlert size={13} aria-hidden /> : <i aria-hidden />}<span>{status}</span></p>
     </div>
     <nav className="paw-session-focus__actions" aria-label="对话工作区">

@@ -67,6 +67,7 @@ import {
   type AgentCommand,
   type AgentPermissionSelection,
   type AgentProductCommandName,
+  type CodemodeMode,
   type ModelCatalog,
   type SessionSummary,
   type ThinkingLevel,
@@ -242,6 +243,7 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
   const rewriteResolving = rewriteResolvingSessionIds.has(selectedId);
   const capabilityPolicyMutation = capabilityPolicyMutations.get(selectedId);
   const capabilityPolicyPending = capabilityPolicyMutation?.status === 'pending';
+  const [codemodeModePending, setCodemodeModePending] = useState(false);
   useEffect(() => {
     if (!selectedId || sessionMetadataKnown) {
       setMetadataGraceSessionId('');
@@ -2054,6 +2056,35 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
     } catch (requestError) { setSessionError(session.id, errorText(requestError)); }
   }
 
+  async function changeCodemodeMode(mode: CodemodeMode): Promise<void> {
+    if (!sessionControlsAvailable || !session) return;
+    if (busy || stopping || sending) {
+      setSessionError(session.id, '请先结束或停止当前任务，再调整代码执行编排。');
+      return;
+    }
+    if (session.codemodeMode === mode) return;
+    const ownerSessionId = session.id;
+    setCodemodeModePending(true);
+    try {
+      const response = await transport.request<Record<string, unknown>>({
+        pathId: 'agent.session.codemode.select',
+        params: { sessionId: ownerSessionId },
+        body: { mode },
+      });
+      if (response.codemodeMode !== mode) {
+        throw new Error('代码执行编排未被后端确认，请重新同步当前对话。');
+      }
+      setSessions((current) => current.map((item) => item.id === ownerSessionId
+        ? { ...item, codemodeMode: response.codemodeMode as CodemodeMode }
+        : item));
+      if (selectedIdRef.current === ownerSessionId) setSessionError(ownerSessionId, '');
+    } catch (requestError) {
+      setSessionError(ownerSessionId, `代码执行编排没有更新。${errorText(requestError)}`);
+    } finally {
+      setCodemodeModePending(false);
+    }
+  }
+
   async function pickWorkspaceRoots(
     single = false,
     ownerSessionId = selectedIdRef.current,
@@ -2256,6 +2287,8 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
             busy={busy}
             capabilityCatalog={capabilityCatalog}
             capabilityPolicyPending={capabilityPolicyPending}
+            codemodeMode={session.codemodeMode}
+            codemodeModePending={codemodeModePending}
             catalog={catalog}
             commands={commands}
             draft={draft}
@@ -2280,6 +2313,7 @@ function AgentWorkspace({ pawOsWorkbench }: { pawOsWorkbench: boolean }) {
             onAttachmentsChange={setSelectedAttachments}
             onCancelEdit={cancelEdit}
             onCapabilityPreferenceChange={(canonicalId, preference) => void changeCapabilityPreference(canonicalId, preference)}
+            onCodemodeModeChange={(mode) => void changeCodemodeMode(mode)}
             onDraftChange={persistSelectedDraft}
             onEditPrevious={() => void beginEditMessage()}
             onJumpLatest={() => setScrollToLatestRequest((current) => current + 1)}

@@ -16,6 +16,11 @@ backed acceptance, and the single user-facing Root result. Partners are peers in
 execution and may communicate directly, but they do not accept another
 Partner's WorkItem or finalize the Root.
 
+When Jev owns the task graph, a partner receiving a `purpose=plan` execution
+pack is a planner, not the Room Facilitator. Use `implementation-planning` and
+submit the plan through the supplied contract; leave dispatch, result decisions,
+and Root completion to Jev. This Skill does not override that ownership.
+
 ## Workflow
 
 1. **Align.** Read the current Root Goal, controlling requirements, acceptance,
@@ -30,9 +35,11 @@ Partner's WorkItem or finalize the Root.
    WorkItems. Prefer vertical deliverables over arbitrary frontend/backend/test
    lanes. Record objective, scope, expected output, acceptance, owner,
    dependencies, capabilities, workspace, references, and result shape.
-4. **Coordinate.** Dispatch independent, non-overlapping lanes together only
-   when concurrency has a material benefit. Dispatch dependent work in later
-   stages. Let Partners communicate directly instead of relaying their wording.
+4. **Coordinate.** First establish interfaces and separate write targets so
+   independently useful lanes can run together. Do not turn broad phases into
+   a serial chain when that prerequisite can be removed by a small contract.
+   Dispatch genuine dependencies later and retain only necessary integration
+   barriers. Let Partners communicate directly instead of relaying their wording.
 5. **Integrate.** Treat Partner output as a submission. Inspect the actual
    artifacts, Runtime receipts, and downstream effects rather than relying on
    the Partner's conclusion.
@@ -42,9 +49,12 @@ Partner's WorkItem or finalize the Root.
 7. **Recover truthfully.** Revise, retry, reassign, block, or abandon the same
    responsibility from current Runtime state. Do not create replacement work to
    hide a failed revision. Reconcile every item before closing the Root.
-8. **Finalize once.** Publish one integrated Root result with evidence,
-   artifacts, residual risks, unverified boundaries, and the executable next
-   action. Mechanical terminality belongs to Runtime, not prose.
+8. **Finalize once.** Automatically publish one user-facing results report:
+   what was completed, where the deliverables are and how to open/use them,
+   which checks actually ran, and what remains incomplete or unverified. Do
+   not require the user to reconstruct the outcome from Tool logs. A short
+   text-only conversation can use the answer itself as its report. Publish one
+   Root result; mechanical terminality belongs to Runtime, not prose.
 
 ## Hard Invariants
 

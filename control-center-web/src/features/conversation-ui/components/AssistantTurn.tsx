@@ -1,5 +1,6 @@
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
 import { Play } from 'lucide-react';
+import { Fragment } from 'react';
 import { useConversationSurface } from '../ConversationSurfaceContext';
 import type { AssistantMessage } from '../model/types';
 import { MessageActions } from './MessageActions';
@@ -32,32 +33,30 @@ export function AssistantTurn({ message }: { message: AssistantMessage }) {
       ) : null}
       <div className="ccui-assistant-body">
         {message.blocks.map((block) => {
+          const blockFooter = surface.renderBlockFooter?.(block, message);
           const override = surface.renderBlock?.(block, message);
-          if (override === null) return null;
-          if (override !== undefined) return <div className="ccui-host-block" key={block.id}>{override}</div>;
+          if (override === null) return blockFooter ? <Fragment key={block.id}><div className="ccui-assistant-host-footer">{blockFooter}</div></Fragment> : null;
+          if (override !== undefined) return <Fragment key={block.id}><div className="ccui-host-block">{override}</div>{blockFooter ? <div className="ccui-assistant-host-footer">{blockFooter}</div> : null}</Fragment>;
           const detail = surface.renderBlockDetail?.(block, message);
           if (block.kind === 'thinking') {
-            return <ThinkingBlock block={block} key={block.id} {...(detail ? { detail } : {})} />;
+            return <Fragment key={block.id}><ThinkingBlock block={block} {...(detail ? { detail } : {})} />{blockFooter ? <div className="ccui-assistant-host-footer">{blockFooter}</div> : null}</Fragment>;
           }
           if (block.kind === 'tool') {
             const action = surface.renderBlockAction?.(block, message);
-            return <ToolCard
+            return <Fragment key={block.id}><ToolCard
               block={block}
-              key={block.id}
               {...(action ? { action } : {})}
               {...(detail ? { detail } : {})}
-            />;
+            />{blockFooter ? <div className="ccui-assistant-host-footer">{blockFooter}</div> : null}</Fragment>;
           }
-          return (
-            <div className="ccui-markdown" key={block.id}>
+          return <Fragment key={block.id}><div className="ccui-markdown">
               <MarkdownBody
                 documentKey={`${message.id}:${block.id}`}
                 sessionId={surface.resolveMessageSessionId?.(message) ?? ''}
                 streamingTail={Boolean(block.streaming)}
                 text={block.text}
               />
-            </div>
-          );
+            </div>{blockFooter ? <div className="ccui-assistant-host-footer">{blockFooter}</div> : null}</Fragment>;
         })}
         {streaming ? <small className="ccui-live-hint">正在生成公开回复</small> : null}
         {message.error ? <div className="ccui-error-card" role="status">{message.error}</div> : null}

@@ -170,6 +170,15 @@ function useRuntimeCompletionNotices({
         || failedPartner
         || room?.workItems?.some((workItem) => workItem.state === 'blocked')
         || (item.kind === 'maintenance' && (maintenanceJob?.state === 'failed' || maintenanceJob?.state === 'expired'));
+      if (!needsAttention && room?.workItems?.some((workItem) => (
+        workItem.state === 'queued' || workItem.state === 'active' || workItem.state === 'review'
+      ))) {
+        // A Partner becoming idle is an ordinary handoff, not a terminal Room.
+        // Keep observing until the canonical responsibilities settle, without
+        // inventing a running Pi Session during the scheduler's idle gap.
+        nextPrevious.set(key, item);
+        continue;
+      }
       publishGlobalNotice({
         id: runtimeCompletionNoticeId({ item, maintenanceJob, room, session, terminalPartner }),
         title: needsAttention ? `${item.title} 需要处理` : `${item.title} 已结束运行`,
@@ -180,7 +189,9 @@ function useRuntimeCompletionNotices({
           : item.kind === 'room'
             ? failedPartner
               ? 'Room 的 Partner 运行失败，可从项目桌面重新打开并检查详情。'
-              : 'Room 当前没有正在执行的 Partner，可从项目桌面重新打开。'
+              : room?.workItems?.length
+                ? '本轮协作已结束，可打开 Room 查看成果和未完成项。'
+                : 'Room 当前没有正在执行的 Partner，可从项目桌面重新打开。'
             : '对话 Agent 已退出运行态，可从项目桌面重新打开。',
         tone: needsAttention ? 'warning' : 'info',
       });

@@ -1,4 +1,5 @@
 import { approvalNeedsHumanDecision } from '@/contracts/approval-decision';
+import { codeModeDetailsFromPayload, codeModeOutputFromPayload } from '../model/codemode';
 import { toolExecutionOutcome } from '../model/tool-receipt';
 import { isModelAuthError, publicAgentErrorText } from '@/features/agent/public-error';
 import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
@@ -91,6 +92,7 @@ export function roomTranscript(
   const activityByBlockId: Record<string, RoomActivityProjection> = {};
   const reclaimedToolBlockIds = new Set<string>();
   const reclaimedAttempts = provenReclaimedAttempts(projection, options.jevGraph);
+  const continuedAttemptSequences = continuedModelAttempts(projection);
   const jevInputMessageId = options.jevGraph?.roomId === projection.roomId
     ? projection.messageOrder.map((id) => projection.messagesById[id]).find((message) =>
       message?.role === 'user' && (message.rootId || message.turnId) === options.jevGraph?.rootId,
@@ -177,12 +179,17 @@ export function roomTranscript(
           && block.visibility !== 'private_session' && isModelAuthError(block.data.message))
         : undefined;
       const authGuidance = authError ? publicAgentErrorText(authError.data.message) : '';
+      const continuedAttempt = PROVIDER_FAILURE_PLACEHOLDERS.has(entry.message.text)
+        && entry.message.message?.status === 'failed'
+        && Number.isSafeInteger(entry.message.sequence)
+        && (continuedAttemptSequences.get(modelAttemptKey(entry.message) ?? '') ?? -1) > entry.message.sequence!;
       if (authGuidance) card.error = authGuidance;
       card.blocks.push({
         id: `text:${entry.message.id}`,
         kind: 'text',
         text: reclaimedMessage ? `${RECLAIM_HANDOFF}。` : authGuidance && entry.message.text.startsWith('模型服务未能生成最终回复')
           ? authGuidance
+          : continuedAttempt ? '本次模型请求失败；同一轮已继续执行，后续结果见下方。'
           : entry.message.text,
         ...(entry.message.status === 'streaming' ? { streaming: true } : {}),
       });
@@ -205,6 +212,39 @@ export function roomTranscript(
   }
 
   return { messages, activityByBlockId, reclaimedToolBlockIds, phase: roomPhase(projection) };
+}
+
+/** A failed Provider response is one attempt within a Pi turn, not its final
+ * outcome. Only later public execution with the exact source binding proves
+ * continuation; retain the original failure envelope in the projection. */
+function modelAttemptKey(message: Pick<RoomMessageProjection,
+  'roomId' | 'rootId' | 'turnId' | 'dispatchId' | 'sourceSessionId' | 'sourceTurnId' | 'participantId'>): string | undefined {
+  const parts = [message.roomId, message.rootId || message.turnId, message.dispatchId,
+    message.sourceSessionId, message.sourceTurnId, message.participantId];
+  return parts.every(Boolean) ? JSON.stringify(parts) : undefined;
+}
+
+function continuedModelAttempts(projection: RoomProjectionState): Map<string, number> {
+  const sequences = new Map<string, number>();
+  const record = (key: string | undefined, sequence: number | undefined) => {
+    if (key && Number.isSafeInteger(sequence)) sequences.set(key, Math.max(sequences.get(key) ?? -1, sequence!));
+  };
+  for (const id of projection.activityOrder) {
+    const activity = projection.activitiesById[id];
+    if (!activity || !['tool_started', 'tool_finished'].includes(text(activity.payload.sourceEventType))) continue;
+    record(modelAttemptKey({ roomId: projection.roomId, rootId: text(activity.payload.rootId),
+      turnId: activity.turnId, dispatchId: text(activity.payload.dispatchId),
+      sourceSessionId: activity.sourceSessionId, sourceTurnId: text(activity.payload.sourceTurnId),
+      participantId: activity.participantId }), activity.sequence);
+  }
+  for (const id of projection.messageOrder) {
+    const message = projection.messagesById[id];
+    if (!message || message.role !== 'assistant' || message.status !== 'completed'
+      || message.message?.status === 'failed' || !message.text.trim()
+      || PROVIDER_FAILURE_PLACEHOLDERS.has(message.text)) continue;
+    record(modelAttemptKey(message), message.sequence);
+  }
+  return sequences;
 }
 
 /** Accepted cancel + drained old attempt + accepted same-task new owner are
@@ -515,6 +555,7 @@ function activityBlock(
     return {
       id: `dispatch:${activity.id}`,
       kind: 'tool',
+      receiptKind: 'dispatch',
       name: `${sourceName} → ${targetName} · ${jevPurpose ? `${jevPurpose}分派` : '任务分派'}`,
       summary: dispatchLine.join(' · '),
       status: toolStatus(activity.status),
@@ -525,6 +566,10 @@ function activityBlock(
   if (eventType === 'tool' || eventType.startsWith('tool_')) {
     const evidence = roomToolEvidence(activity.payload);
     const managedRead = roomEscapedManagedRead(activity);
+    const toolId = text(activity.payload.toolName, text(activity.payload.toolId)).trim().toLowerCase();
+    const isCodeMode = toolId === 'codemode';
+    const codeMode = isCodeMode ? codeModeDetailsFromPayload(activity.payload) : undefined;
+    const codeOutput = isCodeMode ? codeModeOutputFromPayload(activity.payload) : '';
     if (reclaimedTool) return {
       id: `tool:${activity.id}`,
       kind: 'tool',
@@ -540,7 +585,12 @@ function activityBlock(
      * is derived from real evidence instead; the blob stays reachable as the
      * card's input, so folding never costs a trace. */
     const raw = rawDetail(activity.summary);
-    const name = managedRead ? '读取受管资源' : evidence?.label || '工具';
+    const name = isCodeMode ? 'codemode' : managedRead ? '读取受管资源' : evidence?.label || '工具';
+    const input = raw
+      ? activity.summary.trim()
+      : isCodeMode
+        ? serializedInput(activity.payload.arguments ?? activity.payload.args)
+        : '';
     const line = managedRead ? '已读取机器文本片段' : roomToolActivityLine(raw ? '' : activity.summary, activity.payload, activity.status);
     /* The card head already names the tool and carries its state, so a derived
      * line of exactly those two would print the same sentence twice. One that
@@ -555,8 +605,10 @@ function activityBlock(
       executionOutcome: toolExecutionOutcome(activity.payload),
       summary: duplicate ? '' : line,
       status: toolStatus(activity.status),
-      ...(raw ? { input: activity.summary.trim() } : {}),
-      ...(!managedRead && evidence?.facts.length
+      ...(input ? { input } : {}),
+      ...(codeMode ? { codeMode } : {}),
+      ...(codeOutput ? { output: codeOutput } : {}),
+      ...(!isCodeMode && !managedRead && evidence?.facts.length
         ? { output: evidence.facts.map((fact) => `${fact.label}：${fact.value}`).join('\n') }
         : {}),
       startedAt: activity.createdAtMs,
@@ -750,4 +802,14 @@ function compact(value: string): string {
 
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+function serializedInput(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
 }

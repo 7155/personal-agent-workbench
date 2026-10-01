@@ -117,8 +117,10 @@ class ControlPathId(str, Enum):
     AGENT_SESSION_MODELS = "agent.session.models"
     AGENT_SESSION_MODEL_SELECT = "agent.session.model.select"
     AGENT_SESSION_THINKING_SELECT = "agent.session.thinking.select"
+    AGENT_SESSION_CODEMODE_SELECT = "agent.session.codemode.select"
     AGENT_SESSION_EVENTS = "agent.session.events"
     AGENT_SESSION_BACKGROUND_JOBS_LIST = "agent.session.backgroundJobs.list"
+    AGENT_SESSION_BACKGROUND_JOB_START = "agent.session.backgroundJob.start"
     AGENT_SESSION_BACKGROUND_JOB_GET = "agent.session.backgroundJob.get"
     AGENT_SESSION_BACKGROUND_JOB_LOGS = "agent.session.backgroundJob.logs"
     AGENT_SESSION_BACKGROUND_JOB_CANCEL = "agent.session.backgroundJob.cancel"
@@ -899,8 +901,10 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_SESSION_MODELS, ControlMethod.GET, "/api/agent/sessions/{sessionId}/models", "/control/v1/agent/sessions/{sessionId}/models", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_SESSION),
         _route(ControlPathId.AGENT_SESSION_MODEL_SELECT, ControlMethod.POST, "/api/agent/sessions/{sessionId}/model", "/control/v1/agent/sessions/{sessionId}/model", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION, body={"provider", "modelId"}, required_body={"provider", "modelId"}, remote_body={"provider", "modelId"}),
         _route(ControlPathId.AGENT_SESSION_THINKING_SELECT, ControlMethod.POST, "/api/agent/sessions/{sessionId}/thinking", "/control/v1/agent/sessions/{sessionId}/thinking", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION, body={"level"}, required_body={"level"}, remote_body={"level"}),
+        _route(ControlPathId.AGENT_SESSION_CODEMODE_SELECT, ControlMethod.POST, "/api/agent/sessions/{sessionId}/codemode", "/control/v1/agent/sessions/{sessionId}/codemode", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION, body={"mode"}, required_body={"mode"}, remote_body={"mode"}),
         _route(ControlPathId.AGENT_SESSION_EVENTS, ControlMethod.GET, "/api/agent/sessions/{sessionId}/events", "/control/v1/agent/sessions/{sessionId}/events", scopes=[ControlScope.AGENT_READ], remote_safe=True, subscription=True, params=_SESSION, query=_LAST_EVENT_QUERY, required_query=_LAST_EVENT_QUERY),
         _route(ControlPathId.AGENT_SESSION_BACKGROUND_JOBS_LIST, ControlMethod.GET, "/api/agent/sessions/{sessionId}/background-jobs", "/control/v1/agent/sessions/{sessionId}/background-jobs", params=_SESSION, query={"limit", "status"}),
+        _route(ControlPathId.AGENT_SESSION_BACKGROUND_JOB_START, ControlMethod.POST, "/api/agent/sessions/{sessionId}/background-jobs/start", None, params=_SESSION, body={"action", "projectId", "cwd", "label", "idempotencyKey", "previewUrl", "timeoutSeconds"}, required_body={"action", "projectId", "cwd"}),
         _route(ControlPathId.AGENT_SESSION_BACKGROUND_JOB_GET, ControlMethod.GET, "/api/agent/sessions/{sessionId}/background-jobs/{jobId}", "/control/v1/agent/sessions/{sessionId}/background-jobs/{jobId}", params=_BACKGROUND_JOB),
         _route(ControlPathId.AGENT_SESSION_BACKGROUND_JOB_LOGS, ControlMethod.GET, "/api/agent/sessions/{sessionId}/background-jobs/{jobId}/logs", "/control/v1/agent/sessions/{sessionId}/background-jobs/{jobId}/logs", params=_BACKGROUND_JOB, query={"cursor", "limitBytes"}),
         _route(ControlPathId.AGENT_SESSION_BACKGROUND_JOB_CANCEL, ControlMethod.POST, "/api/agent/sessions/{sessionId}/background-jobs/{jobId}/cancel", "/control/v1/agent/sessions/{sessionId}/background-jobs/{jobId}/cancel", params=_BACKGROUND_JOB, body={"reason", "roomTurnId"}),

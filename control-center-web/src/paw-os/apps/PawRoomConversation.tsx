@@ -28,6 +28,7 @@ import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { JEV_TASK_STAGE_LABELS, type JevSnapshot, type JevTask } from '@/features/semantic-workspace/jev-execution';
 import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
+import { ProjectQuickActions } from '@/features/eval-lab/projects/ProjectQuickActions';
 import { runtimeToolWindowRequest } from '../runtime/runtime-tool-window';
 import { roomFocusCelestialName } from './room-focus-projection';
 import { readableManagedReadExcerpt, roomDispatchPlanFromActivity, roomEscapedManagedRead, roomToolEvidence } from './room-gravity-projection';
@@ -48,7 +49,7 @@ import './paw-room-conversation-navigation.css';
 export function PawRoomConversation({
   empty,
   lead,
-  tail,
+  planReview,
   collaborationMode = 'room',
   graph,
   onApprovalDecision,
@@ -58,6 +59,7 @@ export function PawRoomConversation({
   participantId,
   rootId,
   projection,
+  active = true,
   readOnly = false,
   retryingTurn,
   room,
@@ -73,18 +75,35 @@ export function PawRoomConversation({
   participantId?: string;
   rootId?: string;
   projection: RoomProjectionState;
+  /** Background job polling belongs to the visible owning Room mount. */
+  active?: boolean;
   /** Observation-only mounts keep approval state visible but do not expose a
    * mutation control. The owning Room remains the intervention surface. */
   readOnly?: boolean;
   retryingTurn?: boolean;
   room: RoomSummary;
   lead?: ReactNode;
-  tail?: ReactNode;
+  /** Jev's plan surface is placed below the plan dispatch card, so the
+   *  approval belongs to the round that produced it instead of the global
+   *  transcript tail. */
+  planReview?: ReactNode;
   collaborationMode?: 'room' | 'jev';
   graph?: JevSnapshot | null;
   empty?: ReactNode;
 }) {
   const desktop = usePawOsDesktop();
+  const quickActionParticipant = room.participants.find((participant) => participant.id === room.moderatorParticipantId)
+    ?? room.participants.find((participant) => participant.sessionId);
+  const quickActionSessionId = quickActionParticipant?.sessionId ?? '';
+  const quickActionCwd = room.workspaceRoots?.[0] ?? '';
+  const quickActions = !readOnly && quickActionSessionId && quickActionCwd ? (
+    <ProjectQuickActions active={active} compact context={{
+      projectId: room.id,
+      title: room.title,
+      sessionId: quickActionSessionId,
+      cwd: quickActionCwd,
+    }} />
+  ) : null;
   const [toolInspection, setToolInspection] = useState<{ blocks: ToolCallBlock[]; details: Record<string, ReactNode> } | null>(null);
   const actorName = useCallback((candidateId: string | null | undefined) => {
     const participant = candidateId
@@ -241,7 +260,15 @@ export function PawRoomConversation({
     ? jevToolGroups(transcript.messages, block => {
       if (!block.id.startsWith('tool:')) return true;
       const activity = transcript.activityByBlockId[block.id];
-      return Boolean(activity && (roomApprovalDecision(activity) || onOpenProcessActivity && roomProcessWindowRequest(activity, room.id)));
+      const dispatch = activity && roomDispatchPlanFromActivity(activity);
+      /* Keep Jev planning visible as its own chronology boundary. Otherwise a
+       * plan and the first execute route from one assistant loop collapse into
+       * one opaque tool-record opener, leaving no insertion point before work
+       * starts. Both dispatch boundaries stay visible; ordinary tools retain
+       * the existing compact grouping. */
+      return Boolean(activity && (roomApprovalDecision(activity)
+        || onOpenProcessActivity && roomProcessWindowRequest(activity, room.id)
+        || dispatch?.purpose === 'plan' || dispatch?.purpose === 'execute'));
     }) : new Map(), [collaborationMode, participantId, onOpenProcessActivity, room.id, transcript]);
   const openToolRecords = useCallback((blocks: ToolCallBlock[]) => {
     setToolInspection({ blocks, details: Object.fromEntries(blocks.map(block => [block.id, renderBlockDetail(block)])) });
@@ -253,6 +280,50 @@ export function PawRoomConversation({
   }, [toolGroups, openToolRecords]);
   const currentTools = useMemo(() => new Map(transcript.messages.flatMap(message => message.role === 'assistant'
     ? message.blocks.filter((block): block is ToolCallBlock => block.kind === 'tool').map(block => [block.id, block] as const) : [])), [transcript.messages]);
+
+  /* The plan review is part of the chronology: route_decision(purpose=plan)
+   * is the anchor, and the first execute dispatch remains below it in the
+   * transcript. A fallback to the current round's last assistant card keeps
+   * a just-created plan visible while its route event is still arriving. */
+  const planReviewAnchor = useMemo(() => {
+    if (!planReview || collaborationMode !== 'jev') return '';
+    const targetRootId = graph?.rootId || rootId || '';
+    const assistantMessages = transcript.messages.filter((message): message is AssistantMessage => (
+      message.role === 'assistant' && (!targetRootId || message.turnId === targetRootId)
+    ));
+    let planMessageIndex = -1;
+    let firstExecuteMessageIndex = -1;
+    let firstExecuteBlockIndex = -1;
+    for (const [messageIndex, message] of assistantMessages.entries()) {
+      let hasPlan = false;
+      for (const [blockIndex, block] of message.blocks.entries()) {
+        const activity = transcript.activityByBlockId[block.id];
+        const purpose = activity ? roomDispatchPlanFromActivity(activity)?.purpose : undefined;
+        if (purpose === 'plan') hasPlan = true;
+        if (firstExecuteMessageIndex < 0 && purpose === 'execute') {
+          firstExecuteMessageIndex = messageIndex;
+          firstExecuteBlockIndex = blockIndex;
+        }
+      }
+      if (hasPlan) planMessageIndex = messageIndex;
+    }
+    if (firstExecuteMessageIndex >= 0) {
+      const message = assistantMessages[firstExecuteMessageIndex];
+      if (message) {
+        const predecessorMessage = firstExecuteBlockIndex > 0
+          ? message
+          : assistantMessages[firstExecuteMessageIndex - 1];
+        const predecessor = firstExecuteBlockIndex > 0
+          ? message.blocks[firstExecuteBlockIndex - 1]
+          : predecessorMessage?.blocks.at(-1);
+        if (predecessor && predecessorMessage) return { messageId: predecessorMessage.id, blockId: predecessor.id };
+      }
+    }
+    const planningMessage = planMessageIndex >= 0 ? assistantMessages[planMessageIndex] : assistantMessages.at(-1);
+    return planningMessage?.blocks.at(-1)
+      ? { messageId: planningMessage.id, blockId: planningMessage.blocks.at(-1)!.id }
+      : { messageId: planningMessage?.id ?? '', blockId: '' };
+  }, [collaborationMode, graph?.rootId, planReview, rootId, transcript.activityByBlockId, transcript.messages]);
 
   const controller = useMemo<ConversationSurfaceController>(() => ({
     conversationId: participantId ? `${room.id}:${participantId}:${rootId || "history"}` : room.id,
@@ -280,10 +351,15 @@ export function PawRoomConversation({
         else onRetryTurn?.(source.text, source.rootId);
       }
     },
-      retryPending: !readOnly && Boolean(retryingTurn),
+    retryPending: !readOnly && Boolean(retryingTurn),
     renderBlockDetail,
     renderBlockAction,
     renderBlock,
+    renderBlockFooter: (block, message) => planReviewAnchor && typeof planReviewAnchor !== 'string'
+      && planReviewAnchor.blockId && message.id === planReviewAnchor.messageId && block.id === planReviewAnchor.blockId
+      ? planReview : undefined,
+    renderMessageFooter: message => planReviewAnchor && typeof planReviewAnchor !== 'string'
+      && !planReviewAnchor.blockId && message.id === planReviewAnchor.messageId ? planReview : undefined,
     resolveMessageSessionId: (message) => boundParticipant(message.actorId, message.actorSessionId ?? '')?.sessionId ?? '',
     renderMessageAvatar: (message) => {
       const participant = room.participants.find(item => item.id === message.actorId);
@@ -311,6 +387,8 @@ export function PawRoomConversation({
     renderBlockAction,
     renderBlockDetail,
     renderBlock,
+    planReview,
+    planReviewAnchor,
     readOnly,
     retryingTurn,
     room.id,
@@ -323,8 +401,7 @@ export function PawRoomConversation({
     controller={controller}
     density={participantId ? 'compact' : 'comfortable'}
     label={participantId ? '行星公开对话' : 'Room 公开对话'}
-    {...(lead ? { lead } : {})}
-    {...(tail ? { tail } : {})}
+    {...(quickActions || lead ? { lead: <>{quickActions}{lead}</> } : {})}
     {...(empty ? { empty } : {})}
   /><PawJevToolRecordDialog
     open={Boolean(toolInspection)}

@@ -98,6 +98,10 @@ import type { PickedFile } from '@/platform/transport';
 import { pawBrowserHost } from './paw-browser-host';
 import { ModelPicker } from '@/features/agent/composer/ModelPicker';
 import { PawAppIcon } from '../shell/PawAppIcon';
+import {
+  preloadRecentConversations,
+  type ConversationPreloadTarget,
+} from '@/features/conversation-ui/conversation-preload';
 
 type WorkMode = 'session' | 'room';
 type Selection =
@@ -119,6 +123,7 @@ const PROMPT_STARTERS: ReadonlyArray<{ label: string; prompt: string }> = [
 ];
 
 export function PawAgentHome({
+  active = true,
   interfaceMode = 'traditional',
   catalogError = '',
   catalogLoading = false,
@@ -134,6 +139,7 @@ export function PawAgentHome({
   rooms,
   sessions,
 }: {
+  active?: boolean;
   interfaceMode?: 'traditional' | 'jev';
   catalogError?: string;
   catalogLoading?: boolean;
@@ -239,6 +245,17 @@ export function PawAgentHome({
   ]
     .sort((left, right) => right.item.updatedAtMs - left.item.updatedAtMs)
     .slice(0, 4), [rooms, sessions]);
+
+  useEffect(() => {
+    if (!active || !recents.length) return;
+    const targets: ConversationPreloadTarget[] = recents.slice(0, 3).map(({ kind, item }) => ({
+      kind,
+      id: item.id,
+      updatedAtMs: item.updatedAtMs,
+    }));
+    const warmup = preloadRecentConversations(transport, targets);
+    return () => warmup.cancel();
+  }, [active, recents, transport]);
 
   function moveModeFocus(event: KeyboardEvent<HTMLButtonElement>): void {
     const next = event.key === 'Home' ? 'session'

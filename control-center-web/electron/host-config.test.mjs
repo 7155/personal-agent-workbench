@@ -295,6 +295,9 @@ test('host serves PAWOS and proxies GET, POST, and event streams through one ori
   const host = await startPawHostServer({
     browserBridge: {
       activateTarget: async (targetId) => ({ ok: true, targetId }),
+      captureScreenshot: async (targetId) => ({
+        ok: true, targetId, mimeType: 'image/png', data: 'aG9zdC1waXhlbHM=',
+      }),
       createTab: async (url) => ({ ok: true, targetId: `target:${url}` }),
       token: 'host-token',
     },
@@ -323,6 +326,14 @@ test('host serves PAWOS and proxies GET, POST, and event streams through one ori
       method: 'POST',
     });
     assert.equal((await created.json()).targetId, 'target:https://example.com');
+    const screenshot = await fetch(`${host.origin}/__paw_browser/screenshot`, {
+      body: '{"targetId":"target:https://example.com"}',
+      headers: { 'Content-Type': 'application/json', 'X-Paw-Browser-Token': 'host-token' },
+      method: 'POST',
+    });
+    assert.deepEqual(await screenshot.json(), {
+      ok: true, targetId: 'target:https://example.com', mimeType: 'image/png', data: 'aG9zdC1waXhlbHM=',
+    });
     assert.match(await (await fetch(`${host.origin}/api/events`)).text(), /event: ready/);
     assert.equal(requests[1].headers.origin, `http://127.0.0.1:${upstreamAddress.port}`);
     assert.equal(requests[1].headers.host, `127.0.0.1:${upstreamAddress.port}`);

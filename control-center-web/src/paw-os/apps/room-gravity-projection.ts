@@ -204,6 +204,7 @@ const roomToolLabels: Record<string, string> = {
   grep: '搜索内容',
   browser: '浏览器操作',
   desktop_semantic: '桌面检查',
+  codemode: '代码执行',
   runtime: '运行时',
 };
 

@@ -27,6 +27,7 @@ _REF_FIELDS = frozenset({"sourceRef", "required", "selection", "selector", "exte
 _READ_BYTES = 96000
 _ARTIFACT_FILE_BYTES = 2 * 1024 * 1024
 _ARTIFACT_TOTAL_BYTES = 8 * 1024 * 1024
+_ARTIFACT_SHA256_SUFFIX = re.compile(r"#sha256:([0-9a-fA-F]{64})$")
 # Only task execution receipts are shared. Room/control/discovery and personal
 # memory tool results may contain other participants' context, not task proof.
 _EVIDENCE_TOOLS = frozenset({"read", "bash", "write", "edit", "grep", "find", "ls",
@@ -122,6 +123,13 @@ class JevMaterialService:
         and `../` are explicit paths even without one. The WorkspaceHarness
         remains the authority for resolving each candidate under Session roots.
         """
+        # A declared revision annotates a path; it is not part of its filename.
+        # Other fragments remain untouched and are not interpreted as hashes.
+        ref = _ARTIFACT_SHA256_SUFFIX.sub("", ref)
+        # BrowserControl owns these immutable snapshot resources. Its public
+        # imagePath is an HTTP route, not an absolute workspace filename.
+        if re.fullmatch(r"/(?:api|control/v1)/browser/snapshots/snap_[0-9a-f]{32}/image", ref):
+            return None
         if ref.startswith("workspace:"):
             return ref[len("workspace:"):]
         parsed = urlsplit(ref)
@@ -167,7 +175,18 @@ class JevMaterialService:
             try:
                 if not path or "\x00" in path:
                     raise GraphError("invalid workspace artifact path")
-                target, root = reader._resolve_existing_path(roots, path, allow_directory=False)
+                relocation = None
+                try:
+                    target, root = reader._resolve_existing_path(roots, path, allow_directory=False)
+                except (ValueError, RuntimeError, OSError):
+                    documents = getattr(self.service, "work_documents", None)
+                    resolve = getattr(documents, "relocated_artifact_path", None)
+                    relocation = resolve(path, authority_kind="room_work_item", authority_id=task.id) if callable(resolve) else None
+                    if relocation is None:
+                        raise
+                    # The WorkDocument owner's receipt establishes identity;
+                    # the verifier's existing reader still owns access and bytes.
+                    target, root = reader._resolve_existing_path(roots, relocation["path"], allow_directory=False)
                 if reader._is_sensitive_for_session(session, target, root):
                     raise GraphConflict("workspace artifact is unavailable")
                 flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -196,8 +215,14 @@ class JevMaterialService:
                 finally:
                     os.close(fd)
                 remaining -= len(raw)
-                revisions.append({"sourceRef": ref, "status": "available",
-                                  "revision": "sha256:" + hashlib.sha256(raw).hexdigest()})
+                actual_hash = hashlib.sha256(raw).hexdigest()
+                declared = _ARTIFACT_SHA256_SUFFIX.search(ref)
+                if declared and declared.group(1).lower() != actual_hash:
+                    raise GraphConflict("workspace artifact differs from declared revision")
+                revision = {"sourceRef": ref, "status": "available", "revision": "sha256:" + actual_hash}
+                if relocation is not None:
+                    revision.update(resolvedRef=str(target), relocationReceiptId=relocation["relocationReceiptId"])
+                revisions.append(revision)
             except (AttributeError, ValueError, RuntimeError, OSError):
                 revisions.append({"sourceRef": ref, "status": "unavailable"})
         return revisions
@@ -548,20 +573,61 @@ class JevMaterialService:
                 snapshot, dependency, lifecycle.effect_for_dispatch(dependency.accepted_turn_id),
                 inline_byte_budget=2000,
             ) if lifecycle is not None else {"status": "unavailable", "tools": []}
+            handoff = {"taskId": dependency.id,
+                       "taskRevision": dependency.revision,
+                       "state": dependency.state,
+                       "stateSource": "current canonical WorkItem",
+                       "acceptedAtMs": dependency.completed_at_ms or None,
+                       "statePolicy": "state 是宿主当前已验收状态；acceptedAtMs 来自该 WorkItem 的 completedAtMs，记录验收完成时间，可与下游工具 startedAtMs 核对前置时序。result 是验收前的历史执行者提交，可能仍写着待验收。不得用历史文字覆盖当前 state。",
+                       "result": dependency.result,
+                       "artifacts": list(dependency.artifacts),
+                       "evidence": list(dependency.evidence),
+                       "workerToolEvidence": tool_evidence}
+            handoff = self._dependency_handoff(snapshot, task, dependency, handoff)
             materials.append(Material("dependency:" + dependency.id, str(dependency.revision),
                                       "已验收依赖成果", "work:" + dependency.id, "",
-                                      original=canonical({"taskId": dependency.id,
-                                                          "taskRevision": dependency.revision,
-                                                          "state": dependency.state,
-                                                          "stateSource": "current canonical WorkItem",
-                                                          "acceptedAtMs": dependency.completed_at_ms or None,
-                                                          "statePolicy": "state 是宿主当前已验收状态；acceptedAtMs 来自该 WorkItem 的 completedAtMs，记录验收完成时间，可与下游工具 startedAtMs 核对前置时序。result 是验收前的历史执行者提交，可能仍写着待验收。不得用历史文字覆盖当前 state。",
-                                                          "result": dependency.result,
-                                                          "artifacts": list(dependency.artifacts),
-                                                          "evidence": list(dependency.evidence),
-                                                          "workerToolEvidence": tool_evidence}),
+                                      original=canonical(handoff),
                                       readable=True, required=True))
         return materials
+
+    def _dependency_handoff(self, snapshot, consumer, dependency, body):
+        """Keep accepted identity inline and exact upstream proof under its
+        existing Room media owner. Dispatch is not another complete read of
+        every upstream transcript; Pi reads the versioned package as needed."""
+        if len(canonical(body).encode('utf-8')) <= 2200:
+            return body
+        archive = {"schemaVersion": "jev-accepted-dependency/1", "graphId": snapshot.graph_id,
+                   "rootId": snapshot.root_id, "roomId": snapshot.room_id,
+                   "ownerId": dependency.owner_id, "dispatchId": dependency.accepted_turn_id, **body}
+        try:
+            actor = self.service.rooms.participant(consumer.owner_id)
+            revisions = self.artifact_revisions(snapshot, dependency, actor['sessionId'])
+            if revisions:
+                archive['artifactRevisions'] = revisions
+            media = self.service.media
+            raw = canonical(archive).encode('utf-8')
+            sha = hashlib.sha256(raw).hexdigest()
+            existing = next((item for item in media.list_for_room(snapshot.room_id, limit=500)
+                             if item.get('originTool') == 'jev_accepted_dependency' and item.get('sha256') == sha), None)
+            if existing:
+                _receipt, stored = media.read(existing['mediaId'], room_id=snapshot.room_id)
+                if stored != raw:
+                    existing = None
+            stored = existing or media.import_bytes(room_id=snapshot.room_id, data=raw, mime_type='text/plain',
+                file_name='accepted-dependency.json', origin='tool_result', origin_tool='jev_accepted_dependency',
+                origin_receipt_id=dependency.accepted_turn_id or dependency.id)
+            compact = {key: body[key] for key in ('taskId', 'taskRevision', 'state', 'stateSource', 'acceptedAtMs')}
+            compact.update(readRef='media://' + stored['mediaId'], archiveSha256=sha, archiveBytes=len(raw),
+                inlineTruncated=True, resultPreview=dependency.result.encode('utf-8')[:500].decode('utf-8', errors='ignore'),
+                artifactCount=len(dependency.artifacts),
+                readPolicy='readRef 是完整已验收成果、artifacts、当前文件路径/版本与 workerToolEvidence。'
+                    'resultPreview 不是全文；接口、交接或证据需要原文时用 read 分页读取至 nextLineOffset=null。'
+                    '验收状态以当前 state 为准，历史 result 不覆盖它；可读文件无需复制旧路径。')
+            return compact
+        except (AttributeError, KeyError, ValueError, RuntimeError, OSError):
+            # Retain the original if no actual readable copy exists. Context
+            # budgeting must report this gap, never invent a successful read.
+            return body
 
     def _read(self, session, reference):
         source = str(reference["sourceRef"])

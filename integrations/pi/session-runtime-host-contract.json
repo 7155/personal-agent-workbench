@@ -29,6 +29,7 @@
     "session.abort",
     "session.compact",
     "session.model.set",
+    "session.codemode.set",
     "session.thinking.set",
     "session.close",
     "room.dispatch",

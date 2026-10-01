@@ -1729,6 +1729,28 @@ class AgentRoomWorkStore:
                             "verifierParticipantId": verification["verifier_id"]}
                 return {"independentVerificationDispatchId": verification["dispatch_id"],
                         "independentVerificationHash": digest(canonical(verdict))}
+        # Auto mode may accept a self-contained result through Jev's recorded
+        # decision, without manufacturing an independent Pi verification.
+        decided = conn.execute(
+            "SELECT v.result_json,c.result_json AS choice_json FROM agent_jev_verifications v "
+            "JOIN agent_jev_runtime_effects e ON e.effect_id=v.dispatch_id "
+            "JOIN agent_jev_host_roots h ON h.graph_id=v.graph_id "
+            "JOIN agent_jev_commands c ON c.command_id=json_extract(v.result_json,'$.decisionId') "
+            "AND c.graph_id=v.graph_id "
+            "WHERE v.task_id=? AND v.task_hash=? AND v.dispatch_id=? AND e.state='accepted' "
+            "AND COALESCE(json_extract(e.request_json,'$.purpose'),'execute')='execute' "
+            "AND json_extract(v.result_json,'$.source')='jev_existing_evidence' "
+            "AND c.operation='verification_route' AND json_extract(h.policy_json,'$.verificationMode')='auto'",
+            (row["id"], task_hash, row["accepted_turn_id"])).fetchone()
+        if decided:
+            verdict = json.loads(decided["result_json"])
+            choice = json.loads(decided["choice_json"])
+            if (choice.get("choice") == "accept_existing_evidence" and choice.get("decision")
+                    and verdict.get("operabilityVerdict") == "passed"
+                    and verdict.get("requirementVerdict") == "satisfied"):
+                return {"verificationMode": "jev_existing_evidence",
+                        "verificationDecisionId": verdict["decisionId"],
+                        "verificationHash": digest(canonical(verdict))}
         if not superseded_by_work_id:
             raise ValueError(
                 "cannot accept passed/satisfied over Partner proposed "

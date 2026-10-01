@@ -1094,6 +1094,64 @@ export function createPreviewTransport(): MockControlTransport {
       )).length,
     };
   };
+  routes['agent.session.backgroundJob.start'] = (request: ControlRequest) => {
+    const sessionId = stringValue(record(request.params).sessionId);
+    const body = record(request.body);
+    const action = stringValue(body.action);
+    const projectId = stringValue(body.projectId);
+    const cwd = stringValue(body.cwd);
+    const script = action === 'preview' ? 'start' : action === 'checks' ? 'test' : '';
+    if (!script || !projectId || !cwd) throw new Error('Preview quick action requires a structured project action.');
+    const command = `npm run ${script}`;
+    const jobs = previewBackgroundJobsBySession[sessionId] ?? (previewBackgroundJobsBySession[sessionId] = []);
+    const active = jobs.find((job) => (
+      ['queued', 'running', 'cancelling'].includes(job.status)
+      && job.command === command
+      && job.cwd === cwd
+    ));
+    if (active) return {
+      schemaVersion: 'rag-ime.agent-background-job-start-receipt.v1',
+      ok: true,
+      summary: '项目动作已在运行',
+      replayed: true,
+      deduplicated: true,
+      mutationApplied: false,
+      job: active,
+      quickAction: { action, script, projectId, ...(stringValue(body.previewUrl) ? { previewUrl: stringValue(body.previewUrl) } : {}) },
+    };
+    const nowMs = Date.now();
+    const suffix = `${nowMs.toString(16)}${jobs.length.toString(16)}`.padStart(32, '0').slice(-32);
+    const fixture = previewBackgroundJobs('session-states', nowMs)[0]!;
+    const job: AgentBackgroundJobV1 = {
+      ...fixture,
+      jobId: `bg_${suffix}`,
+      sessionId,
+      label: stringValue(body.label) || (action === 'preview' ? '项目预览' : '项目检核'),
+      status: 'running',
+      command,
+      cwd,
+      createdAtMs: nowMs,
+      startedAtMs: nowMs,
+      updatedAtMs: nowMs,
+      pid: 51_000 + jobs.length,
+      outputBytes: 0,
+      logStartCursor: 0,
+      logTruncated: false,
+      endedAtMs: 0,
+      exitCode: null,
+      cancelRequestedAtMs: 0,
+      error: '',
+    };
+    jobs.unshift(job);
+    return {
+      schemaVersion: 'rag-ime.agent-background-job-start-receipt.v1',
+      ok: true,
+      summary: '项目动作已启动',
+      mutationApplied: true,
+      job,
+      quickAction: { action, script, projectId, ...(stringValue(body.previewUrl) ? { previewUrl: stringValue(body.previewUrl) } : {}) },
+    };
+  };
   routes['agent.session.backgroundJob.get'] = (request: ControlRequest) => {
     const sessionId = stringValue(record(request.params).sessionId);
     const jobId = stringValue(record(request.params).jobId);

@@ -354,7 +354,7 @@ describe('Agent tool activity details', () => {
     const list = controlledId ? document.getElementById(controlledId) : null;
 
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(stack).getByText('进行中 · 1 项失败 · 6 个步骤')).toBeVisible();
+    expect(within(stack).getByText('步骤进行中 · 1 项失败 · 6 个步骤')).toBeVisible();
     expect(list).toHaveAttribute('aria-hidden', 'true');
     expect(list).toHaveAttribute('inert');
 
@@ -679,7 +679,6 @@ describe('Agent tool activity details', () => {
         },
       },
     });
-
     const { container } = render(<ActivitySummary activities={[activity]} inline />);
     const group = container.querySelector<HTMLDetailsElement>('details.agent-activity--inline')!;
     expect(group).toHaveTextContent('1 项操作');
@@ -752,6 +751,40 @@ describe('Agent tool activity details', () => {
     const result = within(row).getByRole('region', { name: '命令输出' });
     expect(result).toHaveAttribute('data-result-kind', 'terminal');
     expect(result).toHaveTextContent('Tests: 12 passed');
+  });
+
+  it('renders historical Pi codemode source, nested calls, and final output together', () => {
+    const activity = toolActivity('tool_finished', 'completed', {
+      toolCallId: 'call-codemode-history',
+      toolName: 'codemode',
+      args: { code: "const value = await read('README.md'); return value;" },
+      result: {
+        details: {
+          calls: [
+            { id: 'codemode/1', name: 'read', args: '{"path":"README.md"}', status: 'ok', durationMs: 16, cost: 0.001 },
+            { id: 'codemode/2', name: 'bash', args: '{"command":"pnpm test"}', status: 'error', durationMs: 38, error: 'exit 1' },
+          ],
+          fullOutputPath: '/tmp/codemode-output.txt',
+          nestedCallsComplete: false,
+        },
+        content: [{ type: 'text', text: 'Script completed\nWall time 0.12s\nOutput:\nFINAL_CODEMODE_OUTPUT' }],
+      },
+    });
+    expect(publicToolResultView(activity).error).toBeUndefined();
+
+    const { container } = render(<ActivitySummary activities={[activity]} inline />);
+    const details = openInlineActivity(container);
+    const row = details.querySelector<HTMLDetailsElement>('.agent-activity-row')!;
+    fireEvent.click(row.querySelector('summary')!);
+
+    const result = within(row).getByRole('region', { name: '代码执行回执' });
+    expect(result).toHaveAttribute('data-result-kind', 'codemode');
+    expect(result).toHaveTextContent('部分恢复');
+    expect(result).toHaveTextContent("const value = await read('README.md'); return value;");
+    expect(result).toHaveTextContent('read');
+    expect(result).toHaveTextContent('exit 1');
+    expect(result).toHaveTextContent('FINAL_CODEMODE_OUTPUT');
+    expect(result).toHaveTextContent('/tmp/codemode-output.txt');
   });
 
   it('projects the latest non-empty subagent return into the activity card', () => {

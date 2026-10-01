@@ -839,6 +839,39 @@ function settleAgentSnapshotQuiescence(
 
 }
 
+/** A slow full-history read can finish behind SSE. Import missing durable
+ * history without moving the live cursor, status, or existing receipts back. */
+export function mergeAgentSnapshotHistory(
+  current: AgentProjectionState,
+  snapshot: AgentSnapshot,
+): AgentProjectionState {
+  if (snapshot.partial || snapshot.messages.length === 0) return current;
+  const history = applyAgentSnapshot(createAgentProjection(current.sessionId), snapshot);
+  history.activityOrder = history.activityOrder.filter((id) => (
+    history.activitiesById[id].status !== 'running' && history.activitiesById[id].status !== 'waiting'
+  ));
+  const next = cloneState(current);
+  const transcriptIds = new Set<string>();
+  let changed = false;
+  for (const id of history.messageOrder) {
+    const message = history.messagesById[id];
+    if (message.status !== 'completed' || current.messagesById[id]) continue;
+    const turnStatus = next.turnsById[message.turnId]?.status;
+    upsertMessage(next, message);
+    if (turnStatus) next.turnsById[message.turnId].status = turnStatus;
+    else next.turnsById[message.turnId].status = history.turnsById[message.turnId].status;
+    transcriptIds.add(id);
+    changed = true;
+  }
+  const merged = preserveConfirmedSnapshotActivities(history, next);
+  changed ||= merged.activityOrder.length !== current.activityOrder.length;
+  if (!changed) return current;
+  reconcileTranscriptReplayMessages(merged, transcriptIds, new Set());
+  merged.messageOrder.sort((a, b) => merged.messagesById[a].createdAtMs - merged.messagesById[b].createdAtMs);
+  merged.turnOrder.sort((a, b) => merged.turnsById[a].createdAtMs - merged.turnsById[b].createdAtMs);
+  return merged;
+}
+
 export function applyAgentSnapshot(
   state: AgentProjectionState,
   snapshot: AgentSnapshot,
@@ -911,7 +944,9 @@ export function applyAgentSnapshot(
       currentTranscriptMessageIds.has(parsed.value.id)
       || parsed.value.turnId.startsWith('history:')
     ) transcriptMessageIds.add(parsed.value.id);
-    if (parsed.value.clientMessageId) serverClientIds.add(parsed.value.clientMessageId);
+    for (const clientMessageId of messageIdentityAliases(parsed.value)) {
+      serverClientIds.add(clientMessageId);
+    }
   }
 
   // The transcript restores durable conversation text; the bounded live event
@@ -973,7 +1008,7 @@ export function applyAgentSnapshot(
   // placeholder before applying a failure boundary, so an old completed
   // answer is not rewritten as failed when a later tool loses its terminal.
   reconcileSnapshotTurnStatuses(next, false);
-  if (options.preserveConfirmedActivities) {
+  if (options.preserveConfirmedActivities || snapshot.partial === true) {
     next = preserveConfirmedSnapshotActivities(state, next);
   }
   settleAgentSnapshotQuiescence(next, snapshot, options.preserveConfirmedActivities ? state.status : next.status);
@@ -1152,7 +1187,7 @@ function reconcileTranscriptReplayMessages(
   for (const messageId of [...state.messageOrder]) {
     if (transcriptMessageIds.has(messageId)) continue;
     const replay = state.messagesById[messageId];
-    if (!replay || replay.status !== 'completed' || replay.timelineSequence === undefined) continue;
+    if (!replay || !['completed', 'streaming'].includes(replay.status) || replay.timelineSequence === undefined) continue;
     const fingerprint = replayFingerprint(replay);
     if (!fingerprint) continue;
     const nearbyCandidates = (
@@ -1199,7 +1234,11 @@ function reconcileTranscriptReplayMessages(
     const mediaShapeCandidate = mediaShapeCandidates.length === 1
       ? mediaShapeCandidates[0]?.message
       : undefined;
-    const candidate = exactCandidate ?? sameTurnFinal ?? mediaShapeCandidate;
+    // A missing message_end leaves a live alias streaming after Pi has persisted it.
+    // Only a unique exact same-turn durable row can settle that alias.
+    const candidate = replay.status === 'streaming'
+      ? sameTurnFinal
+      : exactCandidate ?? sameTurnFinal ?? mediaShapeCandidate;
     if (!candidate) continue;
 
     claimedTranscriptIds.add(candidate.id);
@@ -1552,6 +1591,20 @@ function matchingLocalOptimisticClientMessageId(
   state: AgentProjectionState,
   durableMessage: AgentMessageProjection,
 ): string {
+  const durableAliases = new Set(messageIdentityAliases(durableMessage));
+  const exactAlias = Object.entries(state.optimisticByClientMessageId)
+    .find(([clientMessageId, messageId]) => {
+      const optimistic = state.messagesById[messageId];
+      return Boolean(
+        optimistic
+        && isLocalAdmissionClientMessageId(clientMessageId)
+        && optimistic.role === 'user'
+        && optimistic.status === 'queued'
+        && !optimistic.admissionState
+        && durableAliases.has(clientMessageId)
+      );
+    });
+  if (exactAlias) return exactAlias[0];
   const fingerprint = replayFingerprint(durableMessage);
   if (!fingerprint) return '';
   const candidates = Object.entries(state.optimisticByClientMessageId)
@@ -1598,7 +1651,7 @@ function matchingRoomMirrorClientMessageId(
     .filter((message): message is AgentMessageProjection => (
       Boolean(message)
       && message.role === 'user'
-      && Boolean(message.clientMessageId)
+      && messageIdentityAliases(message).length > 0
       && message.blocks.some((block) => block.source?.kind === 'room_event')
       && replayFingerprint(message) === fingerprint
       && Math.abs(message.createdAtMs - durableMessage.createdAtMs) <= 60_000
@@ -1612,7 +1665,63 @@ function matchingRoomMirrorClientMessageId(
   const secondDistance = candidates[1]
     ? Math.abs(candidates[1].createdAtMs - durableMessage.createdAtMs)
     : -1;
-  return firstDistance === secondDistance ? '' : candidates[0].clientMessageId ?? '';
+  return firstDistance === secondDistance
+    ? ''
+    : messageIdentityAliases(candidates[0])[0] ?? '';
+}
+
+/**
+ * A Room mirror carries the original UI id in text-block data while the Pi
+ * transcript uses the bound dispatch id as its canonical clientMessageId.
+ * Keep both identities available to snapshot, SSE, and optimistic admission
+ * reconciliation. The aliases are source-bound; text and time alone remain
+ * the legacy fallback below.
+ */
+function messageIdentityAliases(message: AgentMessageProjection): string[] {
+  const aliases = new Set<string>();
+  if (message.clientMessageId) aliases.add(message.clientMessageId);
+  for (const block of message.blocks) {
+    if (block.type !== 'text') continue;
+    const data = record(block.data);
+    for (const key of ['roomClientMessageId', 'roomDispatchId']) {
+      const value = text(data[key]);
+      if (value) aliases.add(value);
+    }
+  }
+  return [...aliases];
+}
+
+function isRoomMirrorMessage(message: AgentMessageProjection): boolean {
+  return message.blocks.some((block) => block.source?.kind === 'room_event');
+}
+
+function retainRoomIdentityAliases(
+  existing: AgentMessageProjection,
+  mirror: AgentMessageProjection,
+): AgentMessageProjection {
+  const mirrorData = mirror.blocks
+    .filter((block) => block.type === 'text')
+    .map((block) => record(block.data))
+    .find((data) => (
+      text(data.roomClientMessageId)
+      || text(data.roomDispatchId)
+      || text(data.roomEventId)
+    ));
+  if (!mirrorData) return existing;
+  let changed = false;
+  const blocks = existing.blocks.map((block) => {
+    if (changed || block.type !== 'text') return block;
+    const data = { ...block.data };
+    for (const key of ['roomClientMessageId', 'roomDispatchId', 'roomEventId']) {
+      const value = text(mirrorData[key]);
+      if (value && !text(data[key])) {
+        data[key] = value;
+        changed = true;
+      }
+    }
+    return changed ? { ...block, data } : block;
+  });
+  return changed ? { ...existing, blocks } : existing;
 }
 
 function upsertCompactionActivity(
@@ -1739,15 +1848,32 @@ function upsertMessage(
   if (message.role !== 'user' && message.role !== 'assistant') return;
   const previous = state.messagesById[message.id];
   if (previous && previous.turnId !== message.turnId) detachMessageFromTurn(state, previous);
-  const optimisticId = clientMessageId
-    ? state.optimisticByClientMessageId[clientMessageId]
-    : undefined;
-  const correlatedId = clientMessageId
-    ? state.messageOrder.find((messageId) => (
-      messageId !== message.id
-      && state.messagesById[messageId]?.clientMessageId === clientMessageId
-    ))
-    : undefined;
+  const identityAliases = new Set(messageIdentityAliases(message));
+  if (clientMessageId) identityAliases.add(clientMessageId);
+  const optimisticId = [...identityAliases]
+    .map((identity) => state.optimisticByClientMessageId[identity])
+    .find((messageId) => (
+      Boolean(messageId)
+      && state.messagesById[messageId]?.role === message.role
+    ));
+  const correlatedId = state.messageOrder.find((messageId) => {
+    if (messageId === message.id) return false;
+    const existing = state.messagesById[messageId];
+    return Boolean(existing)
+      && existing.role === message.role
+      && messageIdentityAliases(existing)
+      .some((identity) => identityAliases.has(identity));
+  });
+  const correlated = correlatedId ? state.messagesById[correlatedId] : undefined;
+  if (
+    !optimisticId
+    && correlated
+    && isRoomMirrorMessage(message)
+    && !isRoomMirrorMessage(correlated)
+  ) {
+    state.messagesById[correlated.id] = retainRoomIdentityAliases(correlated, message);
+    return;
+  }
   const replaceableId = optimisticId ?? correlatedId;
   let replacedOptimistic = false;
   let projectedMessage = message;
@@ -1758,7 +1884,13 @@ function upsertMessage(
       projectedMessage = inheritLocalDeliveryProjection(message, replaced);
     }
     delete state.messagesById[replaceableId];
-    if (optimisticId) delete state.optimisticByClientMessageId[clientMessageId];
+    for (const [identity, mappedMessageId] of Object.entries(
+      state.optimisticByClientMessageId,
+    )) {
+      if (mappedMessageId === replaceableId) {
+        delete state.optimisticByClientMessageId[identity];
+      }
+    }
     if (index >= 0) state.messageOrder[index] = message.id;
     if (replaced) detachMessageFromTurn(state, replaced);
     replacedOptimistic = index >= 0;

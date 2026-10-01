@@ -20,6 +20,7 @@ import agentMigratedCss from '../styles/paw-os-agent-migrated-v1.css?raw';
 import appsCss from './paw-apps.css?raw';
 import { PawWindowFrame } from '../shell/PawWindowLayer';
 import { PawSessionWorkspace, sessionWorkspaceProjectionSlice } from './PawSessionWorkspace';
+import { messageWithWorkspaceContext } from './workspace-draft';
 
 /* jsdom gives every row zero height, so the real virtualizer would keep the
    transcript empty and no timeline assertion here would mean anything. */
@@ -62,7 +63,7 @@ describe('PAWOS Agent Session structural migration', () => {
   it('keeps the complete-history control visible after the full snapshot has loaded', async () => {
     const sessionId = 'session-history-control';
     const transport = new StubControlTransport('mock', {
-      'agent.session.snapshot': (request: ControlRequest) => request.query?.view === 'full'
+      'agent.session.snapshot': (request: ControlRequest) => request.query?.view !== 'recent'
         ? { messages: [], liveEvents: [], lastSequence: 2, resumeToken: `${sessionId}:2`, status: 'idle', snapshotScope: 'full', partial: false }
         : { messages: [], liveEvents: [], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'idle', snapshotScope: 'recent', partial: true },
       'agent.session.models': {}, 'agent.session.commands': {}, 'agent.tools.list': {}, 'agent.runtime.get': {},
@@ -71,6 +72,7 @@ describe('PAWOS Agent Session structural migration', () => {
       <PawSessionWorkspace record={{...liveSession(), id: sessionId}} recordId={sessionId}
         onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
     </TooltipProvider></ControlTransportProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '展开对话控件' }));
     const button = await screen.findByRole('button', {name:'加载完整记录'});
     await userEvent.setup().click(button);
     await waitFor(() => expect(screen.getByRole('button', {name:'加载完整记录'})).toBeEnabled());
@@ -114,6 +116,24 @@ describe('PAWOS Agent Session structural migration', () => {
     await user.click(screen.getByRole('button',{name:'发送'}));
     await waitFor(()=>expect(transport.requests.some(r=>r.pathId==='agent.session.prompt')).toBe(true));
     expect(transport.requests.find(r=>r.pathId==='agent.session.prompt')?.body).toMatchObject({message:expect.stringContaining('```geojson\n'+context.text)});
+  });
+  it('restores the readable Lab request after a failed send, without duplicating its snapshot', async () => {
+    const transport = idleSessionTransport();
+    const sessionId = 'session-lab-draft-recovery';
+    const context = { kind: 'project' as const, label: '成果', detail: 'v8', text: JSON.stringify({ projectId: 'lab-1', projectRevision: 2, page: 'workspace', current: { kind: 'artifact', content: '<html>成果</html>' }, artifacts: [], artifactCount: 0 }), onClear: vi.fn() };
+    const sent = messageWithWorkspaceContext('完成判定', context);
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{ ...liveSession(), id: sessionId }} recordId={sessionId} appearance="embedded" userMessagePresentation="project-context" composerContext={context} initialDraft={sent}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(composer).toHaveValue('完成判定'));
+    await userEvent.setup().click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(transport.requests.some((request) => request.pathId === 'agent.session.prompt')).toBe(true));
+    const body = transport.requests.find((request) => request.pathId === 'agent.session.prompt')?.body as { message: string };
+    expect(body.message).toBe(sent);
+    await waitFor(() => expect(composer).toHaveValue('完成判定'));
+    expect(composer).not.toHaveValue(expect.stringContaining('项目工作面上下文：'));
   });
   it.each(['missing', 'provisional'])('does not invent a permission preset with %s canonical Session metadata', async (kind) => {
     const transport = new StubControlTransport('mock', idleSessionRoutes());
@@ -504,6 +524,8 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(within(titlebar).getByText('完整迁移')).toBeInTheDocument();
     expect(titlebar.querySelector('.paw-session-workspace__identity')).not.toBeInTheDocument();
     expect(window.querySelector('.paw-window-body .paw-session-workspace__header')).toBeNull();
+    expect(within(titlebar).queryByRole('button', { name: '对话' })).not.toBeInTheDocument();
+    fireEvent.click(within(titlebar).getByRole('button', { name: '展开对话控件' }));
     expect(within(titlebar).getByRole('button', { name: '对话' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: 'Agent 轨迹' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: '星空' })).toBeInTheDocument();
@@ -565,6 +587,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(conversation).not.toHaveAttribute('inert');
     expect(trace).toHaveAttribute('inert');
     expect(screen.queryByRole('complementary', { name: 'Session 工具侧栏' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '展开对话控件' }));
     await user.click(screen.getByRole('button', { name: 'Agent 轨迹' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Agent 轨迹' })).toHaveAttribute('aria-pressed', 'true'));
     expect(conversation).toHaveAttribute('inert');
@@ -651,6 +674,7 @@ describe('PAWOS Agent Session structural migration', () => {
     // Not watched → not mounted: the sky never polls behind the conversation.
     expect(screen.queryByRole('dialog', { name: 'Session 星空' })).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: '展开对话控件' }));
     await user.click(screen.getByRole('button', { name: '星空' }));
     // This is the cold lazy-import acceptance path.  PawStarfield intentionally
     // stays out of the default Session bundle, so a clean test worker can spend
@@ -1208,7 +1232,7 @@ describe('PAWOS Agent Session structural migration', () => {
     await waitFor(() => expect(
       transport.requests.filter((request) => request.pathId === 'agent.session.abort'),
     ).toHaveLength(1));
-    expect(fullRequests).toBe(0);
+    await waitFor(() => expect(fullRequests).toBe(1));
     expect(screen.queryByText(/Session 操作没有完成|full archive temporarily unavailable/)).not.toBeInTheDocument();
     useAgentLiveStore.getState().clear(sessionId);
   });
@@ -1473,7 +1497,7 @@ describe('PAWOS Agent Session structural migration', () => {
     useAgentLiveStore.getState().clear(sessionId);
   });
 
-  it('makes a live recent snapshot usable without starting a blocking full restore', async () => {
+  it('loads full history automatically after presenting the recent snapshot', async () => {
     const sessionId = 'session-recent-first';
     const fullSnapshot = new Promise(() => undefined);
     let fullRequests = 0;
@@ -1514,7 +1538,7 @@ describe('PAWOS Agent Session structural migration', () => {
 
     await screen.findByRole('textbox', { name: '消息' });
     await waitFor(() => expect(container.querySelector('.paw-session-workspace__loading')).toBeNull());
-    expect(fullRequests).toBe(0);
+    await waitFor(() => expect(fullRequests).toBe(1));
     expect(screen.getByText('最近上下文')).toBeInTheDocument();
     await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
 
@@ -1531,7 +1555,8 @@ describe('PAWOS Agent Session structural migration', () => {
         resumeToken: `${sessionId}:13`,
       }));
     });
-    expect(fullRequests).toBe(0);
+    await waitFor(() => expect(fullRequests).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: '展开对话控件' }));
     await userEvent.setup().click(screen.getByRole('button', { name: '加载完整记录' }));
     await waitFor(() => expect(fullRequests).toBe(1));
     useAgentLiveStore.getState().clear(sessionId);
@@ -1596,13 +1621,16 @@ describe('PAWOS Agent Session structural migration', () => {
 
     const composer = await screen.findByRole('textbox', { name: '消息' });
     await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
-    expect(transport.requests.filter((request) => (
+    await waitFor(() => expect(transport.requests.filter((request) => (
       request.pathId === 'agent.session.snapshot' && request.query?.view === undefined
-    ))).toHaveLength(0);
+    ))).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '展开对话控件' }));
     await user.click(screen.getByRole('button', { name: '加载完整记录' }));
     expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);
     await user.type(composer, '完整历史还在恢复，但这一条必须立即发送');
     await user.keyboard('{Enter}');
+    expect(screen.getByText('Thinking')).toBeVisible();
+    expect(screen.getByText('Thinking').closest('.agent-first-response')).not.toBeNull();
     await waitFor(() => expect(
       transport.requests.some((request) => request.pathId === 'agent.session.prompt'),
     ).toBe(true));
@@ -1614,6 +1642,7 @@ describe('PAWOS Agent Session structural migration', () => {
       resolveFull?.({ ...recent, partial: false, snapshotScope: 'full' });
       await Promise.resolve();
     });
+    expect(screen.getByText('Thinking')).toBeVisible();
     expect(Object.keys(
       useAgentLiveStore.getState().projections[sessionId]?.optimisticByClientMessageId ?? {},
     )).toHaveLength(1);
@@ -1672,7 +1701,7 @@ describe('PAWOS Agent Session structural migration', () => {
 
       expect(await screen.findByRole('button', { name: '停止当前回合' })).toBeVisible();
       await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
-      expect(fullRequests).toBe(0);
+      await waitFor(() => expect(fullRequests).toBe(1));
       act(() => {
         transport.emit('agent.session.events', parseAgentEvent({
           schemaVersion: 'rag-ime.agent-event.v1',
@@ -1691,7 +1720,7 @@ describe('PAWOS Agent Session structural migration', () => {
 
       await waitFor(() => expect(screen.queryByRole('button', { name: '停止当前回合' })).not.toBeInTheDocument());
       expect(screen.getByRole('textbox', { name: '消息' })).toBeEnabled();
-      expect(fullRequests).toBe(0);
+      await waitFor(() => expect(fullRequests).toBe(1));
       useAgentLiveStore.getState().clear(sessionId);
     },
   );
@@ -1840,7 +1869,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(await screen.findByText('停止前仍需保留的历史')).toBeVisible();
     await waitFor(() => expect(screen.queryByRole('button', { name: '停止当前回合' })).not.toBeInTheDocument());
     expect(screen.getByRole('textbox', { name: '消息' })).toBeEnabled();
-    expect(fullRequests).toBe(0);
+    await waitFor(() => expect(fullRequests).toBe(1));
     await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
     useAgentLiveStore.getState().clear(sessionId);
   });

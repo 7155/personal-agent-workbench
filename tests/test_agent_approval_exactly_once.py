@@ -205,6 +205,44 @@ class AgentApprovalExactlyOnceTests(unittest.TestCase):
         self.assertEqual(effect_count, 1)
         self.assertEqual(repeated["receipt"], receipt)
 
+    def test_terminal_branch_cursor_does_not_stale_another_room_approval(self) -> None:
+        service = self._service(suffix="cursor-generation")
+        binding, pending = self._room_bound_approval(
+            service,
+            suffix="cursor-generation",
+        )
+        runtime_binding = service.sessions.runtime_binding(binding["sessionId"])
+        self.assertIsNotNone(runtime_binding)
+        assert runtime_binding is not None
+        service.sessions.advance_runtime_branch_cursor(
+            binding["sessionId"],
+            branch_anchor="terminal-settlement",
+            expected_generation=int(runtime_binding["generation"]),
+            expected_external_session_id=str(runtime_binding["externalSessionId"]),
+            expected_transcript_ref=str(runtime_binding["transcriptRef"]),
+            expected_branch_anchor=str(runtime_binding["branchAnchor"]),
+        )
+        unchanged = service.sessions.runtime_binding(binding["sessionId"])
+        self.assertIsNotNone(unchanged)
+        assert unchanged is not None
+        self.assertEqual(unchanged["generation"], runtime_binding["generation"])
+        self.assertEqual(unchanged["branchAnchor"], "terminal-settlement")
+
+        decided = service.sessions.decide_approval(
+            binding["approvalId"],
+            approved=True,
+            payload_sha256=str(pending["payloadSha256"]),
+            decided_by="execution-policy:room_unrestricted",
+        )
+        claimed = service.sessions.claim_approval_execution(
+            binding["approvalId"],
+            room_context=service._active_room_dispatch_context(
+                binding["sessionId"]
+            ),
+        )
+        self.assertEqual(decided["state"], "approved")
+        self.assertEqual(claimed["state"], "approved")
+
     def test_pruned_runtime_terminal_uses_unpruned_projection_authority_after_restart(
         self,
     ) -> None:

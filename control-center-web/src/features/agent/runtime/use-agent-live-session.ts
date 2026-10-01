@@ -9,6 +9,7 @@ import {
 import type { ControlTransport } from '@/platform/transport';
 import { agentProjection, useAgentLiveStore } from '../state/live-store';
 import { createSnapshotRequestQueue } from './snapshot-request-queue';
+import { readRecentSessionSnapshot } from '@/features/conversation-ui/conversation-preload';
 
 export type AgentSnapshotView = 'recent' | 'full';
 export type AgentRecoveryState = 'recovering' | 'failed' | 'synced';
@@ -327,11 +328,14 @@ function createSharedAgentLiveSession(
   function requestSnapshotValue(
     view: AgentSnapshotView,
     signal: AbortSignal,
+    useRecentCache = true,
   ): Promise<unknown> {
+    if (view === 'recent') {
+      return readRecentSessionSnapshot(transport, sessionId, signal, { useCache: useRecentCache });
+    }
     return transport.request({
       pathId: 'agent.session.snapshot',
       params: { sessionId },
-      ...(view === 'recent' ? { query: { view: 'recent' as const } } : {}),
       signal,
     });
   }
@@ -346,7 +350,11 @@ function createSharedAgentLiveSession(
     try {
       while (true) {
         try {
-          value = await requestSnapshotValue(requestedView, controller.signal);
+          value = await requestSnapshotValue(
+            requestedView,
+            controller.signal,
+            request.preserveAfterSequence === undefined,
+          );
         } catch (error) {
           if (requestedView === 'recent' && preferredSnapshotView() === 'full') {
             requestedView = 'full';
@@ -399,7 +407,8 @@ function createSharedAgentLiveSession(
       const shouldHydrate = presentable
         && !retainNewerTerminal
         && (
-          request.preserveAfterSequence === undefined
+          actualView === 'full'
+          || request.preserveAfterSequence === undefined
           || sequence > request.preserveAfterSequence
           || equalCursorIsQuiescent
           || equalCursorRepairsGap
@@ -441,7 +450,7 @@ function createSharedAgentLiveSession(
       if (!isCurrentSnapshot(requestId, controller) || isAbortError(error)) return false;
       snapshotAttempted = true;
       snapshotNeedsRepair = true;
-      const recoverable = requestedView === 'recent' && preferredSnapshotView() !== 'full';
+      const recoverable = loadedView !== undefined || requestedView === 'recent';
       const failure = {
         sessionId,
         view: requestedView,
@@ -469,7 +478,8 @@ function createSharedAgentLiveSession(
     // Otherwise a snapshot that the store rejects can silently lose this tail.
     batcher.flush();
     if (!active) return Promise.resolve(false);
-    clearStream();
+    // Historical reads must not suspend the live subscription while Pi works.
+    if (request.view !== 'full' || !snapshotAttempted || agentProjection(sessionId).needsSnapshot) clearStream();
     const requestId = ++snapshotGeneration;
     const controller = new AbortController();
     snapshotController = controller;
@@ -562,7 +572,7 @@ function createSharedAgentLiveSession(
     } else if (snapshotAttempted) {
       maybeSubscribe();
     }
-    if (preferredSnapshotView() === 'full' && loadedView !== 'full' && !snapshotQueue.busy) {
+    if (preferredSnapshotView() === 'full' && loadedView !== 'full') {
       void loadSnapshot({ view: 'full' });
     }
   }
