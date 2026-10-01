@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-09-29T08:08:26.365985+00:00",
+  "generatedAt": "2026-10-01T02:57:33.832434+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "main",
+    "branch": "codex/paw-room-ptc-20261001",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Preserve the released V1-V4 and current main owners. Integrate Pi Content V5 then Studio V6 with existing PAW typography and semantic colors. Pi remains the execution owner; synthetic UI checks, Runtime checks and installed-app acceptance are separate evidence boundaries. Preserve unrelated worktrees."
+    "candidateCommitPolicy": "Preserve the released V1-V4 and current main owners. Integrate Pi Content V5 then Studio V6 with existing PAW typography and semantic colors. Pi remains the execution owner; synthetic UI checks, Runtime checks and installed-app acceptance are separate evidence boundaries. Preserve unrelated worktrees. Add user-authorized native Pi 0.99.2 codemode and Room recovery source; preserve the independent installed and real task acceptance boundaries."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -156,13 +156,17 @@
     "refactor_verification": {
       "description": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "pathCount": 66
+    },
+    "room_history_codemode": {
+      "description": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks.",
+      "pathCount": 54
     }
   },
   "summary": {
-    "pathCount": 1540,
+    "pathCount": 1594,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1341
+      "keep_release": 1395
     },
     "groupCounts": {
       "local_docs": 122,
@@ -173,6 +177,7 @@
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
+      "room_history_codemode": 54,
       "pi_content_studio_v5_v6": 41,
       "workspace_completion": 315,
       "conversation_v2_integration": 49,
@@ -1152,6 +1157,13 @@
       "reason": "Own the source previously located at paw-agent-chat-ui-kit-source.zip; preserve runtime behavior and attribution."
     },
     {
+      "path": "control-center-web/e2e/collab-timeline.e2e.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/e2e/conversation-rich-v2.e2e.ts",
       "disposition": "keep_release",
       "group": "pi_content_studio_v5_v6",
@@ -1164,6 +1176,27 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/collab-timeline.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/collab-timeline.html",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/collab-timeline.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/e2e/fixtures/conversation-rich-v2-assets.ts",
@@ -2524,6 +2557,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/contracts/generated/agent-session-codemode-selection.v1.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/contracts/generated/agent-tool-call.v1.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -2755,6 +2795,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/agent/delegation/SessionSubagentPanel.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/features/agent/file-preview/AgentFileBlock.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -2881,6 +2928,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/agent/state/live-store.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/features/agent/state/live-store.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -2944,11 +2998,32 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/agent/timeline/MemoryRecallReceipt.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/MemoryRecallReceipt.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/StructuredRenderers.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/activity-summary.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/features/agent/timeline/chat-rendering.test.tsx",
@@ -3103,6 +3178,90 @@
       "disposition": "keep_release",
       "group": "session_full_access",
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/CollabTimelineStage.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/RoomCollabTimeline.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/SessionCollabTimeline.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/collab-timeline.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/collab-timeline.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/fixtures.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/index.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/model.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/room-timeline.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/session-timeline.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/timeline-motion.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/collab-timeline/timeline-truth.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/features/composer/ComposerAddMenu.tsx",
@@ -3287,6 +3446,20 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/conversation-preload.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/conversation-preload.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/conversation-tokens.test.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -3329,6 +3502,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/index.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/media/ImageGallery.test.tsx",
       "disposition": "keep_release",
       "group": "pi_content_studio_v5_v6",
@@ -3362,6 +3542,20 @@
       "group": "pi_content_studio_v5_v6",
       "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/model/codemode.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/model/codemode.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/features/conversation-ui/model/tool-receipt.ts",
@@ -3805,6 +3999,20 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/ProjectQuickActions.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/ProjectQuickActions.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/api-recovery.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3985,6 +4193,13 @@
       "group": "lab_frontend",
       "reason": "Integrate the Lab workflow and result visualization updates.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/projects/project-quick-actions.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/features/eval-lab/projects/project-view-context.ts",
@@ -4538,6 +4753,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/use-room-live-session.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/features/rooms/runtime/use-room-live-session.ts",
@@ -5331,6 +5553,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomLiveFocusOverview.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomProgress.test.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -5357,6 +5586,20 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomResponseStatus.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomResponseStatus.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawRoomRoundSheet.test.tsx",
@@ -5406,6 +5649,13 @@
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawSessionFocusHeader.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawSessionFocusHeader.tsx",
@@ -5553,6 +5803,13 @@
       "disposition": "keep_release",
       "group": "react_os_docs",
       "reason": "Current React OS naming, architecture and development entrypoints."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-chat-priority.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/paw-os/apps/paw-jev-conversation.css",
@@ -6085,6 +6342,20 @@
       "disposition": "keep_release",
       "group": "brand_stellar",
       "reason": "User-selected branding and bounded stellar visual behavior."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawBackgroundActivity.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawBackgroundActivity.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "control-center-web/src/paw-os/shell/PawBackgroundToolWindows.test.tsx",
@@ -6661,11 +6932,25 @@
       "status": "added"
     },
     {
+      "path": "integrations/pi/pi-0.99-codemode.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "integrations/pi/rag-ime-control.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor."
+    },
+    {
+      "path": "integrations/pi/session-runtime-host-contract.json",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "integrations/pi/skills/agent-eval-room-optimizer/SKILL.md",
@@ -6708,6 +6993,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "integrations/pi/skills/implementation-planning/SKILL.md",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "integrations/pi/skills/pawos-system/SKILL.md",
@@ -7403,6 +7695,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/agent_message_snapshot.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "rag_ime/agent_prompt_application.py",
       "status": "modified",
       "group": "composition_refactor",
@@ -7723,6 +8022,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "rag_ime/contracts/json/agent-session-codemode-selection.v1.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "rag_ime/contracts/json/agent-tool-call.v1.json",
@@ -8082,6 +8388,13 @@
       "status": "added"
     },
     {
+      "path": "rag_ime/jev_tasks/completion_report.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "rag_ime/jev_tasks/context.py",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -8213,6 +8526,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/verification_route.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "rag_ime/keychain_secrets.py",
@@ -8425,6 +8745,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/managed_resource_text.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "rag_ime/memory_book_compiler.py",
       "disposition": "keep_release",
       "group": "composition_refactor",
@@ -8612,6 +8939,13 @@
       "group": "pi_runtime_refactor",
       "reason": "Single Host executor, explicit transport, history and UI projection boundaries; preserve Pi lifecycle and stored data.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/pi/model_additions.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "rag_ime/pi/protocols.py",
@@ -9032,6 +9366,13 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/work_documents.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "release/README.md",
@@ -9951,6 +10292,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_routes.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "tests/test_agent_runtime_error_projection.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -9991,6 +10339,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_agent_tool_images.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "tests/test_agent_tool_runtime_contracts.py",
@@ -10112,6 +10467,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_debug_server.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
       "path": "tests/test_deepseek_memory_organizer.py",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -10222,6 +10584,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_jev_completion_report.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "tests/test_jev_context_pipeline.py",
@@ -10453,6 +10822,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_jev_verification_route.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "tests/test_jev_workspace_job_cancel.py",
@@ -10978,6 +11354,13 @@
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_workspace_job_idempotency_gateway.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
       "path": "uv.lock",
