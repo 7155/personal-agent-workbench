@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-01T06:53:10.891685+00:00",
+  "generatedAt": "2026-10-01T07:58:00.787928+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-room-ptc-20261001",
@@ -159,14 +159,14 @@
     },
     "room_history_codemode": {
       "description": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks.",
-      "pathCount": 58
+      "pathCount": 60
     }
   },
   "summary": {
-    "pathCount": 1598,
+    "pathCount": 1600,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1399
+      "keep_release": 1401
     },
     "groupCounts": {
       "local_docs": 122,
@@ -177,7 +177,7 @@
       "brand_stellar": 60,
       "public_showcase": 30,
       "references_history": 8,
-      "room_history_codemode": 58,
+      "room_history_codemode": 60,
       "pi_content_studio_v5_v6": 41,
       "workspace_completion": 315,
       "conversation_v2_integration": 49,
@@ -2737,6 +2737,20 @@
       "group": "conversation_controls",
       "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/agent/composer/NativeMcpPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Current Session native Pi MCP inspection and focused frontend regression coverage."
+    },
+    {
+      "path": "control-center-web/src/features/agent/composer/NativeMcpPanel.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_history_codemode",
+      "reason": "Current Session native Pi MCP inspection and focused frontend regression coverage."
     },
     {
       "path": "control-center-web/src/features/agent/composer/PermissionPicker.tsx",

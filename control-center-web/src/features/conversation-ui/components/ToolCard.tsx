@@ -108,7 +108,7 @@ function CodeModeBody({ id, block, details, source, output, detail }: {
       <header><strong>嵌套工具调用</strong><small>{details.calls.length} 次{details.nestedCallsComplete === false ? ' · 部分恢复' : ''}</small></header>
       {details.calls.length ? <ol className="pi-code-mode-calls">
         {details.calls.map(call => <CodeModeCallRow call={call} key={call.id} />)}
-      </ol> : <p className="pi-tool-empty">脚本没有调用其他工具。</p>}
+      </ol> : <p className="pi-tool-empty">{details.nestedCallsComplete === true ? '脚本没有调用其他工具。' : '本条回执未附带可核对的嵌套调用记录。'}</p>}
     </section>
     {output ? <section className="pi-code-mode-section" aria-label="代码执行最终输出">
       <header><strong>最终输出</strong></header>
@@ -123,7 +123,11 @@ function CodeModeBody({ id, block, details, source, output, detail }: {
 function CodeModeCallRow({ call }: { call: CodeModeCall }) {
   return <li className="pi-code-mode-call" data-call-status={call.status}>
     <span className="pi-code-mode-call__status" aria-label={codeModeCallStatusLabel(call.status)}>{codeModeCallStatusMark(call.status)}</span>
-    <span className="pi-code-mode-call__main"><strong>{call.name}</strong><code>{call.args}</code>{call.error ? <small role="alert">{call.error}</small> : null}<small className="pi-code-mode-call__id">{call.id}</small></span>
+    <details className="pi-code-mode-call__main"><summary><strong>{call.name}</strong><code>{call.args || '参数未附带'}</code></summary>
+      <pre tabIndex={0} aria-label={`${call.name} 调用参数`}>{call.args || '本条回执未附带参数。'}</pre>
+      {call.error ? <small role="alert">{call.error}</small> : null}<small className="pi-code-mode-call__id">{call.id}</small>
+      <small>嵌套结果未在这条汇总中独立附带；脚本最终输出见下方。</small>
+    </details>
     <span className="pi-code-mode-call__meta">{call.durationMs !== undefined ? formatCodeModeDuration(call.durationMs) : null}{call.cost !== undefined ? <>{call.durationMs !== undefined ? ' · ' : ''}{formatCodeModeCost(call.cost)}</> : null}</span>
   </li>;
 }

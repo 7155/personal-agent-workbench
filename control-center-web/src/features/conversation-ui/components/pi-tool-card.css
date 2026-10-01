@@ -38,6 +38,10 @@
 .pi-code-mode-call__main small { overflow-wrap:anywhere; color:var(--color-danger,#b75d4b); font-size:11px; line-height:1.45; }
 .pi-code-mode-call__main .pi-code-mode-call__id { color:var(--color-text-tertiary,#959891); font:10px/1.4 var(--font-mono,ui-monospace,monospace); }
 .pi-code-mode-call__meta { color:var(--color-text-secondary,#71756f); font:11px/1.4 var(--font-mono,ui-monospace,monospace); white-space:nowrap; }
+.pi-code-mode-call__main summary { cursor:pointer; display:grid; gap:3px; min-width:0; }
+.pi-code-mode-call__main summary:focus-visible { outline:2px solid var(--color-accent); outline-offset:3px; }
+.pi-code-mode-call__main pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; }
+.pi-code-mode-call__main>small:last-child { color:var(--color-text-secondary); }
 .pi-code-mode-full-output { display:grid; gap:3px; margin:0; color:var(--color-text-secondary,#71756f); font-size:11px; }
 .pi-code-mode-full-output code { overflow-wrap:anywhere; color:var(--color-text,#252824); font:11px/1.45 var(--font-mono,ui-monospace,monospace); }
 .pi-code-mode-host-detail { min-width:0; }

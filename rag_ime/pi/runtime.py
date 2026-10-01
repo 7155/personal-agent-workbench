@@ -3238,6 +3238,61 @@ class PiRuntimeHostManager:
             )
         return commands
 
+    def native_capabilities(self, session_id: str) -> dict[str, object]:
+        """Inspect the resident Pi owner, without a Provider turn or MCP reconnect."""
+        self._inspection_snapshot(session_id, durable_fallback=False)
+        response = self._require_client().send("tools.list", {"sessionId": session_id})
+        raw = response.get("nativeCapabilities")
+        if not isinstance(raw, Mapping) or raw.get("schemaVersion") != "rag-ime.pi-native-capabilities.v1":
+            raise PiRuntimeError("Pi native capability inspection is unavailable")
+        mcp = raw.get("mcp")
+        if not isinstance(mcp, Mapping) or mcp.get("available") is not True:
+            raise PiRuntimeError("Pi native MCP owner is unavailable")
+        states = {"starting", "disabled", "connecting", "connected", "disconnected", "needs-auth", "failed", "closed"}
+        exposures = {"direct", "codemode", "deferred", "hidden"}
+        raw_servers = mcp.get("servers")
+        raw_tools = raw.get("tools")
+        if not isinstance(raw_servers, list) or not isinstance(raw_tools, list):
+            raise PiRuntimeError("Pi returned invalid native capabilities")
+        servers = []
+        for value in raw_servers:
+            if not isinstance(value, Mapping) or value.get("state") not in states or value.get("exposure") not in exposures:
+                raise PiRuntimeError("Pi returned invalid MCP state")
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", str(value.get("name") or "")):
+                raise PiRuntimeError("Pi returned invalid MCP server identity")
+            servers.append({
+                "name": str(value.get("name") or "")[:200],
+                "namespace": str(value.get("namespace") or "")[:240],
+                "scope": str(value.get("scope") or "")[:40],
+                "enabled": value.get("enabled") is True,
+                "state": value["state"], "exposure": value["exposure"],
+                **{key: max(0, as_integer(value.get(key))) for key in ("toolCount", "resourceCount", "resourceTemplateCount")},
+            })
+        tools = []
+        for value in raw_tools:
+            if not isinstance(value, Mapping) or value.get("exposure") not in exposures:
+                raise PiRuntimeError("Pi returned invalid native tool catalog")
+            namespace = value.get("namespace")
+            if not isinstance(namespace, Mapping):
+                continue
+            parameters = value.get("parameters")
+            if not isinstance(parameters, Mapping):
+                raise PiRuntimeError("Pi returned invalid native tool parameters")
+            tools.append({
+                "name": str(value.get("name") or "")[:240],
+                "namespace": {"name": str(namespace.get("name") or "")[:240]},
+                "description": redact_mapping({"text": str(value.get("description") or "")}).get("text", ""),
+                "parameters": redact_mapping(parameters),
+                "exposure": value["exposure"], "active": value.get("active") is True,
+                "routable": value.get("routable") is True,
+            })
+        mode = raw.get("codemodeMode")
+        return {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "sessionId": session_id,
+                "codemodeMode": mode if mode in {"on", "only", "off"} else None,
+                "mcp": {"available": True, "active": mcp.get("active") is True,
+                        "configErrorCount": max(0, as_integer(mcp.get("configErrorCount"))), "servers": servers},
+                "tools": tools}
+
     def skill_catalog(self, session_id: str) -> list[dict[str, object]]:
         """Read the effective Pi Skill loader without projecting transcript history.
 

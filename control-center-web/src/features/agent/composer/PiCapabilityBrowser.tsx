@@ -1,5 +1,5 @@
-import { ArrowUpRight, BookOpen, BrainCircuit, ChevronRight, Package, Puzzle, Search, ShieldCheck, SlidersHorizontal, Wrench, X } from 'lucide-react';
-import type { Ref } from 'react';
+import { ArrowUpRight, BookOpen, BrainCircuit, ChevronRight, Package, Plug, Puzzle, Search, ShieldCheck, SlidersHorizontal, Wrench, X } from 'lucide-react';
+import type { ReactNode, Ref } from 'react';
 import type { CapabilityPreference } from '@/features/plugins/capability-policy';
 import type { CodemodeMode } from '../types';
 import { filterCapabilityRows, type CapabilityDisplayRow, type CapabilityFilter, type CapabilitySection } from './capability-display';
@@ -16,10 +16,12 @@ export interface PiCapabilityBrowserProps {
   onPreference: (key: string, preference: CapabilityPreference) => void;
   onCodemodeModeChange?: (mode: CodemodeMode) => void;
   onInsert: (row: CapabilityDisplayRow) => void; onClose?: () => void; onManage?: () => void;
+  mcpPanel?: ReactNode;
 }
 const sections: Array<{ id: CapabilitySection; label: string; icon: typeof Wrench }> = [
   { id: 'all', label: '全部', icon: SlidersHorizontal }, { id: 'tool', label: '工具', icon: Wrench },
   { id: 'skill', label: '技能', icon: BookOpen }, { id: 'extension', label: '扩展', icon: Puzzle },
+  { id: 'mcp', label: 'MCP', icon: Plug },
 ];
 const kindLabels = { tool: '工具', skill: '技能', extension: '扩展' };
 export function PiCapabilityBrowser(props: PiCapabilityBrowserProps) {
@@ -36,7 +38,7 @@ export function PiCapabilityBrowser(props: PiCapabilityBrowserProps) {
     </header>
     <div className="pi-capabilities__categories" role="group" aria-label="功能类别">
       {sections.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-pressed={section === id}
-        onClick={() => props.onSection(id)}><Icon size={14} aria-hidden /><span>{label}</span><small>{id === 'all' ? rows.length : rows.filter(row => row.kind === id).length}</small></button>)}
+        onClick={() => props.onSection(id)}><Icon size={14} aria-hidden /><span>{label}</span>{id !== 'mcp' ? <small>{id === 'all' ? rows.length : rows.filter(row => row.kind === id).length}</small> : null}</button>)}
       {rows.some(row => row.id === 'memory') ? <button type="button" aria-label="查看记忆召回设置" aria-pressed={section === 'memory'} onClick={() => props.onSection('memory')}><BrainCircuit size={14} aria-hidden /><span>记忆</span></button> : null}
     </div>
     <div className="pi-capabilities__search"><Search size={15} aria-hidden /><input ref={props.searchRef} value={query} autoComplete="off"
@@ -67,7 +69,7 @@ export function PiCapabilityBrowser(props: PiCapabilityBrowserProps) {
     </div> : null}
     {locked ? <p className="pi-capabilities__notice"><ShieldCheck size={15} aria-hidden />当前暂不能调整功能；可以继续查看，现有任务不受影响。</p> : null}
     <div className="pi-capabilities__body" data-detail={Boolean(selected)}>
-      {status !== 'ready' ? <div className="pi-capabilities__empty" role="status"><Package size={27} aria-hidden /><strong>{status === 'failed' ? '能力目录暂不可用' : '正在读取能力目录'}</strong><p>{status === 'failed' ? '请通过原设置入口重新读取。不会用旧目录代替当前伙伴。' : '工具、技能与扩展会按当前 Session 的配置显示。'}</p></div>
+      {section === 'mcp' ? props.mcpPanel : status !== 'ready' ? <div className="pi-capabilities__empty" role="status"><Package size={27} aria-hidden /><strong>{status === 'failed' ? '能力目录暂不可用' : '正在读取能力目录'}</strong><p>{status === 'failed' ? '请通过原设置入口重新读取。不会用旧目录代替当前伙伴。' : '工具、技能与扩展会按当前 Session 的配置显示。'}</p></div>
         : visible.length ? <div className="pi-capabilities__list" aria-label="功能列表">
           <p className="pi-capabilities__count">{visible.length} 项{query ? '匹配' : '功能'}<span>点击查看来源与使用范围</span></p>
           {visible.map(row => <button type="button" key={row.key} className="pi-capabilities__row" data-capability-key={row.key} data-selected={selected?.key === row.key}

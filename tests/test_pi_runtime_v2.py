@@ -5248,6 +5248,37 @@ class PiRuntimeV2Tests(unittest.TestCase):
             ],
         )
 
+    def test_native_capabilities_read_resident_owner_without_prompt_or_configuration_payload(self) -> None:
+        session_id = str(self.first["id"])
+        native = {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "codemodeMode": "on",
+                  "mcp": {"available": True, "active": True, "configErrorCount": 0,
+                          "servers": [{"name": "docs", "namespace": "mcp__docs", "scope": "global",
+                                      "enabled": True, "state": "connected", "exposure": "codemode",
+                                      "toolCount": 1, "url": "private-transport", "env": {"SECRET": "private"}}]},
+                  "tools": [{"name": "mcp__docs__search", "namespace": {"name": "mcp__docs", "instructions": "not-in-catalog"},
+                             "exposure": "codemode", "active": False, "routable": True,
+                             "description": "Search docs", "parameters": {"type": "object"}}]}
+        with patch.object(self.runtime, "_inspection_snapshot") as inspect, patch.object(self.runtime, "_require_client") as client:
+            client.return_value.send.return_value = {"nativeCapabilities": native}
+            response = self.runtime.native_capabilities(session_id)
+        inspect.assert_called_once_with(session_id, durable_fallback=False)
+        client.return_value.send.assert_called_once_with("tools.list", {"sessionId": session_id})
+        self.assertEqual(response["sessionId"], session_id)
+        self.assertEqual(response["tools"][0]["namespace"], {"name": "mcp__docs"})
+        self.assertFalse(response["tools"][0]["active"])
+        self.assertTrue(response["tools"][0]["routable"])
+        self.assertNotIn("private", json.dumps(response))
+        self.assertNotIn("not-in-catalog", json.dumps(response))
+
+    def test_native_capabilities_do_not_promote_an_unsupported_or_malformed_owner_to_empty_success(self) -> None:
+        session_id = str(self.first["id"])
+        for raw in ({}, {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "mcp": {"available": False}},
+                    {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "mcp": {"available": True, "servers": "invalid"}, "tools": []}):
+            with self.subTest(raw=raw), patch.object(self.runtime, "_inspection_snapshot"), patch.object(self.runtime, "_require_client") as client:
+                client.return_value.send.return_value = {"nativeCapabilities": raw}
+                with self.assertRaises(PiRuntimeError):
+                    self.runtime.native_capabilities(session_id)
+
     def test_v2_exposes_managed_skill_commands_to_the_composer(self) -> None:
         session_id = str(self.first["id"])
 

@@ -8,6 +8,21 @@ import {
 } from './codemode';
 
 describe('codemode receipt projection', () => {
+  it('merges native arguments by child identity instead of preferring compact display previews', () => {
+    const script = 'text("完整脚本");'.repeat(200);
+    expect(codeModeDetailsFromPayload({ result: {
+      details: { calls: [{ id: 'p/1', name: 'browser', args: 'script: text(...)', status: 'ok', durationMs: 42 }] },
+      nestedCalls: { complete: true, calls: [{ id: 'p/1', name: 'browser', arguments: { script }, status: 'ok' }] },
+    } })).toEqual({ calls: [{ id: 'p/1', name: 'browser', args: JSON.stringify({ script }), status: 'ok', durationMs: 42 }], nestedCallsComplete: true });
+  });
+
+  it('retains native cancellation and flags missing rows instead of claiming an empty complete receipt', () => {
+    expect(codeModeDetailsFromPayload({ result: {
+      details: { calls: [{ id: 'p/1', name: 'read', args: '{}', status: 'cancelled' }] },
+      nestedCalls: { complete: false, calls: [{ id: 'p/1', name: 'read', arguments: {}, status: 'error' }] },
+    } })?.calls[0]?.status).toBe('cancelled');
+    expect(parseCodeModeDetails({ complete: true, calls: [{ name: 'read', status: 'ok' }] })?.nestedCallsComplete).toBe(false);
+  });
   it('accepts Pi nested call details and keeps optional evidence fields', () => {
     expect(parseCodeModeDetails({
       calls: [
@@ -26,7 +41,7 @@ describe('codemode receipt projection', () => {
 
   it('ignores malformed nested rows without inventing a successful receipt', () => {
     expect(parseCodeModeDetails({ calls: [{ name: 'read', status: 'ok' }, { id: 'call/2', name: 'bash', args: '{}', status: 'running' }] }))
-      .toEqual({ calls: [{ id: 'call/2', name: 'bash', args: '{}', status: 'running' }] });
+      .toEqual({ calls: [{ id: 'call/2', name: 'bash', args: '{}', status: 'running' }], nestedCallsComplete: false });
     expect(parseCodeModeDetails({ calls: 'not-an-array' })).toBeUndefined();
   });
 

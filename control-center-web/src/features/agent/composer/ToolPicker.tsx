@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useOptionalControlTransport } from '@/app/control-transport';
 import { Button, Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import type { CapabilityCatalog, CapabilityPreference } from '@/features/plugins/capability-policy';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
@@ -8,9 +9,10 @@ import { countAvailableTools, countRegisteredTools, toolAvailableForConversation
 import { buildCapabilityRows, type CapabilityFilter, type CapabilitySection } from './capability-display';
 import { usePresentationMotion } from '@/features/conversation-ui/reading/reading-preferences';
 import { PiCapabilityBrowser } from './PiCapabilityBrowser';
+import { NativeMcpPanel } from './NativeMcpPanel';
 import './pi-capabilities.css';
 
-/** One entry for Session and Room. The parent retains reads, writes and confirmation. */
+/** One entry for Session and Room. Pi retains native MCP connection/execution ownership. */
 export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPolicyPending,
   codemodeMode, codemodeModePending = false,
   tools, status: receivedStatus, session, sessionId = session?.id, disabled, requestOpen, requestQuery = '',
@@ -25,6 +27,15 @@ export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPo
   onSelect: (tool: ToolManifest) => void;
 }) {
   const desktop = usePawOsDesktop(); const titleId = useId();
+  const transport = useOptionalControlTransport();
+  const loadNative = useCallback(async (owner: string) => {
+    if (!transport) throw new Error('Transport unavailable');
+    return transport.request({ pathId: 'agent.session.commands', params: { sessionId: owner } });
+  }, [transport]);
+  const invokeNative = useCallback(async (owner: string, command: string) => {
+    if (!transport) throw new Error('Transport unavailable');
+    return transport.request({ pathId: 'agent.session.command.invoke', params: { sessionId: owner }, body: { command } });
+  }, [transport]);
   const [openedFor, setOpenedFor] = useState<string | null>(null);
   const [query, setQuery] = useState(''); const [section, setSection] = useState<CapabilitySection>('all');
   const [filter, setFilter] = useState<CapabilityFilter>('all'); const [selectedKey, setSelectedKey] = useState('');
@@ -60,6 +71,8 @@ export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPo
       <div ref={browserRef}><PiCapabilityBrowser rows={rows} query={query} section={section} filter={filter} selectedKey={selectedKey}
         status={status} motion={motion} locked={adjustmentDisabled || disabled} pending={capabilityPolicyPending} titleId={titleId} searchRef={searchRef}
         codemodeMode={codemodeMode} codemodeModePending={codemodeModePending} onCodemodeModeChange={onCodemodeModeChange}
+        mcpPanel={open && section === 'mcp' ? <NativeMcpPanel key={scope} sessionId={scope} query={query} filter={filter}
+          locked={adjustmentDisabled || disabled || capabilityPolicyPending} load={loadNative} invoke={invokeNative} /> : null}
         onQuery={setQuery} onSection={value => { setSection(value); setSelectedKey(''); }} onFilter={setFilter} onSelect={key => {
           const previous = selectedKey; setSelectedKey(key);
           requestAnimationFrame(() => {

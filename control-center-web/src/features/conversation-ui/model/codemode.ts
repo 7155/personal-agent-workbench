@@ -31,7 +31,7 @@ export function parseCodeModeDetails(value: unknown): CodeModeDetails | undefine
     const call = record(candidate);
     const id = text(call.id);
     const name = text(call.name);
-    const args = displayArgs(call.args);
+    const args = displayArgs(call.arguments ?? call.args);
     const status = call.status;
     if (!id || !name || !CODEMODE_STATUSES.has(status as CodeModeCallStatus)) continue;
     calls.push({
@@ -45,11 +45,12 @@ export function parseCodeModeDetails(value: unknown): CodeModeDetails | undefine
     });
   }
   const fullOutputPath = text(root.fullOutputPath);
-  const nestedCallsComplete = typeof root.nestedCallsComplete === 'boolean'
+  const statedCompleteness = typeof root.nestedCallsComplete === 'boolean'
     ? root.nestedCallsComplete
     : typeof root.complete === 'boolean'
       ? root.complete
       : undefined;
+  const nestedCallsComplete = calls.length !== root.calls.length ? false : statedCompleteness;
   return {
     calls,
     ...(fullOutputPath ? { fullOutputPath } : {}),
@@ -61,19 +62,28 @@ export function parseCodeModeDetails(value: unknown): CodeModeDetails | undefine
 export function codeModeDetailsFromPayload(payload: Record<string, unknown>): CodeModeDetails | undefined {
   const result = record(payload.result);
   const publicResult = record(payload.publicResult);
-  let emptyReceipt: CodeModeDetails | undefined;
-  for (const candidate of [result.details, payload.details, publicResult.details, result, payload,
-    result.nestedCalls, payload.nestedCalls, publicResult.nestedCalls]) {
-    const parsed = parseCodeModeDetails(candidate);
-    if (parsed?.calls.length) {
-      return parsed.nestedCallsComplete === undefined
-        && typeof payload.nestedCallsComplete === 'boolean'
-        ? { ...parsed, nestedCallsComplete: payload.nestedCallsComplete }
-        : parsed;
-    }
-    if (parsed) emptyReceipt ??= parsed;
+  const detailCandidates = [result.details, payload.details, publicResult.details, result, payload].map(parseCodeModeDetails);
+  const genericCandidates = [result.nestedCalls, payload.nestedCalls, publicResult.nestedCalls].map(parseCodeModeDetails);
+  const details = detailCandidates.find(value => value?.calls.length) ?? detailCandidates.find(value => value !== undefined);
+  const generic = genericCandidates.find(value => value?.calls.length) ?? genericCandidates.find(value => value !== undefined);
+  if (!generic) {
+    return details && details.nestedCallsComplete === undefined && typeof payload.nestedCallsComplete === 'boolean'
+      ? { ...details, nestedCallsComplete: payload.nestedCallsComplete } : details;
   }
-  return emptyReceipt;
+  const detailById = new Map(details?.calls.map(call => [call.id, call]) ?? []);
+  const calls = generic.calls.map(call => {
+    const detail = detailById.get(call.id);
+    if (!detail || detail.name !== call.name) return call;
+    return { ...detail, ...call, args: call.args || detail.args,
+      // Pi's generic receipt represents cancellation as error; its codemode
+      // details retain the explicit cancellation outcome for the same child.
+      status: detail.status === 'cancelled' && call.status === 'error' ? 'cancelled' as const : call.status };
+  });
+  const missing = details?.calls.filter(detail => !calls.some(call => call.id === detail.id && call.name === detail.name)) ?? [];
+  const complete = missing.length || details?.nestedCallsComplete === false ? false
+    : generic.nestedCallsComplete ?? (typeof payload.nestedCallsComplete === 'boolean' ? payload.nestedCallsComplete : details?.nestedCallsComplete);
+  return { ...details, ...generic, calls: [...calls, ...missing],
+    ...(complete !== undefined ? { nestedCallsComplete: complete } : {}) };
 }
 
 /** Read the final text emitted by Pi from the public result envelope. */

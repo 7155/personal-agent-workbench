@@ -87,3 +87,22 @@
 .pi-capabilities__codemode-switch label { display: grid; gap: 5px; font-size: 12px; }
 .pi-capabilities__codemode-switch select { color: var(--pi-ink); background: var(--pi-surface); border: 1px solid var(--pi-line); border-radius: 7px; padding: 7px; }
 @media (max-width: 620px) { .pi-capabilities__codemode-switch { grid-template-columns: minmax(0,1fr); padding-inline: 14px; } }
+
+.pi-mcp { width:100%; min-width:0; padding:12px 20px 18px; font-size:var(--text-label); overflow-wrap:anywhere; }
+.pi-mcp__toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; color:var(--pi-muted); }
+.pi-mcp :is(button,summary) { min-height:34px; }
+.pi-mcp button { display:inline-flex; gap:6px; align-items:center; border:1px solid var(--pi-line); border-radius:7px; background:var(--pi-soft); padding:5px 10px; }
+.pi-mcp button:hover:not(:disabled) { background:var(--pi-surface); }
+.pi-mcp__server { border-top:1px solid var(--pi-line); padding:10px 0; }
+.pi-mcp__server>summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; cursor:pointer; }
+.pi-mcp__server>summary strong { color:var(--pi-ink); font-size:var(--text-ui); }
+.pi-mcp__server>summary small { margin-left:auto; color:var(--pi-muted); font-variant-numeric:tabular-nums; }
+.pi-mcp__server-body { padding:4px 0 0; }
+.pi-mcp__server-body p { color:var(--pi-muted); line-height:1.7; margin:8px 0; }
+.pi-mcp__actions { display:flex; flex-wrap:wrap; gap:8px; }
+.pi-mcp__tool { border-top:1px solid var(--pi-line); margin-top:10px; padding-top:6px; }
+.pi-mcp__tool summary { cursor:pointer; line-height:1.6; }
+.pi-mcp__tool>summary small { display:block; margin:3px 0 6px; color:var(--pi-muted); }
+.pi-mcp pre { max-height:240px; overflow:auto; padding:10px; background:var(--pi-soft); white-space:pre-wrap; overflow-wrap:anywhere; font:var(--text-label)/1.7 var(--font-mono,monospace); }
+.pi-mcp__notice { padding:10px 0; color:var(--pi-muted); }
+@media(max-width:620px) { .pi-mcp { padding-inline:14px; } .pi-mcp__server>summary small { width:100%; margin-left:0; } }

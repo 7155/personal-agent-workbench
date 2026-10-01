@@ -4,7 +4,7 @@ import type { SessionSummary, ToolManifest } from '../types';
 import { toolAvailableForConversation, riskLabel } from './tool-policy';
 
 /** Display values only. Availability still comes from the existing Session policy owner. */
-export type CapabilitySection = 'all' | 'tool' | 'skill' | 'extension' | 'memory';
+export type CapabilitySection = 'all' | 'tool' | 'skill' | 'extension' | 'memory' | 'mcp';
 export type CapabilityFilter = 'all' | 'usable' | 'unavailable';
 export type CapabilityDisplayState = 'usable' | 'disabled' | 'denied' | 'unavailable' | 'unknown';
 export interface CapabilityDisplayRow {

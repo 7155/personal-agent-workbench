@@ -865,11 +865,12 @@ function PublicCodeModeResult({ view }: { view: PublicToolResultView }) {
         <ol aria-label="嵌套工具调用">
           {calls.map((call) => <li key={call.id} data-status={call.status}>
             <span className="agent-tool-codemode__call-status" aria-label={codeModeCallStatusLabel(call.status)}>{codeModeCallStatusMark(call.status)}</span>
-            <span className="agent-tool-codemode__call-main">
-              <strong>{call.name}</strong>
-              <code>{call.args || '{}'}</code>
+            <details className="agent-tool-codemode__call-main">
+              <summary><strong>{call.name}</strong><code>{call.args || '参数未附带'}</code></summary>
+              <pre aria-label={`${call.name} 调用参数`} tabIndex={0}>{call.args || '本条回执未附带参数。'}</pre>
               {call.error ? <small role="alert">{call.error}</small> : null}
-            </span>
+              <small>{call.id} · 嵌套结果未在这条汇总中独立附带</small>
+            </details>
             <span className="agent-tool-codemode__call-meta">
               {call.durationMs !== undefined ? formatCodeModeDuration(call.durationMs) : null}
               {call.cost !== undefined ? formatCodeModeCost(call.cost) : null}

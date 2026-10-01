@@ -29,3 +29,14 @@ Installed version and foreground acceptance must be checked independently.
 Normal execution uses the user's selected model and thinking level. Enabling
 codemode does not change reasoning to max, increase Room partners, or promise
 token or latency savings for a complete task.
+
+The managed SDK loader also loads native MCP and `tool_search`. The built-in
+MCP owner reads this Session's managed agent directory and trusted project
+configuration. Its read-only status callback publishes connection states and
+per-tool MCP exposure without command arguments, transport URLs or credentials.
+`tools.list` supplies that projection to the existing Session command catalog;
+the frontend's MCP tab offers inspection, refresh and idle native login/reconnect.
+The MCP server exposure and Pi core tool exposure are distinct: native MCP's
+`codemode` maps to deferred core discovery. The UI uses the MCP owner's per-tool
+value, including overrides, instead of guessing from the core value or name.
+An unavailable or replaced native owner remains unavailable in the inspector.
