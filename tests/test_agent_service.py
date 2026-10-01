@@ -5809,11 +5809,53 @@ class AgentServiceTests(unittest.TestCase):
                 "toolHistoryEvents": [],
                 "telemetry": None,
                 "messageQueue": None,
+                "codemodeMode": "only",
             },
         ):
             response = self.service.messages(session_id)
 
         self.assertEqual(response["items"], history)
+        self.assertEqual(response["codemodeMode"], "only")
+
+    def test_message_snapshot_does_not_invent_codemode_when_runtime_omits_it(
+        self,
+    ) -> None:
+        session = self.service.create_session(
+            {"title": "缺少 codemode 能力的快照"}
+        )["session"]
+        session_id = str(session["id"])
+        self.service.sessions.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-codemode-omitted",
+            metadata={"codemodeAvailable": True, "codemodeMode": "only"},
+        )
+
+        with patch.object(
+            self.service.runtime,
+            "session_snapshot",
+            create=True,
+            return_value={
+                "messages": [],
+                "codemodeAvailable": False,
+                "codemodeMode": "on",
+            },
+        ):
+            full = self.service.messages(session_id)
+        self.assertNotIn("codemodeMode", full)
+
+        with patch.object(
+            self.service.runtime,
+            "recent_session_snapshot",
+            create=True,
+            return_value={"messages": []},
+        ):
+            recent = self.service.message_snapshot.messages(
+                session_id,
+                view="recent",
+            )
+        self.assertNotIn("codemodeMode", recent)
 
     def test_message_snapshot_recovers_managed_html_link_for_historical_reply(
         self,
@@ -5970,6 +6012,13 @@ class AgentServiceTests(unittest.TestCase):
             {"title": "Room 近期快照"}
         )["session"]
         session_id = str(session["id"])
+        self.service.sessions.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-room-recent-codemode",
+            metadata={"codemodeAvailable": True, "codemodeMode": "only"},
+        )
         room_user_event = {
             "eventId": "room:user:recent",
             "eventType": "user_message",
@@ -6018,6 +6067,7 @@ class AgentServiceTests(unittest.TestCase):
         ]
         self.assertEqual(response["snapshotScope"], "recent")
         self.assertTrue(response["partial"])
+        self.assertEqual(response["codemodeMode"], "only")
         self.assertEqual(len(response["liveEvents"]), 80)
         self.assertEqual(sequences, list(range(1, 81)))
         self.assertEqual(response["recentFromSequence"], 1)
@@ -6352,7 +6402,10 @@ class AgentServiceTests(unittest.TestCase):
                 self.service.runtime,
                 "recent_session_snapshot",
                 create=True,
-                return_value={"messages": [recent_message]},
+                return_value={
+                    "messages": [recent_message],
+                    "codemodeMode": "only",
+                },
             ) as recent_snapshot,
             patch.object(
                 self.service.runtime,
@@ -6379,6 +6432,7 @@ class AgentServiceTests(unittest.TestCase):
         recent_snapshot.assert_called_once_with(session_id)
         self.assertEqual(response["snapshotScope"], "recent")
         self.assertTrue(response["partial"])
+        self.assertEqual(response["codemodeMode"], "only")
         # This history fits the expanded recent window. Restoring it must keep
         # the earlier records without loading the full Pi archive.
         self.assertEqual(

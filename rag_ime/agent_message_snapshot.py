@@ -188,6 +188,7 @@ class AgentMessageSnapshotService:
             if callable(snapshot_provider)
             else None
         )
+        codemode_mode = _verified_codemode_mode(runtime_snapshot)
         # Inspecting Pi can reconcile an open-but-idle transcript back to idle.
         # Refetch after that boundary so snapshot replay never resurrects a
         # completed turn from the bounded event journal.
@@ -314,6 +315,11 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": telemetry,
             "messageQueue": message_queue,
+            **(
+                {"codemodeMode": codemode_mode}
+                if codemode_mode is not None
+                else {}
+            ),
             "todo": workflow["todo"],
             "goal": workflow["goal"],
             "actGate": workflow["actGate"],
@@ -330,6 +336,7 @@ class AgentMessageSnapshotService:
         """Return the durable recent window without restoring Pi Runtime."""
 
         session = self.sessions.get(session_id)
+        codemode_mode = _verified_codemode_mode(session)
         last_sequence = self.sessions.max_event_sequence(session_id)
         replayed, _gap = self.events.replay(session_id)
         # Streaming text deltas are intentionally in-memory only.  They still
@@ -391,6 +398,11 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": None,
             "messageQueue": None,
+            **(
+                {"codemodeMode": codemode_mode}
+                if codemode_mode is not None
+                else {}
+            ),
             "todo": workflow["todo"],
             "goal": workflow["goal"],
             "actGate": workflow["actGate"],
@@ -424,6 +436,7 @@ class AgentMessageSnapshotService:
             if callable(snapshot_provider)
             else None
         )
+        codemode_mode = _verified_codemode_mode(runtime_snapshot)
         messages = (
             [
                 dict(message)
@@ -506,6 +519,11 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": None,
             "messageQueue": None,
+            **(
+                {"codemodeMode": codemode_mode}
+                if codemode_mode is not None
+                else {}
+            ),
             "todo": workflow["todo"],
             "goal": workflow["goal"],
             "actGate": workflow["actGate"],
@@ -1215,6 +1233,21 @@ def _mapping_field(
         return None
     field = value.get(key)
     return dict(field) if isinstance(field, Mapping) else None
+
+
+def _verified_codemode_mode(value: object) -> str | None:
+    """Project only a valid mode already verified by the owning Runtime."""
+
+    if not isinstance(value, Mapping):
+        return None
+    availability = value.get("codemodeAvailable")
+    if availability is not None and availability is not True:
+        return None
+    raw = value.get("codemodeMode")
+    if not isinstance(raw, str):
+        return None
+    mode = raw.strip().lower()
+    return mode if mode in {"on", "only", "off"} else None
 
 
 def _merge_tool_events(
