@@ -171,6 +171,16 @@ Root are four facts. A network error proves none of their opposites. Recovery
 queries the original binding/receipt and preserves unknown outcomes. A new
 request ID is a new operation, not a safe recovery mechanism.
 
+Room send recovery retains its original client message identity. The accepted
+Room timeline owns canonical messages and its sequence cursor; an optimistic
+message cannot be appended again when that identity is already canonical.
+After history trimming, a validated old user ACK can remove only its matching
+Room/client optimistic message and empty local turn, without rewinding history
+or the cursor. A rejected or foreign event batch cannot partly mutate this
+projection. The composer updates its controlled draft synchronously so a delayed
+parent echo cannot overwrite newer keystrokes; external clear and recovered
+drafts remain authoritative.
+
 JEV admission, plan decisions, task assignment and task revision share request
 identity, immutable pending input and persistence mechanics. Their adapters
 retain distinct input/receipt validation and definitive-rejection rules. An
@@ -269,11 +279,17 @@ The compatibility adapter uses legacy `jev.evaluate` only when the Runtime has
 no classifier method or its negotiated Host declares no support, before any
 native classification is sent. Other existing approval/routing/rerank consumers
 still use that transport, so deleting `jev.py` would remove active functionality.
-Room Stop already invalidates a pending decision's authority through the Root
-and WorkStore guards; it does not yet bind that decision to the native classifier
-cancel RPC. A stopped Root therefore does not prove that a classification HTTP
-request has drained. The native request retains its bounded deadline and exact
-uncertain-response cancellation path.
+Room Stop binds controller and auto-route decisions to their original Root,
+Runtime and request. Registration shares the stopped-Root admission fence;
+cancellation before the pipe write prevents dispatch, and later cancellation
+uses the original exact request. The existing cancellation owner includes the
+classification resource when computing its receipt. A stopped business Root
+does not imply resource drain: pending classifications remain observable until
+settlement or the original Host exit, while already drained Sessions release
+their own claims. The current projection and `jev_updated` events expose this
+distinction without changing old receipts or publishing a second Root terminal.
+The legacy direct HTTP adapter has no immediate native abort; it retains its
+pending resource until the request returns and its late answer loses authority.
 
 Code Mode uses Pi's existing native `models` namespace with a typed allowlist:
 only `typesafe/jev-latest` classification is exposed by this Host. Catalog lookup

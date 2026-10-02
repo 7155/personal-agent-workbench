@@ -209,9 +209,16 @@ The Room task decider uses this native path when supported. Only capability
 absence before dispatch permits the older HTTP adapter; a native error or lost
 receipt cannot trigger that fallback. PAW still validates every proposed choice
 against its own candidates, probabilities and current task/Root revisions.
-Root Stop invalidates a pending choice but does not currently invoke this
-classifier's cancellation RPC; do not equate stopped work with classification
-HTTP drain. Other legacy Jev consumers remain active.
+Root Stop invalidates the pending choice and cancels its original native
+classification request. Both controller and auto-route decisions share the
+stopped-Root admission fence, including cancellation before pipe write. The
+existing cancellation receipt keeps a `classification` resource pending until
+actual settlement; the Jev snapshot exposes `pendingClassifications` and
+`classificationDrained`, and an existing `jev_updated` event prompts refresh.
+Do not equate stopped business work or a sent signal with HTTP drain. The
+unsupported-Host legacy adapter remains pending until its HTTP request returns;
+it does not gain an immediate abort operation. Other legacy Jev consumers remain
+active.
 
 The existing PAW TypeSafe credential resolver is unchanged. Direct decisions
 resolve it on each call and reject an absent key before native dispatch. The
