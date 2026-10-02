@@ -30,6 +30,7 @@ from rag_ime.personal_context_maintenance import (
 )
 from rag_ime.personal_context_observability import PersonalContextObservability
 from rag_ime.retrieval_docs import rebuild_retrieval_docs
+from tests.sqlite_fixtures import copy_current_database
 
 
 class DailyActivityTimelineTests(unittest.TestCase):
@@ -38,6 +39,8 @@ class DailyActivityTimelineTests(unittest.TestCase):
             prefix="rag-ime-activity-timeline-"
         )
         self.db_path = Path(self.temporary.name) / "rag-ime.sqlite"
+        self.addCleanup(self.temporary.cleanup)
+        copy_current_database(self.db_path)
         self.project = "wisdom-weasel-rag-ime"
         self.zone = ZoneInfo("Asia/Shanghai")
         self.core = LocalSqliteCoreClient(self.db_path)
@@ -51,9 +54,6 @@ class DailyActivityTimelineTests(unittest.TestCase):
             mission="维护个人上下文",
             created_at_ms=self._ms(8, 0),
         )
-
-    def tearDown(self) -> None:
-        self.temporary.cleanup()
 
     def test_preverified_store_does_not_reapply_migrations(self) -> None:
         store = DailyActivityTimelineStore(
