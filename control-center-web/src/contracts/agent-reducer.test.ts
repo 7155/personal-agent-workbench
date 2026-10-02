@@ -24,6 +24,62 @@ import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
 import type { AgentLifecycleCancellationAuditV1 } from './generated/agent-lifecycle-cancellation-audit.v1';
 
 describe('AgentEventReducer', () => {
+  it.each(['turn_completed', 'turn_failed'] as const)(
+    'keeps the successor status when %s arrives for an older turn',
+    (terminal) => {
+      for (const successor of ['optimistic', 'running', 'completed'] as const) {
+        let state = reduceAgentEvent(createAgentProjection('session-1'), agentEvent(1, 'status_changed', { status: 'busy' })).state;
+        state = appendOptimisticAgentMessage(state, {
+          clientMessageId: 'next', text: 'new work', nowMs: 20, turnId: 'turn-new',
+        });
+        let sequence = 2;
+        if (successor !== 'optimistic') {
+          state = reduceAgentEvent(state, {
+            ...agentEvent(sequence++, successor === 'running' ? 'status_changed' : 'turn_completed', { status: successor === 'running' ? 'busy' : 'completed' }),
+            turnId: 'turn-new',
+          }).state;
+        }
+        state = reduceAgentEvent(state, agentEvent(sequence, terminal,
+          terminal === 'turn_failed' ? { error: 'old error' } : { status: 'completed' })).state;
+        expect(state.turnsById['turn-1'].status).toBe(terminal === 'turn_failed' ? 'failed' : 'completed');
+        expect(state.turnsById['turn-new'].status).toBe(successor === 'optimistic' ? 'queued' : successor);
+        expect(state.status).toBe(successor === 'completed' ? 'idle' : 'busy');
+      }
+    },
+  );
+
+  it.each(['turn_completed', 'turn_failed'] as const)(
+    'does not let an unknown %s acquire the current status owner',
+    (terminal) => {
+      const state = appendOptimisticAgentMessage(createAgentProjection('session-1'), {
+        clientMessageId: 'current', text: 'current work', nowMs: 20, turnId: 'turn-current',
+      });
+      const settled = reduceAgentEvent(state, {
+        ...agentEvent(1, terminal, { error: 'unknown older outcome' }), turnId: 'unknown-old',
+      }).state;
+      expect(settled.turnsById['unknown-old'].status).toBe(terminal === 'turn_failed' ? 'failed' : 'completed');
+      expect(settled.turnsById['turn-current'].status).toBe('queued');
+      expect(settled.status).toBe('busy');
+      expect(settled.turnOrder.at(-1)).toBe('turn-current');
+      const currentFinished = reduceAgentEvent(settled, {
+        ...agentEvent(2, 'turn_completed', {}), turnId: 'turn-current',
+      }).state;
+      expect(currentFinished.status).toBe('idle');
+    },
+  );
+
+  it('retains a current failure when an unknown old completion is projected', () => {
+    const current = reduceAgentEvent(createAgentProjection('session-1'), {
+      ...agentEvent(1, 'turn_failed', { error: 'current failure' }), turnId: 'turn-current',
+    }).state;
+    const settled = reduceAgentEvent(current, {
+      ...agentEvent(2, 'turn_completed', {}), turnId: 'unknown-old',
+    }).state;
+    expect(settled.status).toBe('failed');
+    expect(settled.turnOrder.at(-1)).toBe('turn-current');
+    expect(settled.turnsById['turn-current'].failure).toBe('current failure');
+  });
+
   it('keeps a failed provider attempt running while a snapshot says Pi is retrying', () => {
     const snapshot = {
       messages: [{ ...serverMessage('attempt', 'assistant', 'turn-1', 'overloaded'), status: 'failed' }],

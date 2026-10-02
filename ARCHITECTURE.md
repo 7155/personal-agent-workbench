@@ -36,7 +36,7 @@ flowchart TD
 | Session interaction | `src/features/agent/runtime/use-agent-live-session.ts`, `state/live-store.ts` | Durable transcript or authorization |
 | Room command delivery | `src/features/rooms/application/room-send.ts`, `runtime/room-send-journal.ts` | Model/Tool loops or Root completion |
 | JEV command delivery | `src/features/semantic-workspace/jev-command-journal.ts`, admission/plan/assignment/revision adapters | Business receipt validation or a second task scheduler |
-| Room projection | `runtime/shared-room-live-session.ts`, `state/live-store.ts`, `contracts/room-reducer.ts` | Automatic resubmission of an uncertain command |
+| Room projection | `src/features/rooms/runtime/shared-room-live-session.ts`, `src/features/rooms/state/live-store.ts`, `src/contracts/room-reducer.ts` | Automatic resubmission of an uncertain command |
 | HTTP/native transport | `src/platform`, `rag_ime/control_api`, `rag_ime/debug_server.py` | Business scheduling; route descriptors select existing application owners |
 | Session application | `rag_ime/agent_service.py`, Session application services and `agent_sessions.py` | Pi's model loop and compaction implementation |
 | Collaboration | `rag_ime/rooms/session_dispatch.py`, `turn_registry.py`, `session_cancellation.py` | A replacement Pi Session or a second per-tool approval |
@@ -140,6 +140,22 @@ signalling cancellation; rejected or missing ACKs cannot widen the target to
 another turn. Newer approvals remain outside an older Stop's captured scope.
 Native remote MCP cancellation sends a cancellation notification; a remote
 server may ignore it. It is not proof that an external side effect stopped.
+
+Pi prompt admission is typed as `started`, `queued` or `handled`. A handled
+extension is not automatically a successful model run: the Host carries an exact
+durable settlement in its ACK, with a distinct no-run preflight origin when
+appropriate. The native prompt scope owns asynchronous preparation and propagates
+cancellation into extension-origin nested prompts. Host admission remains pending
+until both the outer command and native preparation have drained; arbitrary
+extension hooks that ignore cancellation remain truthfully pending. PAW does not
+invent assistant output or retry a handled effect after a missing receipt.
+
+Terminal Session status is persisted under the same Runtime lock that admits a
+successor. Public terminal events retain their original turn and are emitted
+outside that lock. UI reducers settle the old turn independently of the current
+Session status: a terminal-only observation cannot acquire a newer turn's
+ownership just by arriving late. Exact history/snapshot recovery restores any
+missing current binding.
 
 History has three different limits: the UI's visible window, retained product
 events, and Pi's model context/compaction. Reaching a UI window edge does not mean

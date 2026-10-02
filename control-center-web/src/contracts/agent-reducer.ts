@@ -239,6 +239,11 @@ export function reduceAgentEvent(
   next.lastSequence = event.sequence;
   next.lastEventId = event.eventId;
   next.resumeToken = event.resumeToken;
+  // Capture ownership before a terminal event can create an unknown turn.
+  // A successor (even already terminal) owns the Session-wide status; old
+  // turns may still settle their own messages and activities independently.
+  const currentTurnId = state.turnOrder.at(-1);
+  const terminalOwnsSessionStatus = !currentTurnId || currentTurnId === event.turnId;
   const payload = record(event.payload);
   const telemetry = parseTelemetry(payload.telemetry);
   if (telemetry) next.telemetry = telemetry;
@@ -436,7 +441,7 @@ export function reduceAgentEvent(
         payload.status === 'aborted' || payload.aborted === true ? 'aborted' : 'completed',
         event.createdAtMs,
       );
-      next.status = 'idle';
+      if (terminalOwnsSessionStatus) next.status = 'idle';
       break;
     case 'turn_failed':
       if (!event.turnId) {
@@ -451,7 +456,7 @@ export function reduceAgentEvent(
         break;
       }
       completeTurn(next, event.turnId, 'failed', event.createdAtMs, text(payload.error));
-      next.status = 'failed';
+      if (terminalOwnsSessionStatus) next.status = 'failed';
       upsertActivity(next, event, payload, 'failed');
       break;
     case 'unknown':
@@ -466,6 +471,16 @@ export function reduceAgentEvent(
       break;
     case 'heartbeat':
       break;
+  }
+  if ((event.eventType === 'turn_completed' || event.eventType === 'turn_failed')
+    && currentTurnId && event.turnId && !state.turnsById[event.turnId]
+    && next.turnsById[event.turnId]) {
+    // A terminal-only observation proves an outcome, not a new admission.
+    // Keep its history before the established owner so later completion and
+    // the Workspace's newest-turn fence still refer to that owner. A snapshot
+    // can restore a newer owner when its start was outside the event window.
+    next.turnOrder = next.turnOrder.filter((id) => id !== event.turnId);
+    next.turnOrder.splice(next.turnOrder.indexOf(currentTurnId), 0, event.turnId);
   }
   return { state: next, disposition: 'applied' };
 }
