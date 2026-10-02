@@ -15,27 +15,37 @@ import { agentModeStore } from '@/features/semantic-workspace/agent-mode-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { parseRoomEvent } from '@/contracts/validators';
 
-vi.mock('./PawSessionWorkspace', () => ({
-  PawSessionWorkspace: ({ record, recordId, recordMetadataKnown }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string }) => (
-    <div>
-      Session 工作区
-      <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
-      <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
-      <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
-    </div>
-  ),
-}));
-vi.mock('./PawRoomWorkspace', () => ({
-  PawRoomWorkspace: ({ initialDraft, record, recordId, onRoomUpdated }: {
-    initialDraft?: string; record?: RoomSummary; recordId: string; onRoomUpdated: (room: RoomSummary) => void;
-  }) => (
-    <div>
-      Room 工作区 · {recordId}<output data-testid="room-initial-draft">{initialDraft}</output>
-      <output data-testid="room-record-title">{record?.title ?? 'missing'}</output>
-      <button onClick={() => onRoomUpdated(roomFixture({ id: recordId, title: '恢复的协作主对话' }))}>接收 Room 快照</button>
-    </div>
-  ),
-}));
+const workspaceEvaluations = vi.hoisted(() => ({ session: 0, room: 0 }));
+const workspaceLoading = vi.hoisted(() => ({ room: null as Promise<void> | null }));
+
+vi.mock('./PawSessionWorkspace', () => {
+  workspaceEvaluations.session += 1;
+  return {
+    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string }) => (
+      <div>
+        Session 工作区
+        <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
+        <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
+        <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
+      </div>
+    ),
+  };
+});
+vi.mock('./PawRoomWorkspace', () => {
+  workspaceEvaluations.room += 1;
+  return {
+    PawRoomWorkspace: ({ initialDraft, record, recordId, onRoomUpdated }: {
+      initialDraft?: string; record?: RoomSummary; recordId: string; onRoomUpdated: (room: RoomSummary) => void;
+    }) => {
+      if (workspaceLoading.room) throw workspaceLoading.room;
+      return <div>
+        Room 工作区 · {recordId}<output data-testid="room-initial-draft">{initialDraft}</output>
+        <output data-testid="room-record-title">{record?.title ?? 'missing'}</output>
+        <button onClick={() => onRoomUpdated(roomFixture({ id: recordId, title: '恢复的协作主对话' }))}>接收 Room 快照</button>
+      </div>;
+    },
+  };
+});
 vi.mock('@/features/roles', () => ({ RolesFeature: () => <div>角色工作区</div> }));
 
 // These are the retained traditional workflows; first-use Jev is covered in
@@ -48,6 +58,41 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
+    const transport = createTransport();
+    const roomRoute = '/agent?room=room-old&draft=room%20draft';
+    const view = renderAgent(transport, { initialRoute: roomRoute });
+
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
+    expect(workspaceEvaluations).toEqual({ session: 0, room: 1 });
+
+    view.rerender(agentTree(transport, { initialRoute: '/agent?session=session-old' }));
+    expect(await screen.findByText('Session 工作区')).toBeInTheDocument();
+    expect(screen.getByTestId('session-record-id')).toHaveTextContent('session-old');
+    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+
+    view.rerender(agentTree(transport, { initialRoute: roomRoute }));
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
+    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+  });
+
+  it('announces a selected workspace while it loads and retains its draft when ready', async () => {
+    const ready = deferred<void>();
+    workspaceLoading.room = ready.promise;
+    try {
+      renderAgent(createTransport(), { initialRoute: '/agent?room=room-old&draft=loading%20draft' });
+      const loading = await screen.findByText('正在打开 Room 工作区…');
+      expect(loading.closest('[role="status"]')).toBeInTheDocument();
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+      await act(async () => { workspaceLoading.room = null; ready.resolve(); });
+      expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+      expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('loading draft');
+      expect(screen.queryByText('正在打开 Room 工作区…')).not.toBeInTheDocument();
+    } finally { workspaceLoading.room = null; ready.resolve(); }
+  });
+
   it('opens a selected Room without starting the hidden Session catalog', async () => {
     const sessions = deferred<unknown>();
     const transport = createTransport({ sessionCatalogHandler: () => sessions.promise });

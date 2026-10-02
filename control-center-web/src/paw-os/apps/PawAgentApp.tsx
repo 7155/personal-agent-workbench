@@ -12,7 +12,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import {
   Button,
@@ -44,8 +44,6 @@ import { evidenceEchoFocusFromRoute } from '@/features/evidence-echo/evidence-ec
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
 import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/features/paw-os/surface-context';
-import { PawSessionWorkspace } from './PawSessionWorkspace';
-import { PawRoomWorkspace } from './PawRoomWorkspace';
 import { PawAgentHome } from './PawAgentHome';
 import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-workspace/AgentModeSwitch';
 import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
@@ -54,6 +52,9 @@ import '@/features/semantic-workspace/semantic-workspace.css';
 import { readSessionCatalog } from './session-catalog';
 import { PawWindowLeadingPortal, usePawWindowLeadingChromeTarget } from '../shell/PawWindowChrome';
 import { TraceAgentHandoffButton, type TraceAgentHandoffInput } from '@/features/trace-agent/handoff';
+
+const PawSessionWorkspace = lazy(() => import('./PawSessionWorkspace').then((module) => ({ default: module.PawSessionWorkspace })));
+const PawRoomWorkspace = lazy(() => import('./PawRoomWorkspace').then((module) => ({ default: module.PawRoomWorkspace })));
 
 type Selection =
   | { kind: 'new'; draft?: string }
@@ -496,47 +497,51 @@ export function PawAgentApp({
             }}
           />
         ) : selection.kind === 'session' ? (
-          <PawSessionWorkspace
-            active={surfaceActive ?? true}
-            key={`session:${selection.id}`}
-            initialDraft={selection.draft}
-            persona={personas.find((item) => item.roleId === sessions.find((session) => session.id === selection.id)?.roleId)}
-            record={selectedSessionRecord}
-            recordMetadataKnown={Boolean(selectedSession)}
-            recordId={selection.id}
-            traceFocusNodeId={evidenceFocus}
-            toolPickerIntent={toolPickerIntent}
-            onNewWork={() => setSelection({ kind: 'new' })}
-            onSessionCreated={(created, draft) => {
-              optimisticSessionsRef.current[created.id] = created;
-              setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);
-              setSelection({ kind: 'session', id: created.id, ...(draft ? { draft } : {}) });
-            }}
-            onSessionUpdated={(updated) => {
-              if (optimisticSessionsRef.current[updated.id]) optimisticSessionsRef.current[updated.id] = updated;
-              setSessions((current) => current.map((item) => item.id === updated.id ? updated : item));
-            }}
-          />
+          <Suspense fallback={<WorkspaceLoading text="正在打开 Session 工作区…" />}>
+            <PawSessionWorkspace
+              active={surfaceActive ?? true}
+              key={`session:${selection.id}`}
+              initialDraft={selection.draft}
+              persona={personas.find((item) => item.roleId === sessions.find((session) => session.id === selection.id)?.roleId)}
+              record={selectedSessionRecord}
+              recordMetadataKnown={Boolean(selectedSession)}
+              recordId={selection.id}
+              traceFocusNodeId={evidenceFocus}
+              toolPickerIntent={toolPickerIntent}
+              onNewWork={() => setSelection({ kind: 'new' })}
+              onSessionCreated={(created, draft) => {
+                optimisticSessionsRef.current[created.id] = created;
+                setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+                setSelection({ kind: 'session', id: created.id, ...(draft ? { draft } : {}) });
+              }}
+              onSessionUpdated={(updated) => {
+                if (optimisticSessionsRef.current[updated.id]) optimisticSessionsRef.current[updated.id] = updated;
+                setSessions((current) => current.map((item) => item.id === updated.id ? updated : item));
+              }}
+            />
+          </Suspense>
         ) : selection.kind === 'room' && roomEntry.mode ? (
-          <PawRoomWorkspace
-            active={surfaceActive ?? true}
-            interfaceMode={roomEntry.mode}
-            onJevEvents={roomEntry.onEvents}
-            initialDraft={selection.draft}
-            initialError={selection.error}
-            key={`room:${selection.id}`}
-            personas={personas}
-            record={rooms.find((item) => item.id === selection.id)}
-            recordId={selection.id}
-            onRoomUpdated={(updated) => {
-              if (optimisticRoomsRef.current[updated.id]) optimisticRoomsRef.current[updated.id] = updated;
-              // A restored Room can receive its live snapshot before the
-              // unfocused window loads the optional work-record directory.
-              setRooms((current) => current.some((item) => item.id === updated.id)
-                ? current.map((item) => item.id === updated.id ? updated : item)
-                : [updated, ...current]);
-            }}
-          />
+          <Suspense fallback={<WorkspaceLoading text="正在打开 Room 工作区…" />}>
+            <PawRoomWorkspace
+              active={surfaceActive ?? true}
+              interfaceMode={roomEntry.mode}
+              onJevEvents={roomEntry.onEvents}
+              initialDraft={selection.draft}
+              initialError={selection.error}
+              key={`room:${selection.id}`}
+              personas={personas}
+              record={rooms.find((item) => item.id === selection.id)}
+              recordId={selection.id}
+              onRoomUpdated={(updated) => {
+                if (optimisticRoomsRef.current[updated.id]) optimisticRoomsRef.current[updated.id] = updated;
+                // A restored Room can receive its live snapshot before the
+                // unfocused window loads the optional work-record directory.
+                setRooms((current) => current.some((item) => item.id === updated.id)
+                  ? current.map((item) => item.id === updated.id ? updated : item)
+                  : [updated, ...current]);
+              }}
+            />
+          </Suspense>
         ) : selection.kind === 'room' ? <RailNotice text={roomEntry.error || '正在读取 Room 工作记录…'} action={roomEntry.error ? roomEntry.refresh : undefined} /> : null}
         </div>
         {interfaceMode === 'jev' && organizationOpen ? <OrganizationWorkspace
@@ -689,6 +694,12 @@ function WorkRow({ active, onClick, projection, title, trailing, extra }: { acti
 function SessionActions({ onArchive, onDelete, session }: { onArchive: () => void; onDelete: () => void; session: SessionSummary }) {
   const archived = session.status === 'archived';
   return <Menu><MenuTrigger asChild><button aria-label={`更多“${session.title}”操作`} className="paw-agent-row-menu" type="button"><MoreHorizontal size={14} /></button></MenuTrigger><MenuContent align="end"><MenuItem onSelect={onArchive}>{archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}{archived ? '恢复 Session' : '归档 Session'}</MenuItem><MenuSeparator /><MenuItem className="paw-agent-row-menu__danger" onSelect={onDelete}><Trash2 size={15} />删除 Session</MenuItem></MenuContent></Menu>;
+}
+
+function WorkspaceLoading({ text }: { text: string }) {
+  return <div className="paw-agent-rail-notice" role="status">
+    <LoaderCircle aria-hidden="true" size={16} /><span>{text}</span>
+  </div>;
 }
 
 function RailNotice({ action, icon, text, traceHandoff }: {

@@ -114,4 +114,26 @@ describe('PAWOS production loading boundaries', () => {
     }
   });
 
+  it('does not evaluate the actual contract runtime when importing the unopened HTTP window layer', async () => {
+    const evaluated: string[] = [];
+    vi.resetModules();
+    // Match the production HTTP alias; preview transport is a different entry.
+    vi.doMock('@/app/control-transport', () => import('@/app/control-transport.http'));
+    vi.doMock('@/contracts/validators', async importOriginal => {
+      evaluated.push('validators');
+      return await importOriginal();
+    });
+    try {
+      await import('./shell/PawWindowLayer');
+      expect(evaluated).toEqual([]);
+      // The deferred observer still evaluates the real validation owner.
+      await import('./shell/PawBackgroundToolWindows');
+      expect(evaluated).toEqual(['validators']);
+    } finally {
+      vi.doUnmock('@/contracts/validators');
+      vi.doUnmock('@/app/control-transport');
+      vi.resetModules();
+    }
+  });
+
 });
