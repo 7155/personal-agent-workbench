@@ -184,6 +184,14 @@ Ordinary Room WorkItems remain valid outside JEV. The shared WorkStore reads
 JEV verification only when the persisted `(room_id, root_turn_id)` belongs to a
 JEV graph; malformed tasks inside an existing graph still fail validation.
 
+Ordinary Room dispatch creates no separate start-confirmation gate. The old
+private gate creator and response builder have been removed after checking
+route, plugin and packaging entry points. The public gate read/confirm routes,
+store and historical receipt recovery remain for older persisted data. Tests
+seed historical wire receipts directly instead of depending on a retired
+production writer. Consolidating that compatibility receipt flow with ordinary
+admission remains separate work: their stored responses have different roles.
+
 PAW SQL migrations are append-only. Changes to a persisted format need an
 explicit reader/upgrade/rollback contract. Preserve original history, immutable
 Lab recipe versions and unknown-effect receipts; never repair these by deleting

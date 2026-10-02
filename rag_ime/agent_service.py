@@ -3125,93 +3125,6 @@ class AgentService:
             response=response,
         )
 
-    def _claim_room_start_gate(
-        self,
-        room_id: str,
-        *,
-        message: str,
-        client_message_id: str,
-        requested_participant_ids: Sequence[str],
-        work_item_id: str,
-        attachment_ids: Sequence[str],
-        retry_of_root_id: str,
-    ) -> dict[str, object] | None:
-        # Client IDs are the replay boundary for Room commands. Requests from
-        # older direct callers without one retain the pre-gate compatibility
-        # path; the Control Center always supplies one.
-        if not client_message_id:
-            return None
-        existing_gate = self.room_start_gates.get(room_id)
-        if (
-            existing_gate is not None
-            and existing_gate.get("status") == "confirmed"
-            and str(existing_gate.get("clientMessageId") or "") != client_message_id
-        ):
-            # The Room start boundary is crossed once. A later WorkItem owns a
-            # new command receipt, not a new alignment gate. The original
-            # client id still reaches `claim()` below so an exact retry can
-            # replay the stored first response and a mutated retry is rejected.
-            return None
-        target_ids = list(requested_participant_ids)
-        if not target_ids:
-            try:
-                _work, owner_id = self.room_work.authoritative_owner(
-                    work_item_id,
-                    room_id=room_id,
-                )
-                target_ids = [str(owner_id)]
-            except Exception:
-                target_ids = []
-        gate = self.room_start_gates.claim(
-            room_id=room_id,
-            objective_text=message,
-            client_message_id=client_message_id,
-            target_participant_ids=target_ids,
-            work_item_id=work_item_id,
-            attachment_ids=attachment_ids,
-            retry_of_root_id=retry_of_root_id,
-        )
-        if gate.get("status") == "pending" and not gate.get("idempotentReplay"):
-            event = self.room_events.publish(
-                room_id=room_id,
-                event_type="room_start_confirmation_required",
-                payload={
-                    "gateId": gate["gateId"],
-                    "objective": gate["objective"],
-                    "workItemId": gate["workItemId"],
-                    "targetParticipantIds": gate["targetParticipantIds"],
-                    "requiresConfirmation": True,
-                },
-                turn_id=str(gate["gateId"]),
-                topic_id=str(self.rooms.get(room_id).get("activeTopicId") or ""),
-            )
-            gate = {**gate, "event": event}
-        return gate
-
-    @staticmethod
-    def _room_start_confirmation_response(gate: Mapping[str, object]) -> dict[str, object]:
-        return {
-            "schemaVersion": "rag-ime.agent-room-message.v1",
-            "ok": True,
-            "accepted": False,
-            "status": "awaiting_confirmation",
-            "phase": "alignment",
-            "executionOwner": "session",
-            "roomId": gate["roomId"],
-            "clientMessageId": gate["clientMessageId"],
-            "workItemId": gate["workItemId"],
-            "startConfirmation": {
-                "gateId": gate["gateId"],
-                "status": gate["status"],
-                "objective": gate["objective"],
-                "workItemId": gate["workItemId"],
-                "targetParticipantIds": gate["targetParticipantIds"],
-                "requiresConfirmation": True,
-                "afterConfirmExecutionMode": "room_unrestricted",
-            },
-            "timelineEvents": ([gate["event"]] if isinstance(gate.get("event"), Mapping) else []),
-        }
-
     def _post_room_message_command(
         self,
         room_id: str,
@@ -3222,9 +3135,7 @@ class AgentService:
         requested_participant_ids: Sequence[str],
         work_item_id: str,
         attachment_ids: Sequence[str],
-        bypass_start_gate: bool = False,
     ) -> dict[str, object]:
-        del bypass_start_gate
         if not client_message_id:
             return self._post_room_message_once(
                 room_id,
@@ -3344,10 +3255,9 @@ class AgentService:
                 "idempotentReplay": gate["status"] != "pending",
             }
         confirmed = self.room_start_gates.confirm(room_id)
-        # The confirmation is the sole user-facing authorization boundary for
-        # ordinary Room work. Persist the overlay before dispatch, and also on
-        # idempotent replay so an older or restarted Host repairs participant
-        # Sessions instead of falling back to per-Tool approvals.
+        # Compatibility for a gate persisted by an older Host. Ordinary Room
+        # dispatch no longer creates a second start approval. Restore its
+        # participant overlay before replaying the original command receipt.
         self._activate_room_unrestricted_execution(room_id)
         stored = confirmed.get("response")
         if isinstance(stored, Mapping):
@@ -3375,7 +3285,6 @@ class AgentService:
             attachment_ids=[
                 str(value) for value in confirmed.get("attachmentIds", [])
             ],
-            bypass_start_gate=True,
         )
         self.room_start_gates.complete(
             room_id,
