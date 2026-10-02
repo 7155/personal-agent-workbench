@@ -65,6 +65,10 @@ export function PawRoomRoundSheet({
   const detailIdPrefix = useId();
   const desktop = usePawOsDesktop();
   const roundsRef = useRef<HTMLElement>(null);
+  const latestNavigationRef = useRef<HTMLButtonElement>(null);
+  const jumpingToLatest = useRef(false);
+  const jumpingToHistory = useRef(false);
+  const scrollSize = useRef({ content: 0, viewport: 0, width: 0 });
   const previousLatestSheetId = useRef('');
   const latestSheetId = sheets.at(-1)?.id ?? '';
   const followingLatest = useRef(true);
@@ -91,9 +95,19 @@ export function PawRoomRoundSheet({
     return () => window.clearTimeout(timer);
   }, [arrivingKeys]);
 
+  const releaseLatestFollow = () => {
+    followingLatest.current = false;
+    jumpingToLatest.current = false;
+    jumpingToHistory.current = false;
+  };
+
   const jumpToRound = (sheetId: string, toEnd = false) => {
+    followingLatest.current = toEnd && sheetId === latestSheetId;
+    jumpingToLatest.current = followingLatest.current;
+    jumpingToHistory.current = !followingLatest.current;
     setHistoricalDisclosure((current) => ({ ...current, [sheetId]: true }));
     requestAnimationFrame(() => {
+      if (toEnd && !followingLatest.current) return;
       const node = roundsRef.current;
       const target = [...(node?.querySelectorAll<HTMLElement>('[data-round-id]') ?? [])]
         .find((round) => round.dataset.roundId === sheetId);
@@ -101,7 +115,10 @@ export function PawRoomRoundSheet({
       const top = toEnd ? node.scrollHeight : node.scrollTop + target.getBoundingClientRect().top - node.getBoundingClientRect().top - 12;
       if (typeof node.scrollTo === 'function') node.scrollTo({ top, behavior: roundScrollBehavior() });
       else node.scrollTop = top;
-      if (sheetId === latestSheetId) setUnseenRound(false);
+      if (sheetId === latestSheetId) {
+        setUnseenRound(false);
+        latestNavigationRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+      }
       target.focus({ preventScroll: true });
     });
   };
@@ -117,7 +134,10 @@ export function PawRoomRoundSheet({
       return;
     }
     if (!node) return;
+    jumpingToLatest.current = true;
     const frame = requestAnimationFrame(() => {
+      if (!followingLatest.current) return;
+      latestNavigationRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
       if (typeof node.scrollTo === 'function') {
         node.scrollTo({ top: node.scrollHeight, behavior });
       } else {
@@ -126,6 +146,37 @@ export function PawRoomRoundSheet({
     });
     return () => cancelAnimationFrame(frame);
   }, [latestSheetId]);
+
+  useEffect(() => {
+    const node = roundsRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    let disposed = false;
+    const rememberSize = () => {
+      scrollSize.current = { content: node.scrollHeight, viewport: node.clientHeight, width: node.clientWidth };
+    };
+    rememberSize();
+    let observedWidth = node.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (disposed) return;
+      // Provider deltas, disclosure layout and viewport changes do not create
+      // a new round. Keep a following reader at the end without queuing an
+      // animation for each delta; an explicit history read owns its position.
+      if (followingLatest.current) {
+        node.scrollTop = node.scrollHeight;
+        if (observedWidth !== node.clientWidth) {
+          latestNavigationRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+        }
+      }
+      const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
+      setAwayFromLatest(!nearBottom);
+      if (nearBottom) setUnseenRound(false);
+      observedWidth = node.clientWidth;
+      rememberSize();
+    });
+    observer.observe(node);
+    node.querySelectorAll('[data-round-id]').forEach(round => observer.observe(round));
+    return () => { disposed = true; observer.disconnect(); };
+  }, [latestSheetId, sheets.length]);
 
   useEffect(() => {
     const node = roundsRef.current;
@@ -155,19 +206,37 @@ export function PawRoomRoundSheet({
           aria-label={`查看第 ${index + 1} 轮：${sheet.objective}`}
           data-state={sheet.status}
           key={sheet.id}
+          ref={sheet.id === latestSheetId ? latestNavigationRef : undefined}
           onClick={() => jumpToRound(sheet.id)}
           title={sheet.objective}
           type="button"
         ><i aria-hidden="true" />第 {index + 1} 轮{sheet.id === latestSheetId ? <small>最新</small> : null}</button>)}</div>
       </nav> : null}
-    <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef} onScroll={(event) => {
-      const node = event.currentTarget;
-      const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
-      followingLatest.current = nearBottom;
-      setAwayFromLatest(!nearBottom);
-      if (nearBottom) setUnseenRound(false);
-      else setHistoricalDisclosure((current) => current[latestSheetId] ? current : { ...current, [latestSheetId]: true });
-    }}>
+    <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef}
+      onWheel={event => { if (event.deltaY < 0) releaseLatestFollow(); }}
+      onTouchMove={releaseLatestFollow}
+      onKeyDown={event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) releaseLatestFollow(); }}
+      onPointerDown={event => { if (event.target === event.currentTarget) releaseLatestFollow(); }}
+      onScroll={(event) => {
+        const node = event.currentTarget;
+        const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
+        const layoutChanged = scrollSize.current.content !== node.scrollHeight
+          || scrollSize.current.viewport !== node.clientHeight || scrollSize.current.width !== node.clientWidth;
+        scrollSize.current = { content: node.scrollHeight, viewport: node.clientHeight, width: node.clientWidth };
+        // A browser may scroll-anchor during resize before the observer runs.
+        // That is not a reader choosing history. Upward input cancels follow
+        // explicitly, including during an in-flight smooth jump to the end.
+        if (followingLatest.current && (layoutChanged || jumpingToLatest.current) && !nearBottom) return;
+        // A smooth history jump starts at the bottom. Its initial anchored
+        // scroll must not re-enable follow before it has moved away.
+        if (jumpingToHistory.current && nearBottom) return;
+        if (!nearBottom) jumpingToHistory.current = false;
+        followingLatest.current = nearBottom;
+        if (nearBottom) jumpingToLatest.current = false;
+        setAwayFromLatest(!nearBottom);
+        if (nearBottom) setUnseenRound(false);
+        else setHistoricalDisclosure((current) => current[latestSheetId] ? current : { ...current, [latestSheetId]: true });
+      }}>
       {sheets.map((sheet, index) => {
         const latest = index === sheets.length - 1;
         const settled = ['completed', 'failed', 'aborted'].includes(sheet.status);
@@ -232,7 +301,10 @@ export function PawRoomRoundSheet({
           setExpandedRows((current) => toggled(current, key));
         };
         const arriving = sheet.rows.filter((row) => row.state === 'running' && arrivingKeys.includes(row.key));
-        const preserveReading = () => setHistoricalDisclosure((current) => current[sheet.id] ? current : { ...current, [sheet.id]: true });
+        const preserveReading = (target: Element) => {
+          if (target.closest('button[aria-expanded], summary')) releaseLatestFollow();
+          setHistoricalDisclosure((current) => current[sheet.id] ? current : { ...current, [sheet.id]: true });
+        };
         const prompt = <span>
           <strong>{sheet.objective}</strong>
           <small>{planetCount} 颗行星 · {sheetStateLabels[sheet.status] ?? sheet.status}</small>
@@ -246,8 +318,8 @@ export function PawRoomRoundSheet({
             data-expanded={roundOpen || undefined}
             key={sheet.id}
             tabIndex={-1}
-            onPointerDownCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(); }}
-            onFocusCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(); }}
+            onPointerDownCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(event.target); }}
+            onFocusCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(event.target); }}
           >
             <header className="paw-room-session-round__prompt">
               <span className="paw-room-session-round__number">第 {index + 1} 轮</span>
@@ -256,6 +328,7 @@ export function PawRoomRoundSheet({
                 aria-expanded={roundOpen}
                 aria-label={roundOpen ? '折叠本轮任务' : '展开本轮任务'}
                 onClick={() => {
+                  releaseLatestFollow();
                   setHistoricalDisclosure((current) => ({ ...current, [sheet.id]: !roundOpen }));
                   if (!roundOpen && sheet.status === 'completed' && !resultRows.length && !coordinatorRows.length) {
                     setSheetDisclosure((current) => ({ ...current, [sheet.id]: true }));

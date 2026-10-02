@@ -1748,6 +1748,19 @@ describe('RoomEventReducer', () => {
     ]);
   });
 
+  it('preserves a tool diagnostic that contains an event-shaped identifier', () => {
+    const event = parseRoomEvent(wireRoomEvent(1, 'participant_activity', {
+      rootId: 'root-public', dispatchId: 'dispatch-review',
+      participantId: 'participant-review', sourceSessionId: 'session-review',
+      sourceEventType: 'tool_finished', toolCallId: 'review-call',
+      state: 'failed', summary: 'tool_timeout: original diagnostic',
+    }));
+    const state = reduceRoomEvents(createRoomProjection('room-1'), [event]);
+    expect(selectRoomParticipantPublicProgress(state)).toEqual([
+      expect.objectContaining({ summary: 'tool_timeout: original diagnostic' }),
+    ]);
+  });
+
   it('selects one latest public summary per participant across live events and snapshot hydration', () => {
     const events = [
       wireRoomEvent(1, 'participant_activity', {

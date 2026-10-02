@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -18,6 +18,116 @@ import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 afterEach(cleanup);
 
 describe('PawRoomRoundSheet (UR-170/172)', () => {
+  it('follows latest through layout growth while preserving an explicit history read', async () => {
+    const observers: { notify: () => void; observed: Set<Element>; disconnected: boolean }[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observed = new Set<Element>();
+      disconnected = false;
+      constructor(callback: ResizeObserverCallback) {
+        const instance = this;
+        observers.push({ notify: () => callback([], this as unknown as ResizeObserver), observed: this.observed,
+          get disconnected() { return instance.disconnected; } });
+      }
+      observe(element: Element) { this.observed.add(element); }
+      unobserve(element: Element) { this.observed.delete(element); }
+      disconnect() { this.disconnected = true; }
+    });
+    try {
+      const user = userEvent.setup();
+      const { unmount } = render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithTwoRounds()} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      let contentHeight = 1600;
+      let viewportHeight = 500;
+      let viewportWidth = 700;
+      const latestNavigation = within(screen.getByRole('navigation', { name: '对话轮次' })).getAllByRole('button').at(-1)!;
+      const revealLatestNavigation = vi.fn();
+      Object.defineProperty(latestNavigation, 'scrollIntoView', { value: revealLatestNavigation });
+      let offset = 0;
+      Object.defineProperties(scroller, {
+        scrollHeight: { configurable: true, get: () => contentHeight },
+        clientHeight: { configurable: true, get: () => viewportHeight },
+        clientWidth: { configurable: true, get: () => viewportWidth },
+        scrollTop: { configurable: true, get: () => offset, set: value => { offset = Math.max(0, Math.min(value, contentHeight - viewportHeight)); } },
+        scrollTo: { configurable: true, value: ({ top }: ScrollToOptions) => { scroller.scrollTop = top ?? 0; } },
+      });
+      const resize = () => act(() => {
+        for (const observer of observers) if (!observer.disconnected && observer.observed.has(scroller)) observer.notify();
+      });
+      await waitFor(() => expect(scroller.scrollTop).toBe(1100));
+      fireEvent.scroll(scroller);
+      // Browsers may dispatch a layout-induced scroll before ResizeObserver.
+      revealLatestNavigation.mockClear();
+      viewportWidth = 320;
+      viewportHeight = 350;
+      contentHeight = 2200;
+      fireEvent.scroll(scroller);
+      resize();
+      expect(scroller.scrollTop).toBe(1850);
+      expect(revealLatestNavigation).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('button', { name: '回到最新' })).not.toBeInTheDocument();
+      contentHeight = 2600;
+      resize();
+      expect(scroller.scrollTop).toBe(2250);
+
+      fireEvent.scroll(scroller, { target: { scrollTop: 200 } });
+      contentHeight = 3200;
+      resize();
+      expect(scroller.scrollTop).toBe(200);
+      await user.click(screen.getByRole('button', { name: '回到最新' }));
+      await waitFor(() => expect(scroller.scrollTop).toBe(2850));
+      contentHeight = 3600;
+      resize();
+      expect(scroller.scrollTop).toBe(3250);
+      fireEvent.wheel(scroller, { deltaY: -150 });
+      scroller.scrollTop = 3100;
+      contentHeight = 4000;
+      fireEvent.scroll(scroller);
+      resize();
+      expect(scroller.scrollTop).toBe(3100);
+      expect(screen.getByRole('button', { name: '回到最新' })).toBeInTheDocument();
+      const owned = observers.filter(observer => observer.observed.has(scroller));
+      expect(owned).toHaveLength(1);
+      unmount();
+      expect(owned.every(observer => observer.disconnected)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('cancels a queued latest scroll when the reader moves upward', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++nextId, callback);
+      return nextId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    try {
+      render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithProgress('正在核对')} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      const scrollTo = vi.fn();
+      Object.defineProperties(scroller, { scrollTo: { value: scrollTo }, scrollHeight: { value: 1600 }, clientHeight: { value: 500 } });
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      act(() => { for (const frame of frames.values()) frame(0); frames.clear(); });
+      expect(scrollTo).not.toHaveBeenCalled();
+      fireEvent.scroll(scroller, { target: { scrollTop: 200 } });
+      fireEvent.click(screen.getByRole('button', { name: '回到最新' }));
+      fireEvent.keyDown(scroller, { key: 'PageUp' });
+      act(() => { for (const frame of frames.values()) frame(1); frames.clear(); });
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('presents routing progress without replacing the original activity evidence', () => {
+    const projection = projectionWithProgress('route_decision');
+    projection.activitiesById['activity-earth']!.kind = 'route_decision';
+    projection.activitiesById['activity-earth']!.payload.sourceEventType = 'route_decision';
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    expect(screen.getAllByText('已确认本轮分工').length).toBeGreaterThan(0);
+    expect(screen.queryByText('route_decision')).not.toBeInTheDocument();
+    expect(projection.activitiesById['activity-earth']!.summary).toBe('route_decision');
+  });
+
   it.each([false, true])('counts both routed planets including the moderator once (unknown lane: %s)', (includeUnknown) => {
     const room = roomWith([
       participant('participant-earth', 'session-earth', 0),

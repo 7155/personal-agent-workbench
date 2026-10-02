@@ -604,7 +604,7 @@ export function selectRoomParticipantPublicProgress(
       dispatchId: text(activity.payload.dispatchId),
       kind: roomParticipantProgressKind(activity.kind, sourceEventType, activityKind),
       status: activity.status,
-      summary: roomParticipantProgressSummary(activity.summary, sourceEventType, activity.kind),
+      summary: roomActivityPublicSummary(activity),
       data: activity.payload,
       updatedAtMs: activity.updatedAtMs ?? activity.createdAtMs,
     });
@@ -2608,17 +2608,15 @@ function roomParticipantProgressKind(
   return 'activity';
 }
 
-function roomParticipantProgressSummary(
-  value: string,
-  sourceEventType: string,
-  eventKind: string,
-): string {
-  const summary = value.trim();
+/** Display fallback for wire enums; the stored activity remains original evidence. */
+export function roomActivityPublicSummary(activity: RoomActivityProjection): string {
+  const sourceEventType = text(activity.payload.sourceEventType);
+  const eventKind = activity.kind;
+  const summary = activity.summary.trim();
   if (
     summary
     && summary !== sourceEventType
     && summary !== eventKind
-    && !/\b(?:participant|route|tool|turn)_[a-z_]+\b/iu.test(summary)
   ) return summary;
   if (sourceEventType === 'reasoning_summary') return '工作摘要已更新';
   if (['current_progress', 'progress'].includes(sourceEventType)) return '工作进度已更新';
