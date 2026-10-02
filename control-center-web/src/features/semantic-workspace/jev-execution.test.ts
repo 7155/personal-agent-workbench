@@ -13,6 +13,34 @@ export function graphList(...ids: string[]) {
 }
 
 describe('Jev execution receipts', () => {
+  it('keeps a stopped Root waiting for its original classifier without reviving cancelled tasks', () => {
+    const classifications = [{ requestId: 'original-classifier', graphId: 'graph-one', status: 'cancellation_requested' }];
+    const wire = graphFixture('graph-one', { stopped: true, running: [], effects: [],
+      tasks: [{ id: 'task-one', state: 'cancelled' }], classificationDrained: false,
+      pendingClassifications: classifications,
+    });
+    const pending = parseJevSnapshot(wire, 'graph-one');
+    expect(pending.pendingClassifications).toEqual(classifications);
+    expect(pending.classificationDrained).toBe(false);
+    expect(jevIsBusy(pending)).toBe(true);
+    expect(jevStatusLabel(pending)).toBe('正在停止，等待分类结束');
+    expect(jevTaskStage(pending.tasks[0], pending)).toBe('cancelled');
+    const settled = parseJevSnapshot({ ...wire, pendingClassifications: [], classificationDrained: true }, 'graph-one');
+    expect(jevIsBusy(settled)).toBe(false);
+    expect(jevStatusLabel(settled)).toBe('已停止');
+  });
+
+  it('retains an explicit unknown drain and accepts only classifier identities from this graph', () => {
+    const parsed = parseJevSnapshot(graphFixture('graph-one', { stopped: true, effects: [], classificationDrained: false,
+      pendingClassifications: [{ requestId: 'foreign', graphId: 'other', status: 'pending' },
+        { requestId: '', graphId: 'graph-one', status: 'pending' }],
+    }), 'graph-one');
+    expect(parsed.pendingClassifications).toEqual([]);
+    expect(jevIsBusy(parsed)).toBe(true);
+    const old = parseJevSnapshot(graphFixture('graph-one', { stopped: true, effects: [] }), 'graph-one');
+    expect(jevIsBusy(old)).toBe(false);
+    expect(jevStatusLabel(old)).toBe('已停止');
+  });
   it('keeps only room-owned attachment receipts for an older Jev input', () => {
     const graph = parseJevSnapshot(graphFixture('graph-one', { roomId: 'room-one', rootAttachmentReceipts: [
       { ownerType: 'room', roomId: 'room-one', mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 },

@@ -1,5 +1,5 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockControlTransport } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { HttpControlTransport } from '@/platform/http-transport';
@@ -16,6 +16,81 @@ const catalog = { ok: true, mode: 'jev', items: [
 afterEach(cleanup);
 
 describe('Jev snapshot lifecycle', () => {
+  it.each(['rejected', 'network'])('keeps an unconfirmed %s Stop on its original error path', async failure => {
+    const transport = new MockControlTransport({ routes: {
+      'agent.jev.get': (request: ControlRequest) => request.query?.graphId ? graph('current') : catalog,
+      'agent.jev.command': () => {
+        if (failure === 'network') throw new Error('offline response lost');
+        return { ok: false, status: 'unknown' };
+      },
+    } });
+    const { result } = renderHook(() => useJevExecution({ roomId: 'one', enabled: true, active: true, transport }));
+    await waitFor(() => expect(result.current.liveSnapshot?.graphId).toBe('current'));
+    await act(async () => result.current.stop());
+    expect(result.current.snapshot?.stopped).toBe(false);
+    expect(result.current.error).not.toBe('');
+    expect(transport.requests.filter(call => call.request.pathId === 'agent.jev.command')).toHaveLength(1);
+  });
+
+  it('observes an accepted Stop until its classifier settles without a second Stop', async () => {
+    let stopped = false;
+    let drained = false;
+    const transport = new MockControlTransport({ routes: {
+      'agent.jev.get': (request: ControlRequest) => request.query?.graphId ? {
+        ...graph('current'), stopped, classificationDrained: drained,
+        pendingClassifications: drained ? [] : [{ requestId: 'original', graphId: 'current', status: stopped ? 'cancellation_requested' : 'pending' }],
+      } : { ...catalog, items: [{ ...catalog.items[0], stopped }] },
+      'agent.jev.command': () => { stopped = true; return { ok: false, status: 'cancellation_pending', pendingTargets: ['classification'] }; },
+    } });
+    const { result } = renderHook(() => useJevExecution({ roomId: 'one', enabled: true, active: true, transport }));
+    await waitFor(() => expect(result.current.liveSnapshot?.graphId).toBe('current'));
+    await act(async () => result.current.stop());
+    expect(result.current.snapshot?.stopped).toBe(true);
+    expect(result.current.snapshot?.classificationDrained).toBe(false);
+    expect(result.current.busy).toBe(true);
+    expect(result.current.error).toBe('');
+    drained = true;
+    act(() => result.current.onEvents([{ payload: { status: 'jev_updated', classificationSettled: true, graphId: 'current' } }]));
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.snapshot?.stopped).toBe(true);
+    expect(transport.requests.filter(call => call.request.pathId === 'agent.jev.command')).toHaveLength(1);
+  });
+
+  it('polls a stopped historical classifier without replacing a newer completed live Root', async () => {
+    let drained = false;
+    const transport = new MockControlTransport({ routes: { 'agent.jev.get': (request: ControlRequest) => request.query?.graphId
+      ? request.query.graphId === 'current' ? graph('current', true) : { ...graph('history'), stopped: true,
+        classificationDrained: drained, pendingClassifications: drained ? [] : [{ requestId: 'old-original', graphId: 'history', status: 'cancellation_requested' }] }
+      : catalog,
+    } });
+    const { result } = renderHook(() => useJevExecution({ roomId: 'one', enabled: true, active: true, transport }));
+    await waitFor(() => expect(result.current.liveSnapshot?.graphId).toBe('current'));
+    act(() => result.current.selectGraph('history'));
+    await waitFor(() => expect(result.current.snapshot?.graphId).toBe('history'));
+    expect(result.current.busy).toBe(false);
+    vi.useFakeTimers();
+    try {
+      // Re-render under the fake clock so the existing observation timer is owned by it.
+      act(() => result.current.onEvents([{ payload: { status: 'jev_updated' } }]));
+      await act(async () => { await Promise.resolve(); });
+      const before = transport.requests.length;
+      drained = true;
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+      expect(transport.requests.length).toBeGreaterThan(before);
+      expect(result.current.snapshot?.classificationDrained).toBe(true);
+      expect(result.current.snapshot?.graphId).toBe('history');
+      expect(result.current.liveSnapshot?.graphId).toBe('current');
+      expect(result.current.busy).toBe(false);
+      act(() => result.current.onEvents([{ payload: { status: 'jev_updated', graphId: 'history', classificationSettled: true } }]));
+      await act(async () => { await Promise.resolve(); });
+      expect(result.current.liveSnapshot?.graphId).toBe('current');
+      const settledCount = transport.requests.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+      expect(transport.requests).toHaveLength(settledCount);
+      expect(transport.requests.every(call => call.request.pathId === 'agent.jev.get')).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([false, true])('follows a newly started Root unless history was explicitly selected (%s)', async explicitHistory => {
     let nextTurn = false;
     const transport = new MockControlTransport({ routes: { 'agent.jev.get': (request: ControlRequest) => request.query?.graphId

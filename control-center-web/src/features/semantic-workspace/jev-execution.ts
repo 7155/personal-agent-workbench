@@ -51,6 +51,8 @@ export interface JevSnapshot {
   currentRootObjective?: string;
   revisions?: { revisionId: string; status: string; changedTaskId: string; affectedTaskIds: string[]; retainedAcceptedTaskIds: string[]; successorTaskIds: string[]; successors?: Record<string, string> }[];
   reclaims?: { reclaimId: string; taskId: string; taskRevision: number; dispatchId: string; targetParticipantId: string; stage: 'awaiting_stop' | 'awaiting_assignment' }[];
+  pendingClassifications?: { requestId: string; graphId: string; status: 'pending' | 'cancellation_requested' }[];
+  classificationDrained?: boolean;
 }
 
 export const jevRecord = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -115,6 +117,11 @@ export function parseJevSnapshot(value: unknown, graphId: string): JevSnapshot {
     ).map(item => ({ mediaId: text(item.mediaId), roomId: text(item.roomId), fileName: text(item.fileName),
       mimeType: text(item.mimeType), byteSize: Number(item.byteSize) })),
     stopped: data.stopped === true, requirementsRevision: Number(data.requirementsRevision) || 0,
+    pendingClassifications: list(data.pendingClassifications).map(jevRecord).filter(item =>
+      text(item.requestId) && item.graphId === graphId && ['pending', 'cancellation_requested'].includes(text(item.status)),
+    ).map(item => ({ requestId: text(item.requestId), graphId,
+      status: item.status as 'pending' | 'cancellation_requested' })),
+    classificationDrained: typeof data.classificationDrained === 'boolean' ? data.classificationDrained : undefined,
     ready: strings(data.ready), running: strings(data.running), review: strings(data.review),
     tasks: activeTaskIds ? allTasks.filter(task => activeTaskIds.includes(task.id)) : allTasks,
     activeTaskIds, historicalTasks: activeTaskIds ? allTasks.filter(task => !activeTaskIds.includes(task.id)) : [],
@@ -176,8 +183,11 @@ export const jevAwaitingPlan = (graph: JevSnapshot | null) => Boolean(graph && !
   && (['awaiting_input', 'awaiting_approval', 'deferred'].includes(graph.phase)
     || ['awaiting_input', 'awaiting_approval', 'deferred'].includes(graph.planApproval?.status || '')));
 // Busy reserves the open Root for queueing/Stop, independently of motion.
-export const jevIsBusy = (graph: JevSnapshot | null) => Boolean(graph && !graph.final && ((!graph.stopped && !jevAwaitingPlan(graph))
-  || graph.running.length || graph.effects.some(effect => ['running', 'unknown'].includes(effect.executionStatus))));
+export const jevClassificationPending = (graph: JevSnapshot | null) => Boolean(graph
+  && (graph.classificationDrained === false || graph.pendingClassifications?.length));
+export const jevIsBusy = (graph: JevSnapshot | null) => Boolean(graph && (jevClassificationPending(graph)
+  || !graph.final && ((!graph.stopped && !jevAwaitingPlan(graph))
+    || graph.running.length || graph.effects.some(effect => ['running', 'unknown'].includes(effect.executionStatus)))));
 export function jevAbstention(graph: JevSnapshot | null): JevSnapshot['events'][number] | null {
   if (!graph || graph.final || graph.stopped || jevAwaitingPlan(graph) || graph.running.length) return null;
   // The server returns owner events newest first. An older abstention cannot
@@ -199,7 +209,8 @@ export function jevTaskCountLabel(graph: JevSnapshot | null) {
 }
 export function jevStatusLabel(graph: JevSnapshot | null, loading = false) {
   if (!graph) return loading ? '正在同步任务' : '从一个目标开始';
-  if (graph.stopped) return jevIsBusy(graph) ? '正在停止，等待执行回执' : '已停止';
+  if (graph.stopped) return jevClassificationPending(graph) ? '正在停止，等待分类结束'
+    : jevIsBusy(graph) ? '正在停止，等待执行回执' : '已停止';
   if (graph.final) return graph.final.status === 'completed' ? '结果已汇总' : '本次未完成';
   const approvalStatus = graph.planApproval?.status || graph.phase;
   if (jevAwaitingPlan(graph)) return approvalStatus === 'awaiting_input' ? '等待补充目标与范围'

@@ -3,7 +3,7 @@ import { commandJevAssignment, pendingJevAssignment, readJevAssignment, type Jev
 import { commandJevRevision, pendingJevRevision, readJevRevision } from './jev-task-revision';
 import type { ControlTransport } from '@/platform/transport';
 import { publicAgentErrorText } from '@/features/agent/public-error';
-import { acknowledgeJevAdmission, acknowledgeJevPlan, commandJevPlan, createJevWork, jevAbstention, jevAwaitingPlan, jevIsBusy, jevRecord, pendingJevInput, uncertainJevInput, uncertainJevPlan, parseJevList, parseJevSnapshot, type JevGraphItem, type JevSnapshot, type JevStrategy, type JevModelRouting, type JevToolApproval, type JevVerificationMode, type JevPlanAction, type JevPlanCommand } from './jev-execution';
+import { acknowledgeJevAdmission, acknowledgeJevPlan, commandJevPlan, createJevWork, jevAbstention, jevAwaitingPlan, jevClassificationPending, jevIsBusy, jevRecord, pendingJevInput, uncertainJevInput, uncertainJevPlan, parseJevList, parseJevSnapshot, type JevGraphItem, type JevSnapshot, type JevStrategy, type JevModelRouting, type JevToolApproval, type JevVerificationMode, type JevPlanAction, type JevPlanCommand } from './jev-execution';
 
 export function useJevExecution({ roomId, enabled, active, transport }: {
   roomId: string; enabled: boolean; active: boolean; transport: ControlTransport;
@@ -100,10 +100,10 @@ export function useJevExecution({ roomId, enabled, active, transport }: {
   // SSE owns prompt refresh; a bounded read-only poll covers an interrupted
   // stream or a missed terminal event. Hidden documents never poll.
   useEffect(() => {
-    if (!enabled || !active || loading || (!jevIsBusy(liveSnapshot) && !error)) return;
+    if (!enabled || !active || loading || (!jevIsBusy(liveSnapshot) && !jevClassificationPending(snapshot) && !error)) return;
     const timer = window.setTimeout(() => { void refresh(); }, 6000);
     return () => window.clearTimeout(timer);
-  }, [enabled, active, liveSnapshot, error, loading, refresh]);
+  }, [enabled, active, liveSnapshot, snapshot, error, loading, refresh]);
 
   const onEvents = useCallback((events: readonly unknown[]) => {
     if (events.some(value => { const event = jevRecord(value); const payload = jevRecord(event.payload);
@@ -154,7 +154,9 @@ export function useJevExecution({ roomId, enabled, active, transport }: {
       const result = jevRecord(await transport.request({ pathId: 'agent.jev.command', params: { roomId }, body: {
         action: 'stop', graphId: liveSnapshot.graphId, clientMessageId: `paw-jev-stop-${crypto.randomUUID()}`,
       } }));
-      if (result.ok === false) throw new Error('停止尚未确认，请重新同步。');
+      // The stopped business Root is confirmed; only its resources are still
+      // pending. Refresh that proof instead of treating Stop as unaccepted.
+      if (result.ok === false && result.status !== 'cancellation_pending') throw new Error('停止尚未确认，请重新同步。');
       if (matches()) await refresh(undefined, true);
     } catch (reason) { if (matches()) setError(publicAgentErrorText(reason, '停止请求尚未确认，请重新同步后核实。')); }
     finally { if (commandPending.current === command) commandPending.current = null; if (matchesScope()) setStopping(false); }
