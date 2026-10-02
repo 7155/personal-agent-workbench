@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRoomProjection, reduceRoomEvents } from '@/contracts/room-reducer';
 import { roomEventFixture } from '@/test/fixtures/events';
 import { parseJevSnapshot } from '@/features/semantic-workspace/jev-execution';
-import { collabDemoRoom, subagentRun } from './fixtures';
+import { collabDemoRoom, subagentRun } from '@/test/fixtures/collab-timeline';
 import { buildSessionCollabTimeline } from './session-timeline';
 import { buildRoomCollabTimeline } from './room-timeline';
 import { collabPhasesFromEvidence, collabFocusAt, collabLaneStateAt } from './model';

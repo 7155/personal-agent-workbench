@@ -94,7 +94,7 @@ describe('PAWOS native Apps', () => {
     const view = renderNative('project-workbench', nativeTransport(), { initialRoute: route });
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(view.container.querySelector(`.paw-workbench-migrated[data-page-id="${pageId}"]`)).not.toBeNull();
+    expect(view.container.querySelector(`.paw-workbench[data-page-id="${pageId}"]`)).not.toBeNull();
     expect(view.container.querySelector('.mgmt-page')).toBeNull();
   });
 

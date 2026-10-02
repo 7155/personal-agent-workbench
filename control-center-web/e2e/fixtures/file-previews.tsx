@@ -1,3 +1,4 @@
+import type { ControlRequest } from '@/platform/transport';
 import { createRoot } from 'react-dom/client';
 import { ControlTransportProvider } from '../../src/app/control-transport';
 import { TooltipProvider } from '../../src/components/primitives';
@@ -55,7 +56,7 @@ const inlineHtml = '<section><h2>页内 HTML 已渲染</h2><label>页内备注 <
 const largeHtml = `<!doctype html><html><body><h1>大型交互报告</h1><button type="button" onclick="document.querySelector('h1').textContent='大型报告脚本已运行'">运行脚本</button><!--${'x'.repeat(1_600_000)}--></body></html>`;
 const transport = new MockControlTransport({
   routes: {
-    'agent.media.preview': (request) => {
+    'agent.media.preview': (request: ControlRequest) => {
       const file = byMediaId.get(String(request.params?.mediaId ?? ''));
       if (!file || request.query?.sessionId !== sessionId) throw new Error('file preview denied');
       return preview(file);

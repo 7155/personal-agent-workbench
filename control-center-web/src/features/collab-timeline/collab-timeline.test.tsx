@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { collabDemoRoom, subagentRun } from './fixtures';
+import { collabDemoRoom, subagentRun } from '@/test/fixtures/collab-timeline';
 import { CollabTimelinePeek, CollabTimelineStage } from './CollabTimelineStage';
 import { collabLaneStateAt, collabTimeScale, COLLAB_GAP_MS } from './model';
 import { buildRoomCollabTimeline, ORIGIN_LANE } from './room-timeline';

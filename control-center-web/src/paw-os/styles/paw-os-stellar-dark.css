@@ -377,7 +377,7 @@
 
 /* Match the workspace-level light tokens: ancestor overrides cannot replace
    a custom property declared directly on the conversation workspace. */
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace, .paw-room-workspace--migrated-v1),
+:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace, .paw-room-workspace--conversation),
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-window-shell[data-app='agent'] .paw-window-titlebar[data-window-chrome] {
   --paw-chat-surface: var(--paw-stellar-surface);
   --paw-chat-surface-subtle: var(--paw-stellar-process);
@@ -508,11 +508,6 @@
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer {
   border-color: var(--paw-stellar-line);
   background: var(--paw-stellar-process);
-}
-
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__delivery button[aria-checked='true'] {
-  color: var(--paw-stellar-ink);
-  background: rgb(82 139 255 / 26%);
 }
 
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-user-message .agent-markdown {

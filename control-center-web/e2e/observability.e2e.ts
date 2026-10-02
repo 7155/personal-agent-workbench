@@ -10,7 +10,7 @@ test('runtime observation stays bounded and filters its causal trace', async ({
   );
 
   await page.goto('/#/observability');
-  const feature = page.locator('main[data-route-id="observability"]');
+  const feature = page.locator('.paw-window-body');
   await expect(feature).toBeVisible();
   await expectNoHorizontalPageOverflow(page);
   await expect(feature).toContainText('运行记录只保存状态、耗时、数量和脱敏后的标识');

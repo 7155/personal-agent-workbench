@@ -7,7 +7,7 @@ test('system Reduce Motion clamps route and indefinite animation', async ({ page
   await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
 
   await openAgentRoute(page);
-  const motion = await page.locator('main[data-route-id="agent"]').evaluate((element) => {
+  const motion = await page.locator('.paw-window-shell[data-app="agent"]').evaluate((element) => {
     const style = getComputedStyle(element);
     return {
       animationDuration: durationToMilliseconds(style.animationDuration),
@@ -51,11 +51,5 @@ test('explicit reduced preference wins over system full motion', async ({ page }
 });
 
 async function openAgentRoute(page: Page): Promise<void> {
-  const mobileNavigation = page.getByRole('navigation', { name: '快捷导航' });
-  if (await mobileNavigation.isVisible()) {
-    await mobileNavigation.getByRole('link', { name: '对话', exact: true }).click();
-    await expect(page.locator('main[data-route-id="agent"]')).toBeVisible();
-    return;
-  }
   await openRoute(page, 'agent');
 }

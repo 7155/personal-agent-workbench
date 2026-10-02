@@ -8,7 +8,7 @@
  * day-grouped history, the in-App destructive confirmations, and the
  * dismissible action receipt. Tab strip, toolbar, and omnibox base layout
  * plus their surface colours remain owned by paw-apps.css and
- * paw-os-tools-files-migrated-v1.css. Popover materials and saturated
+ * paw-os-tools-files.css. Popover materials and saturated
  * button colours read the shared OS control tokens (paw-os-controls.css)
  * with equivalent fallbacks for the standalone route.
  */

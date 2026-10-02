@@ -4,7 +4,7 @@ import { CollabTimelineOverlay, CollabTimelinePeek, CollabTimelineStage } from '
 import { roomPlanetAvatarRenderer } from '../../src/features/collab-timeline/RoomCollabTimeline';
 import { buildRoomCollabTimeline } from '../../src/features/collab-timeline/room-timeline';
 import { buildSessionCollabTimeline } from '../../src/features/collab-timeline/session-timeline';
-import { collabDemoRoom, subagentRun } from '../../src/features/collab-timeline/fixtures';
+import { collabDemoRoom, subagentRun } from '../../src/test/fixtures/collab-timeline';
 import '../../src/design/tokens.css';
 import '../../src/components/primitives/primitives.css';
 import './collab-timeline.css';

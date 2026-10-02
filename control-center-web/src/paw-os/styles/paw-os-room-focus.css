@@ -159,7 +159,7 @@
 :root[data-reduce-motion='true'] .paw-desktop-root .paw-room-focus-participants__traffic { transition: none; }
 
 .paw-desktop-root .paw-room-focus-overview {
-  /* One Room status palette (UR-057 / paw-os-room-migrated-v1): reuse the
+  /* One Room status palette (UR-057 / paw-os-room): reuse the
      desktop-scoped --room-* hues instead of a near-duplicate local set, so
      "running/waiting/blocked/complete" reads as the exact same colour in the
      Focus console, the chronology work-strip and the flow ledger. */

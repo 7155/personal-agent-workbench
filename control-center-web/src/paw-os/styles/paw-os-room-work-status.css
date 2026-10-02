@@ -67,7 +67,7 @@
   .paw-room-work-status *, .paw-assignment *, .paw-room-focus-participants * { animation: none !important; transition: none !important; }
 }
 
-.paw-desktop-root .paw-room-workspace--migrated-v1 .paw-room-workspace__composer > .paw-room-work-status { width: min(742px, 100%); margin-inline: auto; }
+.paw-desktop-root .paw-room-workspace--conversation .paw-room-workspace__composer > .paw-room-work-status { width: min(742px, 100%); margin-inline: auto; }
 
 :root[data-reduce-motion='true'] .paw-room-work-status *,
 :root[data-reduce-motion='true'] .paw-assignment *,

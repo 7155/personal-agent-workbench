@@ -1,4 +1,5 @@
 import { GripVertical } from 'lucide-react';
+import './workspace-pane-resizer.css';
 import { useEffect, useRef } from 'react';
 
 export interface WorkspacePaneResizerConfig {

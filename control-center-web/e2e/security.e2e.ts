@@ -12,7 +12,7 @@ test('strict CSP stays eval-free and still permits the React app to boot', async
   });
 
   await page.goto('/#/overview');
-  await expect(page.locator('main[data-route-id="overview"]')).toBeVisible();
+  await expect(page.locator('.paw-workbench')).toBeVisible();
 
   const contentSecurityPolicy = await page
     .locator('meta[http-equiv="Content-Security-Policy"]')
@@ -32,7 +32,7 @@ test('strict CSP stays eval-free and still permits the React app to boot', async
 test('browser preview does not expose the native message handler', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one browser capability gate is sufficient');
   await page.goto('/#/overview');
-  await expect(page.locator('main[data-route-id="overview"]')).toBeVisible();
+  await expect(page.locator('.paw-workbench')).toBeVisible();
 
   const state = await page.evaluate(() => ({
     nativeHandler: Boolean(

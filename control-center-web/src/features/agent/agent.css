@@ -1,188 +1,5 @@
-/* Shell, rail chrome, floating header, turn measure, user bubble and composer
-   are declared once in src/design/workspace.css so Session and Room cannot
-   drift. Only Session-specific structure lives here. */
-.agent-feature__title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.shell-route-stage > main.agent-feature {
-  --agent-rail-width: 280px;
-  --agent-status-width: 312px;
-  grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) 0;
-}
-
-.shell-route-stage > main.agent-feature[data-side-panel='subagents'] {
-  --agent-status-width: min(480px, 38vw);
-}
-
-.shell-route-stage > main.agent-feature[data-status-open='true'] { grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) var(--agent-status-width); }
-.shell-route-stage > main.agent-feature[data-rail-open='false'] { grid-template-columns: 0 minmax(0, 1fr) 0; }
-.shell-route-stage > main.agent-feature[data-rail-open='false'][data-status-open='true'] { grid-template-columns: 0 minmax(0, 1fr) var(--agent-status-width); }
-.agent-feature[data-rail-open='false'] .agent-session-rail { overflow: hidden; border-right: 0; opacity: 0; pointer-events: none; transform: translateX(-4px); }
-
-.agent-session-rail {
-  grid-column: 1;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  transition:
-    transform var(--duration-panel) var(--ease-standard),
-    opacity var(--duration-enter) var(--ease-standard),
-    box-shadow var(--duration-enter) var(--ease-standard);
-}
-
-.agent-session-rail > header > div { display: grid; gap: 2px; }
-.agent-session-rail__actions { display: flex; align-items: center; gap: 3px; }
-.agent-session-rail__close { display: none; }
-.agent-rail-backdrop { display: none; }
-
-.agent-session-search { display: flex; height: 32px; align-items: center; gap: 7px; margin: 0 10px 8px; padding: 0 9px; border: 1px solid transparent; border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text-tertiary); }
-.agent-session-search:focus-within { border-color: var(--color-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus) 14%, transparent); }
-/* Stretch to the search row's full 32px rather than sitting as a 21px line box
-   inside it, so the whole visible field is clickable, not just its text line. */
-.agent-session-search input { width: 100%; min-width: 0; align-self: stretch; border: 0; outline: 0; background: transparent; font-size: 13px; }
-.agent-session-list { min-width: 0; min-height: 0; flex: 1; padding: 0 7px 12px; overflow-x: hidden; overflow-y: auto; }
-.agent-session-list__state { display: grid; justify-items: start; gap: var(--space-2); margin: var(--space-2); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-surface-subtle); }
-.agent-session-list__state[role='alert'] { border-color: var(--color-danger-border); background: var(--color-danger-soft); }
-.agent-session-list__state > span { display: grid; width: var(--space-8); height: var(--space-8); place-items: center; border-radius: var(--radius-round); background: var(--color-surface); color: var(--color-text-tertiary); }
-.agent-session-list__state > strong { color: var(--color-text); font-size: var(--font-size-ui-strong); }
-.agent-session-list__state > small { color: var(--color-text-secondary); font-size: var(--font-size-caption); line-height: var(--line-height-ui); overflow-wrap: anywhere; }
-.agent-session-list__state[role='alert'] > strong,
-.agent-session-list__state[role='alert'] > small { color: var(--color-danger); }
-.agent-session-project { display: grid; min-width: 0; gap: 1px; margin-bottom: 7px; }
-.agent-session-project__toggle {
-  display: grid;
-  width: 100%;
-  min-height: 34px;
-  grid-template-columns: 14px 17px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--color-text-secondary);
-  text-align: left;
-  cursor: pointer;
-}
-.agent-session-project__toggle:hover { background: var(--color-surface-hover); }
-.agent-session-project__toggle:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
-.agent-session-project__toggle svg { color: var(--color-text-tertiary); }
-.agent-session-project__toggle strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-session-project__toggle small { min-width: 18px; color: var(--color-text-tertiary); font: var(--font-weight-semibold) 13px var(--font-mono); text-align: right; }
-.agent-session-project[data-selected='true'] .agent-session-project__toggle { color: var(--color-text); }
-.agent-session-project__sessions { display: grid; min-width: 0; gap: 1px; }
-.agent-session-project__sessions[hidden] { display: none; }
-.agent-session-project .agent-session-row { padding-left: 15px; }
-.agent-session-row-shell {
-  display: grid;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 56px;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  border-radius: var(--radius-2);
-  transition: background-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
-}
-.agent-session-row-shell:has(> .agent-session-row__menu) {
-  grid-template-columns: minmax(0, 1fr) var(--control-height-sm);
-}
-.agent-session-row-shell[data-selected='true'] { background: var(--color-accent-soft); box-shadow: inset 3px 0 0 var(--color-accent); }
-.agent-session-row {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  min-height: 56px;
-  grid-template-columns: 7px minmax(0, 1fr);
-  align-items: start;
-  gap: 7px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  transition: transform var(--duration-press) var(--ease-press), box-shadow var(--duration-enter) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
-}
-.agent-session-row:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
-.agent-session-row:active { box-shadow: var(--shadow-control-press); transform: translateY(1px); }
-.agent-session-row[aria-current='true'] { background: var(--color-accent-soft); }
-.agent-session-row-shell[data-selected='true'] .agent-session-row[aria-current='true'] { background: transparent; }
-.agent-session-row__menu {
-  align-self: center;
-  justify-self: center;
-  opacity: 1;
-  transition: opacity var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
-}
-.agent-session-row__menu:focus-visible { outline-offset: -2px; }
-.agent-session-row__delete { color: var(--color-danger); }
-.agent-session-delete-dialog__error { margin: 0; padding: 8px 10px; border-radius: var(--radius-1); background: var(--color-danger-soft); color: var(--color-danger); font-size: 13px; }
-.agent-session-row-shell:has(.agent-session-row__status[data-status='archived']) { opacity: .72; }
-.agent-session-row__status { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--color-border-strong); }
-.agent-session-row__status[data-status='busy'] { background: var(--color-info); }
-.agent-session-row__status[data-status='active'] { background: var(--color-success); }
-.agent-session-row__status[data-status='faulted'] { background: var(--color-danger); }
-.agent-session-row__copy { display: grid; min-width: 0; gap: 3px; }
-.agent-session-row__heading { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px; }
-.agent-session-row__copy strong,
-.agent-session-row__copy small { overflow: hidden; text-overflow: ellipsis; }
-.agent-session-row__copy strong {
-  display: -webkit-box;
-  font-size: 13px;
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.3;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.agent-session-row__copy small {
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-caption);
-  line-height: var(--line-height-compact);
-  white-space: nowrap;
-}
-.agent-session-row-shell[data-selected='true'] .agent-session-row__copy small,
-.agent-session-row-shell[data-selected='true'] .agent-session-row time { color: var(--color-text-secondary); }
-.agent-session-row time {
-  color: var(--color-text-tertiary);
-  font-family: var(--font-ui);
-  font-size: var(--font-size-caption);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-.agent-conversation { width: 100%; height: 100%; grid-column: 2; grid-row: 1; }
-.agent-conversation::after { display: none; content: ''; }
-.agent-conversation > .agent-timeline { min-height: 0; grid-row: 1; overflow: hidden; }
-.agent-conversation > .agent-composer-dock,
-.agent-conversation > .agent-composer-wrap { position: absolute; z-index: 6; right: 0; bottom: 0; left: 0; min-height: 0; }
 .agent-composer-dock { display: grid; min-width: 0; pointer-events: none; }
 .agent-composer-dock > * { pointer-events: auto; }
-.agent-conversation-state { display: grid; min-height: 0; grid-row: 1; place-items: center; padding: var(--space-6); overflow: auto; }
-.agent-conversation__header > span { display: grid; min-width: 0; gap: 1px; }
-.agent-conversation__header > span > small { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
-.agent-context-snapshot-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: var(--color-info); }
-.agent-context-snapshot-state::before { width: 5px; height: 5px; border-radius: 50%; background: currentColor; content: ''; }
-.agent-context-snapshot-state[data-state='restoring']::before { animation: agent-status-breathe 1.4s ease-in-out infinite; }
-.agent-context-snapshot-state[data-state='partial'] { color: var(--color-warning); }
-.agent-conversation__header p { display: flex; min-width: 0; max-width: 50%; align-items: center; gap: 6px; margin: 0 0 0 auto; color: var(--color-danger); font-size: 13px; }
-.agent-conversation__header p > svg { flex: 0 0 auto; }
-.agent-conversation__header p > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-conversation__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; margin-left: auto; }
-.agent-status-toggle { flex: 0 0 auto; }
-.agent-conversation__header p + .agent-conversation__actions { margin-left: 0; }
-
-@media (min-width: 761px) {
-  .agent-conversation__actions { margin-right: var(--workspace-global-actions-clearance); }
-}
 
 .agent-fork-dialog { width: min(720px, calc(100vw - 32px)); }
 .agent-fork-dialog .ui-dialog__title { display: flex; align-items: center; gap: 8px; }
@@ -201,40 +18,9 @@
 .agent-fork-dialog__status { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--color-text-secondary); font-size: 13px; }
 .agent-fork-dialog__status svg { flex: 0 0 auto; animation: agent-status-spin 1.2s linear infinite; }
 .agent-fork-dialog__error { margin: 0; border-left: 3px solid var(--color-danger); padding: 9px 11px; background: var(--color-danger-soft); color: var(--color-danger); font-size: 13px; }
-.agent-session-delete-dialog__error { margin: 0; padding: 8px 10px; border-radius: var(--radius-1); background: var(--color-danger-soft); color: var(--color-danger); font-size: 13px; }
 .agent-fork-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
 .agent-fork-dialog footer svg { animation: none; }
 .agent-fork-dialog footer button[data-loading='true'] svg { animation: agent-status-spin 1.2s linear infinite; }
-.agent-new-task-dialog { width: min(600px, calc(100vw - 32px)); }
-.agent-new-task-dialog .ui-dialog__title { display: flex; align-items: center; gap: 8px; }
-.agent-new-task-dialog__projects { display: grid; gap: 8px; }
-.agent-new-task-dialog__projects > header { display: flex; align-items: baseline; justify-content: space-between; }
-.agent-new-task-dialog__projects > header strong { font-size: 13px; }
-.agent-new-task-dialog__projects > header small { color: var(--color-text-tertiary); font-size: 13px; }
-.agent-new-task-dialog__projects [role='radiogroup'] { display: grid; max-height: 196px; gap: 1px; overflow-y: auto; border-block: 1px solid var(--color-border); }
-.agent-new-task-dialog__projects [role='radio'],
-.agent-new-task-dialog__picked { display: grid; width: 100%; min-width: 0; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 8px; border: 0; border-left: 3px solid transparent; padding: 8px 9px 8px 7px; background: transparent; color: inherit; text-align: left; }
-.agent-new-task-dialog__projects [role='radio'] { cursor: pointer; }
-.agent-new-task-dialog__projects [role='radio']:hover { background: var(--color-surface-hover); }
-.agent-new-task-dialog__projects [role='radio'][data-state='checked'] { border-left-color: var(--color-accent); background: var(--color-accent-soft); }
-.agent-new-task-dialog__projects [role='radio'] > span,
-.agent-new-task-dialog__picked > span { display: grid; min-width: 0; gap: 2px; }
-.agent-new-task-dialog__projects [role='radio'] strong,
-.agent-new-task-dialog__picked strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-new-task-dialog__projects [role='radio'] small,
-.agent-new-task-dialog__picked small { overflow: hidden; color: var(--color-text-tertiary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-new-task-dialog__projects > .ui-button { justify-self: start; }
-.agent-new-task-dialog__permissions { display: grid; gap: 8px; }
-.agent-new-task-dialog__permissions > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.agent-new-task-dialog__permissions > header strong { font-size: 13px; }
-.agent-new-task-dialog__permissions > header small { color: var(--color-text-tertiary); font-size: 13px; }
-.agent-new-task-dialog__permissions [role='radiogroup'] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.agent-new-task-dialog__permissions [role='radio'] { display: grid; min-width: 0; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 7px; padding: 9px; border: 1px solid var(--color-border); border-radius: var(--radius-1); background: transparent; color: inherit; text-align: left; cursor: pointer; }
-.agent-new-task-dialog__permissions [role='radio'][data-state='checked'] { border-color: var(--color-accent); background: var(--color-accent-soft); }
-.agent-new-task-dialog__permissions [role='radio']:disabled { opacity: .48; cursor: not-allowed; }
-.agent-new-task-dialog__permissions [role='radio'] > span { display: grid; min-width: 0; gap: 3px; }
-.agent-new-task-dialog__permissions [role='radio'] strong { font-size: 13px; }
-.agent-new-task-dialog__permissions [role='radio'] small { color: var(--color-text-tertiary); font-size: 12px; line-height: 1.35; }
 .agent-timeline { position: relative; display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .agent-timeline > div:first-child { height: 100%; }
 .agent-timeline__header-space { height: calc(var(--workspace-header-height) + 8px); }
@@ -293,7 +79,8 @@
 .agent-goal-budget { display: grid; gap: 9px; margin-top: 11px; }
 .agent-goal-budget > div { display: grid; gap: 5px; }
 .agent-goal-budget > div > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.agent-goal-budget small, .agent-goal-unbounded { color: var(--color-text-tertiary); font-size: 12px; }
+.agent-goal-budget small,
+.agent-goal-unbounded { color: var(--color-text-tertiary); font-size: 12px; }
 .agent-goal-budget strong { color: var(--color-text-secondary); font: var(--font-weight-semibold) 12px var(--font-mono); }
 .agent-goal-budget i { display: block; height: 4px; overflow: hidden; border-radius: 2px; background: var(--color-border); }
 .agent-goal-budget i b { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
@@ -305,7 +92,8 @@
 .agent-goal-cancel-editor > small { color: var(--color-text-tertiary); font-size: var(--text-label); line-height: var(--line-height-ui); }
 .agent-goal-criteria { display: grid; gap: var(--space-1); margin-top: var(--space-2); padding-left: var(--space-2); border-left: var(--radius-1) solid var(--color-border-strong); }
 .agent-goal-criteria strong { color: var(--color-text-secondary); font-size: var(--text-label); }
-.agent-goal-criteria span, .agent-goal-criteria li { color: var(--color-text-tertiary); font-size: var(--text-label); line-height: var(--line-height-ui); overflow-wrap: anywhere; }
+.agent-goal-criteria span,
+.agent-goal-criteria li { color: var(--color-text-tertiary); font-size: var(--text-label); line-height: var(--line-height-ui); overflow-wrap: anywhere; }
 .agent-goal-criteria ul { display: grid; gap: var(--space-1); margin: 0; padding-left: var(--space-4); }
 .agent-goal-audit--cancelled > strong { color: var(--color-warning); }
 .agent-workflow-error { margin: 9px 0 0; padding: 7px 8px; border-left: 3px solid var(--color-danger); background: var(--color-danger-soft); color: var(--color-danger); font-size: 12px; line-height: 1.4; }
@@ -351,7 +139,8 @@
   box-shadow: none;
   animation: agent-message-enter var(--duration-enter) var(--ease-standard) both;
 }
-.agent-user-message .agent-markdown > :first-child, .agent-user-message .agent-markdown > :last-child { margin-block: 0; }
+.agent-user-message .agent-markdown > :first-child,
+.agent-user-message .agent-markdown > :last-child { margin-block: 0; }
 .agent-user-message > small { display: block; margin-top: 6px; color: var(--color-text-tertiary); font-size: 12px; }
 .agent-user-message > .agent-user-message__delivery { width: fit-content; max-width: 100%; border-left: 2px solid var(--color-accent); padding-left: 6px; color: var(--color-text-secondary); font-size: var(--font-size-caption); overflow-wrap: anywhere; }
 .agent-user-message > .agent-user-message__delivery[data-delivery='followUp'] { border-left-color: var(--color-success); }
@@ -372,10 +161,6 @@
 .agent-assistant-message-shell { position: relative; min-width: 0; }
 .agent-assistant-message-shell[data-actions='true'] { margin-bottom: 20px; }
 .agent-assistant-message { min-width: 0; padding: 2px 0 8px; }
-.agent-stream-rate { display: inline-flex; width: fit-content; align-items: center; gap: 5px; margin: 5px 0 0 var(--space-2); color: var(--color-text-tertiary); font: var(--font-weight-semibold) 12px var(--font-mono); }
-.agent-stream-rate > i { width: 5px; height: 5px; border-radius: 50%; background: var(--color-text-tertiary); box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 36%, transparent); animation: agent-rate-pulse 1.25s ease-in-out infinite; }
-.agent-stream-rate[data-band='medium'] > i { background: var(--color-info); }
-.agent-stream-rate[data-band='fast'] > i { background: var(--color-success); }
 @keyframes agent-rate-pulse {
   0%, 100% { opacity: .55; box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 24%, transparent); }
   50% { opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 0%, transparent); }
@@ -385,12 +170,6 @@
 .agent-message-usage span + span::before,
 .agent-message-usage strong::before { margin-right: 7px; color: var(--color-border-strong); content: '·'; }
 .agent-message-usage strong { color: var(--color-success); font-weight: var(--font-weight-semibold); }
-/* Which model answered is the one fact in this row a reader actually scans for,
-   and it is the only one that can change between two adjacent turns. Left at
-   tertiary it sat at exactly the weight of "输出 96", so a mid-conversation
-   model switch was invisible without comparing two rows character by character.
-   Secondary text is enough to separate identity from telemetry without turning
-   a quiet footer into a second headline. */
 .agent-message-usage__model { color: var(--color-text-secondary); }
 .agent-compaction-notice { position: relative; display: grid; min-height: 50px; max-width: 620px; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 9px; margin: 4px 0 12px; padding: 8px 10px; overflow: hidden; border: 1px solid var(--color-border); border-left: 3px solid var(--color-warning); border-radius: 5px; background: color-mix(in srgb, var(--color-warning-soft) 44%, var(--color-surface)); animation: agent-autocompact-enter var(--duration-enter) var(--ease-standard) both; }
 .agent-compaction-notice[data-state='failed'] { border-left-color: var(--color-danger); background: var(--color-danger-soft); }
@@ -412,9 +191,6 @@
 .agent-compaction-notice small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-compaction-notice strong { font-size: 13px; }
 .agent-compaction-notice small { color: var(--color-text-secondary); font-size: 13px; line-height: 1.35; }
-/* Jump destination: a margin rule appears and a wash settles into the paper —
-   brief, non-flashing emphasis with spatial continuity. Reduced motion gets
-   the rule alone via the global animation reset. */
 .agent-user-message-shell[data-history-target='true'],
 .agent-assistant-message[data-history-target='true'] {
   border-radius: var(--radius-1);
@@ -426,9 +202,6 @@
   from { background-color: color-mix(in srgb, var(--color-accent-soft) 55%, transparent); }
   to { background-color: transparent; }
 }
-/* Shared stellar activity: a still illuminated nucleus and one orbit layer.
-   Thinking uses spiral arms; Tool execution uses satellites. Continuous
-   linear revolution indicates ongoing work, not a transition delay. */
 .paw-conv-planet {
   --paw-planet-size: 20px;
   --paw-planet-core: var(--color-accent);
@@ -538,33 +311,21 @@
 .agent-turn__failure small { color: var(--color-text-secondary); font-size: 12.5px; line-height: 1.35; }
 .agent-turn__failure-actions { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 5px; }
 
-.agent-welcome { display: grid; height: 100%; place-content: center; justify-items: center; gap: 18px; padding: 24px; text-align: center; }
-.agent-welcome h2 { margin: 0; font-family: var(--font-sans); font-size: var(--font-size-title); font-weight: var(--font-weight-semibold); letter-spacing: var(--tracking-heading); }
-.agent-welcome p { margin: 6px 0 0; color: var(--color-text-secondary); font-size: var(--font-size-ui); }
-.agent-welcome__suggestions { display: grid; width: min(100%, 560px); grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-/* Starter prompts read as quiet chips: bordered so they announce themselves
-   as tappable, surfaced so they sit on the paper rather than float as bare
-   links. Hover raises the fill only — no lift. */
-.agent-welcome__suggestions .ui-button {
-  min-height: 44px;
-  justify-content: flex-start;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-surface);
-}
-.agent-welcome__suggestions .ui-button:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
-
 .agent-blocks { width: 100%; max-width: 100%; min-width: 0; }
 .agent-markdown { min-width: 0; max-width: 100%; color: var(--color-text); font-family: var(--font-sans); font-size: var(--font-size-chat); font-weight: var(--font-weight-regular); line-height: var(--line-height-chat); letter-spacing: -.004em; overflow-wrap: anywhere; word-break: break-word; }
-.agent-markdown h1, .agent-markdown h2, .agent-markdown h3 { margin: 15px 0 6px; font-family: var(--font-sans); font-size: 17px; font-weight: 600; line-height: 1.42; letter-spacing: -.014em; }
+.agent-markdown h1,
+.agent-markdown h2,
+.agent-markdown h3 { margin: 15px 0 6px; font-family: var(--font-sans); font-size: 17px; font-weight: 600; line-height: 1.42; letter-spacing: -.014em; }
 .agent-markdown p { margin: 0 0 8px; }
-.agent-markdown ul, .agent-markdown ol { margin: 4px 0 9px; padding-left: 22px; }
+.agent-markdown ul,
+.agent-markdown ol { margin: 4px 0 9px; padding-left: 22px; }
 .agent-markdown blockquote { margin: 10px 0; padding-left: 12px; border-left: 3px solid var(--color-border-strong); color: var(--color-text-secondary); }
 .agent-markdown :not(pre) > code { padding: 1px 4px; border-radius: 4px; background: var(--color-surface-subtle); font-family: var(--font-mono); font-size: .9em; }
 .agent-markdown a { display: inline-flex; align-items: baseline; gap: 3px; color: var(--color-accent); }
 .agent-markdown table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
 .agent-markdown > table { display: block; max-width: 100%; margin: 10px 0; overflow-x: auto; }
-.agent-markdown th, .agent-markdown td { padding: 6px 9px; border: 1px solid var(--color-border); text-align: left; }
+.agent-markdown th,
+.agent-markdown td { padding: 6px 9px; border: 1px solid var(--color-border); text-align: left; }
 
 .agent-trace-diagnostic-receipt {
   display: grid;
@@ -640,31 +401,28 @@
 .agent-code-block pre { max-width: 100%; max-height: min(440px, 64dvh); margin: 0; padding: 13px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; font: 13px/1.55 var(--font-mono); white-space: pre; }
 .agent-code-block pre:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -3px; }
 .agent-code-block__content { display: block; width: max-content; min-width: 100%; padding: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; overflow-wrap: normal; }
-/* Highlighted settled reader: same bounded scroll box as the plain pre; the
-   surface stays on the paired code tokens while shiki only colours tokens. */
 .agent-code-block__highlight { max-width: 100%; max-height: min(440px, 64dvh); margin: 0; padding: 13px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; font: 13px/1.55 var(--font-mono); }
 .agent-code-block__highlight:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -3px; }
 .agent-code-block__highlight pre { width: max-content; min-width: 100%; margin: 0; padding: 0; background: transparent; color: inherit; font: inherit; white-space: pre; }
 .agent-code-block__highlight code { display: block; padding: 0; border-radius: 0; background: transparent; font: inherit; overflow-wrap: normal; }
-.agent-citation, .agent-inline-notice, .agent-audio-block { display: flex; width: min(100%, 620px); max-width: 620px; box-sizing: border-box; align-items: center; gap: 10px; margin: 8px 0; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-2); overflow: hidden; background: var(--color-surface-subtle); text-decoration: none; }
+.agent-citation,
+.agent-inline-notice { display: flex; width: min(100%, 620px); max-width: 620px; box-sizing: border-box; align-items: center; gap: 10px; margin: 8px 0; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-2); overflow: hidden; background: var(--color-surface-subtle); text-decoration: none; }
 .agent-citation > span:nth-child(2) { display: grid; min-width: 0; flex: 1; gap: 2px; }
 .agent-citation strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-citation small, .agent-citation q { overflow: hidden; color: var(--color-text-tertiary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-citation small,
+.agent-citation q { overflow: hidden; color: var(--color-text-tertiary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .agent-media-error > span { display: grid; min-width: 0; flex: 1; gap: var(--space-1); }
 .agent-media-error strong { color: var(--color-text); font-size: var(--text-ui); line-height: var(--text-ui-lh); }
 .agent-media-error small { color: var(--color-text-secondary); font-size: var(--text-label); line-height: var(--text-label-lh); overflow-wrap: anywhere; }
 .agent-citation__index { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--color-info-soft); color: var(--color-info); font: var(--font-weight-semibold) 13px var(--font-mono); }
-.agent-media-block { max-width: 420px; margin: 10px 0; }
-.agent-media-block img { display: block; width: 100%; height: auto; max-height: 340px; border-radius: var(--radius-2); object-fit: contain; background: var(--color-surface-subtle); }
-.agent-media-block figcaption { margin-top: 5px; color: var(--color-text-tertiary); font-size: 13px; }
 .agent-sticker-block { width: 112px; height: 112px; object-fit: contain; }
-.agent-audio-block { display: grid; }
-.agent-audio-block figcaption { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.agent-audio-block audio { width: min(100%, 420px); }
 .agent-task-plan { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--color-project); background: var(--color-project-soft); }
 .agent-task-plan strong { font-size: 13px; }
 .agent-task-plan ol { margin: 7px 0 0; padding-left: 20px; font-size: 13px; }
-.agent-rich-card, .agent-rich-artifact, .agent-rich-status, .agent-rich-collapsible { width: min(100%, 620px); max-width: 100%; box-sizing: border-box; margin: 9px 0; border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-surface-subtle); }
+.agent-rich-card,
+.agent-rich-artifact,
+.agent-rich-status,
+.agent-rich-collapsible { width: min(100%, 620px); max-width: 100%; box-sizing: border-box; margin: 9px 0; border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-surface-subtle); }
 .agent-rich-card { padding: 11px 12px; border-left: 3px solid var(--color-info); }
 .agent-rich-card[data-tone='success'] { border-left-color: var(--color-success); }
 .agent-rich-card[data-tone='warning'] { border-left-color: var(--color-warning); }
@@ -675,10 +433,14 @@
 .agent-tool-preview .agent-markdown { font-family: var(--font-sans); letter-spacing: -.004em; }
 .agent-user-message .agent-markdown { font-size: var(--font-size-chat); line-height: var(--line-height-chat); }
 .agent-rich-card > .agent-markdown { font-size: 13px; line-height: 1.55; }
-.agent-rich-card dl, .agent-rich-status dl { display: grid; gap: 4px; margin: 8px 0 0; }
-.agent-rich-card dl > div, .agent-rich-status dl > div { display: grid; min-width: 0; grid-template-columns: minmax(76px, auto) minmax(0, 1fr); gap: 8px; }
-.agent-rich-card dt, .agent-rich-status dt { color: var(--color-text-tertiary); }
-.agent-rich-card dd, .agent-rich-status dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.agent-rich-card dl,
+.agent-rich-status dl { display: grid; gap: 4px; margin: 8px 0 0; }
+.agent-rich-card dl > div,
+.agent-rich-status dl > div { display: grid; min-width: 0; grid-template-columns: minmax(76px, auto) minmax(0, 1fr); gap: 8px; }
+.agent-rich-card dt,
+.agent-rich-status dt { color: var(--color-text-tertiary); }
+.agent-rich-card dd,
+.agent-rich-status dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .agent-rich-collapsible { overflow: hidden; }
 .agent-rich-collapsible > summary { display: grid; min-height: 40px; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; }
 .agent-rich-collapsible > summary::-webkit-details-marker { display: none; }
@@ -686,77 +448,63 @@
 .agent-rich-collapsible > summary > svg { color: var(--color-accent); }
 .agent-rich-collapsible > summary > small { color: var(--color-text-tertiary); font-size: 12px; font-weight: 500; }
 .agent-rich-checklist .ui-disclosure__reveal > div > ul { display: grid; gap: 0; margin: 0; padding: 0 10px 8px; list-style: none; }
-.agent-rich-checklist .ui-disclosure__reveal > div > p, .agent-rich-table .ui-disclosure__reveal > div > p { margin: 0; padding: 0 10px 10px; color: var(--color-text-tertiary); font-size: 13px; }
+.agent-rich-checklist .ui-disclosure__reveal > div > p,
+.agent-rich-table .ui-disclosure__reveal > div > p { margin: 0; padding: 0 10px 10px; color: var(--color-text-tertiary); font-size: 13px; }
 .agent-rich-checklist li { display: grid; min-height: 34px; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 7px; border-top: 1px solid var(--color-border); font-size: 13px; }
 .agent-rich-checklist li > span:first-child { display: grid; place-items: center; color: var(--color-success); }
 .agent-rich-checklist li[data-checked='true'] > span:last-child { color: var(--color-text-secondary); text-decoration: line-through; }
 .agent-rich-checklist__empty { width: 13px; height: 13px; border: 1px solid var(--color-border-strong); border-radius: 3px; }
 .agent-rich-table .ui-disclosure__reveal > div > div { max-width: 100%; max-block-size: min(56dvh, 520px); overflow: auto; overscroll-behavior: contain; border-top: 1px solid var(--color-border); }
 .agent-rich-table table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 13px; }
-.agent-rich-table th, .agent-rich-table td { max-width: 320px; padding: 7px 9px; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); text-align: left; overflow-wrap: anywhere; }
-.agent-rich-table th:last-child, .agent-rich-table td:last-child { border-right: 0; }
+.agent-rich-table th,
+.agent-rich-table td { max-width: 320px; padding: 7px 9px; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); text-align: left; overflow-wrap: anywhere; }
+.agent-rich-table th:last-child,
+.agent-rich-table td:last-child { border-right: 0; }
 .agent-rich-table th { background: var(--color-surface); color: var(--color-text-secondary); }
-.agent-rich-artifact, .agent-rich-status { display: grid; min-height: 52px; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 10px; }
-.agent-rich-artifact > svg, .agent-rich-status > svg { color: var(--color-accent); }
-.agent-rich-artifact > span, .agent-rich-status > span { display: grid; min-width: 0; gap: 2px; }
-.agent-rich-artifact strong, .agent-rich-status strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-rich-artifact small, .agent-rich-status small { color: var(--color-text-tertiary); font-size: 13px; overflow-wrap: anywhere; }
+.agent-rich-artifact,
+.agent-rich-status { display: grid; min-height: 52px; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 10px; }
+.agent-rich-artifact > svg,
+.agent-rich-status > svg { color: var(--color-accent); }
+.agent-rich-artifact > span,
+.agent-rich-status > span { display: grid; min-width: 0; gap: 2px; }
+.agent-rich-artifact strong,
+.agent-rich-status strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-rich-artifact small,
+.agent-rich-status small { color: var(--color-text-tertiary); font-size: 13px; overflow-wrap: anywhere; }
 .agent-rich-status[data-tone='success'] > svg { color: var(--color-success); }
 .agent-rich-status[data-tone='danger'] > svg { color: var(--color-danger); }
 .agent-rich-status dl { grid-column: 2 / -1; }
-.agent-code-collapse > .agent-code-block { width: 100%; margin: 0; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; }
 .agent-inline-diff { width: min(100%, 860px); }
 .agent-inline-diff > .agent-diff-preview { min-height: 0; border-top: 1px solid var(--color-border); }
 .agent-inline-diff .agent-diff-preview__files { max-height: 560px; }
-/* A dead native audio bar explains nothing; the stated boundary does. */
-.agent-audio-block__unplayable {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
-  margin: 6px 0 0;
-  color: var(--color-text-secondary);
-  font-size: var(--text-label);
-}
-/* Standalone action link, not a link inside a sentence: it needs the full 24px
-   target. Padding gives it the height; the negative margin keeps the optical
-   position of the line unchanged. */
-.agent-audio-block__unplayable a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  margin-block: -3px;
-  padding-block: 3px;
-  color: var(--color-accent);
-}
 
-.agent-unknown-block, .agent-structured-block { margin: 8px 0; color: var(--color-text-secondary); font-size: 13px; }
+.agent-unknown-block,
+.agent-structured-block { margin: 8px 0; color: var(--color-text-secondary); font-size: 13px; }
 .agent-tool-activity { width: min(100%, 620px); padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-2); overflow: hidden; background: var(--color-surface-subtle); }
 .agent-tool-activity > summary { display: grid; min-height: 38px; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 6px 10px; cursor: pointer; list-style: none; color: var(--color-text); font-weight: var(--font-weight-semibold); }
 .agent-tool-activity > summary::-webkit-details-marker { display: none; }
 .agent-tool-activity > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 .agent-tool-activity > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-tool-activity > summary > small { color: var(--color-text-tertiary); font-size: 12px; font-weight: 500; }
-.agent-tool-activity > .agent-safe-fields, .agent-tool-activity > p { margin: 0; padding: 8px 10px 10px 35px; border-top: 1px solid var(--color-border); }
+.agent-tool-activity > .agent-safe-fields,
+.agent-tool-activity > p { margin: 0; padding: 8px 10px 10px 35px; border-top: 1px solid var(--color-border); }
 .agent-tool-activity__spinner { animation: agent-status-spin 1.2s linear infinite; color: var(--color-accent); }
 .agent-safe-fields { display: grid; gap: 3px; margin: 8px 0 0; }
 .agent-safe-fields > div { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; }
 .agent-safe-fields dt { color: var(--color-text-tertiary); }
 .agent-safe-fields dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 520px) {
-  .agent-new-task-dialog__permissions [role='radiogroup'] { grid-template-columns: 1fr; }
-  .agent-new-task-dialog__permissions [role='radio'] { padding-block: 8px; }
-  .agent-rich-artifact, .agent-rich-status { grid-template-columns: 20px minmax(0, 1fr) auto; }
+  .agent-rich-artifact,
+.agent-rich-status { grid-template-columns: 20px minmax(0, 1fr) auto; }
   .agent-rich-status dl { grid-column: 1 / -1; }
-  .agent-rich-card dl > div, .agent-rich-status dl > div { grid-template-columns: 72px minmax(0, 1fr); }
+  .agent-rich-card dl > div,
+.agent-rich-status dl > div { grid-template-columns: 72px minmax(0, 1fr); }
 }
 
 .agent-activity-group { width: min(100%, 680px); max-width: 100%; min-width: 0; margin: 2px 0 11px; overflow: hidden; }
 .agent-activity { display: grid; width: 100%; min-height: 46px; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: 9px; margin: 0; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-2); background: color-mix(in srgb, var(--color-surface-subtle) 48%, transparent); color: var(--color-text); font: inherit; text-align: left; cursor: pointer; transition: transform var(--duration-press) var(--ease-press), box-shadow var(--duration-enter) var(--ease-standard); }
 .agent-activity:active { box-shadow: var(--shadow-control-press); transform: translateY(1px); }
 .agent-activity > svg { color: var(--color-text-tertiary); }
-/* Height/easing must stay in step with DISCLOSURE_MOTION in
-   SmoothDisclosureReveal.tsx, which bounds the fallback finish timer. */
 .agent-smooth-reveal {
   min-width: 0;
   overflow: hidden;
@@ -766,10 +514,6 @@
     height 220ms cubic-bezier(0.34, 1.4, 0.64, 1),
     opacity 150ms ease;
 }
-/* A transcript holds hundreds of collapsed reveals. Promoting every one of
-   them for a height animation they are not running costs a compositor layer
-   each and made plain scrolling flicker; only a reveal actually in motion is
-   promoted. */
 .agent-smooth-reveal[data-state='opening'],
 .agent-smooth-reveal[data-state='closing'] { will-change: height; }
 .agent-smooth-reveal[data-state='opening'],
@@ -777,7 +521,7 @@
 .agent-smooth-reveal[data-state='open'] { overflow: visible; will-change: auto; }
 .agent-smooth-reveal__inner { min-width: 0; min-height: 0; display: flow-root; }
 
-.agent-activity-row > summary::-webkit-details-marker, .agent-model-tree summary::-webkit-details-marker { display: none; }
+.agent-activity-row > summary::-webkit-details-marker { display: none; }
 .agent-activity__status { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); }
 .agent-activity[data-state='running'] .agent-activity__status { background: var(--color-info-soft); color: var(--color-info); }
 .agent-activity[data-state='running'] .agent-activity__status svg { animation: agent-status-spin 1.2s linear infinite; }
@@ -786,11 +530,6 @@
 .agent-activity__copy { display: grid; min-width: 0; gap: 2px; }
 .agent-activity__copy strong { font-size: 14px; }
 .agent-activity__copy small { overflow: hidden; color: var(--color-text-tertiary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-/* Activity is supporting detail read in sequence, not a stack of cards. A
-   plate per group cost two borders, a radius and an inset fill for every row,
-   which shortened the readable measure enough that the tool name and its
-   object no longer fit on one line. The row now sits in the document flow and
-   spends the whole lane on text. */
 details.agent-activity--inline {
   display: block;
   min-height: 0;
@@ -857,8 +596,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-activity-row[open] { grid-column: 1 / -1; }
 .agent-activity-row::before { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--color-border); content: ''; }
 .agent-activity-row > summary { display: grid; min-height: 34px; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 6px; cursor: pointer; list-style: none; transition: background-color var(--duration-enter) var(--ease-standard); }
-/* A settled row must not run a transition it did not ask for: a scrolling
-   transcript would otherwise leave a fading tail behind the pointer. */
 .agent-timeline[data-scrolling] :is(
   .agent-activity-row > summary,
   details.agent-activity--inline > summary,
@@ -880,9 +617,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-activity-row__details { padding: 0 8px 10px 34px; color: var(--color-text-secondary); font-size: 13px; }
 .agent-activity-row[open] .agent-activity-row__details { transform-origin: 50% 0; }
 .agent-activity-row__details p { margin: 0 0 5px; }
-/* Padding rather than a taller line box: this is a standalone action link, not
-   a link inside a sentence, so it needs the full 24px target. The margin gives
-   back exactly what the padding adds, keeping the optical gap above it at 8px. */
 .agent-tool-destination { display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; padding-block: 3px; color: var(--color-accent); font-size: 13px; font-weight: var(--font-weight-semibold); text-decoration: none; }
 .agent-tool-destination:hover { text-decoration: underline; }
 .agent-tool-destination:focus-visible { border-radius: 4px; outline: 2px solid var(--color-focus); outline-offset: 3px; }
@@ -1004,13 +738,13 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-tool-result-panel > strong { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text-secondary); font-size: 13px; }
 .agent-tool-result-panel__header { display: flex; min-width: 0; min-height: 36px; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 5px 8px 5px 10px; border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
 .agent-tool-result-panel__header > strong { display: inline-flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--text-label); }
-.agent-tool-result-panel[data-tone='error'] > strong, .agent-tool-result-panel[data-tone='error'] .agent-tool-result-panel__header > strong, .agent-tool-result-panel[data-tone='error'] > p { color: var(--color-danger); }
+.agent-tool-result-panel[data-tone='error'] > strong,
+.agent-tool-result-panel[data-tone='error'] .agent-tool-result-panel__header > strong,
+.agent-tool-result-panel[data-tone='error'] > p { color: var(--color-danger); }
 .agent-tool-result-panel > p { margin: 0; padding: 9px 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .agent-tool-result-panel > pre { max-height: 260px; margin: 0; padding: 10px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 0; background: var(--color-surface); color: var(--color-text-secondary); font-family: var(--font-mono); font-size: var(--text-code); line-height: var(--text-code-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-tool-result-panel > pre:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .agent-tool-result-panel > small { padding: 6px 10px; color: var(--color-text-tertiary); line-height: 1.45; }
-/* An edit receipt's 变更差异 opens into the structured diff reader inside the
-   panel; bound it like the panel's pre so a large patch scrolls in place. */
 .agent-tool-diff-output > .agent-diff-preview { min-height: 0; }
 .agent-tool-diff-output .agent-diff-preview__files { max-height: 380px; overflow: auto; overscroll-behavior: contain; }
 .agent-tool-result-panel > .agent-safe-fields,
@@ -1039,12 +773,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-streaming-cursor--inline { display: none; vertical-align: -2px; }
 .agent-assistant-message[data-status='streaming'] .agent-streaming-cursor--inline { display: inline-block; }
 .agent-blocks[data-has-stream-tail] + .agent-streaming-cursor:not(.agent-streaming-cursor--inline) { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
-
-/* Active streaming tail. The progressive renderer freezes every committed
-   chunk (their DOM never changes per token batch), so streaming motion may
-   only live on the single mutable tail chunk. The wrapper div is a stable DOM
-   node across token appends, which keeps the sweep continuous instead of
-   restarting on every re-parse; frozen prose above it stays perfectly still. */
 .agent-markdown__active-tail { position: relative; z-index: 0; min-width: 0; overflow: clip; overflow-clip-margin: 7px; isolation: isolate; }
 .agent-markdown__active-tail::after {
   content: '';
@@ -1070,13 +798,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }
 }
-
-/* Chunk-commit entrance. A frozen chunk's DOM nodes are inserted exactly once
-   (React.memo keeps them for the rest of the stream), so animating direct
-   children of the progressive container plays one soft rise per committed
-   block and can never replay on later token batches. The settled document
-   (no [data-progressive-markdown]) is excluded on purpose: the final
-   whole-document parse must not re-fade prose the reader already has. */
 .agent-markdown[data-progressive-markdown] > * {
   animation: agent-stream-block-enter 0.32s ease-out backwards;
 }
@@ -1084,10 +805,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
   from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: none; }
 }
-
-/* Open-fence fast path: while a fenced block is still unclosed, its caption
-   carries a slow accent sweep so a long silent code stream still reads as
-   alive even when tokens land between visual lines. */
 .agent-code-block[data-streaming] > figcaption {
   position: relative;
   overflow: hidden;
@@ -1114,12 +831,16 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 
 .ui-dialog.agent-review-dialog { display: grid; width: min(760px, calc(100vw - 28px)); max-height: min(760px, calc(100dvh - 28px)); grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 12px; overflow: hidden; }
 .ui-dialog.agent-approval-dialog { display: grid; width: min(520px, calc(100vw - 28px)); gap: 14px; }
-.agent-review-dialog .ui-dialog__header, .agent-approval-dialog .ui-dialog__header { display: grid; gap: 4px; }
+.agent-review-dialog .ui-dialog__header,
+.agent-approval-dialog .ui-dialog__header { display: grid; gap: 4px; }
 .agent-review-dialog__eyebrow { display: inline-flex; width: fit-content; align-items: center; gap: 6px; color: var(--color-warning); font-size: 13px; font-weight: 700; }
-.agent-review-dialog .ui-dialog__title, .agent-approval-dialog .ui-dialog__title { font-size: 20px; }
-.agent-review-dialog .ui-dialog__description, .agent-approval-dialog .ui-dialog__description { max-width: 640px; font-size: 13px; line-height: 1.5; }
+.agent-review-dialog .ui-dialog__title,
+.agent-approval-dialog .ui-dialog__title { font-size: 20px; }
+.agent-review-dialog .ui-dialog__description,
+.agent-approval-dialog .ui-dialog__description { max-width: 640px; font-size: 13px; line-height: 1.5; }
 .agent-review-dialog__loading { display: flex; min-height: 120px; align-items: center; justify-content: center; gap: 9px; color: var(--color-text-secondary); font-size: 13px; }
-.agent-review-dialog__loading svg, .agent-review-item__spinner { animation: agent-status-spin 1.2s linear infinite; }
+.agent-review-dialog__loading svg,
+.agent-review-item__spinner { animation: agent-status-spin 1.2s linear infinite; }
 .agent-review-dialog__summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-surface-subtle); }
 .agent-review-dialog__summary > span { display: grid; min-width: 0; gap: 3px; }
 .agent-review-dialog__summary strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1335,9 +1056,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-soft);
 }
-
-
-.agent-composer--pending { display: flex; min-height: 102px; align-items: center; padding: 14px; color: var(--color-text-tertiary); font-size: 13px; }
 .agent-composer__edit { display: grid; min-height: 44px; grid-template-columns: 18px minmax(0, 1fr) 28px; align-items: center; gap: 8px; padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-accent-soft); color: var(--color-accent); }
 .agent-composer__edit > span { display: grid; min-width: 0; gap: 1px; }
 .agent-composer__edit strong { color: var(--color-text); font-size: 13px; }
@@ -1345,22 +1063,12 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-composer { overflow: visible; }
 .agent-composer__controls { overflow: visible; overscroll-behavior-inline: contain; scrollbar-width: none; }
 .agent-composer__controls::-webkit-scrollbar { display: none; }
-.agent-composer__delivery { display: inline-flex; flex: none; overflow: hidden; margin-left: 3px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface-subtle); animation: agent-composer-control-enter var(--duration-enter) var(--ease-standard) both; }
-.agent-composer__delivery button { min-width: 44px; height: 27px; border: 0; border-right: 1px solid var(--color-border); padding: 0 8px; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
-.agent-composer__delivery button:last-child { border-right: 0; }
-.agent-composer__delivery button[data-active='true'] { background: var(--color-surface); color: var(--color-text); font-weight: var(--font-weight-semibold); box-shadow: inset 0 -2px 0 var(--color-accent); }
-.agent-composer__delivery button:disabled { cursor: default; opacity: .55; }
-/* The actions slot always reserves send + stop width, so a turn starting or
-   stopping never shifts the send target under the pointer (PF-CM-009). */
 .agent-composer__actions { display: flex; min-width: 73px; align-items: center; justify-content: flex-end; gap: 5px; }
 .agent-composer__stop { animation: agent-composer-stop-enter var(--duration-fast) var(--ease-standard) both; }
 @keyframes agent-composer-stop-enter {
   from { opacity: 0; transform: scale(.85); }
   to { opacity: 1; transform: none; }
 }
-/* Running signal: the whole rounded input frame carries one continuous colour
-   flow. The masked wrapper stays still; only its duplicated gradient layer
-   translates, so the textarea and toolbar never repaint or move. */
 .agent-composer__busy-frame {
   position: absolute;
   z-index: 2;
@@ -1395,17 +1103,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-composer__picker-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-composer__picker-detail { flex: 0 0 auto; white-space: nowrap; }
 .agent-composer__picker-thinking { flex: 0 0 auto; margin-inline-start: 4px; font-size: inherit; font-weight: var(--font-weight-semibold); white-space: nowrap; }
-
-/* ------------------------------------------------- composer logo collapse --
- * PF-CM-009/017: when the toolbar runs out of room the chrome sheds words in
- * a deliberate order — the secondary detail (provider, reasoning level, tool
- * count) first, then the label itself — and never the control. What survives
- * is the semantic mark, and the button's `aria-label`/`title` still carry the
- * complete sentence, so nothing is lost to a screen reader or a hover.
- *
- * The ladder is keyed on the toolbar container, not the viewport, because a
- * PAWOS window can be dragged narrow on a wide display.
- */
 @container paw-composer-toolbar (max-width: 620px) {
   .agent-composer__picker { max-width: 136px; }
   .agent-composer__picker-detail { display: none; }
@@ -1429,8 +1126,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .agent-composer__delivery button { min-width: 36px; padding-inline: 5px; }
 }
 
 @container paw-composer-toolbar (max-width: 360px) {
@@ -1439,11 +1134,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
     overflow-y: hidden;
   }
 }
-.agent-composer__attachment { flex: 0 0 auto; border: 1px solid var(--color-border); background: var(--color-surface-subtle); color: var(--color-text-secondary); }
-.agent-composer__attachment:disabled { opacity: .62; }
-/* Stop joins the actions row to the left of Send, which stays anchored to the
-   toolbar's right edge — Send never moves. A short fade keeps the arrival from
-   reading as a flicker while a turn starts (PF-CM-009/011). */
 .agent-composer__stop { width: 34px; height: 34px; border-radius: 50%; color: var(--color-warning); animation: agent-stop-enter var(--duration-fast) var(--ease-standard) both; }
 @keyframes agent-stop-enter { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
@@ -1453,21 +1143,18 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-composer__attachment-chip { display: inline-flex; min-height: var(--space-12); flex: 0 0 auto; align-items: center; gap: var(--space-2); padding: var(--space-1); border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-surface-subtle); font-size: 13px; animation: agent-attachment-enter var(--duration-enter) var(--ease-standard) both; }
 .agent-composer__attachment-chip > img { width: var(--space-10); height: var(--space-10); border-radius: var(--radius-1); background: var(--color-surface); object-fit: cover; }
 .agent-composer__attachment-chip > svg { width: var(--space-5); height: var(--space-5); margin: 0 var(--space-2); color: var(--color-text-tertiary); }
-/* Non-image files show their type as a compact badge, never a broken thumbnail. */
 .agent-composer__attachment-badge { display: grid; min-width: var(--space-10); height: var(--space-10); flex: 0 0 auto; place-items: center; padding: 0 4px; border-radius: var(--radius-1); background: var(--color-surface); color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 12px; font-style: normal; font-weight: var(--font-weight-semibold); letter-spacing: .04em; }
 .agent-composer__attachment-chip > b { overflow: hidden; max-width: 18ch; text-overflow: ellipsis; white-space: nowrap; }
 .agent-composer__attachment-chip > button { display: grid; width: var(--space-6); height: var(--space-6); place-items: center; border: 0; border-radius: var(--radius-round); background: transparent; cursor: pointer; }
 .agent-composer__attachment-chip > button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .agent-composer__attachment-chip > button:active { transform: translateY(1px); }
 .agent-command-palette { position: absolute; z-index: 25; inset-inline-start: var(--workspace-gutter); bottom: calc(100% + 7px); display: grid; width: min(640px, calc(100% - (var(--workspace-gutter) * 2))); max-height: min(336px, calc(100dvh - 176px)); padding: 6px; border: 1px solid color-mix(in srgb, var(--color-border-strong) 72%, var(--color-border)); border-radius: 9px; background: color-mix(in srgb, var(--color-surface) 96%, transparent); box-shadow: var(--shadow-dialog); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-backdrop-filter: blur(18px) saturate(128%); backdrop-filter: blur(18px) saturate(128%); animation: agent-panel-enter var(--duration-panel) var(--ease-standard) both; transform-origin: 24px 100%; }
-/* The palette surface above already blurs its backdrop; a second blur on this
-   sticky header (backed by the palette's own 96% surface) only re-rasterizes
-   the option list on every scroll frame. */
 .agent-command-palette > header { position: sticky; z-index: 1; top: -6px; display: flex; min-width: 0; min-height: 34px; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 7px 6px; border-bottom: 1px solid var(--color-border-soft); background: color-mix(in srgb, var(--color-surface) 98%, transparent); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .agent-command-palette__heading { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--color-text-secondary); }
 .agent-command-palette__heading > svg { color: var(--color-accent); }
 .agent-command-palette > header strong { color: var(--color-text); font-size: 12px; font-weight: var(--font-weight-semibold); }
-.agent-command-palette > header small, .agent-command-palette > header p { color: var(--color-text-tertiary); font-size: 12px; }
+.agent-command-palette > header small,
+.agent-command-palette > header p { color: var(--color-text-tertiary); font-size: 12px; }
 .agent-command-palette__heading > small::before { margin-right: 5px; content: '·'; }
 .agent-command-palette > header p { display: flex; max-width: 370px; align-items: center; gap: 4px; margin: 0; line-height: 1.4; text-align: right; }
 .agent-command-palette > header p kbd { padding: 1px 4px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-subtle); color: var(--color-text-secondary); font: var(--font-weight-semibold) 12px/1.35 var(--font-ui); }
@@ -1521,9 +1208,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-dangerous-permission-dialog__limits p + p { border-top: 1px solid var(--color-border); color: var(--color-danger); }
 .agent-dangerous-permission-dialog__limits p:first-child > svg { color: var(--color-success); }
 .agent-dangerous-permission-dialog__limits p strong { margin-right: 4px; color: var(--color-text); }
-.agent-dangerous-permission-dialog__check { display: flex; min-height: 42px; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border)); border-radius: var(--radius-2); background: color-mix(in srgb, var(--color-danger-soft) 62%, var(--color-surface)); color: var(--color-text); font-size: 13px; font-weight: var(--font-weight-semibold); cursor: pointer; }
-.agent-dangerous-permission-dialog__check button { display: grid; width: 18px; height: 18px; flex: 0 0 auto; place-items: center; padding: 0; border: 1px solid var(--color-danger); border-radius: var(--radius-1); background: var(--color-surface); color: #fff; }
-.agent-dangerous-permission-dialog__check button[data-state='checked'] { background: var(--color-danger); }
 .agent-picker-popover__note[data-tone='warning'] {
   border-color: var(--color-warning-border);
   color: var(--color-warning);
@@ -1625,11 +1309,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-lifecycle-audits dd[data-state='partial'] strong,
 .agent-lifecycle-audits dd[data-state='unknown'] strong { color: var(--color-warning); }
 .agent-lifecycle-audits dd small { color: var(--color-text-tertiary); font-size: var(--font-size-caption); line-height: var(--line-height-ui); overflow-wrap: anywhere; }
-
-.agent-pane-resizer[data-side='rail'] { left: var(--agent-rail-width); transform: translateX(-50%); }
-.agent-pane-resizer[data-side='status'] { right: var(--agent-status-width); transform: translateX(50%); }
-.agent-feature[data-rail-open='false'] .agent-pane-resizer[data-side='rail'],
-.agent-feature:not([data-status-open='true']) .agent-pane-resizer[data-side='status'] { display: none; }
 .agent-status-message-queue { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
 .agent-status-message-queue li { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 7px; font-size: 13px; }
 .agent-status-message-queue b { color: var(--color-accent); font-size: 12px; }
@@ -1779,14 +1458,9 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-status-task-plan__content > ol > li b { display: inline-block; min-width: 18px; margin-right: 4px; color: var(--color-text-tertiary); font: var(--font-weight-semibold) 12px/18px var(--font-mono); }
 .agent-status-task-plan__load-more { justify-self: start; margin: 0; }
 .agent-todo-turn-summary { padding: 8px 14px 10px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-surface-subtle) 28%, transparent); }
-.agent-status-tasks { display: grid; gap: 5px; margin: 7px 0 0; padding: 0; list-style: none; }
-.agent-status-tasks li { display: grid; grid-template-columns: 17px minmax(0, 1fr); align-items: start; gap: 6px; color: var(--color-text-secondary); font-size: 13px; line-height: 1.4; }
-.agent-status-tasks li > svg { margin-top: 2px; color: var(--color-text-tertiary); }
-.agent-status-tasks li[data-state='running'] > svg { color: var(--color-accent); animation: agent-status-spin 1.2s linear infinite; }
-.agent-status-tasks li[data-state='completed'] { color: var(--color-text-tertiary); }
-.agent-status-tasks li[data-state='completed'] > svg { color: var(--color-success); }
-.agent-status-tasks li[data-state='failed'] > svg { color: var(--color-danger); }
-.agent-status-tools, .agent-status-files, .agent-status-subagents { display: grid; gap: 1px; }
+.agent-status-tools,
+.agent-status-files,
+.agent-status-subagents { display: grid; gap: 1px; }
 .agent-background-jobs { display: grid; gap: var(--space-2); }
 .agent-background-jobs__toolbar { display: flex; min-height: var(--control-height-sm); align-items: center; justify-content: space-between; gap: var(--space-2); border-bottom: 1px solid var(--color-border-soft); }
 .agent-background-jobs__toolbar > span { color: var(--color-text-tertiary); font-size: var(--text-label); line-height: var(--text-label-lh); }
@@ -1841,15 +1515,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-background-job__server-detail { color: var(--color-text-secondary); }
 .agent-background-job__cancel-notice { color: var(--color-success); }
 .agent-background-job__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.agent-runtime-catalog { display: grid; gap: 10px; }
-.agent-runtime-catalog > section { display: grid; min-width: 0; gap: 5px; }
-.agent-runtime-catalog > section > header { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
-.agent-runtime-catalog > section > header strong { color: var(--color-text-secondary); font-size: 12px; }
-.agent-runtime-catalog > section > header small { overflow: hidden; color: var(--color-text-tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-runtime-catalog ul { display: grid; max-height: 210px; gap: 1px; margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-gutter: stable; }
-.agent-runtime-catalog li { display: grid; min-width: 0; gap: 2px; padding: 5px 6px; border-left: 2px solid var(--color-border); background: color-mix(in srgb, var(--color-surface-subtle) 44%, transparent); }
-.agent-runtime-catalog li code { overflow: hidden; color: var(--color-text-secondary); font: var(--font-weight-semibold) 12px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.agent-runtime-catalog li span { overflow: hidden; color: var(--color-text-tertiary); font-size: 12px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .agent-capability-session {
   display: grid;
   min-width: 0;
@@ -2236,7 +1901,8 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-status-row { display: grid; min-height: 38px; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 7px; }
 .agent-status-row > svg { color: var(--color-text-tertiary); }
 .agent-status-row > span { display: grid; min-width: 0; gap: 1px; }
-.agent-status-row strong, .agent-status-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-status-row strong,
+.agent-status-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-status-row strong { font-size: 13px; }
 .agent-status-row small { color: var(--color-text-tertiary); font-size: 13px; }
 .agent-status-observation-link { display: grid; min-height: 58px; grid-template-columns: 22px minmax(0, 1fr) 16px; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); text-decoration: none; }
@@ -2281,29 +1947,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-status-query-error small { color: var(--color-text-secondary); font-size: var(--font-size-caption); line-height: var(--line-height-ui); }
 .agent-status-query-error > .ui-button { flex: none; margin-left: auto; }
 .agent-status-empty[data-animated] > svg { animation: agent-status-spin 1.2s linear infinite; }
-.agent-status-backdrop { display: none; }
-.ui-dialog.agent-subagent-result-dialog { width: min(560px, calc(100vw - 24px)); }
-.agent-subagent-result > p { margin: 4px 0 14px; color: var(--color-text-secondary); font-size: 13px; line-height: 1.55; }
-.agent-subagent-result dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-top: 1px solid var(--color-border); }
-.agent-subagent-result dl > div { display: grid; gap: 3px; padding: 10px 8px; border-right: 1px solid var(--color-border); }
-.agent-subagent-result dl > div:last-child { border-right: 0; }
-.agent-subagent-result dt { color: var(--color-text-tertiary); font-size: 13px; }
-.agent-subagent-result dd { margin: 0; font-size: 13px; font-weight: var(--font-weight-semibold); }
-.agent-subagent-artifact { margin-top: 12px; border-top: 1px solid var(--color-border); }
-.agent-subagent-artifact > summary { display: grid; min-height: 42px; grid-template-columns: 18px minmax(0, 1fr) auto 14px; align-items: center; gap: 7px; color: var(--color-text-secondary); cursor: pointer; list-style: none; }
-.agent-subagent-artifact > summary::-webkit-details-marker { display: none; }
-.agent-subagent-artifact > summary span { color: var(--color-text); font-size: 13px; font-weight: var(--font-weight-semibold); }
-.agent-subagent-artifact > summary small { color: var(--color-text-tertiary); font-size: 13px; }
-.agent-subagent-artifact > summary > svg:last-child { transition: transform var(--duration-fast) var(--ease-standard); }
-.agent-subagent-artifact[open] > summary > svg:last-child { transform: rotate(90deg); }
-.agent-subagent-artifact ol { display: grid; gap: 0; max-height: 260px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-.agent-subagent-artifact li { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid color-mix(in srgb, var(--color-border) 62%, transparent); }
-.agent-subagent-artifact li > time { color: var(--color-text-tertiary); font: var(--font-weight-semibold) 13px var(--font-mono); }
-.agent-subagent-artifact li > span { display: grid; min-width: 0; gap: 2px; }
-.agent-subagent-artifact li strong { font-size: 13px; }
-.agent-subagent-artifact li small { color: var(--color-text-tertiary); font-size: 13px; line-height: 1.35; }
-.agent-subagent-result__error { color: var(--color-danger) !important; }
-.agent-subagent-result__actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 @keyframes agent-panel-enter {
   from { opacity: 0; transform: translateY(-4px) scale(.995); }
@@ -2314,17 +1957,12 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
   from { opacity: 0; transform: translateY(3px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-
-/* Stop and steer/follow-up only exist while a turn runs. Mounting them cold
-   made the dock pop each time busy toggled; easing them in reads as the same
-   surface changing state, while idle sessions still pay no reserved space. */
 @keyframes agent-composer-control-enter {
   from { opacity: 0; transform: translateY(2px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-composer__delivery,
   .agent-composer__stop { animation: none; }
   .agent-composer__busy-frame > i {
     animation: none;
@@ -2332,7 +1970,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
   }
 }
 
-:root[data-reduce-motion='true'] .agent-composer__delivery,
 :root[data-reduce-motion='true'] .agent-composer__stop { animation: none; }
 
 @keyframes agent-status-breathe {
@@ -2348,9 +1985,6 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 @keyframes agent-status-spin {
   to { transform: rotate(360deg); }
 }
-
-/* Running copy stays still while the adjacent status glyph owns motion. This
-   keeps incremental Markdown off a continuous background-paint path. */
 details.agent-activity--inline[data-state='running'] > summary > strong { --agent-running-ink: var(--color-text); }
 details.agent-activity--inline[data-state='running'] > summary > .agent-activity__inline-tools { --agent-running-ink: var(--color-text-tertiary); }
 .agent-status-tool[data-state='running'] > summary strong { --agent-running-ink: var(--color-text); }
@@ -2402,29 +2036,14 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .agent-session-row__menu { opacity: 0; }
-  .agent-session-row-shell:hover .agent-session-row__menu,
-  .agent-session-row-shell:focus-within .agent-session-row__menu,
-  .agent-session-row-shell[data-selected='true'] .agent-session-row__menu { opacity: 1; }
-  .agent-session-row:hover,
   .agent-command-palette > button:hover,
-  .agent-picker-popover__option:hover:not(:disabled),
-  .agent-model-tree summary:hover,
-  .agent-model-tree__levels button:hover:not(:disabled) {
+.agent-picker-popover__option:hover:not(:disabled) {
     background: var(--color-surface-hover);
     box-shadow: var(--shadow-control-hover);
   }
-
-  /* A ring drawn on hover redraws a border as each row passes under a
-     stationary pointer during scrolling. A fill answers the same question
-     without adding an edge. */
   .agent-activity-row > summary:hover {
     background: var(--color-surface-hover);
   }
-
-  /* Hover answers a pointer that moved. During a scroll the pointer is still
-     and the rows move, so every row under it lights and unlights in turn —
-     the reported "疯狂闪烁". Suspend the answer until the transcript settles. */
   .agent-timeline[data-scrolling] :is(
     .agent-activity-row > summary,
     details.agent-activity--inline > summary,
@@ -2444,52 +2063,22 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 }
 
 @media (max-width: 1360px) {
-  .shell-route-stage > main.agent-feature,
-  .shell-route-stage > main.agent-feature[data-status-open='true'] {
-    --agent-rail-width: 260px;
-    position: relative;
-    grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) 0;
-  }
-  .shell-route-stage > main.agent-feature[data-rail-open='false'],
-  .shell-route-stage > main.agent-feature[data-rail-open='false'][data-status-open='true'] { grid-template-columns: 0 minmax(0, 1fr) 0; }
   .agent-status-panel,
-  .agent-files-panel { position: absolute; z-index: 14; top: 0; right: 0; bottom: 0; width: min(340px, 90vw); box-shadow: var(--shadow-menu); }
+.agent-files-panel { position: absolute; z-index: 14; top: 0; right: 0; bottom: 0; width: min(340px, 90vw); box-shadow: var(--shadow-menu); }
   .agent-status-panel:not([data-open='true']),
-  .agent-files-panel:not([data-open='true']) { display: none; }
-  .agent-status-backdrop { position: absolute; z-index: 13; inset: 0; display: block; padding: 0; border: 0; background: color-mix(in srgb, var(--color-text) 16%, transparent); opacity: 0; pointer-events: none; transition: opacity var(--duration-enter) var(--ease-standard); }
-  .agent-feature[data-status-open='true'] .agent-status-backdrop { opacity: 1; pointer-events: auto; }
-  .agent-pane-resizer[data-side='status'] { display: none; }
+.agent-files-panel:not([data-open='true']) { display: none; }
 }
 
 @media (max-width: 900px) {
-  .shell-route-stage > main.agent-feature,
-  .shell-route-stage > main.agent-feature[data-status-open='true'] {
-    --agent-rail-width: 248px;
-    grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) 0;
-  }
-  .shell-route-stage > main.agent-feature[data-rail-open='false'],
-  .shell-route-stage > main.agent-feature[data-rail-open='false'][data-status-open='true'] { grid-template-columns: 0 minmax(0, 1fr) 0; }
-  .agent-turn, .agent-composer-wrap { padding-inline: 16px 30px; }
-  .agent-welcome__suggestions { grid-template-columns: 1fr; }
+  .agent-turn,
+.agent-composer-wrap { padding-inline: 16px 30px; }
 }
 
 @media (max-width: 760px) {
-  .shell-route-stage > main.agent-feature { position: relative; height: calc(100dvh - 52px - var(--mobile-nav-height)); min-height: 0; display: block; }
-  .agent-pane-resizer { display: none; }
-  .agent-conversation { height: 100%; grid-template-rows: minmax(0, 1fr); }
-  .agent-conversation__header { min-height: var(--workspace-header-height); padding-inline: 10px; }
-  .agent-session-rail { position: absolute; z-index: 12; top: 0; bottom: 0; left: 0; width: min(82vw, 304px); box-shadow: var(--shadow-menu); transform: translateX(0); transition: transform var(--duration-panel) var(--ease-standard), opacity var(--duration-enter) var(--ease-standard), box-shadow var(--duration-enter) var(--ease-standard); }
-  .agent-feature[data-rail-open='false'] .agent-session-rail { transform: translateX(-100%); opacity: 1; }
-  .agent-session-rail__close { display: grid; }
-  .agent-rail-backdrop { position: absolute; z-index: 11; inset: 0; display: block; padding: 0; border: 0; background: color-mix(in srgb, var(--color-text) 16%, transparent); opacity: 0; pointer-events: none; transition: opacity var(--duration-enter) var(--ease-standard); }
-  .agent-feature[data-rail-open='true'] .agent-rail-backdrop { opacity: 1; pointer-events: auto; }
   .agent-turn { padding: 13px 12px 5px; }
   .agent-conversation-nav { display: none; }
   .agent-user-message-shell { max-width: 92%; margin-bottom: 14px; }
   .agent-user-message-shell[data-actions='true'] { margin-bottom: 28px; }
-  /* Assistant identity now belongs to Session chrome. Keeping the retired
-     avatar column here placed the whole Turn sequence into a 50 px track and
-     collapsed Chinese copy to one character per line on phones. */
   .agent-assistant-turn { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .agent-composer-wrap { padding: 5px 9px 8px; }
   .agent-user-input-card {
@@ -2509,7 +2098,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   .agent-command-palette__copy strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .agent-command-palette__copy small { display: none; }
   .agent-command-palette__shortcut { display: none; }
-  .agent-media-block { max-width: 100%; }
   .ui-dialog.agent-activity-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); }
   .ui-dialog.agent-review-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); }
   .ui-dialog.agent-dangerous-permission-dialog { width: calc(100vw - 20px); }
@@ -2535,8 +2123,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 }
 
 @media (max-width: 520px) {
-  /* Picker collapse itself is owned by the `paw-composer-toolbar` container
-     ladder above; a viewport copy here would only fight it. */
   .agent-composer__controls { overflow: visible; }
   .ui-dialog.agent-capability-dialog {
     top: var(--space-2);
@@ -2556,11 +2142,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 }
 
 @media (max-width: 420px) {
-  .agent-conversation__header { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 6px 8px; }
-  .agent-conversation__header > span { grid-column: 2; min-width: 0; }
-  .agent-conversation__actions { grid-column: 3; grid-row: 1; justify-self: end; }
-  .agent-conversation__header p { grid-column: 1 / -1; max-width: 100%; margin: 0; padding: 6px 8px; border-radius: var(--radius-1); background: var(--color-danger-soft); }
-  .agent-conversation__header p > span { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   details.agent-activity--inline > summary { grid-template-columns: 20px minmax(0, 1fr) auto 16px; }
   details.agent-activity--inline > summary > .agent-activity__inline-tools { display: none; }
   .agent-markdown { font-size: var(--font-size-chat); line-height: var(--line-height-chat); }
@@ -2569,17 +2150,14 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   .agent-activity-row__approval .agent-activity-row__approval-actions { display: grid !important; width: 100%; min-width: 0 !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .agent-activity-row__approval .agent-activity-row__approval-actions .ui-button { justify-content: center; }
   .agent-status-panel,
-  .agent-files-panel { width: 100%; }
-  .agent-subagent-result dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .agent-subagent-result dl > div:nth-child(2) { border-right: 0; }
-  .agent-subagent-result dl > div:nth-child(n + 3) { border-top: 1px solid var(--color-border); }
+.agent-files-panel { width: 100%; }
   .agent-context-node-detail dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .agent-context-node-detail dl > div:nth-child(3) { border-left: 0; }
   .agent-context-node-detail dl > div:nth-child(n + 3) { border-top: 1px solid var(--color-border); }
   .agent-context-dag { display: grid; min-height: 0; gap: 8px; overflow-x: hidden; }
   .agent-context-dag__layer { width: 100%; min-width: 0; }
   .agent-context-dag__layer::before,
-  .agent-context-dag__layer::after { display: none; }
+.agent-context-dag__layer::after { display: none; }
   .agent-context-dag__layer button { min-height: 68px; }
 }
 
@@ -2594,10 +2172,9 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   .agent-compaction-notice[data-state='running'] .agent-compaction-notice__fold > i:nth-child(2) { transform: scaleX(.55); }
   .agent-compaction-notice[data-state='running'] .agent-compaction-notice__fold > i:nth-child(3) { opacity: .72; transform: translateY(-5px) scaleX(.72); }
   .agent-status-section__content,
-  .agent-status-section__chevron,
-  .agent-files-panel__chevron,
-  .agent-background-job__summary,
-  .agent-pane-resizer::before {
+.agent-status-section__chevron,
+.agent-files-panel__chevron,
+.agent-background-job__summary {
     transition: none;
   }
 
@@ -2611,31 +2188,29 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   }
 
   .agent-markdown[data-progressive-markdown] > *,
-  .agent-code-block[data-streaming] > figcaption::after {
+.agent-code-block[data-streaming] > figcaption::after {
     animation: none;
     opacity: 0;
   }
 
   .agent-streaming-cursor,
-  .agent-context-snapshot-state[data-state='restoring']::before,
-  .agent-assistant-pending > svg,
-  .agent-timeline-loading > svg,
-  .agent-working-dots b,
-  .agent-review-dialog__loading svg,
-  .agent-review-item__spinner,
-  .agent-activity[data-state='running'] .agent-activity__status svg,
-  .agent-status-tool[data-state='running'] .agent-status-tool__icon > svg,
-  .agent-status-turn[data-state='queued'] > svg,
-  .agent-status-turn[data-state='running'] > svg,
-  .agent-background-job[data-state='running'] .agent-background-job__state svg,
-  .agent-background-job[data-state='cancelling'] .agent-background-job__state svg,
-  .agent-status-tasks li[data-state='running'] > svg,
-  .agent-status-subagent[data-state='running'] .agent-status-subagent__state svg,
-  .agent-status-subagent[data-state='queued'] .agent-status-subagent__state svg,
-  .agent-status-empty[data-animated] > svg,
-  .agent-fork-dialog__state svg,
-  .agent-file-preview-inline[data-status='loading'] .agent-file-preview-inline__state > svg,
-  .agent-fork-dialog footer button[data-loading='true'] svg {
+.agent-assistant-pending > svg,
+.agent-timeline-loading > svg,
+.agent-working-dots b,
+.agent-review-dialog__loading svg,
+.agent-review-item__spinner,
+.agent-activity[data-state='running'] .agent-activity__status svg,
+.agent-status-tool[data-state='running'] .agent-status-tool__icon > svg,
+.agent-status-turn[data-state='queued'] > svg,
+.agent-status-turn[data-state='running'] > svg,
+.agent-background-job[data-state='running'] .agent-background-job__state svg,
+.agent-background-job[data-state='cancelling'] .agent-background-job__state svg,
+.agent-status-subagent[data-state='running'] .agent-status-subagent__state svg,
+.agent-status-subagent[data-state='queued'] .agent-status-subagent__state svg,
+.agent-status-empty[data-animated] > svg,
+.agent-fork-dialog__state svg,
+.agent-file-preview-inline[data-status='loading'] .agent-file-preview-inline__state > svg,
+.agent-fork-dialog footer button[data-loading='true'] svg {
     animation: none;
     opacity: 1;
   }
@@ -2658,8 +2233,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
     animation: none;
   }
 
-  .agent-model-picker__panel,
-  .agent-model-picker__reasoning-bar,
   .agent-model-picker__list [role='option'][aria-selected='true'] .agent-model-picker__check {
     animation: none;
   }
@@ -2667,75 +2240,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   .agent-model-picker__reasoning-indicator {
     transition: none;
   }
-}
-
-/* ---------------------------------------------------------------- PAWOS --
- * The legacy shell is page-responsive. A PAWOS App is a movable, resizable
- * surface, so its presentation must respond to the window container instead
- * of the browser viewport. Runtime ownership and Agent behavior stay above
- * this layer; these rules only compose the rail, transcript, composer and
- * inspectors inside the App window. */
-.paw-window-shell[data-app='agent'] .agent-feature {
-  --agent-rail-width: clamp(244px, 25cqw, 284px);
-  --agent-status-width: clamp(286px, 29cqw, 340px);
-  position: relative;
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) 0;
-  grid-template-rows: minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 78% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 30%),
-    var(--color-canvas);
-  transition: grid-template-columns var(--duration-panel) var(--ease-standard);
-}
-
-.paw-window-shell[data-app='agent'] .agent-feature[data-status-open='true'] {
-  grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) var(--agent-status-width);
-}
-
-.paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'] {
-  grid-template-columns: 0 minmax(0, 1fr) 0;
-}
-
-.paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'][data-status-open='true'] {
-  grid-template-columns: 0 minmax(0, 1fr) var(--agent-status-width);
-}
-
-.paw-window-shell[data-app='agent'] .agent-session-rail {
-  background: color-mix(in srgb, var(--color-chrome) 94%, transparent);
-  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-border-soft) 72%, transparent);
-}
-
-/* These headers sit over the scrolling rail/conversation inside an OS window
-   that already owns the glass layer; a nested blur re-rasterizes the streaming
-   content beneath them on every frame. */
-.paw-window-shell[data-app='agent'] .agent-session-rail > header,
-.paw-window-shell[data-app='agent'] .agent-conversation__header {
-  background: color-mix(in srgb, var(--color-chrome) 95%, transparent);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-.paw-window-shell[data-app='agent'] .agent-conversation {
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--color-border-soft) 24%, transparent) 1px, transparent 1px),
-    var(--color-paper);
-  background-size: 64px 100%, auto;
-}
-
-.paw-window-shell[data-app='agent'] .agent-conversation::before {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  background: radial-gradient(circle at 50% 14%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 34%);
-  content: '';
-  pointer-events: none;
 }
 
 .paw-window-shell[data-app='agent'] .agent-composer-wrap {
@@ -2750,18 +2254,9 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 }
 
 @container paw-window (max-width: 1120px) {
-  .paw-window-shell[data-app='agent'] .agent-feature,
-  .paw-window-shell[data-app='agent'] .agent-feature[data-status-open='true'] {
-    grid-template-columns: var(--agent-rail-width) minmax(0, 1fr) 0;
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'],
-  .paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'][data-status-open='true'] {
-    grid-template-columns: 0 minmax(0, 1fr) 0;
-  }
 
   .paw-window-shell[data-app='agent'] .agent-status-panel,
-  .paw-window-shell[data-app='agent'] .agent-files-panel {
+.paw-window-shell[data-app='agent'] .agent-files-panel {
     position: absolute;
     z-index: 14;
     top: 0;
@@ -2772,85 +2267,10 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   }
 
   .paw-window-shell[data-app='agent'] .agent-status-panel:not([data-open='true']),
-  .paw-window-shell[data-app='agent'] .agent-files-panel:not([data-open='true']) { display: none; }
-
-  .paw-window-shell[data-app='agent'] .agent-status-backdrop {
-    position: absolute;
-    z-index: 13;
-    inset: 0;
-    display: block;
-    padding: 0;
-    border: 0;
-    background: rgb(0 0 0 / 28%);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--duration-enter) var(--ease-standard);
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-feature[data-status-open='true'] .agent-status-backdrop {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-pane-resizer[data-side='status'] { display: none; }
+.paw-window-shell[data-app='agent'] .agent-files-panel:not([data-open='true']) { display: none; }
 }
 
 @container paw-window (max-width: 760px) {
-  .paw-window-shell[data-app='agent'] .agent-feature,
-  .paw-window-shell[data-app='agent'] .agent-feature[data-status-open='true'],
-  .paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'],
-  .paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'][data-status-open='true'] {
-    position: relative;
-    display: block;
-    height: 100%;
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-pane-resizer { display: none; }
-  .paw-window-shell[data-app='agent'] .agent-conversation { width: 100%; height: 100%; }
-
-  .paw-window-shell[data-app='agent'] .agent-session-rail {
-    position: absolute;
-    z-index: 12;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: min(86cqw, 304px);
-    box-shadow: 22px 0 60px rgb(0 0 0 / 26%);
-    opacity: 1;
-    transform: translateX(0);
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='false'] .agent-session-rail {
-    border-right: 1px solid var(--color-border);
-    opacity: 1;
-    pointer-events: none;
-    transform: translateX(-102%);
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-session-rail__close { display: grid; }
-
-  .paw-window-shell[data-app='agent'] .agent-rail-backdrop {
-    position: absolute;
-    z-index: 11;
-    inset: 0;
-    display: block;
-    padding: 0;
-    border: 0;
-    background: rgb(0 0 0 / 30%);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--duration-enter) var(--ease-standard);
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-feature[data-rail-open='true'] .agent-rail-backdrop {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .paw-window-shell[data-app='agent'] .agent-conversation__header {
-    min-height: var(--workspace-header-height);
-    padding-inline: 10px;
-  }
 
   .paw-window-shell[data-app='agent'] .agent-turn { padding: 12px 13px 4px; }
   .paw-window-shell[data-app='agent'] .agent-conversation-nav { display: none; }
@@ -2876,7 +2296,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 }
 
 :root[data-reduce-motion='true'] .agent-streaming-cursor,
-:root[data-reduce-motion='true'] .agent-context-snapshot-state[data-state='restoring']::before,
 :root[data-reduce-motion='true'] .agent-assistant-pending > svg,
 :root[data-reduce-motion='true'] .agent-timeline-loading > svg,
 :root[data-reduce-motion='true'] .agent-working-dots b,
@@ -2888,7 +2307,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 :root[data-reduce-motion='true'] .agent-status-turn[data-state='running'] > svg,
 :root[data-reduce-motion='true'] .agent-background-job[data-state='running'] .agent-background-job__state svg,
 :root[data-reduce-motion='true'] .agent-background-job[data-state='cancelling'] .agent-background-job__state svg,
-:root[data-reduce-motion='true'] .agent-status-tasks li[data-state='running'] > svg,
 :root[data-reduce-motion='true'] .agent-status-subagent[data-state='running'] .agent-status-subagent__state svg,
 :root[data-reduce-motion='true'] .agent-status-subagent[data-state='queued'] .agent-status-subagent__state svg,
 :root[data-reduce-motion='true'] .agent-status-empty[data-animated] > svg,
@@ -2916,8 +2334,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 :root[data-reduce-motion='true'] .agent-status-section__chevron,
 :root[data-reduce-motion='true'] .agent-files-panel__chevron,
 :root[data-reduce-motion='true'] .agent-background-job__summary,
-:root[data-reduce-motion='true'] .agent-pane-resizer::before,
-:root[data-reduce-motion='true'] .agent-session-row-shell,
 :root[data-reduce-motion='true'] .agent-composer__send {
   transition: none;
 }
@@ -2937,8 +2353,6 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   transform: translate3d(-25%, 0, 0);
 }
 
-:root[data-reduce-motion='true'] .agent-model-picker__panel,
-:root[data-reduce-motion='true'] .agent-model-picker__reasoning-bar,
 :root[data-reduce-motion='true'] .agent-model-picker__list [role='option'][aria-selected='true'] .agent-model-picker__check {
   animation: none;
 }
@@ -2947,16 +2361,10 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
   transition: none;
 }
 
-
-/* ============================== editorial inserts ==============================
-   One related family: work artefacts are pressed INTO the paper as a slightly
-   deeper wash with a hanging tone edge — not white cards floating on white. */
-
 .agent-tool-activity,
 .agent-activity,
 .agent-citation,
 .agent-inline-notice,
-.agent-audio-block,
 .agent-rich-card,
 .agent-rich-artifact,
 .agent-rich-status,
@@ -2978,22 +2386,11 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 .agent-rich-card[data-tone='danger'] { border-left-color: var(--color-danger); }
 
 .agent-code-block { border: 0; border-radius: var(--radius-2); }
-
-/* Insert numerals are ink, not chat-app badges. */
 .agent-citation__index {
   background: var(--color-paper);
   color: var(--color-text-secondary);
   font: var(--font-weight-semibold) 12px var(--font-sans);
 }
-
-.agent-welcome h2 { font-family: var(--font-ui); }
-
-/* ============== one icon language for tool activity ==============
-   Per-kind tinted chips (memory teal, rag blue, subagent purple, approval
-   amber) turned a calm document into a sticker set. Kind is already carried by
-   the icon glyph and the step label, so the chip becomes quiet ink and colour
-   is reserved for STATE — running, waiting, failed — which is the only thing
-   that actually needs to catch the eye. */
 .agent-activity-row__icon,
 .agent-activity-row[data-kind='memory'] .agent-activity-row__icon,
 .agent-activity-row[data-kind='rag'] .agent-activity-row__icon,
@@ -3007,23 +2404,12 @@ details.agent-activity--inline[data-state='running'] > summary > .agent-activity
 .agent-activity-row[data-state='running'] .agent-activity-row__icon { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); color: var(--color-accent); }
 .agent-activity-row[data-state='waiting'] .agent-activity-row__icon { border-color: var(--color-warning-border); color: var(--color-warning); }
 .agent-activity-row[data-state='failed'] .agent-activity-row__icon { border-color: var(--color-danger-border); color: var(--color-danger); }
-
-/* Steps hang off one margin rule so the list reads as a document sequence
-   rather than free-floating rows. */
 .agent-activity__inline-timeline { border-left: 1px solid var(--color-border-soft); }
-/* Interleaved activity scans rather than reads, so it takes the whole
-   conversation lane instead of the prose measure. */
 .agent-activity-group[data-layout='interleaved'] { width: 100%; margin: 1px 0 6px; overflow: visible; }
-.agent-activity-row__meta,
 .agent-activity-row > summary > :last-child {
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
 }
-
-
-/* Interleaved activity is the one insert that is a sequence of rows rather
-   than a block of prose. It keeps the family's measure but not its hanging
-   edge or wash: a plate around each group is what starved the row of text. */
 details.agent-activity--inline {
   width: 100%;
   border: 0;
@@ -3032,10 +2418,6 @@ details.agent-activity--inline {
   box-shadow: none;
 }
 details.agent-activity--inline[open] > summary { background: transparent; }
-
-/* Narrow widths: the activity summary's max-content label column forced the
-   row wider than the lane, pushing the Room workspace into horizontal scroll.
-   The label truncates instead; the timing keeps its own column. */
 @media (max-width: 760px) {
   details.agent-activity--inline > summary {
     grid-template-columns: 18px minmax(0, 1fr) auto 14px;
@@ -3048,13 +2430,6 @@ details.agent-activity--inline[open] > summary { background: transparent; }
   }
   details.agent-activity--inline > summary > .agent-activity__inline-tools { display: none; }
 }
-
-/* ============== every result joins the insert family ==============
-   Measured evidence: progress and the unknown-type fallback rendered at 847px
-   with no edge, radius or wash — orphans in a document where every other
-   result is an insert. Approval ran to 847px while its siblings (status,
-   checklist, table, artifact, citation) capped at 620px, giving the same
-   document two competing measures. */
 .agent-structured-block,
 .agent-unknown-block {
   width: min(100%, 620px);
@@ -3085,15 +2460,7 @@ details.agent-activity--inline[open] > summary { background: transparent; }
 .agent-unknown-block > summary::-webkit-details-marker { display: none; }
 .agent-structured-block > summary:focus-visible,
 .agent-unknown-block > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-
-/* Code carries a deliberately wider measure than prose-side inserts; that is
-   a decision, not the accident it was. */
 .agent-inline-diff { width: min(100%, 860px); }
-
-
-/* Tone must reach the notice renderer too: an error carrying the neutral
-   insert edge is indistinguishable from an ordinary result. Tone lives in the
-   hanging rule, so state is legible without relying on fill alone. */
 .agent-inline-notice[data-tone='danger'] {
   border-left-color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger-soft) 48%, var(--color-paper));
@@ -3109,12 +2476,6 @@ details.agent-activity--inline[open] > summary { background: transparent; }
   background: color-mix(in srgb, var(--color-success-soft) 44%, var(--color-paper));
 }
 .agent-inline-notice[data-tone='success'] > svg { color: var(--color-success); }
-
-/* ====================== result hierarchy, not grey slabs ======================
-   The contract has several result types, but the old surface grammar collapsed
-   all of them onto the same 72% muted-grey fill. Type is carried by icon and
-   title; state is carried by one semantic edge, a quiet icon well and a small
-   status label. The paper remains the dominant material. */
 :is(
   .agent-rich-card,
   .agent-rich-artifact,
@@ -3294,15 +2655,6 @@ details[open] > summary > .agent-rich-collapsible__chevron { transform: rotate(9
 .agent-rich-status small {
   color: var(--color-text-secondary);
   font: var(--font-weight-regular) var(--text-label) / var(--text-label-lh) var(--font-ui);
-}
-.agent-rich-status__metric {
-  align-self: start;
-  padding: 2px 6px;
-  border-radius: var(--radius-1);
-  background: color-mix(in srgb, var(--agent-insert-soft) 58%, transparent);
-  color: var(--agent-insert-color) !important;
-  font-size: 13px !important;
-  font-variant-numeric: tabular-nums;
 }
 .agent-rich-status dl {
   display: flex;
@@ -3485,7 +2837,9 @@ details[open] > summary > .agent-rich-collapsible__chevron { transform: rotate(9
   font: var(--font-weight-regular) var(--text-label) / var(--text-label-lh) var(--font-ui);
 }
 .agent-reasoning-summary .ui-disclosure__reveal > div > ol { display: grid; gap: 6px; padding-left: 63px; }
-.agent-rich-load-more, .agent-status-tool__load-more, .agent-context-items__load-more { margin: 6px 10px 10px; }
+.agent-rich-load-more,
+.agent-status-tool__load-more,
+.agent-context-items__load-more { margin: 6px 10px 10px; }
 .agent-status-tool__load-more { margin-left: 0; }
 .agent-context-items__load-more { margin-inline: 0; }
 
@@ -3576,16 +2930,6 @@ details[open] > summary > .agent-rich-collapsible__chevron { transform: rotate(9
 .agent-citation strong { color: var(--color-text); font-size: var(--text-label); }
 .agent-citation small,
 .agent-citation q { color: var(--color-text-secondary); }
-
-.agent-audio-block figcaption {
-  color: var(--color-text);
-  font-size: var(--text-label);
-  font-weight: var(--font-weight-semibold);
-}
-
-/* Activity projections predate the renderer registry but appear in the same
-   conversation. They therefore use the same header/body split: state colours
-   the hanging edge and header, while the readable timeline remains paper. */
 details.agent-activity--inline {
   --activity-color: color-mix(in srgb, var(--color-text-tertiary) 72%, var(--color-border-strong));
   --activity-soft: var(--color-surface-subtle);
@@ -3671,7 +3015,7 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
 @media (prefers-reduced-motion: reduce) {
   .agent-smooth-reveal { transition: opacity 90ms linear; }
   details.agent-activity--inline[data-state='running'] > summary > .agent-activity__inline-icon,
-  details.agent-activity--inline[data-state='waiting'] > summary > .agent-activity__inline-icon {
+details.agent-activity--inline[data-state='waiting'] > summary > .agent-activity__inline-icon {
     animation: none;
     opacity: 1;
   }
@@ -3689,21 +3033,12 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
 
 @media (max-width: 520px) {
   .agent-rich-collapsible > summary,
-  .agent-tool-activity > summary {
+.agent-tool-activity > summary {
     grid-template-columns: 28px minmax(0, 1fr) auto 14px;
     padding-inline: 9px;
   }
   .agent-rich-status dl { grid-column: 1 / -1; }
 }
-
-
-/* ============== the jump rail has to survive long conversations ==============
-   Measured at 60 turns the markers merged into a continuous dotted line: the
-   navigator stopped reading as discrete stops and became noise down the
-   margin. Density tiers shrink the marker and drop the ring as the transcript
-   grows, so the rail stays a quiet scale rather than a texture. The current
-   position keeps full weight at every density — it is the one marker that
-   must remain findable. */
 .agent-conversation-nav[data-density='tight'] > button::before { width: 5px; height: 5px; border-width: 1px; }
 .agent-conversation-nav[data-density='dense'] > button::before {
   width: 3px;
@@ -3723,12 +3058,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
 @media (hover: hover) and (pointer: fine) {
   .agent-conversation-nav[data-density='dense'] > button:hover::before { width: 7px; height: 7px; opacity: 1; }
 }
-
-/* ============== return to latest ==============
-   Appears only once the reader has moved away from the newest turn, so it is
-   never present during ordinary reading at the bottom. Paper-native: a quiet
-   surface chip with a hairline sitting just above the composer on the shared
-   measure — not a floating accent pill. */
 .agent-jump-latest {
   position: relative;
   z-index: 1;
@@ -3749,8 +3078,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
   font-family: var(--font-ui);
   font-size: var(--text-label);
   font-weight: var(--font-weight-medium);
-  /* `backwards` (not `both`): once the entrance settles, the fill must release
-     the transform so the :active press below still lands. */
   animation: agent-jump-latest-enter 220ms cubic-bezier(.34, 1.4, .64, 1) backwards;
   transition: color var(--motion-press) var(--ease-standard), border-color var(--motion-press) var(--ease-standard), transform var(--motion-press) var(--ease-standard);
 }
@@ -3760,9 +3087,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
 .agent-jump-latest:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .agent-jump-latest > svg { color: var(--color-accent); }
 .agent-jump-latest[data-unseen] { border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border)); color: var(--color-text); }
-
-/* Count of content that arrived while the reader was away. Quiet ink on the
-   accent, not a notification badge — the transcript is a document. */
 .agent-jump-latest__count {
   min-width: 18px;
   padding: 0 5px;
@@ -3776,8 +3100,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
   line-height: var(--text-label-lh);
   text-align: center;
 }
-
-/* Settle-only transcript announcement. Visually hidden, never focusable. */
 .agent-timeline__announcer {
   position: absolute;
   width: 1px;
@@ -3802,12 +3124,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
 
 :root[data-reduce-motion='true'] .agent-jump-latest { animation: none; transition: none; }
 :root[data-reduce-motion='true'] .agent-jump-latest:active { transform: none; }
-
-/* ============================== Agent 轨迹证据 ==============================
-   Evidence layout for PawContextTrace: every summary row opens to concrete
-   captured content with a line/character count and a safe copy of exactly the
-   redacted text on screen (PF-CM-010). Visual identity stays with the an-* /
-   paw-agent-trace-v1 owners; this section only styles the evidence additions. */
 
 .agent-trace-evidence-actions {
   display: inline-flex;
@@ -3839,10 +3155,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
   font-size: 12px;
   line-height: 1.5;
 }
-
-/* ===== 分派计划（route_decision 的真实内容） =====
-   目标、理由与波次在头部；下方每位候选伙伴一行：真实权重条 + 路由信号。
-   权重来自路由回执的 score（0..1），不发明进度；协作色 = 紫罗兰。 */
 .agent-route-plan {
   display: grid;
   min-width: 0;
@@ -3966,8 +3278,6 @@ details.agent-activity--inline > summary > .agent-activity__inline-status {
   color: var(--color-collaboration);
   font-weight: 600;
 }
-
-/* Pending questions own the composer space; never crop their submit actions. */
 .agent-user-input-card { display: flex; flex-direction: column; min-height: 0; box-sizing: border-box; }
 .agent-user-input-card__header { flex: none; }
 .agent-user-input-card .agent-user-input-dialog__form { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

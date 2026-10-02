@@ -1067,7 +1067,7 @@ export function PawRoomWorkspace({
   return (
     <section
       ref={workspaceRef}
-      className={`paw-room-workspace paw-room-workspace--migrated-v1${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
+      className={`paw-room-workspace paw-room-workspace--conversation${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
       data-agent-mode={jevEnabled ? 'jev' : 'room'}
       data-collaboration-mode={!jevEnabled && collaborationFocusActive}
       data-external-focus={externalCollaborationFocus || undefined}

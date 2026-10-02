@@ -23,9 +23,9 @@ import type { ControlRequest } from '@/platform/transport';
 import type { PawOsAppId } from '@/features/paw-os/model/app-registry';
 import { pawApp } from '../runtime/app-registry';
 import { AppSidebarToggle, useAppSidebar } from './app-sidebar';
-import { PawSystemAppsMigrated, isPawSystemAppId, type PawSystemAppId } from './PawSystemAppsMigrated';
+import { PawSystemApps, isPawSystemAppId, type PawSystemAppId } from './PawSystemApps';
 import { PawWorkbenchDocumentLifecycle } from './PawWorkbenchDocumentLifecycle';
-import { PawWorkbenchMigrated, type PawWorkbenchPageId } from './PawWorkbenchMigrated';
+import { PawWorkbench, type PawWorkbenchPageId } from './PawWorkbench';
 import { PawWorkbenchDocumentRegisterDialog, PawWorkbenchGoalDialog, PawWorkbenchTaskDialog } from './PawWorkbenchOperations';
 import { PawWorkbenchPlanningTools } from './PawWorkbenchPlanningTools';
 
@@ -61,7 +61,7 @@ const pagesByApp: Record<PawFeatureAppId, readonly NativePage[]> = {
 };
 
 export function PawNativeApp({ appId, initialRoute = '' }: { appId: PawNativeAppId; initialRoute?: string }) {
-  if (isPawSystemAppId(appId)) return <PawSystemAppsMigrated appId={appId} initialRoute={initialRoute} />;
+  if (isPawSystemAppId(appId)) return <PawSystemApps appId={appId} initialRoute={initialRoute} />;
   return <PawFeatureApp appId={appId} initialRoute={initialRoute} />;
 }
 
@@ -188,7 +188,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
       : { label: '登记工作文档', onClick: () => setRegisterDialogOpen(true) };
 
   return <>
-    <PawWorkbenchMigrated
+    <PawWorkbench
       documents={docs}
       documentTotal={documentList.data?.total ?? docs.length}
       documentHistoryQuery={documentHistoryQuery}

@@ -7,7 +7,7 @@ import { PawDesktop } from './shell/PawDesktop';
 import './styles/paw-os.css';
 import './styles/paw-os-motion.css';
 import './styles/paw-os-webmodel-v1.css';
-import './styles/paw-os-shell-migrated-v1.css';
+import './styles/paw-os-shell.css';
 import './styles/paw-os-controls.css';
 import './styles/paw-os-stellar.css';
 import './styles/paw-os-stellar-dark.css';

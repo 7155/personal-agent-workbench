@@ -105,9 +105,7 @@
 .an-chip .caret { flex: none; opacity: .58; }
 .an-chip .paw-mark,
 .an-mode-seg .paw-app-icon { flex: none; }
-.an-chip-text,
-.an-chip-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.an-chip-detail { flex: none; color: var(--an-ink-3); }
+.an-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .an-send { display: grid; width: 32px; height: 32px; margin-left: 0; justify-self: end; place-items: center; border: 0; border-radius: 8px; background: var(--an-ink); color: var(--an-paper-bright); transition: transform 180ms var(--an-spring), opacity 140ms ease, background 140ms ease; }
 .an-send:hover:not(:disabled) { background: var(--an-cobalt); transform: translateY(-2px); }
 .an-send:active:not(:disabled) { transform: translateY(0) scale(.96); }
@@ -217,7 +215,7 @@
   .agent-turn__failure
 )::before { left: -25px; }
 /* The real user bubble (rounded corners, cobalt-tinted gradient, radius/
-   shadow) is owned end-to-end by paw-os-agent-migrated-v1's separated-flow
+   shadow) is owned end-to-end by paw-os-agent's separated-flow
    `.agent-user-message .agent-markdown` rule. This wrapper only carries
    inherited reading properties now — an earlier straight-edged border +
    drop-shadow here used to frame the rounded bubble underneath it,
@@ -245,7 +243,7 @@
 /* .paw-session-workspace__composer is a sibling of .paw-session-workspace__conversation
    in PawSessionWorkspace's markup, not a descendant, so composer chrome has no
    owner here; it is styled once, for both Session and Room, in
-   paw-os-agent-migrated-v1.css. */
+   paw-os-agent.css. */
 
 /* True Agent trace */
 .an-trace { container: paw-agent-trace / size; display: flex; width: 100%; height: 100%; min-height: 0; overflow: hidden; background: var(--an-paper); }
@@ -377,15 +375,6 @@
 .an-mini-tool .mt-key { min-width: 0; flex: 1; overflow: hidden; color: var(--an-ink-2); font-family: var(--an-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .an-mini-tool .mt-dur { flex: none; color: var(--an-ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .an-batch-tag { display: inline-flex; align-items: center; padding: 1px 6px; border: 1px solid color-mix(in srgb, var(--an-violet) 42%, transparent); border-radius: 5px; color: var(--an-violet); font-size: 12px; font-weight: 750; letter-spacing: .05em; }
-.an-events { padding: 4px 2px 18px; }
-.an-ev { display: grid; grid-template-columns: 68px 128px minmax(0, 1fr) auto; gap: 11px; align-items: baseline; padding: 8px 3px; border-bottom: 1px dashed var(--an-hairline); font-size: 12.5px; }
-.an-ev .ev-time { color: var(--an-ink-3); font-family: var(--an-mono); font-size: 12px; }
-.an-ev .ev-type { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 680; }
-.an-ev .ev-body { min-width: 0; color: var(--an-ink-2); overflow-wrap: anywhere; }
-.an-ev .ev-dur { color: var(--an-ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
-.an-ev[data-tone="fail"] .ev-type { color: var(--an-red); }
-.an-ev[data-tone="ok"] .ev-type { color: var(--an-teal); }
-.an-ev[data-tone="run"] .ev-type { color: var(--an-cobalt); }
 
 /* Shared scroll behavior inside the Agent surface. */
 .paw-agent-next * { scrollbar-color: var(--an-rule-strong) transparent; scrollbar-width: thin; }
@@ -422,9 +411,6 @@
   /* 横向轮播模式没有纵向轨道可挂。 */
   .an-turn-item::before { display: none; }
   .an-trace-center { padding: 13px; }
-  .an-ev { grid-template-columns: 58px minmax(0, 1fr); }
-  .an-ev .ev-body,
-  .an-ev .ev-dur { grid-column: 2; }
   .an-node .n-bar { display: none; }
 }
 
@@ -455,7 +441,6 @@
    then labels, keep the semantic mark + aria-label/title. */
 @container an-home-composer (max-width: 560px) {
   .an-chip { max-width: 148px; }
-  .an-chip-detail { display: none; }
 }
 
 @container an-home-composer (max-width: 420px) {
@@ -475,9 +460,8 @@
   }
 
   .an-chip .caret,
-  .an-chip-text,
-  .an-chip-detail,
-  .an-mode-seg .an-chip-text {
+.an-chip-text,
+.an-mode-seg .an-chip-text {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -505,24 +489,6 @@
 /* 证据复制：核对后的原文可以直接带走，不必全选整段可滚动 pre。
    同一按钮同时服务装配证据（an-assembly-evidence）与事件流载荷
    （paw-agent-trace-v1__payload-body 内的 an-evidence-actions 行）。 */
-.an-evidence-tools { display: inline-flex; flex: none; align-items: center; gap: 8px; }
-.an-evidence-copy {
-  flex: none;
-  min-height: 22px;
-  padding: 1px 9px;
-  border: 1px solid var(--an-rule);
-  border-radius: 999px;
-  background: var(--an-paper-bright);
-  color: var(--an-ink-2);
-  font-family: var(--font-ui, inherit);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.4;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
-}
-.an-evidence-copy:hover { border-color: var(--an-rule-strong); color: var(--an-ink); }
-.an-evidence-copy[data-copied] { border-color: var(--an-teal); background: rgba(18, 138, 82, .08); color: var(--an-teal); }
-.an-evidence-actions { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 
 /* The Home and Session use one model control; its popover portals outside the
    resizable window so the reasoning rail cannot be clipped by the composer. */

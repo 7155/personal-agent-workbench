@@ -32,7 +32,7 @@
   border-bottom: 1px solid var(--paw-line);
   background: transparent;
 }
-/* 视图切换分段控件由 paw-os-agent-migrated-v1 单一负责（与 Room 窗口
+/* 视图切换分段控件由 paw-os-agent 单一负责（与 Room 窗口
    chrome 同一语言）；此处旧的墨底活动片覆写已删除（UR-042）。 */
 .paw-desktop-root .paw-session-workspace__runtime > span {
   border: 1px solid var(--paw-line);
@@ -241,12 +241,6 @@
 @keyframes paw-comp8-marching {
   to { transform: translate3d(0, 0, 0); }
 }
-
-.paw-desktop-root .agent-activity-row__meta {
-  color: var(--paw-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 .paw-desktop-root .agent-activity-row__details {
   margin: 2px 6px 6px 27px;
   border: 1px solid var(--paw-line);
@@ -274,7 +268,7 @@
   font-weight: 650;
 }
 /* 代码/终端/原始输出统一走共享 code 色对（--color-code-bg / --color-code-text），
-   与 paw-os-agent-migrated-v1 的分离式对话流规则同一合同。 */
+   与 paw-os-agent 的分离式对话流规则同一合同。 */
 .paw-desktop-root .agent-tool-raw-result__body,
 .paw-desktop-root .agent-tool-code-result,
 .paw-desktop-root .agent-tool-terminal-result {

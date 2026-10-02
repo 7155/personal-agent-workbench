@@ -205,7 +205,6 @@ def _build_frontend(
     environment = _clean_environment(clean_root)
     environment.update(
         {
-            "VITE_PAW_FRONTEND": "paw-os",
             "VITE_CONTROL_TRANSPORT": "http",
             "VITE_BUILD_CHANNEL": "production",
             "VITE_CONTROL_BASE_URL": "http://127.0.0.1:8766",
@@ -247,7 +246,6 @@ def _run_source_ui_tests(
     environment = _clean_environment(clean_root)
     environment.update(
         {
-            "VITE_PAW_FRONTEND": "paw-os",
             "VITE_CONTROL_TRANSPORT": "mock",
             "VITE_BUILD_CHANNEL": "preview",
         }

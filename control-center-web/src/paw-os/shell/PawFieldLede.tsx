@@ -25,7 +25,7 @@ import { PawBrandMark } from './PawAppIcon';
  *   但不持有它——桌面仍然只做导航，副句里的「回执 → 记忆与知识 → 上下文」
  *   就是那条链路在文案上的同一句话。
  *
- * 样式：paw-os.css 拥有几何，paw-os-shell-migrated-v1.css 拥有着墨与雾面底。
+ * 样式：paw-os.css 拥有几何，paw-os-shell.css 拥有着墨与雾面底。
  */
 export const PawFieldLede = memo(function PawFieldLede({ onOpen }: { onOpen: (appId: PawAppId) => void }) {
   return (

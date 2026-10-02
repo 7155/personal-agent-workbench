@@ -1137,11 +1137,6 @@ html[data-paw-native-host='macos'] .paw-sf[data-immersive]:not(:fullscreen) .paw
 }
 
 /* Agent home: the inline galaxy needs its own definite height. */
-.paw-desktop-root .an-home-galaxy .paw-sf {
-  height: clamp(360px, 48vh, 560px);
-  border: 1px solid rgb(24 32 43 / .12);
-  border-radius: 14px;
-}
 
 /* ---------------------------------------------------------- motion -- */
 

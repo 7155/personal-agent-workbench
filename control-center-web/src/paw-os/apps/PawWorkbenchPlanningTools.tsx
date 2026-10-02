@@ -8,7 +8,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
-import type { PawWorkbenchRecord } from './PawWorkbenchMigrated';
+import type { PawWorkbenchRecord } from './PawWorkbench';
 
 type AgentHandoffIntent = 'organize' | 'breakdown' | 'review';
 

@@ -295,7 +295,6 @@ if [[ "$DRY_RUN" != "1" && "$DRY_RUN" != "true" && "$DRY_RUN" != "TRUE" ]]; then
   fi
   trap cleanup_web_install_state EXIT
 
-  VITE_PAW_FRONTEND=paw-os \
   RAG_IME_CONTROL_TRANSPORT=http \
   RAG_IME_CONTROL_BUILD_CHANNEL=production \
     "$ROOT/scripts/build_control_center_web.sh" >/dev/null

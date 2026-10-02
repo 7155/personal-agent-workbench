@@ -1,3 +1,4 @@
+import type { ControlRequest } from '@/platform/transport';
 /** Read-only README illustration. Only allowlisted public experiment metadata is loaded. */
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -48,7 +49,7 @@ const project = {
 };
 const refuse = () => { throw new Error('README 配图仅展示公开历史元数据，不执行项目或模型命令。'); };
 const transport = new MockControlTransport({ routes: {
-  'agent.eval-lab.projects.get': (request) => ({ ok: true, project: request.query?.projectId ? project : null, items: [project], supportedViews: ['table', 'json'], ...(request.query?.artifactId ? { artifact: artifacts.find((a) => a.artifactId === request.query?.artifactId) } : {}) }),
+  'agent.eval-lab.projects.get': (request: ControlRequest) => ({ ok: true, project: request.query?.projectId ? project : null, items: [project], supportedViews: ['table', 'json'], ...(request.query?.artifactId ? { artifact: artifacts.find((a) => a.artifactId === request.query?.artifactId) } : {}) }),
   'agent.eval-lab.projects.command': refuse,
   'agent.eval-lab.apps.get': () => ({ ok: true, items: [], app: null, version: null, versions: [], calls: [] }),
   'agent.session.prompt': refuse,

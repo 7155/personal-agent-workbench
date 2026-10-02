@@ -208,11 +208,15 @@ export function PawRoomRoundSheet({
           : sheet.rows.filter((row) => !row.assigned && !coordinatorRows.includes(row));
         const standaloneTaskRow = taskRows.length === 1 ? taskRows[0] : undefined;
         const multiParticipantRows = taskRows.length > 1 ? taskRows : [];
-        const countedResultRows = workerAssignmentExists
-          ? resultRows.filter((row) => !isCoordinatorRow(row, room))
-          : resultRows;
-        const planetCount = taskRows.length + countedResultRows.length
-          + (workerAssignmentExists ? 0 : coordinatorRows.length) || starterRows.length;
+        // The prompt counts participating planets, independently of the
+        // worker table's synthesis layout. A routed moderator is one planet;
+        // repeated dispatches remain one row. Unknown historical lane IDs
+        // keep their evidence surfaces without inflating the roster count.
+        const knownPlanet = (row: RoomRoundTaskRow) => room.participants.some((participant) => participant.id === row.participantId);
+        const participatingPlanets = sheet.rows.filter((row) => knownPlanet(row) && (row.assigned || resultRows.includes(row)));
+        const planetCount = new Set((participatingPlanets.length
+          ? participatingPlanets
+          : starterRows.filter(knownPlanet)).map((row) => row.participantId)).size;
         const roundOpen = latest || Boolean(historicalDisclosure[sheet.id]);
         const replyId = `${detailIdPrefix}-${domToken(sheet.id)}-reply`;
         const processId = `${detailIdPrefix}-${domToken(sheet.id)}-process`;

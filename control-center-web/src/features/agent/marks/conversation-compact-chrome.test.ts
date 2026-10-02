@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import agentCss from '../agent.css?raw';
 import workspaceCss from '../../../design/workspace.css?raw';
 import agentFxCss from '../../../paw-os/styles/paw-os-agent-fx.css?raw';
-import agentMigratedCss from '../../../paw-os/styles/paw-os-agent-migrated-v1.css?raw';
+import agentMigratedCss from '../../../paw-os/styles/paw-os-agent.css?raw';
 import webModelCss from '../../../paw-os/styles/paw-os-webmodel-v1.css?raw';
 import marksCss from './conversation-marks.css?raw';
 import composerShellSource from '../../composer/ComposerShell.tsx?raw';
@@ -19,7 +19,7 @@ import toolPickerSource from '../composer/ToolPicker.tsx?raw';
 describe('conversation logo-first compact chrome', () => {
   it('measures the composer toolbar itself instead of the viewport', () => {
     expect(workspaceCss).toMatch(
-      /\.agent-composer__toolbar,\s*\.room-composer__toolbar\s*\{[^}]*container:\s*paw-composer-toolbar \/ inline-size;/s,
+      /\.agent-composer__toolbar\s*\{[^}]*container:\s*paw-composer-toolbar \/ inline-size;/s,
     );
   });
 
@@ -53,16 +53,6 @@ describe('conversation logo-first compact chrome', () => {
     );
     expect(agentMigratedCss).not.toContain('.agent-composer__picker .ui-button__label');
     expect(agentMigratedCss).not.toMatch(/\.agent-composer__picker\s*\{[^}]*flex:\s*0 0 32px;/s);
-  });
-
-  it('collapses the Session lead-in to marks from the workspace container', () => {
-    const chipCollapse = agentFxCss.slice(
-      agentFxCss.indexOf('@container paw-session-workspace (max-width: 560px)'),
-    );
-    expect(chipCollapse).toMatch(/\.fx-context-chip__text\s*\{[^}]*clip-path:\s*inset\(50%\);/s);
-    expect(agentFxCss).toContain('.paw-desktop-root .paw-chatfx .fx-context-chip > .paw-mark');
-    // The retired tone dot carried no meaning once the mark arrived.
-    expect(agentFxCss).not.toMatch(/\.fx-context-chip i\s*\{/);
   });
 
   it('gives each mark family its own identity policy', () => {

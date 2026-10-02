@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { routes } from './helpers';
+import { productRoute, routeSurface, routes } from './helpers';
 
 test('all desktop and mobile routes have no WCAG A/AA violations', async ({
   page,
@@ -12,8 +12,8 @@ test('all desktop and mobile routes have no WCAG A/AA violations', async ({
   );
 
   for (const route of routes) {
-    await page.goto(`/#/${route.id}`);
-    await expect(page.locator(`main[data-route-id="${route.id}"]`)).toBeVisible();
+    await page.goto(productRoute(route.id));
+    await expect(routeSurface(page, route.id)).toBeVisible();
     await page.waitForTimeout(250);
 
     const results = await new AxeBuilder({ page })
@@ -23,6 +23,9 @@ test('all desktop and mobile routes have no WCAG A/AA violations', async ({
       body: JSON.stringify(results.violations, null, 2),
       contentType: 'application/json',
     });
+    if (route.id === 'approvals' || route.id === 'governance') {
+      await testInfo.attach(`${route.id}-contrast.png`, { body: await page.screenshot(), contentType: 'image/png' });
+    }
 
     expect(
       results.violations,

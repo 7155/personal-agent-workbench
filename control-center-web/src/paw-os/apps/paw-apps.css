@@ -272,7 +272,7 @@
 .paw-session-workspace__composer > :is(.ccui-queue-tray, .ccui-queue-panel, .ccui-queue-cap-notice) { width: min(900px, 100%); margin: 0 auto 6px; }
 /* UR-042：Session 与 Room 同一只 Composer——两个工作面的输入船坞共用
    同一组规则，Room 不再持有第二套视觉系统。船坞本体的边框/圆角/底色/投影
-   由 paw-os-agent-migrated-v1.css 单一负责；这里只留度量。 */
+   由 paw-os-agent.css 单一负责；这里只留度量。 */
 .paw-session-workspace__composer .agent-composer textarea,
 .paw-room-workspace__composer .agent-composer textarea { min-height: 52px; padding: 12px 13px 38px; font-size: 12px; }
 .paw-session-workspace__composer .agent-composer__toolbar,
@@ -1406,7 +1406,7 @@
 .paw-agent-rail-backdrop { display: none; }
 /* The composer's running glow ring is the owner's signal (PF-CM-011); it is not
    re-hidden here, and its reduced-motion behaviour is decided once, in
-   paw-os-agent-migrated-v1.css. */
+   paw-os-agent.css. */
 .paw-unified-composer > textarea {
   min-height: 64px;
   padding: 12px 13px 41px;

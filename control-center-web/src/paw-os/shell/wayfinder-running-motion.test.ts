@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import shellCss from '../styles/paw-os-shell-migrated-v1.css?raw';
+import shellCss from '../styles/paw-os-shell.css?raw';
 import wayfinderSource from './PawWayfinderWork.tsx?raw';
 
 describe('Wayfinder running desktop-file motion', () => {

@@ -84,11 +84,6 @@ describe('conversation status polish', () => {
     expect(agentFxCss).toMatch(/\.agent-assistant-pending \{[^}]*box-shadow: none;/);
   });
 
-  it('binds PAWOS Agent responsive rules to the real window shell', () => {
-    expect(agentCss).toContain(".paw-window-shell[data-app='agent'] .agent-feature");
-    expect(agentCss).not.toContain('.paw-os-app-window');
-  });
-
   it('animates autocompact with composited properties and a reduced-motion state', () => {
     expect(agentCss).toMatch(/\.agent-compaction-notice \{[^}]*animation: agent-autocompact-enter var\(--duration-enter\) var\(--ease-standard\) both;/);
     expect(agentCss).toContain('@keyframes agent-autocompact-fold-top');

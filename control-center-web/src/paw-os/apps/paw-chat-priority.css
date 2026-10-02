@@ -30,17 +30,17 @@
  * keeps a 760px/742px legacy reading column; the workbench layout uses one
  * wider column for transcript, status and input so Thinking cannot drift away
  * from the messages it describes. */
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation {
   --wb-read: 1480px !important;
 }
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-timeline > .ccui-conversation-surface {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-timeline > .ccui-conversation-surface {
   --ccui-reading-width: var(--wb-read) !important;
 }
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-workspace__composer > .room-composer-shell,
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-workspace__composer .ccui-queue-tray,
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-workspace__composer .ccui-queue-panel {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-workspace__composer > .room-composer-shell,
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-workspace__composer .ccui-queue-tray,
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-workspace__composer .ccui-queue-panel {
   width: min(var(--wb-read), 100%) !important;
 }
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--migrated-v1 .paw-room-response-status {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-response-status {
   width: min(var(--wb-read), 100%) !important;
 }

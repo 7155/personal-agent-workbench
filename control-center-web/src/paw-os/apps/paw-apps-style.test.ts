@@ -22,17 +22,17 @@ import primitiveCss from '../../components/primitives/primitives.css?raw';
 import workspaceCss from '../../design/workspace.css?raw';
 import agentCompositionCss from '../styles/paw-os-agent-composition.css?raw';
 import agentFxCss from '../styles/paw-os-agent-fx.css?raw';
-import agentMigratedCss from '../styles/paw-os-agent-migrated-v1.css?raw';
+import agentMigratedCss from '../styles/paw-os-agent.css?raw';
 import agentNextCss from '../styles/paw-os-agent-next.css?raw';
 import pawOsCss from '../styles/paw-os.css?raw';
 import motionCss from '../styles/paw-os-motion.css?raw';
 import roomFocusCss from '../styles/paw-os-room-focus.css?raw';
-import roomMigratedCss from '../styles/paw-os-room-migrated-v1.css?raw';
-import shellMigratedCss from '../styles/paw-os-shell-migrated-v1.css?raw';
-import systemMigratedCss from '../styles/paw-os-sys-apps-migrated-v1.css?raw';
-import toolsMigratedCss from '../styles/paw-os-tools-files-migrated-v1.css?raw';
+import roomMigratedCss from '../styles/paw-os-room.css?raw';
+import shellMigratedCss from '../styles/paw-os-shell.css?raw';
+import systemMigratedCss from '../styles/paw-os-system-apps.css?raw';
+import toolsMigratedCss from '../styles/paw-os-tools-files.css?raw';
 import webmodelCss from '../styles/paw-os-webmodel-v1.css?raw';
-import workbenchMigratedCss from '../styles/paw-os-workbench-migrated-v1.css?raw';
+import workbenchMigratedCss from '../styles/paw-os-workbench.css?raw';
 
 type SemanticBlock = {
   css: string;
@@ -555,7 +555,7 @@ describe('PAWOS semantic type roles', () => {
     // where a PAWOS owner can out-specify the de-boxed base. Opening a group
     // must reveal rows, not summon the plate the closed row does without.
     for (const [owner, css] of Object.entries({
-      'paw-os-agent-migrated-v1.css': agentMigratedCss,
+      'paw-os-agent.css': agentMigratedCss,
       'paw-os-webmodel-v1.css': webmodelCss,
       'paw-os-agent-fx.css': agentFxCss,
       'paw-os-agent-next.css': agentNextCss,
@@ -697,7 +697,6 @@ describe('PAWOS semantic type roles', () => {
     expect(agentFxCss).toContain('.paw-desktop-root .paw-chatfx .paw-user-message');
     expect(agentFxCss).toContain('.paw-desktop-root .paw-chatfx .fx-pill.danger');
     expect(agentFxCss).toContain('.paw-desktop-root .paw-chatfx .fx-pill.vio');
-    expect(agentFxCss).toContain('.paw-desktop-root .paw-chatfx .fx-context-chip');
     // The stable status mark is declared once in the Agent owner so it
     // survives outside the desktop shell; the fx layer may only repaint it.
     expect(agentFxCss).not.toContain('@keyframes paw-conv-planet-breathe');
@@ -803,7 +802,7 @@ describe('PAWOS semantic type roles', () => {
     // by theming the shared conversation surface rather than by owning a
     // second set of message rules.
     expect(roomMigratedCss).toMatch(/\.ccui-assistant-body\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*24px;/s);
-    expect(roomMigratedCss).toMatch(/\.paw-room-workspace--migrated-v1 \.ccui-conversation-surface\s*\{[^}]*--ccui-text:\s*var\(--paw-chat-text\);/s);
+    expect(roomMigratedCss).toMatch(/\.paw-room-workspace--conversation \.ccui-conversation-surface\s*\{[^}]*--ccui-text:\s*var\(--paw-chat-text\);/s);
     expect(roomMigratedCss).not.toContain('.paw-room-chronology');
     expect(roomConversationCss).toMatch(/\.ccui-assistant-turn:has\(\.paw-room-conversation__final-report\)\s*\{[^}]*width:\s*calc\(100%\s*-\s*40px\);/s);
     expect(roomConversationCss).toMatch(/\.paw-room-conversation__final-report\s*\{[^}]*width:\s*100%;/s);
@@ -851,7 +850,7 @@ describe('PAWOS semantic type roles', () => {
     expect(roundSheetCss).toMatch(/\.paw-room-round table\s*\{[^}]*min-width:\s*720px;/s);
     expect(appCss).toMatch(/\.paw-room-workspace\[data-window-chrome='portal'\]\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/s);
     expect(appCss).toMatch(/\.paw-room-workspace\[data-window-chrome='fallback'\]\s*\{[^}]*grid-template-rows:\s*44px auto minmax\(0, 1fr\);/s);
-    expect(roomMigratedCss).toMatch(/\.paw-room-workspace--migrated-v1\[data-window-chrome='portal'\]\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/s);
+    expect(roomMigratedCss).toMatch(/\.paw-room-workspace--conversation\[data-window-chrome='portal'\]\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/s);
     expect(appCss).not.toMatch(/\.paw-room-workspace__header nav button:nth-child\(2\)\s*\{[^}]*display:\s*none;/s);
     expect(appCss).toContain("[data-room-view='conversation']");
     expect(appCss).toContain("[data-room-view='starfield']");
@@ -869,7 +868,7 @@ describe('PAWOS semantic type roles', () => {
   });
 
   it('lets the Room conversation reclaim the column retired with the inline tool panel', () => {
-    expect(roomMigratedCss).toMatch(/\.paw-room-workspace--migrated-v1 \.paw-room-workspace__body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+    expect(roomMigratedCss).toMatch(/\.paw-room-workspace--conversation \.paw-room-workspace__body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   });
 
   it('projects the consolidated Sol console into the room-panel satellite without dead flow styles', () => {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { routes } from './helpers';
+import { productRoute, routeSurface, routes } from './helpers';
 
 const auditedRoutes = routes.filter(({ id }) => !['agent', 'rooms'].includes(id));
 
@@ -12,8 +12,8 @@ test('management pages do not vertically clip text at 200% text size', async ({ 
 
   const failures: Record<string, string[]> = {};
   for (const route of auditedRoutes) {
-    await page.goto(`/?controlTransport=mock#/${route.id}`);
-    const main = page.locator(`main[data-route-id="${route.id}"]`);
+    await page.goto(productRoute(route.id));
+    const main = routeSurface(page, route.id);
     await expect(main).toBeVisible();
 
     const clipped = await main.evaluate((root) => {

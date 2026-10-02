@@ -16,7 +16,7 @@ import { StubControlTransport } from '@/test/stub-control-transport';
 import { ControlTransportHttpError } from '@/platform/http-transport';
 import type { ControlEventObserver, ControlRequest } from '@/platform/transport';
 import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
-import agentMigratedCss from '../styles/paw-os-agent-migrated-v1.css?raw';
+import agentMigratedCss from '../styles/paw-os-agent.css?raw';
 import appsCss from './paw-apps.css?raw';
 import { PawWindowFrame } from '../shell/PawWindowLayer';
 import { PawSessionWorkspace, sessionWorkspaceProjectionSlice } from './PawSessionWorkspace';

@@ -59,18 +59,12 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
-      d3-contour:
-        specifier: 4.0.2
-        version: 4.0.2
       katex:
         specifier: ^0.18.9
         version: 0.18.9
       leaflet:
         specifier: 1.9.4
         version: 1.9.4
-      leaflet-draw:
-        specifier: 1.0.4
-        version: 1.0.4
       lucide-react:
         specifier: ^1.24.0
         version: 1.24.0(react@19.2.7)
@@ -95,9 +89,6 @@ importers:
       react-virtuoso:
         specifier: ^4.18.10
         version: 4.18.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      react-zoom-pan-pinch:
-        specifier: 4.0.3
-        version: 4.0.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
@@ -129,15 +120,9 @@ importers:
       '@testing-library/user-event':
         specifier: ^14.6.1
         version: 14.6.1(@testing-library/dom@10.4.1)
-      '@types/d3-contour':
-        specifier: 3.0.6
-        version: 3.0.6
       '@types/leaflet':
         specifier: 1.9.21
         version: 1.9.21
-      '@types/leaflet-draw':
-        specifier: 1.0.13
-        version: 1.0.13
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
@@ -1417,9 +1402,6 @@ packages:
   '@types/katex@0.16.8':
     resolution: {integrity: sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==}
 
-  '@types/leaflet-draw@1.0.13':
-    resolution: {integrity: sha512-YU82kilOaU+wPNbqKCCDfHH3hqepN6XilrBwG/mSeZ/z4ewumaRCOah44s3FMxSu/Aa0SVa3PPJvhIZDUA09mw==}
-
   '@types/leaflet@1.9.21':
     resolution: {integrity: sha512-TbAd9DaPGSnzp6QvtYngntMZgcRk+igFELwR2N99XZn7RXUdKgsXMR+28bUO0rPsWp8MIu/f47luLIQuSLYv/w==}
 
@@ -2129,9 +2111,6 @@ packages:
   layout-base@2.0.1:
     resolution: {integrity: sha512-dp3s92+uNI1hWIpPGH3jK2kxE2lMjdXdr+DH8ynZHpd6PUlH6x6cbuXnoMmiNumznqaNO31xu9e79F0uuZ0JFg==}
 
-  leaflet-draw@1.0.4:
-    resolution: {integrity: sha512-rsQ6saQO5ST5Aj6XRFylr5zvarWgzWnrg46zQ1MEOEIHsppdC/8hnN8qMoFvACsPvTioAuysya/TVtog15tyAQ==}
-
   leaflet@1.9.4:
     resolution: {integrity: sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==}
 
@@ -2524,13 +2503,6 @@ packages:
     peerDependencies:
       react: '>=16 || >=17 || >= 18 || >= 19'
       react-dom: '>=16 || >=17 || >= 18 || >=19'
-
-  react-zoom-pan-pinch@4.0.3:
-    resolution: {integrity: sha512-N2Hi6L78fFmhRra+ORpFSW7WST5x6kxpOPplIvtB0b7b+U2anpo1z1wLgaWRPS2kUSqcraRG+JgBCIlDJnqqAg==}
-    engines: {node: '>=8', npm: '>=5'}
-    peerDependencies:
-      react: '*'
-      react-dom: '*'
 
   react@19.2.7:
     resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
@@ -4316,10 +4288,6 @@ snapshots:
 
   '@types/katex@0.16.8': {}
 
-  '@types/leaflet-draw@1.0.13':
-    dependencies:
-      '@types/leaflet': 1.9.21
-
   '@types/leaflet@1.9.21':
     dependencies:
       '@types/geojson': 7946.0.16
@@ -5077,8 +5045,6 @@ snapshots:
 
   layout-base@2.0.1: {}
 
-  leaflet-draw@1.0.4: {}
-
   leaflet@1.9.4: {}
 
   lodash-es@4.17.23: {}
@@ -5701,11 +5667,6 @@ snapshots:
       '@types/react': 19.2.17
 
   react-virtuoso@4.18.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
-    dependencies:
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-
-  react-zoom-pan-pinch@4.0.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)

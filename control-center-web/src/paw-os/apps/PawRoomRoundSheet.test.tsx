@@ -18,6 +18,73 @@ import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 afterEach(cleanup);
 
 describe('PawRoomRoundSheet (UR-170/172)', () => {
+  it.each([false, true])('counts both routed planets including the moderator once (unknown lane: %s)', (includeUnknown) => {
+    const room = roomWith([
+      participant('participant-earth', 'session-earth', 0),
+      participant('participant-mars', 'session-mars', 1),
+      participant('participant-venus', 'session-venus', 2),
+    ]);
+    const projection = projectionWithProgress('Earth 已交付');
+    projection.turnsById['turn-1']!.status = 'completed';
+    projection.activitiesById['activity-earth']!.status = 'completed';
+    projection.activitiesById['activity-earth']!.kind = 'route_decision';
+    const routes = [
+      ['route-mars', 'participant-mars', 'session-mars'],
+      ['route-mars-repeat', 'participant-mars', 'session-mars'],
+    ];
+    if (includeUnknown) routes.push(['route-unknown', 'participant-unknown', 'session-unknown']);
+    for (const [id, participantId, sessionId] of routes) {
+      const activity = activityForParticipant(projection.activitiesById['activity-earth']!, id!, participantId!, sessionId!, '已交付');
+      activity.kind = 'route_decision';
+      activity.payload.dispatchId = id;
+      projection.activitiesById[id!] = activity;
+      projection.turnsById['turn-1']!.activityIds.push(id!);
+    }
+    projection.turnsById['turn-1']!.participantIds.push('participant-mars');
+    if (includeUnknown) projection.turnsById['turn-1']!.participantIds.push('participant-unknown');
+    projection.activityOrder = [...projection.turnsById['turn-1']!.activityIds];
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={room} />);
+    expect(screen.getByText('2 颗行星 · 已完成')).toBeInTheDocument();
+    expect(screen.queryByText('3 颗行星 · 已完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('4 颗行星 · 已完成')).not.toBeInTheDocument();
+  });
+
+  it('counts repeated dispatches for one moderator as one planet', () => {
+    const projection = projectionWithProgress('Earth 已交付');
+    projection.turnsById['turn-1']!.status = 'completed';
+    projection.activitiesById['activity-earth']!.status = 'completed';
+    projection.activitiesById['repeat-earth'] = activityForParticipant(
+      projection.activitiesById['activity-earth']!, 'repeat-earth', 'participant-earth', 'session-earth', 'Earth 再次交付',
+    );
+    projection.turnsById['turn-1']!.activityIds.push('repeat-earth');
+    projection.activityOrder = [...projection.turnsById['turn-1']!.activityIds];
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([
+      participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1),
+    ])} />);
+    expect(screen.getByText('1 颗行星 · 已完成')).toBeInTheDocument();
+    expect(screen.queryByText('2 颗行星 · 已完成')).not.toBeInTheDocument();
+  });
+
+  it('shows a stopped explanation for a retained routing enum without changing the evidence', () => {
+    const projection = projectionWithProgress('route_decision');
+    projection.turnsById['turn-1']!.status = 'aborted';
+    projection.activitiesById['activity-earth']!.status = 'aborted';
+    projection.activitiesById['activity-earth']!.kind = 'route_decision';
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    const notice = screen.getByText('本轮已停止').closest('.paw-room-round__notice');
+    expect(notice).toHaveTextContent('本轮执行已停止，已有进展和证据保留。');
+    expect(notice).not.toHaveTextContent('route_decision');
+    expect(projection.activitiesById['activity-earth']!.summary).toBe('route_decision');
+  });
+
+  it('keeps an unknown terminal error readable instead of replacing it with a stop explanation', () => {
+    const projection = projectionWithProgress('runtime_custom_failure: original diagnostic');
+    projection.turnsById['turn-1']!.status = 'failed';
+    projection.activitiesById['activity-earth']!.status = 'failed';
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    expect(screen.getByText('本轮需要处理').closest('.paw-room-round__notice')).toHaveTextContent('runtime_custom_failure: original diagnostic');
+  });
+
   it('surfaces a stopped reason immediately and opens its evidence in place', async () => {
     const user = userEvent.setup();
     const projection = projectionWithProgress('工具连续失败，已停止本轮以避免继续空转');
@@ -305,7 +372,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(within(table).getAllByRole('row')).toHaveLength(3);
     expect(within(table).queryByText('主控已经汇总当前公开进展')).not.toBeInTheDocument();
     expect(within(table).queryByText('Earth')).not.toBeInTheDocument();
-    expect(screen.getByText('2 颗行星 · 协作中')).toBeInTheDocument();
+    // Two worker rows and one participating moderator remain three planets.
+    expect(screen.getByText('3 颗行星 · 协作中')).toBeInTheDocument();
   });
 
   it('does not create a one-row table when only one worker accompanies the coordinator', () => {
@@ -509,8 +577,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(within(table).queryByText('Earth')).not.toBeInTheDocument();
     expect(within(table).getByText('Mars')).toBeInTheDocument();
     expect(within(table).getByText('Venus')).toBeInTheDocument();
-    expect(screen.getByText('2 颗行星 · 协作中')).toBeInTheDocument();
-    expect(screen.queryByText('3 颗行星 · 协作中')).not.toBeInTheDocument();
+    expect(screen.getByText('3 颗行星 · 协作中')).toBeInTheDocument();
+    expect(screen.queryByText('2 颗行星 · 协作中')).not.toBeInTheDocument();
   });
 
   it('keeps a stopped host report readable while collapsing only the settled collaboration process', async () => {

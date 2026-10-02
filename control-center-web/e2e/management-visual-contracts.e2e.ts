@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-for (const frontend of ['legacy', 'paw-os']) {
+for (const frontend of ['paw-os']) {
   test(`Memory lifecycle labels remain readable in ${frontend}`, async ({ page }, testInfo) => {
     await page.goto(`/?frontend=${frontend}&controlTransport=mock#/memory?view=organize`);
     const section = page.locator('.mgmt-section').filter({

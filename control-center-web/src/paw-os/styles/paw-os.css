@@ -1,7 +1,7 @@
 /* PAWOS shell structure -------------------------------------------------------
  * This file owns shell structure and state semantics: tokens, layout geometry,
  * interaction targets, window states and flow signals. Visual identity (colour,
- * material, blur, shadows) is owned by paw-os-shell-migrated-v1.css; timing and
+ * material, blur, shadows) is owned by paw-os-shell.css; timing and
  * choreography by paw-os-motion.css; the shared control language (select,
  * menu, button, panel) by paw-os-controls.css. Windows are opaque working
  * surfaces; backdrop blur is reserved for true chrome (menu bar, Dock and
@@ -209,7 +209,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    instrument keeps the opposite corner, so the two surfaces read as a
    statement and an instrument instead of as twins.
    This file owns geometry only; the veil that grounds the column and every
-   ink on it belong to paw-os-shell-migrated-v1.css. */
+   ink on it belong to paw-os-shell.css. */
 .paw-field-stage {
   position: absolute; z-index: 3;
   left: 34px;
@@ -294,7 +294,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
 }
 /* Hover and selection no longer plate the whole cell: the macOS desktop
    treatment scopes feedback to the label text and the icon's own dimming.
-   The visual half lives in paw-os-shell-migrated-v1.css. */
+   The visual half lives in paw-os-shell.css. */
 .paw-desktop-shortcuts button > span {
   display: grid; place-items: center;
   border-radius: 8px;

@@ -14,7 +14,7 @@ afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
 it('keeps a visible loading surface until the real desktop module is ready', async () => {
   vi.stubEnv('VITE_CONTROL_TRANSPORT', 'mock');
-  render(<App frontendProduct="paw-os" />);
+  render(<App />);
   const pending = screen.getByRole('status', { name: '正在打开工作台' });
   expect(pending).toHaveTextContent('正在准备工作台');
   expect(pending).toHaveTextContent('正在载入界面');

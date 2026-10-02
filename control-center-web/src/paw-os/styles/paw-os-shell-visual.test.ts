@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import shellCss from './paw-os-shell-migrated-v1.css?raw';
+import shellCss from './paw-os-shell.css?raw';
 import pawOsCss from './paw-os.css?raw';
 import motionCss from './paw-os-motion.css?raw';
 import controlsCss from './paw-os-controls.css?raw';
@@ -391,7 +391,7 @@ describe('PAWOS shell visual language', () => {
     for (const [name, css] of Object.entries({
       'paw-os.css': pawOsCss,
       'paw-os-motion.css': motionCss,
-      'paw-os-shell-migrated-v1.css': shellCss,
+      'paw-os-shell.css': shellCss,
       'paw-os-controls.css': controlsCss,
       'paw-app-icon.css': appIconCss,
     })) {
@@ -484,7 +484,7 @@ describe('PAWOS shell visual language', () => {
     // geometry, not a per-window rediscovery.
     for (const [name, css] of Object.entries({
       'paw-os.css': pawOsCss,
-      'paw-os-shell-migrated-v1.css': shellCss,
+      'paw-os-shell.css': shellCss,
       'paw-os-motion.css': motionCss,
       'paw-os-controls.css': controlsCss,
       'paw-os-webmodel-v1.css': webmodelCss,
@@ -503,7 +503,7 @@ describe('PAWOS shell visual language', () => {
     const structureRadius = pawOsCss.match(/--paw-radius:\s*([^;]+);/)?.[1]?.trim();
     const visualRadius = shellCss.match(/--paw-radius:\s*([^;]+);/)?.[1]?.trim();
     expect(structureRadius, '--paw-radius in paw-os.css').toBe('12px');
-    expect(visualRadius, '--paw-radius in paw-os-shell-migrated-v1.css').toBe(structureRadius);
+    expect(visualRadius, '--paw-radius in paw-os-shell.css').toBe(structureRadius);
     // No shell owner may give one named App's titlebar its own height or give
     // one named App's window its own corner radius: identity speaks through
     // ink, icon and the documented Terminal ink/aurora hairline only. The
@@ -512,7 +512,7 @@ describe('PAWOS shell visual language', () => {
     // — only a selector naming one specific App value is a fork.
     for (const [name, css] of Object.entries({
       'paw-os.css': pawOsCss,
-      'paw-os-shell-migrated-v1.css': shellCss,
+      'paw-os-shell.css': shellCss,
       'paw-os-motion.css': motionCss,
       'paw-os-webmodel-v1.css': webmodelCss,
     })) {
@@ -533,7 +533,7 @@ describe('PAWOS shell visual language', () => {
     // two Apps in the same window resolve different widths for one query.
     expect(pawOsCss.match(/container(-name)?:\s*[^;]*\bpaw-window\b/g)).toHaveLength(1);
     for (const [name, css] of Object.entries({
-      'paw-os-shell-migrated-v1.css': shellCss,
+      'paw-os-shell.css': shellCss,
       'paw-os-motion.css': motionCss,
       'paw-os-controls.css': controlsCss,
       'paw-os-webmodel-v1.css': webmodelCss,

@@ -1,7 +1,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CollabTimelineStage } from './CollabTimelineStage';
-import { collabDemoRoom } from './fixtures';
+import { collabDemoRoom } from '@/test/fixtures/collab-timeline';
 import { buildRoomCollabTimeline } from './room-timeline';
 
 vi.mock('@/features/conversation-ui/reading/reading-preferences', () => ({ usePresentationMotion: (active = true) => active }));
