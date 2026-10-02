@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 import threading
@@ -106,6 +107,14 @@ _PROMPT_TIMEOUT_SECONDS = 60.0 * 60.0
 _DURABLE_TRANSCRIPT_MAX_BYTES = 64 * 1024 * 1024
 _DURABLE_TRANSCRIPT_MAX_LINES = 200_000
 _SESSION_RESOURCE_SNAPSHOT_SCHEMA = "rag-ime.pi-session-resource-snapshot.v1"
+
+
+@dataclass
+class _ClassificationCall:
+    client: PiRuntimeHostClient
+    dispatch_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    dispatched: bool = False
+    cancel_requested: bool = False
 
 
 def _session_resource_snapshot(
@@ -253,6 +262,7 @@ class PiRuntimeHostManager:
         self._states: dict[str, _HostedSessionState] = {}
         self._open_sessions: set[str] = set()
         self._active_completion_ids: set[str] = set()
+        self._classifications: dict[str, _ClassificationCall] = {}
         self._completion_sinks: dict[str, Callable[[str], None]] = {}
         self._status = "stopped" if config.enabled else "disabled"
         self._last_error = ""
@@ -377,7 +387,7 @@ class PiRuntimeHostManager:
             )
             open_sessions = sorted(self._open_sessions)
             active_completions = sorted(self._active_completion_ids)
-            status = "busy" if busy or active_completions else self._status
+            status = "busy" if busy or active_completions or self._classifications else self._status
             last_error = self._last_error
             capabilities = dict(self._host_capabilities)
             host_negotiated = self._client is not None and self._client.running
@@ -432,6 +442,7 @@ class PiRuntimeHostManager:
                     if host_negotiated
                     else installed and str(self.config.protocol_version or "") == PI_HOST_PROTOCOL_VERSION
                 ),
+                "statelessClassification": host_negotiated and capabilities.get("statelessClassification") is True,
                 "transientContext": bool(capabilities.get("transientContext")),
                 "sessionSkillAllowlist": bool(
                     capabilities.get("sessionSkillAllowlist")
@@ -568,8 +579,8 @@ class PiRuntimeHostManager:
         self.reconcile_runtime_hosts()
         client = PiRuntimeHostClient(
             self.config,
-            on_event=self._handle_host_event,
-            on_exit=self._handle_host_exit,
+            on_event=lambda envelope: self._handle_host_event(envelope, source_client=client),
+            on_exit=lambda code, error: self._handle_host_exit(code, error, source_client=client),
             kill_gate=self._kill_gate,
             owner_instance_id=self._owner_instance_id,
         )
@@ -3540,6 +3551,126 @@ class PiRuntimeHostManager:
                 self._available_models_cache_ready = True
             return [dict(model) for model in models]
 
+    def classify_once(
+        self,
+        *,
+        request_id: str,
+        state: Mapping[str, object],
+        questions: Mapping[str, object],
+        api_key: str = "",
+        endpoint: str = "",
+        timeout_seconds: float = 12.0,
+    ) -> dict[str, object] | None:
+        """Use Pi's native TypeSafe classifier without creating an Agent turn.
+
+        None means the negotiated Host lacks this operation, before any
+        classification was sent. Every outcome after dispatch, including an
+        unknown answer, stays on that original native request's path.
+        Credentials travel only over the private Host pipe, never public state.
+        """
+        identity = model_reference_part(request_id, field="requestId", maximum=200)
+        if not isinstance(state, Mapping) or not isinstance(questions, Mapping) or not questions:
+            raise ValueError("classification requires an object state and nonempty questions")
+        if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
+                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
+            raise ValueError("classification timeout must be finite and positive")
+        bounded_timeout = max(1.0, min(300.0, float(timeout_seconds)))
+        params: dict[str, object] = {
+            "requestId": identity, "state": dict(state), "questions": dict(questions),
+            "timeoutMs": int(bounded_timeout * 1000),
+        }
+        # Validate JSON before admission, without truncating the user's state.
+        json.dumps(params, allow_nan=False)
+        if api_key:
+            params["apiKey"] = api_key
+        if endpoint:
+            params["endpoint"] = endpoint
+        with self._lifecycle_lock:
+            client = self._host()
+            with self._lock:
+                if self._host_capabilities.get("statelessClassification") is not True:
+                    return None
+                if identity in self._classifications:
+                    raise PiRuntimeError("Pi classification request is already active")
+                self._cancel_idle_locked()
+                call = _ClassificationCall(client)
+                self._classifications[identity] = call
+                params["dispatchId"] = call.dispatch_id
+                self._status = "busy"
+
+        def before_write() -> None:
+            # Runs under the pipe write lock: cancellation either prevents
+            # admission or follows the once command on that same ordered pipe.
+            with self._lock:
+                if call.cancel_requested or self._classifications.get(identity) is not call:
+                    raise PiRuntimeCommandRejected("Pi classification cancelled before dispatch")
+                call.dispatched = True
+
+        settled = False
+        try:
+            result = client.send("classification.once", params, timeout=bounded_timeout + 5.0,
+                                 before_write=before_write)
+            if (result.get("requestId") != identity
+                    or result.get("dispatchId") != call.dispatch_id
+                    or result.get("stopReason") not in {"stop", "error", "aborted"}):
+                raise PiRuntimeCommandAcceptanceUnknown("Pi classification returned an unbound receipt")
+            settled = True
+            return result
+        except PiRuntimeCommandRejected:
+            settled = True
+            raise
+        except PiRuntimeCommandAcceptanceUnknown:
+            # An uncertain answer permits cancellation of the original call,
+            # never fallback or replay. A signal is not proof of drain.
+            try:
+                self._abort_classification(identity, call)
+            except Exception:
+                with self._lock:
+                    if self._client is client:
+                        self._last_error = "Pi classification answer and cancellation remain unconfirmed"
+            raise
+        finally:
+            if settled or not call.dispatched or not client.running:
+                self._release_classification(identity, call)
+
+    def _release_classification(self, identity: str, call: _ClassificationCall) -> None:
+        with self._lock:
+            if self._classifications.get(identity) is not call:
+                return
+            del self._classifications[identity]
+            if (self._client is call.client and call.client.running
+                    and not self._classifications and not self._active_completion_ids
+                    and not any(item.turn_id or item.prompt_admission_in_flight for item in self._states.values())):
+                self._status = "ready"
+                self._schedule_idle_locked()
+
+    def _abort_classification(self, identity: str, call: _ClassificationCall) -> bool:
+        result = call.client.send("classification.abort", {"requestId": identity, "dispatchId": call.dispatch_id},
+                                  timeout=min(5.0, max(1.0, self.config.command_timeout_seconds)))
+        if result.get("requestId") != identity or result.get("dispatchId") != call.dispatch_id:
+            return False
+        if result.get("drained") is True:
+            self._release_classification(identity, call)
+        return result.get("aborted") is True
+
+    def cancel_classification(self, request_id: str) -> bool:
+        """Cancel exactly one call; a signal alone never releases its Host."""
+        try:
+            identity = model_reference_part(request_id, field="requestId", maximum=200)
+        except ValueError:
+            return False
+        with self._lock:
+            call = self._classifications.get(identity)
+            if call is None:
+                return False
+            call.cancel_requested = True
+            if not call.dispatched:
+                return True
+        if not call.client.running:
+            self._release_classification(identity, call)
+            return False
+        return self._abort_classification(identity, call)
+
     def complete_once(
         self,
         *,
@@ -4719,6 +4850,7 @@ class PiRuntimeHostManager:
                         state.settle_timer.cancel()
                 self._open_sessions.clear()
                 self._active_completion_ids.clear()
+                self._classifications.clear()
                 self._completion_sinks.clear()
                 self._states.clear()
                 self._status = "stopped" if self.config.enabled else "disabled"
@@ -4819,6 +4951,7 @@ class PiRuntimeHostManager:
         envelope: dict[str, object],
         *,
         allow_retired_turn: bool = False,
+        source_client: PiRuntimeHostClient | None = None,
     ) -> None:
         if envelope.get("protocolVersion") != PI_HOST_PROTOCOL_VERSION or envelope.get("event") not in {
             "agent.event",
@@ -4826,6 +4959,14 @@ class PiRuntimeHostManager:
         }:
             return
         raw = dict(as_mapping(envelope.get("payload")))
+        if envelope.get("event") == "runtime.notice" and raw.get("type") == "classification_settled":
+            identity = str(raw.get("requestId") or "")
+            with self._lock:
+                call = self._classifications.get(identity)
+            if (call is not None and call.client is source_client
+                    and raw.get("dispatchId") == call.dispatch_id):
+                self._release_classification(identity, call)
+            return
         if _record_plugin_usage_notice(
             self.plugin_usage,
             event=envelope.get("event"),
@@ -5811,8 +5952,14 @@ class PiRuntimeHostManager:
             turn_id=turn_id,
         )
 
-    def _handle_host_exit(self, exit_code: int | None, error: str) -> None:
+    def _handle_host_exit(self, exit_code: int | None, error: str, *,
+                          source_client: PiRuntimeHostClient | None = None) -> None:
         with self._lock:
+            for identity, call in tuple(self._classifications.items()):
+                if source_client is None or call.client is source_client:
+                    del self._classifications[identity]
+            if source_client is not None and self._client is not source_client:
+                return
             if self._intentional_stop:
                 return
             message = redact_runtime_text(error or f"Pi Runtime Host exited with code {exit_code}")
@@ -5983,6 +6130,7 @@ class PiRuntimeHostManager:
         if (
             self.config.idle_timeout_seconds <= 0
             or self._active_completion_ids
+            or self._classifications
             or any(
                 state.turn_id or state.prompt_admission_in_flight
                 for state in self._states.values()

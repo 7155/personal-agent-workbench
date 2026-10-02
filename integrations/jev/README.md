@@ -16,6 +16,25 @@ The scenario list separates configured credentials, available adapters and
 unimplemented candidates. It does not claim that a saved credential was tested
 or that every scenario has been activated.
 
+## Native Pi transport ownership
+
+On a paired Pi 1.0 Host advertising `statelessClassification`, the Room task
+controller's typed decisions use native `ModelRuntime.classify` with
+`typesafe/jev-latest`. PAW retains candidate construction, confidence checks,
+task revisions and WorkStore mutations. No Agent prompt is created to imitate
+Choice/Score results. Only an unsupported Host detected before dispatch uses
+the existing direct adapter; a native failure or missing reply is not retried
+through another path.
+
+Code Mode can access that same native classifier through its allowlisted
+`models` namespace. It retains Pi's nested-call receipts, concurrency and
+cancellation. The existing key resolver is read per standalone decision and at
+each Code Mode Host start; changing a credential does not refresh an already
+running Host's environment. No login settings or stored data are migrated.
+Other listed Jev scenarios still use their existing adapter; this is a scoped
+transport migration, not removal of the canonical Room task owner. See the
+[paired protocol and cancellation boundaries](../pi/pi-0.99-codemode.md#stateless-native-classification).
+
 ## Implemented paths
 
 - **Room task execution:** a user request can enter routing, planning, execution,

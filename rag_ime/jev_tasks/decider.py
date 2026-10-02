@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import math
+import os
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -68,7 +71,10 @@ def parse_choice(
 
 
 class JevChoices:
-    """A bounded transport adapter. No retries, timers, startup or hidden fallback.
+    """A bounded transport adapter. No retries, timers or hidden error fallback.
+
+    Construction has no startup side effects. The already-owned Runtime may
+    lazily admit a native classifier when a caller explicitly requests a choice.
 
     Thresholds are application policy, not claims about calibrated correctness.
     The caller owns deadline/backoff and can inspect an abstention without
@@ -92,7 +98,8 @@ class JevChoices:
 
     @classmethod
     def from_paw(
-        cls, *, timeout_seconds: float = 12.0, max_request_bytes: int = 96000
+        cls, *, timeout_seconds: float = 12.0, max_request_bytes: int = 96000,
+        runtime_provider: Callable[[], object] | None = None,
     ) -> JevChoices:
         if (
             not isinstance(timeout_seconds, (float, int))
@@ -101,15 +108,32 @@ class JevChoices:
             or timeout_seconds <= 0
         ):
             raise GraphError("invalid Jev timeout")
-        # Reuse the existing credential/transport owner. Import does not call it.
+        # Preserve the existing credential owner; native classification uses
+        # the same TypeSafe model and answers, not a chat model guessing scores.
         from rag_ime import jev
 
-        return cls(
-            lambda state, questions: jev.evaluate(
-                state, questions, key=jev.api_key(), timeout_seconds=timeout_seconds
-            ),
-            max_request_bytes=max_request_bytes,
-        )
+        def evaluate(state: str, questions: Mapping[str, object]) -> object:
+            key = jev.api_key()
+            if not key:
+                raise DecisionUnavailable("Jev key is not configured")
+            runtime = runtime_provider() if runtime_provider is not None else None
+            native = getattr(runtime, "classify_once", None)
+            if callable(native):
+                response = native(
+                    request_id=f"jev-classify:{uuid.uuid4()}", state=json.loads(state),
+                    questions=questions, api_key=key,
+                    endpoint=os.environ.get("TYPESAFE_API_URL", jev.JEV_ENDPOINT),
+                    timeout_seconds=timeout_seconds,
+                )
+                if response is not None:
+                    if not isinstance(response, Mapping) or response.get("stopReason") != "stop":
+                        raise DecisionUnavailable("Pi native classification did not complete")
+                    return response
+            # Only a missing method or pre-dispatch unsupported capability may
+            # use the old adapter. Native exceptions never reach this branch.
+            return jev.evaluate(state, questions, key=key, timeout_seconds=timeout_seconds)
+
+        return cls(evaluate, max_request_bytes=max_request_bytes)
 
     def choose(
         self,

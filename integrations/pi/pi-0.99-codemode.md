@@ -149,8 +149,15 @@ preference with the exact Runtime binding. Busy Sessions reject the change.
 Hosts that do not declare the capability retain their older behavior.
 
 The sandbox calls the same authorized native/product tools, including the
-original Gateway admission and cancellation path. Optional direct model
-helpers are disabled: Pi/Room model routing still owns model execution.
+original Gateway admission and cancellation path. The paired Host exposes only
+the native `typesafe/jev-latest` classifier through the Code Mode `models`
+namespace. Its typed allowlist filters catalogs and validates calls again after
+concurrency admission; image generation is not exposed. This does not add a
+chat-model loop or bypass the selected Session model. Classifier calls keep
+native nested-call identity, usage, cancellation and the four-call limit.
+The Host supplies trusted classifier options with zero transport retries and a
+caller-owned direct fetch, preserving the configured complete TypeSafe endpoint
+without changing the process-wide proxy.
 Nested calls retain their parent ID, exact arguments, and actual status in
 Pi's transcript. PAW groups them under the code card and restores them on
 reopen. Missing or unfinished results remain unfinished; a caught internal
@@ -177,3 +184,37 @@ The MCP server exposure and Pi core tool exposure are distinct: native MCP's
 `codemode` maps to deferred core discovery. The UI uses the MCP owner's per-tool
 value, including overrides, instead of guessing from the core value or name.
 An unavailable or replaced native owner remains unavailable in the inspector.
+
+## Stateless native classification
+
+`hello.capabilities.statelessClassification` negotiates `classification.once`
+and `classification.abort` under protocol 2. `once` accepts `requestId`, an object
+`state`, typed `questions`, bounded `timeoutMs`, and optional private `apiKey`,
+complete `endpoint` and `dispatchId`. The model is fixed server-side to
+`typesafe/jev-latest`. It returns the bound IDs, provider/model, native answers,
+usage when available, and `stopReason` (`stop`, `error`, `aborted`). Provider error
+bodies are replaced by safe errors; credentials are never public receipt fields.
+
+`abort` targets the original request and, when supplied, exact dispatch ID. Its
+`aborted` signal and `drained` proof are different fields. An unknown ID returns
+no drain proof. After the native scope releases its Provider operation the Host
+emits `runtime.notice` with `type: classification_settled` and the same IDs.
+PAW binds the notice to its original Host; stale events cannot release another
+call. A lost reply permits exact cancellation, never automatic reclassification.
+These calls do not create an Agent transcript or a durable billing ledger.
+
+The Room task decider uses this native path when supported. Only capability
+absence before dispatch permits the older HTTP adapter; a native error or lost
+receipt cannot trigger that fallback. PAW still validates every proposed choice
+against its own candidates, probabilities and current task/Root revisions.
+Root Stop invalidates a pending choice but does not currently invoke this
+classifier's cancellation RPC; do not equate stopped work with classification
+HTTP drain. Other legacy Jev consumers remain active.
+
+The existing PAW TypeSafe credential resolver is unchanged. Direct decisions
+resolve it on each call and reject an absent key before native dispatch. The
+Code Mode Host environment resolves it freshly on each owned Host start, using
+`TYPESAFE_API_KEY` and trusted `RAG_IME_PI_TYPESAFE_ENDPOINT`; updates to an already
+running Host take effect on its next start. Scripts cannot replace this endpoint,
+credential or allowlist. This development integration does not restart or switch
+the installed default Runtime.

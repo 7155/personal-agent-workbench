@@ -18,6 +18,8 @@ flowchart TD
     Lab --> Session
     Session --> Adapter[PAW Pi adapter / protocol 2]
     Adapter --> Host[Managed Pi Runtime Host]
+    Jev --> Classify[Pi native ModelRuntime.classify]
+    Classify --> TypeSafe[TypeSafe Choice / Score]
     Host --> Pi[Pi AgentSession / SessionManager]
     Pi --> Models[Provider adapters]
     Pi --> Tools[Native tools / MCP / Code Mode]
@@ -82,6 +84,17 @@ read or disclosure interaction releases follow; returning to latest opts in agai
 One lifecycle-scoped resize observer measures the viewport and round layout, and
 is disconnected on cleanup. Layout-driven scroll events do not impersonate a
 reader choosing history. Navigation keeps the latest round reachable horizontally.
+
+The existing `reading-recovery` owner persists round IDs, viewport offset,
+following intent and disclosure preferences under the connection/Room scope.
+It stores no conversation text or execution payload. The rounds surface waits
+for the existing full snapshot before restoring once: a lightweight first page
+cannot prove an older anchor was pruned. Explicit navigation during that wait
+cancels the pending restore. A genuinely missing anchor falls back within the
+available history without fetching unbounded records. Scroll writes are
+coalesced and flushed on page hide/unmount; blocked storage leaves reading usable.
+The legacy transcript/view keys remain valid, and standalone rounds can omit
+the optional recovery scope without depending on a transport provider.
 
 Room activity summaries share one display fallback in `roomActivityPublicSummary`.
 Exact event enums receive readable labels, while diagnostic text and stored source
@@ -216,6 +229,44 @@ durable event or evidence that a task completed.
 - Route descriptors migrate one HTTP family at a time. The remaining explicit
   route branches stay covered by the ownership gate; file size alone is not a
   reason to move them or add a service locator.
+
+## Native classification and JEV responsibility
+
+Room's `JevChoices` delegates typed decisions to the already-owned Pi Host when
+it advertises `statelessClassification`. This is native
+`ModelRuntime.classify(typesafe/jev-latest)`, not a chat prompt simulating a
+classifier. Candidate construction, probability validation, Root epochs and
+WorkStore mutation remain in PAW. The classifier cannot grant authority or
+complete a task merely by returning an answer.
+
+Each request has a logical request ID, a fresh dispatch ID and the original Host
+binding. Cancellation before pipe admission prevents the write; cancellation
+after admission targets that exact dispatch. A lost response is never retried
+through the legacy HTTP adapter. The Runtime stays occupied until a matched
+terminal reply, an exact drained abort, a matched `classification_settled` notice
+or the original process exit proves release. A late notice/exit cannot release
+another Host or a successor dispatch. This in-memory classification boundary is
+not a durable exactly-once journal for Provider billing.
+
+The compatibility adapter uses legacy `jev.evaluate` only when the Runtime has
+no classifier method or its negotiated Host declares no support, before any
+native classification is sent. Other existing approval/routing/rerank consumers
+still use that transport, so deleting `jev.py` would remove active functionality.
+Room Stop already invalidates a pending decision's authority through the Root
+and WorkStore guards; it does not yet bind that decision to the native classifier
+cancel RPC. A stopped Root therefore does not prove that a classification HTTP
+request has drained. The native request retains its bounded deadline and exact
+uncertain-response cancellation path.
+
+Code Mode uses Pi's existing native `models` namespace with a typed allowlist:
+only `typesafe/jev-latest` classification is exposed by this Host. Catalog lookup
+and execution both enforce the policy, including after a queued concurrency
+slot opens. Image generation is absent from this product namespace. Native
+nested-call receipts, cancellation, usage and the four-call concurrency limit
+remain Pi-owned; there is no second classifier Tool or JavaScript executor.
+Credentials remain owned by PAW's existing key resolver and travel privately.
+Standalone decisions resolve them per call; Code Mode resolves the owned Host's
+environment at its next start. No account setting or user data format changes.
 
 ## Runtime and data changes
 

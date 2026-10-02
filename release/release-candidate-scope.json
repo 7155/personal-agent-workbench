@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-02T12:11:23.508573+00:00",
+  "generatedAt": "2026-10-02T14:49:25.742930+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-pi1-mac-iteration-20261002",
@@ -167,14 +167,14 @@
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
-      "pathCount": 223
+      "pathCount": 234
     }
   },
   "summary": {
-    "pathCount": 1857,
+    "pathCount": 1868,
     "dispositionCounts": {
       "delete_old_implementation": 310,
-      "keep_release": 1547
+      "keep_release": 1558
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -194,7 +194,7 @@
       "offline_installer": 12,
       "owner_boundaries": 15,
       "pi1_experience_iteration": 38,
-      "pi1_final_integration": 223,
+      "pi1_final_integration": 234,
       "pi_content_studio_v5_v6": 41,
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
@@ -1708,6 +1708,13 @@
     {
       "path": "control-center-web/e2e/tsconfig.json",
       "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/window-context.e2e.ts",
+      "status": "added",
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
@@ -6186,6 +6193,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/semantic-workspace/reading-recovery.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/semantic-workspace/reading-recovery.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -6529,6 +6543,20 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawApps.loading.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawApps.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawAppsRuntime.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -6863,6 +6891,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/agent-workspace-loader.ts",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/apps/app-sidebar.css",
@@ -12213,6 +12248,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_frontend_gateway.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_gateway_execution_identity.py",
       "status": "added",
       "group": "pi1_final_integration",
@@ -12647,6 +12689,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_management_pagination.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_management_work_contract.py",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -12659,6 +12708,13 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "tests/test_memory_actions.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_memory_book_compiler.py",
@@ -12841,6 +12897,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_pi_native_classification.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_pi_nested_tool_evidence.py",
@@ -13062,6 +13125,20 @@
     {
       "path": "tests/test_run_unit_tests.py",
       "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_runtime_config.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_runtime_settings_bridge.py",
+      "status": "modified",
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"

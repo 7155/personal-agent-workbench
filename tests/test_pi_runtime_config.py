@@ -38,6 +38,9 @@ class PiRuntimeConfigTests(unittest.TestCase):
         self.assertEqual(with_current_codex_models(extended), extended)
 
     def setUp(self) -> None:
+        classifier_key = mock.patch("rag_ime.jev.api_key", return_value="")
+        classifier_key.start()
+        self.addCleanup(classifier_key.stop)
         temporary = tempfile.TemporaryDirectory(prefix="paw-pi-config-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

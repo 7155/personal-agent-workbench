@@ -28,6 +28,18 @@ __all__ = ["CODEMODE_MODES", "PiRuntimeConfig", "normalize_codemode_mode"]
 CODEMODE_MODES = frozenset({"on", "only", "off"})
 
 
+def _typesafe_host_environment() -> Mapping[str, str]:
+    # Read the existing credential owner only when starting an owned Host.
+    # Settings may have changed since this immutable config was composed.
+    from rag_ime import jev
+
+    key = jev.api_key()
+    return {
+        "TYPESAFE_API_KEY": key,
+        "RAG_IME_PI_TYPESAFE_ENDPOINT": os.environ.get("TYPESAFE_API_URL", jev.JEV_ENDPOINT),
+    } if key else {}
+
+
 def normalize_codemode_mode(value: object, *, default: str = "on") -> str:
     normalized = str(value or default).strip().lower()
     if normalized not in CODEMODE_MODES:
@@ -448,6 +460,9 @@ class PiRuntimeConfig:
     tool_gateway_token: str = ""
     plugin_approval_token: str = ""
     provider_environment: Mapping[str, str] = field(default_factory=dict, repr=False)
+    typesafe_environment_resolver: Callable[[], Mapping[str, str]] | None = field(
+        default=None, repr=False, compare=False,
+    )
     model_providers: Mapping[str, Mapping[str, object]] = field(
         default_factory=dict, repr=False
     )
@@ -619,6 +634,7 @@ class PiRuntimeConfig:
                 maximum=60_000,
             ),
             provider_environment=provider_environment,
+            typesafe_environment_resolver=_typesafe_host_environment,
             model_providers=model_providers,
             model_base_url=model_base_url,
             model_configured=not bool(model_error),
@@ -739,6 +755,12 @@ class PiRuntimeConfig:
         environment.update(
             {str(key): str(value) for key, value in self.provider_environment.items()}
         )
+        if self.typesafe_environment_resolver is not None:
+            classifier_environment = self.typesafe_environment_resolver()
+            for key in ("TYPESAFE_API_KEY", "RAG_IME_PI_TYPESAFE_ENDPOINT"):
+                environment.pop(key, None)
+                if value := classifier_environment.get(key):
+                    environment[key] = str(value)
         environment["RAG_IME_APP_SUPPORT_DIR"] = str(self.agent_dir.parent.parent)
         environment["PI_CODING_AGENT_DIR"] = str(self.agent_dir)
         environment["RAG_IME_PI_AGENT_DIR"] = str(self.agent_dir)

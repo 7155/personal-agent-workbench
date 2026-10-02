@@ -61,7 +61,9 @@ class JevRoomApplication:
         self.driver = JevRoomDriver(
             ledger=self.ledger,
             controller=JevTaskController(
-                self.ledger, self.owner, decider or JevChoices.from_paw()
+                self.ledger, self.owner, decider or JevChoices.from_paw(
+                    runtime_provider=lambda: getattr(service, "runtime", None)
+                )
             ),
             effects=self.effects,
             observe=self.observe,
