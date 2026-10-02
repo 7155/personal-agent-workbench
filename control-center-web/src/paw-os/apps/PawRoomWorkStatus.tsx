@@ -24,6 +24,9 @@ export function PawRoomWorkStatus({ focus, status, onOpenParticipant, onRetrySyn
   const pageVisible = usePageVisibility();
   const animate = status.animate && status.live && pageVisible;
   const progress = useMemo(() => buildRoomVisualProgress(focus), [focus]);
+  // Explicit progress excludes Runtime rows; inspect the complete readable list.
+  const compactCompletion = status.state === 'completed' && focus.workItems.length === 0;
+  const detailsAvailable = !compactCompletion || Boolean(focus.flow.length || focus.handoffs.length || focus.rootEvidence.length);
   const [selection, setSelection] = useState<{ rootId: string; bucket?: RoomProgressBucket }>();
   const bucket = selection?.rootId === focus.goal.rootId ? selection.bucket : undefined;
   const selectBucket = (next?: RoomProgressBucket) => {
@@ -43,24 +46,26 @@ export function PawRoomWorkStatus({ focus, status, onOpenParticipant, onRetrySyn
   const date = status.updatedAtMs > 0 && Number.isFinite(status.updatedAtMs)
     ? new Date(status.updatedAtMs) : undefined;
   const updated = date && Number.isFinite(date.getTime()) ? date : undefined;
-  return <section aria-label="协作状态" className="paw-room-work-status" data-state={status.state} data-live={status.live}>
+  return <section aria-label="协作状态" className="paw-room-work-status" data-state={status.state} data-live={status.live} data-compact={compactCompletion || undefined}>
     <div className="paw-room-work-status__bar">
       <Icon aria-hidden="true" size={17} className={animate ? 'paw-room-work-status__spin' : undefined} />
       <div className="paw-room-work-status__copy">
         <strong role="status" aria-live="polite" aria-atomic="true">{status.headline}</strong>
-        <span title={status.detail}>{roomTextExcerpt(status.detail, 120)}</span>
+        <span title={compactCompletion ? undefined : status.detail}>{compactCompletion
+          ? status.live ? '未登记工作项' : '上次记录 · 未登记工作项'
+          : roomTextExcerpt(status.detail, 120)}</span>
       </div>
       <div className="paw-room-work-status__actions">
         {status.action === 'sync' && status.state === 'offline' ? <button type="button" onClick={onRetrySync}><RefreshCw size={14} aria-hidden="true" />重新同步</button> : null}
         {status.action === 'answer' ? <button type="button" onClick={onAnswer}><ArrowUpRight size={14} aria-hidden="true" />回答问题</button> : null}
-        <button type="button" ref={trigger} aria-controls={detailId} aria-expanded={expanded} onClick={toggle}>
+        {detailsAvailable ? <button type="button" ref={trigger} aria-controls={detailId} aria-expanded={expanded} onClick={toggle}>
           {expanded ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
-          {expanded ? '收起任务' : '展开任务'}
-        </button>
+          {compactCompletion ? expanded ? '收起协作记录' : '查看协作记录' : expanded ? '收起任务' : '展开任务'}
+        </button> : null}
       </div>
     </div>
-    <PawRoomProgress progress={progress} live={status.live} executing={animate && progress.leaves.some((task) => task.state === 'running' && Boolean(task.ownerParticipantId && status.executingParticipantIds.includes(task.ownerParticipantId)))} selected={bucket} controlsId={detailId} onSelect={selectBucket} />
-    <div id={detailId} role="region" aria-label="协作任务详情" hidden={!expanded} className="paw-room-work-status__detail" onKeyDown={(event) => {
+    {!compactCompletion ? <PawRoomProgress progress={progress} live={status.live} executing={animate && progress.leaves.some((task) => task.state === 'running' && Boolean(task.ownerParticipantId && status.executingParticipantIds.includes(task.ownerParticipantId)))} selected={bucket} controlsId={detailId} onSelect={selectBucket} /> : null}
+    <div id={detailId} role="region" aria-label={compactCompletion ? '协作记录' : '协作任务详情'} hidden={!expanded || !detailsAvailable} className="paw-room-work-status__detail" onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); close(); }
     }}>
       {everExpanded ? <PawRoomAssignmentMap key={focus.goal.rootId} focus={focus} live={status.live && expanded} executingParticipantIds={animate ? status.executingParticipantIds : []} progressBucket={bucket} onClearProgressBucket={() => selectBucket(undefined)} freshness={status.live ? 'live' : status.state === 'offline' ? 'offline' : status.state === 'syncing' ? 'recovering' : status.state === 'paused-view' ? 'paused' : 'last-known'} onOpenParticipant={onOpenParticipant} /> : null}

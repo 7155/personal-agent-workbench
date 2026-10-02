@@ -63,6 +63,12 @@
   .paw-desktop-root .paw-room-work-status .paw-assignment__role { display: inline; align-self: center; }
   .paw-desktop-root .paw-room-work-status .paw-assignment__actor button { width: auto; min-width: 85px; padding-inline: 10px; }
 }
+/* A settled round without task rows needs one quiet summary, not an empty counter. */
+.paw-room-work-status[data-compact='true'] .paw-room-work-status__bar {
+  flex-wrap: nowrap; align-items: center; padding: 8px 10px;
+}
+.paw-room-work-status[data-compact='true'] .paw-room-work-status__copy { flex-basis: auto; }
+.paw-room-work-status[data-compact='true'] .paw-room-work-status__actions { margin-inline-start: 0; }
 @media (prefers-reduced-motion: reduce) {
   .paw-room-work-status *, .paw-assignment *, .paw-room-focus-participants * { animation: none !important; transition: none !important; }
 }
