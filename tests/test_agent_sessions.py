@@ -346,7 +346,7 @@ class AgentSessionStoreTests(unittest.TestCase):
         self.assertEqual(session["title"], "输入助手 今天")
         self.assertEqual(session["mode"], "assistant")
         self.assertEqual(session["roleId"], "companion-future-v1")
-        self.assertEqual(session["modelProfile"], "openai-codex/gpt-5.6-sol")
+        self.assertEqual(session["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(session["thinkingLevel"], "max")
         self.assertEqual(session["executionMode"], "per_action")
         self.assertFalse(session["workspaceScopeGranted"])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import sqlite3
 import tempfile
 import threading
@@ -15,8 +16,10 @@ from rag_ime.agent_lab.scene_recipes import (
     AgentLabSceneRecipeStore,
     AgentLabSceneRecipeUnavailable,
     ENTERPRISE_RAG_VALIDATION_SCENE_ID,
+    validate_scene_recipe_binding,
 )
-from rag_ime.db import latest_migration_version, sqlite_connection
+from rag_ime.db import apply_database_migrations, latest_migration_version, sqlite_connection
+from rag_ime.agent_lab import scene_recipes as recipes
 
 
 SCENE = ENTERPRISE_RAG_VALIDATION_SCENE_ID
@@ -56,6 +59,46 @@ class AgentLabSceneRecipeStoreTests(unittest.TestCase):
         with sqlite_connection(self.db_path) as conn:
             return conn.execute("SELECT count(*) FROM agent_lab_scene_recipe_events").fetchone()[0]
 
+    def test_upgrade_preserves_immutable_v1_binding_receipt_and_revision_zero_rollback(self) -> None:
+        old_path = Path(self.tmp.name) / "old.sqlite"
+        legacy = copy.deepcopy(recipes._BUILTIN_VERSION)
+        legacy["recipe"]["model"] = "gpt-5.6-sol"
+        payloads = [legacy, copy.deepcopy(recipes._CANDIDATE_VERSION)]
+        def encode(value):
+            return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        with sqlite_connection(old_path) as conn:
+            migration = apply_database_migrations(conn).current_version
+            for payload in payloads:
+                conn.execute("INSERT INTO agent_lab_scene_recipe_versions (scene_id, version_id, payload_json) VALUES (?, ?, ?)",
+                             (SCENE, payload["versionId"], encode(payload)))
+        old_store = AgentLabSceneRecipeStore(old_path, experiment_provider=lambda: [candidate_experiment()])
+        # Reconstruct the old owner against its already-initialized immutable
+        # rows, without asking today's initializer to seed a future default.
+        with patch.object(old_store, "initialize", return_value=migration), patch.object(
+            old_store, "_active_version", side_effect=lambda conn, scene, row: old_store._version(
+                conn, scene, str(row["version_id"] if row else legacy["versionId"])),
+        ):
+            binding = old_store.resolve_for_run(SCENE)
+            first = old_store.apply_candidate(SCENE, experiment_id=EXPERIMENT,
+                                             expected_revision=0, client_request_id="old-apply")
+        upgraded = AgentLabSceneRecipeStore(old_path, experiment_provider=lambda: [])
+        upgraded.initialize()
+        self.assertEqual(validate_scene_recipe_binding(binding), binding)
+        self.assertEqual(binding["recipe"]["model"], "gpt-5.6-sol")
+        replay = upgraded.apply_candidate(SCENE, experiment_id=EXPERIMENT,
+                                          expected_revision=0, client_request_id="old-apply")
+        self.assertEqual(replay, {**first, "replayed": True})
+        rollback = upgraded.rollback(SCENE, expected_revision=1, client_request_id="old-rollback")
+        self.assertEqual(rollback["activeVersion"], legacy)
+        self.assertEqual(rollback["event"]["versionId"], first["event"]["fromVersionId"])
+        with sqlite_connection(old_path) as conn:
+            for payload in payloads:
+                actual = conn.execute("SELECT payload_json FROM agent_lab_scene_recipe_versions WHERE scene_id=? AND version_id=?",
+                                      (SCENE, payload["versionId"])).fetchone()[0]
+                self.assertEqual(actual, encode(payload))
+        reopened = AgentLabSceneRecipeStore(old_path, experiment_provider=lambda: [])
+        self.assertEqual(reopened.resolve_for_run(SCENE)["recipe"]["model"], "gpt-5.6-sol")
+
     def test_initial_state_is_scene_incumbent_without_an_application_claim(self) -> None:
         state = self.store.get_state(SCENE)
         self.assertEqual(state["revision"], 0)
@@ -68,7 +111,7 @@ class AgentLabSceneRecipeStoreTests(unittest.TestCase):
         self.assertEqual(version["sourceExperimentId"], "")
         self.assertEqual(version["sourceCandidateRunId"], "")
         self.assertEqual(version["recipe"], {
-            "provider": "openai-codex", "model": "gpt-5.6-sol", "thinkingLevel": "max",
+            "provider": "openai-codex", "model": "gpt-6.1-sol", "thinkingLevel": "max",
             "promptProfile": "incumbent",
             "promptContractVersion": "rag-agent-evidence-state-budget-routing-v19",
             "agenticSupplementalLimit": 6, "answerOnly": True, "developmentOnly": True,
@@ -93,7 +136,7 @@ class AgentLabSceneRecipeStoreTests(unittest.TestCase):
         self.assertEqual(recipe["split"], "validation")
         self.assertTrue(recipe["candidateAware"])
         self.assertFalse(recipe["unbiasedPromotionClaimAllowed"])
-        self.assertEqual(before["recipe"]["model"], "gpt-5.6-sol")
+        self.assertEqual(before["recipe"]["model"], "gpt-6.1-sol")
         self.assertEqual(self.store.resolve_for_run(SCENE)["recipe"], recipe)
         recipe["model"] = "caller-mutation"
         self.assertEqual(self.store.resolve_for_run(SCENE)["recipe"]["model"], "gpt-5.6-luna")
@@ -352,7 +395,7 @@ class AgentLabSceneRecipeStoreTests(unittest.TestCase):
         self.assertFalse(result["rollbackAvailable"])
         self.assertEqual(self.event_count(), 4)
         with sqlite_connection(self.db_path) as conn:
-            self.assertEqual(conn.execute("SELECT count(*) FROM agent_lab_scene_recipe_versions").fetchone()[0], 2)
+            self.assertEqual(conn.execute("SELECT count(*) FROM agent_lab_scene_recipe_versions").fetchone()[0], 3)
 
     def test_default_provider_uses_current_public_ledger_without_an_experiment_import(self) -> None:
         store = AgentLabSceneRecipeStore(self.db_path)

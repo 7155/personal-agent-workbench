@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .agent_execution_policy import safe_full_auto_command, workspace_scope_is_granted
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations, sqlite_connection
@@ -20,7 +21,7 @@ from .jev import api_key as jev_api_key, evaluate as evaluate_jev
 
 
 APPROVAL_MODEL_PROVIDER = "openai-codex"
-APPROVAL_MODEL_ID = "gpt-5.6-luna"
+APPROVAL_MODEL_ID = DEFAULT_AGENT_MODEL_ID
 APPROVAL_MODEL_PROFILE = f"{APPROVAL_MODEL_PROVIDER}/{APPROVAL_MODEL_ID}"
 APPROVAL_MODEL_THINKING_LEVEL = "max"
 APPROVAL_MODEL_PROMPT_VERSION = "approval-arbiter-v2"
@@ -242,7 +243,7 @@ class _ApprovalContextLockPool:
 
 
 class ApprovalModelArbiter:
-    """Use Jev when configured, with Luna Max as the explicit fallback."""
+    """Use Jev when configured, with the current Codex model as the explicit fallback."""
 
     def __init__(
         self,
@@ -389,7 +390,7 @@ class ApprovalModelArbiter:
                         if jev_only:
                             raise
                         # Jev is an optional fast path. A transport or provider
-                        # failure falls back to the existing Luna arbiter; a
+                        # failure falls back to the current Codex arbiter; a
                         # valid low-confidence Jev deny never reaches this path.
                         fallback_reason = _failure_classification(jev_error)[1]
                         base.update(
@@ -413,7 +414,7 @@ class ApprovalModelArbiter:
                         )
                         decision, reason_codes, rationale = _parse_model_result(result)
                         reason_codes = _unique_reason_codes([fallback_reason, *reason_codes])
-                        rationale = f"Jev 不可用，已回退 Luna Max；{rationale}"
+                        rationale = f"Jev 不可用，已回退 GPT-6.1 Sol；{rationale}"
                 else:
                     runtime = self.runtime_provider()
                     result = runtime.complete_once(

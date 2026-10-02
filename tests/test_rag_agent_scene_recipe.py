@@ -155,7 +155,7 @@ class RagAgentSceneRecipeTests(unittest.TestCase):
         with patch.object(runner, "_run", return_value={"passed": True}) as run, redirect_stdout(io.StringIO()):
             runner.main(args)
         actual = run.call_args.kwargs
-        self.assertEqual(actual["evaluation_model"], "gpt-5.6-sol")
+        self.assertEqual(actual["evaluation_model"], "gpt-6.1-sol")
         self.assertEqual(actual["prompt_profile"], "incumbent")
         self.assertEqual(actual["evaluation_split"], "held_out")
         self.assertFalse(actual["answer_only"])

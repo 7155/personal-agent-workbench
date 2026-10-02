@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 import time
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .micro import canonical, decode, digest, turn_usage, write_private
 from .room_comparison import CASES, score
 
@@ -60,7 +61,7 @@ class RoomMergeTrialAdapter:
     def prepare(self,spec,job_id):
         if spec!={"taskId":"room-merge"}:raise ValueError("fixed workflow trial only")
         public={**spec,"target":"workflow","commonPromptRevision":"typed-contract-v2",
-                "taskSha256":digest(TASKS),"budget":dict(BUDGET),"model":"gpt-5.6-luna","thinkingLevel":"low",
+                "taskSha256":digest(TASKS),"budget":dict(BUDGET),"model":DEFAULT_AGENT_MODEL_ID,"thinkingLevel":"low",
                 "allowedOperator":"deterministic_disjoint_merge","synthetic":True}
         return {"publicSpec":public,"privateInput":{**public,"jobId":job_id}}
 
@@ -169,7 +170,7 @@ def reconcile_completed_trial(source_root):
     with sqlite3.connect(root/"agent.sqlite") as conn:
         for label in ("baseline-partner-a","baseline-partner-b","baseline-integrator","diagnosis","candidate-partner-a","candidate-partner-b"):
             receipt=json.loads((folder/(label+".json")).read_text())
-            if receipt["receipt"]["requestId"]!=job["jobId"]+":"+label or receipt["receipt"]["model"]!={"provider":"openai-codex","model":"gpt-5.6-luna","thinkingLevel":"low"}:
+            if receipt["receipt"]["requestId"]!=job["jobId"]+":"+label or receipt["receipt"]["model"]!={"provider":"openai-codex","model":DEFAULT_AGENT_MODEL_ID,"thinkingLevel":"low"}:
                 raise ValueError("model or request identity changed")
             path=conn.execute("SELECT session_file FROM agent_sessions WHERE id=?",(receipt["sessionId"],)).fetchone()[0]
             actual=turn_usage(path,receipt["turnId"])
@@ -203,7 +204,7 @@ class RoomMergeConfirmationAdapter:
         reconciled=reconcile_completed_trial(self.baseline_root)
         if not reconciled["arms"]["baseline"]["score"]["allPassed"] or reconciled["diagnosis"].get("operator")!="deterministic_disjoint_merge":
             raise ValueError("baseline quality or operator selection unavailable")
-        public={**spec,"taskSha256":digest(TASKS),"model":"gpt-5.6-luna","thinkingLevel":"low",
+        public={**spec,"taskSha256":digest(TASKS),"model":DEFAULT_AGENT_MODEL_ID,"thinkingLevel":"low",
                 "maxProviderCalls":2,"maxObservedTokens":10000,"baselineReceiptSha256":reconciled["sourceJobSha256"],"candidateFrozenBeforeConfirmation":True}
         return {"publicSpec":public,"privateInput":{**public,"jobId":job_id,"source":reconciled}}
 

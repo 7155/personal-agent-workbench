@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from rag_ime.managed_pi_runtime import discover_managed_pi_runtime
 from rag_ime.memory_near_budget_evaluation import (
     DEFAULT_NEAR_BUDGET_PAYLOAD_CHARS,
@@ -144,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             executor = build_governed_memory_model_executor(
                 service.agent.runtime,
-                "openai-codex/gpt-5.6-luna",
+                DEFAULT_AGENT_MODEL_PROFILE,
                 "max",
                 timeout_seconds=float(args.timeout_seconds),
                 db_path=db_path,

@@ -13,13 +13,14 @@ import math
 from types import MappingProxyType
 from typing import Mapping
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .text_utils import compact_whitespace
 
 
 DEFAULT_AI_JUDGE_EVALUATOR = MappingProxyType(
     {
         "provider": "openai-codex",
-        "model": "gpt-5.6-luna",
+        "model": DEFAULT_AGENT_MODEL_ID,
         "thinking": "max",
         "displayName": "Luna Max",
     }

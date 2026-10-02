@@ -17,6 +17,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import closing
 from pathlib import Path
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .golden_pi import AgentLabGoldenPiExecutor, GoldenPiCallError
 from ..contracts.json_schema import validate_contract
 from ..personal_memory_luna_evaluation import _evaluation_prompt, _phase, personal_memory_phase_schema
@@ -48,12 +49,12 @@ class AgentLabMemoryPiExecutor:
     transport = "pi_session"
 
     def __init__(self, artifact_root: str | Path, *, pi_executor: AgentLabGoldenPiExecutor,
-                 model_id: str = "gpt-5.6-luna", thinking_level: str = "max",
+                 model_id: str = DEFAULT_AGENT_MODEL_ID, thinking_level: str = "max",
                  context_profile: str = "full-json-v1", prompt_contract: str = "standard-v1",
                  cancelled: Callable[[], bool] = lambda: False,
                  receipt_observer: Callable[[Mapping[str, object]], None] | None = None,
                  request_namespace: str = "", audit_db_path: str | Path | None = None) -> None:
-        if model_id not in {"gpt-5.6-luna", "gpt-5.6-sol"} or thinking_level != "max":
+        if model_id not in {DEFAULT_AGENT_MODEL_ID, "gpt-5.6-luna", "gpt-5.6-sol"} or thinking_level != "max":
             raise ValueError("Memory evaluation supports Luna/Sol with frozen max thinking")
         if context_profile not in {"full-json-v1", "compact-json-v1"} or prompt_contract not in {"standard-v1", "concise-json-v1"}:
             raise ValueError("unsupported Memory evaluation prompt configuration")

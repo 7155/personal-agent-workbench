@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .trial_execution import TrialObserver
 
 
@@ -29,7 +30,7 @@ class CloudOpsTrialAssets:
     pricing_config: Path | None = None
     pricing_date: str = ""
     provider: str = "openai-codex"
-    default_model: str = "gpt-5.6-sol"
+    default_model: str = DEFAULT_AGENT_MODEL_ID
 
 
 @contextmanager

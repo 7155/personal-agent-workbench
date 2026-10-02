@@ -5,6 +5,8 @@ The host supplies completion/Room callbacks; expected values stay host-side.
 """
 from __future__ import annotations
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
+
 import hashlib
 import json
 import math
@@ -156,9 +158,9 @@ class MicroAdapter:
         task_id = spec.get("taskId")
         if task_id not in {"contract", "handoff", "update", "optimization"}:
             raise ValueError("Unsupported micro task; reliability is a source test run and export follows optimization")
-        model = spec.get("model", "gpt-5.6-luna")
+        model = spec.get("model", DEFAULT_AGENT_MODEL_ID)
         thinking = spec.get("thinkingLevel", "low")
-        if model not in {"gpt-5.6-luna", "gpt-5.6-sol"} or thinking not in {"low", "medium"}:
+        if model not in {DEFAULT_AGENT_MODEL_ID, "gpt-5.6-luna", "gpt-5.6-sol"} or thinking not in {"low", "medium"}:
             raise ValueError("Unsupported micro model controls")
         public = {"taskId":task_id, "suiteRevision":suite["revision"], "suiteSha256":digest(suite),
                   "model":model, "thinkingLevel":thinking, "budget":suite["budget"], "synthetic":True}

@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .activity_timeline_curation import (
     ACTIVITY_ORGANIZATION_CONTRACT_REPAIR_PROMPT_VERSION,
     ActivityOrganizationContractError,
@@ -27,8 +28,11 @@ from .activity_timeline_curation import (
 from .text_utils import compact_whitespace
 
 
-REQUIRED_EVALUATION_MODEL = "gpt-5.6-luna"
+REQUIRED_EVALUATION_MODEL = DEFAULT_AGENT_MODEL_ID
 REQUIRED_EVALUATION_THINKING = "max"
+_READ_COMPATIBLE_EVALUATION_MODELS = frozenset({
+    REQUIRED_EVALUATION_MODEL, "gpt-6.1-sol", "gpt-5.6-luna", "gpt-5.6-sol",
+})
 
 
 @dataclass(frozen=True)
@@ -232,10 +236,13 @@ def run_luna_structured(
     phase: str,
     timeout_seconds: float = 1_200.0,
     codex_bin: str = "codex",
+    model: str = REQUIRED_EVALUATION_MODEL,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> LunaStructuredRun:
     """Run one ephemeral structured Luna call without putting source text in argv."""
 
+    if model not in _READ_COMPATIBLE_EVALUATION_MODELS:
+        raise ValueError("structured evaluation model is unsupported")
     normalized_phase = compact_whitespace(phase).casefold().replace("_", "-")
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", normalized_phase):
         raise ValueError("phase must be a short filesystem-safe identifier")
@@ -266,7 +273,7 @@ def run_luna_structured(
         "--ignore-user-config",
         "--ignore-rules",
         "--model",
-        REQUIRED_EVALUATION_MODEL,
+        model,
         "--config",
         f'model_reasoning_effort="{REQUIRED_EVALUATION_THINKING}"',
         "--sandbox",
@@ -313,7 +320,7 @@ def run_luna_structured(
 
     run = LunaStructuredRun(
         phase=normalized_phase,
-        model=REQUIRED_EVALUATION_MODEL,
+        model=model,
         thinking=REQUIRED_EVALUATION_THINKING,
         command=command,
         elapsed_seconds=elapsed,
@@ -336,6 +343,7 @@ def load_luna_structured_run(
     artifact_dir: str | Path,
     *,
     phase: str,
+    expected_model: str | None = None,
 ) -> LunaStructuredRun:
     """Resume from a completed private run only when its receipt still matches."""
 
@@ -364,7 +372,8 @@ def load_luna_structured_run(
         raise ValueError("private Luna output and receipt must be objects")
     if str(receipt.get("phase") or "") != normalized_phase:
         raise ValueError("private Luna receipt phase does not match requested phase")
-    if str(receipt.get("model") or "") != REQUIRED_EVALUATION_MODEL:
+    model = str(receipt.get("model") or "")
+    if model not in _READ_COMPATIBLE_EVALUATION_MODELS or (expected_model is not None and model != expected_model):
         raise ValueError("private Luna receipt model does not match evaluation model")
     if str(receipt.get("thinking") or "") != REQUIRED_EVALUATION_THINKING:
         raise ValueError("private Luna receipt thinking level does not match evaluation")
@@ -382,7 +391,7 @@ def load_luna_structured_run(
 
     return LunaStructuredRun(
         phase=normalized_phase,
-        model=REQUIRED_EVALUATION_MODEL,
+        model=model,
         thinking=REQUIRED_EVALUATION_THINKING,
         command=(),
         elapsed_seconds=float(receipt.get("elapsedSeconds") or 0.0),

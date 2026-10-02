@@ -39,6 +39,23 @@ from rag_ime.personal_memory_luna_evaluation import (
 
 
 class PersonalMemoryLunaEvaluationTests(unittest.TestCase):
+    def test_new_private_executor_freezes_current_model_in_runner_prompt_and_receipt(self) -> None:
+        calls = []
+        def runner(**kwargs):
+            calls.append(kwargs)
+            return LunaStructuredRun(phase=kwargs["phase"], model=kwargs["model"], thinking="max", command=(),
+                elapsed_seconds=0.1, exit_code=0, prompt_sha256="a"*64, schema_sha256="b"*64,
+                output_sha256="c"*64, stdout_sha256="d"*64, stderr_sha256="e"*64, output={"v":2,"d":[]})
+        with tempfile.TemporaryDirectory() as temporary:
+            executor = PrivateCodexLunaMemoryExecutor(temporary, structured_runner=runner)
+            executor.begin_run("latest", frozen_input_sha256="f"*64)
+            response = executor.complete(phase="evidence-adjudication", messages=[{"role":"system","content":"classify"},{"role":"user","content":"[]"}])
+            executor.finish_run()
+        self.assertEqual(executor.model_id, "gpt-6.1-sol")
+        self.assertEqual(calls[0]["model"], "gpt-6.1-sol")
+        self.assertIn("Required model: gpt-6.1-sol", calls[0]["prompt"])
+        self.assertEqual(response["receipt"]["model"], "gpt-6.1-sol")
+
     def test_concise_prompt_contract_keeps_full_packet_and_bounds_output(self) -> None:
         messages = [
             {"role": "system", "content": "authoritative contract"},
@@ -528,7 +545,7 @@ class PersonalMemoryLunaEvaluationTests(unittest.TestCase):
                     output=output,
                 )
 
-            executor = PrivateCodexLunaMemoryExecutor(root, structured_runner=runner)
+            executor = PrivateCodexLunaMemoryExecutor(root, structured_runner=runner, model_id="gpt-5.6-luna")
             executor.begin_run("run:one", frozen_input_sha256="a" * 64)
             response = executor.complete(
                 phase="evidence-adjudication",
@@ -611,7 +628,7 @@ class PersonalMemoryLunaEvaluationTests(unittest.TestCase):
             executor = PrivateCodexLunaMemoryExecutor(
                 root / "luna",
                 audit_db_path=db_path,
-                structured_runner=runner,
+                structured_runner=runner, model_id="gpt-5.6-luna",
             )
             executor.begin_run("run:audited", frozen_input_sha256="c" * 64)
             executor.complete(
@@ -684,7 +701,7 @@ class PersonalMemoryLunaEvaluationTests(unittest.TestCase):
             executor = PrivateCodexLunaMemoryExecutor(
                 root / "luna",
                 audit_db_path=db_path,
-                structured_runner=runner,
+                structured_runner=runner, model_id="gpt-5.6-luna",
             )
             executor.begin_run("run:replayed", frozen_input_sha256="f" * 64)
             request = {
@@ -772,7 +789,7 @@ class PersonalMemoryLunaEvaluationTests(unittest.TestCase):
             executor = PrivateCodexLunaMemoryExecutor(
                 root / "luna",
                 audit_db_path=db_path,
-                structured_runner=runner,
+                structured_runner=runner, model_id="gpt-5.6-luna",
             )
             executor.begin_run("run:lock-wait", frozen_input_sha256="d" * 64)
             writer_ready = threading.Event()

@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE, PREVIOUS_PRODUCT_MODEL_PROFILES
 from .agent_role_identity import canonical_agent_role_id
 from .agent_prompt_settings import default_prompt_settings, normalize_prompt_settings, prompt_text
 from .agent_skill_routing import (
@@ -70,7 +71,7 @@ def default_agent_configuration(
     idle_timeout_seconds: int = 900,
     role_id: str = "companion-future-v1",
     role_version: str = "1",
-    model_profile: str = "openai-codex/gpt-5.6-luna",
+    model_profile: str = DEFAULT_AGENT_MODEL_PROFILE,
     tool_profile_version: str = "control-center-v1",
     resume_last_session: bool = True,
     coordinator_enabled: bool = False,
@@ -312,6 +313,18 @@ class AgentConfigurationStore:
         _ensure_model_routing(configuration)
         if not had_trace_diagnostic_route:
             changed_keys.append("modelRouting.traceDiagnostic")
+        # Advance defaults for future work through the existing revisioned
+        # configuration owner. Session transcripts and frozen runs retain the
+        # exact model that produced their receipts.
+        if defaults.get("modelProfile") in PREVIOUS_PRODUCT_MODEL_PROFILES:
+            defaults["modelProfile"] = DEFAULT_AGENT_MODEL_PROFILE
+            changed_keys.append("sessionDefaults.modelProfile")
+        model_routing = configuration["modelRouting"]
+        if isinstance(model_routing, dict):
+            for route_id, route_value in model_routing.items():
+                if isinstance(route_value, Mapping) and route_value.get("modelProfile") in PREVIOUS_PRODUCT_MODEL_PROFILES:
+                    model_routing[route_id] = {**route_value, "modelProfile": DEFAULT_AGENT_MODEL_PROFILE}
+                    changed_keys.append(f"modelRouting.{route_id}")
         previous = str(defaults.get("roleId") or "")
         canonical = canonical_agent_role_id(previous)
         if canonical != previous:
@@ -924,23 +937,23 @@ def _validate_configuration(configuration: Mapping[str, object]) -> None:
 def _default_model_routing() -> dict[str, dict[str, str]]:
     return {
         "primary": {
-            "modelProfile": "openai-codex/gpt-5.6-luna",
+            "modelProfile": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "max",
         },
         "traceDiagnostic": {
-            "modelProfile": "openai-codex/gpt-5.6-sol",
+            "modelProfile": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "high",
         },
         "toolAgent": {
-            "modelProfile": "openai-codex/gpt-5.6-luna",
+            "modelProfile": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "max",
         },
         "subagent": {
-            "modelProfile": "openai-codex/gpt-5.6-luna",
+            "modelProfile": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "max",
         },
         "roomCoordinator": {
-            "modelProfile": "openai-codex/gpt-5.6-sol",
+            "modelProfile": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "high",
         },
     }

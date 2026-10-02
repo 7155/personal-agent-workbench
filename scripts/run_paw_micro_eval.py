@@ -20,6 +20,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from rag_ime.agent_lab.micro import MicroAdapter, SUITE, canonical, digest, write_private, turn_usage
 from rag_ime.agent_lab.trial_execution import AgentLabTrialApplication
 from rag_ime.agent_lab.trials import AgentLabTrialStore
@@ -161,7 +162,7 @@ def live_trials(root, tasks, baseline_run=None):
             def prepare(self,spec,job_id):
                 if spec!={"taskId":"context-continuation"}:
                     raise ValueError("fixed continuation suite only")
-                public={**spec,"model":"gpt-5.6-luna","thinkingLevel":"low","maxProviderCalls":4,"maxObservedTokens":12000,"maxOutputTokens":768}
+                public={**spec,"model":DEFAULT_AGENT_MODEL_ID,"thinkingLevel":"low","maxProviderCalls":4,"maxObservedTokens":12000,"maxOutputTokens":768}
                 return {"publicSpec":public,"privateInput":{**public,"jobId":job_id}}
             def execute(self,private,observer,cancelled):
                 from scripts.eval_paw_context_continuation import run_evaluation

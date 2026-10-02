@@ -14,6 +14,7 @@ from threading import RLock
 from typing import Callable, Iterable, Mapping, cast
 from urllib.parse import quote
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_approval_model import pending_model_arbitration
 from .agent_role_identity import (
     canonical_agent_role_id,
@@ -178,7 +179,7 @@ class AgentSessionStore:
         role_id: str = "companion-future-v1",
         role_version: str = "1",
         role_book_revision_id: str = "",
-        model_profile: str = "openai-codex/gpt-5.6-sol",
+        model_profile: str = DEFAULT_AGENT_MODEL_PROFILE,
         thinking_level: str = "max",
         tool_profile_version: str = "control-center-v1",
         execution_mode: str | None = None,

@@ -44,7 +44,7 @@ class RagAgentCandidateControlsTests(unittest.TestCase):
             with patch.object(runner, "_run", return_value={"passed": True}) as run, redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.main(arguments), 0)
             self.assertEqual(run.call_args.kwargs["evaluation_model"], "gpt-5.6-luna")
-            self.assertEqual(run.call_args.kwargs["judge_model"], "gpt-5.6-sol")
+            self.assertEqual(run.call_args.kwargs["judge_model"], "gpt-6.1-sol")
             with patch.object(runner, "_run", return_value={"passed": True}) as run, redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.main([*arguments, "--judge-model", "gpt-5.6-luna"]), 0)
             self.assertEqual(run.call_args.kwargs["judge_model"], "gpt-5.6-luna")

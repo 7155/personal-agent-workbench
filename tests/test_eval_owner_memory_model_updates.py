@@ -109,7 +109,7 @@ class OwnerMemoryModelUpdateEvaluatorTests(unittest.TestCase):
 
             self.assertIsInstance(organizer.delegate, ManagedPiMemoryOrganizer)
             self.assertEqual(identity["provider"], "openai-codex")
-            self.assertEqual(identity["model"], "gpt-5.6-luna")
+            self.assertEqual(identity["model"], "gpt-6.1-sol")
             self.assertEqual(identity["thinking"], "max")
             self.assertEqual(identity["transport"], "codex_cli_ephemeral")
             executor = organizer.delegate.completion_executor

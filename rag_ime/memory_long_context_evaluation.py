@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
+
 import hashlib
 import json
 from collections.abc import Mapping
@@ -154,10 +156,11 @@ def near_budget_checks(
     model_reference: str,
     thinking_level: str,
     output_validation: Mapping[str, object],
+    expected_model_reference: str = DEFAULT_AGENT_MODEL_PROFILE,
 ) -> dict[str, bool]:
     tokens = max(0, int(input_tokens))
     return {
-        "actualProviderModel": model_reference == "openai-codex/gpt-5.6-luna",
+        "actualProviderModel": model_reference == expected_model_reference,
         "thinkingMax": str(thinking_level) == "max",
         "contextAtLeast272K": int(context_window) >= 272_000,
         "inputBeyond64K": tokens > MINIMUM_NO_TRUNCATION_INPUT_TOKENS,

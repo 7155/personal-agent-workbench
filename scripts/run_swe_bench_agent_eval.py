@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from rag_ime.agent_service import AgentService  # noqa: E402
 from rag_ime.agent_tools import ControlToolGateway  # noqa: E402
 from rag_ime.managed_pi_runtime import snapshot_managed_pi_runtime  # noqa: E402
@@ -552,7 +553,7 @@ def _isolated_runtime_config(run_root: Path, *, agent_config: Path) -> PiRuntime
         logs_dir=run_root / "agent" / "logs",
         debug_context_dir=run_root / "agent" / "debug-context",
         provider="openai-codex",
-        model="gpt-5.6-luna",
+        model=DEFAULT_AGENT_MODEL_ID,
         model_configured=True,
         model_configuration_error="",
         provider_environment=provider_environment,

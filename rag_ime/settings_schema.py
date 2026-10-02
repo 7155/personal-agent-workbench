@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
+
 import copy
 import json
 from typing import Any, Mapping
@@ -111,14 +113,14 @@ DEFAULT_SETTINGS: dict[str, object] = {
         },
         "automaticOrganization": {
             "enabled": True,
-            "model": "openai-codex/gpt-5.6-luna",
+            "model": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "max",
             "runsPerDay": 2,
             "includeAgentDialogue": True,
         },
         "dreaming": {
             "enabled": True,
-            "model": "openai-codex/gpt-5.6-luna",
+            "model": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "max",
             "runsPerDay": 2,
         },
@@ -149,7 +151,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
     },
     "agent": {
         "defaults": {
-            "modelReference": "openai-codex/gpt-5.6-luna",
+            "modelReference": DEFAULT_AGENT_MODEL_PROFILE,
             "thinkingLevel": "max",
             "executionMode": "per_action",
         },
@@ -417,12 +419,12 @@ SETTINGS_SCHEMA: dict[str, object] = {
                 {"key": "memory.timeDecay.topicBookHalfLifeDays", "type": "integer", "label": "主题书衰减半衰期", "default": 180},
                 {"key": "memory.timeDecay.stablePreferenceHalfLifeDays", "type": "integer", "label": "稳定偏好衰减半衰期", "default": 365},
                 {"key": "memory.automaticOrganization.enabled", "type": "boolean", "label": "自动整理", "default": True},
-                {"key": "memory.automaticOrganization.model", "type": "pi-model", "label": "自动整理模型", "default": "openai-codex/gpt-5.6-luna"},
+                {"key": "memory.automaticOrganization.model", "type": "pi-model", "label": "自动整理模型", "default": DEFAULT_AGENT_MODEL_PROFILE},
                 {"key": "memory.automaticOrganization.thinkingLevel", "type": "pi-thinking", "label": "自动整理思考", "default": "max", "modelKey": "memory.automaticOrganization.model", "options": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]},
                 {"key": "memory.automaticOrganization.runsPerDay", "type": "integer", "label": "每天自动整理次数", "default": 2},
                 {"key": "memory.automaticOrganization.includeAgentDialogue", "type": "boolean", "label": "整理 Agent 对话摘要", "default": True},
                 {"key": "memory.dreaming.enabled", "type": "boolean", "label": "记忆做梦", "default": True},
-                {"key": "memory.dreaming.model", "type": "pi-model", "label": "做梦模型", "default": "openai-codex/gpt-5.6-luna"},
+                {"key": "memory.dreaming.model", "type": "pi-model", "label": "做梦模型", "default": DEFAULT_AGENT_MODEL_PROFILE},
                 {"key": "memory.dreaming.thinkingLevel", "type": "pi-thinking", "label": "做梦思考", "default": "max", "modelKey": "memory.dreaming.model", "options": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]},
                 {"key": "memory.dreaming.runsPerDay", "type": "integer", "label": "每天做梦次数", "default": 2},
                 {"key": "memory.catalogConsolidation.enabled", "type": "boolean", "label": "启用全局目录整理", "default": True},
@@ -549,7 +551,7 @@ SETTINGS_SCHEMA: dict[str, object] = {
                     "key": "agent.defaults.modelReference",
                     "type": "pi-model-or-inherit",
                     "label": "新建 Session 模型",
-                    "default": "openai-codex/gpt-5.6-luna",
+                    "default": DEFAULT_AGENT_MODEL_PROFILE,
                 },
                 {
                     "key": "agent.defaults.thinkingLevel",

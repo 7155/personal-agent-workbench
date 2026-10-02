@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID, DEFAULT_AGENT_MODEL_PROFILE
 from rag_ime.agent_memory_sources import AgentMemorySourceStore
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.deepseek_config import load_deepseek_config
@@ -361,7 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="configured",
         help=(
             "Use the historical configured Provider or the fixed "
-            "openai-codex/gpt-5.6-luna thinking=max evaluation boundary."
+            f"{DEFAULT_AGENT_MODEL_PROFILE} thinking=max evaluation boundary."
         ),
     )
     parser.add_argument("--codex-bin", default="codex")
@@ -1162,7 +1163,7 @@ def run(
         if organizer_kind == "luna":
             identity_gate = (
                 model_identity["provider"] == "openai-codex"
-                and model_identity["model"] == "gpt-5.6-luna"
+                and model_identity["model"] == DEFAULT_AGENT_MODEL_ID
                 and model_identity["thinking"] == "max"
                 and model_identity["transport"] == "codex_cli_ephemeral"
             )

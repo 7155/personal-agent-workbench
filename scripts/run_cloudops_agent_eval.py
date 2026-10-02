@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from rag_ime.agent_artifacts import AgentArtifactStore
 from rag_ime.agent_service import AgentService
 from rag_ime.cloudops_benchmark_agent import (
@@ -1684,7 +1685,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate-prompt-file", type=Path, help="UTF-8 generic candidate instructions; never Host Gold.")
     parser.add_argument("--evaluation-split", choices=("validation", "development"), default="validation")
     parser.add_argument("--provider", default="openai-codex")
-    parser.add_argument("--model", default="gpt-5.6-sol")
+    parser.add_argument("--model", default=DEFAULT_AGENT_MODEL_ID)
     parser.add_argument("--thinking", default="max")
     parser.add_argument("--timeout-seconds", type=float, default=900.0)
     parser.add_argument("--max-reads-per-case", type=int, default=40)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
+
 import hashlib
 import json
 import sqlite3
@@ -221,6 +223,7 @@ def redacted_near_budget_summary(
     source_hashes: Mapping[str, str],
     production_access: Mapping[str, object],
     production_file_identity_changed: bool,
+    expected_model_id: str = DEFAULT_AGENT_MODEL_ID,
 ) -> dict[str, object]:
     receipt_value = response.get("receipt")
     receipt = dict(receipt_value) if isinstance(receipt_value, Mapping) else {}
@@ -230,7 +233,7 @@ def redacted_near_budget_summary(
     }
     transport_gate = {
         "providerMatched": str(receipt.get("provider") or "") == "openai-codex",
-        "modelMatched": str(receipt.get("modelId") or "") == "gpt-5.6-luna",
+        "modelMatched": str(receipt.get("modelId") or "") == expected_model_id,
         "thinkingMatched": str(receipt.get("thinkingLevel") or "") == "max",
         "contextWindowSufficient": int(receipt.get("contextWindow") or 0) >= 272_000,
         "inputLengthCovered": int(receipt.get("inputChars") or 0) >= case.payload_chars,

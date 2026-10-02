@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import cast
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
+
 
 def with_current_codex_models(
     providers: Mapping[str, Mapping[str, object]],
@@ -14,9 +16,9 @@ def with_current_codex_models(
     result = dict(providers)
     codex = dict(result.get("openai-codex") or {})
     models = list(cast(Iterable[Mapping[str, object]], codex.get("models") or []))
-    if not any(model.get("id") == "gpt-6.1-sol" for model in models):
+    if not any(model.get("id") == DEFAULT_AGENT_MODEL_ID for model in models):
         models.append({
-            "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol",
+            "id": DEFAULT_AGENT_MODEL_ID, "name": "GPT-6.1 Sol",
             "api": "openai-codex-responses", "reasoning": True,
             "input": ["text", "image"],
             # Retain the managed Codex provider's conservative context budget.

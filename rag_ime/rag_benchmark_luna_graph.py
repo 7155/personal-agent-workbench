@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .activity_timeline_evaluation import (
     LunaStructuredRun,
     load_luna_structured_run,
@@ -23,7 +24,7 @@ from .knowledge_library.graph_extractors import (
 )
 
 
-LUNA_GRAPH_MODEL = "gpt-5.6-luna"
+LUNA_GRAPH_MODEL = DEFAULT_AGENT_MODEL_ID
 LUNA_GRAPH_MODEL_REFERENCE = f"openai-codex/{LUNA_GRAPH_MODEL}"
 LUNA_GRAPH_THINKING = "max"
 LUNA_GRAPH_PROMPT_VERSION = "rag-benchmark-luna-knowledge-graph-v1"

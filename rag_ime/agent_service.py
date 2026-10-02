@@ -16,6 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from threading import RLock
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .db import sqlite_connection
 from .pi.values import PiRuntimeCommandRejected
 from .agent_capability_catalog import capability_disclosure_enabled, session_resource_disclosure_policy
@@ -6126,7 +6127,7 @@ class AgentService:
                 response = self.runtime.complete_once(
                     request_id=request_id,
                     provider="openai-codex",
-                    model_id="gpt-5.6-luna",
+                    model_id=DEFAULT_AGENT_MODEL_ID,
                     thinking_level="max",
                     message=build_ai_judge_prompt(trace),
                     timeout_seconds=120.0,

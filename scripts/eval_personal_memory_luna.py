@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from rag_ime.deepseek_memory_organizer import ManagedPiMemoryOrganizer
 from rag_ime.embeddings import (
     HashingEmbeddingProvider,
@@ -64,7 +65,7 @@ ATOM_FIRST_EVALUATION_INSTRUCTION = (
     "unresolved questions and implementation status unless the evidence directly states a "
     "durable requirement or decision. Never infer facts from app, time or repetition."
 )
-_MEMORY_MODELS = ("gpt-5.6-luna", "gpt-5.6-sol")
+_MEMORY_MODELS = (DEFAULT_AGENT_MODEL_ID, "gpt-5.6-luna", "gpt-5.6-sol")
 _MEMORY_CONTEXT_PROFILES = ("full-json-v1", "compact-json-v1")
 _MEMORY_PROMPT_CONTRACTS = ("standard-v1", "concise-json-v1")
 _MEMORY_USAGE_KEYS = (
@@ -328,7 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-sources", type=int, default=1_000)
     parser.add_argument("--timeout-seconds", type=float, default=1_200.0)
     parser.add_argument("--codex-bin", default="codex")
-    parser.add_argument("--model", choices=_MEMORY_MODELS, default="gpt-5.6-luna")
+    parser.add_argument("--model", choices=_MEMORY_MODELS, default=DEFAULT_AGENT_MODEL_ID)
     parser.add_argument(
         "--context-profile",
         choices=_MEMORY_CONTEXT_PROFILES,

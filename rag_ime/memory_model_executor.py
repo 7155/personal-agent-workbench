@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Protocol
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_sessions import AgentSessionNotFound, AgentSessionStore
 from .agent_tool_ids import MEMORY_CURATION_TOOL_PROFILE
 from rag_ime.pi.values import (
@@ -23,7 +24,7 @@ from rag_ime.pi.values import (
 
 
 MEMORY_CURATION_PROFILE = "MEMORY_CURATION"
-DEFAULT_MEMORY_MODEL_REFERENCE = "openai-codex/gpt-5.6-luna"
+DEFAULT_MEMORY_MODEL_REFERENCE = DEFAULT_AGENT_MODEL_PROFILE
 REQUIRED_MEMORY_THINKING_LEVEL = "max"
 MINIMUM_MEMORY_CONTEXT_TOKENS = 272_000
 MAXIMUM_MEMORY_PROMPT_CHARS = 1_000_000
