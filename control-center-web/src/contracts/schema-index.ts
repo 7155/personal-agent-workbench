@@ -870,6 +870,7 @@ export const contractSchemas = {
       "modelId": {
         "type": "string",
         "enum": [
+          "gpt-6.1-sol",
           "gpt-5.6-luna",
           "jev-latest",
           "jev-preview",
@@ -879,6 +880,7 @@ export const contractSchemas = {
       "modelProfile": {
         "type": "string",
         "enum": [
+          "openai-codex/gpt-6.1-sol",
           "openai-codex/gpt-5.6-luna",
           "typesafe/jev-latest",
           "typesafe/jev-preview",
@@ -9020,6 +9022,75 @@ export const contractSchemas = {
       }
     }
   },
+  "agent-session-codemode-selection.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "rag-ime.contract.agent-session-codemode-selection.v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schemaVersion",
+      "ok",
+      "sessionId",
+      "codemodeMode",
+      "capability"
+    ],
+    "properties": {
+      "schemaVersion": {
+        "type": "string",
+        "const": "rag-ime.agent-session-codemode-selection.v1"
+      },
+      "ok": {
+        "type": "boolean",
+        "const": true
+      },
+      "sessionId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "codemodeMode": {
+        "type": "string",
+        "enum": [
+          "on",
+          "only",
+          "off"
+        ]
+      },
+      "capability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "available",
+          "modes",
+          "defaultMode"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "off",
+                "on",
+                "only"
+              ]
+            }
+          },
+          "defaultMode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "on",
+              "only",
+              ""
+            ]
+          }
+        }
+      }
+    }
+  },
   "agent-session-fork-candidates.v1": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "rag-ime.contract.agent-session-fork-candidates.v1",
@@ -9586,6 +9657,17 @@ export const contractSchemas = {
               "stale"
             ]
           },
+          "codemodeAvailable": {
+            "type": "boolean"
+          },
+          "codemodeMode": {
+            "type": "string",
+            "enum": [
+              "on",
+              "only",
+              "off"
+            ]
+          },
           "createdAtMs": {
             "type": "integer",
             "minimum": 0
@@ -9622,6 +9704,14 @@ export const contractSchemas = {
         "enum": [
           "conversation",
           "subagent_runtime"
+        ]
+      },
+      "codemodeMode": {
+        "type": "string",
+        "enum": [
+          "on",
+          "only",
+          "off"
         ]
       },
       "evaluationSnapshot": {
@@ -10691,6 +10781,25 @@ export const contractSchemas = {
         "type": "string",
         "minLength": 1,
         "maxLength": 240
+      },
+      "executionBinding": {
+        "type": "object",
+        "required": [
+          "turnId",
+          "clientMessageId"
+        ],
+        "properties": {
+          "turnId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "clientMessageId": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "additionalProperties": false
       },
       "args": {
         "type": "object"

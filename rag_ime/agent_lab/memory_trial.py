@@ -17,6 +17,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .golden_pi import AgentLabGoldenPiExecutor
 from .memory_pi import AgentLabMemoryPiExecutor
 from .trial_execution import AgentLabTrialExecutionInterrupted, TrialObserver
@@ -24,7 +25,7 @@ from ..personal_memory_luna_evaluation import SYNTHETIC_PERSONAL_MEMORY_RAG_CASE
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PREPARED_SCHEMA = "rag-ime.agent-lab-memory-trial-input.v1"
-_MODELS = {"gpt-5.6-luna", "gpt-5.6-sol"}
+_MODELS = {DEFAULT_AGENT_MODEL_ID, "gpt-5.6-luna", "gpt-5.6-sol"}
 _CONTEXTS = {"full-json-v1", "compact-json-v1"}
 _PROMPTS = {"standard-v1", "concise-json-v1"}
 _STAGES = {
@@ -181,7 +182,7 @@ class AgentLabMemoryTrialAdapter:
             raise ValueError("unsupported Memory trial controls; host paths cannot be submitted")
         if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}", job_id):
             raise ValueError("Memory trial requires a bounded job identifier")
-        controls = {"model": spec.get("model", "gpt-5.6-luna"),
+        controls = {"model": spec.get("model", DEFAULT_AGENT_MODEL_ID),
             "contextProfile": spec.get("contextProfile", "full-json-v1"),
             "promptContract": spec.get("promptContract", "standard-v1")}
         for key, allowed in (("model", _MODELS), ("contextProfile", _CONTEXTS), ("promptContract", _PROMPTS)):

@@ -1,6 +1,7 @@
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { PawSessionFocusHeader } from './PawSessionFocusHeader';
 import {
+  ChevronDown,
   CircleAlert,
   FolderTree,
   GitBranch,
@@ -81,7 +82,7 @@ import {
 } from '@/features/agent/sessions/ConversationForkDialog';
 import { agentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { AgentStatusPanel } from '@/features/agent/status/AgentStatusPanel';
-import { AgentTimeline } from '@/features/agent/timeline/AgentTimeline';
+import { AgentTimeline, initialAgentResponseTurnId, labProjectUserDraft, type AgentUserMessagePresentation } from '@/features/agent/timeline/AgentTimeline';
 import { QueueTray, useConversationQueue } from '@/features/conversation-ui';
 import { toolIntentPrompt } from '@/features/agent/tool-presentation';
 import { AgentFilesPanel } from '@/features/agent/workspace/AgentFilesPanel';
@@ -114,6 +115,7 @@ import {
 } from '@/features/plugins/capability-policy';
 import '@/features/agent/agent.css';
 import { screenContextForMessage, type ScreenContext } from '@/features/screen-assistant/screen-assistant-model';
+import { ProjectQuickActions } from '@/features/eval-lab/projects/ProjectQuickActions';
 
 type WorkbenchPanel = 'none' | 'files' | 'subagents' | 'status';
 type SessionWorkspaceView = 'conversation' | 'trace' | 'starfield';
@@ -163,7 +165,8 @@ export function PawSessionWorkspace({
   appearance = 'full',
   showComposerControls = appearance !== 'embedded',
   composerPlaceholder,
-  fullHistoryOnOpen = false,
+  userMessagePresentation,
+  fullHistoryOnOpen = true,
 }: {
   active?: boolean;
   persona?: AgentPersonaV1;
@@ -185,6 +188,7 @@ export function PawSessionWorkspace({
   appearance?: 'full' | 'embedded';
   showComposerControls?: boolean;
   composerPlaceholder?: string;
+  userMessagePresentation?: AgentUserMessagePresentation;
   /** Earth and other audit-heavy surfaces can opt into the complete turn log
    * on first paint; ordinary Agent keeps its bounded recent snapshot. */
   fullHistoryOnOpen?: boolean;
@@ -215,13 +219,22 @@ export function PawSessionWorkspace({
   useEffect(() => {
     if (draftRequest) setDraft(current => applyWorkspaceDraft(current, draftRequest));
   }, [draftRequest]);
+  // A failed send or restored queue can contain the transport-only Lab snapshot.
+  // Keep the real request editable; the snapshot will be attached again on send.
+  useEffect(() => {
+    if (userMessagePresentation !== 'project-context') return;
+    const request = labProjectUserDraft(draft);
+    if (request !== undefined) setDraft(request);
+  }, [draft, setDraft, userMessagePresentation]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(state.projections[recordId]));
   const [stopping, setStopping] = useState(false);
   const [modelChanging, setModelChanging] = useState(false);
   const [panel, setPanel] = useState<WorkbenchPanel>('none');
   const [statusPanelVisited, setStatusPanelVisited] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<SessionWorkspaceView>(embedded ? 'conversation' : traceFocusNodeId ? 'trace' : 'conversation');
   const [error, setError] = useState('');
   const [attachmentError, setAttachmentError] = useState('');
@@ -358,7 +371,7 @@ export function PawSessionWorkspace({
     transport,
     active: liveActive,
     live: liveActive && !evaluationSnapshot,
-    snapshotView: evaluationSnapshot || fullHistoryOnOpen ? 'full' : 'recent',
+    snapshotView: evaluationSnapshot || (fullHistoryOnOpen && hasSnapshot) ? 'full' : 'recent',
     onLoadingChange: setLoading,
     onRecoveryState: setSyncState,
     onSnapshot: (snapshot) => {
@@ -541,7 +554,7 @@ export function PawSessionWorkspace({
     }
   }
 
-  async function send(delivery: AgentMessageDelivery, rawDraft: string): Promise<void> {
+  async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft): Promise<void> {
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
     const value = rawDraft.trim();
@@ -655,7 +668,7 @@ export function PawSessionWorkspace({
     /* The input only comes back if the reader has not already started the next
        thought; a fresh draft never gets clobbered by an old failure. */
     const restoreInput = (): void => {
-      setDraft((current) => (current.trim() ? current : value));
+      setDraft((current) => (current.trim() ? current : displayDraft.trim()));
       setAttachments((current) => (current.length ? current : selectedAttachments));
     };
     // Admission and the optimistic turn are synchronous. Catalog reconciliation,
@@ -1290,18 +1303,19 @@ export function PawSessionWorkspace({
 
   const title = workspaceRecord.title || '未命名 Session';
   const sessionChrome = (
-      <div className="paw-session-workspace__header" data-status={stopping ? 'stopping' : busy ? 'busy' : 'idle'}>
+      <div className="paw-session-workspace__header" data-controls-expanded={controlsExpanded} data-status={stopping ? 'stopping' : busy ? 'busy' : 'idle'}>
         {!windowChromeTarget ? <div className="paw-session-workspace__identity">
           <div>
             <span className="paw-session-workspace__breadcrumb"><small>Agent</small><i>/</i><strong>{title}</strong></span>
             <small>Session · {workspaceRecord.mode === 'coordinator' ? '协调' : '单聊'}</small>
           </div>
         </div> : null}
-        {!evaluationSnapshot ? <nav aria-label="当前 Session 视图" className="paw-session-workspace__view-switch">
+        {!evaluationSnapshot && controlsExpanded ? <nav aria-label="当前 Session 视图" className="paw-session-workspace__view-switch">
           <button aria-label="对话" aria-pressed={workspaceView === 'conversation'} onClick={() => { setWorkspaceView('conversation'); setPanel('none'); setToolMenuOpen(false); }} type="button"><MessageSquare size={15} /><span>对话</span></button>
           <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setToolMenuOpen(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
           <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setToolMenuOpen(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
-        </nav> : <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span>}
+        </nav> : evaluationSnapshot ? <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span> : null}
+        {!evaluationSnapshot ? <button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起对话控件' : '展开对话控件'} onClick={() => setControlsExpanded(value => !value)}><ChevronDown size={15} /><span>视图</span></button> : null}
         <div className="paw-session-workspace__runtime">
           <span data-context={contextSnapshotState}><i />{evaluationSnapshot
             ? '只读证据'
@@ -1316,7 +1330,7 @@ export function PawSessionWorkspace({
               : contextSnapshotState === 'partial'
                 ? '最近上下文'
                 : '已同步'}</span>
-          {!evaluationSnapshot ? (
+          {!evaluationSnapshot && controlsExpanded ? (
             <button
               aria-label="加载完整记录"
               disabled={contextSnapshotState === 'restoring'}
@@ -1375,7 +1389,7 @@ export function PawSessionWorkspace({
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
       <WorkspaceRecoveryNotice recovery={recovery} />
-      {!embedded && !evaluationSnapshot && workspaceView === 'conversation' ? <PawSessionFocusHeader
+      {controlsExpanded && !embedded && !evaluationSnapshot && workspaceView === 'conversation' ? <PawSessionFocusHeader
         title={title}
         busy={busy}
         stopping={stopping}
@@ -1404,13 +1418,22 @@ export function PawSessionWorkspace({
               <div aria-hidden="true" className="agent-fx-fade agent-fx-fade--top" />
               <div aria-hidden="true" className="agent-fx-fade agent-fx-fade--bottom" />
               {loading && !projectionSlice.hasTurns ? <div className="paw-session-workspace__loading"><LoaderCircle className="ui-spin" size={18} />正在载入最近对话</div> : null}
+              {!evaluationSnapshot && !workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (
+                <ProjectQuickActions active={active && liveActive && !loading && workspaceView === 'conversation'} compact context={{
+                  projectId: recordId,
+                  title: workspaceRecord.title || recordId,
+                  sessionId: recordId,
+                  cwd: workspaceRecord.workspaceRoots[0],
+                }} />
+              ) : null}
               <AgentTimeline
+                pendingFeedbackTurnId={evaluationSnapshot ? '' : pendingFeedbackTurnId}
                 active={liveActive}
                 activityPresentation="grouped"
                 failurePresentation={embedded ? 'compact' : 'default'}
                 presentation={embedded ? 'default' : 'fx'}
                 showConversationNavigation={!embedded}
-                userMessagePresentation={embedded ? 'request-tail' : 'full'}
+                userMessagePresentation={userMessagePresentation ?? (embedded ? 'request-tail' : 'full')}
                 sessionId={recordId}
                 includeRoomPublicPosts={Boolean(workspaceRecord.roomParticipant)}
                 persona={persona}
@@ -1480,6 +1503,7 @@ export function PawSessionWorkspace({
           </div>
 
           <div className="paw-session-workspace__composer" data-read-only={evaluationSnapshot || undefined}>
+            {pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
             {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
               <CircleAlert size={14} aria-hidden="true" />
               <span>{attachmentError}</span>
@@ -1564,7 +1588,10 @@ export function PawSessionWorkspace({
                 onPasteImages={pasteFiles}
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
-                onSend={(delivery, value) => void send(delivery, editState ? value : messageWithWorkspaceContext(value,composerContext))}
+                onSend={(delivery, value) => {
+                  const input = userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value;
+                  void send(delivery, editState ? value : messageWithWorkspaceContext(input, composerContext), input);
+                }}
                 onStop={() => void stop()}
                 showJumpLatest={!timelineFollow.following}
                 unseenUpdates={timelineFollow.unseenUpdates}
@@ -1573,7 +1600,7 @@ export function PawSessionWorkspace({
                 onPermissionChange={(selection) => void changePermission(selection)}
                 onWorkspaceRootsChange={() => void manageWorkspaceRoots()}
                 queueDepth={queue.queue.length}
-                onQueue={(value) => queue.enqueue(messageWithWorkspaceContext(value,composerContext))}
+                onQueue={(value) => queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
               />
               </>
             ) : null}

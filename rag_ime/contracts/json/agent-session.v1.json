@@ -41,6 +41,8 @@
         "runtimeKind": {"type": "string", "minLength": 1},
         "generation": {"type": "integer", "minimum": 1},
         "state": {"type": "string", "enum": ["prepared", "active", "stale"]},
+        "codemodeAvailable": {"type": "boolean"},
+        "codemodeMode": {"type": "string", "enum": ["on", "only", "off"]},
         "createdAtMs": {"type": "integer", "minimum": 0},
         "updatedAtMs": {"type": "integer", "minimum": 0}
       }
@@ -49,6 +51,7 @@
     "mode": {"type": "string", "enum": ["assistant", "coordinator"]},
     "status": {"type": "string", "enum": ["idle", "active", "busy", "faulted", "archived"]},
     "sessionKind": {"type": "string", "enum": ["conversation", "subagent_runtime"]},
+    "codemodeMode": {"type": "string", "enum": ["on", "only", "off"]},
     "evaluationSnapshot": {"type": "boolean"},
     "surfaceKind": {"type": "string", "enum": ["agent", "extension_app", "builtin_app"]},
     "ownerAppId": {"type": "string", "pattern": "^$|^memory$|^extension:[a-z0-9][a-z0-9-]{0,63}$"},

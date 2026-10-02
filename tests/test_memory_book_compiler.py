@@ -188,7 +188,7 @@ class MemoryBookCompilerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             builder_calls,
-            [((self.db_path, "openai-codex/gpt-5.6-luna", "max"), {})],
+            [((self.db_path, "openai-codex/gpt-6.1-sol", "max"), {})],
         )
         self.assertTrue(payload["dryRun"])
         self.assertTrue(payload["validation"]["ok"])

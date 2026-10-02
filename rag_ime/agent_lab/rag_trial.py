@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .trial_execution import AgentLabTrialExecutionInterrupted, TrialObserver
 
 
@@ -40,7 +41,7 @@ class AgentLabRagTrialAssets:
     distractor_limit: int = 1000
     timeout_seconds: float = 420.0
     lane_attempts: int = 1
-    judge_model: str = "gpt-5.6-sol"
+    judge_model: str = DEFAULT_AGENT_MODEL_ID
     pricing_config: Path | None = None
     pricing_published_date: str = ""
     pricing_source_url: str = "https://platform.openai.com/docs/pricing"

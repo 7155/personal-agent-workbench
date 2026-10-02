@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,223 @@ import { RoomComposer, roomMentionedParticipants } from './RoomComposer';
 afterEach(cleanup);
 
 describe('RoomComposer macOS input methods', () => {
+  const queuedCommon = () => ({
+    room: { id: 'room-awaiting-start', status: 'active', participants: [] },
+    personas: [],
+    draft: '补充发布边界',
+    attachments: [],
+    sending: false,
+    onDraftChange: vi.fn(),
+    onAttachmentsChange: vi.fn(),
+    onPasteImages: vi.fn(),
+    onPasteFromClipboard: vi.fn(),
+    onPickAttachments: vi.fn(),
+    onSend: vi.fn(() => false),
+    onQueue: vi.fn(() => true),
+    onStop: vi.fn(),
+  });
+
+  it('accepts external recovery after local edit and clear leave the host draft unchanged', () => {
+    const common = queuedCommon();
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('a')}>Restore externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={setDraft} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    act(() => {
+      fireEvent.change(editor, { target: { value: 'a' } });
+      fireEvent.change(editor, { target: { value: '' } });
+    });
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Restore externally' }));
+    expect(editor).toHaveValue('a');
+    expect(common.onSend).not.toHaveBeenCalled();
+  });
+
+  it('applies an external clear during pending local publication even when the same clear was edited locally', () => {
+    const common = queuedCommon();
+    function Harness() {
+      const [draft, setDraft] = useState('原草稿');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('')}>Clear externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={setDraft} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    act(() => {
+      fireEvent.change(editor, { target: { value: '' } });
+      fireEvent.change(editor, { target: { value: '新的本地内容' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Clear externally' }));
+    });
+    expect(editor).toHaveValue('');
+    expect(common.onSend).not.toHaveBeenCalled();
+  });
+
+  it.each(['ABC_xyz_0123456789', '中文输入必须保留每个字符'])('keeps controlled host input and external replacements intact: %s', (value) => {
+    const common = { ...queuedCommon(), draft: '' };
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('')}>Clear externally</button>
+        <button onClick={() => setDraft(value.slice(0, 1))}>Restore an earlier value externally</button>
+        <button onClick={() => setDraft('恢复的外部草稿')}>Recover externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={(next) => { common.onDraftChange(next); setDraft(next); }} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    for (let index = 1; index <= value.length; index += 1) {
+      fireEvent.change(editor, { target: { value: value.slice(0, index) } });
+    }
+    expect(common.onDraftChange).toHaveBeenLastCalledWith(value);
+    expect(editor).toHaveValue(value);
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith(value);
+    expect(editor).toHaveValue(value);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear externally' }));
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Restore an earlier value externally' }));
+    expect(editor).toHaveValue(value.slice(0, 1));
+    fireEvent.click(screen.getByRole('button', { name: 'Recover externally' }));
+    expect(editor).toHaveValue('恢复的外部草稿');
+    expect(common.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the mention selection and newer text as the controlled host publishes edits', () => {
+    const common = { ...queuedCommon(), draft: '', room: {
+      id: 'room-mention-echo', status: 'active', participants: [{
+        id: 'earth', sessionId: 'earth-session', roleId: 'worker', roleVersion: '1',
+        displayName: 'Earth', ordinal: 0, status: 'active',
+      }],
+    } };
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return <TooltipProvider><RoomComposer {...common} draft={draft} onDraftChange={setDraft} /></TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    fireEvent.change(editor, { target: { value: '@' } });
+    fireEvent.change(editor, { target: { value: '@E' } });
+    expect(editor).toHaveValue('@E');
+    expect(screen.getByRole('listbox', { name: '选择要点名的伙伴' })).toBeVisible();
+    fireEvent.click(screen.getByRole('option', { name: /Earth/ }));
+    expect(editor).toHaveValue('@Earth ');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    fireEvent.change(editor, { target: { value: '@Earth ABC中文' } });
+    expect(editor).toHaveValue('@Earth ABC中文');
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('@Earth ABC中文');
+  });
+
+  it('keeps the next controlled draft after an accepted send and applies external clear and recovery', () => {
+    const common = { ...queuedCommon(), onSend: vi.fn(() => true) };
+    function Harness() {
+      const [draft, setDraft] = useState('第一条');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('')}>Clear externally</button>
+        <button onClick={() => setDraft('恢复第一条')}>Recover externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={setDraft} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('第一条');
+    expect(editor).toHaveValue('');
+    fireEvent.change(editor, { target: { value: '下一条 ABC中文' } });
+    expect(editor).toHaveValue('下一条 ABC中文');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear externally' }));
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Recover externally' }));
+    expect(editor).toHaveValue('恢复第一条');
+    expect(common.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows awaiting execution without claiming it started and preserves supplement and queue callbacks', () => {
+    const common = queuedCommon();
+    render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('请求已排队，正在等待开始；可补充要求，或将新消息排到下一轮。');
+    expect(status).not.toHaveTextContent('当前任务仍在执行');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(status.querySelector('.room-composer__status-icon')).not.toBeInTheDocument();
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    expect(editor).toHaveAttribute('placeholder', '补充当前请求…');
+    const supplement = screen.getByRole('button', { name: '补充当前请求' });
+    expect(supplement).toBeEnabled();
+    fireEvent.click(supplement);
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('补充发布边界');
+    expect(common.onQueue).not.toHaveBeenCalled();
+    expect(editor).toHaveValue('补充发布边界');
+    fireEvent.click(screen.getByRole('button', { name: '排到当前回合之后' }));
+    expect(common.onQueue).toHaveBeenCalledExactlyOnceWith('补充发布边界');
+    expect(common.onSend).toHaveBeenCalledTimes(1);
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: '停止当前协作' }));
+    expect(common.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps evidence-confirmed running copy when execution is no longer awaiting start', () => {
+    const common = queuedCommon();
+    const view = render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart /></TooltipProvider>);
+    expect(screen.getByRole('status')).not.toHaveAttribute('data-running');
+    view.rerender(<TooltipProvider><RoomComposer {...common} taskBusyState="running" /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('当前任务仍在执行');
+    expect(status).toHaveAttribute('data-running', 'true');
+    expect(status.querySelector('.room-composer__status-icon')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '立即干预当前回合' })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveAttribute('placeholder', '立即干预当前回合…');
+  });
+
+  it('gives a pending answer priority over awaiting execution presentation', () => {
+    const common = queuedCommon();
+    render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart pendingUserAnswer /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('当前任务正在等待你的回答');
+    expect(status).not.toHaveTextContent('请求已排队');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveAttribute('placeholder', '回答伙伴正在等待的问题…');
+    expect(screen.queryByRole('button', { name: '排到当前回合之后' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '发送问题回答' }));
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('补充发布边界');
+    expect(common.onQueue).not.toHaveBeenCalled();
+  });
+
+  it('retains attachments ahead of awaiting execution copy without admitting a supplement or queue', () => {
+    const common = queuedCommon();
+    render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart attachments={[{
+      mediaId: 'media-awaiting', fileName: 'proof.png', mimeType: 'image/png', byteSize: 8,
+      sha256: 'a'.repeat(64), roomId: 'room-awaiting-start',
+    }]} /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('附件已保留，当前协作结束后就能发送。');
+    expect(status).not.toHaveTextContent('请求已排队');
+    expect(status).not.toHaveAttribute('data-running');
+    const supplement = screen.getByRole('button', { name: '补充当前请求' });
+    const queue = screen.getByRole('button', { name: '排到当前回合之后' });
+    expect(supplement).toBeDisabled();
+    expect(queue).toBeDisabled();
+    fireEvent.click(supplement);
+    fireEvent.click(queue);
+    expect(common.onSend).not.toHaveBeenCalled();
+    expect(common.onQueue).not.toHaveBeenCalled();
+  });
+
+  it.each(['blocked', 'waiting'] as const)('does not replace the %s contract with awaiting execution copy', (state) => {
+    render(<TooltipProvider><RoomComposer {...queuedCommon()} taskBusyState={state} awaitingExecutionStart /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).not.toHaveTextContent('请求已排队');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(screen.getByRole('button', { name: state === 'blocked' ? '告诉伙伴怎样继续' : '立即干预当前回合' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '排到当前回合之后' })).not.toBeInTheDocument();
+  });
+
   it('shows a route waiting state without implying that execution is running', () => {
     render(<TooltipProvider><RoomComposer
       room={{ id: 'room-waiting', status: 'active', participants: [] }} personas={[]} draft="下一轮补充"
@@ -222,6 +439,29 @@ describe('RoomComposer macOS input methods', () => {
     expect(onPasteFromClipboard).toHaveBeenCalledTimes(1);
   });
 
+  it('hands Finder local references to the native pasteboard fallback while leaving links as text', () => {
+    const onPasteFromClipboard = vi.fn();
+    render(<TooltipProvider><RoomComposer
+      room={{ id: 'room-finder-paste', status: 'active', participants: [] }} personas={[]} draft=""
+      attachments={[]} sending={false} onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()}
+      onPasteImages={vi.fn()} onPasteFromClipboard={onPasteFromClipboard} onPickAttachments={vi.fn()} onSend={vi.fn()}
+    /></TooltipProvider>);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+
+    fireEvent.paste(editor, { clipboardData: {
+      files: [], items: [],
+      getData: (kind: string) => kind === 'text/uri-list' ? 'file:///Users/example/Desktop/brief.pdf' : 'brief.pdf',
+    } });
+    expect(onPasteFromClipboard).toHaveBeenCalledTimes(1);
+    expect(editor).toHaveValue('');
+
+    fireEvent.paste(editor, { clipboardData: {
+      files: [], items: [],
+      getData: (kind: string) => kind === 'text/uri-list' ? 'https://example.test/brief.pdf' : 'https://example.test/brief.pdf',
+    } });
+    expect(onPasteFromClipboard).toHaveBeenCalledTimes(1);
+  });
+
   it('renders a removable managed attachment chip', () => {
     const onAttachmentsChange = vi.fn();
     render(
@@ -409,14 +649,14 @@ it('moves the one JEV draft into a dialog and restores it and focus without send
   expect(onSend).not.toHaveBeenCalled();
 });
 
-it('keeps one add menu, stop and expanded editing and blocks file drops during execution', async () => {
+it('keeps one add menu, stop and expanded editing and stages file drops during execution', async () => {
   const onStop = vi.fn(); const onInvite = vi.fn(); const onFiles = vi.fn();
   render(<TooltipProvider><RoomComposer room={{ id: 'room-controls', status: 'active', participants: [] }} personas={[]} draft="长文本" attachments={[]} sending={false} taskBusyState="running" onStop={onStop} onInvitePartners={onInvite} onDraftChange={vi.fn()} onAttachmentsChange={vi.fn()} onPasteImages={onFiles} onPasteFromClipboard={vi.fn()} onPickAttachments={vi.fn()} onSend={vi.fn()} /></TooltipProvider>);
   fireEvent.click(screen.getByRole('button', { name: '停止当前协作' }));
   expect(screen.queryByRole('button', { name: '邀请新伙伴' })).not.toBeInTheDocument();
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: '添加内容' }));
-  expect(screen.getByRole('menuitem', { name: /选择附件/ })).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.getByRole('menuitem', { name: /选择附件/ })).not.toHaveAttribute('aria-disabled', 'true');
   await user.click(screen.getByRole('menuitem', { name: '邀请新伙伴' }));
   expect(onStop).toHaveBeenCalledTimes(1); expect(onInvite).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: '展开长文本编辑' }));
@@ -425,7 +665,9 @@ it('keeps one add menu, stop and expanded editing and blocks file drops during e
   fireEvent.keyDown(editor, { key: 'Escape' });
   expect(screen.getByRole('button', { name: '展开长文本编辑' })).toHaveAttribute('aria-expanded', 'false');
   fireEvent.drop(editor, { dataTransfer: { types: ['Files'], files: [new File(['a'], 'test.txt')] } });
-  expect(onFiles).not.toHaveBeenCalled();
+  expect(onFiles).toHaveBeenCalledTimes(1);
+  fireEvent.paste(editor, { clipboardData: { files: [new File(['pdf'], 'reference.pdf', { type: 'application/pdf' })] } });
+  expect(onFiles).toHaveBeenCalledTimes(2);
   expect(editor).toHaveValue('长文本');
 });
 

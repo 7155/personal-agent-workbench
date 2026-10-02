@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { usePresentationMotion } from '../reading/reading-preferences';
 import { ImageGalleryView, ImageViewerView } from './ImageGalleryView';
 import { imageKey, limitZoom, type GalleryImage, type ImageLoadMap, type ImageViewerMode } from './image-gallery-model';
+import { useMotionActivity } from '@/design/motion';
 
 /** Shared reader for managed message media and user-selected local draft bytes.
  * No fetch/dispatch/install command lives in this presentation component.
@@ -18,7 +19,10 @@ export function ImageGallery({ items, compact = false, onOpenOriginal }: {
   const [zoom, setZoom] = useState(0); const [compare, setCompare] = useState<[string, string]>(['', '']);
   const [limit, setLimit] = useState(6); const [loads, setLoads] = useState<ImageLoadMap>({});
   const [retries, setRetries] = useState<Record<string, number>>({});
-  const motion = usePresentationMotion(); const current = items.find(item => item.id === currentId);
+  const readingMotion = usePresentationMotion();
+  const surfaceMotion = useMotionActivity();
+  const motion = readingMotion && surfaceMotion;
+  const current = items.find(item => item.id === currentId);
   const signature = JSON.stringify(items.map(imageKey));
   useEffect(() => {
     const keys = new Set<string>(JSON.parse(signature));

@@ -53,7 +53,7 @@ class AgentRoleTests(unittest.TestCase):
         )
         self.assertEqual(
             [persona_model_profile(item) for item in roles],
-            ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-terra", "openai-codex/gpt-5.6-luna", "openai-codex/gpt-5.6-luna"],
+            ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-6.1-sol", "openai-codex/gpt-6.1-sol", "openai-codex/gpt-6.1-sol"],
         )
         self.assertEqual(catalog[0]["visualProfile"]["accentToken"], "rose")
         self.assertTrue(catalog[0]["runtimeCharacteristics"]["isDefault"])

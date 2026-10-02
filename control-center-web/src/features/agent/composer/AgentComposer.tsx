@@ -68,6 +68,7 @@ import type {
   AgentCommand,
   AgentPermissionSelection,
   AgentProductCommandName,
+  CodemodeMode,
   ComposerAttachment,
   ModelCatalog,
   SessionSummary,
@@ -120,6 +121,8 @@ export function AgentComposer({
   toolCatalogStatus,
   capabilityCatalog,
   capabilityPolicyPending = false,
+  codemodeMode,
+  codemodeModePending = false,
   busy,
   stopping = false,
   sending,
@@ -132,6 +135,7 @@ export function AgentComposer({
   onPasteImages,
   onToolSelect,
   onCapabilityPreferenceChange = () => {},
+  onCodemodeModeChange,
   onProductCommand,
   onSend,
   onStop,
@@ -168,6 +172,9 @@ export function AgentComposer({
   toolCatalogStatus: 'loading' | 'ready' | 'failed';
   capabilityCatalog?: CapabilityCatalog;
   capabilityPolicyPending?: boolean;
+  /** Pi 0.99.2 codemode policy; omitted when the backend cannot confirm it. */
+  codemodeMode?: CodemodeMode;
+  codemodeModePending?: boolean;
   busy: boolean;
   stopping?: boolean;
   sending: boolean;
@@ -180,6 +187,7 @@ export function AgentComposer({
   onPasteImages: ComposerFileImporter;
   onToolSelect: (tool: ToolManifest) => void;
   onCapabilityPreferenceChange?: (canonicalId: string, preference: CapabilityPreference) => void;
+  onCodemodeModeChange?: (mode: CodemodeMode) => void;
   onProductCommand: (command: AgentProductCommandName) => void;
   onSend: (delivery: AgentMessageDelivery, draft: string) => void;
   onStop: () => void | Promise<void>;
@@ -580,6 +588,8 @@ export function AgentComposer({
                   adjustmentDisabled={busy || sending}
                   capabilityCatalog={capabilityCatalog}
                   capabilityPolicyPending={capabilityPolicyPending}
+                  codemodeMode={codemodeMode}
+                  codemodeModePending={codemodeModePending}
                   disabled={!session}
                   requestOpen={toolPickerRequest}
                   requestQuery={toolPickerQuery}
@@ -587,6 +597,7 @@ export function AgentComposer({
                   status={toolCatalogStatus}
                   tools={tools}
                   onCapabilityPreferenceChange={onCapabilityPreferenceChange}
+                  onCodemodeModeChange={onCodemodeModeChange}
                   onSelect={(tool) => {
                     onToolSelect(tool);
                     window.requestAnimationFrame(() => textareaRef.current?.focus());

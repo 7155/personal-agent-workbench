@@ -6,9 +6,11 @@ import {
   type EvidenceEchoEntity,
 } from '@/features/evidence-echo/evidence-echo';
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
+import { CopyAction } from '@/features/agent/timeline/rich/RichBlockTools';
 import { usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { usePageVisibility } from '@/platform/use-page-visibility';
+import { readRoomRoundReading, useRoomRoundReadingRecovery } from '@/features/semantic-workspace/reading-recovery';
 import {
   progressFallback,
   selectRoomRoundTaskSheets,
@@ -36,42 +38,72 @@ const sheetStateLabels: Record<string, string> = {
   aborted: '已停止',
 };
 
-export function PawRoomRoundSheet({
-  onOpenParticipant,
-  onResumeBlocked,
-  projection,
-  resumeErrorByRow,
-  resumingWorkItemId,
-  room,
-  selectedParticipantId,
-}: {
+type ParticipantDestination = 'session' | 'observer' | 'room-transcript';
+const participantOpenLabel = (name: string, destination: ParticipantDestination) => destination === 'observer'
+  ? `查看 ${name} 进展` : destination === 'room-transcript' ? `在 Room 中查看 ${name} 进展` : `打开 ${name} Session`;
+
+type RoomRoundSheetProps = {
   onOpenParticipant: (participantId: string) => void;
+  /** Labels describe the existing callback destination; no navigation is changed. */
+  participantDestination?: ParticipantDestination;
   /** Optional so compact surfaces keep their composer-less behavior. */
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   projection: RoomProjectionState;
+  /** Optional connection/Room scope supplied by the owning workspace. */
+  readingRecoveryKey?: string;
+  /** A lightweight first page must not classify a saved older anchor as cropped. */
+  readingRecoveryReady?: boolean;
   resumeErrorByRow?: Record<string, string | undefined>;
   resumingWorkItemId?: string;
   room: RoomSummary;
   selectedParticipantId?: string;
-}) {
+};
+
+export function PawRoomRoundSheet(props: RoomRoundSheetProps) {
+  // A new Room/connection owns a new reading lifetime, including timer cleanup.
+  return <RoomRoundSheet key={props.readingRecoveryKey || props.room.id} {...props} />;
+}
+
+function RoomRoundSheet({
+  onOpenParticipant,
+  participantDestination = 'session',
+  onResumeBlocked,
+  projection,
+  readingRecoveryKey,
+  readingRecoveryReady = true,
+  resumeErrorByRow,
+  resumingWorkItemId,
+  room,
+  selectedParticipantId,
+}: RoomRoundSheetProps) {
   const sheets = useMemo(
     () => selectRoomRoundTaskSheets(room, projection),
     [projection, room],
   );
-  const [sheetDisclosure, setSheetDisclosure] = useState<Record<string, boolean>>({});
-  const [historicalDisclosure, setHistoricalDisclosure] = useState<Record<string, boolean>>({});
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set());
+  const initialReading = useMemo(() => readRoomRoundReading(readingRecoveryKey), [readingRecoveryKey]);
+  const [sheetDisclosure, setSheetDisclosure] = useState<Record<string, boolean>>(() => Object.fromEntries(initialReading?.processDisclosure ?? []));
+  const [historicalDisclosure, setHistoricalDisclosure] = useState<Record<string, boolean>>(() => Object.fromEntries(initialReading?.historicalRoundIds.map(id => [id, true]) ?? []));
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set(initialReading?.expandedRowIds));
   const detailIdPrefix = useId();
   const desktop = usePawOsDesktop();
   const roundsRef = useRef<HTMLElement>(null);
+  const latestNavigationRef = useRef<HTMLButtonElement>(null);
+  const jumpingToLatest = useRef(false);
+  const jumpingToHistory = useRef(false);
+  const scrollSize = useRef({ content: 0, viewport: 0, width: 0 });
   const previousLatestSheetId = useRef('');
   const latestSheetId = sheets.at(-1)?.id ?? '';
-  const followingLatest = useRef(true);
-  const [awayFromLatest, setAwayFromLatest] = useState(false);
+  const followingLatest = useRef(initialReading?.followingLatest ?? true);
+  const [awayFromLatest, setAwayFromLatest] = useState(initialReading ? !initialReading.followingLatest : false);
   const [unseenRound, setUnseenRound] = useState(false);
   const pageVisible = usePageVisibility();
   const previousPartnerStates = useRef<Map<string, RoomRoundRowState> | null>(null);
   const [arrivingKeys, setArrivingKeys] = useState<readonly string[]>([]);
+  const cancelReadingRestore = useRoomRoundReadingRecovery(roundsRef, readingRecoveryKey, readingRecoveryReady && Boolean(sheets.length), initialReading, () => ({
+    followingLatest: followingLatest.current,
+    historicalRoundIds: Object.keys(historicalDisclosure).filter(id => historicalDisclosure[id]),
+    processDisclosure: Object.entries(sheetDisclosure), expandedRowIds: [...expandedRows],
+  }));
 
   useEffect(() => {
     const latest = sheets.at(-1);
@@ -90,9 +122,21 @@ export function PawRoomRoundSheet({
     return () => window.clearTimeout(timer);
   }, [arrivingKeys]);
 
+  const releaseLatestFollow = () => {
+    cancelReadingRestore();
+    followingLatest.current = false;
+    jumpingToLatest.current = false;
+    jumpingToHistory.current = false;
+  };
+
   const jumpToRound = (sheetId: string, toEnd = false) => {
+    cancelReadingRestore();
+    followingLatest.current = toEnd && sheetId === latestSheetId;
+    jumpingToLatest.current = followingLatest.current;
+    jumpingToHistory.current = !followingLatest.current;
     setHistoricalDisclosure((current) => ({ ...current, [sheetId]: true }));
     requestAnimationFrame(() => {
+      if (toEnd && !followingLatest.current) return;
       const node = roundsRef.current;
       const target = [...(node?.querySelectorAll<HTMLElement>('[data-round-id]') ?? [])]
         .find((round) => round.dataset.roundId === sheetId);
@@ -100,7 +144,10 @@ export function PawRoomRoundSheet({
       const top = toEnd ? node.scrollHeight : node.scrollTop + target.getBoundingClientRect().top - node.getBoundingClientRect().top - 12;
       if (typeof node.scrollTo === 'function') node.scrollTo({ top, behavior: roundScrollBehavior() });
       else node.scrollTop = top;
-      if (sheetId === latestSheetId) setUnseenRound(false);
+      if (sheetId === latestSheetId) {
+        setUnseenRound(false);
+        latestNavigationRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+      }
       target.focus({ preventScroll: true });
     });
   };
@@ -116,7 +163,10 @@ export function PawRoomRoundSheet({
       return;
     }
     if (!node) return;
+    jumpingToLatest.current = true;
     const frame = requestAnimationFrame(() => {
+      if (!followingLatest.current) return;
+      latestNavigationRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
       if (typeof node.scrollTo === 'function') {
         node.scrollTo({ top: node.scrollHeight, behavior });
       } else {
@@ -125,6 +175,37 @@ export function PawRoomRoundSheet({
     });
     return () => cancelAnimationFrame(frame);
   }, [latestSheetId]);
+
+  useEffect(() => {
+    const node = roundsRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    let disposed = false;
+    const rememberSize = () => {
+      scrollSize.current = { content: node.scrollHeight, viewport: node.clientHeight, width: node.clientWidth };
+    };
+    rememberSize();
+    let observedWidth = node.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (disposed) return;
+      // Provider deltas, disclosure layout and viewport changes do not create
+      // a new round. Keep a following reader at the end without queuing an
+      // animation for each delta; an explicit history read owns its position.
+      if (followingLatest.current) {
+        node.scrollTop = node.scrollHeight;
+        if (observedWidth !== node.clientWidth) {
+          latestNavigationRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+        }
+      }
+      const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
+      setAwayFromLatest(!nearBottom);
+      if (nearBottom) setUnseenRound(false);
+      observedWidth = node.clientWidth;
+      rememberSize();
+    });
+    observer.observe(node);
+    node.querySelectorAll('[data-round-id]').forEach(round => observer.observe(round));
+    return () => { disposed = true; observer.disconnect(); };
+  }, [latestSheetId, sheets.length]);
 
   useEffect(() => {
     const node = roundsRef.current;
@@ -154,19 +235,40 @@ export function PawRoomRoundSheet({
           aria-label={`查看第 ${index + 1} 轮：${sheet.objective}`}
           data-state={sheet.status}
           key={sheet.id}
+          ref={sheet.id === latestSheetId ? latestNavigationRef : undefined}
           onClick={() => jumpToRound(sheet.id)}
           title={sheet.objective}
           type="button"
         ><i aria-hidden="true" />第 {index + 1} 轮{sheet.id === latestSheetId ? <small>最新</small> : null}</button>)}</div>
       </nav> : null}
-    <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef} onScroll={(event) => {
-      const node = event.currentTarget;
-      const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
-      followingLatest.current = nearBottom;
-      setAwayFromLatest(!nearBottom);
-      if (nearBottom) setUnseenRound(false);
-      else setHistoricalDisclosure((current) => current[latestSheetId] ? current : { ...current, [latestSheetId]: true });
-    }}>
+    <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef}
+      onWheel={event => { cancelReadingRestore(); if (event.deltaY < 0) releaseLatestFollow(); }}
+      onTouchMove={releaseLatestFollow}
+      onKeyDown={event => {
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) cancelReadingRestore();
+        if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) releaseLatestFollow();
+      }}
+      onPointerDown={event => { if (event.target === event.currentTarget) releaseLatestFollow(); }}
+      onScroll={(event) => {
+        const node = event.currentTarget;
+        const nearBottom = node.scrollHeight - node.clientHeight - node.scrollTop < 80;
+        const layoutChanged = scrollSize.current.content !== node.scrollHeight
+          || scrollSize.current.viewport !== node.clientHeight || scrollSize.current.width !== node.clientWidth;
+        scrollSize.current = { content: node.scrollHeight, viewport: node.clientHeight, width: node.clientWidth };
+        // A browser may scroll-anchor during resize before the observer runs.
+        // That is not a reader choosing history. Upward input cancels follow
+        // explicitly, including during an in-flight smooth jump to the end.
+        if (followingLatest.current && (layoutChanged || jumpingToLatest.current) && !nearBottom) return;
+        // A smooth history jump starts at the bottom. Its initial anchored
+        // scroll must not re-enable follow before it has moved away.
+        if (jumpingToHistory.current && nearBottom) return;
+        if (!nearBottom) jumpingToHistory.current = false;
+        followingLatest.current = nearBottom;
+        if (nearBottom) jumpingToLatest.current = false;
+        setAwayFromLatest(!nearBottom);
+        if (nearBottom) setUnseenRound(false);
+        else setHistoricalDisclosure((current) => current[latestSheetId] ? current : { ...current, [latestSheetId]: true });
+      }}>
       {sheets.map((sheet, index) => {
         const latest = index === sheets.length - 1;
         const settled = ['completed', 'failed', 'aborted'].includes(sheet.status);
@@ -207,11 +309,15 @@ export function PawRoomRoundSheet({
           : sheet.rows.filter((row) => !row.assigned && !coordinatorRows.includes(row));
         const standaloneTaskRow = taskRows.length === 1 ? taskRows[0] : undefined;
         const multiParticipantRows = taskRows.length > 1 ? taskRows : [];
-        const countedResultRows = workerAssignmentExists
-          ? resultRows.filter((row) => !isCoordinatorRow(row, room))
-          : resultRows;
-        const planetCount = taskRows.length + countedResultRows.length
-          + (workerAssignmentExists ? 0 : coordinatorRows.length) || starterRows.length;
+        // The prompt counts participating planets, independently of the
+        // worker table's synthesis layout. A routed moderator is one planet;
+        // repeated dispatches remain one row. Unknown historical lane IDs
+        // keep their evidence surfaces without inflating the roster count.
+        const knownPlanet = (row: RoomRoundTaskRow) => room.participants.some((participant) => participant.id === row.participantId);
+        const participatingPlanets = sheet.rows.filter((row) => knownPlanet(row) && (row.assigned || resultRows.includes(row)));
+        const planetCount = new Set((participatingPlanets.length
+          ? participatingPlanets
+          : starterRows.filter(knownPlanet)).map((row) => row.participantId)).size;
         const roundOpen = latest || Boolean(historicalDisclosure[sheet.id]);
         const replyId = `${detailIdPrefix}-${domToken(sheet.id)}-reply`;
         const processId = `${detailIdPrefix}-${domToken(sheet.id)}-process`;
@@ -227,7 +333,10 @@ export function PawRoomRoundSheet({
           setExpandedRows((current) => toggled(current, key));
         };
         const arriving = sheet.rows.filter((row) => row.state === 'running' && arrivingKeys.includes(row.key));
-        const preserveReading = () => setHistoricalDisclosure((current) => current[sheet.id] ? current : { ...current, [sheet.id]: true });
+        const preserveReading = (target: Element) => {
+          if (target.closest('button[aria-expanded], summary')) releaseLatestFollow();
+          setHistoricalDisclosure((current) => current[sheet.id] ? current : { ...current, [sheet.id]: true });
+        };
         const prompt = <span>
           <strong>{sheet.objective}</strong>
           <small>{planetCount} 颗行星 · {sheetStateLabels[sheet.status] ?? sheet.status}</small>
@@ -241,8 +350,8 @@ export function PawRoomRoundSheet({
             data-expanded={roundOpen || undefined}
             key={sheet.id}
             tabIndex={-1}
-            onPointerDownCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(); }}
-            onFocusCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(); }}
+            onPointerDownCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(event.target); }}
+            onFocusCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(event.target); }}
           >
             <header className="paw-room-session-round__prompt">
               <span className="paw-room-session-round__number">第 {index + 1} 轮</span>
@@ -251,6 +360,7 @@ export function PawRoomRoundSheet({
                 aria-expanded={roundOpen}
                 aria-label={roundOpen ? '折叠本轮任务' : '展开本轮任务'}
                 onClick={() => {
+                  releaseLatestFollow();
                   setHistoricalDisclosure((current) => ({ ...current, [sheet.id]: !roundOpen }));
                   if (!roundOpen && sheet.status === 'completed' && !resultRows.length && !coordinatorRows.length) {
                     setSheetDisclosure((current) => ({ ...current, [sheet.id]: true }));
@@ -315,7 +425,7 @@ export function PawRoomRoundSheet({
                               detailId={`${detailIdPrefix}-${domToken(row.key)}`}
                               expanded={expandedRows.has(row.key)}
                               key={row.key}
-                              onOpenParticipant={onOpenParticipant}
+                              onOpenParticipant={onOpenParticipant} participantDestination={participantDestination}
                               onResumeBlocked={onResumeBlocked}
                               onToggle={() => toggleRow(row.key)}
                               resumingWorkItemId={resumingWorkItemId}
@@ -330,14 +440,14 @@ export function PawRoomRoundSheet({
                     ) : null}
                     <>
                       {starterRows.map((row) => (
-                        <StandaloneStarterPlanet key={row.key} onOpenParticipant={onOpenParticipant} row={row} selected={selectedParticipantId === row.participantId} />
+                        <StandaloneStarterPlanet key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} row={row} selected={selectedParticipantId === row.participantId} />
                       ))}
                       {standaloneTaskRow ? (
                         <StandaloneTaskPlanet
                           desktop={desktop}
                           detailId={`${detailIdPrefix}-${domToken(standaloneTaskRow.key)}`}
                           expanded={expandedRows.has(standaloneTaskRow.key)}
-                          onOpenParticipant={onOpenParticipant}
+                          onOpenParticipant={onOpenParticipant} participantDestination={participantDestination}
                           onResumeBlocked={onResumeBlocked}
                           onToggle={() => toggleRow(standaloneTaskRow.key)}
                           resumingWorkItemId={resumingWorkItemId}
@@ -353,16 +463,16 @@ export function PawRoomRoundSheet({
               ) : null}
               <>
                 {coordinatorRows.map((row) => (
-                  <StandaloneCoordinatorSummary desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
+                  <StandaloneCoordinatorSummary desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                 ))}
                 {finalRows.map((row) => (
-                  <StandaloneResultPlanet desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
+                  <StandaloneResultPlanet desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                 ))}
                 {partnerResults.length ? (
                   <section aria-label="伙伴交付" className="paw-room-round__partner-results">
                     <header><h3>伙伴交付</h3><span>{partnerResults.length} 份结果</span></header>
                     {partnerResults.map((row) => (
-                      <PartnerResult desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
+                      <PartnerResult desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                     ))}
                   </section>
                 ) : null}
@@ -427,6 +537,7 @@ function TaskPlanetRows({
   detailId,
   expanded,
   onOpenParticipant,
+  participantDestination,
   onResumeBlocked,
   onToggle,
   resumingWorkItemId,
@@ -439,6 +550,7 @@ function TaskPlanetRows({
   detailId: string;
   expanded: boolean;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   onToggle: () => void;
   resumingWorkItemId?: string;
@@ -527,7 +639,7 @@ function TaskPlanetRows({
               {expanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
             </button>
             <button
-              aria-label={`打开 ${row.celestialName} Session 窗口`}
+              aria-label={participantDestination === 'session' ? `打开 ${row.celestialName} Session 窗口` : participantOpenLabel(row.celestialName, participantDestination)}
               onClick={() => onOpenParticipant(row.participantId)}
               type="button"
             >
@@ -582,7 +694,7 @@ function TaskPlanetRows({
                       text={row.result}
                     />
                   </div>
-                ) : <p>结果尚未返回；打开行星 Session 可查看完整公开过程。</p>}
+                ) : <p>结果尚未返回；打开伙伴记录可查看公开过程。</p>}
                 {row.evidenceRefs.length ? (
                   <ul>
                     {row.evidenceRefs.map((ref) => {
@@ -596,7 +708,7 @@ function TaskPlanetRows({
                   </ul>
                 ) : null}
                 <button onClick={() => onOpenParticipant(row.participantId)} type="button">
-                  打开行星 Session 查看完整过程 <ExternalLink aria-hidden="true" size={13} />
+                  {participantDestination === 'session' ? '打开行星 Session 查看完整过程' : '查看伙伴公开过程'} <ExternalLink aria-hidden="true" size={13} />
                 </button>
               </section>
             </div>
@@ -648,12 +760,14 @@ function isCoordinatorRow(row: RoomRoundTaskRow, room: RoomSummary): boolean {
 function StandaloneCoordinatorSummary({
   desktop,
   onOpenParticipant,
+  participantDestination,
   room,
   row,
   selected,
 }: {
   desktop: ReturnType<typeof usePawOsDesktop>;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   room: RoomSummary;
   row: RoomRoundTaskRow;
   selected: boolean;
@@ -676,7 +790,7 @@ function StandaloneCoordinatorSummary({
       data-state={row.state}
       role="region"
     >
-      <ReportHeading onOpenParticipant={onOpenParticipant} row={row} title={title} />
+      <ReportHeading onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} row={row} title={title} />
       <div className="paw-room-round__prose">
         <MarkdownBody documentKey={`${row.key}:summary:${row.updatedAtMs}`} sessionId={row.sessionId} text={summary} />
       </div>
@@ -694,6 +808,7 @@ function StandaloneTaskPlanet({
   detailId,
   expanded,
   onOpenParticipant,
+  participantDestination,
   onResumeBlocked,
   onToggle,
   resumingWorkItemId,
@@ -706,6 +821,7 @@ function StandaloneTaskPlanet({
   detailId: string;
   expanded: boolean;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   onToggle: () => void;
   resumingWorkItemId?: string;
@@ -769,8 +885,8 @@ function StandaloneTaskPlanet({
           {expanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
           {expanded ? '收起详情' : '查看详情'}
         </button>
-        <button aria-label={`打开 ${row.celestialName} Session`} onClick={() => onOpenParticipant(row.participantId)} type="button">
-          打开 Session <ExternalLink aria-hidden="true" size={14} />
+        <button aria-label={participantOpenLabel(row.celestialName, participantDestination)} onClick={() => onOpenParticipant(row.participantId)} type="button">
+          {participantDestination === 'session' ? '打开 Session' : participantDestination === 'observer' ? '查看进展' : '在 Room 中查看'} <ExternalLink aria-hidden="true" size={14} />
         </button>
         {resumeError ? <span className="paw-room-round__resume-error" role="alert">{resumeError}</span> : null}
       </div>
@@ -800,7 +916,7 @@ function StandaloneTaskPlanet({
               <div className="paw-room-round__result">
                 <MarkdownBody documentKey={`${row.key}:result`} sessionId={row.sessionId} text={row.result} />
               </div>
-            ) : <p>结果尚未返回；打开行星 Session 可查看完整公开过程。</p>}
+            ) : <p>结果尚未返回；打开伙伴记录可查看公开过程。</p>}
             {row.evidenceRefs.length ? (
               <ul>
                 {row.evidenceRefs.map((ref) => {
@@ -850,10 +966,12 @@ function RowProgressHistory({ row, activityOnly = false }: { row: RoomRoundTaskR
 
 function StandaloneStarterPlanet({
   onOpenParticipant,
+  participantDestination,
   row,
   selected,
 }: {
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   row: RoomRoundTaskRow;
   selected: boolean;
 }) {
@@ -874,15 +992,17 @@ function StandaloneStarterPlanet({
         <span className="paw-room-round__row-state"><i aria-hidden="true" />尚未分配</span>
       </header>
       <div className="paw-room-round__standalone-body">
-        <strong>先和这颗行星说清楚要做什么</strong>
-        <p>进入 Session 后可以直接对话、补充上下文，或使用 Grill Me 把目标与取舍问清楚，再决定是否发起协作。</p>
+        <strong>{participantDestination === 'session' ? '先和这颗行星说清楚要做什么' : '查看这颗行星的公开记录'}</strong>
+        <p>{participantDestination === 'session' ? '进入 Session 后可以直接对话、补充上下文，或使用 Grill Me 把目标与取舍问清楚，再决定是否发起协作。'
+          : participantDestination === 'observer' ? '查看伙伴的公开进展与执行轨迹；需要直接对话时，可从观察窗进入完整 Session。'
+            : '在当前 Room 查看伙伴的公开进展与证据。'}</p>
       </div>
       <button
-        aria-label={`打开 ${row.celestialName} Session`}
+        aria-label={participantOpenLabel(row.celestialName, participantDestination)}
         onClick={() => onOpenParticipant(row.participantId)}
         type="button"
       >
-        打开 {row.celestialName} Session <ExternalLink aria-hidden="true" size={14} />
+        {participantOpenLabel(row.celestialName, participantDestination)} <ExternalLink aria-hidden="true" size={14} />
       </button>
     </section>
   );
@@ -891,43 +1011,97 @@ function StandaloneStarterPlanet({
 function StandaloneResultPlanet({
   desktop,
   onOpenParticipant,
+  participantDestination,
   room,
   row,
   selected,
 }: {
   desktop: ReturnType<typeof usePawOsDesktop>;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   room: RoomSummary;
   row: RoomRoundTaskRow;
   selected: boolean;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const result = row.result ?? '';
   return (
     <section
       aria-label={`${row.celestialName} 最终结果`}
       className="paw-room-round__report paw-room-round__report--final"
       data-coordinator="true"
       data-row-key={row.key}
+      data-report-layout="wide"
       data-result-ready="true"
       data-selected={selected || undefined}
+      data-state={row.state}
       role="region"
     >
-      <ReportHeading final onOpenParticipant={onOpenParticipant} row={row} title="最终结果" />
-      <div className="paw-room-round__prose">
-        <MarkdownBody documentKey={`${row.key}:result`} sessionId={row.sessionId} text={row.result ?? ''} />
+      <ReportHeading final onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} row={row} title="最终结果" />
+      <div className="paw-room-round__final-outcome" data-state={row.state}>
+        <small>报告摘要</small>
+        <p>{reportOutcomePreview(result) || '完整报告可展开查看。'}</p>
       </div>
-      <ResultReferences desktop={desktop} room={room} row={row} />
+      <details className="paw-room-round__final-details" onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
+        <summary>
+          <span>查看完整汇报与运行证据</span>
+          <ChevronRight aria-hidden="true" size={14} />
+        </summary>
+        {detailsOpen ? <div className="paw-room-round__final-details-body">
+          <div className="paw-room-round__prose">
+            <MarkdownBody documentKey={`${row.key}:result`} sessionId={row.sessionId} text={result} />
+          </div>
+          <div className="paw-room-round__final-actions">
+            <CopyAction compact label="复制完整汇报" value={result} />
+          </div>
+          <ResultReferences desktop={desktop} room={room} row={row} />
+        </div> : null}
+      </details>
     </section>
   );
+}
+
+/**
+ * Keep the first readable part of the stored report visible without making a
+ * second claim about its outcome. The full source remains owned by
+ * MarkdownBody and is rendered unchanged in the explicit disclosure below.
+ */
+function reportOutcomePreview(source: string): string {
+  const lines = source.replace(/\r\n?/gu, '\n').split('\n');
+  const parts: string[] = [];
+  let fenced = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || !trimmed) continue;
+    const readable = trimmed
+      .replace(/^#{1,6}\s+/u, '')
+      .replace(/^[-*+]\s+/u, '')
+      .replace(/^\d+[.)]\s+/u, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/gu, '$1')
+      .replace(/[`*_~]/gu, '')
+      .trim();
+    if (!readable) continue;
+    parts.push(readable);
+    const preview = parts.join(' ');
+    if (preview.length >= 240) return `${preview.slice(0, 237).trimEnd()}…`;
+  }
+  return parts.join(' ');
 }
 
 function ReportHeading({
   final = false,
   onOpenParticipant,
+  participantDestination,
   row,
   title,
 }: {
   final?: boolean;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   row: RoomRoundTaskRow;
   title: string;
 }) {
@@ -936,11 +1110,11 @@ function ReportHeading({
       <div className="paw-room-round__report-title">
         <h3>{title}</h3>
         <span className="paw-room-round__row-state" data-state={row.state} role="status">
-          <i aria-hidden="true" />{final ? '已提交' : row.state === 'completed' ? '已回复' : rowStateLabels[row.state]}
+          <i aria-hidden="true" />{final ? rowStateLabels[row.state] : row.state === 'completed' ? '已回复' : rowStateLabels[row.state]}
         </span>
       </div>
       <button
-        aria-label={`打开 ${row.celestialName} Session`}
+        aria-label={participantOpenLabel(row.celestialName, participantDestination)}
         className="paw-room-round__report-author"
         onClick={() => onOpenParticipant(row.participantId)}
         type="button"
@@ -957,12 +1131,14 @@ function ReportHeading({
 function PartnerResult({
   desktop,
   onOpenParticipant,
+  participantDestination,
   room,
   row,
   selected,
 }: {
   desktop: ReturnType<typeof usePawOsDesktop>;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   room: RoomSummary;
   row: RoomRoundTaskRow;
   selected: boolean;
@@ -992,7 +1168,7 @@ function PartnerResult({
             </div>
           ) : <p>此伙伴已提交产物与证据。</p>}
           <button
-            aria-label={`打开 ${row.celestialName} Session`}
+            aria-label={participantOpenLabel(row.celestialName, participantDestination)}
             className="paw-room-round__text-action"
             onClick={() => onOpenParticipant(row.participantId)}
             type="button"

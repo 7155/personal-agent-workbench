@@ -12,7 +12,8 @@ export function useComposerEditor(ref: RefObject<HTMLTextAreaElement | null>, dr
     const previousHeight = input.style.height;
     input.style.transition = 'none';
     input.style.height = 'auto';
-    const height = Math.min(Math.max(input.scrollHeight, expanded ? 220 : 54), expanded ? 360 : 156);
+    const minimum = Number.parseFloat(getComputedStyle(input).minHeight) || 40;
+    const height = Math.min(Math.max(input.scrollHeight, expanded ? 220 : minimum), expanded ? 360 : 156);
     if (toggled && previousHeight) {
       input.style.height = previousHeight;
       void input.offsetHeight;

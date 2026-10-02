@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .agent_runtime_driver import RuntimeModelCatalog
 from .agent_runtime_driver import RuntimeDriverFactory
 
@@ -259,15 +260,15 @@ class AgentRoleApplicationService:
         )
         timeline = {
             "rag-ime-timeline-past-v1": (
-                "gpt-5.6-luna",
+                DEFAULT_AGENT_MODEL_ID,
                 "max",
             ),
             "rag-ime-timeline-present-v1": (
-                "gpt-5.6-terra",
+                DEFAULT_AGENT_MODEL_ID,
                 "max",
             ),
             "rag-ime-timeline-future-v1": (
-                "gpt-5.6-sol",
+                DEFAULT_AGENT_MODEL_ID,
                 "xhigh",
             ),
         }.get(role.visual_profile.avatar_asset_id)
@@ -304,7 +305,7 @@ class AgentRoleApplicationService:
             }
         if (
             provider != "gpt"
-            and not configured_model.startswith("gpt-5.6-")
+            and configured_model != DEFAULT_AGENT_MODEL_ID
         ):
             return {
                 "modelProfile": default_profile,

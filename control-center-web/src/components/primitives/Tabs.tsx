@@ -1,6 +1,7 @@
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef } from 'react';
 import { cn } from './utils';
+import { useMotionActivity } from '@/design/motion';
 
 export const Tabs = TabsPrimitive.Root;
 
@@ -22,5 +23,6 @@ export const TabsContent = forwardRef<
   ComponentRef<typeof TabsPrimitive.Content>,
   ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
 >(function TabsContent({ className, ...props }, ref) {
-  return <TabsPrimitive.Content ref={ref} className={cn('ui-tabs__content', className)} {...props} />;
+  const motionActive = useMotionActivity();
+  return <TabsPrimitive.Content ref={ref} className={cn('ui-tabs__content', className)} data-motion-active={motionActive} {...props} />;
 });

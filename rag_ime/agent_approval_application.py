@@ -1267,11 +1267,15 @@ class AgentApprovalApplicationService:
         *,
         reason: str = "user_abort",
         turn_id: str = "",
+        client_message_id: str | None = None,
+        approval_ids: tuple[str, ...] | None = None,
     ) -> dict[str, object]:
         summary = self.sessions.cancel_pending_approvals(
             session_id,
             reason=reason,
             turn_id=turn_id,
+            client_message_id=client_message_id,
+            approval_ids=approval_ids,
         )
         cancelled_ids = [
             str(value)

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -15,27 +15,37 @@ import { agentModeStore } from '@/features/semantic-workspace/agent-mode-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { parseRoomEvent } from '@/contracts/validators';
 
-vi.mock('./PawSessionWorkspace', () => ({
-  PawSessionWorkspace: ({ record, recordId, recordMetadataKnown }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string }) => (
-    <div>
-      Session 工作区
-      <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
-      <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
-      <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
-    </div>
-  ),
-}));
-vi.mock('./PawRoomWorkspace', () => ({
-  PawRoomWorkspace: ({ initialDraft, record, recordId, onRoomUpdated }: {
-    initialDraft?: string; record?: RoomSummary; recordId: string; onRoomUpdated: (room: RoomSummary) => void;
-  }) => (
-    <div>
-      Room 工作区 · {recordId}<output data-testid="room-initial-draft">{initialDraft}</output>
-      <output data-testid="room-record-title">{record?.title ?? 'missing'}</output>
-      <button onClick={() => onRoomUpdated(roomFixture({ id: recordId, title: '恢复的协作主对话' }))}>接收 Room 快照</button>
-    </div>
-  ),
-}));
+const workspaceEvaluations = vi.hoisted(() => ({ session: 0, room: 0 }));
+const workspaceLoading = vi.hoisted(() => ({ room: null as Promise<void> | null }));
+
+vi.mock('./PawSessionWorkspace', () => {
+  workspaceEvaluations.session += 1;
+  return {
+    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string }) => (
+      <div>
+        Session 工作区
+        <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
+        <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
+        <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
+      </div>
+    ),
+  };
+});
+vi.mock('./PawRoomWorkspace', () => {
+  workspaceEvaluations.room += 1;
+  return {
+    PawRoomWorkspace: ({ initialDraft, record, recordId, onRoomUpdated }: {
+      initialDraft?: string; record?: RoomSummary; recordId: string; onRoomUpdated: (room: RoomSummary) => void;
+    }) => {
+      if (workspaceLoading.room) throw workspaceLoading.room;
+      return <div>
+        Room 工作区 · {recordId}<output data-testid="room-initial-draft">{initialDraft}</output>
+        <output data-testid="room-record-title">{record?.title ?? 'missing'}</output>
+        <button onClick={() => onRoomUpdated(roomFixture({ id: recordId, title: '恢复的协作主对话' }))}>接收 Room 快照</button>
+      </div>;
+    },
+  };
+});
 vi.mock('@/features/roles', () => ({ RolesFeature: () => <div>角色工作区</div> }));
 
 // These are the retained traditional workflows; first-use Jev is covered in
@@ -48,6 +58,69 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
+    const transport = createTransport();
+    const mode = deferred<unknown>();
+    const originalRequest = transport.request.bind(transport);
+    transport.request = <T,>(request: ControlRequest): Promise<T> => request.pathId === 'agent.jev.get'
+      ? mode.promise as Promise<T> : originalRequest<T>(request);
+    const roomRoute = '/agent?room=room-old&draft=room%20draft';
+    const view = renderAgent(transport, { initialRoute: roomRoute });
+    try {
+      await waitFor(() => expect({ ...workspaceEvaluations }).toEqual({ session: 0, room: 1 }));
+      // Prewarming does not choose a JEV mode or mount the Room early.
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+    } finally { await act(async () => mode.resolve({ ok: true, mode: 'jev', items: [] })); }
+
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
+    expect(workspaceEvaluations).toEqual({ session: 0, room: 1 });
+
+    view.rerender(agentTree(transport, { initialRoute: '/agent?session=session-old' }));
+    expect(await screen.findByText('Session 工作区')).toBeInTheDocument();
+    expect(screen.getByTestId('session-record-id')).toHaveTextContent('session-old');
+    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+
+    view.rerender(agentTree(transport, { initialRoute: roomRoute }));
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
+    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+  });
+
+  it('warms an exact rail record on intent without selecting it or sending work', async () => {
+    const loader = await import('./agent-workspace-loader');
+    const warm = vi.spyOn(loader, 'warmAgentWorkspace');
+    try {
+      const transport = createTransport();
+      renderAgent(transport);
+      fireEvent.click(await screen.findByRole('button', { name: '打开工作记录' }));
+      const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+      const target = await within(rail).findByRole('button', { name: /^迁移作战室/ });
+      warm.mockClear();
+      fireEvent.pointerEnter(target);
+      fireEvent.focus(target);
+      fireEvent.pointerDown(target);
+      expect(warm.mock.calls).toEqual([['room'], ['room'], ['room']]);
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+      expect(transport.requests.some(({ request }) => ['agent.room.message', 'agent.session.prompt', 'agent.jev.command'].includes(request.pathId))).toBe(false);
+    } finally { warm.mockRestore(); }
+  });
+
+  it('announces a selected workspace while it loads and retains its draft when ready', async () => {
+    const ready = deferred<void>();
+    workspaceLoading.room = ready.promise;
+    try {
+      renderAgent(createTransport(), { initialRoute: '/agent?room=room-old&draft=loading%20draft' });
+      const loading = await screen.findByText('正在打开 Room 工作区…');
+      expect(loading.closest('[role="status"]')).toBeInTheDocument();
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+      await act(async () => { workspaceLoading.room = null; ready.resolve(); });
+      expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+      expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('loading draft');
+      expect(screen.queryByText('正在打开 Room 工作区…')).not.toBeInTheDocument();
+    } finally { workspaceLoading.room = null; ready.resolve(); }
+  });
+
   it('opens a selected Room without starting the hidden Session catalog', async () => {
     const sessions = deferred<unknown>();
     const transport = createTransport({ sessionCatalogHandler: () => sessions.promise });
@@ -72,6 +145,45 @@ describe('PAWOS Agent App', () => {
     const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
     expect(await within(rail).findByRole('button', { name: /^迁移作战室/ })).toBeInTheDocument();
     expect(rail.querySelector('.paw-agent-recents')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('shows the first Session page while later pages and model metadata are pending', async () => {
+    const laterPage = deferred<unknown>();
+    const metadata = deferred<unknown>();
+    const transport = createTransport({
+      modelCatalog: () => metadata.promise,
+      sessionCatalogHandler: (request) => request.query?.beforeId
+        ? laterPage.promise
+        : { items: [{ id: 'session-first', title: '首屏工作记录', mode: 'coordinator', status: 'idle', updatedAtMs: 2 }], hasMore: true, nextBeforeUpdatedAtMs: 2, nextBeforeId: 'session-first' },
+    });
+    renderAgent(transport);
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^首屏工作记录/ })).toBeInTheDocument();
+    expect(rail.querySelector('.paw-agent-recents')).toHaveAttribute('aria-busy', 'true');
+    await act(async () => {
+      laterPage.resolve({ items: [{ id: 'session-older', title: '更早工作记录', mode: 'coordinator', status: 'idle', updatedAtMs: 1 }], hasMore: false });
+      await laterPage.promise;
+    });
+    expect(await within(rail).findByRole('button', { name: /^更早工作记录/ })).toBeInTheDocument();
+    expect(within(rail).getByRole('button', { name: /^首屏工作记录/ })).toBeInTheDocument();
+    await act(async () => {
+      metadata.resolve({ providers: [], selected: {} });
+      await metadata.promise;
+    });
+    await waitFor(() => expect(rail.querySelector('.paw-agent-recents')).not.toHaveAttribute('aria-busy'));
+  });
+
+  it('retains a published first page and reports a failed later page', async () => {
+    const transport = createTransport({
+      sessionCatalogHandler: (request) => request.query?.beforeId
+        ? Promise.reject(new Error('older catalog page unavailable'))
+        : { items: [{ id: 'session-first', title: '已读取工作记录', mode: 'coordinator', status: 'idle', updatedAtMs: 2 }], hasMore: true, nextBeforeUpdatedAtMs: 2, nextBeforeId: 'session-first' },
+    });
+    renderAgent(transport);
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^已读取工作记录/ })).toBeInTheDocument();
+    expect(await within(rail).findByText('部分 Agent 目录暂时不可用。')).toBeInTheDocument();
+    await waitFor(() => expect(rail.querySelector('.paw-agent-recents')).not.toHaveAttribute('aria-busy'));
   });
 
   it('aborts an abandoned Session page when switching to a closed Room directory', async () => {

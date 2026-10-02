@@ -1,7 +1,7 @@
 /* PAWOS shell structure -------------------------------------------------------
  * This file owns shell structure and state semantics: tokens, layout geometry,
  * interaction targets, window states and flow signals. Visual identity (colour,
- * material, blur, shadows) is owned by paw-os-shell-migrated-v1.css; timing and
+ * material, blur, shadows) is owned by paw-os-shell.css; timing and
  * choreography by paw-os-motion.css; the shared control language (select,
  * menu, button, panel) by paw-os-controls.css. Windows are opaque working
  * surfaces; backdrop blur is reserved for true chrome (menu bar, Dock and
@@ -209,7 +209,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    instrument keeps the opposite corner, so the two surfaces read as a
    statement and an instrument instead of as twins.
    This file owns geometry only; the veil that grounds the column and every
-   ink on it belong to paw-os-shell-migrated-v1.css. */
+   ink on it belong to paw-os-shell.css. */
 .paw-field-stage {
   position: absolute; z-index: 3;
   left: 34px;
@@ -294,7 +294,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
 }
 /* Hover and selection no longer plate the whole cell: the macOS desktop
    treatment scopes feedback to the label text and the icon's own dimming.
-   The visual half lives in paw-os-shell-migrated-v1.css. */
+   The visual half lives in paw-os-shell.css. */
 .paw-desktop-shortcuts button > span {
   display: grid; place-items: center;
   border-radius: 8px;
@@ -801,6 +801,10 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   margin-inline-start: 3px;
 }
 .paw-window-leading-slot:empty { display: none; }
+.paw-desktop-root .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) .paw-window-leading-slot > button {
+  min-width: 24px;
+  min-height: 24px;
+}
 .paw-traffic-lights .paw-window-leading-slot .paw-agent-rail-toggle {
   position: static;
   z-index: auto;
@@ -816,6 +820,11 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    per-App or per-breakpoint leading width still composes with this. */
 .paw-window-titlebar:has(.paw-window-leading-slot:not(:empty)) {
   --paw-titlebar-lead: auto;
+}
+.paw-desktop-root .paw-window > .paw-window-titlebar[data-window-chrome='room-workspace']:has(> .paw-window-title) {
+  /* Expanded view controls scroll in their own strip before the Room name
+     loses its whole grid track on a desktop-sized window. */
+  grid-template-columns: max-content minmax(112px, 1fr) minmax(0, auto);
 }
 .paw-window-body {
   width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden;
@@ -1351,6 +1360,52 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   .paw-window-shell[data-window-target='participant'] .paw-window-title > strong { display: block; }
   .paw-window-shell[data-window-target='participant'] .paw-window-title > small { display: none; }
   .paw-window-leading-slot { max-width: 32px; overflow: hidden; }
+}
+
+/* Room and Session names identify the conversation the reader is using. Keep
+   their caption on a second line when App controls fill the first; the same
+   height token moves the absolute header and the content inset together.
+   Focus-primary Rooms omit this caption and retain their existing chrome. */
+@container paw-window (max-width: 700px) {
+  .paw-desktop-root .paw-window:has(> .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title) {
+    --paw-titlebar-h: 64px;
+  }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']):has(> .paw-window-title) {
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-rows: 40px 24px;
+    column-gap: 6px;
+    row-gap: 0;
+    padding: 0 8px;
+  }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']):has(> .paw-window-title) > .paw-traffic-lights {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']):has(> .paw-window-title) > .paw-window-chrome-slot {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+    visibility: visible;
+    opacity: 1;
+    font-size: 12.5px;
+  }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title > strong {
+    display: block;
+    flex: 1 1 auto;
+  }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title > small { display: none; }
+  .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']):has(> .paw-window-title) .paw-window-leading-slot {
+    max-width: none;
+    overflow: visible;
+  }
+  .paw-desktop-root .paw-window-shell[data-interaction='resizing'] .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title {
+    visibility: hidden;
+    opacity: 0;
+  }
 }
 
 /* Reduced motion keeps every state legible through short opacity changes:

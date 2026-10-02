@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID, DEFAULT_AGENT_MODEL_PROFILE
 from rag_ime.agent_role_book import AgentRoleBookStore
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.deepseek_memory_organizer import ManagedPiMemoryOrganizer
@@ -93,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             apply_safe_recent_work=True,
             auto_publish_timelines=True,
             batch_limit=100,
-            model="openai-codex/gpt-5.6-luna",
+            model=DEFAULT_AGENT_MODEL_PROFILE,
             thinking_level="max",
         ),
         role_book_organizer=organizer,
@@ -287,7 +288,7 @@ def _evaluate_result(
     timeline_summary = dict(result.get("activityTimelineSummary") or {})
     request_contract_ok = bool(requests) and all(
         item.get("phase") == "role-book-curation"
-        and item.get("model") == "gpt-5.6-luna"
+        and item.get("model") == DEFAULT_AGENT_MODEL_ID
         and item.get("thinking") == "max"
         and not bool(item.get("isolated"))
         for item in requests
@@ -325,7 +326,7 @@ def _evaluate_result(
         "status": "pass" if passed else "iterate",
         "candidateOnly": True,
         "productionMutationPerformed": False,
-        "model": "gpt-5.6-luna",
+        "model": str(requests[0].get("model") or "") if requests else "",
         "thinking": "max",
         "automaticTimeline": {
             "approvedCount": int(timeline_summary.get("approvedCount") or 0),
@@ -367,7 +368,7 @@ def _write_public_report(path: Path, summary: Mapping[str, object]) -> None:
     text = f"""# Personal Context Dreaming Luna Evaluation
 
 - Status: `{summary.get('status')}`
-- Model: `gpt-5.6-luna`, thinking `max`
+- Model: `{summary.get("model")}`, thinking `max`
 - Candidate only: `true`; production mutation: `false`
 - Automatic Timeline approvals: `{timeline.get('approvedCount', 0)}`
 - Evidence-backed proposals accepted: `{dreaming.get('acceptedProposalCount', 0)}`

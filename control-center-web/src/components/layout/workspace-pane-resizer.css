@@ -1,0 +1,59 @@
+.workspace-pane-resizer {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  outline: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.workspace-pane-resizer::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: transparent;
+  content: '';
+  transform: translateX(-50%) scaleX(1);
+  transition: transform var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+
+.workspace-pane-resizer > svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding-block: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-round);
+  background: var(--color-chrome);
+  box-shadow: var(--shadow-control-hover);
+  color: var(--color-text-tertiary);
+  opacity: .34;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+
+.workspace-pane-resizer:focus-visible::before,
+[data-resizing] > .workspace-pane-resizer::before {
+  background: var(--color-accent);
+  transform: translateX(-50%) scaleX(2);
+}
+
+.workspace-pane-resizer:focus-visible > svg,
+[data-resizing] > .workspace-pane-resizer > svg {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.workspace-pane-resizer[data-side='rail'][data-clamped='min'],
+.workspace-pane-resizer[data-side='status'][data-clamped='max'] { cursor: e-resize; }
+.workspace-pane-resizer[data-side='rail'][data-clamped='max'],
+.workspace-pane-resizer[data-side='status'][data-clamped='min'] { cursor: w-resize; }
+
+@media (hover: hover) and (pointer: fine) {
+  .workspace-pane-resizer:hover::before { background: var(--color-accent); transform: translateX(-50%) scaleX(2); }
+  .workspace-pane-resizer:hover > svg { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+}

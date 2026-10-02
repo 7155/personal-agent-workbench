@@ -237,6 +237,72 @@ class JevHostTests(JevHostFixture):
         self.assertEqual(self.prompt.call_count, calls)
         self.assertEqual(self.app.effects.get(dispatch)["state"], "unknown")
 
+    def test_tick_skips_final_drained_graph_without_claim_but_keeps_unknown_effect(self):
+        """A published, fully drained Root must leave the expensive reconcile lane."""
+        import json
+
+        created = self.create()
+        self.app.tick()
+        dispatch = self.snapshot(created).tasks[0].accepted_turn_id
+        with self.app.ledger.connection(write=True) as conn:
+            claim = conn.execute(
+                "SELECT session_id FROM agent_jev_executor_claims WHERE effect_id=?",
+                (dispatch,),
+            ).fetchone()
+            conn.execute(
+                "UPDATE agent_jev_host_roots SET final_json=? WHERE graph_id=?",
+                (json.dumps({"content": "finished"}), created["graphId"]),
+            )
+            conn.execute(
+                "INSERT INTO agent_jev_execution_drains VALUES(?,?,?)",
+                (dispatch, json.dumps({"status": "drained"}), 1),
+            )
+            conn.execute(
+                "DELETE FROM agent_jev_executor_claims WHERE effect_id=?",
+                (dispatch,),
+            )
+        with patch.object(self.app, "reconcile_graph") as reconcile:
+            self.app.tick(limit=0)
+        reconcile.assert_not_called()
+
+        # A terminal-looking final must not suppress an in-doubt receipt. The
+        # effect stays in the reconciliation lane and is never re-delivered.
+        with self.app.ledger.connection(write=True) as conn:
+            conn.execute(
+                "UPDATE agent_jev_runtime_effects SET state='unknown' WHERE effect_id=?",
+                (dispatch,),
+            )
+        with patch.object(self.app, "reconcile_graph") as reconcile:
+            self.app.tick(limit=0)
+        reconcile.assert_called_once()
+        self.assertEqual(self.app.effects.get(dispatch)["state"], "unknown")
+        self.assertIsNotNone(claim)
+
+    def test_interrupted_execution_keeps_exact_runtime_failure_after_drain(self):
+        created = self.create()
+        self.app.tick()
+        task = self.snapshot(created).tasks[0]
+        effect = self.app.effects.get(task.accepted_turn_id)
+        session_id, turn_id = effect["request"]["sessionId"], effect["receipt"]["turnId"]
+        failure = "Allocation failed - JavaScript heap out of memory"
+        self.service.sessions.record_runtime_event(
+            event_id="oom-exact-turn", session_id=session_id, turn_id=turn_id,
+            sequence=1, event_type="turn_failed", created_at_ms=1,
+            redacted_summary=failure, metrics={"failureKind": "runtime_host_exit"},
+        )
+        # The recovered Pi receipt proves physical drain, while the original
+        # failure remains this responsibility's outcome and recovery reason.
+        terminal = {"eventId": "pi-settlement:recovered", "eventType": "turn_completed", "status": "aborted"}
+        with patch.object(self.app, "execution_terminal", return_value=terminal):
+            self.app.reconcile_graph(self.app.binding_by_graph(created["graphId"]))
+        current = self.service.room_work.get(task.id)
+        self.assertEqual(current["state"], "failed")
+        self.assertIn(failure, current["blocker"]["reason"])
+        with self.app.ledger.connection() as conn:
+            self.assertIsNone(conn.execute(
+                "SELECT 1 FROM agent_jev_executor_claims WHERE effect_id=?", (effect["effectId"],)
+            ).fetchone())
+
     def test_terminal_result_enters_review_and_requires_bound_acceptance(self):
         created = self.create()
         self.app.tick()

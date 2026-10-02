@@ -26,6 +26,7 @@ class LabResearchGatewayTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        self.call_sequence = 0
         self.sessions = AgentSessionStore(self.root / 'lab.sqlite')
         self.sessions.initialize()
         self.addCleanup(self.sessions.close)
@@ -49,18 +50,19 @@ class LabResearchGatewayTests(unittest.TestCase):
             project='research-test', lab_projects=self.service)
 
     def call(self, op='discover', **args):
+        self.call_sequence += 1
         return self.gateway.execute({'schemaVersion': 'rag-ime.agent-tool-call.v1',
-            'sessionId': self.session['id'], 'tool': 'lab_research', 'toolCallId': 'tool-one',
+            'sessionId': self.session['id'], 'tool': 'lab_research', 'toolCallId': f'tool-one:{self.call_sequence}',
             'args': {'op': op, **args}})
 
     def test_all_four_operations_reach_app_owner_with_only_host_identities(self):
-        for op in ('discover', 'find', 'open', 'search'):
+        for sequence, op in enumerate(('discover', 'find', 'open', 'search'), start=1):
             self.call(op, query='Orion', _sessionId='spoofed', _toolCallId='spoofed')
             session, operation, args = self.owner.research_tool.call_args.args
             self.assertEqual(session['id'], self.session['id'])
             self.assertEqual(operation, op)
             self.assertEqual(args, {'op': op, 'query': 'Orion',
-                '_sessionId': self.session['id'], '_toolCallId': 'tool-one'})
+                '_sessionId': self.session['id'], '_toolCallId': f'tool-one:{sequence}'})
         self.assertEqual(self.owner.research_tool.call_count, 4)
 
     def test_explicit_empty_golden_policy_cannot_use_research_or_global_knowledge(self):
@@ -100,7 +102,7 @@ class LabResearchGatewayTests(unittest.TestCase):
         self.service._lab_project_application = Mock(return_value=project)
         for operation in ('knowledge_read', 'knowledge_command', 'app_command'):
             request = {'schemaVersion': 'rag-ime.agent-tool-call.v1', 'sessionId': guide['id'],
-                'tool': 'lab_project', 'toolCallId': 'project-tool',
+                'tool': 'lab_project', 'toolCallId': f'project-tool:{operation}',
                 'args': {'op': operation, 'appId': 'extension:lab-test', 'action': 'invoke',
                          'expectedRevision': 1, 'clientRequestId': 'same-request', 'input': {}}}
             response = self.gateway.execute(request)
@@ -110,7 +112,7 @@ class LabResearchGatewayTests(unittest.TestCase):
             tool_profile_version='subagent-readonly-v1', allowed_tools=['lab_project'],
             project_context_enabled=False, pi_skills_enabled=False, codex_skills_enabled=False, workspace_roots=[])
         with self.assertRaisesRegex(ValueError, 'tool profile'):
-            self.gateway.execute(request)
+            self.gateway.execute({**request, 'toolCallId': 'project-tool:policy-check'})
 
     def test_service_read_replica_is_cached_and_never_runs_recovery(self):
         self.service._eval_lab_app_application = None

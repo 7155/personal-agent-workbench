@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 from rag_ime.agent_context_runtime import AgentContextRuntime
+from rag_ime.agent_media import AgentMediaStore
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.agent_workspace import WorkspaceHarness
 from rag_ime.rooms.store import AgentRoomStore
@@ -406,6 +409,59 @@ class MaterialPipelineTests(unittest.TestCase):
         self.assertNotIn("artifact:revision-1", self.body(accepted))
         self.assertEqual(next(item.revision for item in accepted.items
                               if item.id == "dependency:" + self.second["id"]), "1")
+
+    def test_three_accepted_handoffs_fit_and_keep_complete_room_owned_results_readable(self):
+        self.service.media = AgentMediaStore(self.db, root=self.root / 'media')
+        dependencies = [self.second, self.create_work('third', self.root_work['id']),
+                        self.create_work('fourth', self.root_work['id'])]
+        self.ledger.change_edges(self.snapshot(), command_id='three-handoffs',
+            add=[Edge(work['id'], self.first['id']) for work in dependencies], remove=[])
+        for work in dependencies:
+            self.work.submit(self.session['id'], {'workId': work['id'],
+                'resultSummary': 'Complete handoff ' * 220,
+                'artifactRefs': ['docs/' + work['id'] + '.md'],
+                'evidenceRefs': ['Exact evidence ' * 50 + str(index) for index in range(12)]})
+            self.work.accept(self.session['id'], {'workId': work['id'], 'expectedRevision': 0,
+                'reason': 'Checked handoff', 'evidenceRefs': ['verification:' + work['id']],
+                'operabilityVerdict': 'passed', 'requirementVerdict': 'satisfied'})
+        first = self.manifest()
+        self.assertFalse(first.missing)
+        self.assertLessEqual(len(canonical(first.for_executor()).encode()), 24000)
+        for item in first.items:
+            if not item.id.startswith('dependency:'):
+                continue
+            inline = json.loads(item.content)
+            self.assertEqual(inline['state'], 'done')
+            self.assertTrue(inline['inlineTruncated'])
+            self.assertLessEqual(len(item.content.encode()), 2200)
+            media_id = inline['readRef'].removeprefix('media://')
+            receipt, raw = self.service.media.read(media_id, room_id=self.room['id'])
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), inline['archiveSha256'])
+            full = json.loads(raw)
+            work = self.snapshot().task(full['taskId'])
+            self.assertEqual(full['result'], work.result)
+            self.assertEqual(full['evidence'], list(work.evidence))
+            self.assertEqual(full['artifacts'], list(work.artifacts))
+            self.assertEqual(receipt['roomId'], self.room['id'])
+            with self.assertRaises(KeyError):
+                self.service.media.read(media_id, room_id='another-room')
+        self.assertEqual(self.manifest().for_executor(), first.for_executor())
+
+    def test_archive_failure_retains_full_handoff_and_reports_the_budget_gap(self):
+        self.service.media = SimpleNamespace(list_for_room=Mock(side_effect=OSError('archive unavailable')))
+        self.ledger.change_edges(self.snapshot(), command_id='handoff-fallback',
+            add=[Edge(self.second['id'], self.first['id'])], remove=[])
+        result = 'Keep exact handoff ' * 200
+        self.work.submit(self.session['id'], {'workId': self.second['id'], 'resultSummary': result,
+            'evidenceRefs': ['actual verification']})
+        self.work.accept(self.session['id'], {'workId': self.second['id'], 'expectedRevision': 0,
+            'reason': 'Checked', 'evidenceRefs': ['verification'],
+            'operabilityVerdict': 'passed', 'requirementVerdict': 'satisfied'})
+        required = self.materials._requirements(self.snapshot(), self.snapshot().task(self.first['id']))
+        full = next(item for item in required if item.id.startswith('dependency:'))
+        self.assertEqual(json.loads(full.original)['result'], result.strip())
+        manifest = self.manifest(byte_budget=3000)
+        self.assertTrue(manifest.missing)
 
 
 if __name__ == "__main__":

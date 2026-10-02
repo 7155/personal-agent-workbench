@@ -19,6 +19,46 @@ const status: RoomWorkStatus = { state:'running',headline:'1 位伙伴正在执�
 function props() { return {focus,status,onOpenParticipant:vi.fn(),onRetrySync:vi.fn(),onAnswer:vi.fn()}; }
 
 describe('Room composer status dock', () => {
+  it('keeps a completed empty task surface concise without implying acceptance', () => {
+    render(<PawRoomWorkStatus {...props()} focus={{...focus,workItems:[]}}
+      status={{...status,state:'completed',animate:false,total:0,headline:'本轮执行已结束',detail:'Root 已有终态回执；此轮没有可核对的工作项计数。'}} />);
+    const summary = screen.getByRole('region', { name: '协作状态' });
+    expect(within(summary).getByRole('status')).toHaveTextContent('本轮执行已结束');
+    expect(summary).toHaveTextContent('未登记工作项');
+    expect(summary).not.toHaveTextContent('Root');
+    expect(summary).not.toHaveTextContent('暂无工作项');
+    expect(summary).not.toHaveTextContent('验收通过');
+    expect(screen.queryByRole('button', { name: '展开任务' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看协作记录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+  it('keeps runtime work inspectable even when the explicit work count is zero', async () => {
+    const user=userEvent.setup();
+    const runtime = {...focus.workItems[0]!, id:'runtime-proof',source:'runtime' as const,objective:'真实 Runtime 工作记录',state:'completed' as const};
+    render(<PawRoomWorkStatus {...props()} focus={{...focus,workItems:[runtime]}}
+      status={{...status,state:'completed',animate:false,total:0,headline:'本轮执行已结束'}} />);
+    await user.click(screen.getByRole('button', { name: '展开任务' }));
+    expect(screen.getByLabelText('分工详情')).toHaveTextContent('真实 Runtime 工作记录');
+  });
+  it('keeps completed collaboration records available without an empty work counter', async () => {
+    const user=userEvent.setup();
+    render(<PawRoomWorkStatus {...props()} focus={{...focus,workItems:[],handoffs:[{
+      id:'handoff-proof',sourceParticipantId:'mars',targetParticipantId:'mars',state:'completed',createdAtMs:100,
+    }]}} status={{...status,state:'completed',animate:false,total:0,headline:'本轮执行已结束'}} />);
+    expect(screen.queryByText('暂无工作项')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '查看协作记录' }));
+    expect(screen.getByRole('region', { name: '协作记录' })).toBeVisible();
+    fireEvent.keyDown(screen.getByRole('region', { name: '协作记录' }), { key:'Escape' });
+    expect(screen.getByRole('button', { name:'查看协作记录' })).toHaveFocus();
+  });
+  it.each(['blocked','needs-input','offline','failed','stopping'] as const)('keeps %s controls available when there are no work items', state => {
+    const p=props();
+    render(<PawRoomWorkStatus {...p} focus={{...focus,workItems:[]}} status={{...status,state,total:0,animate:false,
+      action:state==='offline'?'sync':state==='needs-input'?'answer':'inspect'}} />);
+    expect(screen.getByRole('button', { name:'展开任务' })).toBeInTheDocument();
+    if(state==='offline') { fireEvent.click(screen.getByRole('button', { name:'重新同步' })); expect(p.onRetrySync).toHaveBeenCalledOnce(); }
+    if(state==='needs-input') { fireEvent.click(screen.getByRole('button', { name:'回答问题' })); expect(p.onAnswer).toHaveBeenCalledOnce(); }
+  });
   it('starts compact, with actual counts and no invented percentage', () => {
     render(<PawRoomWorkStatus {...props()} />);
     expect(screen.getByRole('button',{name:'展开任务'})).toHaveAttribute('aria-expanded','false');

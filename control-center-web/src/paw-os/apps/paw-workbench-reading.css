@@ -72,3 +72,11 @@
 @keyframes paw-session-signal { 0% { opacity: .5; transform: scale(.65); } 100% { opacity: 0; transform: scale(1.6); } }
 @media (prefers-reduced-motion: reduce) { .paw-session-focus *, .paw-session-focus *::after { animation: none !important; transition: none !important; } }
 [data-reduce-motion='true'] .paw-session-focus *, [data-reduce-motion='true'] .paw-session-focus *::after { animation: none !important; transition: none !important; }
+
+/* A single compact status/tool row; the window already owns the title. */
+.paw-session-focus { min-height: 38px; gap: 12px; padding: 3px 18px; box-sizing: border-box; }
+.paw-session-focus__identity { display: flex; align-items: center; }
+.paw-session-focus__actions > button { min-height: 28px; padding: 4px 8px; }
+@media (max-width: 620px) {
+  .paw-session-focus { align-items: center; padding: 3px 12px; }
+}

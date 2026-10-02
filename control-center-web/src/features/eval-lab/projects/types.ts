@@ -62,7 +62,7 @@ export type LabProject = LabProjectSummary & {
   workspace: { artifactOrder: string[]; primaryArtifactId: string; layout: 'split' | 'focus' };
   workspaceBinding: { kind: string; path: string; pathKind: string; checkedAtMs: number } | null;
 };
-export type LabProjectDirectory = { path: string; status: 'ready' | 'partial' | 'unavailable'; sourceRevision: number; generatedAtMs: number; files: { path: string; title: string; kind: string }[]; warnings: string[] };
+export type LabProjectDirectory = { path: string; status: 'ready' | 'partial' | 'unavailable'; sourceRevision: number; generatedAtMs: number; files: { path: string; title: string; kind: string }[]; warnings: string[]; previewUrl?: string };
 export type ProjectRead = {
   ok: true; items: LabProjectSummary[]; project: LabProject | null; artifact?: LabArtifact; materialSet?: MaterialSet;
   supportedViews: ArtifactView[]; availableAdapters?: { adapterId: string; title: string; description: string }[];
@@ -99,7 +99,7 @@ const isLatestRecord = (value: unknown): value is LabProjectLatestRecord => {
 export function isProjectDirectory(value: unknown): value is LabProjectDirectory {
   const item = object(value);
   return text(item.path) && ['ready', 'partial', 'unavailable'].includes(String(item.status)) && natural(item.sourceRevision) && natural(item.generatedAtMs)
-    && texts(item.warnings) && Array.isArray(item.files) && item.files.every((raw) => { const file = object(raw); return text(file.path) && text(file.title) && text(file.kind); });
+    && texts(item.warnings) && (item.previewUrl === undefined || text(item.previewUrl)) && Array.isArray(item.files) && item.files.every((raw) => { const file = object(raw); return text(file.path) && text(file.title) && text(file.kind); });
 }
 const isBindingExecution = (value: unknown): value is LabBindingExecution => {
   const item = object(value); const latest = item.latestJob === null ? null : object(item.latestJob);

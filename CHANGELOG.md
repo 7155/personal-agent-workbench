@@ -10,6 +10,39 @@ source checkpoint is not a signed and notarized macOS binary release.
   Playback flicker remains reported on the user's browser despite passing
   layout and pause checks; do not treat those checks as visual acceptance.
 
+- Keep the committed Room history prefix readable while new events append.
+  Read its database bounds and anchors from one snapshot, and recheck only
+  the captured prefix bytes when the archive grows; reject changed prefixes.
+
+- Connect the managed Pi native MCP and tool-search extensions to the Session
+  capability browser, with owner-supplied connection state, per-tool exposure,
+  refresh and idle login/reconnect actions. Merge codemode child receipts by
+  identity and expand their arguments without inventing missing nested results.
+  Drain Browser CLI stdout and stderr before exit so large piped results retain
+  their JSON and UTF-8 tails, including failed commands.
+  Reconcile cold codemode Browser children with a unique existing receipt from
+  the same Session, original parameters and native parent execution window;
+  keep missing, ambiguous and failed evidence explicit without replaying calls.
+
+- Read exact Pi turn arguments for task verification instead of shortened UI
+  previews. Preserve long credential-masked scripts and more than 64 completed
+  calls in the paginated media archive; keep missing, oversized and failed
+  evidence explicit without expanding public history or replaying tools.
+
+- Upgrade the managed Pi adapter to native 0.99.2 codemode, with idle-only
+  mode controls and expandable code/nested-call cards in Session and Room.
+  Preserve Gateway ownership, exact parameters, failure/cancellation status,
+  and historical nested calls across restart.
+- Keep Session/Room history available through background preload, show
+  Thinking immediately, and give content a compact reading surface. Derive
+  collaboration phases from actual events and include truthful delivery
+  reports and quick run/check actions.
+
+- Keep explicitly submitted local preview jobs running under their background
+  owner after a successful Pi turn settles. Preserve live job status and Root
+  cancellation, require the exact submission and dispatch, and keep unfinished
+  checks and child executions blocking; preview handoff never accepts the task.
+
 - Add Pi Content V5: result-first tool records with separate argument tabs,
   stable adjacent-image galleries, local draft previews, zoom/comparison, and
   a searchable Session-bound capability catalog. Keep installation, disclosure,

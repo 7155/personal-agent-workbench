@@ -132,12 +132,20 @@ class AgentSessionPolicyService:
                 owners=owners,
             )
         ]
+        native_capabilities = None
+        inspect_native = getattr(self.runtime, "native_capabilities", None)
+        if runtime_available and callable(inspect_native):
+            try:
+                native_capabilities = inspect_native(session_id)
+            except AgentRuntimeError:
+                pass
         return {
             "schemaVersion": "rag-ime.agent-command-catalog.v1",
             "ok": True,
             "sessionId": session_id,
             "runtimeAvailable": runtime_available,
             "items": commands,
+            "nativeCapabilities": native_capabilities,
         }
 
     def skill_catalog(self, session_id: str) -> dict[str, object]:
@@ -303,6 +311,36 @@ class AgentSessionPolicyService:
         validate_contract(
             response,
             "agent-thinking-selection.v1.json",
+        )
+        return response
+
+    def select_codemode_mode(
+        self,
+        session_id: str,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        selected = self.runtime.set_codemode_mode(
+            session_id,
+            mode=_required_text(payload, "mode"),
+        )
+        response = {
+            "schemaVersion": "rag-ime.agent-session-codemode-selection.v1",
+            "ok": True,
+            "sessionId": session_id,
+            "codemodeMode": str(selected.get("codemodeMode") or ""),
+            "capability": dict(selected.get("capability") or {}),
+        }
+        self.events.publish(
+            session_id,
+            "session_configuration_changed",
+            {
+                "kind": "codemode",
+                "codemodeMode": response["codemodeMode"],
+            },
+        )
+        validate_contract(
+            response,
+            "agent-session-codemode-selection.v1.json",
         )
         return response
 

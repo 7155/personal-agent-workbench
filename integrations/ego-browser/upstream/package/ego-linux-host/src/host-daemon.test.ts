@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createConnection } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,6 +17,8 @@ import {
   LineBuffer,
 } from "./rpc.js";
 import type { HostConfig } from "./config.js";
+import { createCdpBridge } from "./cdp-bridge.js";
+import { connectHost } from "./ego-client.js";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = join(
@@ -115,6 +118,78 @@ test("daemon listens and answers ping without Chrome", async () => {
       const result = await rpcCall(daemon.socketPath, "ping");
       assert.deepEqual(result, { ok: true, version: HOST_VERSION });
     } finally {
+      await daemon.close();
+    }
+  });
+});
+
+test("daemon confines the first late CDP reply to its disconnected script connection", { timeout: 5000 }, async (t) => {
+  await withTempDir(async (dir) => {
+    const health = createHttpServer((_request, response) => response.end("{}"));
+    await new Promise<void>((resolve) => health.listen(0, "127.0.0.1", resolve));
+    t.after(() => new Promise<void>((resolve, reject) => health.close((error) => error ? reject(error) : resolve())));
+    const config = testConfig(dir);
+    config.cdpPort = (health.address() as { port: number }).port;
+    const sent: any[] = [];
+    let incoming: (text: string) => void;
+    const deliver = (message: object) => incoming(JSON.stringify(message));
+    const bridge = createCdpBridge({
+      onMessage(handler) { incoming = handler; },
+      send(text) {
+        const message = JSON.parse(text);
+        sent.push(message);
+        if (message.method === "Target.getTargets") {
+          queueMicrotask(() => deliver({ id: message.id, result: { targetInfos: [] } }));
+        }
+      },
+    });
+    const daemon = await startDaemon({ config, writePid: false,
+      ensureChrome: async () => ({ pid: null, cdpPort: config.cdpPort,
+        userDataDir: config.userDataDir, async kill() {} }),
+      connectCdp: async () => bridge,
+    });
+    const a = await connectHost(daemon.socketPath);
+    const b = await connectHost(daemon.socketPath);
+    const observer = await connectHost(daemon.socketPath);
+    const received: any[] = [];
+    const observed: any[] = [];
+    b.onEvent((event, params) => received.push({ event, params }));
+    observer.onEvent((event, params) => observed.push({ event, params }));
+    try {
+      await a.request("ego.sendCDPMessage", { payload: JSON.stringify({ id: 1, method: "Browser.getVersion" }) });
+      const oldWireId = sent.at(-1).id;
+      // A never received a response. This is its first late response, not a duplicate.
+      a.close();
+      await b.request("ego.sendCDPMessage", { payload: JSON.stringify({ id: 1, method: "Browser.getVersion" }) });
+      const newWireId = sent.at(-1).id;
+      assert.notEqual(oldWireId, newWireId);
+      const internal = bridge.send("Browser.getVersion");
+      const internalId = sent.at(-1).id;
+      const barriers = [b, observer].map((connection) => new Promise<void>((resolve) => {
+        const off = connection.onEvent((event, params) => {
+          if (event === "cdp.message" && JSON.parse(params.payload).method === "Target.targetCreated") {
+            off(); resolve();
+          }
+        });
+      }));
+      deliver({ id: oldWireId, result: { script: "old-a" } });
+      deliver({ id: newWireId, result: { script: "current-b" } });
+      deliver({ id: internalId, result: { internal: true } });
+      const event = { method: "Target.targetCreated", params: { targetInfo: { targetId: "visible-page" } } };
+      deliver(event);
+      await Promise.all(barriers);
+      assert.deepEqual(await internal, { internal: true });
+      assert.deepEqual(received.map((item) => JSON.parse(item.params.payload)), [
+        { id: 1, result: { script: "current-b" } }, event,
+      ]);
+      assert.deepEqual(observed.map((item) => JSON.parse(item.params.payload)), [event]);
+      // A malformed request also belongs only to its sender, not every script.
+      await b.request("ego.sendCDPMessage", { payload: "not JSON" });
+      await observer.request("ping");
+      assert.equal(received.at(-1).event, "cdp.sendError");
+      assert.equal(observed.length, 1);
+    } finally {
+      a.close(); b.close(); observer.close();
       await daemon.close();
     }
   });

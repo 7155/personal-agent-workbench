@@ -113,8 +113,10 @@ const canonicalPathIds = [
   'agent.session.models',
   'agent.session.model.select',
   'agent.session.thinking.select',
+  'agent.session.codemode.select',
   'agent.session.events',
   'agent.session.backgroundJobs.list',
+  'agent.session.backgroundJob.start',
   'agent.session.backgroundJob.get',
   'agent.session.backgroundJob.logs',
   'agent.session.backgroundJob.cancel',
@@ -433,6 +435,19 @@ describe('control route policy', () => {
       params: { sessionId: 'session-room-worker', jobId: 'bg_123' },
       body: { reason: 'control_center_requested', roomId: 'room-1' },
     } as never)).toThrow(/body field/);
+  });
+
+  it('keeps project quick actions structured and bound to a project workspace', () => {
+    expect(() => assertControlRequest({
+      pathId: 'agent.session.backgroundJob.start',
+      params: { sessionId: 'guide-session' },
+      body: {
+        action: 'preview',
+        projectId: 'project-1',
+        cwd: '/tmp/project-1',
+        previewUrl: 'http://127.0.0.1:5392/dev/ui.html',
+      },
+    })).not.toThrow();
   });
 
   it('keeps configuration file paths behind the five local migration contracts', () => {

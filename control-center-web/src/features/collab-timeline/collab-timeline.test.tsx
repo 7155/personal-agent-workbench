@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { collabDemoRoom, subagentRun } from './fixtures';
+import { collabDemoRoom, subagentRun } from '@/test/fixtures/collab-timeline';
 import { CollabTimelinePeek, CollabTimelineStage } from './CollabTimelineStage';
 import { collabLaneStateAt, collabTimeScale, COLLAB_GAP_MS } from './model';
 import { buildRoomCollabTimeline, ORIGIN_LANE } from './room-timeline';
@@ -102,4 +102,25 @@ describe('Collaboration stage', () => {
     const peek = screen.getByRole('button', { name: '打开协作全景' });
     expect(peek).toHaveTextContent(/Mars|Venus/);
   });
+});
+
+it('shows full task requirements and actual dispatch ownership in Room details', async () => {
+  const demo = collabDemoRoom();
+  const timeline = buildRoomCollabTimeline({ ...demo });
+  expect(timeline.tasks?.find(task => task.id === 'w-mars')?.objective).toBe('写发布说明正文');
+  expect(timeline.dispatches?.find(dispatch => dispatch.id === 'd-mars')).toMatchObject({ fromLaneId: 'p-earth', toLaneId: 'p-mars' });
+  const task = timeline.tasks!.find(task => task.id === 'w-mars')!;
+  task.expectedOutput = '完整发布说明';
+  task.acceptance = ['包含迁移步骤'];
+  const onOpenLane = vi.fn();
+  render(<CollabTimelineStage timeline={timeline} active={false} onOpenLane={onOpenLane} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: '任务与分派' }));
+  expect(screen.getByText('具体任务 · 3')).toBeVisible();
+  await user.click(screen.getByText('写发布说明正文'));
+  expect(screen.getByText('交付：完整发布说明')).toBeVisible();
+  expect(screen.getByText('包含迁移步骤')).toBeVisible();
+  expect(within(screen.getByText('分派记录 · 4').parentElement!).getAllByText('Earth → Mars').some(element => element.closest('.ctl-tasks'))).toBe(true);
+  await user.click(within(screen.getByText('交付：完整发布说明').closest('details')!).getByRole('button', { name: '查看负责人的对话' }));
+  expect(onOpenLane).toHaveBeenCalledWith(expect.objectContaining({ id: task.ownerLaneId }));
 });

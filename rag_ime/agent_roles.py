@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_core_policy import base_agent_safety_policy_prompt
 from .agent_role_identity import canonical_agent_role_id
 from .contracts.json_schema import validate_contract
@@ -115,7 +116,7 @@ _PRESENT_DEFAULTS = PersonaDefaults(
     model_policy="fixed",
     memory_policy="personal-evidence-v1",
     tool_profile_version="control-center-v1",
-    model_profile="openai-codex/gpt-5.6-terra",
+    model_profile=DEFAULT_AGENT_MODEL_PROFILE,
     thinking_level="max",
 )
 
@@ -123,7 +124,7 @@ _PAST_DEFAULTS = PersonaDefaults(
     model_policy="fixed",
     memory_policy="personal-evidence-v1",
     tool_profile_version="control-center-v1",
-    model_profile="openai-codex/gpt-5.6-luna",
+    model_profile=DEFAULT_AGENT_MODEL_PROFILE,
     thinking_level="max",
 )
 
@@ -131,7 +132,7 @@ _FUTURE_DEFAULTS = PersonaDefaults(
     model_policy="fixed",
     memory_policy="personal-evidence-v1",
     tool_profile_version="control-center-v1",
-    model_profile="openai-codex/gpt-5.6-sol",
+    model_profile=DEFAULT_AGENT_MODEL_PROFILE,
     thinking_level="max",
 )
 
@@ -139,7 +140,7 @@ _FLASH_DEFAULTS = PersonaDefaults(
     model_policy="fixed",
     memory_policy="personal-evidence-v1",
     tool_profile_version="control-center-v1",
-    model_profile="openai-codex/gpt-5.6-luna",
+    model_profile=DEFAULT_AGENT_MODEL_PROFILE,
     thinking_level="low",
 )
 

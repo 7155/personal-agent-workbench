@@ -30,6 +30,7 @@ class JevTaskController:
         *,
         decision_lease_ms: int = 30000,
         max_decisions_per_snapshot: int = 4,
+        choose_action=None,
     ):
         if (
             isinstance(decision_lease_ms, bool)
@@ -41,6 +42,7 @@ class JevTaskController:
         ):
             raise GraphError("invalid decision limits")
         self.ledger, self.owner, self.decider = ledger, owner, decider
+        self._choose_action = choose_action
         self.reclaims = Reclaims(ledger, owner)
         self.lease_ms, self.max_decisions = (
             decision_lease_ms,
@@ -286,9 +288,12 @@ class JevTaskController:
                 # Probabilities rank alternatives, not permission to execute.
                 # Equivalent ready tasks must not deadlock on a 0.75 majority;
                 # the explicit insufficient_evidence choice still abstains.
-                action, answer = self.decider.choose_action(
-                    state, candidates, min_probability=0.0, min_margin=0.0
-                )
+                if self._choose_action is None:
+                    action, answer = self.decider.choose_action(
+                        state, candidates, min_probability=0.0, min_margin=0.0
+                    )
+                else:
+                    action, answer = self._choose_action(expected.graph_id, state, candidates)
                 decision = {
                     "selectedId": action.id if action else "",
                     "answer": asdict(answer) if answer else None,

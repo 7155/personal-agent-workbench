@@ -2587,3 +2587,14 @@
 .knowledge-pdf-controls, .knowledge-pdf-controls form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .knowledge-pdf-controls input { width: 6rem; }
 .knowledge-pdf-location { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; color: var(--color-text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+
+.knowledge-library__operation-receipt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}

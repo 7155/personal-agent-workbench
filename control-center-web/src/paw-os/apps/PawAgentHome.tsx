@@ -1,3 +1,4 @@
+import { warmAgentWorkspace } from './agent-workspace-loader';
 import { ContinuityHome } from '@/features/semantic-workspace/ContinuityHome';
 import { createJevWork, type JevModelRouting, type JevToolApproval, type JevVerificationMode } from '@/features/semantic-workspace/jev-execution';
 import { JevPolicyControls } from '@/features/semantic-workspace/JevPolicyControls';
@@ -98,6 +99,10 @@ import type { PickedFile } from '@/platform/transport';
 import { pawBrowserHost } from './paw-browser-host';
 import { ModelPicker } from '@/features/agent/composer/ModelPicker';
 import { PawAppIcon } from '../shell/PawAppIcon';
+import {
+  preloadRecentConversations,
+  type ConversationPreloadTarget,
+} from '@/features/conversation-ui/conversation-preload';
 
 type WorkMode = 'session' | 'room';
 type Selection =
@@ -119,6 +124,7 @@ const PROMPT_STARTERS: ReadonlyArray<{ label: string; prompt: string }> = [
 ];
 
 export function PawAgentHome({
+  active = true,
   interfaceMode = 'traditional',
   catalogError = '',
   catalogLoading = false,
@@ -134,6 +140,7 @@ export function PawAgentHome({
   rooms,
   sessions,
 }: {
+  active?: boolean;
   interfaceMode?: 'traditional' | 'jev';
   catalogError?: string;
   catalogLoading?: boolean;
@@ -239,6 +246,17 @@ export function PawAgentHome({
   ]
     .sort((left, right) => right.item.updatedAtMs - left.item.updatedAtMs)
     .slice(0, 4), [rooms, sessions]);
+
+  useEffect(() => {
+    if (!active || !recents.length) return;
+    const targets: ConversationPreloadTarget[] = recents.slice(0, 3).map(({ kind, item }) => ({
+      kind,
+      id: item.id,
+      updatedAtMs: item.updatedAtMs,
+    }));
+    const warmup = preloadRecentConversations(transport, targets);
+    return () => warmup.cancel();
+  }, [active, recents, transport]);
 
   function moveModeFocus(event: KeyboardEvent<HTMLButtonElement>): void {
     const next = event.key === 'Home' ? 'session'
@@ -820,6 +838,10 @@ export function PawAgentHome({
 
           {interfaceMode === 'jev' ? <ContinuityHome
             spaceKeys={[...sessions.filter(item => item.status !== 'archived').map(item => ({ key: `session:${item.id}`, at: item.updatedAtMs })), ...rooms.filter(item => item.status !== 'archived').map(item => ({ key: `room:${item.id}`, at: item.updatedAtMs }))].sort((a, b) => b.at - a.at).map(item => item.key)}
+            onOpenIntent={key => {
+              if (key.startsWith('session:')) warmAgentWorkspace('session');
+              else if (key.startsWith('room:')) warmAgentWorkspace('room');
+            }}
             onOpen={key => key.startsWith('session:') ? onOpenSession(key.slice(8)) : onOpenRoom(key.slice(5))}
           /> : null}
 
@@ -830,13 +852,13 @@ export function PawAgentHome({
               <h2>继续工作</h2>
               <div className="an-recent-list">
                 {recents.map((entry) => entry.kind === 'session' ? (
-                  <button className="an-recent-card" key={`session:${entry.item.id}`} onClick={() => onOpenSession(entry.item.id)} type="button">
+                  <button className="an-recent-card" key={`session:${entry.item.id}`} onFocus={() => warmAgentWorkspace('session')} onPointerEnter={() => warmAgentWorkspace('session')} onPointerDown={() => warmAgentWorkspace('session')} onClick={() => onOpenSession(entry.item.id)} type="button">
                     <span className="rc-top"><PawAppIcon appId="agent" size={16} /><span className="rc-title">{entry.item.title}</span></span>
                     {entry.item.lastMessagePreview ? <span className="rc-preview">{entry.item.lastMessagePreview}</span> : null}
                     <span className="rc-meta">{projectName(entry.item.workspaceRoots)} · {relativeTime(entry.item.updatedAtMs)}</span>
                   </button>
                 ) : (
-                  <button className="an-recent-card is-room" key={`room:${entry.item.id}`} onClick={() => onOpenRoom(entry.item.id)} type="button">
+                  <button className="an-recent-card is-room" key={`room:${entry.item.id}`} onFocus={() => warmAgentWorkspace('room')} onPointerEnter={() => warmAgentWorkspace('room')} onPointerDown={() => warmAgentWorkspace('room')} onClick={() => onOpenRoom(entry.item.id)} type="button">
                     <span className="rc-top"><PawAppIcon appId="room" size={16} /><span className="rc-title">{entry.item.title}</span></span>
                     {entry.item.description && entry.item.description !== entry.item.title ? <span className="rc-preview">{entry.item.description}</span> : null}
                     <span className="rc-meta"><Users size={11} style={{ verticalAlign: -1 }} /> {entry.item.participants?.length ?? 0} 位伙伴 · {relativeTime(entry.item.updatedAtMs)}</span>

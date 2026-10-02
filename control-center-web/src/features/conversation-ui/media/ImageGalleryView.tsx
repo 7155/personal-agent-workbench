@@ -1,6 +1,6 @@
 import { LayoutGrid, ArrowUpRight, ChevronLeft, ChevronRight, Columns2, Image as ImageIcon, Maximize2, Minus, Plus, RefreshCw } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { imageBytesLabel, imageDimensions, imageKey, imageOriginLabel, imageSizeLabel, type GalleryImage, type ImageLoadMap, type ImageViewerMode } from './image-gallery-model';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { imageBytesLabel, imageDimensions, imageKey, limitZoom, imageOriginLabel, imageSizeLabel, type GalleryImage, type ImageLoadMap, type ImageViewerMode } from './image-gallery-model';
 import './image-gallery.css';
 
 export interface GalleryViewProps {
@@ -12,17 +12,52 @@ export interface GalleryViewProps {
   onLoad: (image: GalleryImage, width: number, height: number) => void;
   onError: (image: GalleryImage) => void; onRetry: (image: GalleryImage) => void;
 }
-export function GalleryImageElement({ image, loads, retries, onLoad, onError, lazy = true, style }: {
-  image: GalleryImage; loads: ImageLoadMap; retries: Readonly<Record<string, number>>;
-  onLoad: GalleryViewProps['onLoad']; onError: GalleryViewProps['onError']; lazy?: boolean;
-  style?: import('react').CSSProperties;
-}) {
-  const key = imageKey(image); const failed = loads[key]?.state === 'failed';
-  if (!image.source || failed) return <span className="paw-image-unavailable"><ImageIcon size={26} aria-hidden /><span>{image.source ? '图片未能加载' : '图片回执不可用'}</span></span>;
-  return <img key={`${key}:${retries[key] || 0}`} src={image.source} alt={image.alt || image.name} loading={lazy ? 'lazy' : 'eager'}
-    decoding="async" draggable={false} referrerPolicy="no-referrer" data-loaded={loads[key]?.state === 'loaded'}
+type GalleryImageElementProps = Pick<GalleryViewProps, 'loads' | 'retries' | 'onLoad' | 'onError' | 'motion'> & {
+  image: GalleryImage; lazy?: boolean; style?: CSSProperties;
+};
+export function GalleryImageElement(props: GalleryImageElementProps) {
+  const { image, loads, retries } = props; const key = imageKey(image);
+  if (!image.source || loads[key]?.state === 'failed') return <span className="paw-image-unavailable"><ImageIcon size={26} aria-hidden /><span>{image.source ? '图片未能加载' : '图片回执不可用'}</span></span>;
+  // A source or explicit retry owns its own decode; other renders preserve the node.
+  return <DecodedGalleryImage key={`${key}:${retries[key] || 0}`} {...props} />;
+}
+function DecodedGalleryImage({ image, onLoad, onError, motion = true, lazy = true, style }: GalleryImageElementProps) {
+  const [phase, setPhase] = useState<'pending' | 'enter' | 'settled'>('pending');
+  const live = useRef(false); const started = useRef(false); const failed = useRef(false);
+  const latest = useRef({ image, onLoad, onError, motion });
+  useLayoutEffect(() => { latest.current = { image, onLoad, onError, motion }; });
+  useLayoutEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  useEffect(() => {
+    if (phase !== 'enter') return;
+    if (!motion) { setPhase('settled'); return; }
+    // CSS animationend normally settles first; this bounds decoration even if it is suppressed.
+    const timeout = window.setTimeout(() => setPhase('settled'), 280);
+    return () => window.clearTimeout(timeout);
+  }, [motion, phase]);
+  function fail() {
+    if (!live.current || failed.current) return;
+    failed.current = true;
+    latest.current.onError(latest.current.image);
+  }
+  function prepare(element: HTMLImageElement) {
+    if (started.current || failed.current) return;
+    started.current = true;
+    const ready = () => {
+      if (!live.current || failed.current) return;
+      if (!element.naturalWidth || !element.naturalHeight) { fail(); return; }
+      setPhase(latest.current.motion ? 'enter' : 'settled');
+      latest.current.onLoad(latest.current.image, element.naturalWidth, element.naturalHeight);
+    };
+    // Some embedded webviews do not expose decode; their successful load is the fallback.
+    if (typeof element.decode !== 'function') { ready(); return; }
+    try { void element.decode().then(ready, fail); } catch { fail(); }
+  }
+  return <img src={image.source} alt={image.alt || image.name} loading={lazy ? 'lazy' : 'eager'}
+    decoding="async" draggable={false} referrerPolicy="no-referrer" data-loaded={phase !== 'pending'}
+    data-reveal={phase} aria-busy={phase === 'pending' || undefined}
     width={image.width} height={image.height} style={style}
-    onLoad={event => onLoad(image, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => onError(image)} />;
+    onAnimationEnd={() => { if (phase === 'enter') setPhase('settled'); }}
+    onLoad={event => prepare(event.currentTarget)} onError={fail} />;
 }
 export function ImageGalleryView(props: GalleryViewProps) {
   const { items, loads, limit, compact = false } = props;
@@ -61,6 +96,37 @@ export interface ImageViewerViewProps extends Pick<GalleryViewProps, 'items' | '
 export function ImageViewerView(props: ImageViewerViewProps) {
   const { items, loads, currentId, mode, compareIds, zoom } = props;
   const current = items.find(image => image.id === currentId) ?? items[0];
+  const viewport = useRef<HTMLDivElement>(null);
+  const anchor = useRef<{ key: string; x: number; y: number } | null>(null);
+  const currentKey = current ? imageKey(current) : '';
+  const previousKey = useRef(currentKey);
+  useLayoutEffect(() => {
+    const container = viewport.current;
+    const point = anchor.current; anchor.current = null;
+    const changed = previousKey.current !== currentKey; previousKey.current = currentKey;
+    if (!container) return;
+    if (changed || zoom === 0) { container.scrollLeft = 0; container.scrollTop = 0; return; }
+    const image = container.querySelector('img');
+    if (!image || !point || point.key !== currentKey) return;
+    const frame = container.getBoundingClientRect(); const bounds = image.getBoundingClientRect();
+    // Reposition the same image-space point after layout, before the browser paints.
+    container.scrollLeft += bounds.left + bounds.width * point.x - (frame.left + container.clientLeft + container.clientWidth / 2);
+    container.scrollTop += bounds.top + bounds.height * point.y - (frame.top + container.clientTop + container.clientHeight / 2);
+  }, [zoom, currentKey, mode]);
+  function changeZoom(requested: number) {
+    const value = requested === 0 ? 0 : limitZoom(requested);
+    const container = viewport.current; const image = container?.querySelector('img');
+    anchor.current = null;
+    if (container && image && value !== zoom) {
+      const frame = container.getBoundingClientRect(); const bounds = image.getBoundingClientRect();
+      if (bounds.width > 0 && bounds.height > 0) anchor.current = {
+        key: currentKey,
+        x: Math.min(1, Math.max(0, (frame.left + container.clientLeft + container.clientWidth / 2 - bounds.left) / bounds.width)),
+        y: Math.min(1, Math.max(0, (frame.top + container.clientTop + container.clientHeight / 2 - bounds.top) / bounds.height)),
+      };
+    }
+    props.onZoom(value);
+  }
   if (!current) return null;
   const position = items.findIndex(image => image.id === current.id);
   const dimensions = imageDimensions(current, loads);
@@ -72,18 +138,18 @@ export function ImageViewerView(props: ImageViewerViewProps) {
       if (event.altKey || event.ctrlKey || event.metaKey || (event.target as HTMLElement).closest('input,select,textarea,[contenteditable=true]')) return;
       if (mode === 'single' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) { event.preventDefault(); event.stopPropagation(); navigate(event.key === 'ArrowLeft' ? -1 : 1); }
       else if (mode === 'single' && (event.key === '0' || event.key === '1' || event.key === '+' || event.key === '=' || event.key === '-')) {
-        if (!haveDimensions && event.key !== '0') return;
-        event.preventDefault(); event.stopPropagation(); props.onZoom(event.key === '0' ? 0 : event.key === '1' ? 1 : (zoom || .75) + (event.key === '-' ? -.25 : .25));
+        if ((!haveDimensions || blocked) && event.key !== '0') return;
+        event.preventDefault(); event.stopPropagation(); changeZoom(event.key === '0' ? 0 : event.key === '1' ? 1 : (zoom || .75) + (event.key === '-' ? -.25 : .25));
       }
     }}>
     <div className="paw-image-viewer__toolbar">
       <div className="paw-image-viewer__switch" role="group" aria-label="图片阅读方式"><button type="button" aria-pressed={mode === 'single'} onClick={() => props.onMode('single')}><ImageIcon size={14} aria-hidden />查看</button><button type="button" aria-pressed={mode === 'compare'} disabled={items.length < 2} onClick={() => props.onMode('compare')}><Columns2 size={14} aria-hidden />对照</button></div>
       {mode === 'single' ? <><span className="paw-image-viewer__counter">{position + 1}<i>/</i>{items.length}</span><div className="paw-image-viewer__zoom" role="group" aria-label="图片缩放">
-        <button type="button" className="paw-image-action" aria-pressed={zoom === 0} onClick={() => props.onZoom(0)}>适应</button>
-        <button type="button" className="paw-image-action" disabled={!haveDimensions || blocked} aria-pressed={zoom === 1} onClick={() => props.onZoom(1)}>原尺寸</button>
-        <button type="button" className="paw-image-icon" aria-label="缩小图片" disabled={!haveDimensions || blocked || zoom !== 0 && zoom <= .25} onClick={() => props.onZoom((zoom || .75) - .25)}><Minus size={15} /></button>
+        <button type="button" className="paw-image-action" aria-pressed={zoom === 0} onClick={() => changeZoom(0)}>适应</button>
+        <button type="button" className="paw-image-action" disabled={!haveDimensions || blocked} aria-pressed={zoom === 1} onClick={() => changeZoom(1)}>原尺寸</button>
+        <button type="button" className="paw-image-icon" aria-label="缩小图片" disabled={!haveDimensions || blocked || zoom !== 0 && zoom <= .25} onClick={() => changeZoom((zoom || .75) - .25)}><Minus size={15} /></button>
         <output>{zoom === 0 ? '适应视口' : `${Math.round(zoom * 100)}%`}</output>
-        <button type="button" className="paw-image-icon" aria-label="放大图片" disabled={!haveDimensions || blocked || zoom >= 4} onClick={() => props.onZoom((zoom || .75) + .25)}><Plus size={15} /></button>
+        <button type="button" className="paw-image-icon" aria-label="放大图片" disabled={!haveDimensions || blocked || zoom >= 4} onClick={() => changeZoom((zoom || .75) + .25)}><Plus size={15} /></button>
       </div></> : <span className="paw-image-viewer__compare-hint">独立适应画面，不进行配准或像素比较</span>}
       {props.onBackdrop ? <span className="paw-image-backdrops" role="group" aria-label="图片画布背景"><small>画布</small>{([
         ['paper', '浅色画布'], ['ink', '深色画布'], ['checker', '透明网格画布'],
@@ -91,7 +157,7 @@ export function ImageViewerView(props: ImageViewerViewProps) {
     </div>
     {mode === 'single' ? <div className="paw-image-viewer__stage">
       {items.length > 1 ? <button type="button" className="paw-image-viewer__prev paw-image-icon" aria-label="上一张图片" disabled={position === 0} onClick={() => navigate(-1)}><ChevronLeft size={19} /></button> : null}
-      <div className="paw-image-viewer__viewport" data-fit={zoom === 0 || !haveDimensions} role="region" aria-label="可滚动的图片画面" tabIndex={0}>
+      <div className="paw-image-viewer__viewport" ref={viewport} data-fit={zoom === 0 || !haveDimensions} role="region" aria-label="可滚动的图片画面" tabIndex={0}>
         <GalleryImageElement {...props} image={current} lazy={false} style={zoom && dimensions.width ? { width: dimensions.width * zoom, height: 'auto', maxWidth: 'none', maxHeight: 'none' } : undefined} />
         {blocked ? <div className="paw-image-viewer__failure"><p>{current.source ? '原回执仍保留，可以重新加载预览。' : '未获得可读取的图片地址。不会自动改用外部图片。'}</p>{current.source ? <button type="button" className="paw-image-action" onClick={() => props.onRetry(current)}><RefreshCw size={14} />重新加载</button> : null}</div> : null}
       </div>

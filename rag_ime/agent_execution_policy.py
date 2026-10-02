@@ -130,6 +130,16 @@ def auto_approve_policy_active(session: Mapping[str, object]) -> bool:
 def unrestricted_workspace_policy_active(session: Mapping[str, object]) -> bool:
     return full_access_policy_active(session) or auto_approve_policy_active(session)
 
+
+def native_mcp_execution_allowed(session: Mapping[str, object]) -> bool:
+    """Native MCP bypasses the product Gateway and therefore needs full access.
+
+    Restricted profiles keep their governed backend read tools. MCP server
+    readOnlyHint annotations are not authorization for either process startup
+    or remote calls, and cannot widen a Session's execution policy.
+    """
+    return not read_only_policy_active(session) and unrestricted_workspace_policy_active(session)
+
 # Legacy ``control-center-v1`` modes remain readable for persisted/system
 # Sessions. New user-facing full-access and full-auto Sessions use explicit
 # unrestricted profiles and are handled before these legacy fences.

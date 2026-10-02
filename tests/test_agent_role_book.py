@@ -14,12 +14,15 @@ from rag_ime.agent_role_book import (
 )
 from rag_ime.contracts.json_schema import validate_contract
 from rag_ime.personal_context import AgentMemoryEvidenceStore
+from tests.sqlite_fixtures import copy_current_database
 
 
 class AgentRoleBookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-role-book-")
         self.db_path = Path(self.tmp.name) / "role-book.sqlite3"
+        self.addCleanup(self.tmp.cleanup)
+        copy_current_database(self.db_path)
         self.store = AgentRoleBookStore(self.db_path)
         self.store.initialize()
         self.evidence_store = AgentMemoryEvidenceStore(
@@ -27,9 +30,6 @@ class AgentRoleBookTests(unittest.TestCase):
             project="rag-ime",
         )
         self.evidence_store.initialize()
-
-    def tearDown(self) -> None:
-        self.tmp.cleanup()
 
     def test_seed_is_idempotent_and_scoped_by_role_and_role_version(self) -> None:
         first = self.store.ensure_seeded(

@@ -1688,6 +1688,68 @@ class AgentRoomWorkStore:
         self._notify_terminal(result)
         return result
 
+    def _jev_acceptance_payload(
+        self, conn: sqlite3.Connection, row: sqlite3.Row,
+    ) -> dict[str, object] | None:
+        # Root identity alone does not make ordinary Room work a Jev task.
+        # Use the same persisted membership as GraphLedger; malformed tasks
+        # inside a real graph must still fail strict Jev validation.
+        graph = conn.execute(
+            "SELECT graph_id FROM agent_jev_graphs "
+            "WHERE room_id=? AND root_turn_id=? AND mode='jev'",
+            (row["room_id"], row["root_turn_id"]),
+        ).fetchone()
+        if graph is None:
+            return None
+        # Jev's verifier is an ordinary, separately bound Pi
+        # purpose, not a synthetic child WorkItem. Its durable receipt must
+        # cover this exact task/result; worker prose cannot create this record.
+        from rag_ime.jev_tasks.ledger import task_from_row
+        from rag_ime.jev_tasks.types import canonical, digest
+        from dataclasses import asdict
+        task_hash = digest(asdict(task_from_row(dict(row))))
+        verification = conn.execute(
+            "SELECT v.dispatch_id,v.result_json,json_extract(e.request_json,'$.ownerId') AS verifier_id FROM agent_jev_verifications v "
+            "JOIN agent_jev_runtime_effects e ON e.effect_id=v.dispatch_id "
+            "JOIN agent_jev_aux_settlements s ON s.dispatch_id=v.dispatch_id "
+            "WHERE v.graph_id=? AND v.task_id=? AND v.task_hash=? AND e.state='accepted' "
+            "AND json_extract(e.request_json,'$.purpose')='verify' "
+            "AND json_extract(s.result_json,'$.status')='applied'",
+            (graph["graph_id"], row["id"], task_hash)).fetchone()
+        if verification:
+            verdict = json.loads(verification["result_json"])
+            if verdict.get("operabilityVerdict") == "passed" and verdict.get("requirementVerdict") == "satisfied":
+                if verification["verifier_id"] == row["current_owner_participant_id"]:
+                    return {"verificationDispatchId": verification["dispatch_id"],
+                            "verificationHash": digest(canonical(verdict)),
+                            "verificationMode": "same_participant",
+                            "verifierParticipantId": verification["verifier_id"]}
+                return {"independentVerificationDispatchId": verification["dispatch_id"],
+                        "independentVerificationHash": digest(canonical(verdict))}
+        # Auto mode may accept a self-contained result through Jev's recorded
+        # decision, without manufacturing an independent Pi verification.
+        decided = conn.execute(
+            "SELECT v.result_json,c.result_json AS choice_json FROM agent_jev_verifications v "
+            "JOIN agent_jev_runtime_effects e ON e.effect_id=v.dispatch_id "
+            "JOIN agent_jev_host_roots h ON h.graph_id=v.graph_id "
+            "JOIN agent_jev_commands c ON c.command_id=json_extract(v.result_json,'$.decisionId') "
+            "AND c.graph_id=v.graph_id "
+            "WHERE v.graph_id=? AND v.task_id=? AND v.task_hash=? AND v.dispatch_id=? AND e.state='accepted' "
+            "AND COALESCE(json_extract(e.request_json,'$.purpose'),'execute')='execute' "
+            "AND json_extract(v.result_json,'$.source')='jev_existing_evidence' "
+            "AND c.operation='verification_route' AND json_extract(h.policy_json,'$.verificationMode')='auto'",
+            (graph["graph_id"], row["id"], task_hash, row["accepted_turn_id"])).fetchone()
+        if decided:
+            verdict = json.loads(decided["result_json"])
+            choice = json.loads(decided["choice_json"])
+            if (choice.get("choice") == "accept_existing_evidence" and choice.get("decision")
+                    and verdict.get("operabilityVerdict") == "passed"
+                    and verdict.get("requirementVerdict") == "satisfied"):
+                return {"verificationMode": "jev_existing_evidence",
+                        "verificationDecisionId": verdict["decisionId"],
+                        "verificationHash": digest(canonical(verdict))}
+        return None
+
     def _accept_over_proposed_payload(
         self,
         conn: sqlite3.Connection,
@@ -1704,31 +1766,9 @@ class AgentRoomWorkStore:
         }
         if not blocking_operability and not blocking_requirement:
             return None
-        # Jev's verifier is an ordinary, separately bound Pi
-        # purpose, not a synthetic child WorkItem. Its durable receipt must
-        # cover this exact task/result; worker prose cannot create this record.
-        from rag_ime.jev_tasks.ledger import task_from_row
-        from rag_ime.jev_tasks.types import canonical, digest
-        from dataclasses import asdict
-        task_hash = digest(asdict(task_from_row(dict(row))))
-        verification = conn.execute(
-            "SELECT v.dispatch_id,v.result_json,json_extract(e.request_json,'$.ownerId') AS verifier_id FROM agent_jev_verifications v "
-            "JOIN agent_jev_runtime_effects e ON e.effect_id=v.dispatch_id "
-            "JOIN agent_jev_aux_settlements s ON s.dispatch_id=v.dispatch_id "
-            "WHERE v.task_id=? AND v.task_hash=? AND e.state='accepted' "
-            "AND json_extract(e.request_json,'$.purpose')='verify' "
-            "AND json_extract(s.result_json,'$.status')='applied'",
-            (row["id"], task_hash)).fetchone()
-        if verification:
-            verdict = json.loads(verification["result_json"])
-            if verdict.get("operabilityVerdict") == "passed" and verdict.get("requirementVerdict") == "satisfied":
-                if verification["verifier_id"] == row["current_owner_participant_id"]:
-                    return {"verificationDispatchId": verification["dispatch_id"],
-                            "verificationHash": digest(canonical(verdict)),
-                            "verificationMode": "same_participant",
-                            "verifierParticipantId": verification["verifier_id"]}
-                return {"independentVerificationDispatchId": verification["dispatch_id"],
-                        "independentVerificationHash": digest(canonical(verdict))}
+        jev_receipt = self._jev_acceptance_payload(conn, row)
+        if jev_receipt is not None:
+            return jev_receipt
         if not superseded_by_work_id:
             raise ValueError(
                 "cannot accept passed/satisfied over Partner proposed "

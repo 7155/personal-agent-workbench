@@ -191,11 +191,12 @@ class AgentKnowledgeToolManagementTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _call(self, operation: str, **args: object) -> dict[str, object]:
+        self.tool_call_ordinal = getattr(self, "tool_call_ordinal", 0) + 1
         return {
             "schemaVersion": "rag-ime.agent-tool-call.v1",
             "sessionId": self.session["id"],
             "tool": "knowledge",
-            "toolCallId": f"tool:knowledge:{operation}",
+            "toolCallId": f"tool:knowledge:{operation}:{self.tool_call_ordinal}",
             "args": {"op": operation, **args},
         }
 

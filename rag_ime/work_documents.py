@@ -364,6 +364,47 @@ class WorkDocumentService:
             "work-document-detail.v1.json",
         )
 
+    def relocated_artifact_path(
+        self, source_path: str, *, authority_kind: str, authority_id: str,
+    ) -> dict[str, str] | None:
+        """Resolve only a relocation actually applied by this document owner.
+
+        This is a read-only identity projection, not a file-read grant or a
+        content verdict. The caller must resolve and read the returned path
+        through its own workspace scope. Do not infer aliases from filenames.
+        """
+        with sqlite_connection(self.db_path, row_factory=sqlite3.Row, foreign_keys=True) as conn:
+            row = conn.execute(
+                "SELECT * FROM work_documents WHERE authority_kind=? AND authority_id=? "
+                "AND state IN ('active','archived')",
+                (authority_kind, authority_id),
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                root = Path(str(row["workspace_root"])).resolve(strict=False)
+                requested = Path(source_path)
+                relative = _relative(str(requested.resolve(strict=False).relative_to(root)) if requested.is_absolute() else source_path)
+                target = _resolve(root, str(row["relative_path"]))
+            except (ValueError, WorkDocumentError, OSError):
+                return None
+            receipt = conn.execute(
+                "SELECT r.receipt_id FROM work_document_outbox o "
+                "JOIN work_document_operation_receipts r ON r.operation_key=o.operation_key "
+                "AND r.document_id=o.document_id "
+                "WHERE o.document_id=? AND o.state='applied' "
+                "AND o.source_relative_path=? AND r.status='applied' "
+                "AND ((o.operation='activate' AND r.operation='register') "
+                "OR (o.operation='archive' AND r.operation='archive') "
+                "OR (o.operation='reopen' AND r.operation='reopen')) "
+                "ORDER BY o.applied_at_ms DESC,o.outbox_id DESC LIMIT 1",
+                (row["document_id"], relative),
+            ).fetchone()
+            if receipt is None:
+                return None
+            return {"path": str(target), "documentId": str(row["document_id"]),
+                    "relocationReceiptId": str(receipt["receipt_id"])}
+
     def request_archive(
         self,
         document_id: str,

@@ -26,12 +26,21 @@ Sessions, assignments, workspace bindings, and live state.
 5. Record objective, expected output, acceptance, dependencies, owner role,
    verification responsibility, integration order, rollback point, exact refs,
    and capability/workspace needs for each item.
-6. Recommend parallel execution only when items are independent and concurrency
-   has a material benefit. Recommend an independent review only when risk or the
-   user request justifies it.
+6. In a multi-partner Room, actively look for useful parallel deliverables
+   before choosing a serial plan. Agree on small interfaces, data shapes, and
+   separate write targets first so partners can produce compatible work at the
+   same time. Add a dependency only when a task actually consumes an unfinished
+   result; narrative order, shared subject matter, or a preference to finish one
+   broad phase first is not a prerequisite. Keep only the necessary integration
+   barrier after independent work. Explain why genuine prerequisites prevent
+   concurrency when no useful parallel frontier exists. Do not manufacture
+   tasks merely to fill every partner. Recommend a separate review only when
+   the user request or missing evidence makes it useful.
 7. Return the executable frontier and proposed workboard delta. Leave Agent
    creation, dispatch, reassignment, and execution to the supervising Session or
-   Room Facilitator.
+   Room Facilitator. In a Jev-owned plan purpose, submit the bounded plan through
+   the supplied `plan_submit` contract. Jev owns dispatch and acceptance; do not
+   load `facilitate-room` or take over its orchestration.
 
 ## Output
 

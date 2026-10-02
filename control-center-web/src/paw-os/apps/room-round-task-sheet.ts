@@ -1,3 +1,4 @@
+import { roomActivityPublicSummary } from '@/contracts/room-reducer';
 import type {
   RoomActivityProjection,
   RoomMessageProjection,
@@ -250,7 +251,14 @@ function roundRow({
       ? blockerReason
       : state === 'completed'
         ? completedProgress
-        : latestCurrent?.summary || progressFallback(state),
+        // A retained snapshot can carry this routing enum as its last public
+        // activity. After cancellation it is evidence of prior routing, not
+        // a reason for stopping. Map only this known enum; keep diagnostics.
+        : state === 'aborted' && currentActivities.some(activity => (
+          activity.id === latestCurrent?.id && activity.summary === 'route_decision'
+        ))
+          ? '本轮执行已停止，已有进展和证据保留。'
+          : latestCurrent ? latestCurrent.summary : progressFallback(state),
     ...(blockerReason ? { blockerReason } : {}),
     ...(blockerNextStep ? { blockerNextStep } : {}),
     ...(blockedWorkItemId ? { blockedWorkItemId } : {}),
@@ -335,7 +343,7 @@ function rowHistory(
     ...activities.flatMap((activity): RoomRoundRowEvent[] => {
       const publicHistory = activityProgressHistory(activity);
       if (publicHistory !== null) return publicHistory;
-      const summary = compactMarkdown(activity.summary);
+      const summary = compactMarkdown(roomActivityPublicSummary(activity));
       if (!summary) return [];
       return [{
         id: activity.id,

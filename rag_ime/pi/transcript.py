@@ -24,6 +24,7 @@ from rag_ime.pi.public import (
     pi_message_continues_public_turn,
     pi_message_is_public,
     public_code_tool_activity,
+    public_codemode_nested_calls,
     public_knowledge_tool_activity,
     public_reasoning_summaries,
     redact_mapping,
@@ -38,6 +39,9 @@ from rag_ime.pi.values import (
 
 __all__ = [
     "durable_branch_messages",
+    "latest_terminal_descendant_leaf",
+    "unambiguous_descendant_leaf",
+    "terminal_branch_anchor",
     "durable_tool_history_events",
     "recent_messages_from_proven_tail",
     "recent_public_message_window",
@@ -51,12 +55,13 @@ __all__ = [
 ]
 
 
-_RECENT_SESSION_TURN_LIMIT = 6
-_RECENT_SESSION_MESSAGE_LIMIT = 24
-_RECENT_SESSION_RESPONSE_BYTES = 48 * 1024
-_RECENT_SESSION_ACTIVITY_LIMIT = 16
-_RECENT_SESSION_ACTIVITY_BYTES = 16 * 1024
+_RECENT_SESSION_TURN_LIMIT = 24
+_RECENT_SESSION_MESSAGE_LIMIT = 96
+_RECENT_SESSION_RESPONSE_BYTES = 256 * 1024
+_RECENT_SESSION_ACTIVITY_LIMIT = 128
+_RECENT_SESSION_ACTIVITY_BYTES = 128 * 1024
 _TURN_BINDING_CUSTOM_TYPE = "rag-ime.pi-turn-binding"
+_TURN_SETTLEMENT_CUSTOM_TYPE = "rag-ime.pi-turn-settlement"
 DURABLE_TURN_ID_KEY = "_ragImeTurnId"
 
 
@@ -86,14 +91,10 @@ def durable_branch_messages(
     selected_leaf = str(leaf_id or "").strip()
     if has_parent_links:
         if selected_leaf not in by_id:
-            selected_leaf = next(
-                (
-                    str(entry.get("id") or "")
-                    for entry in reversed(entries)
-                    if str(entry.get("id") or "")
-                ),
-                "",
-            )
+            # A serialized transcript may contain several forks.  The final
+            # physical row does not prove which branch Pi selected; callers
+            # must provide the Host's canonical leaf or receive no branch.
+            return [], []
         branch: list[dict[str, object]] = []
         visited: set[str] = set()
         cursor = selected_leaf
@@ -147,6 +148,161 @@ def durable_branch_messages(
         messages.append(message)
         message_entries.append(entry)
     return messages, message_entries
+
+
+def terminal_branch_anchor(
+    raw_entries: Sequence[object],
+    *,
+    turn_id: str,
+) -> str:
+    """Return the exact transcript entry that settles one Pi turn.
+
+    A Pi transcript is a tree serialized in append order.  The last physical
+    row is not a safe branch selector: a later row may belong to another fork.
+    The settlement custom entry is the durable terminal fact for this exact
+    turn, so its own entry id is the only cursor this projection may advance
+    to after terminal handling.
+    """
+
+    normalized_turn_id = str(turn_id or "").strip()
+    if not normalized_turn_id:
+        return ""
+    for value in reversed(raw_entries):
+        if not isinstance(value, Mapping):
+            continue
+        if (
+            str(value.get("type") or "") != "custom"
+            or str(value.get("customType") or "")
+            != _TURN_SETTLEMENT_CUSTOM_TYPE
+        ):
+            continue
+        data = as_mapping(value.get("data"))
+        if (
+            data.get("schemaVersion") != "rag-ime.pi-turn-settlement.v1"
+            or str(data.get("turnId") or "").strip() != normalized_turn_id
+        ):
+            continue
+        entry_id = str(value.get("id") or "").strip()
+        if entry_id:
+            return entry_id
+    return ""
+
+
+def latest_terminal_descendant_leaf(
+    raw_entries: Sequence[object],
+    *,
+    ancestor_id: str,
+) -> str:
+    """Return one proven latest settlement below a stale branch cursor.
+
+    Recovery may observe a transcript that was appended after its persisted
+    cursor.  A physical final row is not a branch identity: a sibling fork
+    can be serialized after the selected turn.  A settlement custom entry is
+    durable terminal evidence, so use it when exactly one maximal settlement
+    descends from the stale cursor.  Multiple terminal branches remain
+    ambiguous and return an empty cursor for the caller to keep the recorded
+    branch.
+    """
+
+    normalized_ancestor = str(ancestor_id or "").strip()
+    if not normalized_ancestor:
+        return ""
+    by_id = {
+        str(entry.get("id") or ""): dict(entry)
+        for entry in raw_entries
+        if isinstance(entry, Mapping) and str(entry.get("id") or "")
+    }
+    if normalized_ancestor not in by_id:
+        return ""
+    children: dict[str, list[str]] = {}
+    for entry_id, entry in by_id.items():
+        parent_id = str(entry.get("parentId") or "").strip()
+        if parent_id:
+            children.setdefault(parent_id, []).append(entry_id)
+
+    reachable: set[str] = set()
+    pending = [normalized_ancestor]
+    while pending:
+        current = pending.pop()
+        if current in reachable:
+            continue
+        reachable.add(current)
+        pending.extend(children.get(current, ()))
+
+    candidates: set[str] = set()
+    for entry_id in reachable:
+        if entry_id == normalized_ancestor:
+            continue
+        entry = by_id[entry_id]
+        if (
+            str(entry.get("type") or "") != "custom"
+            or str(entry.get("customType") or "")
+            != _TURN_SETTLEMENT_CUSTOM_TYPE
+        ):
+            continue
+        data = as_mapping(entry.get("data"))
+        if (
+            data.get("schemaVersion") == "rag-ime.pi-turn-settlement.v1"
+            and str(data.get("turnId") or "").strip()
+        ):
+            candidates.add(entry_id)
+    if not candidates:
+        return ""
+
+    # A settlement with another settlement below it is an earlier turn on
+    # the same branch.  Keep only maximal terminals without consulting row
+    # order; sibling maximal terminals are intentionally ambiguous.
+    has_terminal_descendant: set[str] = set()
+    for candidate in candidates:
+        cursor = str(by_id[candidate].get("parentId") or "").strip()
+        visited: set[str] = set()
+        while cursor and cursor not in visited:
+            if cursor in candidates:
+                has_terminal_descendant.add(cursor)
+            visited.add(cursor)
+            cursor = str(by_id.get(cursor, {}).get("parentId") or "").strip()
+    maximal = candidates - has_terminal_descendant
+    return next(iter(maximal)) if len(maximal) == 1 else ""
+
+
+def unambiguous_descendant_leaf(
+    raw_entries: Sequence[object],
+    *,
+    ancestor_id: str,
+) -> str:
+    """Follow a single proven append chain without crossing a fork.
+
+    This is only a compatibility aid for a stale binding.  It advances from
+    the recorded anchor when every descendant has exactly one child.  A fork,
+    a missing anchor, or a malformed parent link leaves the cursor unchanged
+    so callers can use the recorded branch or wait for a Host terminal anchor.
+    """
+
+    normalized_anchor = str(ancestor_id or "").strip()
+    if not normalized_anchor:
+        return ""
+    by_id = {
+        str(entry.get("id") or ""): dict(entry)
+        for entry in raw_entries
+        if isinstance(entry, Mapping) and str(entry.get("id") or "")
+    }
+    if normalized_anchor not in by_id:
+        return ""
+    children: dict[str, list[str]] = {}
+    for entry in by_id.values():
+        parent_id = str(entry.get("parentId") or "").strip()
+        entry_id = str(entry.get("id") or "").strip()
+        if parent_id and entry_id:
+            children.setdefault(parent_id, []).append(entry_id)
+    cursor = normalized_anchor
+    visited: set[str] = set()
+    while cursor and cursor not in visited:
+        visited.add(cursor)
+        descendants = children.get(cursor, [])
+        if len(descendants) != 1:
+            return cursor
+        cursor = descendants[0]
+    return ""
 
 
 def recent_messages_from_proven_tail(
@@ -411,14 +567,15 @@ def durable_tool_history_events(
     raw_entries: Sequence[object] | None = None,
     maximum_tools: int | None = 256,
     maximum_public_chars: int | None = 48_000,
+    evidence_turn_id: str = "",
 ) -> list[dict[str, object]]:
     """Rebuild the public tool timeline from Pi's durable transcript.
 
     The conversation transcript intentionally hides protocol messages, but the
     tool activity strip still needs to survive a Gateway restart or replay
     eviction. Only the same redacted projection used by live events is rebuilt
-    here; full arguments and results remain available solely through the
-    local-only transient Debug endpoint.
+    here. The internal evidence reader may select one exact turn and preserve
+    its credential-masked arguments; this does not expand public history.
     """
 
     events: list[tuple[str, str, str, int, dict[str, object], float | None]] = []
@@ -511,9 +668,13 @@ def durable_tool_history_events(
                 payload: dict[str, object] = {
                     "toolCallId": tool_call_id,
                     "toolName": tool_name,
-                    "args": redact_mapping(raw_args),
+                    "args": (inspectable_tool_result(raw_args)
+                             if evidence_turn_id and turn_id == evidence_turn_id
+                             else redact_mapping(raw_args)),
                     "isError": False,
                 }
+                if evidence_turn_id and turn_id == evidence_turn_id:
+                    payload["argumentSource"] = "native_transcript_arguments"
                 public_result = public_code_tool_activity(tool_name, raw_args)
                 public_result.update(
                     public_knowledge_tool_activity(tool_name, raw_args)
@@ -555,6 +716,68 @@ def durable_tool_history_events(
         tool_names[tool_call_id] = tool_name
         raw_result = _pi_tool_result(raw)
         raw_args = tool_arguments.get(tool_call_id, {})
+        nested_calls = public_codemode_nested_calls(raw,
+            inspectable_arguments=bool(evidence_turn_id and turn_id == evidence_turn_id),
+            include_results=True)
+        for nested_index, nested_call in enumerate(nested_calls):
+            nested_id = str(nested_call.get("id") or "").strip()
+            nested_name = str(nested_call.get("name") or "").strip() or "tool"
+            if not nested_id:
+                continue
+            nested_status = str(nested_call.get("status") or "running").strip().lower()
+            nested_args = nested_call.get("args")
+            if not isinstance(nested_args, Mapping):
+                nested_args = {}
+            nested_payload: dict[str, object] = {
+                "toolCallId": nested_id,
+                "parentToolCallId": tool_call_id,
+                "toolName": nested_name,
+                "args": dict(nested_args),
+                "isError": nested_status in {"error", "cancelled"},
+                "status": nested_status,
+            }
+            for key in ("durationMs", "error", "cost", "argumentSource", "argumentsBytes"):
+                if nested_call.get(key) is not None:
+                    nested_payload[key] = nested_call[key]
+            events.append(
+                (
+                    nested_id,
+                    "tool_started",
+                    turn_id,
+                    created_at_ms + nested_index,
+                    nested_payload,
+                    source_sequence + 0.3 + (nested_index / 1_000)
+                    if source_sequence is not None
+                    else None,
+                )
+            )
+            if nested_id not in tool_names:
+                activity_order.append(nested_id)
+            tool_names[nested_id] = nested_name
+            tool_arguments[nested_id] = dict(nested_args)
+            if nested_status in {"ok", "error", "cancelled"}:
+                finished_payload = dict(nested_payload)
+                nested_result = nested_call.get("result")
+                if isinstance(nested_result, Mapping):
+                    finished_payload["result"] = _pi_tool_result(nested_result)
+                    finished_payload["resultSource"] = nested_call["resultSource"]
+                    finished_payload["isError"] = runtime_tool_result_is_error(
+                        nested_name, nested_result,
+                        reported_is_error=bool(nested_payload["isError"]))
+                if nested_call.get("resultUnavailable"):
+                    finished_payload["resultUnavailable"] = nested_call["resultUnavailable"]
+                events.append(
+                    (
+                        nested_id,
+                        "tool_finished",
+                        turn_id,
+                        created_at_ms + nested_index,
+                        finished_payload,
+                        source_sequence + 0.4 + (nested_index / 1_000)
+                        if source_sequence is not None
+                        else None,
+                    )
+                )
         payload = {
             "toolCallId": tool_call_id,
             "toolName": tool_name,
@@ -566,6 +789,13 @@ def durable_tool_history_events(
                 reported_is_error=bool(raw.get("isError") or raw.get("is_error")),
             ),
         }
+        if nested_calls:
+            payload["nestedCalls"] = [{key: value for key, value in call.items()
+                                       if key not in {"result", "resultSource", "resultUnavailable"}}
+                                      for call in nested_calls]
+            nested_receipt = as_mapping(raw.get("nestedCalls"))
+            if isinstance(nested_receipt.get("complete"), bool):
+                payload["nestedCallsComplete"] = nested_receipt["complete"]
         public_result = public_code_tool_activity(
             tool_name,
             raw_args,
@@ -634,7 +864,8 @@ def durable_tool_history_events(
         allowed_order.append(activity_id)
         used_chars += activity_chars
     allowed_ids = set(allowed_order)
-    selected = [event for event in events if event[0] in allowed_ids]
+    selected = [event for event in events if event[0] in allowed_ids
+                and (not evidence_turn_id or event[2] == evidence_turn_id)]
     result: list[dict[str, object]] = []
     for sequence, (
         tool_call_id,
@@ -821,4 +1052,6 @@ def _pi_tool_result(raw: Mapping[str, object]) -> dict[str, object]:
     content = raw.get("content")
     if content is not None:
         result["content"] = inspectable_tool_result(content)
+    if "structuredContent" in raw:
+        result["structuredContent"] = inspectable_tool_result(raw["structuredContent"])
     return result

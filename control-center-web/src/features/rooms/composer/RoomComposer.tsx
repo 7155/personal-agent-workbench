@@ -1,7 +1,6 @@
 import { AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Play, Send, Square } from 'lucide-react';
 import { Anchor as PopoverAnchor } from '@radix-ui/react-popover';
 import {
-  startTransition,
   useCallback,
   useEffect,
   useId,
@@ -56,6 +55,7 @@ export function RoomComposer({
   attachments,
   sending,
   taskBusyState,
+  awaitingExecutionStart = false,
   busySubmitBehavior = 'steer',
   expandInDialog = false,
   uncertainSubmission = false,
@@ -83,6 +83,8 @@ export function RoomComposer({
   attachments: RoomAttachmentReceipt[];
   sending: boolean;
   taskBusyState?: 'running' | 'blocked' | 'waiting';
+  /** Public turn evidence is still queued; presentation only, never a dispatch gate. */
+  awaitingExecutionStart?: boolean;
   /** JEV holds a follow-up until the current graph settles; it does not steer a Room turn. */
   busySubmitBehavior?: 'steer' | 'queue';
   /** A compact workspace can move its one draft editor into a larger dialog. */
@@ -130,10 +132,12 @@ export function RoomComposer({
   const [activeIndex, setActiveIndex] = useState(0);
   const roomCanCompose = room?.status === 'active';
   const pendingAnswerMode = Boolean(pendingUserAnswer);
+  const awaitingStart = awaitingExecutionStart && taskBusyState === 'running' && !pendingAnswerMode;
+  const showRunning = taskBusyState === 'running' && !pendingAnswerMode && !awaitingStart;
   const roomCanSend = roomCanCompose;
   // Once Send snapshots its attachments, a pending network request must not
   // prevent preparing the next draft. Runtime execution still has its own gate.
-  const canAttach = Boolean(roomCanCompose && !pendingAnswerMode && (!taskBusyState || submitting) && attachments.length < 8);
+  const canAttach = Boolean(roomCanCompose && !pendingAnswerMode && attachments.length < 8);
   const pastedText = usePastedTextAttachments({ ownerId: room?.id ?? '', canImport: canAttach, onImport: onPasteImages });
   useComposerEditor(textareaRef, composerDraft, expanded);
   const participants = room?.participants.filter(
@@ -169,8 +173,8 @@ export function RoomComposer({
   );
 
   useEffect(() => {
-    // A controlled host echoes our own typing. Preserve the caret's mention
-    // menu for that echo; reset only when the host supplies a different draft.
+    // The controlled host echoes typing in the same input update. Preserve
+    // the caret's mention menu for that echo; apply external replacements.
     if (draft === draftRef.current) return;
     draftRef.current = draft;
     setComposerDraft(draft);
@@ -186,7 +190,10 @@ export function RoomComposer({
 
   function publishDraft(value: string): void {
     draftRef.current = value;
-    startTransition(() => onDraftChange(value));
+    // Deferring the controlled value lets an older host echo overwrite newer
+    // local input. Keep the host and editor in the same urgent update; the
+    // string prop cannot distinguish a stale echo from a real recovery/clear.
+    onDraftChange(value);
   }
 
   function endComposition(event: CompositionEvent<HTMLTextAreaElement>): void {
@@ -269,6 +276,15 @@ export function RoomComposer({
     }
     if (!files.length && !hasFileItem) {
       const text = event.clipboardData.getData?.('text/plain') ?? '';
+      // Finder may expose a local file as text/uri-list (or as a plain local
+      // path) while WebKit hides the File object. Keep ordinary links/text in
+      // the editor, but hand a local reference to the native pasteboard owner.
+      const uriList = event.clipboardData.getData?.('text/uri-list') ?? '';
+      if (canAttach && isLocalClipboardFileReference(uriList || text)) {
+        event.preventDefault();
+        onPasteFromClipboard();
+        return;
+      }
       if (pastedText.pasteText(text, 8000 - composerDraft.length + (event.currentTarget.selectionEnd - event.currentTarget.selectionStart))) { event.preventDefault(); return; }
       if (text) return;
       event.preventDefault();
@@ -386,8 +402,8 @@ export function RoomComposer({
         editorAction={<ComposerExpandButton expanded={expanded} onToggle={() => { setExpanded(!expanded); textareaRef.current?.focus(); }} />}
         onSurfacePress={() => textareaRef.current?.focus()}
         banner={<>{pastedText.pendingNotice}{taskBusyState || pendingAnswerMode ? (
-          <p className="room-composer__task-lock" role="status" data-running={taskBusyState === 'running' && !pendingAnswerMode || undefined}>
-            {taskBusyState === 'running' && !pendingAnswerMode ? <LoaderCircle className="room-composer__status-icon" size={14} aria-hidden /> : <MessageCircle size={14} aria-hidden />}
+          <p className="room-composer__task-lock" role="status" data-running={showRunning || undefined}>
+            {showRunning ? <LoaderCircle className="room-composer__status-icon" size={14} aria-hidden /> : <MessageCircle size={14} aria-hidden />}
             <span>
             {pendingAnswerMode
               ? '当前任务正在等待你的回答。这里只发送文字回答；点名和附件不会随回答发送。'
@@ -395,6 +411,8 @@ export function RoomComposer({
                 ? '附件已保留，当前协作结束后就能发送。'
               : taskBusyState === 'waiting'
                 ? '当前任务等待重新判断，原任务已保留。可在顶部继续；新消息会排入下一轮。'
+              : awaitingStart
+                ? '请求已排队，正在等待开始；可补充要求，或将新消息排到下一轮。'
               : busySubmitBehavior === 'queue'
                 ? '任务进行中 · 新消息不会打断当前执行，会排入下一轮'
               : taskBusyState === 'blocked'
@@ -477,7 +495,7 @@ export function RoomComposer({
             placeholder={pendingAnswerMode
               ? '回答伙伴正在等待的问题…'
               : taskBusyState
-                ? busySubmitBehavior === 'queue' ? '补充下一轮任务…' : '立即干预当前回合…'
+                ? busySubmitBehavior === 'queue' ? '补充下一轮任务…' : awaitingStart ? '补充当前请求…' : '立即干预当前回合…'
                 : composerPlaceholder(room)}
             aria-label="协作消息"
             aria-describedby={`${menuId}-hint`}
@@ -515,7 +533,7 @@ export function RoomComposer({
               : taskBusyState === 'blocked'
                 ? '告诉伙伴怎样继续'
                 : taskBusyState
-                  ? busySubmitBehavior === 'queue' ? '排入下一轮任务' : '立即干预当前回合'
+                  ? busySubmitBehavior === 'queue' ? '排入下一轮任务' : awaitingStart ? '补充当前请求' : '立即干预当前回合'
                   : '发送消息'}
             icon={canContinue ? <Play size={17} fill="currentColor" /> : <Send size={18} />}
             disabled={!canSend && !canContinue}
@@ -540,6 +558,20 @@ export function RoomComposer({
       {expanded ? editor : null}
     </DialogContent>
   </Dialog>;
+}
+
+function isLocalClipboardFileReference(value: string): boolean {
+  const entries = value.split(/\r?\n/u)
+    .map(item => item.trim())
+    .filter(item => item && !item.startsWith('#'));
+  if (!entries.length) return false;
+  return entries.every(item => (
+    /^file:\/\/(?:localhost\/)?(?:\/|%2f)/iu.test(item)
+    || /^\/(?:Users|Volumes|private|tmp|var|Applications|Library)\//u.test(item)
+    || /^~\//u.test(item)
+    || /^[A-Za-z]:[\\/]/u.test(item)
+    || /^\\\\/u.test(item)
+  ));
 }
 
 export function roomMentionedParticipants<T extends ComposerParticipant>(

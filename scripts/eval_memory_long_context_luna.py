@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID, DEFAULT_AGENT_MODEL_PROFILE
 from rag_ime.agent_configuration import default_agent_configuration
 from rag_ime.agent_service import AgentService
 from rag_ime.embeddings import HashingEmbeddingProvider
@@ -52,7 +53,7 @@ from pi_canary_support import (
 )
 
 
-MODEL_REFERENCE = "openai-codex/gpt-5.6-luna"
+MODEL_REFERENCE = DEFAULT_AGENT_MODEL_PROFILE
 THINKING_LEVEL = "max"
 DEFAULT_LAUNCH_AGENT = (
     Path.home() / "Library" / "LaunchAgents" / "com.rag-ime.agent-gateway.plist"
@@ -174,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                     if key in OPENAI_CODEX_PROXY_ENV
                 },
                 provider="openai-codex",
-                model="gpt-5.6-luna",
+                model=DEFAULT_AGENT_MODEL_ID,
                 model_base_url="",
                 model_configured=True,
                 model_configuration_error="",

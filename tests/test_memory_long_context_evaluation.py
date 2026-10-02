@@ -75,11 +75,18 @@ class MemoryLongContextEvaluationTests(unittest.TestCase):
         self.assertEqual(input_tokens_from_usage({"input": 165_001}), 165_001)
         self.assertEqual(input_tokens_from_usage({"inputTokens": 165_002}), 165_002)
 
+    def test_new_checks_require_current_default_and_historical_checks_require_explicit_identity(self) -> None:
+        options = dict(input_tokens=165_000, context_window=372_000, thinking_level="max", output_validation={"passed":True})
+        self.assertTrue(all(near_budget_checks(model_reference="openai-codex/gpt-6.1-sol", **options).values()))
+        self.assertFalse(near_budget_checks(model_reference="openai-codex/gpt-5.6-luna", **options)["actualProviderModel"])
+        self.assertTrue(all(near_budget_checks(model_reference="openai-codex/gpt-5.6-luna", expected_model_reference="openai-codex/gpt-5.6-luna", **options).values()))
+
     def test_final_checks_require_real_luna_max_and_near_budget_usage(self) -> None:
         checks = near_budget_checks(
             input_tokens=165_000,
             context_window=372_000,
             model_reference="openai-codex/gpt-5.6-luna",
+            expected_model_reference="openai-codex/gpt-5.6-luna",
             thinking_level="max",
             output_validation={"passed": True},
         )
@@ -87,6 +94,7 @@ class MemoryLongContextEvaluationTests(unittest.TestCase):
             input_tokens=63_999,
             context_window=372_000,
             model_reference="openai-codex/gpt-5.6-luna",
+            expected_model_reference="openai-codex/gpt-5.6-luna",
             thinking_level="max",
             output_validation={"passed": True},
         )

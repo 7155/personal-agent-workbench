@@ -10,6 +10,12 @@ import { readFile } from "node:fs/promises";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/** A single script connection owns its replies until that connection closes. */
+export type CdpRawOwner = {
+  signal: AbortSignal;
+  onMessage(message: any): void;
+};
+
 export type CdpPageTarget = {
   active?: boolean;
   targetId: string;
@@ -22,11 +28,12 @@ export type CdpPageTarget = {
 
 export type CdpBridge = {
   send(method: string, params?: object, sessionId?: string): Promise<any>;
-  sendRaw(payload: object): void;
+  sendRaw(payload: object, owner?: CdpRawOwner): void;
   onEvent(handler: (msg: any) => void): () => void;
   /**
-   * Every successfully parsed incoming CDP message (responses + events).
-   * Used by the daemon to forward raw messages to CLI `onCDPMessage`.
+   * Unowned raw caller responses (with original ids) and CDP events.
+   * Connection-owned responses go directly to their owner.
+   * Internal send() responses stay private to their owning promise.
    */
   onMessage?(handler: (msg: any) => void): () => void;
   close(): Promise<void>;
@@ -43,13 +50,15 @@ export type CdpTransport = {
 export type CdpSessionOptions = {
   /** Request timeout in ms (default 15_000). Injectable for unit tests. */
   timeoutMs?: number;
+  /** Forwarded responses may outlive the internal timeout (PAW run: <=120s). */
+  forwardedTimeoutMs?: number;
 };
 
 export type CdpSession = {
   send(method: string, params?: object, sessionId?: string): Promise<any>;
-  sendRaw(payload: object): void;
+  sendRaw(payload: object, owner?: CdpRawOwner): void;
   onEvent(handler: (msg: any) => void): () => void;
-  /** All parsed incoming messages (id responses and events). */
+  /** Forwarded caller responses and events; never internal send() responses. */
   onMessage(handler: (msg: any) => void): () => void;
   handleIncoming(text: string): void;
   /** Reject all pending requests (e.g. on close / transport drop). */
@@ -74,9 +83,28 @@ export function createCdpSession(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let nextId = 1;
   const pending = new Map<number, Pending>();
+  const forwarded = new Map<number, {
+    callerId: number; timer: ReturnType<typeof setTimeout>; owner?: CdpRawOwner;
+  }>();
+  const owners = new Map<CdpRawOwner, { ids: Set<number>; abort: () => void }>();
   const eventHandlers = new Set<(msg: any) => void>();
   const messageHandlers = new Set<(msg: any) => void>();
   let disposed = false;
+
+  function removeForwarded(id: number): void {
+    const entry = forwarded.get(id);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    forwarded.delete(id);
+    if (entry.owner) {
+      const owned = owners.get(entry.owner);
+      owned?.ids.delete(id);
+      if (owned && owned.ids.size === 0) {
+        entry.owner.signal.removeEventListener("abort", owned.abort);
+        owners.delete(entry.owner);
+      }
+    }
+  }
 
   function handleIncoming(text: string): void {
     let msg: any;
@@ -84,14 +112,6 @@ export function createCdpSession(
       msg = JSON.parse(text);
     } catch {
       return;
-    }
-
-    for (const handler of messageHandlers) {
-      try {
-        handler(msg);
-      } catch {
-        // Listener errors must not break the session
-      }
     }
 
     if (msg && msg.id != null && pending.has(msg.id)) {
@@ -113,6 +133,28 @@ export function createCdpSession(
         entry.resolve(msg.result);
       }
       return;
+    }
+
+    if (msg && msg.id != null) {
+      const entry = forwarded.get(msg.id);
+      // A late or duplicate response cannot satisfy a later script that reused
+      // its caller id. All ids on this browser socket are allocated here.
+      if (!entry) return;
+      removeForwarded(msg.id);
+      msg = { ...msg, id: entry.callerId };
+      if (entry.owner) {
+        if (!entry.owner.signal.aborted) {
+          try { entry.owner.onMessage(msg); } catch { /* isolated listener */ }
+        }
+        return;
+      }
+    }
+    for (const handler of messageHandlers) {
+      try {
+        handler(msg);
+      } catch {
+        // Listener errors must not break the session
+      }
     }
 
     // Events: messages with a method and no correlated pending id
@@ -175,16 +217,41 @@ export function createCdpSession(
     });
   }
 
-  function sendRaw(payload: object): void {
-    if (disposed) {
+  function sendRaw(payload: object, owner?: CdpRawOwner): void {
+    if (disposed || owner?.signal.aborted) {
       throw makeEgoError(
         "EGO_CDP_CHANNEL_UNAVAILABLE",
         "CDP session is closed",
       );
     }
+    const raw = payload as Record<string, unknown>;
+    if (raw.id != null && (typeof raw.id !== "number" || !Number.isSafeInteger(raw.id))) {
+      throw makeEgoError("EGO_INVALID_ARGUMENT", "CDP request id must be a safe integer");
+    }
+    const wireId = raw.id == null ? undefined : nextId++;
+    if (wireId !== undefined) {
+      const timer = setTimeout(() => removeForwarded(wireId),
+        options.forwardedTimeoutMs ?? Math.max(timeoutMs, 150_000));
+      timer.unref();
+      forwarded.set(wireId, { callerId: raw.id as number, timer, owner });
+      if (owner) {
+        let owned = owners.get(owner);
+        if (!owned) {
+          const ids = new Set<number>();
+          const abort = () => { for (const id of ids) removeForwarded(id); };
+          owned = { ids, abort };
+          owners.set(owner, owned);
+          owner.signal.addEventListener("abort", abort, { once: true });
+        }
+        owned.ids.add(wireId);
+      }
+    }
     try {
-      transport.send(JSON.stringify(payload));
+      transport.send(JSON.stringify(wireId === undefined ? raw : { ...raw, id: wireId }));
     } catch (err) {
+      if (wireId !== undefined) {
+        removeForwarded(wireId);
+      }
       throw makeEgoError(
         "EGO_CDP_SEND_FAILED",
         `CDP sendRaw failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -217,6 +284,7 @@ export function createCdpSession(
       entry.reject(err);
     }
     pending.clear();
+    for (const id of forwarded.keys()) removeForwarded(id);
     eventHandlers.clear();
     messageHandlers.clear();
   }
@@ -247,7 +315,7 @@ function wrapSessionAsBridge(
   return {
     send: (method, params, sessionId) =>
       session.send(method, params, sessionId),
-    sendRaw: (payload) => session.sendRaw(payload),
+    sendRaw: (payload, owner) => session.sendRaw(payload, owner),
     onEvent: (handler) => session.onEvent(handler),
     onMessage: (handler) => session.onMessage(handler),
     async close() {

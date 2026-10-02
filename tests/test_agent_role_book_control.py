@@ -12,12 +12,15 @@ from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.management_work_contract import ManagementWorkContract
 from rag_ime.personal_context import AgentMemoryEvidenceStore
 from rag_ime.personal_context_observability import PersonalContextObservability
+from tests.sqlite_fixtures import copy_current_database
 
 
 class AgentRoleBookControlTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-role-book-control-")
         self.db_path = Path(self.tmp.name) / "rag-ime.sqlite3"
+        self.addCleanup(self.tmp.cleanup)
+        copy_current_database(self.db_path)
         self.roles = AgentRoleBookStore(self.db_path)
         self.roles.initialize()
         self.observability = PersonalContextObservability(
@@ -53,9 +56,6 @@ class AgentRoleBookControlTests(unittest.TestCase):
             created_at_ms=110,
         )
         self.daily_draft = self._seed_daily_draft()
-
-    def tearDown(self) -> None:
-        self.tmp.cleanup()
 
     def test_daily_proposals_require_r1_preview_and_keep_old_session_pinned(self) -> None:
         catalog = self.control.catalog(

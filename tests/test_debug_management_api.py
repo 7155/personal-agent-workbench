@@ -191,7 +191,8 @@ class DebugManagementApiTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        self.service.agent.close()
+        self.service.close()
+        self.core.close()
         for key, value in self._pinyin_env.items():
             if value is None:
                 os.environ.pop(key, None)
@@ -599,7 +600,10 @@ class DebugManagementApiTests(unittest.TestCase):
             )
         )
 
-        history = service.management_history({"limit": 1, "project": "wisdom-weasel-rag-ime"})
+        try:
+            history = service.management_history({"limit": 1, "project": "wisdom-weasel-rag-ime"})
+        finally:
+            service.close()
 
         self.assertTrue(history["rawTextVisible"])
         self.assertEqual(history["items"][0]["text"], "只有显式调试开关才展示完整原文")
@@ -1480,7 +1484,7 @@ class DebugManagementApiTests(unittest.TestCase):
         self.assertEqual(status["automation"]["runsPerDay"], 2)
         self.assertEqual(
             status["automation"]["model"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(status["automation"]["curationProtocol"], "atom-first-v1")
         self.assertEqual(status["automation"]["targetSourceCount"], 1_000)
@@ -1489,7 +1493,7 @@ class DebugManagementApiTests(unittest.TestCase):
         self.assertEqual(status["automation"]["reservedContextTokens"], 72_000)
         self.assertEqual(
             status["modelCuration"]["requiredModel"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(status["modelCuration"]["requiredThinkingLevel"], "max")
         self.assertEqual(status["modelCuration"]["minimumContextTokens"], 272_000)

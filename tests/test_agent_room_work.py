@@ -457,49 +457,52 @@ class AgentRoomWorkTests(unittest.TestCase):
     def test_accept_cannot_upgrade_proposed_failed_or_unverified_submission(
         self,
     ) -> None:
-        assigned, _ = self.work.assign(
-            str(self.coordinator["id"]),
-            self._assignment("root-proposed-gate", self.worker_participant["id"]),
-        )
-        active = self.work.accept_assignment(
-            str(assigned["id"]),
-            target_participant_id=str(self.worker_participant["id"]),
-            accepted_turn_id="turn:proposed-gate",
-        )
-        submitted = self.work.submit(
-            str(self.worker["id"]),
-            {
-                "workId": active["id"],
-                "resultSummary": "浏览器执行失败，两轴均未验证。",
-                "evidenceRefs": ["review:browser-run-failed"],
-                "proposedOperabilityVerdict": "failed",
-                "proposedRequirementVerdict": "unverified",
-            },
-            updated_at_ms=30,
-        )
-        self.assertEqual(submitted["proposedOperabilityVerdict"], "failed")
-        self.assertEqual(submitted["proposedRequirementVerdict"], "unverified")
+        for root_turn_id in ("", "room-turn:ordinary-without-jev"):
+            with self.subTest(root_turn_id=root_turn_id):
+                assigned, _ = self.work.assign(
+                    str(self.coordinator["id"]),
+                    self._assignment(f"root-proposed-gate:{root_turn_id}", self.worker_participant["id"]),
+                    root_turn_id=root_turn_id,
+                )
+                active = self.work.accept_assignment(
+                    str(assigned["id"]),
+                    target_participant_id=str(self.worker_participant["id"]),
+                    accepted_turn_id="turn:proposed-gate",
+                )
+                submitted = self.work.submit(
+                    str(self.worker["id"]),
+                    {
+                        "workId": active["id"],
+                        "resultSummary": "浏览器执行失败，两轴均未验证。",
+                        "evidenceRefs": ["review:browser-run-failed"],
+                        "proposedOperabilityVerdict": "failed",
+                        "proposedRequirementVerdict": "unverified",
+                    },
+                    updated_at_ms=30,
+                )
+                self.assertEqual(submitted["proposedOperabilityVerdict"], "failed")
+                self.assertEqual(submitted["proposedRequirementVerdict"], "unverified")
 
-        with self.assertRaisesRegex(ValueError, "supersed"):
-            self.work.accept(
-                str(self.coordinator["id"]),
-                {
-                    "workId": submitted["id"],
-                    "expectedRevision": submitted["revision"],
-                    "operabilityVerdict": "passed",
-                    "requirementVerdict": "satisfied",
-                    "evidenceRefs": ["review:facilitator-claim"],
-                    "reason": "试图无视 Partner 的失败结论直接验收。",
-                },
-            )
+                with self.assertRaisesRegex(ValueError, "supersed"):
+                    self.work.accept(
+                        str(self.coordinator["id"]),
+                        {
+                            "workId": submitted["id"],
+                            "expectedRevision": submitted["revision"],
+                            "operabilityVerdict": "passed",
+                            "requirementVerdict": "satisfied",
+                            "evidenceRefs": ["review:facilitator-claim"],
+                            "reason": "试图无视 Partner 的失败结论直接验收。",
+                        },
+                    )
 
-        unchanged = self.work.get(
-            str(submitted["id"]),
-            room_id=str(self.room["id"]),
-        )
-        self.assertEqual(unchanged["state"], "review")
-        self.assertEqual(unchanged["proposedOperabilityVerdict"], "failed")
-        self.assertEqual(unchanged["proposedRequirementVerdict"], "unverified")
+                unchanged = self.work.get(
+                    str(submitted["id"]),
+                    room_id=str(self.room["id"]),
+                )
+                self.assertEqual(unchanged["state"], "review")
+                self.assertEqual(unchanged["proposedOperabilityVerdict"], "failed")
+                self.assertEqual(unchanged["proposedRequirementVerdict"], "unverified")
 
     def test_accept_over_failed_proposal_requires_valid_superseding_review(
         self,

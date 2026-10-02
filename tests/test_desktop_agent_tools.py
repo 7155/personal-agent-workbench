@@ -105,6 +105,7 @@ class _DesktopClient:
 class DesktopAgentToolTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
+        self.call_sequence = 0
         self.addCleanup(self.temporary.cleanup)
         self.store = AgentSessionStore(Path(self.temporary.name) / "agent.sqlite")
         self.store.initialize()
@@ -119,11 +120,12 @@ class DesktopAgentToolTests(unittest.TestCase):
         )
 
     def call(self, operation: str, **args: object) -> dict[str, object]:
+        self.call_sequence += 1
         return {
             "schemaVersion": "rag-ime.agent-tool-call.v1",
             "sessionId": self.session["id"],
             "tool": "desktop_semantic",
-            "toolCallId": f"call:{operation}",
+            "toolCallId": f"call:{operation}:{self.call_sequence}",
             "args": {"op": operation, **args},
         }
 

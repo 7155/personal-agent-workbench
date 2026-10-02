@@ -5,9 +5,11 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import { MotionConfig } from 'motion/react';
+import { usePageVisibility } from '@/platform/use-page-visibility';
 
 export const motionTokens = {
   duration: {
@@ -40,6 +42,14 @@ type MotionContextValue = {
 
 const STORAGE_KEY = 'rag-ime-control-motion';
 const MotionContext = createContext<MotionContextValue | null>(null);
+const MotionActivityContext = createContext(true);
+
+/** Host presentation activity is projected here, never inferred from geometry
+ * and never used to pause a task, network owner, or runtime execution. */
+export function MotionActivityBoundary({ active, children }: { active: boolean; children: ReactNode }) {
+  const parentActive = useContext(MotionActivityContext);
+  return <MotionActivityContext.Provider value={parentActive && active}>{children}</MotionActivityContext.Provider>;
+}
 
 function getStoredPreference(): MotionPreference {
   if (typeof window === 'undefined') return 'system';
@@ -52,6 +62,18 @@ function getSystemPreference(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+function subscribeSystemPreference(listener: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (media.addEventListener) media.addEventListener('change', listener);
+  else media.addListener?.(listener);
+  return () => {
+    if (media.removeEventListener) media.removeEventListener('change', listener);
+    else media.removeListener?.(listener);
+  };
+}
+const noSystemSubscription = () => () => {};
+
 export function resolveReduceMotion(
   preference: MotionPreference,
   systemReduceMotion: boolean,
@@ -63,17 +85,8 @@ export function resolveReduceMotion(
 
 export function MotionProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<MotionPreference>(getStoredPreference);
-  const [systemReduceMotion, setSystemReduceMotion] = useState(getSystemPreference);
+  const systemReduceMotion = useSyncExternalStore(subscribeSystemPreference, getSystemPreference, () => false);
   const reduceMotion = resolveReduceMotion(preference, systemReduceMotion);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setSystemReduceMotion(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.reduceMotion = String(reduceMotion);
@@ -101,4 +114,20 @@ export function useMotionPreference(): MotionContextValue {
   const context = useContext(MotionContext);
   if (!context) throw new Error('useMotionPreference must be used inside MotionProvider');
   return context;
+}
+
+/** Decorative motion follows the existing preference owner, including in
+ * isolated controls/previews, and never runs in a hidden document. */
+export function useMotionActivity(): boolean {
+  const context = useContext(MotionContext);
+  const surfaceActive = useContext(MotionActivityContext);
+  // Hosted controls share their provider's subscription. An isolated preview
+  // subscribes itself; the animation library's hook only captures initial state.
+  const systemReduced = useSyncExternalStore(context ? noSystemSubscription : subscribeSystemPreference, getSystemPreference, () => false);
+  const visible = usePageVisibility();
+  // The provider is authoritative. Its DOM projection updates after render and
+  // must not keep a newly enabled preference stuck on the previous value.
+  const reduced = context ? context.reduceMotion : Boolean(systemReduced)
+    || typeof document !== 'undefined' && document.documentElement.dataset.reduceMotion === 'true';
+  return visible && surfaceActive && !reduced;
 }

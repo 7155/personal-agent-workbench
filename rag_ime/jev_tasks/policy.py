@@ -21,7 +21,7 @@ MODEL_ROUTING = frozenset({"balanced", "participant"})
 TOOL_APPROVAL_MODES = frozenset({"dispatch", "jev_dangerous"})
 VERIFICATION_MODES = frozenset({"auto", "independent"})
 TASK_DIFFICULTIES = frozenset({"simple", "routine", "complex", "critical"})
-_MODELS = {"simple": "gpt-6-luna", "routine": "gpt-6-sol", "complex": "gpt-6-sol", "critical": "gpt-6-sol"}
+_MODELS = {"simple": "gpt-6-luna", "routine": "gpt-6.1-sol", "complex": "gpt-6.1-sol", "critical": "gpt-6.1-sol"}
 
 
 def model_cards() -> list[dict[str, object]]:
@@ -30,7 +30,7 @@ def model_cards() -> list[dict[str, object]]:
         ("astra", "特别困难的规划与疑难处理", "critical", ["plan", "execute", "verify"],
          ["制定跨模块计划，处理高不确定性与最难问题", "为关键技术选择和复杂失败提供深入分析"],
          ["社区有明显的额度消耗反馈；避免承接大量重复劳动", "仍须通过任务验收，模型强度不能替代运行证据"],
-         "仅用户明确指定时使用 Astra；自动分配优先 Sol max，明确简单的执行可用 Luna max。",
+         "仅用户明确指定时使用 Astra；自动分配使用 Sol 6.1，明确简单的执行可用 Luna max。",
          "官方定位为最难端到端工作的高能力模型，支持 max 推理。",
          "https://www.reddit.com/r/codex/comments/1wpspww/gpt6_astra_seems_unusable_due_to_token_burn_gpt6/",
          "GPT-6 Astra seems unusable due to Token burn",
@@ -38,7 +38,7 @@ def model_cards() -> list[dict[str, object]]:
         ("sol", "日常规划、复杂实现与集成", "complex", ["plan", "execute", "verify", "synthesize"],
          ["承担跨模块实现、复杂集成与固定成果核验", "常规任务升级为复杂责任时，用于处理更多依赖与约束"],
          ["社区对质量提升的感受不一致，不能据此保证首次通过", "发现重大不确定性时应明确任务难度，再于新执行前重选模型"],
-         "普通规划、复核、常规及复杂任务默认 Sol max；只有明确简单的执行或汇总可用 Luna max。",
+         "旧 Sol 仅用于明确选定的模型；自动分配已使用 Sol 6.1。常规执行 medium，复杂规划与集成 xhigh，不默认 max。",
          "官方定位为复杂编程与 Agent 工作流模型，支持 max 推理。",
          "https://www.reddit.com/r/codex/comments/1wo52no/gpt_6_solluna_do_have_their_benefits/",
          "GPT 6 Sol/Luna do have their benefits",
@@ -46,15 +46,15 @@ def model_cards() -> list[dict[str, object]]:
         ("luna", "边界明确的简单任务", "simple", ["execute", "synthesize"],
          ["按明确计划完成小范围修改、资料整理和局部验证", "仅输入、输出和验收都明确的简单任务优先使用"],
          ["社区小样本观察提示较大集成面和返修收尾可能更弱", "max 是本工作区选择；引用对照使用 High，不能推断 max 的实测成绩"],
-         "仅 simple 执行或汇总使用 Luna max；常规、复杂和关键责任优先 Sol max。",
+         "仅 simple 执行或汇总使用 Luna max；常规、复杂和关键责任使用 Sol 6.1。",
          "官方定位为高效率、聚焦且高频的工作模型，支持 max 推理。",
          "https://www.reddit.com/r/codex/comments/1wp7ckc/i_ab_tested_gpt56_luna_and_gpt6_luna_on_the_same/",
          "I A/B tested GPT-5.6 Luna and GPT-6 Luna on the same engineering tasks",
          "作者在同仓库十项工程任务中观察到 Luna 6 更适合窄范围实现，较大集成面更需关注；任务、档位和模型评审均限制了结论。"),
     )
-    return [{
+    cards = [{
         "modelId": "gpt-6-" + name, "name": "GPT-6 " + name.title(), "role": role,
-        "tier": tier, "defaultThinkingLevel": "max", "recommendedPurposes": purposes,
+        "tier": tier, "defaultThinkingLevel": "medium" if name == "sol" else "max", "recommendedPurposes": purposes,
         "strengths": strengths, "limitations": limitations, "routingGuidance": guidance,
         "checkedAt": "2026-09-26",
         "evidence": [
@@ -64,9 +64,25 @@ def model_cards() -> list[dict[str, object]]:
             {"sourceKind": "community", "confidence": "anecdotal", "title": title,
              "url": url, "summary": observation},
             {"sourceKind": "user_policy", "confidence": "explicit",
-             "summary": "按用户当前偏好优先使用 Sol max；仅明确简单的执行或汇总可用 Luna max。Astra 需要用户明确指定。"},
+             "summary": "当前自动分派使用 Sol 6.1：常规执行 medium，规划、复核和复杂责任 xhigh；明确简单的执行或汇总可用 Luna max。Astra 需要用户明确指定。"},
         ],
     } for name, role, tier, purposes, strengths, limitations, guidance, official, url, title, observation in roles]
+    cards.append({
+        "modelId": "gpt-6.1-sol", "name": "GPT-6.1 Sol", "role": "规划、复杂实现与集成",
+        "tier": "complex", "defaultThinkingLevel": "medium",
+        "recommendedPurposes": ["plan", "execute", "verify", "synthesize"],
+        "strengths": ["复杂编程、计算机操作与专业任务"],
+        "limitations": ["工具调用使用 Responses；不支持 off/minimal 推理", "仍需真实任务证据验收"],
+        "routingGuidance": "常规执行使用 medium；规划、复核、复杂实现和集成使用 xhigh。明确模型与推理强度锁定优先，不静默退回旧 Sol。",
+        "checkedAt": "2026-09-30",
+        "evidence": [
+            {"sourceKind": "official", "confidence": "official_positioning", "title": "OpenAI · GPT-6.1 Sol",
+             "url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+             "summary": "支持 low/medium/high/xhigh/max；工具调用需要 Responses API。"},
+            {"sourceKind": "user_policy", "confidence": "explicit", "summary": "用户要求 6.1 Sol 替换旧 Sol，推理用 medium 或 xhigh，不默认 max。"},
+        ],
+    })
+    return cards
 
 
 def model_role_guidance(model_id: str, purpose: str) -> str:
@@ -114,11 +130,12 @@ def select_model(
     difficulty: str = "routine",
     preferred_provider: str = "",
     locked_profile: str = "",
-    thinking_level: str = "max",
+    thinking_level: str | None = None,
 ) -> dict[str, str]:
     """Choose an exact available profile before admission, never an alias.
 
-    Sol max owns routine, complex and critical work, plus planning and review.
+    Sol 6.1 owns routine, complex and critical work, plus planning and review.
+    Routine execution uses medium, complex work and plan/review use xhigh.
     Only explicitly simple execution or synthesis uses Luna max. An explicit
     model lock still wins; provider and reasoning support must be present.
     """
@@ -135,6 +152,11 @@ def select_model(
         if not separator or not locked_provider or not locked_model:
             raise GraphError("locked model profile requires exact provider/model")
         provider, model_id, reason = locked_provider, locked_model, "user_model_lock"
+    if thinking_level is None:
+        thinking_level = (
+            "xhigh" if purpose in {"plan", "verify"} or tier in {"complex", "critical"}
+            else "medium"
+        ) if model_id in {"gpt-6-sol", "gpt-6.1-sol"} else "max"
     candidates = {
         (str(row.get("provider") or ""), str(row.get("id") or "")): row
         for row in catalog
@@ -150,7 +172,7 @@ def select_model(
     if len(candidates) != 1:
         raise GraphConflict("JEV_MODEL_PROVIDER_AMBIGUOUS: choose a provider for " + model_id)
     (provider, model_id), selected = next(iter(candidates.items()))
-    if model_id in _MODELS.values() and selected.get("api") == "openai-completions" and (model_id == "gpt-6-astra" or thinking_level != "off"):
+    if (model_id in {*_MODELS.values(), "gpt-6-sol", "gpt-6-astra"}) and selected.get("api") == "openai-completions" and (model_id in {"gpt-6-astra", "gpt-6.1-sol"} or thinking_level != "off"):
         raise GraphConflict("JEV_MODEL_API_UNSUPPORTED: GPT-6 tool execution with reasoning requires a Responses API profile")
     levels = selected.get("thinkingLevels")
     if not isinstance(levels, list) or thinking_level not in levels:

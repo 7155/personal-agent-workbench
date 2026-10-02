@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
+import { getEventListeners } from "node:events";
 import {
   createCdpSession,
   createCdpBridge,
@@ -234,6 +235,78 @@ test("createCdpSession routes events (no id) to onEvent listeners", async () => 
   assert.equal(events.length, 2, "unsubscribed handler must not receive more");
 });
 
+test("the first late raw reply cannot cross a disconnected connection owner", async () => {
+  const transport = mockTransport();
+  const session = createCdpSession(transport);
+  const a = new AbortController();
+  const b = new AbortController();
+  const aReplies: any[] = [];
+  const bReplies: any[] = [];
+  const broadcasts: any[] = [];
+  session.onMessage((message) => broadcasts.push(message));
+  const ownerA = { signal: a.signal, onMessage: (message: any) => aReplies.push(message) };
+  const ownerB = { signal: b.signal, onMessage: (message: any) => bReplies.push(message) };
+  session.sendRaw({ id: 1, method: "Runtime.evaluate" }, ownerA);
+  const oldWireId = JSON.parse(transport.sent.at(-1)!).id;
+  a.abort();
+  session.sendRaw({ id: 1, method: "Runtime.evaluate" }, ownerB);
+  const newWireId = JSON.parse(transport.sent.at(-1)!).id;
+  transport.deliver({ id: oldWireId, result: { script: "old-a-first-response" } });
+  assert.deepEqual(aReplies, []);
+  assert.deepEqual(bReplies, []);
+  assert.deepEqual(broadcasts, []);
+  transport.deliver({ id: newWireId, result: { script: "current-b" } });
+  assert.deepEqual(bReplies, [{ id: 1, result: { script: "current-b" } }]);
+  assert.deepEqual(broadcasts, []);
+  assert.throws(() => session.sendRaw({ id: 2, method: "Runtime.evaluate" }, ownerA), /closed/);
+  session.dispose();
+});
+
+test("simultaneous raw owners retain private responses while real events still broadcast", async () => {
+  const transport = mockTransport();
+  const session = createCdpSession(transport);
+  const received = [[], []] as any[][];
+  const broadcasts: any[] = [];
+  const events: any[] = [];
+  session.onMessage((message) => broadcasts.push(message));
+  session.onEvent((message) => events.push(message));
+  received.forEach((messages) => session.sendRaw({ id: 1, method: "Browser.getVersion" }, {
+    signal: new AbortController().signal, onMessage: (message) => messages.push(message),
+  }));
+  const internal = session.send("Target.attachToTarget");
+  const ids = transport.sent.map((text) => JSON.parse(text).id);
+  transport.deliver({ id: ids[1], result: { owner: "b" } });
+  transport.deliver({ id: ids[0], result: { owner: "a" } });
+  transport.deliver({ id: ids[2], result: { sessionId: "internal" } });
+  const event = { method: "Target.targetCreated", params: { targetId: "shared-event" } };
+  transport.deliver(event);
+  assert.deepEqual(received, [[{ id: 1, result: { owner: "a" } }], [{ id: 1, result: { owner: "b" } }]]);
+  assert.deepEqual(await internal, { sessionId: "internal" });
+  assert.deepEqual(broadcasts, [event]);
+  assert.deepEqual(events, [event]);
+  session.dispose();
+});
+
+test("connection cancellation, timeout and disposal release raw mappings and abort listeners", async () => {
+  const transport = mockTransport();
+  const session = createCdpSession(transport, { forwardedTimeoutMs: 10 });
+  const controller = new AbortController();
+  const owner = { signal: controller.signal, onMessage() { assert.fail("expired response must not be delivered"); } };
+  for (let id = 0; id < 20; id++) session.sendRaw({ id, method: "Runtime.evaluate" }, owner);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 1);
+  controller.abort();
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  for (const text of transport.sent) transport.deliver({ id: JSON.parse(text).id, result: {} });
+  const timed = { ...owner, signal: new AbortController().signal };
+  session.sendRaw({ id: 1, method: "Runtime.evaluate" }, timed);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(getEventListeners(timed.signal, "abort").length, 0);
+  transport.deliver({ id: JSON.parse(transport.sent.at(-1)!).id, result: {} });
+  session.sendRaw({ id: 2, method: "Runtime.evaluate" }, timed);
+  session.dispose();
+  assert.equal(getEventListeners(timed.signal, "abort").length, 0);
+});
+
 test("createCdpSession handleIncoming is public for direct injection", async () => {
   const t = mockTransport();
   const session = createCdpSession(t);
@@ -328,13 +401,72 @@ test("createCdpBridge attach returns sessionId with flatten", async () => {
 test("createCdpBridge sendRaw emits JSON without waiting", () => {
   const t = mockTransport();
   const bridge = createCdpBridge(t);
+  const forwarded: any[] = [];
+  bridge.onMessage!((msg) => forwarded.push(msg));
   bridge.sendRaw({ id: 99, method: "Foo", params: {} });
   assert.equal(t.sent.length, 1);
   assert.deepEqual(JSON.parse(t.sent[0]), {
-    id: 99,
+    id: 1,
     method: "Foo",
     params: {},
   });
+  t.deliver({ id: 1, result: { ok: true } });
+  assert.deepEqual(forwarded, [{ id: 99, result: { ok: true } }]);
+});
+
+test("raw script ids cannot consume an internal target attachment response", async () => {
+  const t = mockTransport();
+  const session = createCdpSession(t);
+  const forwarded: any[] = [];
+  session.onMessage((msg) => forwarded.push(msg));
+  session.sendRaw({ id: 1, method: "Runtime.evaluate", params: { expression: "true" }, sessionId: "page-a" });
+  const raw = JSON.parse(t.sent[0]);
+  const attaching = session.send("Target.attachToTarget", { targetId: "page-a", flatten: true });
+  const internal = JSON.parse(t.sent[1]);
+  assert.notEqual(raw.id, internal.id, "one browser socket must allocate unique wire ids");
+  t.deliver({ id: raw.id, result: {}, sessionId: "page-a" });
+  t.deliver({ id: internal.id, result: { sessionId: "attached-a" } });
+  assert.deepEqual(await attaching, { sessionId: "attached-a" });
+  assert.deepEqual(forwarded, [{ id: 1, result: {}, sessionId: "page-a" }]);
+  session.dispose();
+});
+
+test("internal responses are not forwarded into a script using the same caller id", async () => {
+  const t = mockTransport();
+  const session = createCdpSession(t);
+  const forwarded: any[] = [];
+  session.onMessage((msg) => forwarded.push(msg));
+  const internalResult = session.send("Target.getTargets");
+  const internal = JSON.parse(t.sent[0]);
+  session.sendRaw({ id: 1, method: "Page.enable", sessionId: "page-b" });
+  const raw = JSON.parse(t.sent[1]);
+  assert.notEqual(raw.id, internal.id);
+  t.deliver({ id: internal.id, result: { targetInfos: [] } });
+  assert.deepEqual(await internalResult, { targetInfos: [] });
+  assert.deepEqual(forwarded, []);
+  t.deliver({ id: raw.id, result: {}, sessionId: "page-b" });
+  assert.deepEqual(forwarded, [{ id: 1, result: {}, sessionId: "page-b" }]);
+  session.dispose();
+});
+
+test("a later script may reuse caller ids without receiving a duplicate old reply", () => {
+  const t = mockTransport();
+  const session = createCdpSession(t);
+  const forwarded: any[] = [];
+  session.onMessage((msg) => forwarded.push(msg));
+  session.sendRaw({ id: 1, method: "Page.enable" });
+  const first = JSON.parse(t.sent[0]);
+  t.deliver({ id: first.id, result: { enabled: true } });
+  session.sendRaw({ id: 1, method: "Target.attachToTarget", params: { targetId: "fresh", flatten: true } });
+  const second = JSON.parse(t.sent[1]);
+  assert.notEqual(first.id, second.id);
+  t.deliver({ id: first.id, result: { stale: true } });
+  t.deliver({ id: second.id, error: { message: "target closed" } });
+  assert.deepEqual(forwarded, [
+    { id: 1, result: { enabled: true } },
+    { id: 1, error: { message: "target closed" } },
+  ]);
+  session.dispose();
 });
 
 test("connectCdp opens WebSocket from /json/version and rounds trips", async () => {

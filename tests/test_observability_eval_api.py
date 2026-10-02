@@ -101,7 +101,7 @@ def _invoke_post(
 
 
 class ObservabilityEvalServiceTests(unittest.TestCase):
-    def test_ai_judge_defaults_to_luna_max_and_records_estimate_authority(self) -> None:
+    def test_ai_judge_defaults_to_current_model_and_records_estimate_authority(self) -> None:
         class JudgeRuntime:
             def __init__(self) -> None:
                 self.calls: list[dict[str, object]] = []
@@ -130,16 +130,16 @@ class ObservabilityEvalServiceTests(unittest.TestCase):
             result = service.evaluate_observation_ai_judge({"traceId": "trace:eval:1"})
 
             self.assertEqual(runtime.calls[0]["provider"], "openai-codex")
-            self.assertEqual(runtime.calls[0]["model_id"], "gpt-5.6-luna")
+            self.assertEqual(runtime.calls[0]["model_id"], "gpt-6.1-sol")
             self.assertEqual(runtime.calls[0]["thinking_level"], "max")
             self.assertEqual(result["mode"], "ai_judge")
             self.assertEqual(result["metricAuthority"], "ai_judge_estimate")
             self.assertEqual(result["truth"]["status"], "none")
             self.assertEqual(result["evaluator"], {
                 "provider": "openai-codex",
-                "model": "gpt-5.6-luna",
+                "model": "gpt-6.1-sol",
                 "thinking": "max",
-                "displayName": "Luna Max",
+                "displayName": "GPT-6.1 Sol Max",
             })
             self.assertEqual(result["requestedEvaluator"], result["evaluator"])
             self.assertEqual(result["promptVersion"], "trace-eval-ai-judge-v1")
@@ -190,13 +190,13 @@ class ObservabilityEvalServiceTests(unittest.TestCase):
         result = service.list_eval_suites({"limit": "10"})
 
         self.assertEqual(result["schemaVersion"], "rag-ime.eval-suite-list.v1")
-        self.assertEqual([item["suiteId"] for item in result["items"]], ["sgg", "zhanggui-wenshu"])
-        self.assertEqual(result["items"][0]["suiteRevision"], "fixture-v2")
-        self.assertEqual(result["items"][0]["fixtureCount"], 1)
-        self.assertEqual(
-            set(result["items"][0]),
-            {"suiteId", "suiteRevision", "displayName", "fixtureCount", "capabilities"},
-        )
+        self.assertEqual([item["suiteId"] for item in result["items"]], ["earth-research", "sgg", "zhanggui-wenshu"])
+        by_id = {item["suiteId"]: item for item in result["items"]}
+        self.assertEqual(by_id["sgg"]["suiteRevision"], "fixture-v2")
+        self.assertEqual(by_id["sgg"]["fixtureCount"], 1)
+        self.assertEqual(by_id["earth-research"]["suiteRevision"], "source-grounding-v1")
+        for item in result["items"]:
+            self.assertEqual(set(item), {"suiteId", "suiteRevision", "displayName", "fixtureCount", "capabilities"})
         self.assertNotIn("fixturePath", repr(result))
         self.assertNotIn("requiredEvidenceIds", repr(result))
 

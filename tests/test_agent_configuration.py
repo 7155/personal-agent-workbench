@@ -36,7 +36,7 @@ class AgentConfigurationTests(unittest.TestCase):
         self.assertEqual(configuration["sessionDefaults"]["roleId"], "companion-future-v1")
         self.assertEqual(
             configuration["sessionDefaults"]["modelProfile"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(
             default_agent_configuration(role_id="vcp-v1")["sessionDefaults"]["roleId"],
@@ -46,23 +46,23 @@ class AgentConfigurationTests(unittest.TestCase):
             configuration["modelRouting"],
             {
                 "primary": {
-                    "modelProfile": "openai-codex/gpt-5.6-luna",
+                    "modelProfile": "openai-codex/gpt-6.1-sol",
                     "thinkingLevel": "max",
                 },
                 "traceDiagnostic": {
-                    "modelProfile": "openai-codex/gpt-5.6-sol",
+                    "modelProfile": "openai-codex/gpt-6.1-sol",
                     "thinkingLevel": "high",
                 },
                 "toolAgent": {
-                    "modelProfile": "openai-codex/gpt-5.6-luna",
+                    "modelProfile": "openai-codex/gpt-6.1-sol",
                     "thinkingLevel": "max",
                 },
                 "subagent": {
-                    "modelProfile": "openai-codex/gpt-5.6-luna",
+                    "modelProfile": "openai-codex/gpt-6.1-sol",
                     "thinkingLevel": "max",
                 },
                 "roomCoordinator": {
-                    "modelProfile": "openai-codex/gpt-5.6-sol",
+                    "modelProfile": "openai-codex/gpt-6.1-sol",
                     "thinkingLevel": "high",
                 },
             },
@@ -253,7 +253,7 @@ class AgentConfigurationTests(unittest.TestCase):
                     "thinkingLevel": "max",
                 },
                 "traceDiagnostic": {
-                    "modelProfile": "openai-codex/gpt-5.6-sol",
+                    "modelProfile": "openai-codex/gpt-6.1-sol",
                     "thinkingLevel": "high",
                 },
                 "toolAgent": {
@@ -300,7 +300,7 @@ class AgentConfigurationTests(unittest.TestCase):
         self.assertEqual(
             snapshot["configuration"]["modelRouting"]["traceDiagnostic"],
             {
-                "modelProfile": "openai-codex/gpt-5.6-sol",
+                "modelProfile": "openai-codex/gpt-6.1-sol",
                 "thinkingLevel": "high",
             },
         )

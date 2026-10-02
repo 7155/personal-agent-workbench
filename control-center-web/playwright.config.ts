@@ -46,13 +46,11 @@ export default defineConfig({
   webServer: {
     // Replace Playwright's shell process with Vite so teardown cannot orphan
     // a package-manager child that keeps the strict test port occupied.
-    // Most route suites exercise the retained legacy compatibility shell.
-    // PAWOS suites opt in explicitly with `frontend=paw-os`, matching the
-    // production selector instead of inheriting an ambiguous test default.
+    // Every product route exercises the same PAWOS entry as the shipped app.
     // The development product intentionally defaults to the live HTTP
     // Runtime. E2E routes, however, assert deterministic preview fixtures and
     // must never read or mutate the developer's foreground PAW sessions.
-    command: `exec env VITE_PAW_FRONTEND=legacy VITE_CONTROL_TRANSPORT=mock node ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${port} --strictPort`,
+    command: `exec env VITE_CONTROL_TRANSPORT=mock node ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}/#/overview`,
     reuseExistingServer: false,
     timeout: 120_000,

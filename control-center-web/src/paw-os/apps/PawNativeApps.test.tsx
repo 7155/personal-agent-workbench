@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { MotionProvider } from '@/design/motion';
-import { PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { ThemeProvider } from '@/design/themes';
 import { PawOsAppSurfaceProvider, PawOsDesktopProvider, type PawOsWindowRequest } from '@/features/paw-os/surface-context';
 import type { ControlRequest } from '@/platform/transport';
@@ -94,7 +93,7 @@ describe('PAWOS native Apps', () => {
     const view = renderNative('project-workbench', nativeTransport(), { initialRoute: route });
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(view.container.querySelector(`.paw-workbench-migrated[data-page-id="${pageId}"]`)).not.toBeNull();
+    expect(view.container.querySelector(`.paw-workbench[data-page-id="${pageId}"]`)).not.toBeNull();
     expect(view.container.querySelector('.mgmt-page')).toBeNull();
   });
 
@@ -342,15 +341,13 @@ function NativeHarness({
       <QueryClientProvider client={client}>
         <ControlTransportProvider transport={transport}>
           <ThemeProvider>
-            <PawOsAppearanceProvider>
-              <MotionProvider>
-                <PawOsDesktopProvider openApp={openApp} openRoute={setRoute} openWindow={openWindow}>
-                  <PawOsAppSurfaceProvider appId={appId} height={720} width={width}>
-                    <PawNativeApp appId={appId} initialRoute={route} />
-                  </PawOsAppSurfaceProvider>
-                </PawOsDesktopProvider>
-              </MotionProvider>
-            </PawOsAppearanceProvider>
+            <MotionProvider>
+              <PawOsDesktopProvider openApp={openApp} openRoute={setRoute} openWindow={openWindow}>
+                <PawOsAppSurfaceProvider appId={appId} height={720} width={width}>
+                  <PawNativeApp appId={appId} initialRoute={route} />
+                </PawOsAppSurfaceProvider>
+              </PawOsDesktopProvider>
+            </MotionProvider>
           </ThemeProvider>
         </ControlTransportProvider>
       </QueryClientProvider>

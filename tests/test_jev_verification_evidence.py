@@ -14,6 +14,7 @@ from unittest.mock import patch
 from rag_ime.agent_media import AgentMediaStore
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.agent_tools import ControlToolGateway
+from rag_ime.browser_control import BrowserControlService
 from rag_ime.jev_tasks.materials import JevMaterialService
 from rag_ime.jev_tasks.types import Task, canonical
 from rag_ime.pi.transcript import durable_branch_messages, durable_tool_history_events
@@ -52,7 +53,7 @@ class WorkerEvidenceTests(unittest.TestCase):
         self.media = AgentMediaStore(db)
         self.media.initialize()
         self.runtime = SimpleNamespace(session_snapshot=Mock(return_value={"toolHistoryEvents": self.events()}))
-        self.service = SimpleNamespace(rooms=self.rooms, sessions=self.sessions, runtime=self.runtime,
+        self.service = SimpleNamespace(db_path=db, rooms=self.rooms, sessions=self.sessions, runtime=self.runtime,
                                        media=self.media, read_media_resource=self.read_media)
         self.materials = JevMaterialService(self.service)
 
@@ -148,6 +149,36 @@ class WorkerEvidenceTests(unittest.TestCase):
         archived = self.media.read(evidence["readRef"].removeprefix("media://"), room_id=self.task.room_id)[1]
         for hidden in (b"never-share", b"old-turn", b"next-turn"):
             self.assertNotIn(hidden, archived)
+
+    def test_scoped_native_evidence_preserves_large_browser_scripts_and_all_completed_calls(self):
+        script = "const legal = " + json.dumps(["种植，购买，暂停" * 100] * 70) + "; console.log(legal.length)"
+        source = [event for event in self.browser_events() if event["turnId"] == "turn:a"
+                  and event["payload"].get("toolName") == "browser"]
+        events = []
+        for index in range(70):
+            for item in source:
+                item = copy.deepcopy(item)
+                item["eventId"] = f"browser-{index}:{item['eventType']}"
+                item["payload"]["toolCallId"] = f"browser-{index}"
+                if item["eventType"] == "tool_started":
+                    item["payload"].update(argumentSource="native_transcript_arguments",
+                        args={"op": "run", "script": script if index in (0, 69) else "console.log('ok')", "timeoutMs": 120000})
+                events.append(item)
+        self.runtime.session_tool_evidence = Mock(return_value={"toolHistoryEvents": events})
+        evidence = self.project(inline_byte_budget=6000)
+        self.runtime.session_tool_evidence.assert_called_once_with(
+            self.worker["id"], turn_id="turn:a", client_message_id="dispatch:a")
+        self.runtime.session_snapshot.assert_not_called()
+        self.assertLessEqual(len(canonical(evidence).encode()), 6000)
+        _receipt, body = self.read_media(evidence["readRef"].removeprefix("media://"), session_id=self.verifier["id"])
+        archive = json.loads(body)
+        self.assertEqual(archive["status"], "available")
+        self.assertEqual(archive["omittedToolResults"], 0)
+        self.assertEqual(len(archive["tools"]), 70)
+        self.assertEqual(archive["tools"][0]["arguments"]["script"], script)
+        self.assertEqual(archive["tools"][-1]["arguments"]["script"], script)
+        self.assertEqual(archive["tools"][0]["argumentSource"], "native_transcript_arguments")
+
 
     def test_browser_discovery_is_excluded_and_failed_command_is_preserved(self):
         for operation in ("status", "tabs", "trace", "snapshot", "stop"):
@@ -289,6 +320,128 @@ class WorkerEvidenceTests(unittest.TestCase):
         self.assertNotIn("private host failure", canonical(result))
         self.assertNotIn("definitely", canonical(result))
 
+    def test_native_reader_failure_does_not_fall_back_to_shortened_arguments(self):
+        self.runtime.session_tool_evidence = Mock(side_effect=RuntimeError("source unavailable"))
+        evidence = self.project()
+        self.assertEqual(evidence["status"], "unavailable")
+        self.runtime.session_snapshot.assert_not_called()
+
+    def test_completed_nested_call_without_result_is_partial_not_unfinished(self):
+        events = self.events()
+        finished = next(e for e in events if e["turnId"] == "turn:a" and e["eventType"] == "tool_finished"
+                        and e["payload"]["toolName"] == "bash")
+        finished["payload"].pop("result")
+        self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
+        evidence = self.project()
+        self.assertEqual(evidence["status"], "partial")
+        self.assertEqual(evidence["unfinishedToolCalls"], 0)
+
+    def nested_browser_events(self):
+        args = {"op": "run", "script": "console.log('original execution')", "timeoutMs": 3000}
+        def event(kind, call, name, at, **payload):
+            return {"eventId": call + ':' + kind, "sessionId": self.worker['id'],
+                    "turnId": "turn:a", "eventType": kind, "createdAtMs": at,
+                    "payload": {"toolCallId": call, "toolName": name, **payload}}
+        return [event('tool_started', 'outer', 'codemode', 1000,
+                      argumentSource='native_transcript_arguments', args={'code': 'private orchestration'}),
+                event('tool_started', 'outer/1', 'browser', 2100,
+                      parentToolCallId='outer', argumentSource='native_nested_call_arguments', args=args),
+                event('tool_finished', 'outer/1', 'browser', 2100,
+                      parentToolCallId='outer', status='ok', isError=False),
+                event('tool_finished', 'outer', 'codemode', 2100, result={'private': 'not-shared'})]
+
+    def seed_nested_browser_receipt(self):
+        browser = BrowserControlService(self.sessions.db_path, app_support_root=self.root / 'browser')
+        with browser._connection() as conn:
+            conn.execute("""INSERT INTO browser_control_commands(
+                command_id,device_id,session_id,action,payload_json,status,created_at_ms,completed_at_ms,result_json)
+                VALUES ('bcmd_native','paw-browser',?,'run',?,'completed',1200,2000,?)""",
+                (self.worker['id'], json.dumps({'script': "console.log('original execution')", 'timeoutMs': 3000}),
+                 json.dumps({'ok': True, 'stdout': '{"observed":42}', 'exitCode': 0})))
+        return browser
+
+    def test_cold_nested_browser_result_uses_one_exact_existing_owner_receipt(self):
+        self.seed_nested_browser_receipt()
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': self.nested_browser_events()})
+        evidence = self.project()
+        self.assertEqual(evidence['status'], 'available')
+        tool = evidence['tools'][0]
+        self.assertEqual(tool['toolCallId'], 'outer/1')
+        self.assertEqual(tool['result']['commandId'], 'bcmd_native')
+        self.assertEqual(tool['result']['result']['stdout'], '{"observed":42}')
+        self.assertEqual(tool['resultSource'], 'bound_browser_control_receipt')
+        self.assertNotIn('private orchestration', canonical(evidence))
+
+    def test_cold_browser_sqlite_receipt_redacts_credentials_before_verifier_media_read(self):
+        browser = self.seed_nested_browser_receipt()
+        stdout = '{"observed":42,"password":"synthetic-password","access_token":"synthetic-access"}'
+        stderr = 'Authorization: Bearer synthetic-bearer\nCookie: session=synthetic-cookie; theme=dark\n'
+        with browser._connection() as conn:
+            conn.execute("UPDATE browser_control_commands SET result_json=?",
+                         (json.dumps({'ok': True, 'stdout': stdout, 'stderr': stderr, 'exitCode': 0}),))
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': self.nested_browser_events()})
+        evidence = self.project()
+        self.assertEqual(evidence['status'], 'available')
+        self.assertEqual(evidence['tools'][0]['resultSource'], 'bound_browser_control_receipt')
+        gateway = ControlToolGateway(sessions=self.sessions, management=object(), core=object(), project=object(),
+                                     collaboration=self.service)
+        read = gateway._read_internal_resource(self.verifier['id'], {'resourceRef': evidence['readRef']})
+        archived = json.loads(read['content'])
+        self.assertEqual(archived['tools'], evidence['tools'])
+        for secret in ('synthetic-password', 'synthetic-access', 'synthetic-bearer', 'synthetic-cookie'):
+            self.assertNotIn(secret, read['content'])
+            self.assertNotIn(secret, canonical(evidence))
+        result = archived['tools'][0]['result']['result']
+        self.assertEqual(json.loads(result['stdout'])['observed'], 42)
+        self.assertEqual(result['exitCode'], 0)
+        self.assertIn('[REDACTED_SECRET]', result['stderr'])
+        # Projection masks the shared copy, without rewriting the durable owner receipt.
+        with browser._connection() as conn:
+            original = json.loads(conn.execute('SELECT result_json FROM browser_control_commands').fetchone()[0])
+        self.assertEqual(original['stdout'], stdout)
+        self.assertEqual(original['stderr'], stderr)
+
+    def test_cold_nested_browser_receipt_rejects_mismatch_and_ambiguity(self):
+        browser = self.seed_nested_browser_receipt()
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': self.nested_browser_events()})
+        for field, value in [('session_id', self.outsider['id']), ('created_at_ms', 999),
+                             ('completed_at_ms', 2200), ('status', 'claimed'),
+                             ('payload_json', '{"script":"different","timeoutMs":3000}')]:
+            with self.subTest(field=field), browser._connection() as conn:
+                original = conn.execute('SELECT '+field+' FROM browser_control_commands').fetchone()[0]
+                conn.execute('UPDATE browser_control_commands SET '+field+'=?', (value,))
+                conn.commit()
+                try:
+                    self.assertIn(self.project()['status'], {'partial', 'unavailable'})
+                finally:
+                    conn.execute('UPDATE browser_control_commands SET '+field+'=?', (original,))
+        with browser._connection() as conn:
+            conn.execute("""INSERT INTO browser_control_commands(
+                command_id,device_id,session_id,action,payload_json,status,created_at_ms,
+                claimed_at_ms,claimed_by,result_json,failure_reason,completed_at_ms)
+                SELECT 'bcmd_ambiguous', device_id, session_id, action, payload_json, status,
+                       created_at_ms, claimed_at_ms, claimed_by, result_json, failure_reason, completed_at_ms
+                FROM browser_control_commands WHERE command_id='bcmd_native'""")
+        self.assertIn(self.project()['status'], {'partial', 'unavailable'})
+
+    def test_cold_nested_browser_failure_is_retained_and_unproven_parent_is_rejected(self):
+        browser = self.seed_nested_browser_receipt()
+        with browser._connection() as conn:
+            conn.execute("UPDATE browser_control_commands SET status='failed',result_json=?,failure_reason='script_failed'",
+                         (json.dumps({'ok': False, 'stderr': 'original failure', 'exitCode': 1}),))
+        events = self.nested_browser_events()
+        events[2]['payload'].update(status='error', isError=True)
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': events})
+        tool = self.project()['tools'][0]
+        self.assertTrue(tool['isError'])
+        self.assertEqual(tool['result']['status'], 'failed')
+        self.assertEqual(tool['result']['result']['stderr'], 'original failure')
+        for event_index in (0, 1):
+            unbound = copy.deepcopy(events)
+            unbound[event_index]['payload'].pop('argumentSource')
+            self.runtime.session_tool_evidence.return_value = {'toolHistoryEvents': unbound}
+            self.assertIn(self.project()['status'], {'partial', 'unavailable'})
+
     def test_exact_owner_command_is_used_only_with_matching_causal_receipt(self):
         events = self.events()
         bash = next(e for e in events if e["turnId"] == "turn:a" and e["eventType"] == "tool_finished"
@@ -358,11 +511,11 @@ class WorkerEvidenceTests(unittest.TestCase):
         events = self.events()
         read = next(e for e in events if e["turnId"] == "turn:a" and e["eventType"] == "tool_finished"
                     and e["payload"]["toolName"] == "read")
-        read["payload"]["result"]["content"] = [{"type": "text", "text": "证据" * 20000}]
+        read["payload"]["result"]["content"] = [{"type": "text", "text": "证据" * 360000}]
         self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
         result = self.project()
         self.assertEqual(result["status"], "partial")
-        self.assertLessEqual(result["archiveBytes"], 256000)
+        self.assertLessEqual(result["archiveBytes"], 2 * 1024 * 1024)
         _receipt, body = self.read_media(result["readRef"].removeprefix("media://"), session_id=self.verifier["id"])
         archived = json.loads(body)
         self.assertTrue(archived["tools"][0]["result"]["truncated"])
@@ -388,21 +541,21 @@ class WorkerEvidenceTests(unittest.TestCase):
                     events.append(pending)
                 self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
                 result = self.project()
-                self.assertEqual(result["status"], "partial")
-                self.assertEqual(result["omittedToolResults"], 1)
+                self.assertEqual(result["status"], "partial" if unfinished else "available")
+                self.assertEqual(result["omittedToolResults"], 0)
                 self.assertEqual(result["unfinishedToolCalls"], unfinished)
                 _receipt, body = self.read_media(result["readRef"].removeprefix("media://"),
                                                 session_id=self.verifier["id"])
                 archived = json.loads(body)
-                self.assertEqual(len(archived["tools"]), 64)
-                self.assertEqual(archived["status"], "partial")
-                self.assertEqual(archived["omittedToolResults"], 1)
+                self.assertEqual(len(archived["tools"]), 65)
+                self.assertEqual(archived["status"], "partial" if unfinished else "available")
+                self.assertEqual(archived["omittedToolResults"], 0)
                 self.assertEqual(archived["unfinishedToolCalls"], unfinished)
 
     def test_archive_budget_retains_latest_results_in_execution_order(self):
         source = [event for event in self.events() if event["turnId"] == "turn:a"
                   and event["payload"].get("toolName") == "read"]
-        for count, content in ((65, "small"), (7, "读取" * 8000)):
+        for count, content, budget in ((65, "small", 24000), (7, "读取" * 8000, 64000)):
             with self.subTest(count=count):
                 events = []
                 for index in range(count):
@@ -414,7 +567,8 @@ class WorkerEvidenceTests(unittest.TestCase):
                             item["payload"]["result"]["content"] = [{"type": "text", "text": content + str(index)}]
                         events.append(item)
                 self.runtime.session_snapshot.return_value = {"toolHistoryEvents": events}
-                result = self.project()
+                with patch("rag_ime.jev_tasks.materials._EVIDENCE_ARCHIVE_BYTES", budget):
+                    result = self.project()
                 _, body = self.read_media(result["readRef"].removeprefix("media://"),
                                           session_id=self.verifier["id"])
                 archive = json.loads(body)
@@ -425,13 +579,16 @@ class WorkerEvidenceTests(unittest.TestCase):
                 self.assertEqual(ids, [f"read-{index}" for index in range(omitted, count)])
                 self.assertEqual(archive["status"], "partial")
                 self.assertEqual(archive["unfinishedToolCalls"], 0)
-                self.assertLessEqual(len(body), 256000)
+                self.assertLessEqual(len(body), budget)
                 self.assertEqual(archive["tools"][-1]["result"]["content"][0]["text"], content + str(count - 1))
 
 
 class VerificationPreparationTests(host.JevHostFixture):
     def test_prepared_verifier_persists_exact_results_and_readable_media(self):
-        created = self.create()
+        created = self.app.create(self.room["id"], {
+            "clientMessageId": "inspect-evidence", "message": "独立检查计算结果",
+            "strategy": "direct", "modelRouting": "participant", "verificationMode": "independent",
+        })
         self.app.tick()
         effect = next(e for e in self.app.projection(self.room["id"], created["graphId"])["effects"]
                       if e["operation"] == "dispatch")
@@ -450,7 +607,7 @@ class VerificationPreparationTests(host.JevHostFixture):
         ], session_id=request["sessionId"])
         terminal = {"eventId": "terminal:a", "eventType": "turn_completed", "status": "completed"}
         with patch.object(self.app, "execution_terminal", side_effect=lambda e, **kw: terminal if e["effectId"] == effect["effectId"] else None), \
-             patch.object(self.service.runtime, "session_snapshot", return_value={"toolHistoryEvents": events}):
+             patch.object(self.service.runtime, "session_tool_evidence", return_value={"toolHistoryEvents": events}):
             self.app.tick()
         verifier = next(e for e in self.app.projection(self.room["id"], created["graphId"])["effects"]
                         if e["operation"] == "dispatch" and e["request"].get("purpose") == "verify")
@@ -459,7 +616,9 @@ class VerificationPreparationTests(host.JevHostFixture):
         instructions = verifier["request"]["taskBrief"]["objective"].split("\nExecutionPack:\n")[0]
         self.assertIn("现有read工具", instructions)
         self.assertIn("offset=1、limit=2000", instructions)
-        self.assertIn("行号，不是字节偏移", instructions)
+        self.assertIn("按返回的nextLineOffset继续读取", instructions)
+        self.assertIn("长JSON行会无损分段", instructions)
+        self.assertIn("offset/limit不是字节偏移", instructions)
         self.assertNotIn("用workspace_read", instructions)
         evidence = pack["workerToolEvidence"]
         self.assertEqual(evidence["binding"]["dispatchId"], effect["effectId"])

@@ -49,8 +49,8 @@ class JevWorkspaceJobCancelTests(JevHostFixture):
         return self.gateway.execute({'schemaVersion': 'rag-ime.agent-tool-call.v1', 'sessionId': self.sid,
             'tool': 'workspace_job', 'toolCallId': f'fixture-job:{self.sequence}', 'args': {'op': op, **args}})['result']
 
-    def start_job(self):
-        result = self.tool('start', command='python3 ' + shlex.quote(str(self.program)), cwd=str(self.root),
+    def start_job(self, command=None):
+        result = self.tool('start', command=command or 'python3 ' + shlex.quote(str(self.program)), cwd=str(self.root),
                            timeoutSeconds=30, allowNetwork=True, label='isolated listener')
         self.assertFalse(result.get('approvalRequired'), result)
         receipt = result['receipt']
@@ -134,6 +134,46 @@ class JevWorkspaceJobCancelTests(JevHostFixture):
                          'isolated result')
         cancelled = self.tool('cancel', jobId=job_id)
         self.assertTrue(cancelled['receipt'].get('ok'), cancelled)
+        self.assert_stopped(job_id)
+
+    def test_submitted_real_preview_keeps_running_without_accepting_work_and_root_cancel_still_owns_it(self):
+        import copy
+        import shutil
+        from tests.test_jev_runtime_adapter import RuntimeAdapterTests
+        if not shutil.which('npm'):
+            self.skipTest('declared npm preview requires npm')
+        self.root.joinpath('package.json').write_text(json.dumps({'scripts': {
+            'start': 'python3 ' + shlex.quote(str(self.program))}}))
+        job_id = self.start_job('npm run start -- --port 0')
+        result = self.app.tool_operation(self.sid, {'op': 'result_submit', 'proposal': {
+            'resultSummary': 'Delivered the live local preview under its background job owner',
+            'evidenceRefs': [job_id], 'artifactRefs': []}}, tool_call_id='fixture-preview-submit')
+        self.assertEqual(result['status'], 'applied')
+        fixture = RuntimeAdapterTests()
+        fixture.setUp()
+        settlement = copy.deepcopy(fixture.settlement)
+        runtime_id = 'native:' + self.sid
+        settlement.update(sessionId=self.sid, turnId=self.turn,
+                          clientMessageId=self.effect['effectId'], runtimeSessionId=runtime_id)
+        settlement['receipt'].update(sessionId=runtime_id, runId=self.turn,
+                                     scopeId=runtime_id + ':' + self.turn)
+        # Real stores, admission and process; the Pi terminal contract remains
+        # an explicit transport fixture, never a claim about the live product.
+        with patch.object(self.service.runtime, 'await_turn_settled', return_value=settlement):
+            terminal = self.app.execution_terminal(self.effect)
+        self.assertEqual(terminal['status'], 'completed')
+        with self.app.ledger.connection() as conn:
+            row = conn.execute('SELECT proof_json FROM agent_jev_execution_drains WHERE dispatch_id=?',
+                               (self.effect['effectId'],)).fetchone()
+        resources = json.loads(row[0])['descendantsProof']['resources']
+        retained = next(resource for resource in resources if resource['id'] == job_id)
+        self.assertEqual(retained['state'], 'running')
+        self.assertEqual(retained['endedAtMs'], 0)
+        self.assertEqual(retained['retention']['kind'], 'retained_preview')
+        self.assertEqual(self.snapshot(self.created).task(self.effect['request']['taskId']).state, 'review')
+        self.assertEqual(self.service.background_jobs.status(self.sid, job_id)['job']['status'], 'running')
+        receipts = self.service.background_jobs.cancel_room_root(self.sid, room_turn_id=self.created['rootId'])
+        self.assertEqual(len(receipts), 1)
         self.assert_stopped(job_id)
 
     def test_job_owner_rejects_each_mismatching_immutable_lineage(self):

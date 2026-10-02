@@ -1,87 +1,32 @@
 import { expect, test } from '@playwright/test';
+import { productRoute } from './helpers';
 
-test('model changes close immediately and the composer publishes an optimistic turn', async ({ page }) => {
-  await page.goto('/#/agent');
-  const feature = page.locator('main[data-route-id="agent"]');
-  await expect(feature.locator('.agent-turn').first()).toBeVisible();
-
-  const modelButton = page.getByRole('button', { name: /^模型与推理：/ });
-  await modelButton.click();
-  const picker = page.getByRole('dialog');
-  await expect(picker).toHaveAccessibleName('选择模型与推理强度');
-  const reasoning = picker.getByRole('radiogroup', { name: '推理强度' });
-  await expect(reasoning).toBeVisible();
-  const modelSelectionStartedAt = Date.now();
-  await reasoning.getByRole('radio', { name: '高', exact: true }).click();
+test('Session changes reasoning and publishes one optimistic turn through the canonical workspace', async ({ page }) => {
+  await page.goto(productRoute('agent'));
+  const button = page.getByRole('button', { name: /^模型与推理：/ });
+  await button.click();
+  const picker = page.getByRole('dialog', { name: '选择模型与推理强度' });
+  await picker.getByRole('radiogroup', { name: '推理强度' }).getByRole('radio', { name: '高', exact: true }).click();
   await expect(picker).toBeHidden();
-  expect(Date.now() - modelSelectionStartedAt).toBeLessThan(500);
-  await expect(modelButton).toHaveAccessibleName(/模型与推理：.*· 高$/);
-
-  const probe = `Session optimistic ${Date.now()}`;
-  const composer = page.getByRole('textbox', { name: '消息' });
+  await expect(button).toHaveAccessibleName(/· 高$/);
+  const probe = `Single Session send ${Date.now()}`;
+  const composer = page.getByRole('textbox', { name: '消息', exact: true });
   await composer.fill(probe);
-  const publishStartedAt = Date.now();
   await page.getByRole('button', { name: '发送', exact: true }).click();
-
-  const optimisticTurn = feature.locator('.agent-turn', { hasText: probe });
-  await expect(optimisticTurn).toBeVisible();
-  expect(Date.now() - publishStartedAt).toBeLessThan(500);
   await expect(composer).toHaveValue('');
-  await expect(optimisticTurn).toHaveCount(1);
+  await expect(page.locator('.paw-user-message', { hasText: probe })).toHaveCount(1);
 });
 
-test('Room publishes once immediately and preserves the in-flight turn across route switches', async ({ page }) => {
-  await page.goto('/#/rooms');
-  const feature = page.locator('main[data-route-id="rooms"]');
-  await expect(feature).toBeVisible();
-
-  const viewSelector = feature.getByRole('radiogroup', { name: '协作空间视图' });
-  await expect(viewSelector.getByRole('radio', { name: '对话', exact: true })).toBeChecked();
-  const timeline = feature.getByLabel('协作对话时间线');
-  await expect(timeline).toBeVisible();
-  const workspaceLayout = await feature.locator('.room-workspace').evaluate((root) => {
-    const timelineElement = root.querySelector<HTMLElement>('[aria-label="协作对话时间线"]');
-    const composerDock = root.querySelector<HTMLElement>('.room-composer-dock');
-    if (!timelineElement || !composerDock) throw new Error('Room conversation layout is incomplete');
-    const rootRect = root.getBoundingClientRect();
-    const timelineRect = timelineElement.getBoundingClientRect();
-    const composerRect = composerDock.getBoundingClientRect();
-    return {
-      clientWidth: root.clientWidth,
-      scrollWidth: root.scrollWidth,
-      root: { left: rootRect.left, right: rootRect.right, bottom: rootRect.bottom },
-      timeline: { left: timelineRect.left, right: timelineRect.right },
-      composer: { left: composerRect.left, right: composerRect.right, bottom: composerRect.bottom },
-    };
-  });
-  expect(workspaceLayout.scrollWidth).toBeLessThanOrEqual(workspaceLayout.clientWidth + 1);
-  expect(workspaceLayout.timeline.left).toBeGreaterThanOrEqual(workspaceLayout.root.left - 1);
-  expect(workspaceLayout.timeline.right).toBeLessThanOrEqual(workspaceLayout.root.right + 1);
-  expect(workspaceLayout.composer.left).toBeGreaterThanOrEqual(workspaceLayout.root.left - 1);
-  expect(workspaceLayout.composer.right).toBeLessThanOrEqual(workspaceLayout.root.right + 1);
-  expect(workspaceLayout.composer.bottom).toBeLessThanOrEqual(workspaceLayout.root.bottom + 1);
-
-  const probe = `Room optimistic ${Date.now()}`;
-  const composer = feature.getByRole('textbox', { name: '协作消息' });
+test('Room preserves its draft across another App and publishes it once', async ({ page }) => {
+  await page.goto(productRoute('rooms'));
+  const composer = page.getByRole('textbox', { name: '协作消息', exact: true });
+  const probe = `Room draft survives ${Date.now()}`;
   await composer.fill(probe);
-  const publishStartedAt = Date.now();
-  await feature.getByRole('button', { name: '立即干预当前回合' }).click();
-
-  const optimisticTurn = feature.locator('article', { hasText: probe });
-  await expect(optimisticTurn).toHaveCount(1);
-  expect(Date.now() - publishStartedAt).toBeLessThan(500);
-  await expect(optimisticTurn).toContainText('正在发送');
+  await page.evaluate(() => { location.hash = '#/memory'; });
+  await expect(page.locator('.paw-window-shell[data-app="memory"]')).toBeVisible();
+  await page.evaluate(() => { location.hash = '#/rooms?room=room-preview'; });
+  await expect(composer).toHaveValue(probe);
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
   await expect(composer).toHaveValue('');
-
-  await page.evaluate(() => {
-    window.location.hash = '#/agent';
-  });
-  await expect(page.locator('main[data-route-id="agent"]')).toBeVisible();
-  await page.evaluate(() => {
-    window.location.hash = '#/rooms';
-  });
-  await expect(page.locator('main[data-route-id="rooms"]')).toBeVisible();
-  await expect(
-    page.locator('main[data-route-id="rooms"] article', { hasText: probe }),
-  ).toHaveCount(1);
+  await expect(page.locator('.paw-room-session-round__objective', { hasText: probe })).toHaveCount(1);
 });

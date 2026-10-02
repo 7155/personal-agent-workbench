@@ -38,4 +38,6 @@ Only positive safe integers are forwarded; JPEG quality must not exceed 100. Unk
 
 The installed runtime reports `sessionExactTurnCancel`, `sessionRetiredTurnRecovery`, and `sessionInterruptedTurnRecovery` as false. PAW must not advertise these as supported, infer them from ordinary abort support, or synthesize successful receipts.
 
+When exact cancellation is unsupported, PAW records a capability-preflight rejection without sending an abort RPC. A task revision can wait for the bound turn's real natural settlement and descendant drain before activating its successor. The rejection does not prove cancellation or settlement, and PAW does not fall back to a broad Session stop. Late output from the superseded dispatch remains historical evidence and cannot accept the replacement task.
+
 Relevant owners: [runtime contract](session-runtime-host-contract.json), [provider translation](../../rag_ime/pi/provider_config.py), [provider tests](../../tests/test_pi_provider_config.py). Local smoke/canary reports are private acceptance artifacts, not a distribution-release declaration.

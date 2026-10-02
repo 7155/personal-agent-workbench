@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import pawOsAppSource from '../PawOsApp.tsx?raw';
 import controlsCss from './paw-os-controls.css?raw';
 import pawOsCss from './paw-os.css?raw';
-import sysAppsCss from './paw-os-sys-apps-migrated-v1.css?raw';
+import sysAppsCss from './paw-os-system-apps.css?raw';
 
 /* The shared control language (select / menu / button / panel) promises that
  * every default control surface is opaque and keeps WCAG AA ink contrast.
@@ -110,7 +110,7 @@ describe('PAWOS shared control language', () => {
   });
 
   it('stays wired into the shell after the shell visual owner', () => {
-    const shellIndex = pawOsAppSource.indexOf("./styles/paw-os-shell-migrated-v1.css");
+    const shellIndex = pawOsAppSource.indexOf("./styles/paw-os-shell.css");
     const controlsIndex = pawOsAppSource.indexOf("./styles/paw-os-controls.css");
     expect(shellIndex).toBeGreaterThan(-1);
     expect(controlsIndex).toBeGreaterThan(shellIndex);

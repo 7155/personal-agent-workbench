@@ -303,7 +303,28 @@ class AgentRoomStartGateServiceTests(unittest.TestCase):
             command_scope="room_message",
             scope_id=str(room["id"]),
             client_message_id=str(request["clientMessageId"]),
-            response=self.service._room_start_confirmation_response(pending_gate),
+            # Historical wire receipt, independent of current production writers.
+            response={
+                "schemaVersion": "rag-ime.agent-room-message.v1",
+                "ok": True,
+                "accepted": False,
+                "status": "awaiting_confirmation",
+                "phase": "alignment",
+                "executionOwner": "session",
+                "roomId": pending_gate["roomId"],
+                "clientMessageId": pending_gate["clientMessageId"],
+                "workItemId": pending_gate["workItemId"],
+                "startConfirmation": {
+                    "gateId": pending_gate["gateId"],
+                    "status": pending_gate["status"],
+                    "objective": pending_gate["objective"],
+                    "workItemId": pending_gate["workItemId"],
+                    "targetParticipantIds": pending_gate["targetParticipantIds"],
+                    "requiresConfirmation": True,
+                    "afterConfirmExecutionMode": "room_unrestricted",
+                },
+                "timelineEvents": [],
+            },
         )
 
         with patch.object(

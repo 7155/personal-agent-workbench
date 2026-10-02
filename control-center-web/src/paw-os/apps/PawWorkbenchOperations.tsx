@@ -27,7 +27,7 @@ import {
   type WorkDocumentCommandInput,
 } from '@/features/work-documents/api';
 import type { JsonValue } from '@/platform/transport';
-import type { PawWorkbenchRecord } from './PawWorkbenchMigrated';
+import type { PawWorkbenchRecord } from './PawWorkbench';
 
 export function PawWorkbenchTaskDialog({
   onChanged,
@@ -98,7 +98,6 @@ export function PawWorkbenchTaskDialog({
             required
           >
             <Input
-              autoFocus
               id="paw-wb-task-title"
               onBlur={() => setTitleTouched(true)}
               onChange={(event) => setTitle(event.target.value)}
@@ -302,7 +301,6 @@ export function PawWorkbenchGoalDialog({
             required
           >
             <Input
-              autoFocus
               id="paw-wb-goal-title"
               onBlur={() => setTitleTouched(true)}
               onChange={(event) => setTitle(event.target.value)}

@@ -65,7 +65,7 @@ class ApprovalModelArbiterTests(unittest.TestCase):
             requested_at_ms=20,
         )
 
-    def test_luna_max_decision_is_hash_bound_persisted_and_reused(self) -> None:
+    def test_current_codex_max_decision_is_hash_bound_persisted_and_reused(self) -> None:
         runtime = FakeCompletionRuntime(
             {
                 "text": json.dumps(
@@ -92,13 +92,13 @@ class ApprovalModelArbiterTests(unittest.TestCase):
         self.assertEqual(receipt, repeated)
         self.assertEqual(receipt["decision"], "approve")
         self.assertEqual(receipt["status"], "decided")
-        self.assertEqual(receipt["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(receipt["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(receipt["thinkingLevel"], "max")
         self.assertEqual(receipt["payloadSha256"], "a" * 64)
         self.assertEqual(len(runtime.requests), 1)
         request = runtime.requests[0]
         self.assertEqual(request["provider"], "openai-codex")
-        self.assertEqual(request["model_id"], "gpt-5.6-luna")
+        self.assertEqual(request["model_id"], "gpt-6.1-sol")
         self.assertEqual(request["thinking_level"], "max")
         with self.assertRaises(sqlite3.IntegrityError):
             with sqlite_connection(self.db_path) as conn:
@@ -127,7 +127,7 @@ class ApprovalModelArbiterTests(unittest.TestCase):
         self.assertEqual(receipt["promptVersion"], "approval-arbiter-jev-v1")
         self.assertEqual(runtime.requests, [])
 
-    def test_jev_transport_failure_falls_back_to_luna(self) -> None:
+    def test_jev_transport_failure_falls_back_to_current_codex(self) -> None:
         runtime = FakeCompletionRuntime({
             "text": json.dumps({
                 "decision": "deny",
@@ -141,7 +141,7 @@ class ApprovalModelArbiterTests(unittest.TestCase):
             approval_model_module, "_jev_decide", side_effect=RuntimeError("endpoint unavailable")
         ):
             receipt = arbiter.decide(approval, self.session)
-        self.assertEqual(receipt["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(receipt["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertIn("model_unavailable", receipt["reasonCodes"])
         self.assertEqual(len(runtime.requests), 1)
 
@@ -417,7 +417,7 @@ class ApprovalModelArbiterTests(unittest.TestCase):
 
                 "mode": "model",
                 "status": "running",
-                "modelProfile": "openai-codex/gpt-5.6-luna",
+                "modelProfile": "openai-codex/gpt-6.1-sol",
                 "thinkingLevel": "max",
                 "promptVersion": "approval-arbiter-v2",
             },

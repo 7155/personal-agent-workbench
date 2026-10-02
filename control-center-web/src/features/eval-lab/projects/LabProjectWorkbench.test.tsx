@@ -41,18 +41,29 @@ function mount(transport: MockControlTransport, props: { initialProjectId?: stri
   return render(props.route ? <MemoryRouter initialEntries={[props.route]}>{surface}<RouteMarker /></MemoryRouter> : surface);
 }
 
+/* Project surfaces may read the shared background-job list while opening an
+ * existing Guide. It is a read-only compatibility request; keep the tests'
+ * no-send/no-run boundary explicit instead of accepting every route. */
+function isLabReadOnlyRequest(pathId: string): boolean {
+  return pathId.endsWith('.get') || pathId === 'agent.session.backgroundJobs.list';
+}
+
 describe('Agent-led Lab project container', () => {
   it('opens a parallel test in its own suite when an older suite is bound first', async () => {
     const bindings = ['old-suite', 'new-suite'].map((id) => ({ bindingId: id, adapterId: 'golden', materialSetId: '', briefVersion: 1, artifactId: '', artifactRevision: 1, ownerRef: { kind: 'golden_suite', id }, summary: '', createdAtMs: 1, input: {} }));
     const current = project({ bindings, workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
       nodes: [{ id: 'review-new', kind: 'dataset', title: '新题集核对', status: 'running', summary: '正在核对', dependencies: [], source: 'runtime', ref: { kind: 'golden_job', id: 'review-new' }, evidenceRefs: [{ kind: 'golden_suite', id: 'new-suite' }] }],
       edges: [], counts: { running: 1, queued: 0, completed: 0, failed: 0 }, currentNodeId: 'review-new' } });
+    let completeProjectRead!: (value: ReturnType<typeof read>) => void;
+    const projectRead = new Promise<ReturnType<typeof read>>(resolve => { completeProjectRead = resolve; });
     const transport = new MockControlTransport({ routes: {
-      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.eval-lab.projects.get': () => projectRead,
       'agent.eval-lab.golden.get': { ok: true, items: [], suite: null },
     } });
     mount(transport, { initialProjectId: current.projectId });
-    fireEvent.click(await screen.findByRole('button', { name: '查看新题集核对的运行记录' }, { timeout: 5_000 }));
+    expect(screen.getByRole('status')).toHaveTextContent('正在恢复项目与成果');
+    await act(async () => { completeProjectRead(read(current, [current])); await projectRead; });
+    fireEvent.click(await screen.findByRole('button', { name: '查看新题集核对的运行记录' }));
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'new-suite')).toBe(true));
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'old-suite')).toBe(false);
   });
@@ -66,7 +77,7 @@ describe('Agent-led Lab project container', () => {
     fireEvent.click(screen.getByRole('button', { name: '带入 Agent 草稿' }));
     expect((screen.getByLabelText('Agent 输入草稿') as HTMLTextAreaElement).value).toContain('优化倾向：成本优先');
     expect((screen.getByLabelText('Agent 输入草稿') as HTMLTextAreaElement).value).toContain('实现手段：Embedding 模型');
-    expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+    expect(transport.requests.every(({ request }) => isLabReadOnlyRequest(request.pathId))).toBe(true);
   });
   it('routes a completed App graph node to its exact version and call while retaining the Guide', async () => {
     const appId = 'extension:lab-11111111111111111111111111111111';
@@ -87,7 +98,7 @@ describe('Agent-led Lab project container', () => {
     expect(screen.getByRole('region', { name: '项目 Agent' })).toBe(guide);
     expect(screen.queryByTitle('研究应用 · 应用预览')).not.toBeInTheDocument();
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.apps.get' && request.query?.appId === appId && request.query?.version === 1 && request.query?.callId === 'original-call')).toBe(true);
-    expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+    expect(transport.requests.every(({ request }) => isLabReadOnlyRequest(request.pathId))).toBe(true);
   });
   it('opens paired Session and Turn sources inside the project while preserving the Guide element', async () => {
     const current = project({ guideSessionId: 'guide-one', workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
@@ -105,7 +116,7 @@ describe('Agent-led Lab project container', () => {
     expect(screen.getByRole('region', { name: '项目 Agent' })).toBe(guide);
     expect(screen.getByRole('heading', { name: '项目工作流' })).toBeVisible();
     expect(transport.requests.find(({ request }) => request.pathId === 'agent.session.snapshot')?.request.params).toEqual({ sessionId: 'source-session' });
-    expect(transport.requests.every(({ request }) => ['agent.session.snapshot', 'agent.eval-lab.projects.get'].includes(request.pathId))).toBe(true);
+    expect(transport.requests.every(({ request }) => ['agent.session.snapshot', 'agent.eval-lab.projects.get', 'agent.session.backgroundJobs.list'].includes(request.pathId))).toBe(true);
   });
   it('opens an exact Knowledge graph receipt beside the current work without another run', async () => {
     const current = project({ workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
@@ -517,7 +528,7 @@ it('links selected artifact contents and refreshed revisions to the Guide withou
   expect(context).not.toHaveTextContent('FIRST_BODY');
   expect(context).toHaveTextContent('v2');
   expect(screen.getByRole('region', { name: '项目 Agent' })).toBe(guide);
-  expect(transport.requests.every(({ request }) => request.pathId.endsWith('.get'))).toBe(true);
+  expect(transport.requests.every(({ request }) => isLabReadOnlyRequest(request.pathId))).toBe(true);
 });
 
 it('links selected experiment receipts and restores artifact context when returning', async () => {

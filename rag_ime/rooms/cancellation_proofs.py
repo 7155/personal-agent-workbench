@@ -176,6 +176,12 @@ def _session_abort_surfaces(
         [session_id, str(runtime.get("turnId") or "")],
         [],
     )
+    commands = receipt.get("workspaceCommands")
+    if isinstance(commands, Mapping):
+        command_surface = _root_resource_surface("shell", "terminated" if commands.get("drained") is True else "requested",
+            [str(item) for item in commands.get("operationIds", [])],
+            [str(item) for item in commands.get("pendingOperationIds", [])])
+        result["shell"] = _merge_root_surface(result.get("shell"), command_surface)
     return result
 
 def _aggregate_session_abort_surfaces(

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { CdpBridge, CdpPageTarget } from "./cdp-bridge.js";
+import { createCdpBridge, type CdpBridge, type CdpPageTarget } from "./cdp-bridge.js";
 import { createEgoRuntime } from "./ego-runtime.js";
 import { SpaceManager } from "./space-manager.js";
 
@@ -91,6 +91,47 @@ function setup(opts?: { targets?: CdpPageTarget[]; reuseSelectedTarget?: boolean
   });
   return { sm, fakeCdp, runtime, ensureSession };
 }
+
+test("runtime carries connection ownership through CDP policy, replies and send errors", async () => {
+  let incoming: (text: string) => void;
+  const sent: any[] = [];
+  const cdp = createCdpBridge({
+    send(text) { sent.push(JSON.parse(text)); },
+    onMessage(handler) { incoming = handler; },
+  });
+  const sm = new SpaceManager();
+  const activated: string[] = [];
+  const runtime = createEgoRuntime({ spaceManager: sm, getCdp: () => cdp,
+    ensureSession: async () => "session", activateVisibleTarget: async (id) => { activated.push(id); },
+  });
+  const broadcast: any[] = [];
+  const replies: any[] = [];
+  const errors: any[] = [];
+  const context = { cdpOwner: { signal: new AbortController().signal,
+    onMessage: (message: any) => replies.push(message) }, onEvent: (event: any) => errors.push(event) };
+  runtime.onEvent((event) => broadcast.push(event));
+  runtime.attachCdpForwarding();
+  try {
+    sm.use(1); // User control still blocks page-domain commands.
+    await runtime.handle("ego.sendCDPMessage", { payload: JSON.stringify({ id: 1, method: "Runtime.evaluate" }) }, context);
+    assert.equal(sent.length, 0);
+    assert.equal(errors.at(-1).params.error_code, "EGO_TASK_SPACE_USER_IN_CONTROL");
+    await runtime.handle("ego.sendCDPMessage", { payload: "not JSON" }, context);
+    assert.equal(errors.at(-1).params.error_code, "EGO_INVALID_ARGUMENT");
+    assert.deepEqual(broadcast, []);
+    await runtime.handle("ego.sendCDPMessage", { payload: JSON.stringify({ id: 1,
+      method: "Target.activateTarget", params: { targetId: "visible-target" } }) }, context);
+    assert.deepEqual(activated, ["visible-target"]);
+    incoming(JSON.stringify({ id: sent.at(-1).id, result: { success: true } }));
+    assert.deepEqual(replies, [{ id: 1, result: { success: true } }]);
+    assert.deepEqual(broadcast, []);
+    incoming(JSON.stringify({ method: "Target.targetCreated", params: { targetId: "event" } }));
+    assert.equal(broadcast.length, 1);
+    assert.equal(JSON.parse(broadcast[0].params.payload).method, "Target.targetCreated");
+  } finally {
+    await cdp.close();
+  }
+});
 
 test("snapshot rejects under user control", async () => {
   const { sm, fakeCdp, runtime } = setup();

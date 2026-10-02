@@ -1,5 +1,7 @@
 /* Vendored clean-room conversation model. See ../ATTRIBUTION.md. */
 
+import type { CodeModeDetails } from './codemode';
+
 export type Id = string;
 
 export type RunPhase = 'idle' | 'sending' | 'responding' | 'stopping' | 'error';
@@ -23,6 +25,10 @@ export interface ToolCallBlock {
   input?: string;
   output?: string;
   status: ToolStatus;
+  /** Native Pi codemode receipt; nested calls stay inside their outer Tool row. */
+  codeMode?: CodeModeDetails;
+  /** A completed dispatch receipt assigns work; it does not complete the task. */
+  receiptKind?: 'dispatch';
   /** Transport timeout is not proof that an already-sent operation failed. */
   executionOutcome?: 'applied' | 'unknown' | 'not_started';
   startedAt?: number;

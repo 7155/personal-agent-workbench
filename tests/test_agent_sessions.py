@@ -191,6 +191,62 @@ class AgentSessionStoreTests(unittest.TestCase):
         self.assertNotIn("runtimeBinding", item)
         self.assertNotIn("allowedTools", item)
 
+    def test_public_codemode_projection_is_verified_and_survives_reload(self) -> None:
+        session = self.store.create(title="codemode projection")
+        session_id = str(session["id"])
+        bound = self.store.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-codemode",
+            metadata={
+                "codemodeAvailable": True,
+                "codemodeMode": "on",
+                "privateHostDetail": "must not be projected",
+            },
+        )
+        self.assertEqual(bound["codemodeMode"], "on")
+        self.assertEqual(bound["runtimeBinding"]["codemodeMode"], "on")
+        self.assertNotIn("privateHostDetail", bound["runtimeBinding"])
+        self.assertEqual(self.store.list()[0]["codemodeMode"], "on")
+        self.assertEqual(
+            self.store.list_page(projection_only=True)["items"][0]["codemodeMode"],
+            "on",
+        )
+
+        generation = int(self.store.runtime_binding(session_id)["generation"])
+        updated = self.store.update_runtime_binding_metadata(
+            session_id,
+            {"codemodeAvailable": True, "codemodeMode": "only"},
+            expected_generation=generation,
+            expected_external_session_id="pi-codemode",
+            expected_transcript_ref="",
+            expected_branch_anchor="",
+        )
+        self.assertEqual(updated["generation"], generation)
+        self.assertEqual(self.store.get(session_id)["codemodeMode"], "only")
+
+        reloaded = AgentSessionStore(self.db_path)
+        reloaded.initialize()
+        self.addCleanup(reloaded.close)
+        self.assertEqual(reloaded.get(session_id)["codemodeMode"], "only")
+
+        unsupported = reloaded.update_runtime_binding_metadata(
+            session_id,
+            {"codemodeAvailable": False, "codemodeMode": "only"},
+            expected_generation=generation,
+            expected_external_session_id="pi-codemode",
+            expected_transcript_ref="",
+            expected_branch_anchor="",
+        )
+        self.assertEqual(unsupported["generation"], generation)
+        self.assertNotIn("codemodeMode", reloaded.get(session_id))
+        self.assertNotIn("codemodeMode", reloaded.list()[0])
+        self.assertNotIn(
+            "codemodeMode",
+            reloaded.list_page(projection_only=True)["items"][0],
+        )
+
     def test_evaluation_snapshot_is_a_visible_read_only_session_kind(self) -> None:
         snapshot = self.store.create(
             title="EnterpriseOps Validation · Task 1",
@@ -290,7 +346,7 @@ class AgentSessionStoreTests(unittest.TestCase):
         self.assertEqual(session["title"], "输入助手 今天")
         self.assertEqual(session["mode"], "assistant")
         self.assertEqual(session["roleId"], "companion-future-v1")
-        self.assertEqual(session["modelProfile"], "openai-codex/gpt-5.6-sol")
+        self.assertEqual(session["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(session["thinkingLevel"], "max")
         self.assertEqual(session["executionMode"], "per_action")
         self.assertFalse(session["workspaceScopeGranted"])
@@ -365,6 +421,55 @@ class AgentSessionStoreTests(unittest.TestCase):
         self.assertEqual(deleted["id"], session_id)
         with self.assertRaises(AgentSessionNotFound):
             self.store.get(session_id)
+
+    def test_branch_cursor_advances_without_rotating_runtime_generation(self) -> None:
+        session = self.store.create(title="branch cursor", created_at_ms=100)
+        session_id = str(session["id"])
+        self.store.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-branch-cursor",
+            transcript_ref="/managed/sessions/branch-cursor.jsonl",
+            branch_anchor="old-settlement",
+            binding_state="active",
+            metadata={"resourceSnapshot": {"skillPolicy": "all_enabled", "skillRefs": []}},
+            message_count=2,
+            updated_at_ms=200,
+        )
+
+        before = self.store.runtime_binding(session_id)
+        assert before is not None
+        advanced = self.store.advance_runtime_branch_cursor(
+            session_id,
+            branch_anchor="new-settlement",
+            expected_generation=int(before["generation"]),
+            expected_external_session_id=str(before["externalSessionId"]),
+            expected_transcript_ref=str(before["transcriptRef"]),
+            expected_branch_anchor=str(before["branchAnchor"]),
+            updated_at_ms=300,
+        )
+
+        self.assertEqual(advanced["branchAnchor"], "new-settlement")
+        self.assertEqual(advanced["generation"], before["generation"])
+        self.assertEqual(advanced["state"], before["state"])
+        self.assertEqual(advanced["metadata"], before["metadata"])
+        self.assertEqual(advanced["createdAtMs"], before["createdAtMs"])
+        self.assertEqual(advanced["updatedAtMs"], 300)
+        with self.assertRaisesRegex(ValueError, "precondition changed"):
+            self.store.advance_runtime_branch_cursor(
+                session_id,
+                branch_anchor="ignored",
+                expected_generation=int(before["generation"]),
+                expected_external_session_id=str(before["externalSessionId"]),
+                expected_transcript_ref=str(before["transcriptRef"]),
+                expected_branch_anchor=str(before["branchAnchor"]),
+            )
+
+        current = self.store.runtime_binding(session_id)
+        assert current is not None
+        self.assertEqual(current["branchAnchor"], "new-settlement")
+        self.assertEqual(current["generation"], before["generation"])
 
     def test_search_history_returns_bounded_navigation_anchors_only(self) -> None:
         current = self.store.create(title="当前 Session", created_at_ms=100)

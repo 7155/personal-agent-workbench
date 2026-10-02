@@ -10,6 +10,42 @@ afterEach(() => {
 });
 
 describe('Agent live store snapshot hydration', () => {
+  it('requires the reset owner and preserves only unresolved local admissions across a reset', () => {
+    const store = useAgentLiveStore.getState();
+    store.hydrateSnapshot(sessionId, {
+      messages: [message('old', 'assistant', 'old-turn', 'old epoch')],
+      liveEvents: [], lastSequence: 10, resumeToken: `${sessionId}:10`, status: 'idle',
+    });
+    store.appendOptimistic(sessionId, { clientMessageId: 'pending', text: 'not yet confirmed', nowMs: 11 });
+    store.applyEvents(sessionId, [{
+      ...event(6, '', 'snapshot_required', { reason: 'event_replay_gap' }),
+      eventId: `${sessionId}:snapshot-required:5`, resumeToken: `${sessionId}:snapshot-required:5`,
+    }]);
+    const before = useAgentLiveStore.getState().projections[sessionId];
+    const replacement: AgentSnapshot = {
+      messages: [], liveEvents: [], lastSequence: 5, resumeToken: `${sessionId}:5`, status: 'idle',
+    };
+    expect(store.hydrateSnapshot(sessionId, replacement)).toBe(false);
+    expect(store.hydrateSnapshot(sessionId, { ...replacement, lastSequence: 20 })).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toBe(before);
+    expect(store.hydrateSnapshot(sessionId, replacement, { recoveryCursor: 5 })).toBe(true);
+    const after = useAgentLiveStore.getState().projections[sessionId];
+    expect(after).toMatchObject({ lastSequence: 5, needsSnapshot: false });
+    expect(after.messagesById.old).toBeUndefined();
+    expect(after.messagesById[after.optimisticByClientMessageId.pending]?.blocks[0]?.data.text).toBe('not yet confirmed');
+    expect(after.recoveryCursor).toBeUndefined();
+  });
+
+  it('an ordinary gap or malformed reset identity cannot authorize a lower snapshot', () => {
+    const store = useAgentLiveStore.getState();
+    store.hydrateSnapshot(sessionId, { messages: [], liveEvents: [], lastSequence: 10, resumeToken: `${sessionId}:10` });
+    store.applyEvents(sessionId, [event(6, '', 'snapshot_required', {})]);
+    expect(store.hydrateSnapshot(sessionId, {
+      messages: [], liveEvents: [], lastSequence: 5, resumeToken: `${sessionId}:5`,
+    }, { recoveryCursor: 5 })).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toMatchObject({ lastSequence: 10, needsSnapshot: true });
+  });
+
   it('keeps a newer confirmed projection when reconnect hydration returns an older snapshot', () => {
     const confirmedSnapshot: AgentSnapshot = {
       messages: [],
@@ -35,6 +71,22 @@ describe('Agent live store snapshot hydration', () => {
       resumeToken: `${sessionId}:8`,
       status: 'working',
     });
+  });
+
+  it('imports history arriving behind SSE without rewinding the live turn or cursor', () => {
+    const store = useAgentLiveStore.getState();
+    store.applyEvents(sessionId, [event(1, 'live', 'text_delta', { delta: '正在生成' })]);
+    const current = useAgentLiveStore.getState().projections[sessionId];
+    expect(store.hydrateSnapshot(sessionId, {
+      messages: [message('old', 'assistant', 'old-turn', '旧回答')],
+      liveEvents: [], lastSequence: 0, resumeToken: `${sessionId}:0`, status: 'idle',
+    })).toBe(true);
+    const next = useAgentLiveStore.getState().projections[sessionId];
+    expect(next.messagesById.old).toBeDefined();
+    expect(next.messagesById['live:assistant']).toEqual(current.messagesById['live:assistant']);
+    expect(next.turnsById.live.status).toBe('running');
+    expect(next.status).toBe(current.status);
+    expect(next.lastSequence).toBe(1);
   });
 
   it('does not let an equal-cursor busy snapshot revive a completed live turn', () => {
@@ -66,6 +118,27 @@ describe('Agent live store snapshot hydration', () => {
     expect(after).toBe(terminal);
     expect(after.status).toBe('idle');
     expect(after.turnsById['turn-terminal']?.status).toBe('completed');
+  });
+
+  it('retains dozens of loaded tool receipts when a nonempty recent window rolls forward', () => {
+    const store = useAgentLiveStore.getState();
+    const tools = Array.from({ length: 40 }, (_, i) => event(i + 1, 'history', 'tool_finished', {
+      toolCallId: `call-${i}`, toolName: 'read', publicResult: { summary: `result-${i}` },
+    }));
+    store.hydrateSnapshot(sessionId, {
+      messages: [message('old', 'assistant', 'history', '已读取')],
+      liveEvents: tools, lastSequence: 40, resumeToken: `${sessionId}:40`, status: 'idle',
+    });
+    const ids = [...useAgentLiveStore.getState().projections[sessionId].activityOrder];
+    expect(ids).toHaveLength(40);
+    store.hydrateSnapshot(sessionId, {
+      messages: [message('new', 'user', 'next', '继续')], liveEvents: [],
+      lastSequence: 41, resumeToken: `${sessionId}:41`, status: 'busy', snapshotScope: 'recent', partial: true,
+    });
+    const state = useAgentLiveStore.getState().projections[sessionId];
+    expect(state.activityOrder).toEqual(ids);
+    expect(state.messageOrder).toEqual(['old', 'new']);
+    expect(state.turnsById.history.activityIds).toEqual(ids);
   });
 
   it('does not replace durable history with a newer empty full snapshot', () => {

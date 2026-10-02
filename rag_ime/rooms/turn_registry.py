@@ -52,6 +52,7 @@ class RoomTurnRegistry:
         ] = {}
         self.topic_by_room_turn: dict[str, str] = {}
         self.user_priority_sessions: set[str] = set()
+        self._priority_reservations: dict[str, object] = {}
         self.cancelled_turns: dict[str, str] = {}
         self.cancelled_root_by_session: dict[str, str] = {}
         self.cancelled_turn_by_session_turn: dict[
@@ -225,7 +226,7 @@ class RoomTurnRegistry:
     def hold_priority(
         self,
         session_ids: Iterable[str],
-    ) -> None:
+    ) -> object:
         """Mark Sessions user-priority unconditionally.
 
         The direct-Agent entry path proves availability separately before
@@ -234,25 +235,31 @@ class RoomTurnRegistry:
         critical section.
         """
 
+        ordered = list(session_ids)
+        reservation = object()
         with self.lock:
-            self.user_priority_sessions.update(session_ids)
+            self.user_priority_sessions.update(ordered)
+            self._priority_reservations.update({session_id: reservation for session_id in ordered})
+        return reservation
 
     def hold_priority_if_idle(
         self,
         session_ids: Iterable[str],
         *,
         ensure_available: Callable[[str], None] | None = None,
-    ) -> None:
+    ) -> object:
         """Atomically reserve Sessions that are not already engaged.
 
         For each Session, in order: run `ensure_available` (inside the lock,
         so caller pre-checks stay atomic with the reservation), then reject
         with `RoomSessionBusyError` if the Session holds priority, a pending
         turn or a registered turn. Only after every Session passes is the
-        whole set marked priority -- a failure reserves nothing.
+        whole set marked priority -- a failure reserves nothing. The returned
+        opaque identity lets delayed cleanup release only this acquisition.
         """
 
         ordered = list(session_ids)
+        reservation = object()
         with self.lock:
             for session_id in ordered:
                 if ensure_available is not None:
@@ -267,22 +274,35 @@ class RoomTurnRegistry:
                 ):
                     raise RoomSessionBusyError(session_id)
             self.user_priority_sessions.update(ordered)
+            self._priority_reservations.update({session_id: reservation for session_id in ordered})
+        return reservation
+
+    def priority_reservations(self, session_ids: Iterable[str]) -> dict[str, object]:
+        """Snapshot claims before cancellation performs fallible/async work."""
+        with self.lock:
+            return {session_id: self._priority_reservations[session_id] for session_id in session_ids
+                    if session_id in self._priority_reservations}
 
     def release_priority(
         self,
         session_ids: Iterable[str],
+        *,
+        reservation: object | None = None,
     ) -> None:
         with self.lock:
-            self.user_priority_sessions.difference_update(
-                session_ids
-            )
+            for session_id in session_ids:
+                if reservation is not None and self._priority_reservations.get(session_id) is not reservation:
+                    continue
+                self.user_priority_sessions.discard(session_id)
+                self._priority_reservations.pop(session_id, None)
 
     def release_priority_session(
         self,
         session_id: str,
+        *,
+        reservation: object | None = None,
     ) -> None:
-        with self.lock:
-            self.user_priority_sessions.discard(session_id)
+        self.release_priority((session_id,), reservation=reservation)
 
     def session_turn_active(self, session_id: str) -> bool:
         """Whether a Session has a pending or registered Room turn.

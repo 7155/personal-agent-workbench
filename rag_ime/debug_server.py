@@ -15,6 +15,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
@@ -72,6 +74,7 @@ from .agent_routes import (
 )
 from .agent_tool_artifacts import AgentToolArtifactProjector
 from .agent_tools import ControlToolGateway
+from .agent_gateway_requests import GatewayRequestConflict, GatewayRequestUnresolved
 from .agent_workspace import WorkspaceHarnessError, WorkspaceSnapshotError
 from .adapter import InputMethodAdapter, SuggestionRequest
 from .assistant_overlay import build_assistant_overlay_payload, build_candidate_panel_payload
@@ -270,6 +273,9 @@ from .voice_control import (
 )
 
 
+_AGENT_GATEWAY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 _MAX_MANUAL_CURATION_PREPARE_BATCHES = 8
 # A foreground "整理" action is still bounded.  Keeping this separate from
 # the model's per-batch source limit prevents one click from holding the
@@ -308,6 +314,47 @@ def _host_is_loopback(host: str) -> bool:
         return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
         return False
+
+
+def _agent_gateway_url(value: object) -> str:
+    """Return the configured loopback Agent Gateway endpoint.
+
+    The passive 8766 Sidecar may read the shared database, but it cannot
+    answer Pi-owned Jev projections from its process-local runtime state.  A
+    sidecar proxy therefore accepts only a loopback gateway target, keeping
+    this owner handoff from becoming a general outbound HTTP proxy.
+    """
+
+    default = "http://127.0.0.1:8768"
+    raw = str(value or "").strip().rstrip("/")
+    if not raw:
+        return default
+    parsed = urlparse(raw)
+    try:
+        hostname = parsed.hostname or ""
+        parsed.port
+    except ValueError:
+        return default
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not _host_is_loopback(hostname)
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        return default
+    return raw
+
+
+def _proxy_http_status(value: object) -> HTTPStatus:
+    """Keep an upstream status inside the stdlib HTTP status enum."""
+
+    try:
+        return HTTPStatus(int(value))
+    except (TypeError, ValueError):
+        return HTTPStatus.BAD_GATEWAY
 
 
 def _origin_matches_host(origin: str, host_header: str) -> bool:
@@ -461,6 +508,7 @@ class DebugServerConfig:
     knowledge_control: object | None = None
     memory_projection_worker_enabled: bool | None = None
     memory_projection_poll_interval_s: float | None = None
+    close_core_on_close: bool = True
 
 
 @dataclass
@@ -538,6 +586,9 @@ class DebugImeService:
             and _bool(os.environ.get("RAG_IME_AGENT_GATEWAY_ENABLED"), default=False)
         )
         self._agent_runtime_execution_owner = not gateway_owns_agent_runtime
+        self._agent_gateway_url = _agent_gateway_url(
+            os.environ.get("RAG_IME_AGENT_GATEWAY_URL", "http://127.0.0.1:8768")
+        )
         self._agent_managed_by_settings = (
             config.agent_service is None
             and self._agent_runtime_execution_owner
@@ -782,6 +833,7 @@ class DebugImeService:
             },
         )
         self.agent.bind_approval_executor(self.agent_tools.apply_approval)
+        self.agent.bind_workspace_command_cancellation(self.agent_tools.workspace_commands.request_cancel)
         self.agent_tools.bind_auto_approval_executor(self.agent.auto_approve_pending)
         self.agent.bind_memory_maintenance_probe(self.agent_memory_maintenance_status)
         self.agent.bind_tool_manifest_provider(self.agent_tools.runtime_manifests)
@@ -852,7 +904,7 @@ class DebugImeService:
             except Exception:
                 pass
         resources = (
-            self.core,
+            self.core if self.config.core is None or self.config.close_core_on_close else None,
             self.settings_store,
             self.system_terminal,
             self.memory_maintenance_jobs,
@@ -9021,6 +9073,8 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
             )
             return
         if agent_room_id and room_action == "jev":
+            if self._proxy_jev_to_agent_gateway(method="GET", parsed=parsed):
+                return
             self._write_json(HTTPStatus.OK, self.service.agent.jev_workspace(
                 agent_room_id, str(query.get("graphId", [""])[0])))
             return
@@ -9130,9 +9184,8 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path == "/api/agent/role-book":
-            self._write_json(
-                HTTPStatus.OK,
-                self.service.agent_role_book_control.catalog(
+            try:
+                response = self.service.agent_role_book_control.catalog(
                     role_id=_query_first(query, "roleId"),
                     role_version=_query_first(query, "roleVersion"),
                     limit=_bounded_int(
@@ -9141,8 +9194,16 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                         minimum=1,
                         maximum=100,
                     ),
-                ),
-            )
+                )
+            except ValueError as exc:
+                if str(exc) != "role book does not exist":
+                    raise
+                self._write_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"ok": False, "error": "role book not found"},
+                )
+                return
+            self._write_json(HTTPStatus.OK, response)
             return
         if parsed.path == "/api/agent/personal-context/observability":
             self._write_json(
@@ -9621,6 +9682,18 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                     return
                 try:
                     result = self.service.agent_tools.execute(self._read_json())
+                except (GatewayRequestConflict, GatewayRequestUnresolved) as exc:
+                    self._write_json(
+                        HTTPStatus.CONFLICT,
+                        {
+                            "schemaVersion": "rag-ime.agent-tool-error.v1",
+                            "ok": False,
+                            "error": str(exc),
+                            "errorCode": exc.error_code,
+                            "retryable": False,
+                        },
+                    )
+                    return
                 except WorkspaceSnapshotError as exc:
                     self._write_json(
                         HTTPStatus.CONFLICT,
@@ -10236,6 +10309,14 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                         context_item_id,
                     ),
                 )
+            elif background_job_session_id and background_job_action == "start":
+                self._write_json(
+                    HTTPStatus.OK,
+                    self.service.agent_tools.start_project_quick_action(
+                        background_job_session_id,
+                        payload,
+                    ),
+                )
             elif (
                 background_job_session_id
                 and background_job_id
@@ -10359,6 +10440,12 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                     ),
                 )
             elif agent_room_id and room_action == "jev":
+                if self._proxy_jev_to_agent_gateway(
+                    method="POST",
+                    parsed=parsed,
+                    body=getattr(self, "_request_body_bytes", None),
+                ):
+                    return
                 self.service.require_agent_runtime_execution_owner()
                 self._write_json(HTTPStatus.OK, self.service.agent.jev_command(agent_room_id, payload))
             elif agent_room_id and room_action == "messages":
@@ -10442,6 +10529,11 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                 self._write_json(
                     HTTPStatus.OK,
                     self.service.agent.select_thinking_level(agent_session_id, payload),
+                )
+            elif agent_session_id and agent_action == "codemode":
+                self._write_json(
+                    HTTPStatus.OK,
+                    self.service.agent.select_codemode_mode(agent_session_id, payload),
                 )
             elif agent_session_id and agent_action == "intercom":
                 self._write_json(
@@ -10969,6 +11061,101 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
             if not expected or provided != expected:
                 return {"schemaVersion": "rag-ime.management-security.v3", "ok": False, "error": "management token required"}
         return None
+
+    def _proxy_jev_to_agent_gateway(
+        self,
+        *,
+        method: str,
+        parsed: Any,
+        body: bytes | None = None,
+    ) -> bool:
+        """Serve a Jev route from the one process that owns Pi execution.
+
+        8766 remains the compatibility endpoint used by the native surfaces,
+        but its Sidecar intentionally has no local Pi turn registry.  Reading
+        a Jev projection there would therefore turn a live Gateway turn into
+        ``unknown``.  Keep this handoff narrow: only a non-owner Sidecar uses
+        it, and the target is the configured loopback 8768 Gateway's existing
+        ``/api`` route.  No command or projection is evaluated locally after
+        this method returns ``True``.
+        """
+
+        if getattr(self.service, "_agent_runtime_execution_owner", True):
+            return False
+        gateway_url = str(
+            getattr(self.service, "_agent_gateway_url", "http://127.0.0.1:8768")
+        ).rstrip("/")
+        target = f"{gateway_url}{parsed.path}"
+        if parsed.query:
+            target = f"{target}?{parsed.query}"
+        headers = {"Accept": "application/json"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        # The Sidecar has already checked the request's Origin against its
+        # own Host.  Do not forward that browser header to :8768: the owner
+        # sees a different Host and would reject a valid :8766 same-origin
+        # request.  The management token, when configured, is the one
+        # authorization credential the owner must receive again.
+        admin_token = self.headers.get("X-RAG-IME-Admin-Token", "")
+        if admin_token:
+            headers["X-RAG-IME-Admin-Token"] = admin_token
+        request = urllib.request.Request(
+            target,
+            data=body,
+            method=method,
+            headers=headers,
+        )
+        try:
+            with _AGENT_GATEWAY_OPENER.open(request, timeout=10.0) as response:
+                status = _proxy_http_status(getattr(response, "status", HTTPStatus.OK))
+                raw = response.read(2_000_001)
+        except urllib.error.HTTPError as exc:
+            status = _proxy_http_status(exc.code)
+            try:
+                raw = exc.read(2_000_001)
+            except OSError:
+                raw = b""
+        except (OSError, urllib.error.URLError, TimeoutError):
+            self._write_json(
+                HTTPStatus.BAD_GATEWAY,
+                {
+                    "schemaVersion": "rag-ime.agent-gateway-proxy.v1",
+                    "ok": False,
+                    "errorCode": "agent_gateway_unavailable",
+                    "error": "Agent Gateway is unavailable",
+                    "retryable": True,
+                },
+            )
+            return True
+        if len(raw) > 2_000_000:
+            self._write_json(
+                HTTPStatus.BAD_GATEWAY,
+                {
+                    "schemaVersion": "rag-ime.agent-gateway-proxy.v1",
+                    "ok": False,
+                    "errorCode": "agent_gateway_response_too_large",
+                    "error": "Agent Gateway response is too large",
+                    "retryable": False,
+                },
+            )
+            return True
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        if not payload:
+            payload = {
+                "schemaVersion": "rag-ime.agent-gateway-proxy.v1",
+                "ok": False,
+                "errorCode": "invalid_agent_gateway_response",
+                "error": "Agent Gateway returned an invalid response",
+                "retryable": True,
+            }
+            status = HTTPStatus.BAD_GATEWAY
+        self._write_json(status, payload)
+        return True
 
     def _knowledge_control(self) -> Any:
         control = self.service.knowledge_control

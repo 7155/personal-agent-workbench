@@ -26,6 +26,7 @@ _TRANSIENT_RUNTIME_EVENT_TYPES = frozenset(
 
 _ROOM_DELTA_MAX_LATENCY_MS = 100
 _ROOM_DELTA_MAX_CHARS = 48
+_RUNTIME_CLASSIFICATION_MAX_CHARS = 80
 
 
 class AgentEventProjectionService:
@@ -206,10 +207,10 @@ class AgentEventProjectionService:
             )
             mapped_type = "participant_activity"
             public_data = {
+                **public_data,
                 "activityKind": "child",
                 "phase": phase,
                 "status": status or phase,
-                "summary": str(event.payload.get("summary") or "")[:500],
             }
         publication: dict[str, object] = dict(
             room_id=str(participant["roomId"]),
@@ -476,6 +477,7 @@ def room_event_projection(
             "toolName",
             "displayName",
             "toolCallId",
+            "parentToolCallId",
             "callId",
             "approvalId",
             "payloadSha256",
@@ -677,6 +679,11 @@ def runtime_event_metrics(
             }
             if tool_name:
                 tool_identity["toolName"] = tool_name
+            parent_tool_call_id = str(
+                payload.get("parentToolCallId") or ""
+            ).strip()[:512]
+            if parent_tool_call_id:
+                tool_identity["parentToolCallId"] = parent_tool_call_id
             metrics["toolIdentity"] = tool_identity
     if event.event_type == "user_input_required":
         # Keep only opaque request identity so a later process can reconcile
@@ -703,6 +710,27 @@ def runtime_event_metrics(
             if state:
                 approval_identity["state"] = state
             metrics["approvalIdentity"] = approval_identity
+    if event.event_type == "turn_failed":
+        failure_kind = _bounded_runtime_classification(
+            payload.get("failureKind")
+        )
+        if failure_kind:
+            metrics["failureKind"] = failure_kind
+        reason_code = _bounded_runtime_classification(
+            payload.get("reasonCode")
+        )
+        if reason_code:
+            metrics["reasonCode"] = reason_code
+        for key in ("hadToolActivity", "retryable"):
+            value = payload.get(key)
+            if isinstance(value, bool):
+                metrics[key] = value
+        exit_code = payload.get("exitCode")
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            metrics["exitCode"] = max(
+                -2_147_483_648,
+                min(2_147_483_647, exit_code),
+            )
     duration = payload.get("durationMs")
     if (
         isinstance(duration, (int, float))
@@ -751,6 +779,25 @@ def _event_summary(event: AgentEventEnvelope) -> str:
         or event.payload.get("label")
         or ""
     )
+
+
+def _bounded_runtime_classification(value: object) -> str:
+    """Keep one typed, opaque runtime classification in durable metrics."""
+
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if (
+        not value
+        or len(value) > _RUNTIME_CLASSIFICATION_MAX_CHARS
+        or not value.isascii()
+        or not all(
+            character.isalnum() or character in "_-"
+            for character in value
+        )
+    ):
+        return ""
+    return value
 
 
 def _public_room_message(

@@ -133,6 +133,8 @@ export interface RoomTurnProjection {
   abortedDispatchIds?: string[];
   dispatchParticipantIds?: Record<string, string>;
   rootTerminalAtMs?: number;
+  /** Exact publication named by the canonical Root terminal receipt. */
+  finalizationPostId?: string;
   createdAtMs: number;
   updatedAtMs: number;
   failure?: string;
@@ -378,6 +380,7 @@ export function reduceRoomEvent(
           : 'completed',
         event.createdAtMs,
       );
+      recordRootFinalization(next, event, payload);
       break;
     case 'turn_failed':
       {
@@ -392,6 +395,7 @@ export function reduceRoomEvent(
           event.createdAtMs,
           failure,
         );
+        recordRootFinalization(next, event, payload);
         upsertActivity(next, event, payload, 'failed');
         break;
       }
@@ -484,6 +488,14 @@ export function appendOptimisticRoomMessage(
 ): RoomProjectionState {
   if (!input.clientMessageId.trim()) throw new TypeError('clientMessageId must not be empty');
   if (state.optimisticByClientMessageId[input.clientMessageId]) return state;
+  // SSE can commit this input before a lost HTTP acknowledgement is retried.
+  // That lookup must not manufacture another queued turn for the same send.
+  if (Object.values(state.messagesById).some((message) => (
+    message.roomId === state.roomId
+    && message.role === 'user'
+    && message.projectionKind !== 'optimistic'
+    && message.clientMessageId === input.clientMessageId
+  ))) return state;
   const next = cloneState(state);
   const id = `local-room:${input.clientMessageId}`;
   const requestedAnswerToPostId = text(input.answerToPostId);
@@ -528,6 +540,29 @@ export function appendOptimisticRoomMessage(
   next.optimisticByClientMessageId[input.clientMessageId] = id;
   attachMessage(next, message);
   if (!answerToPostId) next.turnsById[turnId].status = 'queued';
+  return next;
+}
+
+/** A validated old HTTP user receipt can resolve its exact local placeholder
+ * after canonical history has been trimmed. Do not replay its old Root or
+ * advance the cursor; the acknowledgement owns only this presentation copy. */
+export function reconcileDuplicateRoomUserAcknowledgement(
+  state: RoomProjectionState,
+  event: UiRoomEvent,
+): RoomProjectionState {
+  if (event.roomId !== state.roomId || event.eventType !== 'user_message'
+    || event.sequence <= 0 || event.sequence > state.lastSequence) return state;
+  const clientMessageId = text(publicRoomPayload(event.payload).clientMessageId);
+  const messageId = state.optimisticByClientMessageId[clientMessageId];
+  const message = messageId ? state.messagesById[messageId] : undefined;
+  if (!messageId || !message || message.id !== messageId || message.roomId !== event.roomId
+    || message.clientMessageId !== clientMessageId || message.role !== 'user'
+    || message.projectionKind !== 'optimistic') return state;
+  const next = cloneState(state);
+  delete next.messagesById[messageId];
+  delete next.optimisticByClientMessageId[clientMessageId];
+  next.messageOrder = next.messageOrder.filter((id) => id !== messageId);
+  detachMessage(next, message);
   return next;
 }
 
@@ -600,7 +635,7 @@ export function selectRoomParticipantPublicProgress(
       dispatchId: text(activity.payload.dispatchId),
       kind: roomParticipantProgressKind(activity.kind, sourceEventType, activityKind),
       status: activity.status,
-      summary: roomParticipantProgressSummary(activity.summary, sourceEventType, activity.kind),
+      summary: roomActivityPublicSummary(activity),
       data: activity.payload,
       updatedAtMs: activity.updatedAtMs ?? activity.createdAtMs,
     });
@@ -958,7 +993,9 @@ export function abortRoomTurn(
   turnId: string,
   nowMs: number,
 ): RoomProjectionState {
-  if (!state.turnsById[turnId]) return state;
+  const turn = state.turnsById[turnId];
+  // A delayed HTTP cancellation receipt cannot replace an observed terminal.
+  if (!turn || (turn.status !== 'queued' && turn.status !== 'running')) return state;
   const next = cloneState(state);
   completeTurn(next, turnId, 'aborted', nowMs);
   return next;
@@ -2079,6 +2116,22 @@ function ensureTurn(
   return turn;
 }
 
+function recordRootFinalization(
+  state: RoomProjectionState,
+  event: UiRoomEvent,
+  payload: Record<string, unknown>,
+): void {
+  const finalizationId = text(payload.finalizationId);
+  const rootId = text(payload.rootId) || event.turnId;
+  if (
+    !finalizationId || rootId !== event.turnId
+    || event.participantId || event.sourceSessionId || text(payload.dispatchId)
+  ) return;
+  const turn = state.turnsById[rootId];
+  if (turn?.rootTerminalAtMs !== event.createdAtMs) return;
+  turn.finalizationPostId = finalizationId;
+}
+
 function completeParticipantTurn(
   state: RoomProjectionState,
   event: Pick<UiRoomEvent, 'turnId' | 'participantId'>,
@@ -2298,7 +2351,9 @@ function completeTurn(
   settleTurnActivities(state, turn, status, nowMs);
   for (const messageId of turn.messageIds) {
     const message = state.messagesById[messageId];
-    if (!message || message.role === 'user' || message.status === 'completed') continue;
+    // A Root terminal settles only unfinished messages. Earlier dispatch
+    // outcomes keep their status and exact completion timestamp.
+    if (!message || message.role === 'user' || ['completed', 'failed', 'aborted'].includes(message.status)) continue;
     state.messagesById[messageId] = {
       ...message,
       status: status === 'completed' ? 'completed' : status,
@@ -2584,17 +2639,15 @@ function roomParticipantProgressKind(
   return 'activity';
 }
 
-function roomParticipantProgressSummary(
-  value: string,
-  sourceEventType: string,
-  eventKind: string,
-): string {
-  const summary = value.trim();
+/** Display fallback for wire enums; the stored activity remains original evidence. */
+export function roomActivityPublicSummary(activity: RoomActivityProjection): string {
+  const sourceEventType = text(activity.payload.sourceEventType);
+  const eventKind = activity.kind;
+  const summary = activity.summary.trim();
   if (
     summary
     && summary !== sourceEventType
     && summary !== eventKind
-    && !/\b(?:participant|route|tool|turn)_[a-z_]+\b/iu.test(summary)
   ) return summary;
   if (sourceEventType === 'reasoning_summary') return '工作摘要已更新';
   if (['current_progress', 'progress'].includes(sourceEventType)) return '工作进度已更新';

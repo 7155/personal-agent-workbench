@@ -16,9 +16,16 @@ from rag_ime.trace_runtime import EvidenceRef, build_trace_envelope, make_span
 class VerticalAgentHarnessTests(unittest.TestCase):
     def test_builtin_eval_catalog_is_bounded_and_contains_no_fixture_details(self) -> None:
         catalog = list_builtin_eval_suites()
+        by_id = {item["suiteId"]: item for item in catalog}
+        self.assertEqual(set(by_id), {"earth-research", "sgg", "zhanggui-wenshu"})
+        self.assertEqual(by_id["earth-research"], {
+            "suiteId": "earth-research", "suiteRevision": "source-grounding-v1",
+            "displayName": "Earth Agent 来源使用验证（非选址计算验收）", "fixtureCount": 1,
+            "capabilities": ["eval.ground_truth", "memory.recall", "rag.retrieval", "sandbox.self_test", "trace.emit"],
+        })
 
         self.assertEqual(
-            catalog,
+            [by_id[suite_id] for suite_id in ("sgg", "zhanggui-wenshu")],
             [
                 {
                     "suiteId": "sgg",
@@ -76,7 +83,7 @@ class VerticalAgentHarnessTests(unittest.TestCase):
 
     def test_builtin_sgg_and_zhanggui_manifests_validate(self) -> None:
         manifests = load_builtin_manifests()
-        self.assertEqual(set(manifests), {"sgg", "zhanggui-wenshu"})
+        self.assertEqual(set(manifests), {"earth-research", "sgg", "zhanggui-wenshu"})
         for manifest in manifests.values():
             validate_vertical_manifest(manifest)
             self.assertEqual(manifest["sandbox"]["network"], "blocked")

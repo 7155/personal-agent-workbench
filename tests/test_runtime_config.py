@@ -22,6 +22,7 @@ class RuntimeConfigResolverTests(unittest.TestCase):
         self.store.initialize()
 
     def tearDown(self) -> None:
+        self.store.close()
         self.tmp.cleanup()
 
     def test_current_profile_clamps_legacy_composition_settings_to_rime_only(self) -> None:
@@ -205,7 +206,10 @@ class RuntimeConfigResolverTests(unittest.TestCase):
         self.assertGreater(changed.runtime_revision, first.runtime_revision)
 
         reopened_store = ManagementSettingsStore(self.db_path)
-        reopened = RuntimeConfigResolver(reopened_store, environ=environ).resolve()
+        try:
+            reopened = RuntimeConfigResolver(reopened_store, environ=environ).resolve()
+        finally:
+            reopened_store.close()
         self.assertEqual(reopened.runtime_revision, changed.runtime_revision)
         self.assertEqual(reopened.snapshot_hash, changed.snapshot_hash)
 
@@ -245,7 +249,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        self.service.management.close()
+        self.service.close()
         self.tmp.cleanup()
 
     def test_management_and_rime_response_share_one_runtime_snapshot(self) -> None:
@@ -295,7 +299,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
         update = self.service.settings_update({"interaction.postCommit.maxCallsPer10s": 1})
         changed_revision = int(update["runtimeRevision"])
         self.assertGreater(changed_revision, int(before["runtimeRevision"]))
-        self.service.management.close()
+        self.service.close()
 
         reopened = DebugImeService(DebugServerConfig(db_path=self.db_path, seed_if_empty=False))
         try:
@@ -303,7 +307,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
             self.assertEqual(payload["runtimeRevision"], changed_revision)
             self.assertEqual(payload["settingsRevision"], update["settingsRevision"])
         finally:
-            reopened.management.close()
+            reopened.close()
 
     def test_rime_suggest_applies_post_commit_trigger_settings(self) -> None:
         self.service.settings_update(

@@ -57,6 +57,14 @@ _BUILTIN_VERSION = {
     "sourceExperimentId": "",
     "sourceCandidateRunId": "",
 }
+# Recipe versions are immutable evidence. Keep v1 and the registered candidate
+# byte-compatible; a new default has its own literal, frozen version identity.
+_CURRENT_BUILTIN_VERSION = {
+    **_BUILTIN_VERSION,
+    "versionId": "enterprise-rag.validation.incumbent.v2",
+    "title": "本场景内置默认（GPT-6.1 Sol）",
+    "recipe": {**_VALIDATION_RECIPE, "model": "gpt-6.1-sol"},
+}
 _CANDIDATE_VERSION = {
     "schemaVersion": "rag-ime.agent-lab-scene-recipe-version.v1",
     "sceneId": ENTERPRISE_RAG_VALIDATION_SCENE_ID,
@@ -152,7 +160,7 @@ class AgentLabSceneRecipeStore:
             with self._connection(foreign_keys=True) as conn:
                 version = apply_database_migrations(conn).current_version
                 conn.execute("BEGIN IMMEDIATE")
-                for payload in (_BUILTIN_VERSION, _CANDIDATE_VERSION):
+                for payload in (_BUILTIN_VERSION, _CURRENT_BUILTIN_VERSION, _CANDIDATE_VERSION):
                     encoded = _json(payload)
                     existing = conn.execute(
                         "SELECT payload_json FROM agent_lab_scene_recipe_versions "
@@ -269,7 +277,7 @@ class AgentLabSceneRecipeStore:
                 if latest is None or latest["rollback_revision"] is None:
                     raise AgentLabSceneRecipeUnavailable("no_previous_version", "本场景没有可回滚的上一版。")
                 prior = self._at_revision(conn, scene_id, int(latest["rollback_revision"]))
-                target = self._active_version(conn, scene_id, prior)
+                target = self._active_version(conn, scene_id, prior) if prior else self._initial_version(conn, scene_id)
                 rollback_revision = int(prior["rollback_revision"]) if prior and prior["rollback_revision"] is not None else None
             revision = current_revision + 1
             created_at_ms = int(time.time() * 1000)
@@ -388,14 +396,26 @@ class AgentLabSceneRecipeStore:
         return json.loads(row["payload_json"])
 
     def _active_version(self, conn: sqlite3.Connection, scene_id: str, row: Mapping[str, object] | sqlite3.Row | None) -> dict[str, object]:
-        return self._version(conn, scene_id, str(row["version_id"] if row else _BUILTIN_VERSION["versionId"]))
+        return self._version(conn, scene_id, str(row["version_id"] if row else _CURRENT_BUILTIN_VERSION["versionId"]))
+
+    def _initial_version(self, conn: sqlite3.Connection, scene_id: str, *, fallback_version_id: str = "") -> dict[str, object]:
+        first = conn.execute(
+            "SELECT from_version_id FROM agent_lab_scene_recipe_events WHERE scene_id = ? ORDER BY revision ASC LIMIT 1",
+            (scene_id,),
+        ).fetchone()
+        version_id = str(first["from_version_id"]) if first is not None else fallback_version_id
+        if not version_id:
+            raise RuntimeError("场景 recipe 的初始历史版本引用不存在。")
+        return self._version(conn, scene_id, version_id)
 
     def _state(self, conn: sqlite3.Connection, scene_id: str, latest: Mapping[str, object] | sqlite3.Row | None, candidate: Mapping[str, object]) -> dict[str, object]:
         active = self._active_version(conn, scene_id, latest)
         previous = None
         if latest is not None and latest["rollback_revision"] is not None:
             prior = self._at_revision(conn, scene_id, int(latest["rollback_revision"]))
-            previous = self._active_version(conn, scene_id, prior)
+            previous = self._active_version(conn, scene_id, prior) if prior else self._initial_version(
+                conn, scene_id, fallback_version_id=str(json.loads(str(latest["event_json"]))["fromVersionId"]),
+            )
         candidate = copy.deepcopy(dict(candidate))
         if candidate["available"] and active["versionId"] == _CANDIDATE_VERSION["versionId"]:
             candidate.update(available=False, reasonCode="already_active", reason="本场景已选择这个 recipe。")
@@ -429,7 +449,7 @@ def validate_scene_recipe_binding(value: Mapping[str, object]) -> dict[str, obje
     ):
         raise ValueError("scene recipe binding identity is invalid")
     version = next(
-        (item for item in (_BUILTIN_VERSION, _CANDIDATE_VERSION) if item["versionId"] == value.get("versionId")),
+        (item for item in (_BUILTIN_VERSION, _CURRENT_BUILTIN_VERSION, _CANDIDATE_VERSION) if item["versionId"] == value.get("versionId")),
         None,
     )
     recipe = value.get("recipe")

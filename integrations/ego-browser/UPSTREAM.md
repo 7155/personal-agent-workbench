@@ -39,3 +39,9 @@ For a missing-files repair, the same build entry accepts `--from-built`,
 `--source`, and `--output`; existing output requires explicit `--replace` and
 is replaced only after the staged payload validates. Installing these helper
 files does not require restarting Gateway, Pi, or Sidecar.
+
+PAW's host patch allocates one CDP wire ID sequence for internal requests and
+forwarded scripts, restores script caller IDs on responses, and keeps internal
+responses out of CLI broadcasts. This prevents target-attachment replies from
+being confused with a script's independently numbered page requests; original
+commands, parameters, events, errors, and Chromium ownership remain unchanged.

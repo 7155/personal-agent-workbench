@@ -8,7 +8,7 @@
  * - control and menu surfaces are OPAQUE (hex, no color-mix ... transparent),
  *   so text can never sit on an unknown backdrop;
  * - no backdrop-filter on controls or menus (glass belongs to true chrome:
- *   menu bar, Dock, Launchpad — owned by paw-os-shell-migrated-v1.css);
+ *   menu bar, Dock, Launchpad — owned by paw-os-shell.css);
  * - ink/surface pairs keep WCAG AA contrast, including disabled and the
  *   native <option> popup (color-scheme: light pins the UA popup palette).
  *

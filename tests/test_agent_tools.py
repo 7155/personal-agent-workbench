@@ -28,6 +28,7 @@ from rag_ime.agent_tools import (
 from rag_ime.agent_workspace import WorkspaceHarness, WorkspaceHarnessError
 from rag_ime.contracts.json_schema import validate_contract
 from rag_ime.work_documents import WorkDocumentService
+from tests.sqlite_fixtures import copy_current_database
 
 
 class _Management:
@@ -675,6 +676,8 @@ class _Facade:
 class ControlToolGatewayTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-agent-tools-")
+        self.addCleanup(self.tmp.cleanup)
+        copy_current_database(Path(self.tmp.name) / "rag-ime.sqlite")
         self.previous_support_dir = os.environ.get("RAG_IME_APP_SUPPORT_DIR")
         os.environ["RAG_IME_APP_SUPPORT_DIR"] = str(Path(self.tmp.name) / "support")
         self.store = AgentSessionStore(Path(self.tmp.name) / "rag-ime.sqlite")
@@ -2639,6 +2642,9 @@ class ControlToolGatewayTests(unittest.TestCase):
         self.assertEqual(self.store.agent_goal(session_id)["status"], "active")
 
         room_events.present = True
+        # A changed prerequisite is a new invocation, not a replay of the
+        # earlier admission whose outcome is retained under its original ID.
+        tool_call["toolCallId"] = "tool:terminal-ordering-after-result"
         completed = gateway.execute(tool_call)["result"]
         self.assertEqual(completed["goal"]["status"], "completed")
         self.assertEqual(
@@ -3182,8 +3188,24 @@ class ControlToolGatewayTests(unittest.TestCase):
         collaboration.read_media_resource = lambda *args, **kwargs: (
             {"mimeType": "text/plain"}, b"x" * (40 * 1024 + 1),
         )
-        with self.assertRaisesRegex(ValueError, "exceeds native read limit"):
-            native_read("media://media_abcdefghijkl", lineOffset=1)
+        page = native_read("media://media_abcdefghijkl", lineOffset=1)
+        self.assertEqual(page["lineLayout"], "bounded_segments")
+        self.assertEqual(page["nextLineOffset"], 2)
+        continuation = native_read("media://media_abcdefghijkl", lineOffset=page["nextLineOffset"])
+        self.assertEqual(page["content"] + continuation["content"], "x" * (40 * 1024 + 1))
+        self.assertIsNone(continuation["nextLineOffset"])
+        self.assertEqual(page["resourceRevision"], continuation["resourceRevision"])
+        original = '{"text":"' + "证据🌱" * 20000 + '"}\nnext\n'
+        collaboration.read_media_resource = lambda *args, **kwargs: (
+            {"mimeType": "text/plain"}, original.encode(),
+        )
+        pieces, offset = [], 1
+        while offset is not None:
+            page = native_read("media://media_abcdefghijkl", lineOffset=offset)
+            self.assertLessEqual(page["contentBytes"], 40 * 1024)
+            pieces.append(page["content"])
+            offset = page["nextLineOffset"]
+        self.assertEqual("".join(pieces), original)
 
     def test_workspace_job_starts_only_after_hash_bound_approval_and_exposes_logs(self) -> None:
         workspace = Path(self.tmp.name) / "background-workspace"
@@ -6188,11 +6210,12 @@ class ControlToolGatewayTests(unittest.TestCase):
         return self._tool_call("memory", operation, **args)
 
     def _tool_call(self, tool: str, operation: str, **args):
+        self.tool_call_ordinal = getattr(self, "tool_call_ordinal", 0) + 1
         return {
             "schemaVersion": "rag-ime.agent-tool-call.v1",
             "sessionId": self.session["id"],
             "tool": tool,
-            "toolCallId": "tool:1",
+            "toolCallId": f"tool:{self.tool_call_ordinal}",
             "args": {"op": operation, **args},
         }
 

@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
-import { PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { MockControlTransport } from '@/test/mock-transport';
 import { PawAppBody } from './PawAppsRuntime';
 
@@ -39,7 +38,7 @@ describe('PAWOS App runtime', () => {
       'observability.traceDiagnosticReports.list': { schemaVersion: 'rag-ime.trace-diagnostic-report-list.v1', total: 0, truncated: false, items: [] },
     } });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<ControlTransportProvider transport={transport}><PawOsAppearanceProvider><QueryClientProvider client={client}><PawAppBody appId="trace-agent" initialRoute="/trace-agent" /></QueryClientProvider></PawOsAppearanceProvider></ControlTransportProvider>);
+    render(<ControlTransportProvider transport={transport}><QueryClientProvider client={client}><PawAppBody appId="trace-agent" initialRoute="/trace-agent" /></QueryClientProvider></ControlTransportProvider>);
     expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Trace Agent 应用导航' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '经验库' })).toBeInTheDocument();
@@ -137,11 +136,9 @@ describe('PAWOS App runtime', () => {
 
     render(
       <ControlTransportProvider transport={transport}>
-        <PawOsAppearanceProvider>
-          <QueryClientProvider client={queryClient}>
-            <PawAppBody appId="project-workbench" />
-          </QueryClientProvider>
-        </PawOsAppearanceProvider>
+        <QueryClientProvider client={queryClient}>
+          <PawAppBody appId="project-workbench" />
+        </QueryClientProvider>
       </ControlTransportProvider>,
     );
 
@@ -159,11 +156,9 @@ describe('PAWOS App runtime', () => {
 
     render(
       <ControlTransportProvider transport={transport}>
-        <PawOsAppearanceProvider>
-          <QueryClientProvider client={queryClient}>
-            <PawAppBody appId={'extension:zhanggui-wenshu' as never} />
-          </QueryClientProvider>
-        </PawOsAppearanceProvider>
+        <QueryClientProvider client={queryClient}>
+          <PawAppBody appId={'extension:zhanggui-wenshu' as never} />
+        </QueryClientProvider>
       </ControlTransportProvider>,
     );
 
@@ -181,20 +176,18 @@ describe('PAWOS App runtime', () => {
 
     render(
       <ControlTransportProvider transport={transport}>
-        <PawOsAppearanceProvider>
-          <QueryClientProvider client={queryClient}>
-            <PawAppBody
-              appId={'extension:zhanggui-wenshu' as never}
-              target={{
-                kind: 'package',
-                id: '@paw/zhanggui-wenshu',
-                title: '掌柜问数',
-                version: '0.2.0',
-                resourceCount: 1,
-              }}
-            />
-          </QueryClientProvider>
-        </PawOsAppearanceProvider>
+        <QueryClientProvider client={queryClient}>
+          <PawAppBody
+            appId={'extension:zhanggui-wenshu' as never}
+            target={{
+              kind: 'package',
+              id: '@paw/zhanggui-wenshu',
+              title: '掌柜问数',
+              version: '0.2.0',
+              resourceCount: 1,
+            }}
+          />
+        </QueryClientProvider>
       </ControlTransportProvider>,
     );
 

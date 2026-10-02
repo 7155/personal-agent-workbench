@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -18,6 +18,287 @@ import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 afterEach(cleanup);
 
 describe('PawRoomRoundSheet (UR-170/172)', () => {
+  it('restores an old round and its reading offset after remount without resuming latest follow', () => {
+    localStorage.clear();
+    const { flushFrames, restoreLayout } = mockRoundReadingLayout();
+    try {
+      const tree = () => <PawRoomRoundSheet readingRecoveryKey="room-reading-a" onOpenParticipant={vi.fn()} projection={projectionWithTwoRounds()} room={roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)])} />;
+      const first = render(tree());
+      flushFrames();
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+      flushFrames();
+      fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
+      expect(scroller.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
+      first.unmount();
+      render(tree());
+      flushFrames();
+      const restored = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(restored.scrollTop).toBe(240);
+      expect(restored.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
+      expect(screen.getByRole('button', { name: '回到最新' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '回到最新' }));
+      flushFrames();
+      expect(restored.scrollTop).toBe(1100);
+    } finally {
+      cleanup(); restoreLayout(); localStorage.clear();
+    }
+  });
+  it('isolates Room reading scopes on a live switch and restores only once while new roots arrive', () => {
+    localStorage.clear();
+    const { flushFrames, restoreLayout } = mockRoundReadingLayout();
+    try {
+      const base = roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)]);
+      const tree = (id: string, projection = projectionWithTwoRounds()) => <PawRoomRoundSheet readingRecoveryKey={`reading:${id}`} onOpenParticipant={vi.fn()} projection={projection} room={{ ...base, id }} />;
+      const rendered = render(tree('a'));
+      flushFrames();
+      let scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
+      // Switch while the old scroll save is still queued: cleanup must flush A into A only.
+      rendered.rerender(tree('b'));
+      flushFrames();
+      scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(scroller.scrollTop).toBe(1100);
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      fireEvent.scroll(scroller, { target: { scrollTop: 350 } });
+      rendered.rerender(tree('a'));
+      flushFrames();
+      scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(scroller.scrollTop).toBe(240);
+      // The recovered snapshot must not keep forcing 240 after the reader moves or a root arrives.
+      fireEvent.scroll(scroller, { target: { scrollTop: 300 } });
+      const later = projectionWithTwoRounds();
+      later.turnOrder.push('turn-3');
+      later.turnsById['turn-3'] = { ...later.turnsById['turn-2']!, id: 'turn-3', rootId: 'turn-3', createdAtMs: 8, messageIds: ['user-3'] };
+      later.messagesById['user-3'] = { ...later.messagesById['user-2']!, id: 'user-3', turnId: 'turn-3', text: '第三轮', createdAtMs: 8 };
+      later.messageOrder.push('user-3');
+      rendered.rerender(tree('a', later));
+      flushFrames();
+      expect(scroller.scrollTop).toBe(300);
+      expect(screen.getByRole('button', { name: '有新一轮对话' })).toBeInTheDocument();
+      rendered.rerender(tree('b'));
+      flushFrames();
+      expect(screen.getByRole('region', { name: 'Room 行星任务表' }).scrollTop).toBe(350);
+    } finally { cleanup(); restoreLayout(); localStorage.clear(); }
+  });
+
+  it.each(['wheel-up', 'wheel-down', 'touch', 'page-down'] as const)('waits for complete history and preserves a newer %s reading intent', input => {
+    localStorage.clear();
+    const { flushFrames, restoreLayout } = mockRoundReadingLayout();
+    try {
+      const room = roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)]);
+      const tree = (projection: RoomProjectionState, ready = true) => <PawRoomRoundSheet readingRecoveryKey="history-ready" readingRecoveryReady={ready} onOpenParticipant={vi.fn()} projection={projection} room={room} />;
+      const first = render(tree(projectionWithTwoRounds()));
+      flushFrames();
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+      flushFrames();
+      fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
+      first.unmount();
+      const partial = projectionWithTwoRounds();
+      partial.turnOrder = ['turn-2']; delete partial.turnsById['turn-1'];
+      partial.messageOrder = ['user-2']; delete partial.messagesById['user-1'];
+      const second = render(tree(partial, false));
+      flushFrames();
+      const recovering = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(recovering.scrollTop).toBe(0);
+      second.rerender(tree(projectionWithTwoRounds()));
+      flushFrames();
+      expect(recovering.scrollTop).toBe(240);
+      expect(recovering.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
+      second.unmount();
+      const third = render(tree(partial, false));
+      flushFrames();
+      const reader = screen.getByRole('region', { name: 'Room 行星任务表' });
+      if (input === 'wheel-up' || input === 'wheel-down') fireEvent.wheel(reader, { deltaY: input === 'wheel-up' ? -100 : 100 });
+      else if (input === 'touch') fireEvent.touchMove(reader);
+      else fireEvent.keyDown(reader, { key: 'PageDown' });
+      fireEvent.scroll(reader, { target: { scrollTop: 160 } });
+      third.rerender(tree(projectionWithTwoRounds()));
+      flushFrames();
+      expect(reader.scrollTop).toBe(160);
+    } finally { cleanup(); restoreLayout(); localStorage.clear(); }
+  });
+
+  it('follows latest through layout growth while preserving an explicit history read', async () => {
+    const observers: { notify: () => void; observed: Set<Element>; disconnected: boolean }[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observed = new Set<Element>();
+      disconnected = false;
+      constructor(callback: ResizeObserverCallback) {
+        const instance = this;
+        observers.push({ notify: () => callback([], this as unknown as ResizeObserver), observed: this.observed,
+          get disconnected() { return instance.disconnected; } });
+      }
+      observe(element: Element) { this.observed.add(element); }
+      unobserve(element: Element) { this.observed.delete(element); }
+      disconnect() { this.disconnected = true; }
+    });
+    try {
+      const user = userEvent.setup();
+      const { unmount } = render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithTwoRounds()} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      let contentHeight = 1600;
+      let viewportHeight = 500;
+      let viewportWidth = 700;
+      const latestNavigation = within(screen.getByRole('navigation', { name: '对话轮次' })).getAllByRole('button').at(-1)!;
+      const revealLatestNavigation = vi.fn();
+      Object.defineProperty(latestNavigation, 'scrollIntoView', { value: revealLatestNavigation });
+      let offset = 0;
+      Object.defineProperties(scroller, {
+        scrollHeight: { configurable: true, get: () => contentHeight },
+        clientHeight: { configurable: true, get: () => viewportHeight },
+        clientWidth: { configurable: true, get: () => viewportWidth },
+        scrollTop: { configurable: true, get: () => offset, set: value => { offset = Math.max(0, Math.min(value, contentHeight - viewportHeight)); } },
+        scrollTo: { configurable: true, value: ({ top }: ScrollToOptions) => { scroller.scrollTop = top ?? 0; } },
+      });
+      const resize = () => act(() => {
+        for (const observer of observers) if (!observer.disconnected && observer.observed.has(scroller)) observer.notify();
+      });
+      await waitFor(() => expect(scroller.scrollTop).toBe(1100));
+      fireEvent.scroll(scroller);
+      // Browsers may dispatch a layout-induced scroll before ResizeObserver.
+      revealLatestNavigation.mockClear();
+      viewportWidth = 320;
+      viewportHeight = 350;
+      contentHeight = 2200;
+      fireEvent.scroll(scroller);
+      resize();
+      expect(scroller.scrollTop).toBe(1850);
+      expect(revealLatestNavigation).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('button', { name: '回到最新' })).not.toBeInTheDocument();
+      contentHeight = 2600;
+      fireEvent.wheel(scroller, { deltaY: 100 });
+      resize();
+      expect(scroller.scrollTop).toBe(2250);
+
+      fireEvent.scroll(scroller, { target: { scrollTop: 200 } });
+      contentHeight = 3200;
+      resize();
+      expect(scroller.scrollTop).toBe(200);
+      await user.click(screen.getByRole('button', { name: '回到最新' }));
+      await waitFor(() => expect(scroller.scrollTop).toBe(2850));
+      contentHeight = 3600;
+      resize();
+      expect(scroller.scrollTop).toBe(3250);
+      fireEvent.wheel(scroller, { deltaY: -150 });
+      scroller.scrollTop = 3100;
+      contentHeight = 4000;
+      fireEvent.scroll(scroller);
+      resize();
+      expect(scroller.scrollTop).toBe(3100);
+      expect(screen.getByRole('button', { name: '回到最新' })).toBeInTheDocument();
+      const owned = observers.filter(observer => observer.observed.has(scroller));
+      expect(owned).toHaveLength(1);
+      unmount();
+      expect(owned.every(observer => observer.disconnected)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('cancels a queued latest scroll when the reader moves upward', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++nextId, callback);
+      return nextId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    try {
+      render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithProgress('正在核对')} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      const scrollTo = vi.fn();
+      Object.defineProperties(scroller, { scrollTo: { value: scrollTo }, scrollHeight: { value: 1600 }, clientHeight: { value: 500 } });
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      act(() => { for (const frame of frames.values()) frame(0); frames.clear(); });
+      expect(scrollTo).not.toHaveBeenCalled();
+      fireEvent.scroll(scroller, { target: { scrollTop: 200 } });
+      fireEvent.click(screen.getByRole('button', { name: '回到最新' }));
+      fireEvent.keyDown(scroller, { key: 'PageUp' });
+      act(() => { for (const frame of frames.values()) frame(1); frames.clear(); });
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('presents routing progress without replacing the original activity evidence', () => {
+    const projection = projectionWithProgress('route_decision');
+    projection.activitiesById['activity-earth']!.kind = 'route_decision';
+    projection.activitiesById['activity-earth']!.payload.sourceEventType = 'route_decision';
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    expect(screen.getAllByText('已确认本轮分工').length).toBeGreaterThan(0);
+    expect(screen.queryByText('route_decision')).not.toBeInTheDocument();
+    expect(projection.activitiesById['activity-earth']!.summary).toBe('route_decision');
+  });
+
+  it.each([false, true])('counts both routed planets including the moderator once (unknown lane: %s)', (includeUnknown) => {
+    const room = roomWith([
+      participant('participant-earth', 'session-earth', 0),
+      participant('participant-mars', 'session-mars', 1),
+      participant('participant-venus', 'session-venus', 2),
+    ]);
+    const projection = projectionWithProgress('Earth 已交付');
+    projection.turnsById['turn-1']!.status = 'completed';
+    projection.activitiesById['activity-earth']!.status = 'completed';
+    projection.activitiesById['activity-earth']!.kind = 'route_decision';
+    const routes = [
+      ['route-mars', 'participant-mars', 'session-mars'],
+      ['route-mars-repeat', 'participant-mars', 'session-mars'],
+    ];
+    if (includeUnknown) routes.push(['route-unknown', 'participant-unknown', 'session-unknown']);
+    for (const [id, participantId, sessionId] of routes) {
+      const activity = activityForParticipant(projection.activitiesById['activity-earth']!, id!, participantId!, sessionId!, '已交付');
+      activity.kind = 'route_decision';
+      activity.payload.dispatchId = id;
+      projection.activitiesById[id!] = activity;
+      projection.turnsById['turn-1']!.activityIds.push(id!);
+    }
+    projection.turnsById['turn-1']!.participantIds.push('participant-mars');
+    if (includeUnknown) projection.turnsById['turn-1']!.participantIds.push('participant-unknown');
+    projection.activityOrder = [...projection.turnsById['turn-1']!.activityIds];
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={room} />);
+    expect(screen.getByText('2 颗行星 · 已完成')).toBeInTheDocument();
+    expect(screen.queryByText('3 颗行星 · 已完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('4 颗行星 · 已完成')).not.toBeInTheDocument();
+  });
+
+  it('counts repeated dispatches for one moderator as one planet', () => {
+    const projection = projectionWithProgress('Earth 已交付');
+    projection.turnsById['turn-1']!.status = 'completed';
+    projection.activitiesById['activity-earth']!.status = 'completed';
+    projection.activitiesById['repeat-earth'] = activityForParticipant(
+      projection.activitiesById['activity-earth']!, 'repeat-earth', 'participant-earth', 'session-earth', 'Earth 再次交付',
+    );
+    projection.turnsById['turn-1']!.activityIds.push('repeat-earth');
+    projection.activityOrder = [...projection.turnsById['turn-1']!.activityIds];
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([
+      participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1),
+    ])} />);
+    expect(screen.getByText('1 颗行星 · 已完成')).toBeInTheDocument();
+    expect(screen.queryByText('2 颗行星 · 已完成')).not.toBeInTheDocument();
+  });
+
+  it('shows a stopped explanation for a retained routing enum without changing the evidence', () => {
+    const projection = projectionWithProgress('route_decision');
+    projection.turnsById['turn-1']!.status = 'aborted';
+    projection.activitiesById['activity-earth']!.status = 'aborted';
+    projection.activitiesById['activity-earth']!.kind = 'route_decision';
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    const notice = screen.getByText('本轮已停止').closest('.paw-room-round__notice');
+    expect(notice).toHaveTextContent('本轮执行已停止，已有进展和证据保留。');
+    expect(notice).not.toHaveTextContent('route_decision');
+    expect(projection.activitiesById['activity-earth']!.summary).toBe('route_decision');
+  });
+
+  it('keeps an unknown terminal error readable instead of replacing it with a stop explanation', () => {
+    const projection = projectionWithProgress('runtime_custom_failure: original diagnostic');
+    projection.turnsById['turn-1']!.status = 'failed';
+    projection.activitiesById['activity-earth']!.status = 'failed';
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    expect(screen.getByText('本轮需要处理').closest('.paw-room-round__notice')).toHaveTextContent('runtime_custom_failure: original diagnostic');
+  });
+
   it('surfaces a stopped reason immediately and opens its evidence in place', async () => {
     const user = userEvent.setup();
     const projection = projectionWithProgress('工具连续失败，已停止本轮以避免继续空转');
@@ -186,6 +467,23 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['observer', '查看 Earth 进展', '查看伙伴的公开进展与执行轨迹'],
+    ['room-transcript', '在 Room 中查看 Earth 进展', '在当前 Room 查看伙伴的公开进展与证据'],
+  ] as const)('describes the %s destination without promising a direct conversation', (destination, label, copy) => {
+    const projection = projectionWithProgress('尚未分配');
+    projection.turnsById['turn-1'] = { ...projection.turnsById['turn-1']!, activityIds: [], participantIds: [] };
+    projection.activitiesById = {}; projection.activityOrder = [];
+    const onOpenParticipant = vi.fn();
+    render(<PawRoomRoundSheet participantDestination={destination} onOpenParticipant={onOpenParticipant} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    const starter = screen.getByRole('region', { name: 'Earth 未分配' });
+    expect(starter).toHaveTextContent(copy);
+    expect(starter).not.toHaveTextContent('Grill Me');
+    expect(starter).not.toHaveTextContent('可以直接对话');
+    fireEvent.click(within(starter).getByRole('button', { name: label }));
+    expect(onOpenParticipant).toHaveBeenCalledExactlyOnceWith('participant-earth');
+  });
+
   it('keeps one unassigned planet out of the task table and preserves its Session actions', () => {
     const projection = projectionWithProgress('尚未分配');
     projection.turnsById['turn-1'] = {
@@ -305,7 +603,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(within(table).getAllByRole('row')).toHaveLength(3);
     expect(within(table).queryByText('主控已经汇总当前公开进展')).not.toBeInTheDocument();
     expect(within(table).queryByText('Earth')).not.toBeInTheDocument();
-    expect(screen.getByText('2 颗行星 · 协作中')).toBeInTheDocument();
+    // Two worker rows and one participating moderator remain three planets.
+    expect(screen.getByText('3 颗行星 · 协作中')).toBeInTheDocument();
   });
 
   it('does not create a one-row table when only one worker accompanies the coordinator', () => {
@@ -509,8 +808,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(within(table).queryByText('Earth')).not.toBeInTheDocument();
     expect(within(table).getByText('Mars')).toBeInTheDocument();
     expect(within(table).getByText('Venus')).toBeInTheDocument();
-    expect(screen.getByText('2 颗行星 · 协作中')).toBeInTheDocument();
-    expect(screen.queryByText('3 颗行星 · 协作中')).not.toBeInTheDocument();
+    expect(screen.getByText('3 颗行星 · 协作中')).toBeInTheDocument();
+    expect(screen.queryByText('2 颗行星 · 协作中')).not.toBeInTheDocument();
   });
 
   it('keeps a stopped host report readable while collapsing only the settled collaboration process', async () => {
@@ -752,7 +1051,8 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(screen.queryByRole('log')).not.toBeInTheDocument();
   });
 
-  it('moves an accepted result into a standalone result planet instead of a table row', async () => {
+  it('moves an accepted result into a compact standalone report with full raw details', async () => {
+    const user = userEvent.setup();
     const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
     const running = projectionWithProgress('正在验收功能路径');
     const { rerender } = render(
@@ -795,15 +1095,51 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
 
     const result = await screen.findByRole('region', { name: 'Earth 最终结果' });
     expect(result).toHaveAttribute('data-result-ready', 'true');
+    expect(result).toHaveAttribute('data-report-layout', 'wide');
     expect(result).toHaveTextContent('验收完成');
-    expect(result).toHaveTextContent('最终保留的结论。');
+    expect(within(result).getByText('报告摘要')).toBeVisible();
+    expect(within(result).queryByText('最终保留的结论。')).not.toBeInTheDocument();
     expect(result).not.toHaveAttribute('aria-live');
-    expect(within(result).getByRole('status')).toHaveTextContent('已提交');
-    expect(within(result).getByRole('status')).not.toHaveTextContent('详细验收依据');
+    expect(within(result).getByRole('status')).toHaveTextContent('已完成');
+    expect(within(result).getByText('查看完整汇报与运行证据')).toBeVisible();
+    const details = result.querySelector<HTMLDetailsElement>('details');
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute('open');
+    await user.click(within(result).getByText('查看完整汇报与运行证据'));
+    expect(details).toHaveAttribute('open');
+    expect(within(result).getByText('最终保留的结论。')).toBeVisible();
+    expect(within(result).getByRole('button', { name: '复制完整汇报' })).toBeInTheDocument();
     expect(within(result).getByRole('link', { name: '打开文件 final-result.md' })).toBeInTheDocument();
     expect(within(result).getByRole('button', { name: '打开文件 final-result.md' })).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '收起 Earth 详情' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a failed Room report failed while preserving its complete public text', () => {
+    const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
+    const projection = projectionWithProgress('校验失败，保留完整公开报告');
+    projection.turnsById['turn-1'] = {
+      ...projection.turnsById['turn-1']!,
+      status: 'failed',
+    };
+    projection.activitiesById['activity-earth'] = {
+      ...projection.activitiesById['activity-earth']!,
+      status: 'failed',
+    };
+    appendCoordinatorPost(
+      projection,
+      'result',
+      '校验失败，下面保留实际运行记录。\n\n## 下一步\n\n继续核对真实失败原因。',
+    );
+
+    render(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projection} room={room} />);
+
+    const report = screen.getByRole('region', { name: 'Earth 主控回复' });
+    expect(report).toHaveAttribute('data-state', 'failed');
+    expect(within(report).getByRole('status')).toHaveTextContent('需要关注');
+    expect(within(report).getByRole('heading', { name: '下一步' })).toBeVisible();
+    expect(report).toHaveTextContent('继续核对真实失败原因。');
+    expect(screen.queryByRole('region', { name: 'Earth 最终结果' })).not.toBeInTheDocument();
   });
 
   it('keeps one unfinished collaborator standalone while presenting a submitted planet result separately', async () => {
@@ -1075,10 +1411,11 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       </TooltipProvider>,
     );
 
+    const result = screen.getByRole('region', { name: 'Earth 最终结果' });
+    await user.click(within(result).getByText('查看完整汇报与运行证据'));
     await user.click(screen.getByRole('button', { name: '打开文件 report.md' }));
     expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Freport.md');
 
-    const result = screen.getByRole('region', { name: 'Earth 最终结果' });
     await user.click(within(result).getByRole('link', { name: '打开文件 summary.md' }));
     expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Fsummary.md');
   });
@@ -1126,6 +1463,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     );
 
     const result = screen.getByRole('region', { name: 'Earth 最终结果' });
+    await user.click(within(result).getByText('查看完整汇报与运行证据'));
     expect(within(result).getByRole('button', { name: '打开文件 final-result.md' })).toBeInTheDocument();
     const resultLink = within(result).getByRole('link', { name: '打开文件 final-result.md' });
     await user.click(resultLink);
@@ -1180,6 +1518,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     );
 
     const detail = screen.getByRole('region', { name: 'Earth 最终结果' });
+    await user.click(within(detail).getByText('查看完整汇报与运行证据'));
     expect(within(detail).getByRole('link', { name: '打开文件 report.md' })).toHaveTextContent('报告');
     expect(within(detail).getByText('docs/inline.md').tagName).toBe('CODE');
     expect(within(detail).getByText('docs/fenced.md')).toBeInTheDocument();
@@ -1492,4 +1831,22 @@ function roomWith(participants: RoomParticipant[]): RoomSummary {
     updatedAtMs: 1,
     participants,
   };
+}
+
+function mockRoundReadingLayout() {
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId; });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    const flushFrames = () => act(() => { for (const frame of frames.values()) frame(0); frames.clear(); });
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1600);
+    const viewport = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const scroller = this.closest('.paw-room-rounds') as HTMLElement | null;
+      const top = 100 + (this.dataset.roundId === 'turn-2' ? 600 : 0) - (this.dataset.roundId ? scroller?.scrollTop ?? 0 : 0);
+      return { top, bottom: top + 600, height: 600, left: 0, right: 700, width: 700, x: 0, y: top, toJSON: () => ({}) };
+    });
+    const originalScrollTo = HTMLElement.prototype.scrollTo;
+    HTMLElement.prototype.scrollTo = function (options?: ScrollToOptions | number, y?: number) { this.scrollTop = Math.max(0, Math.min(typeof options === 'number' ? y ?? 0 : options?.top ?? 0, 1100)); };
+    return { flushFrames, restoreLayout: () => { height.mockRestore(); viewport.mockRestore(); rect.mockRestore(); HTMLElement.prototype.scrollTo = originalScrollTo; vi.unstubAllGlobals(); } };
 }

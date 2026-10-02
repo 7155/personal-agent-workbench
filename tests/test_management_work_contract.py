@@ -983,6 +983,7 @@ class ConfigurationSettingsWorkContractTests(unittest.TestCase):
         )
 
     def test_agent_defaults_apply_and_reopen_from_the_sqlite_authority(self) -> None:
+        initial_defaults = ManagementSettingsStore(self.db_path).get_settings()["agent"]["defaults"]
         changes = {"agent.defaults.executionMode": "workspace_managed"}
         preview = self.service.configuration_settings_preview(
             {
@@ -1005,11 +1006,7 @@ class ConfigurationSettingsWorkContractTests(unittest.TestCase):
         validate_contract(applied, "management-work-receipt.v1.json")
         self.assertEqual(
             reopened["agent"]["defaults"],
-            {
-                "modelReference": "openai-codex/gpt-5.6-luna",
-                "thinkingLevel": "max",
-                "executionMode": "workspace_managed",
-            },
+            {**initial_defaults, "executionMode": "workspace_managed"},
         )
 
     def test_settings_apply_rejects_a_preview_staled_by_another_setting_change(self) -> None:

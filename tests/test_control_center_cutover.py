@@ -190,7 +190,8 @@ class ControlCenterCutoverTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("VITE_PAW_FRONTEND=paw-os", build)
+        self.assertIn("FRONTEND_PRODUCT=paw-os", build)
+        self.assertNotIn("VITE_PAW_FRONTEND", build)
         self.assertIn("frontendProduct", build)
         self.assertIn("distTreeDigest", build)
         self.assertIn("rag-ime-control-web-build.json", build)
@@ -200,7 +201,7 @@ class ControlCenterCutoverTests(unittest.TestCase):
             ROOT / "scripts" / "install_agent_gateway_launch_agent.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("VITE_PAW_FRONTEND=paw-os", installer)
+        self.assertNotIn("VITE_PAW_FRONTEND", installer)
         self.assertIn("mktemp", installer)
         self.assertIn("distTreeDigest", installer)
         self.assertIn("os.replace", installer)

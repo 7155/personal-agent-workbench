@@ -18,7 +18,7 @@ RoomPublicMessageProvider: TypeAlias = Callable[
 _ROOM_CONTEXT_OPEN = "<room-context>"
 _ROOM_CONTEXT_CLOSE = "</room-context>"
 _TRANSIENT_CONTEXT_PREFIX = "RAG_IME_TRANSIENT_CONTEXT_V1\n"
-_RECENT_LIVE_EVENT_LIMIT = 48
+_RECENT_LIVE_EVENT_LIMIT = 256
 _RECENT_ROOM_MESSAGE_LIMIT = 12
 _ROOM_USER_TRANSCRIPT_MATCH_WINDOW_MS = 30_000
 _HISTORICAL_HTML_LINK = re.compile(
@@ -188,6 +188,7 @@ class AgentMessageSnapshotService:
             if callable(snapshot_provider)
             else None
         )
+        codemode_mode = _verified_codemode_mode(runtime_snapshot)
         # Inspecting Pi can reconcile an open-but-idle transcript back to idle.
         # Refetch after that boundary so snapshot replay never resurrects a
         # completed turn from the bounded event journal.
@@ -314,6 +315,11 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": telemetry,
             "messageQueue": message_queue,
+            **(
+                {"codemodeMode": codemode_mode}
+                if codemode_mode is not None
+                else {}
+            ),
             "todo": workflow["todo"],
             "goal": workflow["goal"],
             "actGate": workflow["actGate"],
@@ -330,6 +336,7 @@ class AgentMessageSnapshotService:
         """Return the durable recent window without restoring Pi Runtime."""
 
         session = self.sessions.get(session_id)
+        codemode_mode = _verified_codemode_mode(session)
         last_sequence = self.sessions.max_event_sequence(session_id)
         replayed, _gap = self.events.replay(session_id)
         # Streaming text deltas are intentionally in-memory only.  They still
@@ -391,6 +398,11 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": None,
             "messageQueue": None,
+            **(
+                {"codemodeMode": codemode_mode}
+                if codemode_mode is not None
+                else {}
+            ),
             "todo": workflow["todo"],
             "goal": workflow["goal"],
             "actGate": workflow["actGate"],
@@ -424,6 +436,7 @@ class AgentMessageSnapshotService:
             if callable(snapshot_provider)
             else None
         )
+        codemode_mode = _verified_codemode_mode(runtime_snapshot)
         messages = (
             [
                 dict(message)
@@ -506,6 +519,11 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": None,
             "messageQueue": None,
+            **(
+                {"codemodeMode": codemode_mode}
+                if codemode_mode is not None
+                else {}
+            ),
             "todo": workflow["todo"],
             "goal": workflow["goal"],
             "actGate": workflow["actGate"],
@@ -659,7 +677,7 @@ def _project_room_public_messages(
     projected: list[
         tuple[int, int, int, str, dict[str, object]]
     ] = []
-    private_user_copies: list[tuple[int, str, int]] = []
+    private_user_copies: list[tuple[int, str, int, str, tuple[str, ...]]] = []
     for index, message in enumerate(private_messages):
         if _is_managed_room_bootstrap(message):
             continue
@@ -669,7 +687,13 @@ def _project_room_public_messages(
             created_at_ms = _message_created_at_ms(value)
             if text and created_at_ms > 0:
                 private_user_copies.append(
-                    (index, text, created_at_ms)
+                    (
+                        index,
+                        text,
+                        created_at_ms,
+                        str(value.get("clientMessageId") or ""),
+                        _message_attachment_ids(value),
+                    )
                 )
         projected.append(
             (
@@ -688,6 +712,52 @@ def _project_room_public_messages(
         and not isinstance(raw_events, (str, bytes))
         else ()
     )
+
+    # A Room user event is a fast public mirror.  Once the target Session has
+    # been admitted, the route decision gives us the exact Pi admission id.
+    # Pair that binding with the visible input before suppressing the Room
+    # mirror: one root may fan out to planning/execute child prompts whose
+    # text must remain visible as a separate Pi row. The private transcript
+    # keeps the dispatch id, while an exact pair carries the Room alias so a
+    # later full snapshot can replace the mirror instead of appending it.
+    route_dispatches_by_root: dict[str, set[str]] = {}
+    for event in events:
+        if not isinstance(event, Mapping):
+            continue
+        if str(event.get("eventType") or "") != "route_decision":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, Mapping):
+            continue
+        target_session_id = str(
+            payload.get("targetSessionId")
+            or event.get("sourceSessionId")
+            or ""
+        )
+        target_participant_id = str(
+            payload.get("targetParticipantId")
+            or event.get("participantId")
+            or ""
+        )
+        dispatch_id = str(payload.get("dispatchId") or "")
+        if (
+            not dispatch_id
+            or target_session_id != session_id
+            or (
+                target_participant_id
+                and participant_id
+                and target_participant_id != participant_id
+            )
+        ):
+            continue
+        roots = {
+            str(event.get("turnId") or ""),
+            str(payload.get("rootId") or ""),
+        }
+        for root in roots:
+            if root:
+                route_dispatches_by_root.setdefault(root, set()).add(dispatch_id)
+
     seen_event_ids: set[str] = set()
     seen_post_ids: set[str] = set()
     matched_private_user_indexes: set[int] = set()
@@ -699,6 +769,127 @@ def _project_room_public_messages(
         ),
         key=_room_event_order,
     )
+
+    def _dispatch_ids_for_user_event(
+        event: Mapping[str, object],
+        payload: Mapping[str, object],
+    ) -> set[str]:
+        dispatch_ids: set[str] = set()
+        direct_dispatch_id = str(payload.get("dispatchId") or "")
+        if direct_dispatch_id:
+            dispatch_ids.add(direct_dispatch_id)
+        raw_dispatches = payload.get("dispatches")
+        if isinstance(raw_dispatches, Sequence) and not isinstance(
+            raw_dispatches,
+            (str, bytes),
+        ):
+            candidates = [
+                item
+                for item in raw_dispatches
+                if isinstance(item, Mapping)
+                and (
+                    not str(item.get("participantId") or item.get("targetParticipantId") or "")
+                    or str(item.get("participantId") or item.get("targetParticipantId") or "")
+                    == participant_id
+                )
+            ]
+            for item in candidates:
+                dispatch_id = str(item.get("dispatchId") or "")
+                if dispatch_id:
+                    dispatch_ids.add(dispatch_id)
+        for root in (
+            str(event.get("turnId") or ""),
+            str(payload.get("rootId") or ""),
+        ):
+            dispatch_ids.update(route_dispatches_by_root.get(root, set()))
+        return dispatch_ids
+
+    def _room_private_match(
+        *,
+        event: Mapping[str, object],
+        payload: Mapping[str, object],
+        text: str,
+        created_at_ms: int,
+    ) -> tuple[int | None, str]:
+        dispatch_ids = _dispatch_ids_for_user_event(event, payload)
+        identity_candidates = [
+            (private_index, client_message_id)
+            for (
+                private_index,
+                private_text,
+                _private_created_at_ms,
+                client_message_id,
+                private_attachment_ids,
+            )
+            in private_user_copies
+            if (
+                private_index not in matched_private_user_indexes
+                and private_text == text
+                and _room_attachments_match(payload, private_attachment_ids)
+                and client_message_id
+                and client_message_id in dispatch_ids
+            )
+        ]
+        if len(identity_candidates) == 1:
+            return identity_candidates[0]
+        # A route binding disables the legacy text/time fallback.  The exact
+        # dispatch still needs the same visible input above: a Room root can
+        # fan out to planning/execute child prompts with different text.
+        # Preserve both rows until an exact content-and-dispatch pair exists.
+        if dispatch_ids:
+            return None, ""
+
+        # Legacy Room events may have no route metadata.  Keep the old bounded
+        # fallback, but require one unique nearest candidate so a later equal
+        # request is never deleted by an earlier Pi row.
+        fallback_candidates = sorted(
+            (
+                (
+                    private_index,
+                    abs(private_created_at_ms - created_at_ms),
+                )
+                for (
+                    private_index,
+                    private_text,
+                    private_created_at_ms,
+                    _client_message_id,
+                    private_attachment_ids,
+                )
+                in private_user_copies
+                if (
+                    private_index not in matched_private_user_indexes
+                    and private_text == text
+                    and _room_attachments_match(payload, private_attachment_ids)
+                    and 0 <= private_created_at_ms - created_at_ms
+                    <= _ROOM_USER_TRANSCRIPT_MATCH_WINDOW_MS
+                )
+            ),
+            key=lambda candidate: (candidate[1], candidate[0]),
+        )
+        if not fallback_candidates:
+            return None, ""
+        if len(fallback_candidates) > 1 and (
+            fallback_candidates[0][1] == fallback_candidates[1][1]
+        ):
+            return None, ""
+        private_index = fallback_candidates[0][0]
+        client_message_id = next(
+            (
+                candidate_client_message_id
+                for (
+                    candidate_index,
+                    _candidate_text,
+                    _candidate_created_at_ms,
+                    candidate_client_message_id,
+                    _candidate_attachment_ids,
+                )
+                in private_user_copies
+                if candidate_index == private_index
+            ),
+            "",
+        )
+        return private_index, client_message_id
+
     for event in ordered_events:
         event_type = str(event.get("eventType") or "")
         event_id = str(event.get("eventId") or "")
@@ -720,18 +911,11 @@ def _project_room_public_messages(
             if not text:
                 continue
             seen_event_ids.add(event_id)
-            matching_private_index = next(
-                (
-                    private_index
-                    for private_index, private_text, private_created_at_ms
-                    in private_user_copies
-                    if private_index not in matched_private_user_indexes
-                    and private_text == text
-                    and 0
-                    <= private_created_at_ms - created_at_ms
-                    <= _ROOM_USER_TRANSCRIPT_MATCH_WINDOW_MS
-                ),
-                None,
+            matching_private_index, bound_client_message_id = _room_private_match(
+                event=event,
+                payload=payload,
+                text=text,
+                created_at_ms=created_at_ms,
             )
             if matching_private_index is not None:
                 # The Room event is the fast public mirror of the same input
@@ -742,7 +926,24 @@ def _project_room_public_messages(
                 matched_private_user_indexes.add(
                     matching_private_index
                 )
+                room_client_message_id = str(
+                    payload.get("clientMessageId") or ""
+                )
+                if room_client_message_id or event_id:
+                    for projected_index, item in enumerate(projected):
+                        if item[2] != matching_private_index:
+                            continue
+                        projected[projected_index] = (
+                            *item[:4],
+                            _attach_room_message_alias(
+                                item[4],
+                                room_client_message_id=room_client_message_id,
+                                room_event_id=event_id,
+                            ),
+                        )
+                        break
                 continue
+            room_client_message_id = str(payload.get("clientMessageId") or "")
             message = _room_text_message(
                 session_id=session_id,
                 message_id=f"room-event:{event_id}",
@@ -752,9 +953,9 @@ def _project_room_public_messages(
                 created_at_ms=created_at_ms,
                 source_kind="room_event",
                 source_ref=event_id,
-                client_message_id=str(
-                    payload.get("clientMessageId") or ""
-                ),
+                client_message_id=bound_client_message_id or room_client_message_id,
+                room_client_message_id=room_client_message_id,
+                room_event_id=event_id,
             )
             projected.append(
                 (
@@ -871,6 +1072,51 @@ def _message_text(value: Mapping[str, object]) -> str:
     return "\n".join(parts).strip()
 
 
+def _message_attachment_ids(value: Mapping[str, object]) -> tuple[str, ...]:
+    raw_attachments = value.get("attachments")
+    if not isinstance(raw_attachments, Sequence) or isinstance(
+        raw_attachments,
+        (str, bytes),
+    ):
+        return ()
+    return tuple(str(item).strip() for item in raw_attachments if str(item).strip())
+
+
+def _room_attachment_ids(payload: Mapping[str, object]) -> tuple[str, ...] | None:
+    if "attachmentReceipts" in payload:
+        raw_attachments = payload.get("attachmentReceipts")
+    elif "attachmentIds" in payload:
+        raw_attachments = payload.get("attachmentIds")
+    else:
+        return None
+    if not isinstance(raw_attachments, Sequence) or isinstance(
+        raw_attachments,
+        (str, bytes),
+    ):
+        return ()
+    values: list[str] = []
+    for item in raw_attachments:
+        if isinstance(item, Mapping):
+            value = str(item.get("mediaId") or item.get("id") or "").strip()
+        else:
+            value = str(item).strip()
+        if value:
+            values.append(value)
+    return tuple(values)
+
+
+def _room_attachments_match(
+    payload: Mapping[str, object],
+    private_attachment_ids: tuple[str, ...],
+) -> bool:
+    room_attachment_ids = _room_attachment_ids(payload)
+    # A Room event without attachment metadata cannot safely absorb a Pi row
+    # carrying attachments: preserving both rows is safer than losing input.
+    if room_attachment_ids is None:
+        return not private_attachment_ids
+    return room_attachment_ids == private_attachment_ids
+
+
 def _is_managed_room_bootstrap(
     message: Mapping[str, object],
 ) -> bool:
@@ -898,7 +1144,14 @@ def _room_text_message(
     source_kind: str,
     source_ref: str,
     client_message_id: str = "",
+    room_client_message_id: str = "",
+    room_event_id: str = "",
 ) -> dict[str, object]:
+    text_data: dict[str, object] = {"text": text}
+    if room_client_message_id and room_client_message_id != client_message_id:
+        text_data["roomClientMessageId"] = room_client_message_id
+    if room_event_id:
+        text_data["roomEventId"] = room_event_id
     message: dict[str, object] = {
         "schemaVersion": "rag-ime.agent-message.v1",
         "id": message_id,
@@ -912,7 +1165,7 @@ def _room_text_message(
                 "type": "text",
                 "status": "completed",
                 "presentationKind": "markdown",
-                "data": {"text": text},
+                "data": text_data,
                 "source": {
                     "kind": source_kind,
                     "ref": source_ref,
@@ -931,6 +1184,47 @@ def _room_text_message(
     return message
 
 
+def _attach_room_message_alias(
+    message: Mapping[str, object],
+    *,
+    room_client_message_id: str,
+    room_event_id: str,
+) -> dict[str, object]:
+    """Keep the fast Room identity on Pi's canonical transcript row.
+
+    ``clientMessageId`` remains the Session dispatch identity.  The original
+    Room id is a display/reconciliation alias and lives in text-block data so
+    the frontend can carry it from recent snapshots through full history and
+    SSE without changing the public message contract.
+    """
+
+    if not room_client_message_id and not room_event_id:
+        return dict(message)
+    updated = dict(message)
+    blocks = [
+        dict(block)
+        for block in message.get("blocks", [])
+        if isinstance(block, Mapping)
+    ]
+    for index, block in enumerate(blocks):
+        if str(block.get("type") or "") != "text":
+            continue
+        data = block.get("data")
+        if not isinstance(data, Mapping):
+            data = {}
+        updated_data = dict(data)
+        if room_client_message_id:
+            updated_data["roomClientMessageId"] = room_client_message_id
+        if room_event_id:
+            updated_data["roomEventId"] = room_event_id
+        block["data"] = updated_data
+        blocks[index] = block
+        break
+    if blocks:
+        updated["blocks"] = blocks
+    return updated
+
+
 def _mapping_field(
     value: object,
     key: str,
@@ -939,6 +1233,21 @@ def _mapping_field(
         return None
     field = value.get(key)
     return dict(field) if isinstance(field, Mapping) else None
+
+
+def _verified_codemode_mode(value: object) -> str | None:
+    """Project only a valid mode already verified by the owning Runtime."""
+
+    if not isinstance(value, Mapping):
+        return None
+    availability = value.get("codemodeAvailable")
+    if availability is not None and availability is not True:
+        return None
+    raw = value.get("codemodeMode")
+    if not isinstance(raw, str):
+        return None
+    mode = raw.strip().lower()
+    return mode if mode in {"on", "only", "off"} else None
 
 
 def _merge_tool_events(

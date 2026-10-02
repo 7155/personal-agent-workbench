@@ -2,6 +2,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo, type ComponentProps } from 'react';
 import type { AgentSubagentRunV1 } from '@/contracts/generated/agent-subagent-run.v1';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
+import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
 import { RoomCollabTimeline } from '@/features/collab-timeline/RoomCollabTimeline';
 import { usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { RoomSummary } from '@/features/rooms/room-types';
@@ -23,11 +24,13 @@ export function PawRoomLiveFocusOverview({
 }
 
 /** Room timeline with each partner's retained Tool Agent satellites joined in. */
-export function RoomCollabTimelineLive({ roomId, focus, room, projection, active = true, onOpenParticipant }: {
+export function RoomCollabTimelineLive({ roomId, focus, room, projection, graph, active = true, onOpenParticipant, onSelectRoot }: {
   roomId: string;
   focus?: RoomFocusProjection;
   room: RoomSummary;
   projection?: RoomProjectionState;
+  graph?: JevSnapshot | null;
+  onSelectRoot?: (rootId: string) => void;
   active?: boolean;
   onOpenParticipant?: (participantId: string) => void;
 }) {
@@ -35,7 +38,7 @@ export function RoomCollabTimelineLive({ roomId, focus, room, projection, active
   const empty = useMemo<RoomFocusProjection>(() => ({ goal: { title: '', description: '', rootId: '', state: 'idle' }, workItems: [], partners: [], handoffs: [], flow: [], rootEvidence: [], counts: { active: 0, review: 0, blocked: 0, completed: 0 } }), []);
   const data = useRoomLiveFocusData(roomId, focus ?? empty, active);
   const satellites = useMemo(() => Object.fromEntries((focus?.partners ?? []).map((partner) => [partner.sessionId, data.rawSatellites[partner.participantId] ?? []])), [focus, data.rawSatellites]);
-  return <RoomCollabTimeline room={room} projection={projection} satellites={satellites} active={active}
+  return <RoomCollabTimeline room={room} projection={projection} graph={graph} onSelectRoot={onSelectRoot} satellites={satellites} active={active}
     {...(onOpenParticipant ? { onOpenParticipant } : {})}
     onOpenSatellite={(lane) => {
       const owner = room.participants.find((participant) => participant.id === lane.parentId);

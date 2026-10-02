@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import {
   clockLabel,
   collabFocusAt,
+  collabFocusPositionAt,
   collabLaneStateAt,
   collabPhasesAt,
   collabTimeScale,
@@ -50,6 +51,7 @@ export function CollabTimelineStage({
   eventsPanel?: boolean;
   className?: string;
 }) {
+  const [feedTab, setFeedTab] = useState<'events' | 'tasks'>('events');
   const animate = usePresentationMotion(active);
   const scale = useMemo(() => collabTimeScale(timeline), [timeline]);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -153,7 +155,7 @@ export function CollabTimelineStage({
 
   const phases = collabPhasesAt(timeline, atMs);
   const focus = collabFocusAt(timeline, atMs);
-  const focusMoving = focus && mode !== 'follow' ? Math.min(1, (atMs - focus.sinceMs) / (HANDOFF_MS * 6)) : 1;
+  const focusY = collabFocusPositionAt(timeline, atMs, Y);
   const stateAt = (lane: CollabLane) => (mode === 'follow' ? { state: lane.state, label: lane.status } : collabLaneStateAt(timeline, lane, atMs));
   const counts = mode === 'follow' ? timeline.counts : {
     ...timeline.counts,
@@ -173,7 +175,7 @@ export function CollabTimelineStage({
     if (next) { setSelectedEvent(next.id); jumpTo(next.atMs); }
   };
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('input,textarea,select,button,a,[contenteditable="true"]')) return;
+    if ((event.target as HTMLElement).closest('input,textarea,select,button,a,summary,[contenteditable="true"]')) return;
     if (event.key === ' ') { event.preventDefault(); togglePlay(); }
     if (event.key === 'ArrowRight') { event.preventDefault(); step(1); }
     if (event.key === 'ArrowLeft') { event.preventDefault(); step(-1); }
@@ -181,7 +183,7 @@ export function CollabTimelineStage({
   };
 
   const doneAll = timeline.final && !timeline.failed && fraction >= 0.999;
-  const acceptMark = [...timeline.marks].filter((mark) => (mark.kind === 'accept' || mark.kind === 'final') && mark.atMs <= atMs).sort((a, b) => a.atMs - b.atMs).at(-1);
+  const acceptMark = [...timeline.marks].filter((mark) => (mark.kind === 'accept' || mark.kind === 'final' || mark.kind === 'final_unfinished') && mark.atMs <= atMs).sort((a, b) => a.atMs - b.atMs).at(-1);
   const stamped = Boolean(acceptMark && acceptMark.atMs <= atMs);
 
   return <MotionConfig reducedMotion={animate ? 'never' : 'always'} transition={animate ? undefined : { duration: 0 }}><section
@@ -204,13 +206,13 @@ export function CollabTimelineStage({
         <Kpi label="执行中" value={counts.running} tone="active" />
         <Kpi label="工具调用" value={counts.tools} />
         {timeline.counts.satellites ? <Kpi label="卫星" value={timeline.counts.satellites} tone="satellite" /> : null}
-        <Kpi label="失败" value={counts.failed} tone={counts.failed ? 'fail' : undefined} />
+        <Kpi label={timeline.scope === 'session' ? '执行失败' : '工具失败'} value={counts.failed} tone={counts.failed ? 'fail' : undefined} />
       </dl>
     </header> : null}
 
     {!compact ? <ol className="ctl-phases" aria-label="协作阶段">
       <span className="ctl-phases__track" aria-hidden><motion.span className="ctl-phases__fill" initial={false}
-        animate={{ scaleX: Math.max(0, phases.findIndex((phase) => phase.state === 'current') === -1 ? phases.every((phase) => phase.state === 'done') ? 1 : 0 : phases.findIndex((phase) => phase.state === 'current') / Math.max(1, phases.length - 1)) }}
+        animate={{ scaleX: Math.max(0, phases.findIndex((phase) => phase.state === 'current' || phase.state === 'failed') === -1 ? phases.every((phase) => phase.state === 'done') ? 1 : 0 : phases.findIndex((phase) => phase.state === 'current' || phase.state === 'failed') / Math.max(1, phases.length - 1)) }}
         transition={{ type: 'spring', stiffness: 120, damping: 20 }} /></span>
       {phases.map((phase, index) => <li key={phase.key} data-state={phase.state}>
         <motion.span className="ctl-phases__dot" initial={false} animate={phase.state === 'current' && animate ? { scale: [1, 1.12, 1] } : { scale: 1 }} transition={phase.state === 'current' ? { repeat: Infinity, duration: 1.8 } : { duration: 0.2 }}>
@@ -222,7 +224,7 @@ export function CollabTimelineStage({
 
     <div className="ctl-body" data-events={eventsPanel && !compact || undefined}>
       <div className="ctl-stage" ref={stageRef} style={{ '--ctl-head': `${LANE_HEAD}px` } as CSSProperties}>
-        <div className="ctl-stage__scroll" style={{ minWidth: width, height: compact ? contentHeight : undefined }}> 
+        <div className="ctl-stage__scroll" style={{ minWidth: width, height: compact ? contentHeight : undefined }}>
           <div className="ctl-axis" aria-hidden>
             {scale.ticks.map((tick, index) => <span key={index} style={{ left: LANE_HEAD + tick.at * plotWidth }}>{tick.label}</span>)}
           </div>
@@ -282,19 +284,18 @@ export function CollabTimelineStage({
             </g> : null}
           </svg>
 
-          {mode !== 'follow' || !timeline.live ? <motion.div className="ctl-playhead" aria-hidden style={{ height: contentHeight - TOP_PAD + 12 }}
-            animate={{ x: X(atMs) }} transition={mode === 'replay' ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 30 }}>
+          {mode !== 'follow' || !timeline.live ? <div className="ctl-playhead" aria-hidden style={{ height: contentHeight - TOP_PAD + 12, transform: `translateX(${X(atMs)}px)` }}>
             <span>{clockLabel(atMs, true)}</span>
-          </motion.div> : null}
+          </div> : null}
 
           {focus && timeline.focus && !compact ? <FocusCapsule
-            x={Math.min(X(atMs), width - 190)} fromY={Y(focus.fromLaneId)} toY={Y(focus.laneId)} progress={focusMoving}
-            label="最近交接" lane={lanes.find((lane) => lane.id === focus.laneId)} done={stamped && doneAll} animate={animate && mode === 'follow'} /> : null}
+            x={Math.min(X(atMs), width - 190)} y={focusY}
+            label="最近交接" lane={lanes.find((lane) => lane.id === focus.laneId)} done={stamped && doneAll} /> : null}
 
-          <AnimatePresence>{stamped && acceptMark && !compact ? <motion.div key={`stamp:${acceptMark.id}`} className="ctl-stamp" aria-hidden
+          <AnimatePresence>{stamped && acceptMark && !compact ? <motion.div key={`stamp:${acceptMark.id}`} className="ctl-stamp" data-state={acceptMark.kind === 'final_unfinished' ? 'unfinished' : undefined} aria-hidden
             style={{ left: Math.min(X(acceptMark.atMs), width - 150), top: Y(acceptMark.laneId) }}
             initial={animate ? { scale: 1.04, rotate: -12, opacity: 0 } : false} animate={{ scale: 1, rotate: -12, opacity: 0.9 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}>{acceptMark.kind === 'final' ? '已答复' : '已验收'}</motion.div> : null}</AnimatePresence>
+            transition={{ duration: 0.2, ease: 'easeOut' }}>{acceptMark.kind === 'final' ? '已答复' : acceptMark.kind === 'final_unfinished' ? '已答复 · 未完成' : '已验收'}</motion.div> : null}</AnimatePresence>
 
           <canvas className="ctl-fx" ref={canvasRef} aria-hidden />
           {!lanes.some((lane) => lane.kind !== 'origin' && timeline.segments.some((segment) => segment.laneId === lane.id)) ? <div className="ctl-empty">
@@ -304,7 +305,21 @@ export function CollabTimelineStage({
       </div>
 
       {eventsPanel && !compact ? <aside className="ctl-feed" aria-label="协作事件">
-        <header><strong>协作事件</strong><small>{visibleEvents.length} / {timeline.events.length}</small></header>
+        <header><nav aria-label="协作详情"><button type="button" aria-pressed={feedTab === 'events'} onClick={() => setFeedTab('events')}>协作事件</button>{timeline.scope === 'room' ? <button type="button" aria-pressed={feedTab === 'tasks'} onClick={() => setFeedTab('tasks')}>任务与分派</button> : null}</nav><small>{feedTab === 'events' ? `${visibleEvents.length} / ${timeline.events.length}` : '当前快照'}</small></header>
+        {feedTab === 'tasks' ? <div className="ctl-tasks">
+          <h3>具体任务 · {timeline.tasks?.length ?? 0}</h3>
+          {(timeline.tasks ?? []).map(task => <details key={task.id}><summary><strong>{task.objective}</strong><span>{task.stateLabel || taskStateLabel(task.state)} · {timeline.lanes.find(lane => lane.id === task.ownerLaneId)?.label || '未分派'}</span></summary>
+            {task.waitingOn?.length ? <p>等待前置：{task.waitingOn.join('；')}</p> : null}
+            {task.expectedOutput ? <p>交付：{task.expectedOutput}</p> : null}
+            {task.acceptance.length ? <ul aria-label="验收要求">{task.acceptance.map((item, i) => <li key={i}>{item}</li>)}</ul> : null}
+            {task.result ? <p>结果：{task.result}</p> : null}
+            {task.ownerLaneId && onOpenLane ? <button type="button" onClick={() => { const lane = timeline.lanes.find(item => item.id === task.ownerLaneId); if (lane) onOpenLane(lane); }}>查看负责人的对话</button> : null}
+          </details>)}
+          {!timeline.tasks?.length ? <p>尚未形成任务记录。</p> : null}
+          <h3>分派记录 · {timeline.dispatches?.length ?? 0}</h3>
+          {(timeline.dispatches ?? []).map(dispatch => <details key={dispatch.id}><summary><strong>{timeline.lanes.find(lane => lane.id === dispatch.fromLaneId)?.label || '团队调度'} → {timeline.lanes.find(lane => lane.id === dispatch.toLaneId)?.label || '伙伴'}</strong><span>{taskStateLabel(dispatch.state)} · {clockLabel(dispatch.atMs, true)}</span></summary><p>{dispatch.objective}</p>{dispatch.taskId ? <small>任务：{dispatch.taskId}</small> : null}</details>)}
+        </div> : null}
+        <div className="ctl-feed__events" hidden={feedTab !== 'events'}>
         <ol ref={feedRef}>
           <AnimatePresence initial={false}>
             {visibleEvents.map((event) => <motion.li key={event.id}
@@ -318,7 +333,7 @@ export function CollabTimelineStage({
             </motion.li>)}
           </AnimatePresence>
           {!visibleEvents.length ? <li className="ctl-feed__empty">回放开始后，事件会按真实顺序出现。</li> : null}
-        </ol>
+        </ol></div>
       </aside> : null}
     </div>
 
@@ -340,9 +355,9 @@ export function CollabTimelineStage({
 }
 
 function Kpi({ label, value, tone }: { label: string; value: number | string; tone?: string }) {
-  return <div data-tone={tone}><dt>{label}</dt><dd><AnimatePresence mode="popLayout" initial={false}>
-    <motion.span key={String(value)} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -10, opacity: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>{value}</motion.span>
-  </AnimatePresence></dd></div>;
+  // Receipt counters must remain readable even when playback or live events
+  // replace them faster than an enter/exit animation can finish.
+  return <div data-tone={tone}><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function LaneAvatar({ lane, state, renderAvatar, size }: { lane: CollabLane; state: CollabLaneState; renderAvatar?: CollabAvatarRenderer; size: number }) {
@@ -422,25 +437,22 @@ function MarkGlyph({ mark, atMs, x, y, fresh, animate }: { mark: CollabMark; atM
   if (mark.kind === 'model') {
     return <g className="ctl-mark" data-kind="model" transform={`translate(${x},${y + 16})`}><title>{mark.label}</title><rect x={-3} y={-3} width={6} height={6} rx={1.5} transform="rotate(45)" /></g>;
   }
-  const glyph = mark.kind === 'tool' ? 'M-2.4 0 L-0.6 1.9 L2.6 -1.8' : mark.kind === 'tool_failed' ? 'M0 -2.8 L0 0.8 M0 2.6 L0 2.8' : mark.kind === 'recruit' ? 'M0 -2.6 L0 2.6 M-2.6 0 L2.6 0' : mark.kind === 'return' ? 'M2.4 -1.6 A2.6 2.6 0 1 0 2.2 1.8 M2.4 -3 L2.4 -1.2 L0.6 -1.2' : 'M-2.6 0 L-0.8 2 L2.8 -2';
-  const lift = mark.kind === 'tool' || mark.kind === 'tool_failed' ? -18 : mark.kind === 'accept' || mark.kind === 'final' ? 0 : 0;
+  const glyph = mark.kind === 'tool' ? 'M-2.4 0 L-0.6 1.9 L2.6 -1.8' : mark.kind === 'tool_failed' || mark.kind === 'final_unfinished' ? 'M0 -2.8 L0 0.8 M0 2.6 L0 2.8' : mark.kind === 'recruit' ? 'M0 -2.6 L0 2.6 M-2.6 0 L2.6 0' : mark.kind === 'return' ? 'M2.4 -1.6 A2.6 2.6 0 1 0 2.2 1.8 M2.4 -3 L2.4 -1.2 L0.6 -1.2' : 'M-2.6 0 L-0.8 2 L2.8 -2';
+  const lift = mark.kind === 'tool' || mark.kind === 'tool_failed' ? -18 : mark.kind === 'accept' || mark.kind === 'final' || mark.kind === 'final_unfinished' ? 0 : 0;
   return <g className="ctl-mark" data-kind={mark.kind} data-pop={pop || undefined} data-shake={mark.kind === 'tool_failed' && pop || undefined} transform={`translate(${x},${y + lift})`}>
     <title>{mark.label}</title>
     {lift ? <line y1={5} y2={-lift - 7} className="ctl-mark__stem" /> : null}
     {pop ? <circle r={11} className="ctl-mark__ripple" /> : null}
-    <circle r={mark.kind === 'accept' || mark.kind === 'final' ? 8 : 6} className="ctl-mark__dot" />
+    <circle r={mark.kind === 'accept' || mark.kind === 'final' || mark.kind === 'final_unfinished' ? 8 : 6} className="ctl-mark__dot" />
     <path d={glyph} className="ctl-mark__glyph" />
   </g>;
 }
 
-function FocusCapsule({ x, fromY, toY, progress, label, lane, done, animate }: { x: number; fromY: number; toY: number; progress: number; label: string; lane?: CollabLane; done: boolean; animate: boolean }) {
-  const eased = 1 - Math.pow(1 - Math.min(1, progress), 3);
-  const y = fromY + (toY - fromY) * eased;
-  const hop = Math.sin(Math.min(1, progress) * Math.PI) * 14;
-  return <motion.div className="ctl-capsule" data-done={done || undefined} data-moving={progress < 1 || undefined} aria-hidden
-    animate={{ x: x + 16, y: y - 30 - hop }} transition={animate ? { type: 'spring', stiffness: 220, damping: 22, mass: 0.7 } : { duration: 0 }}>
+function FocusCapsule({ x, y, label, lane, done }: { x: number; y: number; label: string; lane?: CollabLane; done: boolean }) {
+  return <div className="ctl-capsule" data-done={done || undefined} aria-hidden
+    style={{ transform: `translate(${x + 16}px, ${y - 30}px)` }}>
     <span className="ctl-capsule__who">{lane?.label ?? ''}</span><span>{label}</span>
-  </motion.div>;
+  </div>;
 }
 
 function EventIcon({ event }: { event: CollabEvent }) {
@@ -592,4 +604,8 @@ function useParticles(ref: React.RefObject<HTMLCanvasElement | null>, size: { wi
       frame.current = requestAnimationFrame(run);
     },
   };
+}
+
+function taskStateLabel(state: string): string {
+  return ({ queued: '待分派', offered: '待接收', active: '进行中', submitted: '已交回', review: '待验收', completed: '已验收', done: '已验收', blocked: '受阻', failed: '失败', cancelled: '已停止', unknown: '状态待同步' } as Record<string, string>)[state] || state || '待同步';
 }

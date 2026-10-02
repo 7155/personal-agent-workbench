@@ -6,6 +6,7 @@ import { pawApp } from '../runtime/app-registry';
 import { isPawExtensionAppId } from '../extensions/registry';
 import { PawExtensionAppHost } from '../extensions/ExtensionAppHost';
 import { PawAppIcon } from '../shell/PawAppIcon';
+import { agentWorkspaceIntent, warmAgentWorkspace } from './agent-workspace-loader';
 import './paw-apps.css';
 
 type PawNativeAppId = Extract<PawAppId,
@@ -73,6 +74,8 @@ export function PawAppBody({
   initialRoute?: string;
   target?: PawOsWindowTarget;
 }) {
+  const workspaceKind = agentWorkspaceIntent({ appId, entityId, initialRoute, target });
+  if (workspaceKind) warmAgentWorkspace(workspaceKind);
   return (
     <Suspense fallback={<AppLoading appId={appId} />}>
       {renderApp(appId, entityId, initialRoute, target)}

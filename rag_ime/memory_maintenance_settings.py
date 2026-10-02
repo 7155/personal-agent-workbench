@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE, PREVIOUS_PRODUCT_MODEL_PROFILES
 from .memory_catalog_scheduler import DEFAULT_CATALOG_CONSOLIDATION_CADENCE_DAYS
 from .settings_store import ManagementSettingsStore
 from .text_utils import compact_whitespace
 
 
-DEFAULT_MAINTENANCE_MODEL = "openai-codex/gpt-5.6-luna"
+DEFAULT_MAINTENANCE_MODEL = DEFAULT_AGENT_MODEL_PROFILE
 DEFAULT_MAINTENANCE_THINKING_LEVEL = "max"
 # Routine owner-scoped curation is allowed to promote only after the existing
 # Evidence, Atom-first, and plan validation gates pass. The resulting run keeps
@@ -181,7 +182,7 @@ def _mapping(value: object) -> Mapping[str, object]:
 
 def _maintenance_model(value: object) -> str:
     model = compact_whitespace(str(value or DEFAULT_MAINTENANCE_MODEL))
-    if model == "gpt/gpt-5.6-luna":
+    if model == "gpt/gpt-5.6-luna" or model in PREVIOUS_PRODUCT_MODEL_PROFILES:
         return DEFAULT_MAINTENANCE_MODEL
     if "/" not in model:
         if model.casefold().replace("_", "-").startswith("deepseek-v4"):

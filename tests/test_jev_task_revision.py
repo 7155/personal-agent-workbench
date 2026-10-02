@@ -66,6 +66,7 @@ class JevTaskRevisionTests(JevHostFixture):
         created = self.app.create(self.room["id"], {
             "clientMessageId": "revision-plan", "message": "完成 A 与独立 B，随后完成 C",
             "strategy": "plan", "modelRouting": "participant", "executionApproval": False,
+            "verificationMode": "independent",
         })
         self.app.tick()
         planner = self.effects(created, "plan")[0]
@@ -132,16 +133,16 @@ class JevTaskRevisionTests(JevHostFixture):
                 "expectedOutput": "A 新成果", "acceptanceCriteria": ["A 新验收"],
                 "reason": "用户改变 A 的要求", "rootObjective": "新目标：A、B、C 均需验收"}
 
-    def drain_old(self, created, effect):
+    def drain_old(self, created, effect, *, status="aborted"):
         dispatch = effect["effectId"]
         self.terminals[dispatch] = {
             "eventId": "physical-drain:" + dispatch,
-            "eventType": "turn_completed", "status": "aborted",
+            "eventType": "turn_completed", "status": status,
         }
         with self.app.ledger.connection(write=True) as conn:
             conn.execute("INSERT OR IGNORE INTO agent_jev_execution_drains VALUES(?,?,?)",
                          (dispatch, canonical({"proofRef": "physical-drain:" + dispatch,
-                                              "terminal": "aborted"}), self.app.ledger.clock_ms()))
+                                              "terminal": status}), self.app.ledger.clock_ms()))
         request = effect["request"]
         self.service.runtime.release_prompt_admission(
             request["sessionId"], client_message_id=dispatch)
@@ -283,6 +284,24 @@ class JevTaskRevisionTests(JevHostFixture):
         self.drain_old(created, worker_a)
         self.assertEqual(self.app.projection(self.room["id"], created["graphId"])["revisions"][-1]["status"],
                          "applied")
+
+    def test_unsupported_cancel_waits_for_natural_settlement_without_stranding_revision(self):
+        created = self.planned()
+        self.ids["b"] = "choose-a-instead"
+        worker = self.next_effect(created, "execute", self.ids["a"])
+        self.abort.side_effect = lambda *args, **kwargs: {
+            **self.cancel_receipt(*args, **kwargs), "state": "rejected",
+            "source": "paw_runtime_capability_preflight",
+            "reason": "sessionExactTurnCancel_unsupported",
+        }
+        self.app.command(self.room["id"], self.revision_payload(created))
+        self.app.tick(limit=1)
+        self.assertEqual(self.app.projection(self.room["id"], created["graphId"])["revisions"][-1]["status"], "awaiting_drain")
+        self.drain_old(created, worker, status="completed")
+        self.assertEqual(self.app.projection(self.room["id"], created["graphId"])["revisions"][-1]["status"], "applied")
+        retired = self.service.room_partner_dispatches.get(worker["effectId"])
+        self.assertEqual(retired["status"], "returned")
+        self.assertIn("未计入", retired["error"])
 
     def test_drained_old_dispatch_without_claim_still_cannot_submit_after_revision_intent(self):
         created = self.planned()

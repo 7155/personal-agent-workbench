@@ -43,8 +43,19 @@ describe('RoomEventReducer', () => {
     expect(state.messagesById[finalId]).toMatchObject({ text: 'A=15，B=12，C=A+B=27。', projectionKind: 'post', postKind: 'result' });
     expect(state.messageOrder.filter(id => id === finalId)).toHaveLength(1);
     expect(state.activityOrder.some(id => state.activitiesById[id].payload.toolCallId === 'calculate')).toBe(true);
-    expect(state.turnsById['room-turn-1']).toMatchObject({ status: 'completed', rootTerminalAtMs: terminal.createdAtMs });
+    expect(state.turnsById['room-turn-1']).toMatchObject({ status: 'completed', rootTerminalAtMs: terminal.createdAtMs, finalizationPostId: finalId });
     expect(state.diagnostics.filter(item => item.eventType === 'room_event_after_root_terminal')).toHaveLength(0);
+  });
+  it('keeps an exact failed Root publication binding separate from participant completion', () => {
+    const finalId = 'final:failed';
+    let state = reduceRoomEvent(createRoomProjection('room-1'), roomEvent(1, 'user_message', { text: '继续', mode: 'jev', graphId: 'graph:failed' })).state;
+    state = reduceRoomEvent(state, roomEvent(2, 'turn_completed', { dispatchId: 'worker', finalizationId: 'not-a-root-final' })).state;
+    expect(state.turnsById['room-turn-1']).not.toHaveProperty('finalizationPostId');
+    const terminal = roomEvent(3, 'turn_failed', { rootId: 'room-turn-1', finalizationId: finalId, status: 'failed' });
+    terminal.participantId = null;
+    terminal.sourceSessionId = '';
+    state = reduceRoomEvent(state, terminal).state;
+    expect(state.turnsById['room-turn-1']).toMatchObject({ status: 'failed', finalizationPostId: finalId });
   });
   it('replays the 2,000-event message-first Room window without blocking the first paint', () => {
     const events = Array.from({ length: 1_000 }, (_value, index) => {
@@ -998,6 +1009,20 @@ describe('RoomEventReducer', () => {
     });
   });
 
+  it('does not append another optimistic turn for an already accepted Room client identity', () => {
+    const accepted = reduceRoomEvent(createRoomProjection('room-1'), roomEvent(1, 'user_message', {
+      messageId: 'accepted-user', clientMessageId: 'already-accepted', text: 'original request',
+    })).state;
+    const retry = appendOptimisticRoomMessage(accepted, {
+      clientMessageId: 'already-accepted', text: 'changed retry must not rebind', nowMs: 100,
+    });
+    expect(retry).toBe(accepted);
+    expect(retry.messageOrder).toEqual(['accepted-user']);
+    expect(retry.turnOrder).toEqual(['room-turn-1']);
+    expect(retry.optimisticByClientMessageId).toEqual({});
+    expect(retry.messagesById['accepted-user'].text).toBe('original request');
+  });
+
   it('merges optimistic room input by clientMessageId and keeps unknown events', () => {
     const optimistic = appendOptimisticRoomMessage(createRoomProjection('room-1'), {
       clientMessageId: 'room-client-1',
@@ -1734,6 +1759,19 @@ describe('RoomEventReducer', () => {
       expect.objectContaining({ eventId: 'progress-5' }),
       ...Array.from({ length: 18 }, () => expect.any(Object)),
       expect.objectContaining({ eventId: 'progress-24' }),
+    ]);
+  });
+
+  it('preserves a tool diagnostic that contains an event-shaped identifier', () => {
+    const event = parseRoomEvent(wireRoomEvent(1, 'participant_activity', {
+      rootId: 'root-public', dispatchId: 'dispatch-review',
+      participantId: 'participant-review', sourceSessionId: 'session-review',
+      sourceEventType: 'tool_finished', toolCallId: 'review-call',
+      state: 'failed', summary: 'tool_timeout: original diagnostic',
+    }));
+    const state = reduceRoomEvents(createRoomProjection('room-1'), [event]);
+    expect(selectRoomParticipantPublicProgress(state)).toEqual([
+      expect.objectContaining({ summary: 'tool_timeout: original diagnostic' }),
     ]);
   });
 

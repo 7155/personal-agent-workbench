@@ -3,7 +3,7 @@ import type { AgentSubagentRunV1 } from '@/contracts/generated/agent-subagent-ru
 import { roomPlanetName } from '@/features/rooms/room-copy';
 import type { RoomCollaborationRole, RoomParticipant, RoomSummary } from '@/features/rooms/room-types';
 import { selectPublicRoomTurnOrder } from '@/features/rooms/runtime/room-execution-lanes';
-import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
+import { JEV_TASK_STAGE_LABELS, jevTaskStage, type JevSnapshot } from '@/features/semantic-workspace/jev-execution';
 import {
   collabPhasesFromEvidence,
   type CollabEvent,
@@ -14,6 +14,7 @@ import {
   type CollabSegment,
   type CollabSegmentKind,
   type CollabTimeline,
+  type CollabTask,
 } from './model';
 
 /**
@@ -68,6 +69,7 @@ interface Dispatch {
   startMs: number;
   endMs?: number;
   failed: boolean;
+  aborted: boolean;
   model: string;
   workItemId: string;
 }
@@ -99,6 +101,7 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
   const marks: CollabMark[] = [];
   const events: CollabEvent[] = [];
   const reached = new Set<string>();
+  const phaseFailures = new Set<string>();
   const joined = new Map<string, number>();
   const involved = new Set<string>();
   const models = new Map<string, string>();
@@ -112,14 +115,25 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
   const firstMs = Number.isFinite(startMs) ? startMs : nowMs;
 
   // Jev effects give purpose/model for a dispatch id (Jev is a helper only).
-  const jevEffects = new Map<string, { purpose: string; model: string }>();
+  const jevEffects = new Map<string, { purpose: string; model: string; taskId: string; objective: string }>();
   for (const effect of graph?.effects ?? []) {
     if (effect.operation !== 'dispatch') continue;
     const selection = record(record(record(effect.request.contextManifest).executionScope).modelSelection);
     jevEffects.set(effect.effectId, {
       purpose: text(effect.request.purpose) || 'execute',
+      taskId: text(effect.request.taskId),
+      objective: text(effect.request.objective),
       model: [text(selection.modelId), text(selection.thinkingLevel)].filter(Boolean).join(' · '),
     });
+  }
+  if (graph?.planApproval || graph?.phase === 'plan') reached.add('plan');
+  for (const effect of graph?.effects ?? []) {
+    if (effect.operation !== 'dispatch') continue;
+    const purpose = text(effect.request.purpose);
+    if (purpose === 'plan') reached.add('plan');
+    if (purpose === 'execute') reached.add('execute');
+    if (purpose === 'verify') reached.add('review');
+    if (purpose === 'synthesize') reached.add('reply');
   }
 
   // 1. The request.
@@ -144,10 +158,10 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     const participant = participantById.get(laneId);
     const role = participant?.collaborationRole;
     const label = PURPOSE_LABEL[purpose]
-      ?? (role === 'coordinator' && !parentId ? '协调本轮' : role === 'reviewer' ? '结果复核' : '执行任务');
+      ?? (role === 'coordinator' && !parentId ? '协调本轮' : '执行任务');
     const model = jev?.model ?? '';
     if (model) models.set(laneId, model);
-    dispatches.set(dispatchId, { id: dispatchId, laneId, parentId, sourceLaneId, purpose, label, startMs: activity.createdAtMs, failed: false, model, workItemId: text(payload.workItemId) });
+    dispatches.set(dispatchId, { id: dispatchId, laneId, parentId, sourceLaneId, purpose, label, startMs: activity.createdAtMs, failed: false, aborted: false, model, workItemId: text(payload.workItemId) || jev?.taskId || '' });
     involved.add(laneId);
     handoffs.push({
       id: `d:${dispatchId}`,
@@ -180,7 +194,13 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
       const dispatch = dispatches.get(text(payload.childDispatchId) || text(payload.dispatchId));
       if (dispatch && dispatch.endMs === undefined) {
         dispatch.endMs = activity.createdAtMs;
-        dispatch.failed = phase !== 'completed';
+        dispatch.failed = phase === 'failed';
+        dispatch.aborted = phase === 'aborted';
+        if (dispatch.failed) {
+          const kind = PURPOSE_KIND[dispatch.purpose];
+          if (kind === 'plan' || kind === 'execute' || kind === 'review') phaseFailures.add(kind);
+          if (kind === 'synthesize') phaseFailures.add('reply');
+        }
         handoffs.push({ id: `r:${dispatch.id}`, kind: 'submit', fromLaneId: dispatch.laneId, toLaneId: dispatch.sourceLaneId, atMs: activity.createdAtMs, label: phase === 'completed' ? '交回结果' : phase === 'aborted' ? '已停止' : '执行失败', failed: phase !== 'completed' });
         events.push({ id: `c:${activity.id}`, laneId: dispatch.laneId, atMs: activity.createdAtMs, tone: phase === 'completed' ? 'done' : 'fail', actor: nameOf(dispatch.laneId), text: phase === 'completed' ? `交回结果${activity.summary && !isMachine(activity.summary) ? `：${short(activity.summary, 48)}` : ''}` : phase === 'aborted' ? '执行已停止' : '执行失败' });
       }
@@ -198,8 +218,12 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
       } else if (phase === 'completed') {
         marks.push({ id: `wa:${activity.id}`, laneId: actor, kind: 'accept', atMs: activity.createdAtMs, label: '已验收' });
         events.push({ id: `wa:${activity.id}`, laneId: actor, atMs: activity.createdAtMs, tone: 'done', actor: nameOf(actor), text: `验收通过：${short(text(work.objective), 40)}` });
-        reached.add('accept');
+        /* Jev task states are the acceptance authority when a graph is
+         * present. A Room work receipt alone can describe a partial handoff
+         * and must not create a green acceptance phase for a failed graph. */
+        if (!graph) reached.add('accept');
       } else if (phase === 'returned') {
+        phaseFailures.add('accept');
         const target = laneOf(text(work.currentOwnerParticipantId));
         marks.push({ id: `wr:${activity.id}`, laneId: actor, kind: 'return', atMs: activity.createdAtMs, label: '退回返修' });
         handoffs.push({ id: `wr:${activity.id}`, kind: 'return', fromLaneId: actor, toLaneId: target, atMs: activity.createdAtMs, label: '退回返修', failed: false });
@@ -257,18 +281,26 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     }
   }
 
-  // Participant turn terminals end any still-open dispatch of that lane.
+  // Exact dispatch receipts precede the legacy participant fallback. A
+  // participant may finish several dispatches long before the Root ends.
+  for (const dispatchId of turn?.terminalDispatchIds ?? []) {
+    const dispatch = dispatches.get(dispatchId);
+    if (!dispatch) continue;
+    dispatch.failed ||= (turn?.failedDispatchIds ?? []).includes(dispatchId);
+    dispatch.aborted ||= (turn?.abortedDispatchIds ?? []).includes(dispatchId);
+    if (dispatch.endMs !== undefined) continue;
+    const failureReceipt = activities.find(activity => activity.kind === 'turn_failed'
+      && text(activity.payload.dispatchId) === dispatchId);
+    const completedMessage = messages.filter(message => message.dispatchId === dispatchId
+      && message.completedAtMs !== undefined).at(-1);
+    dispatch.endMs = failureReceipt?.createdAtMs ?? completedMessage?.completedAtMs ?? turn?.updatedAtMs ?? nowMs;
+  }
   for (const participantId of turn?.terminalParticipantIds ?? []) {
     for (const dispatch of dispatches.values()) {
-      if (dispatch.laneId === participantId && dispatch.endMs === undefined && !live) dispatch.endMs = turn?.updatedAtMs ?? nowMs;
-    }
-  }
-  for (const [dispatchId, participantId] of Object.entries(turn?.dispatchParticipantIds ?? {})) {
-    const dispatch = dispatches.get(dispatchId);
-    if (dispatch && dispatch.endMs === undefined && (turn?.terminalDispatchIds ?? []).includes(dispatchId)) {
-      dispatch.endMs = messages.filter((message) => message.dispatchId === dispatchId).at(-1)?.createdAtMs ?? turn?.updatedAtMs ?? nowMs;
-      dispatch.failed = (turn?.failedDispatchIds ?? []).includes(dispatchId);
-      void participantId;
+      if (dispatch.laneId !== participantId || dispatch.endMs !== undefined || live) continue;
+      dispatch.endMs = turn?.updatedAtMs ?? nowMs;
+      dispatch.failed = (turn?.failedParticipantIds ?? []).includes(participantId);
+      dispatch.aborted = (turn?.abortedParticipantIds ?? []).includes(participantId);
     }
   }
 
@@ -279,18 +311,23 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
   for (const dispatch of dispatches.values()) {
     const open = dispatch.endMs === undefined;
     const end = open ? (live ? endMs : Math.max(dispatch.startMs + 1, endMs)) : dispatch.endMs!;
+    // A reviewer role describes capability, not an observed review. Only a
+    // purpose/receipt that says verify may advance the review phase.
     const kind: CollabSegmentKind = PURPOSE_KIND[dispatch.purpose]
-      ?? (participantById.get(dispatch.laneId)?.collaborationRole === 'reviewer' ? 'review'
-        : participantById.get(dispatch.laneId)?.collaborationRole === 'coordinator' && !dispatch.parentId ? 'plan' : 'execute');
+      ?? (participantById.get(dispatch.laneId)?.collaborationRole === 'coordinator' && !dispatch.parentId ? 'plan' : 'execute');
     if (kind === 'plan') reached.add('plan');
     if (kind === 'execute') reached.add('execute');
     if (kind === 'review') reached.add('review');
     if (kind === 'synthesize') reached.add('reply');
+    if (dispatch.failed) {
+      if (kind === 'plan' || kind === 'execute' || kind === 'review') phaseFailures.add(kind);
+      if (kind === 'synthesize') phaseFailures.add('reply');
+    }
     const children = [...dispatches.values()].filter((child) => child.parentId === dispatch.id).sort((a, b) => a.startMs - b.startMs);
     let cursor = dispatch.startMs;
     const push = (segmentKind: CollabSegmentKind, from: number, to: number, label: string, isOpen: boolean) => {
       if (to - from < 1) return;
-      segments.push({ id: `s:${dispatch.id}:${segments.length}`, laneId: dispatch.laneId, kind: segmentKind, startMs: from, endMs: to, open: isOpen, label, failed: dispatch.failed && !isOpen && to === end });
+      segments.push({ id: `s:${dispatch.id}:${segments.length}`, laneId: dispatch.laneId, kind: segmentKind, startMs: from, endMs: to, open: isOpen, label, failed: dispatch.failed && !isOpen && to === end, aborted: dispatch.aborted && !isOpen && to === end });
     };
     if (children.length) {
       const waitFrom = Math.max(cursor, children[0]!.startMs);
@@ -348,15 +385,27 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
   const finalMessage = [...messages].reverse().find((message) => message.role === 'assistant' && (message.postKind === 'result' || (!message.postKind && message.participantId === projection?.moderatorParticipantId)) && message.status === 'completed' && message.text.trim());
   const final = Boolean(graph?.final) || (!live && ['completed', 'failed'].includes(turn?.status ?? ''));
   const failed = graph?.final ? graph.final.status !== 'completed' : turn?.status === 'failed';
+  const realGraphTasks = executableJevTasks(graph);
+  if (failed) {
+    for (const key of ['execute', 'review', 'accept', 'reply']) if (reached.has(key)) phaseFailures.add(key);
+    if (!reached.has('execute') && !reached.has('review') && reached.has('plan')) phaseFailures.add('plan');
+  }
   if (finalMessage && final) {
     const laneId = laneOf(finalMessage.participantId);
     handoffs.push({ id: `f:${finalMessage.id}`, kind: 'result', fromLaneId: laneId, toLaneId: ORIGIN_LANE, atMs: finalMessage.createdAtMs, label: '答复' });
-    marks.push({ id: `f:${finalMessage.id}`, laneId: ORIGIN_LANE, kind: 'final', atMs: finalMessage.createdAtMs, label: '答复已发布' });
-    events.push({ id: `f:${finalMessage.id}`, laneId: ORIGIN_LANE, atMs: finalMessage.createdAtMs, tone: 'done', actor: nameOf(laneId), text: '答复已发布到主 Room' });
+    marks.push({ id: `f:${finalMessage.id}`, laneId: ORIGIN_LANE, kind: failed ? 'final_unfinished' : 'final', atMs: finalMessage.createdAtMs, label: failed ? '答复已发布 · 未完成' : '答复已发布' });
+    events.push({ id: `f:${finalMessage.id}`, laneId: ORIGIN_LANE, atMs: finalMessage.createdAtMs, tone: failed ? 'fail' : 'done', actor: nameOf(laneId), text: failed ? '答复已发布，但本轮仍有未完成项' : '答复已发布到主 Room' });
     reached.add('reply');
+    if (failed) phaseFailures.add('reply');
   }
   if (graph) {
-    for (const task of graph.tasks) if (task.state === 'done') reached.add('accept');
+    for (const task of realGraphTasks) if (task.state === 'done') reached.add('accept');
+    // A completed Pi turn only means a result was submitted. Current task
+    // outcomes remain authoritative while the final report is being prepared.
+    if (realGraphTasks.some(task => task.state === 'failed')) {
+      for (const key of ['execute', 'review', 'accept']) if (reached.has(key)) phaseFailures.add(key);
+    }
+    if (failed && reached.has('accept')) phaseFailures.add('accept');
   }
 
   // 7. Lanes: origin, then every planet that took part (or everyone when the
@@ -370,7 +419,7 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     const state: CollabLaneState = !own.length ? 'idle'
       : stopping && current ? 'waiting' : stopped && current ? 'stopped'
         : current && live ? lastSegment?.kind === 'wait' ? 'waiting' : lastSegment?.kind === 'review' ? 'reviewing' : lastSegment?.kind === 'plan' || lastSegment?.kind === 'synthesize' ? 'thinking' : 'working'
-          : own.some((dispatch) => dispatch.failed) ? 'error' : 'done';
+          : own.some((dispatch) => dispatch.failed) ? 'error' : own.some((dispatch) => dispatch.aborted) ? 'stopped' : 'done';
     lanes.push({
       id: participant.id, kind: 'partner', label: roomPlanetName(participant.ordinal), ordinal: participant.ordinal,
       role: roleLabel(participant), depth: 0, state,
@@ -397,8 +446,51 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     ...activities.filter((item) => text(item.payload.activityKind) === 'work').map((item) => text(item.payload.workItemId)).filter(Boolean),
     ...[...dispatches.values()].map((dispatch) => dispatch.workItemId).filter(Boolean),
   ]);
-  const totalWork = graph?.tasks.length ?? seenWork.size;
-  const accepted = graph ? graph.tasks.filter((task) => task.state === 'done').length : marks.filter((mark) => mark.kind === 'accept').length;
+  const taskMap = new Map<string, CollabTask>();
+  for (const activity of activities) {
+    if (text(activity.payload.activityKind) !== 'work') continue;
+    const work = record(activity.payload.work);
+    const id = text(activity.payload.workItemId) || text(work.id);
+    if (!id) continue;
+    const previous = taskMap.get(id);
+    taskMap.set(id, { id, objective: text(work.objective) || previous?.objective || id,
+      ownerLaneId: text(work.currentOwnerParticipantId) || previous?.ownerLaneId || '',
+      state: text(work.state) || text(activity.payload.phase) || previous?.state || '',
+      expectedOutput: text(work.expectedOutput) || previous?.expectedOutput || '',
+      acceptance: Array.isArray(work.acceptanceCriteria) ? work.acceptanceCriteria.filter((v): v is string => typeof v === 'string') : previous?.acceptance ?? [],
+      result: text(work.resultSummary) || previous?.result || '',
+    });
+  }
+  for (const item of room.workItems ?? []) {
+    if (item.rootTurnId !== rootId) continue;
+    taskMap.set(item.id, { id: item.id, objective: item.objective, ownerLaneId: item.currentOwnerParticipantId || item.offeredToParticipantId,
+      state: item.state, expectedOutput: item.expectedOutput, acceptance: item.acceptanceCriteria, result: item.resultSummary });
+  }
+  // Public Room history retains old WorkItems after a selective revision.
+  // The current task list must use the graph's version boundary; their actual
+  // dispatches remain available below as historical execution receipts.
+  for (const task of graph?.historicalTasks ?? []) taskMap.delete(task.id);
+  if (graph) for (const task of graph.tasks) {
+    const stage = jevTaskStage(task, graph);
+    taskMap.set(task.id, {
+      id: task.id, objective: task.objective, ownerLaneId: task.ownerId, state: stage,
+      stateLabel: JEV_TASK_STAGE_LABELS[stage],
+      waitingOn: ['done', 'failed', 'cancelled', 'superseded'].includes(stage) ? [] : graph.edges
+        .filter(edge => edge.dependent === task.id && edge.kind !== 'context')
+        .map(edge => graph.tasks.find(item => item.id === edge.prerequisite))
+        .filter(item => item && item.state !== 'done').map(item => item!.objective),
+      expectedOutput: task.expectedOutput, acceptance: task.acceptance, result: task.result,
+    });
+  }
+  const tasks = [...taskMap.values()];
+  const taskDispatches = [...dispatches.values()].map(dispatch => ({
+    id: dispatch.id, taskId: dispatch.workItemId, fromLaneId: dispatch.sourceLaneId, toLaneId: dispatch.laneId,
+    objective: taskMap.get(dispatch.workItemId)?.objective || jevEffects.get(dispatch.id)?.objective || dispatch.label,
+    state: dispatch.failed ? 'failed' : dispatch.aborted ? 'cancelled' : dispatch.endMs !== undefined ? 'submitted' : live ? 'active' : stopped ? 'cancelled' : 'unknown',
+    atMs: dispatch.startMs,
+  }));
+  const totalWork = graph ? realGraphTasks.length : seenWork.size;
+  const accepted = graph ? realGraphTasks.filter((task) => task.state === 'done').length : marks.filter((mark) => mark.kind === 'accept').length;
   const running = lanes.filter((lane) => ['working', 'thinking', 'reviewing'].includes(lane.state) && lane.kind !== 'origin').length;
   const focusLane = [...handoffs].reverse().find((handoff) => !handoff.failed)?.toLaneId ?? ORIGIN_LANE;
   return {
@@ -409,7 +501,13 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     handoffs,
     marks,
     events,
-    phases: collabPhasesFromEvidence({ reached, final }),
+    phases: collabPhasesFromEvidence({ reached, final, failed: phaseFailures }).map(phase => (
+      phase.key === 'accept' && graph && accepted < totalWork && phase.state !== 'failed'
+        ? { ...phase, state: final ? 'failed' : 'current' }
+        : phase
+    )),
+    tasks,
+    dispatches: taskDispatches,
     startMs: firstMs,
     endMs,
     live,
@@ -427,6 +525,20 @@ const TEMPLATE: Record<string, string> = { researcher: '研究员', planner: '�
 
 function roleLabel(participant: RoomParticipant): string {
   return ROLE_LABELS[participant.collaborationRole ?? 'implementer'] ?? '协作伙伴';
+}
+
+/** Jev snapshots may retain a synthetic objective node above the executable
+ *  tasks. It has no owner or accepted turn of its own; counting it would make
+ *  the Room KPI claim one extra unfinished task. */
+function executableJevTasks(graph?: JevSnapshot | null): JevSnapshot['tasks'] {
+  const tasks = graph?.tasks ?? [];
+  const executedTaskIds = new Set((graph?.effects ?? [])
+    .filter((effect) => effect.operation === 'dispatch' && text(effect.request.purpose) === 'execute')
+    .map((effect) => text(effect.request.taskId))
+    .filter(Boolean));
+  return tasks.filter((task) => !(task.parentId === '' && !task.acceptedTurnId
+    && tasks.some((candidate) => candidate.parentId === task.id)
+    && !executedTaskIds.has(task.id)));
 }
 
 const TOOL_LABELS: Record<string, string> = {

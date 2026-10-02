@@ -30,6 +30,30 @@ from rag_ime.activity_timeline_evaluation import (
 
 
 class ActivityTimelineEvaluationTests(unittest.TestCase):
+    def test_historical_audit_resumes_original_model_receipt_without_admitting_another_call(self) -> None:
+        from scripts import audit_historical_memory_luna as audit
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "completed"
+            root.mkdir(mode=0o700)
+            phase = "historical-catalog-audit"
+            prompt, schema, output = "frozen audit prompt", {"type":"object"}, {}
+            def encode(value):
+                return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            output_text = json.dumps(output)
+            receipt = {"phase":phase,"model":"gpt-5.6-luna","thinking":"max","exitCode":0,"elapsedSeconds":1,
+                "promptSha256":hashlib.sha256(prompt.encode()).hexdigest(),
+                "schemaSha256":hashlib.sha256(encode(schema).encode()).hexdigest(),
+                "outputSha256":hashlib.sha256(output_text.encode()).hexdigest(),"stdoutSha256":"d"*64,"stderrSha256":"e"*64}
+            for name, value in ((f"{phase}-output.json", output_text), (f"{phase}-receipt.json", json.dumps(receipt))):
+                path = root / name
+                path.write_text(value)
+                path.chmod(0o600)
+            with patch.object(audit, "run_luna_structured", side_effect=AssertionError("must not admit a new call")) as writer:
+                resumed = audit._run_or_resume_audit(prompt=prompt, schema=schema, artifact_base=root, timeout_seconds=1, codex_bin="unused")
+            writer.assert_not_called()
+            self.assertEqual(resumed.model, "gpt-5.6-luna")
+            self.assertEqual(sorted(path.name for path in Path(temporary).iterdir()), ["completed"])
+
     def test_exclusive_writer_does_not_close_a_descriptor_after_fdopen_owns_it(
         self,
     ) -> None:
@@ -221,7 +245,7 @@ class ActivityTimelineEvaluationTests(unittest.TestCase):
             self.assertEqual(calls[0][1], prompt)
             self.assertNotIn(prompt, calls[0][0])
             self.assertIn("--ephemeral", calls[0][0])
-            self.assertIn("gpt-5.6-luna", calls[0][0])
+            self.assertIn("gpt-6.1-sol", calls[0][0])
             self.assertIn('model_reasoning_effort="max"', calls[0][0])
             self.assertEqual(run.output, output)
             self.assertEqual(stat.S_IMODE(artifact_dir.stat().st_mode), 0o700)
@@ -385,6 +409,9 @@ class ActivityTimelineEvaluationTests(unittest.TestCase):
             run = load_luna_structured_run(root, phase="repair")
 
             self.assertEqual(run.output, output)
+            self.assertEqual(run.model, "gpt-5.6-luna")
+            with self.assertRaises(ValueError):
+                load_luna_structured_run(root, phase="repair", expected_model="gpt-6.1-sol")
             self.assertEqual(run.elapsed_seconds, 12.5)
             output_path.write_text("{}", encoding="utf-8")
             with self.assertRaises(ValueError):

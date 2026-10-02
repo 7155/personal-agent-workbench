@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID, DEFAULT_AGENT_MODEL_PROFILE
 from .knowledge_library.models import KnowledgeLibraryError
 
 
@@ -81,7 +82,7 @@ def organize(facade, payload):
     result = facade.runtime_provider().complete_once(
         request_id="vault-organize-" + uuid.uuid4().hex,
         provider="openai-codex",
-        model_id="gpt-5.6-luna",
+        model_id=DEFAULT_AGENT_MODEL_ID,
         thinking_level="max",
         message=prompt,
         timeout_seconds=120,
@@ -125,12 +126,12 @@ def organize(facade, payload):
                 "after": output["after"],
                 "reason": output["reason"][:1000],
                 "project": payload.get("project", ""),
-                "generator": "openai-codex/gpt-5.6-luna",
+                "generator": DEFAULT_AGENT_MODEL_PROFILE,
             },
         )
     saved = facade.worker.management_call("management_vault", {
         **payload, "action": "store_diary", "markdown": output["diary"],
-        "generator": "openai-codex/gpt-5.6-luna",
+        "generator": DEFAULT_AGENT_MODEL_PROFILE,
     })
     response = {
         "diaryRecord": saved,

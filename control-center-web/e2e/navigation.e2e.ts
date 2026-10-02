@@ -1,80 +1,45 @@
 import { expect, test } from '@playwright/test';
-import {
-  expectNoHorizontalPageOverflow,
-  openRoute,
-  percentile,
-  routes,
-} from './helpers';
+import { pawOsAppRegistry } from '../src/features/paw-os/model/app-registry';
+import { expectNoHorizontalPageOverflow } from './helpers';
 
-test('conversation is the default companion workspace', async ({ page }) => {
-  await page.goto('/#/');
-  await expect(page.locator('main[data-route-id="agent"]')).toBeVisible();
-  await expect(page.locator('.shell-topbar__title h1')).toHaveText('对话');
-});
-
-test('all registered routes commit before data work and preserve the selected state', async ({ page }, testInfo) => {
-  await page.goto('/#/overview');
-  await expect(page.locator('main[data-route-id="overview"]')).toBeVisible();
-  const navigationLatencies: number[] = [];
-  const routeSequence = [...routes.slice(1), routes[0]];
-
-  for (const route of routeSequence) {
-    navigationLatencies.push(await openRoute(page, route.id));
-    await expect(page.locator('.shell-route-stage')).toHaveAttribute('data-active-route', route.id);
-    await expect(page.locator('.shell-route-stage')).toHaveAttribute('aria-label', `${route.label}主内容`);
-    if (route.id === 'project-field') {
-      await expect(page.locator('.shell-topbar')).toHaveCount(0);
-      await expect(page.locator('.shell-sidebar')).toHaveCount(0);
-    } else {
-      await expect(page.locator('.shell-topbar__title > :is(h1, strong)')).toHaveText(route.label);
-      await expect(page.locator(`.shell-sidebar [data-route="${route.id}"]`)).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
-    }
+test('the default and historical frontend URLs open the same PAWOS desktop', async ({ page }) => {
+  for (const search of ['', '?frontend=legacy', '?frontend=paw-os']) {
+    await page.goto(`/${search}`);
+    await expect(page.getByTestId('paw-os-product-root')).toBeVisible();
+    await expect(page.locator('.paw-wayfinder')).toBeVisible();
+    await expect(page.locator('.control-shell')).toHaveCount(0);
     await expectNoHorizontalPageOverflow(page);
   }
-
-  const p95Ms = percentile(navigationLatencies, 0.95);
-  const maxMs = Math.max(...navigationLatencies);
-  await testInfo.attach('navigation-performance.json', {
-    body: JSON.stringify({ samplesMs: navigationLatencies, p95Ms, maxMs }, null, 2),
-    contentType: 'application/json',
-  });
-  expect(p95Ms).toBeLessThan(100);
-  expect(maxMs).toBeLessThan(250);
 });
 
-test('mobile route dialog is keyboard operable and restores focus', async ({ page }, testInfo) => {
-  test.skip(!testInfo.project.name.startsWith('mobile-'), 'mobile navigation contract');
-  await page.goto('/#/overview');
-  await expect(page.locator('main[data-route-id="overview"]')).toBeVisible();
+test('Launchpad opens every registered App through the product window host', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  test.skip(!['desktop-1440x900', 'mobile-390x844'].includes(info.project.name));
+  await page.goto('/?controlTransport=mock');
+  for (const app of pawOsAppRegistry) {
+    await page.getByRole('button', { name: '全部 App', exact: true }).click();
+    const launcher = page.getByRole('dialog', { name: '全部 App' });
+    await launcher.locator(`button[data-app="${app.id}"]`).click();
+    await expect(launcher).toBeHidden();
+    const shell = page.locator(`.paw-window-shell[data-app="${app.id}"]`);
+    await expect(shell).toBeVisible();
+    await expectNoHorizontalPageOverflow(page);
+    await shell.getByRole('button', { name: '关闭窗口', exact: true }).click();
+    await expect(shell).toBeHidden();
+  }
+});
 
-  const trigger = page.getByRole('navigation', { name: '快捷导航' })
-    .getByRole('button', { name: '打开全部导航' });
+test('Launchpad traps keyboard focus and returns it to the opener', async ({ page }) => {
+  await page.goto('/?controlTransport=mock');
+  const trigger = page.getByRole('button', { name: '全部 App', exact: true });
   await trigger.focus();
   await page.keyboard.press('Enter');
-
-  const dialog = page.getByRole('dialog', { name: '全部功能' });
+  const dialog = page.getByRole('dialog', { name: '全部 App' });
   await expect(dialog).toBeVisible();
-  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-
+  expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Tab');
-  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Escape');
-
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
-});
-
-test('desktop navigation exposes a visible focus indicator', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name.startsWith('mobile-'), 'desktop navigation contract');
-  await page.goto('/#/overview');
-  await expect(page.locator('main[data-route-id="overview"]')).toBeVisible();
-
-  const firstLink = page.locator('.shell-sidebar [data-route="overview"]');
-  await firstLink.focus();
-  await expect(firstLink).toBeFocused();
-  const outline = await firstLink.evaluate((element) => getComputedStyle(element).outlineStyle);
-  expect(outline).not.toBe('none');
 });

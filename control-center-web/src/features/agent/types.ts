@@ -4,6 +4,8 @@ import type { AgentSessionV1 } from '@/contracts/generated/agent-session.v1';
 import type { ControlToolManifestV1 } from '@/contracts/generated/control-tool-manifest.v1';
 import type { PickedFile } from '@/platform/transport';
 
+export type CodemodeMode = 'on' | 'only' | 'off';
+
 export type SessionSummary = Pick<
   AgentSessionV1,
   | 'id'
@@ -35,7 +37,10 @@ export type SessionSummary = Pick<
     | 'ownerAppId'
     | 'surfaceKey'
     | 'evaluationSnapshot'
-  >>;
+  >> & {
+    /** Optional until the Runtime session snapshot advertises Pi codemode mode. */
+    codemodeMode?: CodemodeMode;
+  };
 
 export interface AgentPermissionSelection {
   mode: 'assistant' | 'coordinator';

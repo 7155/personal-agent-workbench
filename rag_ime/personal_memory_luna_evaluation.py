@@ -11,6 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .agent_sessions import AgentSessionStore
 from .agent_tool_ids import MEMORY_CURATION_TOOL_PROFILE
 from .activity_timeline_evaluation import (
@@ -36,7 +37,7 @@ PERSONAL_MEMORY_LUNA_EVALUATION_SCHEMA_VERSION = (
     "rag-ime.personal-memory-luna-evaluation.v1"
 )
 PERSONAL_MEMORY_LUNA_TRANSPORT = "codex_cli_ephemeral"
-_PRIVATE_MEMORY_MODELS = frozenset({"gpt-5.6-luna", "gpt-5.6-sol"})
+_PRIVATE_MEMORY_MODELS = frozenset({DEFAULT_AGENT_MODEL_ID, "gpt-5.6-luna", "gpt-5.6-sol"})
 _PRIVATE_MEMORY_CONTEXT_PROFILES = frozenset({"full-json-v1", "compact-json-v1"})
 _PRIVATE_MEMORY_PROMPT_CONTRACTS = frozenset({"standard-v1", "concise-json-v1"})
 _PHASES = frozenset(
@@ -803,7 +804,7 @@ class PrivateCodexLunaMemoryExecutor:
     """
 
     provider = "openai-codex"
-    model_id = "gpt-5.6-luna"
+    model_id = DEFAULT_AGENT_MODEL_ID
     thinking_level = "max"
     transport = PERSONAL_MEMORY_LUNA_TRANSPORT
 
@@ -814,7 +815,7 @@ class PrivateCodexLunaMemoryExecutor:
         audit_db_path: str | Path | None = None,
         timeout_seconds: float = 1_200.0,
         codex_bin: str = "codex",
-        model_id: str = "gpt-5.6-luna",
+        model_id: str = DEFAULT_AGENT_MODEL_ID,
         context_profile: str = "full-json-v1",
         prompt_contract: str = "standard-v1",
         structured_runner: Callable[..., LunaStructuredRun] = run_luna_structured,
@@ -1232,6 +1233,7 @@ class PrivateCodexLunaMemoryExecutor:
             phase=phase,
             timeout_seconds=self.timeout_seconds,
             codex_bin=self.codex_bin,
+            model=self.model_id,
         )
         return run, False
 
@@ -2064,7 +2066,7 @@ def _evaluation_prompt(
     messages: Sequence[Mapping[str, object]],
     *,
     requested_output_tokens: int | None,
-    required_model: str = "gpt-5.6-luna",
+    required_model: str = DEFAULT_AGENT_MODEL_ID,
     context_profile: str = "full-json-v1",
     prompt_contract: str = "standard-v1",
 ) -> tuple[str, dict[str, object]]:

@@ -16,6 +16,7 @@ from urllib.parse import unquote, urlsplit
 
 from rag_ime.agent_execution_policy import read_only_policy_active, unrestricted_workspace_policy_active
 from rag_ime.agent_workspace_roots import system_wide_workspace_roots
+from rag_ime.browser_control import BrowserControlService
 from rag_ime.pi.public import inspectable_tool_result
 
 from .context import ContextManifest, Material, build_manifest, choose_reading_depth
@@ -27,6 +28,7 @@ _REF_FIELDS = frozenset({"sourceRef", "required", "selection", "selector", "exte
 _READ_BYTES = 96000
 _ARTIFACT_FILE_BYTES = 2 * 1024 * 1024
 _ARTIFACT_TOTAL_BYTES = 8 * 1024 * 1024
+_ARTIFACT_SHA256_SUFFIX = re.compile(r"#sha256:([0-9a-fA-F]{64})$")
 # Only task execution receipts are shared. Room/control/discovery and personal
 # memory tool results may contain other participants' context, not task proof.
 _EVIDENCE_TOOLS = frozenset({"read", "bash", "write", "edit", "grep", "find", "ls",
@@ -43,7 +45,10 @@ _EVIDENCE_RESULT_FIELDS = frozenset({"schemaVersion", "summary", "path", "relati
     "resourceRevision", "readOrigin", "startLine", "endLine", "nextLineOffset", "nextOffset",
     "offset", "size", "contentBytes", "truncated", "receipt", "output", "stdout", "stderr",
     "exitCode", "timedOut", "outputLimited", "outputBytes", "terminal", "retryable", "terminalReason"})
-_EVIDENCE_ARCHIVE_BYTES = 256000
+# Full scoped receipts live in the existing paginated media owner, not the
+# bounded inline context. Stay within that owner's text attachment limit.
+_EVIDENCE_ARCHIVE_BYTES = _ARTIFACT_FILE_BYTES
+_EVIDENCE_RECORD_BYTES = 512000
 _COMMAND_RECEIPT_SEMANTICS = {
     "schemaVersion": "rag-ime.workspace-command-receipt.v1",
     "owner": "WorkspaceHarness._run_sandboxed",
@@ -122,6 +127,13 @@ class JevMaterialService:
         and `../` are explicit paths even without one. The WorkspaceHarness
         remains the authority for resolving each candidate under Session roots.
         """
+        # A declared revision annotates a path; it is not part of its filename.
+        # Other fragments remain untouched and are not interpreted as hashes.
+        ref = _ARTIFACT_SHA256_SUFFIX.sub("", ref)
+        # BrowserControl owns these immutable snapshot resources. Its public
+        # imagePath is an HTTP route, not an absolute workspace filename.
+        if re.fullmatch(r"/(?:api|control/v1)/browser/snapshots/snap_[0-9a-f]{32}/image", ref):
+            return None
         if ref.startswith("workspace:"):
             return ref[len("workspace:"):]
         parsed = urlsplit(ref)
@@ -167,7 +179,18 @@ class JevMaterialService:
             try:
                 if not path or "\x00" in path:
                     raise GraphError("invalid workspace artifact path")
-                target, root = reader._resolve_existing_path(roots, path, allow_directory=False)
+                relocation = None
+                try:
+                    target, root = reader._resolve_existing_path(roots, path, allow_directory=False)
+                except (ValueError, RuntimeError, OSError):
+                    documents = getattr(self.service, "work_documents", None)
+                    resolve = getattr(documents, "relocated_artifact_path", None)
+                    relocation = resolve(path, authority_kind="room_work_item", authority_id=task.id) if callable(resolve) else None
+                    if relocation is None:
+                        raise
+                    # The WorkDocument owner's receipt establishes identity;
+                    # the verifier's existing reader still owns access and bytes.
+                    target, root = reader._resolve_existing_path(roots, relocation["path"], allow_directory=False)
                 if reader._is_sensitive_for_session(session, target, root):
                     raise GraphConflict("workspace artifact is unavailable")
                 flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -196,8 +219,14 @@ class JevMaterialService:
                 finally:
                     os.close(fd)
                 remaining -= len(raw)
-                revisions.append({"sourceRef": ref, "status": "available",
-                                  "revision": "sha256:" + hashlib.sha256(raw).hexdigest()})
+                actual_hash = hashlib.sha256(raw).hexdigest()
+                declared = _ARTIFACT_SHA256_SUFFIX.search(ref)
+                if declared and declared.group(1).lower() != actual_hash:
+                    raise GraphConflict("workspace artifact differs from declared revision")
+                revision = {"sourceRef": ref, "status": "available", "revision": "sha256:" + actual_hash}
+                if relocation is not None:
+                    revision.update(resolvedRef=str(target), relocationReceiptId=relocation["relocationReceiptId"])
+                revisions.append(revision)
             except (AttributeError, ValueError, RuntimeError, OSError):
                 revisions.append({"sourceRef": ref, "status": "unavailable"})
         return revisions
@@ -232,17 +261,22 @@ class JevMaterialService:
             if (actor.get("status") != "active" or actor.get("roomId") != snapshot.room_id
                 or actor.get("sessionId") != request.get("sessionId")):
                 return missing
-            history = self.service.runtime.session_snapshot(request["sessionId"])
+            reader = getattr(self.service.runtime, "session_tool_evidence", None)
+            history = (reader(request["sessionId"], turn_id=receipt["turnId"],
+                              client_message_id=request["dispatchId"]) if callable(reader)
+                       else self.service.runtime.session_snapshot(request["sessionId"]))
         except (AttributeError, KeyError, ValueError, RuntimeError, OSError):
             return missing
         if not isinstance(history, Mapping) or not isinstance(history.get("toolHistoryEvents"), list):
             return missing
         binding = {**expected, "sessionId": request["sessionId"], "turnId": receipt["turnId"]}
-        events = [event for event in history["toolHistoryEvents"] if isinstance(event, Mapping)
+        bound_events = [event for event in history["toolHistoryEvents"] if isinstance(event, Mapping)
                   and event.get("sessionId") == binding["sessionId"] and event.get("turnId") == binding["turnId"]
                   and event.get("eventType") in {"tool_started", "tool_finished"}
-                  and isinstance(event.get("payload"), Mapping)
-                  and event["payload"].get("toolName") in _EVIDENCE_TOOLS]
+                  and isinstance(event.get("payload"), Mapping)]
+        bound_starts = {event['payload'].get('toolCallId'): event for event in bound_events
+                        if event['eventType'] == 'tool_started'}
+        events = [event for event in bound_events if event['payload'].get('toolName') in _EVIDENCE_TOOLS]
         # Browser discovery/trace can contain unrelated Task Spaces. Share only
         # commands actually invoked by this exact worker turn, not global views.
         browser_calls = {event["payload"].get("toolCallId") for event in events
@@ -252,7 +286,8 @@ class JevMaterialService:
         events = [event for event in events if event["payload"].get("toolName") != "browser"
                   or event["payload"].get("toolCallId") in browser_calls]
         starts = {e["payload"].get("toolCallId"): e for e in events if e["eventType"] == "tool_started"}
-        records, record_sizes, seen, finished_ids, omitted, partial = [], [], set(), set(), 0, False
+        records, record_sizes, seen, finished_ids, omitted = [], [], set(), set(), 0
+        partial = any(event["payload"].get("nestedCallsComplete") is False for event in bound_events)
         archive_bytes = len(canonical(binding).encode()) + 2000
         for event in events:
             payload = event["payload"]
@@ -266,12 +301,31 @@ class JevMaterialService:
             if start and start["payload"].get("toolName") != name:
                 partial = True
                 continue
+            # A completion without an inspectable result (such as a cold PTC
+            # child receipt) is missing evidence, not a still-running tool.
+            finished_ids.add(call_id)
             raw = payload.get("result")
+            result_source = ("native_nested_call_result"
+                             if payload.get("resultSource") == "native_nested_call_result" else None)
+            if not isinstance(raw, Mapping) and name == 'browser' and start:
+                native = start['payload']
+                parent = bound_starts.get(native.get('parentToolCallId'), {})
+                parent_payload = parent.get('payload', {})
+                if (native.get('argumentSource') == 'native_nested_call_arguments'
+                    and parent_payload.get('toolName') == 'codemode'
+                    and parent_payload.get('argumentSource') == 'native_transcript_arguments'
+                    and isinstance(native.get('args'), Mapping)
+                    and getattr(self.service, 'db_path', None)):
+                    raw = BrowserControlService.receipt_for_native_run(self.service.db_path,
+                        session_id=binding['sessionId'], arguments=native['args'],
+                        started_at_ms=int(parent.get('createdAtMs') or 0),
+                        finished_at_ms=int(event.get('createdAtMs') or 0),
+                        status=str(payload.get('status') or ''))
+                    if raw is not None:
+                        result_source = 'bound_browser_control_receipt'
             if not isinstance(raw, Mapping):
                 partial = True
                 continue
-            # Archive limits do not turn an observed completion into a pending call.
-            finished_ids.add(call_id)
             result = {key: value for key, value in raw.items() if key in _EVIDENCE_RESULT_FIELDS}
             # Never forward image bytes, private assistant messages, reasoning,
             # Room lists, governance internals or memory checkpoint metadata.
@@ -297,7 +351,9 @@ class JevMaterialService:
                 result["content"] = raw["content"]
             result = inspectable_tool_result(result)
             arguments = start.get("payload", {}).get("args", {})
-            argument_source = "runtime_redacted_arguments"
+            argument_source = start.get("payload", {}).get("argumentSource", "runtime_redacted_arguments")
+            if argument_source not in {"native_transcript_arguments", "native_nested_call_arguments"}:
+                argument_source = "runtime_redacted_arguments"
             # Native bash's public args intentionally shorten paths. Its applied
             # owner receipt retains the exact request, with its own causal binding.
             approval = raw.get("approval", {})
@@ -315,15 +371,17 @@ class JevMaterialService:
                       "finishedAtMs": event.get("createdAtMs"), "timelineSequence": event.get("timelineSequence"),
                       "arguments": arguments, "argumentSource": argument_source,
                       "isError": payload.get("isError"), "result": result}
+            if result_source:
+                record['resultSource'] = result_source
             command_receipt = result.get("receipt") if isinstance(result, Mapping) else None
             if (isinstance(command_receipt, Mapping)
                 and command_receipt.get("schemaVersion") == _COMMAND_RECEIPT_SEMANTICS["schemaVersion"]):
                 record["receiptSemantics"] = {**_COMMAND_RECEIPT_SEMANTICS, "receiptPath": "result.receipt"}
             elif isinstance(result, Mapping) and result.get("schemaVersion") == _COMMAND_RECEIPT_SEMANTICS["schemaVersion"]:
                 record["receiptSemantics"] = {**_COMMAND_RECEIPT_SEMANTICS, "receiptPath": "result"}
-            if not start or _source_truncated(raw):
+            if not start or _source_truncated(raw) or start.get("payload", {}).get("argumentsBytes"):
                 partial = True
-            bounded = _bounded_evidence(record, 64000)
+            bounded = _bounded_evidence(record, _EVIDENCE_RECORD_BYTES)
             if bounded is not record:
                 record = {key: value for key, value in record.items() if key not in {"arguments", "result"}}
                 record["result"] = bounded
@@ -332,7 +390,7 @@ class JevMaterialService:
             # Keep the latest bounded execution suffix: final tests and readback
             # receipts must not lose their place to earlier large file reads.
             # Eviction remains explicit partial evidence, never a success signal.
-            while records and (len(records) >= 64 or archive_bytes + size > _EVIDENCE_ARCHIVE_BYTES):
+            while records and archive_bytes + size > _EVIDENCE_ARCHIVE_BYTES:
                 records.pop(0)
                 archive_bytes -= record_sizes.pop(0)
                 omitted += 1
@@ -548,20 +606,61 @@ class JevMaterialService:
                 snapshot, dependency, lifecycle.effect_for_dispatch(dependency.accepted_turn_id),
                 inline_byte_budget=2000,
             ) if lifecycle is not None else {"status": "unavailable", "tools": []}
+            handoff = {"taskId": dependency.id,
+                       "taskRevision": dependency.revision,
+                       "state": dependency.state,
+                       "stateSource": "current canonical WorkItem",
+                       "acceptedAtMs": dependency.completed_at_ms or None,
+                       "statePolicy": "state 是宿主当前已验收状态；acceptedAtMs 来自该 WorkItem 的 completedAtMs，记录验收完成时间，可与下游工具 startedAtMs 核对前置时序。result 是验收前的历史执行者提交，可能仍写着待验收。不得用历史文字覆盖当前 state。",
+                       "result": dependency.result,
+                       "artifacts": list(dependency.artifacts),
+                       "evidence": list(dependency.evidence),
+                       "workerToolEvidence": tool_evidence}
+            handoff = self._dependency_handoff(snapshot, task, dependency, handoff)
             materials.append(Material("dependency:" + dependency.id, str(dependency.revision),
                                       "已验收依赖成果", "work:" + dependency.id, "",
-                                      original=canonical({"taskId": dependency.id,
-                                                          "taskRevision": dependency.revision,
-                                                          "state": dependency.state,
-                                                          "stateSource": "current canonical WorkItem",
-                                                          "acceptedAtMs": dependency.completed_at_ms or None,
-                                                          "statePolicy": "state 是宿主当前已验收状态；acceptedAtMs 来自该 WorkItem 的 completedAtMs，记录验收完成时间，可与下游工具 startedAtMs 核对前置时序。result 是验收前的历史执行者提交，可能仍写着待验收。不得用历史文字覆盖当前 state。",
-                                                          "result": dependency.result,
-                                                          "artifacts": list(dependency.artifacts),
-                                                          "evidence": list(dependency.evidence),
-                                                          "workerToolEvidence": tool_evidence}),
+                                      original=canonical(handoff),
                                       readable=True, required=True))
         return materials
+
+    def _dependency_handoff(self, snapshot, consumer, dependency, body):
+        """Keep accepted identity inline and exact upstream proof under its
+        existing Room media owner. Dispatch is not another complete read of
+        every upstream transcript; Pi reads the versioned package as needed."""
+        if len(canonical(body).encode('utf-8')) <= 2200:
+            return body
+        archive = {"schemaVersion": "jev-accepted-dependency/1", "graphId": snapshot.graph_id,
+                   "rootId": snapshot.root_id, "roomId": snapshot.room_id,
+                   "ownerId": dependency.owner_id, "dispatchId": dependency.accepted_turn_id, **body}
+        try:
+            actor = self.service.rooms.participant(consumer.owner_id)
+            revisions = self.artifact_revisions(snapshot, dependency, actor['sessionId'])
+            if revisions:
+                archive['artifactRevisions'] = revisions
+            media = self.service.media
+            raw = canonical(archive).encode('utf-8')
+            sha = hashlib.sha256(raw).hexdigest()
+            existing = next((item for item in media.list_for_room(snapshot.room_id, limit=500)
+                             if item.get('originTool') == 'jev_accepted_dependency' and item.get('sha256') == sha), None)
+            if existing:
+                _receipt, stored = media.read(existing['mediaId'], room_id=snapshot.room_id)
+                if stored != raw:
+                    existing = None
+            stored = existing or media.import_bytes(room_id=snapshot.room_id, data=raw, mime_type='text/plain',
+                file_name='accepted-dependency.json', origin='tool_result', origin_tool='jev_accepted_dependency',
+                origin_receipt_id=dependency.accepted_turn_id or dependency.id)
+            compact = {key: body[key] for key in ('taskId', 'taskRevision', 'state', 'stateSource', 'acceptedAtMs')}
+            compact.update(readRef='media://' + stored['mediaId'], archiveSha256=sha, archiveBytes=len(raw),
+                inlineTruncated=True, resultPreview=dependency.result.encode('utf-8')[:500].decode('utf-8', errors='ignore'),
+                artifactCount=len(dependency.artifacts),
+                readPolicy='readRef 是完整已验收成果、artifacts、当前文件路径/版本与 workerToolEvidence。'
+                    'resultPreview 不是全文；接口、交接或证据需要原文时用 read 分页读取至 nextLineOffset=null。'
+                    '验收状态以当前 state 为准，历史 result 不覆盖它；可读文件无需复制旧路径。')
+            return compact
+        except (AttributeError, KeyError, ValueError, RuntimeError, OSError):
+            # Retain the original if no actual readable copy exists. Context
+            # budgeting must report this gap, never invent a successful read.
+            return body
 
     def _read(self, session, reference):
         source = str(reference["sourceRef"])

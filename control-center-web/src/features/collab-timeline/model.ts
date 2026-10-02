@@ -13,7 +13,7 @@ export type CollabLaneKind = 'origin' | 'partner' | 'satellite' | 'agent';
 export type CollabLaneState = 'idle' | 'thinking' | 'working' | 'waiting' | 'reviewing' | 'done' | 'error' | 'stopped';
 export type CollabSegmentKind = 'plan' | 'execute' | 'review' | 'synthesize' | 'wait' | 'origin' | 'satellite' | 'chat';
 export type CollabHandoffKind = 'request' | 'dispatch' | 'submit' | 'review' | 'accept' | 'return' | 'message' | 'reply' | 'recruit' | 'result';
-export type CollabMarkKind = 'tool' | 'tool_failed' | 'accept' | 'return' | 'recruit' | 'model' | 'final';
+export type CollabMarkKind = 'tool' | 'tool_failed' | 'accept' | 'return' | 'recruit' | 'model' | 'final' | 'final_unfinished';
 
 export interface CollabLane {
   id: string;
@@ -45,6 +45,7 @@ export interface CollabSegment {
   open: boolean;
   label: string;
   failed?: boolean;
+  aborted?: boolean;
 }
 
 export interface CollabHandoff {
@@ -78,7 +79,28 @@ export interface CollabEvent {
 export interface CollabPhase {
   key: string;
   label: string;
-  state: 'pending' | 'current' | 'done';
+  state: 'pending' | 'current' | 'done' | 'failed';
+}
+
+export interface CollabTask {
+  id: string;
+  objective: string;
+  ownerLaneId: string;
+  state: string;
+  stateLabel?: string;
+  waitingOn?: string[];
+  expectedOutput: string;
+  acceptance: string[];
+  result: string;
+}
+export interface CollabDispatch {
+  id: string;
+  taskId: string;
+  fromLaneId: string;
+  toLaneId: string;
+  objective: string;
+  state: string;
+  atMs: number;
 }
 
 export interface CollabTimeline {
@@ -90,6 +112,8 @@ export interface CollabTimeline {
   marks: CollabMark[];
   events: CollabEvent[];
   phases: CollabPhase[];
+  tasks?: CollabTask[];
+  dispatches?: CollabDispatch[];
   startMs: number;
   endMs: number;
   live: boolean;
@@ -205,7 +229,9 @@ export function collabLaneStateAt(timeline: CollabTimeline, lane: CollabLane, at
     const ended = timeline.segments.filter((item) => item.laneId === lane.id && item.endMs <= atMs);
     if (!ended.length) return { state: 'idle', label: '待命' };
     const last = ended.reduce((a, b) => (a.endMs >= b.endMs ? a : b));
-    return last.failed ? { state: 'error', label: `${last.label} · 失败` } : { state: 'done', label: `${last.label} · 已交回` };
+    return last.failed ? { state: 'error', label: `${last.label} · 失败` }
+      : last.aborted ? { state: 'stopped', label: `${last.label} · 已停止` }
+        : { state: 'done', label: `${last.label} · 已交回` };
   }
   const state: CollabLaneState = segment.kind === 'wait' ? 'waiting'
     : segment.kind === 'plan' || segment.kind === 'synthesize' ? 'thinking'
@@ -224,24 +250,58 @@ export function collabFocusAt(timeline: CollabTimeline, atMs: number): { laneId:
   return { laneId: last.toLaneId, fromLaneId: last.fromLaneId, sinceMs: last.atMs };
 }
 
+/** Replay is one deterministic clock. Interrupt a handoff at its current
+ * position instead of teleporting back to the next sender's lane. */
+export function collabFocusPositionAt(
+  timeline: CollabTimeline,
+  atMs: number,
+  laneY: (id: string) => number,
+  durationMs = 4200,
+): number {
+  const origin = timeline.lanes.find((lane) => lane.kind === 'origin') ?? timeline.lanes[0];
+  let from = origin ? laneY(origin.id) : 0;
+  let to = from;
+  let since = timeline.startMs;
+  const position = (time: number) => {
+    const progress = Math.min(1, Math.max(0, (time - since) / durationMs));
+    return from + (to - from) * (1 - (1 - progress) ** 3);
+  };
+  const moves = timeline.handoffs.filter((item) => item.atMs <= atMs && !item.failed && !item.pending && !['message', 'reply', 'recruit'].includes(item.kind)).sort((a, b) => a.atMs - b.atMs);
+  for (const move of moves) {
+    from = position(move.atMs);
+    to = laneY(move.toLaneId);
+    since = move.atMs;
+  }
+  return position(atMs);
+}
+
 export function collabPhasesAt(timeline: CollabTimeline, atMs: number): CollabPhase[] {
   if (atMs >= timeline.endMs - 1) return timeline.phases;
   const reached = new Set<string>();
+  const failed = new Set<string>();
   for (const segment of timeline.segments) {
     if (segment.startMs > atMs) continue;
     if (segment.kind === 'plan') reached.add('plan');
     if (segment.kind === 'execute' || segment.kind === 'satellite' || segment.kind === 'chat') reached.add('execute');
     if (segment.kind === 'review') reached.add('review');
     if (segment.kind === 'synthesize') reached.add('reply');
+    if (segment.failed && segment.endMs <= atMs) {
+      if (segment.kind === 'plan' || segment.kind === 'execute' || segment.kind === 'review') failed.add(segment.kind);
+      if (segment.kind === 'synthesize') failed.add('reply');
+    }
   }
   for (const mark of timeline.marks) if (mark.atMs <= atMs && mark.kind === 'accept') reached.add('accept');
-  for (const mark of timeline.marks) if (mark.atMs <= atMs && mark.kind === 'final') reached.add('reply');
+  for (const mark of timeline.marks) if (mark.atMs <= atMs && (mark.kind === 'final' || mark.kind === 'final_unfinished')) {
+    reached.add('reply');
+    if (mark.kind === 'final_unfinished') failed.add('reply');
+  }
   const order = timeline.phases.map((phase) => phase.key);
-  const lastIndex = Math.max(-1, ...order.map((key, index) => (reached.has(key) ? index : -1)));
-  return timeline.phases.map((phase, index) => ({
-    ...phase,
-    state: !reached.has(phase.key) ? 'pending' : index < lastIndex ? 'done' : 'current',
-  }));
+  const observed = order.filter((key) => reached.has(key) || failed.has(key));
+  const lastIndex = observed.length - 1;
+  return observed.map((key, index) => {
+    const phase = timeline.phases.find((candidate) => candidate.key === key)!;
+    return { ...phase, state: failed.has(key) ? 'failed' : index < lastIndex ? 'done' : 'current' };
+  });
 }
 
 export const COLLAB_PHASES: readonly { key: string; label: string }[] = [
@@ -253,11 +313,20 @@ export const COLLAB_PHASES: readonly { key: string; label: string }[] = [
 ];
 
 /** Phases from observed evidence at the end of the timeline. */
-export function collabPhasesFromEvidence(input: { reached: ReadonlySet<string>; final: boolean }): CollabPhase[] {
+export function collabPhasesFromEvidence(input: {
+  reached: ReadonlySet<string>;
+  final: boolean;
+  failed?: ReadonlySet<string>;
+}): CollabPhase[] {
   const order = COLLAB_PHASES.map((phase) => phase.key);
-  const lastIndex = Math.max(-1, ...order.map((key, index) => (input.reached.has(key) ? index : -1)));
-  return COLLAB_PHASES.map((phase, index) => ({
-    ...phase,
-    state: !input.reached.has(phase.key) ? 'pending' : input.final || index < lastIndex ? 'done' : 'current',
-  }));
+  const failed = input.failed ?? new Set<string>();
+  const observed = order.filter((key) => input.reached.has(key) || failed.has(key));
+  const lastIndex = observed.length - 1;
+  return observed.map((key, index) => {
+    const phase = COLLAB_PHASES.find((candidate) => candidate.key === key)!;
+    return {
+      ...phase,
+      state: failed.has(key) ? 'failed' : input.final || index < lastIndex ? 'done' : 'current',
+    };
+  });
 }

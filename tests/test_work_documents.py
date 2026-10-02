@@ -82,6 +82,46 @@ class WorkDocumentTests(unittest.TestCase):
         self.assertEqual(abandoned["counts"]["abandoned"], 1)
         return abandoned, self._latest_todo_event_id()
 
+    def test_registered_relocation_resolves_only_its_exact_authority_and_source(self) -> None:
+        _todo, document, _content = self._todo_document("relocated")
+        kwargs = {
+            "authority_kind": "session_todo", "authority_id": self.session_id,
+        }
+        source = "docs/drafts/relocated.md"
+        self.assertFalse((self.root / source).exists())
+        resolution = self.service.relocated_artifact_path(source, **kwargs)
+        self.assertEqual(resolution["path"], str((self.root / document["path"]).resolve()))
+        self.assertEqual(resolution["documentId"], document["documentId"])
+        self.assertTrue(resolution["relocationReceiptId"].startswith("workdoc-receipt:"))
+        self.assertEqual(self.service.relocated_artifact_path(str(self.root / source), **kwargs), resolution)
+        self.assertIsNone(self.service.relocated_artifact_path("docs/other/relocated.md", **kwargs))
+        self.assertIsNone(self.service.relocated_artifact_path(source, **{**kwargs, "authority_id": "another-session"}))
+        self.assertIsNone(self.service.relocated_artifact_path(source, **{**kwargs, "authority_kind": "session_goal"}))
+        self.assertIsNone(self.service.relocated_artifact_path(str(self.root.parent / source), **kwargs))
+
+    def test_applied_archive_and_reopen_keep_exact_published_paths_resolvable(self) -> None:
+        todo, document, content = self._todo_document("published-path")
+        kwargs = {"authority_kind": "session_todo", "authority_id": self.session_id}
+        completed, receipt = self._complete_todo(todo)
+        archived = self.service.request_archive(document["documentId"], {"terminalReceiptId": receipt})
+        resolution = self.service.relocated_artifact_path(document["path"], **kwargs)
+        self.assertEqual(resolution["path"], str((self.root / archived["document"]["path"]).resolve()))
+        self.assertEqual(Path(resolution["path"]).read_text(), content)
+        advanced, transition = self._advance_todo(completed)
+        reopened = self.service.reopen(document["documentId"], {
+            "authorityRevision": advanced["revision"], "transitionReceiptId": transition,
+        })
+        resolution = self.service.relocated_artifact_path(archived["document"]["path"], **kwargs)
+        self.assertEqual(resolution["path"], str((self.root / reopened["document"]["path"]).resolve()))
+        self.assertEqual(Path(resolution["path"]).read_text(), content)
+
+    def test_pending_archive_does_not_publish_a_relocated_path(self) -> None:
+        todo, document, _content = self._todo_document("pending-path")
+        _completed, receipt = self._complete_todo(todo)
+        self.service.request_archive(document["documentId"], {"terminalReceiptId": receipt}, _reconcile=False)
+        self.assertIsNone(self.service.relocated_artifact_path(document["path"],
+            authority_kind="session_todo", authority_id=self.session_id))
+
     def _complete_todo(self, _todo: dict[str, object]) -> tuple[dict[str, object], str]:
         completed = self.sessions.mutate_agent_todo(
             self.session_id,

@@ -13,6 +13,34 @@ export function graphList(...ids: string[]) {
 }
 
 describe('Jev execution receipts', () => {
+  it('keeps a stopped Root waiting for its original classifier without reviving cancelled tasks', () => {
+    const classifications = [{ requestId: 'original-classifier', graphId: 'graph-one', status: 'cancellation_requested' }];
+    const wire = graphFixture('graph-one', { stopped: true, running: [], effects: [],
+      tasks: [{ id: 'task-one', state: 'cancelled' }], classificationDrained: false,
+      pendingClassifications: classifications,
+    });
+    const pending = parseJevSnapshot(wire, 'graph-one');
+    expect(pending.pendingClassifications).toEqual(classifications);
+    expect(pending.classificationDrained).toBe(false);
+    expect(jevIsBusy(pending)).toBe(true);
+    expect(jevStatusLabel(pending)).toBe('正在停止，等待分类结束');
+    expect(jevTaskStage(pending.tasks[0], pending)).toBe('cancelled');
+    const settled = parseJevSnapshot({ ...wire, pendingClassifications: [], classificationDrained: true }, 'graph-one');
+    expect(jevIsBusy(settled)).toBe(false);
+    expect(jevStatusLabel(settled)).toBe('已停止');
+  });
+
+  it('retains an explicit unknown drain and accepts only classifier identities from this graph', () => {
+    const parsed = parseJevSnapshot(graphFixture('graph-one', { stopped: true, effects: [], classificationDrained: false,
+      pendingClassifications: [{ requestId: 'foreign', graphId: 'other', status: 'pending' },
+        { requestId: '', graphId: 'graph-one', status: 'pending' }],
+    }), 'graph-one');
+    expect(parsed.pendingClassifications).toEqual([]);
+    expect(jevIsBusy(parsed)).toBe(true);
+    const old = parseJevSnapshot(graphFixture('graph-one', { stopped: true, effects: [] }), 'graph-one');
+    expect(jevIsBusy(old)).toBe(false);
+    expect(jevStatusLabel(old)).toBe('已停止');
+  });
   it('keeps only room-owned attachment receipts for an older Jev input', () => {
     const graph = parseJevSnapshot(graphFixture('graph-one', { roomId: 'room-one', rootAttachmentReceipts: [
       { ownerType: 'room', roomId: 'room-one', mediaId: 'media_abcdefghijklmnop', fileName: 'comparison.md', mimeType: 'text/markdown', byteSize: 40182 },
@@ -112,4 +140,88 @@ describe('Jev execution receipts', () => {
     expect(pendingJevInput(second, 'room-durable')).toBeUndefined();
     expect(second.requests).toHaveLength(0);
   });
+});
+
+it('can recover the original Jev admission after its caller edits the submitted input', async () => {
+  let first = true;
+  const transport = new MockControlTransport({ routes: { 'agent.jev.command': () => {
+    if (first) { first = false; throw new Error('lost ACK'); }
+    return { ok: true, accepted: true, graphId: 'original-graph', rootId: 'original-root' };
+  } } });
+  const input = { message: 'original task', attachmentIds: ['media-original'] };
+  await expect(createJevWork(transport, 'room-journal-negative', input)).rejects.toThrow('lost ACK');
+  input.message = 'next draft'; input.attachmentIds.push('media-next');
+  await createJevWork(transport, 'room-journal-negative', { message: 'original task', attachmentIds: ['media-original'] });
+  expect(transport.requests[1].request.body).toMatchObject({ message: 'original task', attachmentIds: ['media-original'] });
+  expect(transport.requests[1].request.body).toEqual(transport.requests[0].request.body);
+  expect(pendingJevInput(transport, 'room-journal-negative')).toBeUndefined();
+});
+
+it('does not let a late failed retry replace a newer admission after the original receipt was recovered', async () => {
+  let call = 0;
+  let retryStarted!: () => void;
+  let nextStarted!: () => void;
+  let failRetry!: (error: Error) => void;
+  let failNext!: (error: Error) => void;
+  const retryReady = new Promise<void>(resolve => { retryStarted = resolve; });
+  const nextReady = new Promise<void>(resolve => { nextStarted = resolve; });
+  const transport = new MockControlTransport({ routes: { 'agent.jev.command': () => {
+    call += 1;
+    if (call === 1) throw new Error('lost ACK');
+    if (call === 2) return new Promise((_resolve, reject) => { failRetry = reject; retryStarted(); });
+    return new Promise((_resolve, reject) => { failNext = reject; nextStarted(); });
+  } } });
+  const room = 'room-journal-late-retry';
+  await expect(createJevWork(transport, room, { message: 'original task' })).rejects.toThrow('lost ACK');
+  const originalId = (transport.requests[0].request.body as { clientMessageId: string }).clientMessageId;
+  const retry = createJevWork(transport, room, { message: 'original task' }).catch(error => error);
+  await retryReady;
+  expect(acknowledgeJevAdmission(transport, room, [{ id: 'graph-original', roomId: room, rootId: 'root-original', title: 'original task', phase: 'final', clientMessageId: originalId, stopped: false, createdAtMs: 1 }])).toBe(true);
+  const next = createJevWork(transport, room, { message: 'next task' }).catch(error => error);
+  await nextReady;
+  try {
+    failRetry(new Error('late transport failure'));
+    await retry;
+    expect(pendingJevInput(transport, room)).toEqual({ message: 'next task' });
+  } finally {
+    failNext(new Error('end observation'));
+    await next;
+  }
+});
+
+it('shares an observed admission when the same backend transport remounts', async () => {
+  let complete!: (value: object) => void;
+  let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  const first = new MockControlTransport({ routes: { 'agent.jev.command': () => new Promise(resolve => {
+    complete = resolve; started();
+  }) } });
+  const remounted = new MockControlTransport({ routes: { 'agent.jev.command': () => {
+    throw new Error('unexpected duplicate admission');
+  } } });
+  Object.defineProperty(first, 'connectionIdentity', { value: 'journal-live-remount' });
+  Object.defineProperty(remounted, 'connectionIdentity', { value: 'journal-live-remount' });
+  const input = { message: 'one task' };
+  const original = createJevWork(first, 'room-live-remount', input);
+  await ready;
+  const joined = createJevWork(remounted, 'room-live-remount', input).catch(error => error);
+  complete({ ok: true, accepted: true, graphId: 'graph-original', rootId: 'root-original' });
+  expect(await joined).toEqual(await original);
+  expect(remounted.requests).toHaveLength(0);
+});
+
+it('restores an existing v1 admission without a live owner and preserves its original request', async () => {
+  const identity = 'journal-existing-v1';
+  const room = 'room-existing-v1';
+  const input = { message: 'original task', attachmentIds: ['original-media'], previousRootId: 'original-root' };
+  const storageKey = `paw.jev.pending.v1:${encodeURIComponent(identity)}:${room}`;
+  sessionStorage.setItem(storageKey, JSON.stringify({ input, signature: 'historical signature', clientMessageId: 'original-client-id', uncertain: false }));
+  const transport = new MockControlTransport({ routes: { 'agent.jev.command': { ok: true, accepted: true, graphId: 'restored-graph' } } });
+  Object.defineProperty(transport, 'connectionIdentity', { value: identity });
+  const observed = pendingJevInput(transport, room)!;
+  observed.attachmentIds!.push('edited-draft');
+  expect(pendingJevInput(transport, room)).toEqual(input);
+  await createJevWork(transport, room, { ...input, previousRootId: 'new-observation' });
+  expect(transport.requests[0].request.body).toEqual({ action: 'create', ...input, strategy: 'auto', clientMessageId: 'original-client-id' });
+  expect(sessionStorage.getItem(storageKey)).toBeNull();
 });

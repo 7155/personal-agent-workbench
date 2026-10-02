@@ -101,6 +101,7 @@ function controlTransportBoundary(): Plugin {
           forbiddenTransportModulesExcluded: isolatedTransportBuild && forbiddenModules.length === 0,
           previewFixturesExcluded: buildChannel === 'production' && forbiddenModules.length === 0,
           sourceCommit,
+          frontendProduct: 'paw-os',
         }, null, 2)}\n`,
       });
     },

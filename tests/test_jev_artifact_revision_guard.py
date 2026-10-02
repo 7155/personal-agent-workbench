@@ -1,5 +1,6 @@
 """A Jev verifier must review the bytes of the fixed workspace artifact."""
 
+import hashlib
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
@@ -101,8 +102,84 @@ class JevArtifactRevisionGuardTests(host.JevHostFixture):
         verifier = self.active_effect(created, "verify")
         self.assertEqual(verifier["request"]["artifactRevisions"][0]["status"], "available")
 
+    def test_registered_work_document_relocation_preserves_fixed_artifact_identity(self):
+        created = self.create()
+        worker = self.active_effect(created, "execute")
+        source = Path(self.tmp.name) / "docs" / "report.md"
+        source.parent.mkdir()
+        source.write_text("actual task report\n", encoding="utf-8")
+        authority = self.service.work_documents.authority_context("room_work_item", worker["request"]["taskId"])
+        command = self.service.work_documents.register({
+            "authorityKind": "room_work_item", "authorityId": worker["request"]["taskId"],
+            "authorityRevision": authority["authorityRevision"], "workspaceRoot": self.tmp.name,
+            "sourcePath": "docs/report.md", "title": "Task report",
+        })
+        canonical = Path(self.tmp.name) / command["document"]["path"]
+        self.assertFalse(source.exists())
+        self.submit(worker, "result_submit", {
+            "resultSummary": "Registered the task report", "artifactRefs": [str(source)],
+            "evidenceRefs": [command["receipt"]["receiptId"]],
+        })
+        self.finish(worker)
+        verifier = self.active_effect(created, "verify")
+        revision = "sha256:" + hashlib.sha256(canonical.read_bytes()).hexdigest()
+        self.assertEqual(verifier["request"]["artifactRevisions"], [{
+            "sourceRef": str(source), "status": "available", "revision": revision,
+            "resolvedRef": str(canonical.resolve()), "relocationReceiptId": command["receipt"]["receiptId"],
+        }])
+        self.assertIn("resolvedRef", verifier["request"]["taskBrief"]["objective"])
+        restricted_root = Path(self.tmp.name) / "restricted"
+        restricted_root.mkdir()
+        self.service.sessions.set_runtime_policy(
+            verifier["request"]["sessionId"], mode="coordinator",
+            tool_profile_version="control-center-v1", execution_mode="workspace_managed",
+            workspace_roots=[str(restricted_root)], allowed_tools=None,
+        )
+        unavailable = self.app.materials.artifact_revisions(
+            self.snapshot(created), self.snapshot(created).task(worker["request"]["taskId"]),
+            verifier["request"]["sessionId"],
+        )
+        self.assertEqual(unavailable, [{"sourceRef": str(source), "status": "unavailable"}])
+        self.service.sessions.set_runtime_policy(
+            verifier["request"]["sessionId"], mode="coordinator",
+            tool_profile_version="control-center-v1", execution_mode="workspace_managed",
+            workspace_roots=[self.tmp.name], allowed_tools=None,
+        )
+        self.submit(verifier, "verification_submit", self.verdict())
+        canonical.write_text("changed actual task report\n", encoding="utf-8")
+        self.finish(verifier)
+        self.assertNotIn(worker["request"]["taskId"], self.app.lifecycle.verifications(self.snapshot(created)))
+
+    def test_workspace_path_with_matching_sha256_suffix_is_bound_to_file_bytes(self):
+        raw = self.artifact.read_bytes()
+        revision = "sha256:" + hashlib.sha256(raw).hexdigest()
+        ref = str(self.artifact) + "#" + revision
+        created, _worker = self.fixed_result(ref)
+        verifier = self.active_effect(created, "verify")
+        self.assertEqual(verifier["request"]["artifactRevisions"], [
+            {"sourceRef": ref, "status": "available", "revision": revision},
+        ])
+        self.submit(verifier, "verification_submit", self.verdict())
+
+    def test_mismatched_sha256_suffix_cannot_be_positive_artifact_evidence(self):
+        ref = str(self.artifact) + "#sha256:" + "0" * 64
+        created, _worker = self.fixed_result(ref)
+        verifier = self.active_effect(created, "verify")
+        self.assertEqual(verifier["request"]["artifactRevisions"], [
+            {"sourceRef": ref, "status": "unavailable"},
+        ])
+        with self.assertRaises(GraphConflict):
+            self.submit(verifier, "verification_submit", self.verdict())
+
     def test_opaque_reference_does_not_create_a_file_read_requirement(self):
         created, _worker = self.fixed_result("fixture:artifact@1")
+        verifier = self.active_effect(created, "verify")
+        self.assertEqual(verifier["request"]["artifactRevisions"], [])
+        self.submit(verifier, "verification_submit", self.verdict())
+
+    def test_browser_snapshot_resource_is_not_a_workspace_file(self):
+        created, _worker = self.fixed_result(
+            "/api/browser/snapshots/snap_f1c5c71724af451b874f3e4543366cde/image")
         verifier = self.active_effect(created, "verify")
         self.assertEqual(verifier["request"]["artifactRevisions"], [])
         self.submit(verifier, "verification_submit", self.verdict())

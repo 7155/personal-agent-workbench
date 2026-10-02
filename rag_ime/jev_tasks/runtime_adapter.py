@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 import sqlite3
 
 from rag_ime.db import sqlite_connection
@@ -185,6 +186,55 @@ def execution_drained(service, request: Mapping[str, object], dispatch_receipt: 
             "effectsReconciled": True, "settlement": settlement, "descendantsProof": dict(descendants_proof)}
 
 
+def _retained_preview(service, request, settlement, job, job_id):
+    """A submitted live preview remains owned by the durable background manager.
+
+    This hands off a referenced deliverable; it never marks the process exited,
+    accepts task verification, or releases unrelated/unfinished execution work.
+    Cancellation and failed Pi turns still require every causal job to stop.
+    """
+    if (request.get("purpose") != "execute"
+        or settlement["receipt"].get("disposition") != "completed"
+        or job.get("status") != "running" or job.get("endedAtMs")
+        or job.get("jobId") != job_id or job.get("sessionId") != request.get("sessionId")
+        or type(job.get("pid")) is not int or job["pid"] <= 0 or not job.get("startedAtMs")):
+        return None
+    command = job.get("command")
+    if not isinstance(command, str) or re.fullmatch(
+        r"[ \t]*npm[ \t]+run[ \t]+start(?:[ \t]+--(?:[ \t]+[A-Za-z0-9_.:/=-]+)+)?[ \t]*", command,
+    ) is None:
+        return None
+    lineage, causal = job.get("roomLineage"), job.get("causalMetadata")
+    if (not isinstance(lineage, Mapping) or not isinstance(causal, Mapping)
+        or causal.get("roomBound") is not True or causal.get("turnId") != settlement["turnId"]
+        or any(lineage.get(key) != request.get(key) for key in ("roomId", "rootId", "dispatchId"))
+        or lineage.get("taskId") not in (None, "", request.get("taskId"))):
+        return None
+    get_work = getattr(getattr(service, "room_work", None), "get", None)
+    if not callable(get_work):
+        return None
+    work = get_work(request["taskId"])
+    if (not isinstance(work, Mapping) or work.get("state") not in {"review", "done"}
+        or work.get("id") != request["taskId"] or work.get("roomId") != request.get("roomId")
+        or work.get("rootTurnId") != request.get("rootId")
+        or work.get("revision") != request.get("taskRevision")
+        or work.get("acceptedTurnId") != request["dispatchId"]
+        or work.get("currentOwnerParticipantId") != request.get("ownerId")
+        or work.get("assignmentKey") != request.get("assignmentKey")
+        or not work.get("resultSummary")):
+        return None
+    artifacts, evidence = work.get("artifactRefs"), work.get("evidenceRefs")
+    if (not isinstance(artifacts, list) or not isinstance(evidence, list)
+        or job_id not in artifacts + evidence):
+        return None
+    submission = {key: work.get(key) for key in ("id", "revision", "acceptedTurnId", "assignmentKey",
+        "currentOwnerParticipantId", "resultSummary", "artifactRefs", "evidenceRefs")}
+    return {"kind": "retained_preview", "taskId": request["taskId"],
+            "submissionRef": "work-submission:" + digest(submission),
+            "jobId": job_id, "command": command, "cwd": job.get("cwd"),
+            "owner": "background_job", "maxRunSeconds": job.get("maxRunSeconds")}
+
+
 def causal_descendants_proof(service, request: Mapping[str, object],
                             dispatch_receipt: Mapping[str, object], *,
                             settlement: Mapping[str, object] | None = None) -> dict[str, object]:
@@ -273,15 +323,26 @@ def causal_descendants_proof(service, request: Mapping[str, object],
                 """ + child_clause + " ORDER BY job_id",
                 (dispatch_id, session_id, turn_id, session_id, *child_ids)).fetchall()
         jobs = causal_jobs()
+        retained = []
         for row in jobs:
             job_id = str(row["job_id"])
             job = service.background_jobs.status(str(row["session_id"]), job_id)["job"]
             state = str(job["status"])
-            resources.append({"kind": "background_job", "id": job_id, "state": state,
-                              "updatedAtMs": job.get("updatedAtMs"), "endedAtMs": job.get("endedAtMs")})
+            resource = {"kind": "background_job", "id": job_id, "state": state,
+                        "updatedAtMs": job.get("updatedAtMs"), "endedAtMs": job.get("endedAtMs")}
+            resources.append(resource)
+            retention = _retained_preview(service, request, settlement, job, job_id)
+            if retention is not None:
+                resource["retention"] = retention
+                retained.append((job_id, job, retention))
             # orphaned means no current owner can prove process termination.
-            if state not in {"completed", "failed", "cancelled"} or not job.get("endedAtMs"):
+            elif state not in {"completed", "failed", "cancelled"} or not job.get("endedAtMs"):
                 pending.append("background_job:" + job_id)
+        # A revision/reassignment or withdrawn submission during the snapshot
+        # cannot become immutable handoff evidence for the previous attempt.
+        for job_id, job, retention in retained:
+            if _retained_preview(service, request, settlement, job, job_id) != retention:
+                pending.append("retained_preview_submission_changed:" + job_id)
         # Running children can spawn descendants while owner reads are in
         # progress. Accept closure only after terminal owner proofs AND an
         # unchanged complete membership, including new runs in existing batches.

@@ -1,11 +1,13 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRoomProjection, reduceRoomEvents } from '@/contracts/room-reducer';
+import { roomEventFixture } from '@/test/fixtures/events';
 import { parseJevSnapshot } from '@/features/semantic-workspace/jev-execution';
-import { collabDemoRoom, subagentRun } from './fixtures';
+import { collabDemoRoom, subagentRun } from '@/test/fixtures/collab-timeline';
 import { buildSessionCollabTimeline } from './session-timeline';
 import { buildRoomCollabTimeline } from './room-timeline';
-import { collabPhasesFromEvidence, collabFocusAt } from './model';
+import { collabPhasesFromEvidence, collabFocusAt, collabLaneStateAt } from './model';
 import { CollabTimelineStage } from './CollabTimelineStage';
 import { SessionCollabTimeline } from './SessionCollabTimeline';
 
@@ -15,6 +17,103 @@ const base = Date.UTC(2026, 8, 29, 9);
 const run = () => subagentRun({ id: 'a', parent: 's', task: '检查文本', template: 'worker', createdAtMs: base, completedAtMs: base + 20_000, tools: 3 });
 
 describe('timeline evidence boundaries', () => {
+  it('keeps exact sequential dispatch completion times and failures after the Root ends', () => {
+    const { room } = collabDemoRoom();
+    let sequence = 0;
+    const event = (second: number, eventType: string, participantId: string | null, payload: Record<string, unknown>) => ({
+      ...roomEventFixture(++sequence, eventType, { rootId: 'root-1', ...payload }),
+      roomId: room.id, turnId: 'root-1', createdAtMs: base + second * 1000,
+      participantId, sourceSessionId: participantId ? `session-${participantId}` : '',
+    });
+    const projection = reduceRoomEvents(createRoomProjection(room.id), [
+      event(0, 'user_message', null, { messageId: 'user-1', text: '连续复核', mode: 'jev', graphId: 'graph-1' }),
+      event(1, 'route_decision', 'p-earth', { dispatchId: 'review-1', targetParticipantId: 'p-earth', purpose: 'verify' }),
+      event(8, 'participant_delta', 'p-earth', { dispatchId: 'review-1', messageId: 'answer-1', delta: '第一次复核' }),
+      event(10, 'turn_completed', 'p-earth', { dispatchId: 'review-1' }),
+      event(20, 'route_decision', 'p-earth', { dispatchId: 'review-2', targetParticipantId: 'p-earth', purpose: 'verify' }),
+      event(24, 'participant_delta', 'p-earth', { dispatchId: 'review-2', messageId: 'answer-2', delta: '第二次复核' }),
+      event(30, 'turn_completed', 'p-earth', { dispatchId: 'review-2' }),
+      event(40, 'route_decision', 'p-mars', { dispatchId: 'review-failed', targetParticipantId: 'p-mars', purpose: 'verify' }),
+      event(45, 'participant_delta', 'p-mars', { dispatchId: 'review-failed', messageId: 'failed-answer', delta: '复核进行中' }),
+      event(50, 'turn_failed', 'p-mars', { dispatchId: 'review-failed', error: '复核失败' }),
+      event(100, 'turn_failed', null, { status: 'failed', error: '任务未通过' }),
+    ]);
+    expect(Object.values(projection.messagesById).find(message => message.dispatchId === 'review-failed')).toMatchObject({ status: 'failed', completedAtMs: base + 50_000 });
+    const model = buildRoomCollabTimeline({ room, projection, nowMs: base + 100_000 });
+    expect(model.segments.filter(segment => segment.laneId === 'p-earth').map(segment => segment.endMs)).toEqual([base + 10_000, base + 30_000]);
+    expect(model.segments.find(segment => segment.laneId === 'p-mars')).toMatchObject({ endMs: base + 50_000, failed: true });
+    expect(model.lanes.find(lane => lane.id === 'p-mars')?.state).toBe('error');
+    expect(model.dispatches?.find(dispatch => dispatch.id === 'review-failed')?.state).toBe('failed');
+  });
+
+  it.each([false, true])('shows cancelled dispatches as stopped with child receipt=%s', (childReceipt) => {
+    const { room } = collabDemoRoom();
+    let sequence = 0;
+    const event = (second: number, eventType: string, participantId: string | null, payload: Record<string, unknown>) => ({
+      ...roomEventFixture(++sequence, eventType, { rootId: 'root-1', ...payload }),
+      roomId: room.id, turnId: 'root-1', createdAtMs: base + second * 1000,
+      participantId, sourceSessionId: participantId ? `session-${participantId}` : '',
+    });
+    const projection = reduceRoomEvents(createRoomProjection(room.id), [
+      event(0, 'user_message', null, { text: '可取消任务', mode: 'jev', graphId: 'graph-1' }),
+      event(10, 'route_decision', 'p-mars', { dispatchId: 'cancelled', targetParticipantId: 'p-mars', purpose: 'execute' }),
+      event(45, 'participant_delta', 'p-mars', { dispatchId: 'cancelled', messageId: 'cancelled-message', delta: '执行中' }),
+      event(50, 'turn_completed', 'p-mars', { dispatchId: 'cancelled', status: 'aborted' }),
+      ...(childReceipt ? [event(50, 'participant_activity', 'p-earth', { activityKind: 'child', childDispatchId: 'cancelled', phase: 'aborted' })] : []),
+      event(100, 'turn_completed', null, { status: 'aborted' }),
+    ]);
+    expect(Object.values(projection.messagesById).find(message => message.dispatchId === 'cancelled')).toMatchObject({ status: 'aborted', completedAtMs: base + 50_000 });
+    const model = buildRoomCollabTimeline({ room, projection, nowMs: base + 100_000 });
+    const lane = model.lanes.find(item => item.id === 'p-mars')!;
+    expect(lane.state).toBe('stopped');
+    expect(model.dispatches?.find(dispatch => dispatch.id === 'cancelled')?.state).toBe('cancelled');
+    expect(model.segments.find(segment => segment.laneId === 'p-mars')).toMatchObject({ endMs: base + 50_000, aborted: true, failed: false });
+    expect(collabLaneStateAt(model, lane, base + 75_000).state).toBe('stopped');
+  });
+
+  it('keeps superseded WorkItems out of current task counts without removing dispatch history', () => {
+    const demo = collabDemoRoom();
+    const rootId = Object.keys(demo.projection.turnsById)[0]!;
+    const graph = parseJevSnapshot({
+      ok: true, mode: 'jev', graphId: 'revised-graph', roomId: demo.room.id, rootId,
+      snapshotVersion: 'v2', phase: 'execute', activeTaskIds: ['replacement'], tasks: [
+        { id: 'w-mars', state: 'cancelled', owner_id: 'p-mars', objective: '旧任务' },
+        { id: 'replacement', state: 'active', owner_id: 'p-mars', objective: '修订后的任务' },
+      ], effects: [], edges: [], ready: [], running: [], review: [], blocked: [], events: [], modelCards: [],
+    }, 'revised-graph');
+    const model = buildRoomCollabTimeline({ ...demo, graph });
+    expect(model.tasks?.some(task => task.id === 'w-mars')).toBe(false);
+    expect(model.tasks?.some(task => task.id === 'replacement')).toBe(true);
+    expect(model.dispatches?.some(dispatch => dispatch.id === 'd-mars')).toBe(true);
+  });
+
+  it('distinguishes blocked and executing tasks from the active WorkItem state', async () => {
+    const demo = collabDemoRoom({ cut: 0 });
+    const rootId = Object.keys(demo.projection.turnsById)[0]!;
+    const graph = parseJevSnapshot({
+      ok: true, mode: 'jev', graphId: 'dependency-graph', roomId: demo.room.id, rootId,
+      snapshotVersion: 'v1', phase: 'execute', tasks: [
+        { id: 'foundation', state: 'review', revision: 0, owner_id: 'p-earth', objective: '基础契约' },
+        { id: 'game', state: 'active', revision: 0, owner_id: 'p-mars', objective: '游戏规则' },
+        { id: 'scene', state: 'active', revision: 0, owner_id: 'p-venus', objective: '画面实现' },
+      ], effects: [
+        { effectId: 'verify', operation: 'dispatch', state: 'accepted', executionStatus: 'running', request: { taskId: 'foundation', taskRevision: 0, purpose: 'verify' }, receipt: {} },
+        { effectId: 'execute', operation: 'dispatch', state: 'accepted', executionStatus: 'running', request: { taskId: 'scene', taskRevision: 0, purpose: 'execute' }, receipt: {} },
+      ], edges: [{ prerequisite: 'foundation', dependent: 'game', kind: 'requires' }],
+      ready: [], running: ['scene'], review: ['foundation'], blocked: [{ taskId: 'game', reasons: ['dependency:foundation'] }], events: [], modelCards: [],
+    }, 'dependency-graph');
+    const model = buildRoomCollabTimeline({ ...demo, graph });
+    expect(model.tasks?.find(task => task.id === 'game')).toMatchObject({ state: 'blocked', stateLabel: '等待依赖', waitingOn: ['基础契约'] });
+    expect(model.tasks?.find(task => task.id === 'foundation')?.stateLabel).toBe('复核中');
+    expect(model.tasks?.find(task => task.id === 'scene')?.stateLabel).toBe('执行中');
+    render(<CollabTimelineStage timeline={model} active={false} />);
+    await userEvent.click(screen.getByRole('button', { name: '任务与分派' }));
+    const game = screen.getByText('游戏规则').closest('details')!;
+    expect(game).toHaveTextContent('等待依赖');
+    await userEvent.click(within(game).getByText('游戏规则'));
+    expect(within(game).getByText('等待前置：基础契约')).toBeVisible();
+  });
+
   it('does not equate a child output contract with task acceptance or a parent final reply', () => {
     const child = run();
     child.contract.status = 'valid';
@@ -24,8 +123,8 @@ describe('timeline evidence boundaries', () => {
     expect(model.final).toBe(false);
     expect(model.settled).toBe(true);
     expect(model.marks.some(mark => mark.kind === 'accept')).toBe(false);
-    expect(model.phases.find(phase => phase.key === 'reply')?.state).toBe('pending');
-    expect(model.phases.find(phase => phase.key === 'accept')?.state).toBe('pending');
+    expect(model.phases.find(phase => phase.key === 'reply')).toBeUndefined();
+    expect(model.phases.find(phase => phase.key === 'accept')).toBeUndefined();
   });
 
   it('does not invent tool timestamps from a usage count', () => {
@@ -56,6 +155,89 @@ describe('timeline evidence boundaries', () => {
     const model = buildRoomCollabTimeline({ room: demo.room, projection: demo.projection, nowMs: demo.nowMs, graph });
     expect(model.final).toBe(false);
     expect(model.live).toBe(true);
+  });
+
+  it('does not treat a reviewer role as an observed review dispatch', () => {
+    const demo = collabDemoRoom();
+    const reviewRoute = Object.values(demo.projection.activitiesById).find(activity => (
+      activity.kind === 'route_decision' && activity.payload.targetParticipantId === 'p-jupiter'
+    ));
+    expect(reviewRoute).toBeDefined();
+    const projection = {
+      ...demo.projection,
+      activitiesById: {
+        ...demo.projection.activitiesById,
+        [reviewRoute!.id]: { ...reviewRoute!, payload: { ...reviewRoute!.payload, purpose: undefined } },
+      },
+    };
+    const model = buildRoomCollabTimeline({ room: demo.room, projection, nowMs: demo.nowMs });
+    expect(model.lanes.find(lane => lane.id === 'p-jupiter')?.role).toBe('复核伙伴');
+    expect(model.segments.filter(segment => segment.laneId === 'p-jupiter').every(segment => segment.kind === 'execute')).toBe(true);
+    expect(model.phases.find(phase => phase.key === 'review')).toBeUndefined();
+  });
+
+  it('omits unobserved stages for a direct answer instead of showing five placeholders', () => {
+    const direct = collabDemoRoom({ cut: 0 });
+    const model = buildRoomCollabTimeline({ room: direct.room, projection: direct.projection, nowMs: direct.nowMs });
+    expect(model.phases).toEqual([]);
+  });
+
+  it('keeps a failed graph result-aware: real task denominator, failed core stages, unfinished reply', () => {
+    const demo = collabDemoRoom();
+    const rootId = Object.keys(demo.projection.turnsById)[0]!;
+    const turn = demo.projection.turnsById[rootId]!;
+    turn.status = 'failed';
+    turn.updatedAtMs = demo.nowMs;
+    turn.rootTerminalAtMs = demo.nowMs;
+    const verifyTerminal = Object.values(demo.projection.activitiesById).find(activity => (
+      activity.payload.activityKind === 'child' && activity.payload.childDispatchId === 'd-jupiter'
+    ));
+    expect(verifyTerminal).toBeDefined();
+    demo.projection.activitiesById[verifyTerminal!.id] = {
+      ...verifyTerminal!, status: 'failed', payload: { ...verifyTerminal!.payload, phase: 'failed', status: 'failed' },
+    };
+    const graph = parseJevSnapshot({
+      ok: true, mode: 'jev', graphId: 'failed-graph', roomId: demo.room.id, rootId,
+      snapshotVersion: 'failed-v1', phase: 'final', tasks: [
+        { id: 'goal', state: 'queued', parent_id: '', owner_id: 'p-earth', objective: '合成总目标' },
+        { id: 'task-a', state: 'failed', parent_id: 'goal', owner_id: 'p-mars', objective: '执行任务 A' },
+        { id: 'task-b', state: 'queued', parent_id: 'goal', owner_id: 'p-venus', objective: '执行任务 B' },
+      ], final: { content: '部分答复', status: 'failed', evidence: [] }, effects: [], edges: [], ready: [], running: [], review: [], blocked: [], events: [], modelCards: [],
+    }, 'failed-graph');
+    const model = buildRoomCollabTimeline({ room: demo.room, projection: demo.projection, graph, nowMs: demo.nowMs });
+    expect(model.counts).toMatchObject({ accepted: 0, total: 2 });
+    expect(model.phases.find(phase => phase.key === 'accept')).toBeUndefined();
+    expect(model.phases.find(phase => phase.key === 'execute')?.state).toBe('failed');
+    expect(model.phases.find(phase => phase.key === 'review')?.state).toBe('failed');
+    expect(model.phases.find(phase => phase.key === 'reply')?.state).toBe('failed');
+    expect(model.marks.find(mark => mark.kind === 'final_unfinished')?.label).toContain('未完成');
+    render(<CollabTimelineStage timeline={model} active={false} />);
+    const stage = screen.getByRole('region', { name: '多 Agent 协作时间线' });
+    expect(stage).toHaveAttribute('data-motion', 'off');
+    expect(stage.querySelector('[data-pop]')).toBeNull();
+    expect(stage.querySelector('.ctl-stamp[data-state="unfinished"]')).not.toBeNull();
+  });
+
+  it('does not mark partial acceptance complete while a failed task awaits the final report', () => {
+    const demo = collabDemoRoom();
+    const rootId = Object.keys(demo.projection.turnsById)[0]!;
+    demo.projection.turnsById[rootId]!.status = 'running';
+    const graph = parseJevSnapshot({
+      ok: true, mode: 'jev', graphId: 'partial-graph', roomId: demo.room.id, rootId,
+      snapshotVersion: 'partial-v1', phase: 'execute', tasks: [
+        { id: 'accepted', state: 'done', owner_id: 'p-mars', objective: '独立模块已验收' },
+        { id: 'failed', state: 'failed', owner_id: 'p-venus', objective: '核心核验失败' },
+      ], effects: [{ effectId: 'summary', operation: 'dispatch', request: { purpose: 'synthesize' } }],
+      edges: [], ready: [], running: [], review: [], blocked: [], events: [], modelCards: [],
+    }, 'partial-graph');
+    const model = buildRoomCollabTimeline({ ...demo, graph });
+    expect(model.counts).toMatchObject({ accepted: 1, total: 2 });
+    expect(model.phases.find(phase => phase.key === 'accept')?.state).toBe('failed');
+    expect(model.phases.find(phase => phase.key === 'execute')?.state).toBe('failed');
+    expect(model.phases.find(phase => phase.key === 'reply')?.state).toBe('current');
+    graph.tasks[1]!.state = 'active';
+    const ongoing = buildRoomCollabTimeline({ ...demo, graph });
+    expect(ongoing.phases.find(phase => phase.key === 'accept')?.state).toBe('current');
   });
 
   it('does not move the main handoff to a pending submission or side message', () => {

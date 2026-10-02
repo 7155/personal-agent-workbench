@@ -9,6 +9,7 @@ import {
 import type { ControlTransport } from '@/platform/transport';
 import { agentProjection, useAgentLiveStore } from '../state/live-store';
 import { createSnapshotRequestQueue } from './snapshot-request-queue';
+import { readRecentSessionSnapshot } from '@/features/conversation-ui/conversation-preload';
 
 export type AgentSnapshotView = 'recent' | 'full';
 export type AgentRecoveryState = 'recovering' | 'failed' | 'synced';
@@ -185,10 +186,12 @@ function createSharedAgentLiveSession(
   let snapshotController: AbortController | undefined;
   let snapshotGeneration = 0;
   let streamGeneration = 0;
+  let initialSnapshotStarted = false;
   let unsubscribe: (() => void) | undefined;
   let snapshotNeedsRepair = false;
   let recoveryAttempt = 0;
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  let recentCacheEligible = false;
 
   const broadcast = (notify: (listener: AgentLiveSessionCallbacks) => void) => {
     for (const { listener } of listeners.values()) {
@@ -327,11 +330,14 @@ function createSharedAgentLiveSession(
   function requestSnapshotValue(
     view: AgentSnapshotView,
     signal: AbortSignal,
+    useRecentCache = true,
   ): Promise<unknown> {
+    if (view === 'recent') {
+      return readRecentSessionSnapshot(transport, sessionId, signal, { useCache: useRecentCache });
+    }
     return transport.request({
       pathId: 'agent.session.snapshot',
       params: { sessionId },
-      ...(view === 'recent' ? { query: { view: 'recent' as const } } : {}),
       signal,
     });
   }
@@ -340,13 +346,23 @@ function createSharedAgentLiveSession(
     request: AgentLiveSnapshotRequest,
     requestId: number,
     controller: AbortController,
+    allowRecentCache: boolean,
   ): Promise<boolean> {
-    let requestedView = request.view ?? preferredSnapshotView();
+    // Capture authority when the read starts. A full history request already
+    // in flight when a reset arrives must not become its replacement read.
+    const beforeRead = agentProjection(sessionId);
+    const recoveryCursor = beforeRead.needsSnapshot ? beforeRead.recoveryCursor : undefined;
+    const resetRead = recoveryCursor !== undefined && recoveryCursor < beforeRead.lastSequence;
+    let requestedView: AgentSnapshotView = resetRead ? 'full' : request.view ?? preferredSnapshotView();
     let value: unknown = undefined;
     try {
       while (true) {
         try {
-          value = await requestSnapshotValue(requestedView, controller.signal);
+          value = await requestSnapshotValue(
+            requestedView,
+            controller.signal,
+            allowRecentCache,
+          );
         } catch (error) {
           if (requestedView === 'recent' && preferredSnapshotView() === 'full') {
             requestedView = 'full';
@@ -399,13 +415,14 @@ function createSharedAgentLiveSession(
       const shouldHydrate = presentable
         && !retainNewerTerminal
         && (
-          request.preserveAfterSequence === undefined
+          actualView === 'full'
+          || request.preserveAfterSequence === undefined
           || sequence > request.preserveAfterSequence
           || equalCursorIsQuiescent
           || equalCursorRepairsGap
         );
       const hydrated = shouldHydrate
-        && useAgentLiveStore.getState().hydrate(sessionId, value);
+        && useAgentLiveStore.getState().hydrate(sessionId, value, { recoveryCursor });
       const repairedWithoutRegression = retainNewerTerminal
         && clearEqualCursorGap(sessionId, sequence, resumeToken);
       const snapshot = {
@@ -441,7 +458,7 @@ function createSharedAgentLiveSession(
       if (!isCurrentSnapshot(requestId, controller) || isAbortError(error)) return false;
       snapshotAttempted = true;
       snapshotNeedsRepair = true;
-      const recoverable = requestedView === 'recent' && preferredSnapshotView() !== 'full';
+      const recoverable = loadedView !== undefined || requestedView === 'recent';
       const failure = {
         sessionId,
         view: requestedView,
@@ -469,13 +486,16 @@ function createSharedAgentLiveSession(
     // Otherwise a snapshot that the store rejects can silently lose this tail.
     batcher.flush();
     if (!active) return Promise.resolve(false);
-    clearStream();
+    // Historical reads must not suspend the live subscription while Pi works.
+    if (request.view !== 'full' || !snapshotAttempted || agentProjection(sessionId).needsSnapshot) clearStream();
+    const allowRecentCache = !initialSnapshotStarted && recentCacheEligible;
+    initialSnapshotStarted = true;
     const requestId = ++snapshotGeneration;
     const controller = new AbortController();
     snapshotController = controller;
     setRecoveryState('recovering');
     setLoading(true);
-    return performSnapshot(request, requestId, controller).finally(() => {
+    return performSnapshot(request, requestId, controller, allowRecentCache).finally(() => {
       if (snapshotController === controller) snapshotController = undefined;
     });
   }
@@ -562,7 +582,7 @@ function createSharedAgentLiveSession(
     } else if (snapshotAttempted) {
       maybeSubscribe();
     }
-    if (preferredSnapshotView() === 'full' && loadedView !== 'full' && !snapshotQueue.busy) {
+    if (preferredSnapshotView() === 'full' && loadedView !== 'full') {
       void loadSnapshot({ view: 'full' });
     }
   }
@@ -590,6 +610,11 @@ function createSharedAgentLiveSession(
       listeners.set(listener, { listener, ...options });
       if (!alreadyRunning) {
         active = true;
+        const existingProjection = useAgentLiveStore.getState().projections[sessionId];
+        recentCacheEligible = Boolean(
+          existingProjection
+          && (existingProjection.lastSequence > 0 || existingProjection.messageOrder.length > 0)
+        );
         useAgentLiveStore.getState().ensure(sessionId);
         void loadSnapshot({ view: preferredSnapshotView() });
       } else {
@@ -696,6 +721,7 @@ function clearEqualCursorGap(
       !current
       || !current.needsSnapshot
       || current.lastSequence !== sequence
+      || (current.recoveryCursor !== undefined && current.recoveryCursor !== sequence)
       || !isTerminalAgentProjection(current)
     ) return state;
     repaired = true;
@@ -708,6 +734,7 @@ function clearEqualCursorGap(
           lastEventId: nextResumeToken || current.lastEventId,
           resumeToken: nextResumeToken,
           needsSnapshot: false,
+          recoveryCursor: undefined,
           gap: undefined,
         },
       },

@@ -162,6 +162,10 @@ class RoomLifecycleService:
                 minimum=1,
                 maximum=200,
             ),
+            # The application history endpoint is the recovery path for the
+            # append-only Room archive.  The raw store keeps its bounded
+            # projection as the explicit default for local callers/tests.
+            full_history=True,
         )
 
     def update(

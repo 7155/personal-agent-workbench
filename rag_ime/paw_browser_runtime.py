@@ -11,6 +11,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Callable, Mapping
+from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
@@ -25,6 +26,9 @@ ListeningPorts = Callable[[int], list[int]]
 HostRequest = Callable[[str, str, dict[str, object], str], object]
 
 CHROMIUM_ERROR_PAGE_URL = "chrome-error://chromewebdata/"
+MAX_HOST_RESPONSE_BYTES = 12 * 1024 * 1024
+MAX_HOST_ERROR_BYTES = 64 * 1024
+MAX_HOST_ERROR_TEXT = 240
 BROWSER_LOAD_RECOVERY_HINT = (
     "检查目标地址和服务是否可用；本地预览服务请使用 workspace_job 启动并保持运行，"
     "再在当前标签页重试。"
@@ -184,6 +188,7 @@ class PawBrowserRuntime:
                     "deviceId": self.DEVICE_ID,
                     "deviceName": self.DISPLAY_NAME,
                     "clientKind": "managed",
+                    "targetType": target_type,
                     "targetId": target_id,
                     "tabId": self.tab_id(target_id),
                     "title": str(raw.get("title") or ""),
@@ -341,16 +346,59 @@ class PawBrowserRuntime:
                 "recoveryHint": BROWSER_LOAD_RECOVERY_HINT,
             })
         if action == "screenshot":
-            captured = self._cdp_request(
-                websocket_url,
-                "Page.captureScreenshot",
-                {"format": "png", "fromSurface": True, "captureBeyondViewport": False},
+            result["screenshotDataUrl"] = self._capture_screenshot(
+                target=target,
+                websocket_url=websocket_url,
             )
-            encoded = str(captured.get("data") or "") if isinstance(captured, Mapping) else ""
-            if not encoded:
-                raise PawBrowserRuntimeError("Chromium did not return a screenshot")
-            result["screenshotDataUrl"] = f"data:image/png;base64,{encoded}"
         return result
+
+    def _capture_screenshot(
+        self,
+        *,
+        target: Mapping[str, object],
+        websocket_url: str,
+    ) -> str:
+        # Electron exposes PAW Browser pages as `webview` DevTools targets. Its
+        # Page.captureScreenshot endpoint can accept the command and then hang
+        # until the WebSocket read timeout, while the owning WebContents has a
+        # supported capturePage() implementation. Keep CDP for standalone
+        # Chromium page targets and route the visible guest through its host.
+        if str(target.get("targetType") or "") == "webview" and self._live_host_pid():
+            try:
+                origin = self.host_origin_file.read_text(encoding="utf-8").strip().rstrip("/")
+                token = self.host_pid_file.with_suffix(".token").read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                raise PawBrowserRuntimeError(
+                    "PAW Browser visible guest bridge is unavailable"
+                ) from exc
+            parsed = urlsplit(origin)
+            if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port or not token:
+                raise PawBrowserRuntimeError("PAW Browser visible guest bridge is unavailable")
+            captured = self._host_request(
+                "POST",
+                f"{origin}/__paw_browser/screenshot",
+                {"targetId": str(target.get("targetId") or "")},
+                token,
+            )
+            if not isinstance(captured, Mapping) or captured.get("ok") is not True:
+                raise PawBrowserRuntimeError("PAW Browser host did not return a screenshot")
+            encoded = str(captured.get("data") or "")
+            mime = str(captured.get("mimeType") or "image/png").lower()
+            if not encoded or mime not in {"image/png", "image/jpeg", "image/webp"}:
+                raise PawBrowserRuntimeError("PAW Browser host returned an invalid screenshot")
+            if len(encoded) > MAX_HOST_RESPONSE_BYTES:
+                raise PawBrowserRuntimeError("PAW Browser host screenshot exceeds the response limit")
+            return f"data:{mime};base64,{encoded}"
+
+        captured = self._cdp_request(
+            websocket_url,
+            "Page.captureScreenshot",
+            {"format": "png", "fromSurface": True, "captureBeyondViewport": False},
+        )
+        encoded = str(captured.get("data") or "") if isinstance(captured, Mapping) else ""
+        if not encoded:
+            raise PawBrowserRuntimeError("Chromium did not return a screenshot")
+        return f"data:image/png;base64,{encoded}"
 
     @staticmethod
     def tab_id(target_id: str) -> int:
@@ -517,8 +565,36 @@ class PawBrowserRuntime:
                 "X-PAW-Browser-Token": token,
             },
         )
-        with urlopen(request, timeout=10.0) as response:
-            body = response.read(100_000)
+        try:
+            with urlopen(request, timeout=10.0) as response:
+                body = response.read(MAX_HOST_RESPONSE_BYTES + 1)
+        except HTTPError as exc:
+            try:
+                error_body = exc.read(MAX_HOST_ERROR_BYTES + 1)
+            finally:
+                exc.close()
+            if len(error_body) > MAX_HOST_ERROR_BYTES:
+                raise PawBrowserRuntimeError(
+                    f"PAW Browser host returned HTTP {exc.code}; error body exceeds the error limit"
+                ) from exc
+            detail = ""
+            if error_body:
+                try:
+                    parsed = json.loads(error_body.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    detail = error_body.decode("utf-8", "replace")
+                else:
+                    if isinstance(parsed, Mapping):
+                        detail = str(parsed.get("error") or parsed.get("message") or "")
+                    else:
+                        detail = str(parsed)
+            detail = " ".join(detail.split())[:MAX_HOST_ERROR_TEXT]
+            suffix = f": {detail}" if detail else ""
+            raise PawBrowserRuntimeError(
+                f"PAW Browser host returned HTTP {exc.code}{suffix}"
+            ) from exc
+        if len(body) > MAX_HOST_RESPONSE_BYTES:
+            raise PawBrowserRuntimeError("PAW Browser host response exceeds the response limit")
         return json.loads(body.decode("utf-8")) if body else {}
 
     @staticmethod

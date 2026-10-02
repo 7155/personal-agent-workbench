@@ -1,5 +1,30 @@
 import { expect, test } from '@playwright/test';
 
+test('image retry decodes once on explicit recovery and copy reports the actual clipboard result', async ({ page, context }, info) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  let imageRequests = 0;
+  await page.route('**/e2e/fixtures/retry-image.png', async route => {
+    imageRequests += 1;
+    if (imageRequests === 1) await route.abort('failed');
+    else await route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVfIAAAAASUVORK5CYII=', 'base64') });
+  });
+  await page.goto('/e2e/fixtures/conversation-rich-v2.html');
+  const gallery = page.locator('.paw-image-gallery-host').filter({ hasText: '失败重试图' });
+  await gallery.scrollIntoViewIfNeeded();
+  await expect(gallery).toContainText('图片未能加载');
+  expect(imageRequests).toBe(1);
+  await gallery.getByRole('button', { name: '重试预览' }).click();
+  await expect(gallery.locator('img')).toHaveAttribute('data-loaded', 'true');
+  await expect(gallery.locator('img')).toHaveAttribute('data-reveal', 'settled');
+  expect(imageRequests).toBe(2);
+  const code = page.locator('figure.paw-rich-code').filter({ hasText: 'receipt.ts' }).first();
+  await code.getByRole('button', { name: '复制代码', exact: true }).click();
+  await expect(code.getByRole('button', { name: '已复制', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('export function settle');
+  await page.screenshot({ path: info.outputPath('image-retry-copy.png') });
+});
+
 test('rich conversation renders math, data, diagrams and controlled media', async ({ page }, testInfo) => {
   const failures: string[] = [];
   page.on('pageerror', error => failures.push(error.message));

@@ -6,7 +6,7 @@ import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { PawSessionWorkspace } from '@/paw-os/apps/PawSessionWorkspace';
 import '@/paw-os/styles/paw-os.css';
 import '@/paw-os/apps/paw-apps.css';
-import '@/paw-os/styles/paw-os-agent-migrated-v1.css';
+import '@/paw-os/styles/paw-os-agent.css';
 import {
   latestCompletedScreenAnswer, prepareScreenConversation, screenActions, screenNoteBody,
   type CapturePreparation,

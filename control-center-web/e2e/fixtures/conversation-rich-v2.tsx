@@ -106,6 +106,7 @@ function Fixture() {
           <MarkdownBody text={'```html\n<section style="padding:24px;font:16px system-ui;background:#f4f4ee"><h2>HTML 输出样例</h2><p>沿用项目现有的隔离预览。</p></section>\n```'} />
         </section>
         <section id="rich-section-3"><h2>真实媒体控件，合成媒体材料</h2><RichImage source={previewImage} alt="上一版工作台设计截图" width={1200} height={853} caption="用户已提供的上一版设计，仅作对照材料" />
+          <RichImage source="/e2e/fixtures/retry-image.png" alt="失败重试图" width={32} height={32} />
           <RichMediaPlayer name="notification-sample.wav" source={previewAudio} />
           <RichMediaPlayer name="workbench-sample.mp4 · 静帧示例" source={previewVideo} kind="video" />
           <MarkdownImage src="https://invalid.example/not-loaded.png" alt="外部图片默认不自动加载" />

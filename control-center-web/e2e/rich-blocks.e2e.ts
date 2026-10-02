@@ -13,9 +13,14 @@ test('typed Rich Blocks stay safe, compact, and readable at 320px', async ({ pag
   await expect(page.getByText(/暂不支持的内容 · future_chart/)).toBeVisible();
 
   const checklist = page.locator('details.agent-rich-checklist');
-  const code = page.locator('details.agent-code-collapse');
+  const code = page.locator('figure.paw-rich-code');
   await expect(checklist).not.toHaveAttribute('open');
-  await expect(code).not.toHaveAttribute('open');
+  const expandCode = code.getByRole('button', { name: /展开阅读区/ });
+  await expect(expandCode).toHaveAttribute('aria-expanded', 'false');
+  await expandCode.click();
+  await expect(code).toHaveAttribute('data-expanded', 'true');
+  await code.getByRole('button', { name: /收起阅读区/ }).click();
+  await expect(code.getByRole('button', { name: /展开阅读区/ })).toHaveAttribute('aria-expanded', 'false');
   await checklist.locator('summary').click();
   await expect(checklist).toHaveAttribute('open', '');
   await expect(page.getByRole('table')).toContainText('Room Post');

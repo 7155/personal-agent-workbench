@@ -145,32 +145,45 @@ export class HttpControlTransport implements ControlTransport {
     const url = this.url(request.pathId, request.params, request.query);
     const headers = new Headers({ Accept: 'application/json' });
     if (route.method !== 'GET') headers.set('Content-Type', 'application/json');
-    const response = await this.fetchImpl(url, {
-      method: route.method,
-      headers,
-      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
-      ...(request.signal ? { signal: request.signal } : {}),
-    });
-    const payload = await responsePayload(response);
-    if (!response.ok) {
-      const message =
-        isRecord(payload) && typeof payload.error === 'string'
-          ? payload.error
-          : `${request.pathId} returned HTTP ${response.status}`;
-      throw new ControlTransportHttpError(
-        request.pathId,
-        response.status,
-        message,
-        payload,
-        response.status === 503
-          ? parseRetryAfterMs(response.headers.get('Retry-After'))
-          : undefined,
-      );
+    const deadline = request.timeoutMs === undefined ? undefined : new AbortController();
+    const signal = deadline?.signal ?? request.signal;
+    const forwardAbort = () => deadline?.abort(request.signal?.reason);
+    if (request.signal?.aborted) forwardAbort();
+    else if (deadline) request.signal?.addEventListener('abort', forwardAbort, { once: true });
+    const timer = deadline ? globalThis.setTimeout(() => deadline.abort(
+      new DOMException('读取超时，请重试。', 'TimeoutError'),
+    ), request.timeoutMs) : undefined;
+    try {
+      const response = await this.fetchImpl(url, {
+        method: route.method,
+        headers,
+        ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
+        ...(signal ? { signal } : {}),
+      });
+      const payload = await responsePayload(response);
+      if (!response.ok) {
+        const message =
+          isRecord(payload) && typeof payload.error === 'string'
+            ? payload.error
+            : `${request.pathId} returned HTTP ${response.status}`;
+        throw new ControlTransportHttpError(
+          request.pathId,
+          response.status,
+          message,
+          payload,
+          response.status === 503
+            ? parseRetryAfterMs(response.headers.get('Retry-After'))
+            : undefined,
+        );
+      }
+      const contract = request.responseContract ?? route.responseContract;
+      if (!contract) return payload as Response;
+      const { parseContract } = await loadContractValidationRuntime();
+      return parseContract(contract, payload) as Response;
+    } finally {
+      if (timer !== undefined) globalThis.clearTimeout(timer);
+      if (deadline) request.signal?.removeEventListener('abort', forwardAbort);
     }
-    const contract = request.responseContract ?? route.responseContract;
-    if (!contract) return payload as Response;
-    const { parseContract } = await loadContractValidationRuntime();
-    return parseContract(contract, payload) as Response;
   }
 
   browserSnapshotImageUrl(snapshotId: string): string {

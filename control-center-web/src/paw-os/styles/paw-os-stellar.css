@@ -519,7 +519,7 @@
   color: var(--paw-stellar-ink);
 }
 
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace, .paw-room-workspace--migrated-v1),
+.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace, .paw-room-workspace--conversation),
 .paw-desktop-root[data-paw-visual='stellar'] .paw-window-shell[data-app='agent'] .paw-window-titlebar[data-window-chrome] {
   --paw-chat-surface: var(--paw-stellar-surface);
   --paw-chat-surface-subtle: var(--paw-stellar-process);
@@ -769,7 +769,7 @@
   background: var(--paw-stellar-process);
 }
 
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__header, .paw-room-workspace--migrated-v1 .paw-room-workspace__header, .paw-room-workspace__signal) {
+.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__header, .paw-room-workspace--conversation .paw-room-workspace__header, .paw-room-workspace__signal) {
   color: var(--paw-stellar-ink);
   border-color: var(--paw-stellar-line);
   background: var(--paw-stellar-surface);
@@ -838,11 +838,6 @@
 .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:not(:disabled) {
   color: #ffffff;
   background: var(--paw-stellar-accent);
-}
-
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__delivery button[aria-checked='true'] {
-  color: var(--paw-stellar-ink);
-  background: #e6edf8;
 }
 
 .paw-desktop-root[data-paw-visual='stellar'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-user-message .agent-markdown {

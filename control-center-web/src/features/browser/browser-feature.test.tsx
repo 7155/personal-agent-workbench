@@ -3,15 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { createPreviewTransport } from '@/app/preview-control-transport';
-import { BrowserFeature } from '.';
+import { PawBrowserApp } from '@/paw-os/apps/PawBrowserApp';
 
 afterEach(() => cleanup());
 
-describe('BrowserFeature', () => {
+describe('PawBrowserApp', () => {
   it('is the direct PAW Browser rather than an extension setup surface', async () => {
     render(
       <ControlTransportProvider transport={createPreviewTransport()}>
-        <BrowserFeature />
+        <PawBrowserApp />
       </ControlTransportProvider>,
     );
 
@@ -27,7 +27,7 @@ describe('BrowserFeature', () => {
   it('keeps the page dominant with no Agent execution chrome while nothing is running', async () => {
     render(
       <ControlTransportProvider transport={createPreviewTransport()}>
-        <BrowserFeature />
+        <PawBrowserApp />
       </ControlTransportProvider>,
     );
 
@@ -45,7 +45,7 @@ describe('BrowserFeature', () => {
     const user = userEvent.setup();
     render(
       <ControlTransportProvider transport={createPreviewTransport()}>
-        <BrowserFeature />
+        <PawBrowserApp />
       </ControlTransportProvider>,
     );
 

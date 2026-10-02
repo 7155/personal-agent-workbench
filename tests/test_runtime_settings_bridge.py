@@ -16,7 +16,7 @@ class RuntimeSettingsBridgeTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        self.service.management.close()
+        self.service.close()
         self.tmp.cleanup()
 
     def test_live_setting_changes_runtime_revision(self) -> None:

@@ -111,6 +111,8 @@ async function handleBrowserBridgeRequest(request, response, pathname, bridge) {
       ? await bridge.createTab(String(input.url || 'about:blank'))
       : pathname === '/__paw_browser/activate'
         ? await bridge.activateTarget(String(input.targetId || ''))
+        : pathname === '/__paw_browser/screenshot' && typeof bridge.captureScreenshot === 'function'
+          ? await bridge.captureScreenshot(String(input.targetId || ''))
         : null;
     if (!result) {
       response.writeHead(404).end();

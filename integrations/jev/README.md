@@ -16,6 +16,42 @@ The scenario list separates configured credentials, available adapters and
 unimplemented candidates. It does not claim that a saved credential was tested
 or that every scenario has been activated.
 
+## Native Pi transport ownership
+
+On a paired Pi 1.0 Host advertising `statelessClassification`, the Room task
+controller's typed decisions use native `ModelRuntime.classify` with
+`typesafe/jev-latest`. PAW retains candidate construction, confidence checks,
+task revisions and WorkStore mutations. No Agent prompt is created to imitate
+Choice/Score results. Only an unsupported Host detected before dispatch uses
+the existing direct adapter; a native failure or missing reply is not retried
+through another path.
+
+Code Mode can access that same native classifier through its allowlisted
+`models` namespace. It retains Pi's nested-call receipts, concurrency and
+cancellation. The existing key resolver is read per standalone decision and at
+each Code Mode Host start; changing a credential does not refresh an already
+running Host's environment. No login settings or stored data are migrated.
+Other listed Jev scenarios still use their existing adapter; this is a scoped
+transport migration, not removal of the canonical Room task owner. See the
+[paired protocol and cancellation boundaries](../pi/pi-0.99-codemode.md#stateless-native-classification).
+
+Root Stop also cancels an in-flight native controller or auto-route decision.
+Registration shares the existing stopped-Root admission fence; cancellation
+before the private pipe write prevents dispatch, and later cancellation targets
+the original Runtime request and dispatch. A cancellation signal does not prove
+drain. An unknown reply remains bound to that Root until the original Host
+reports settlement or exits; another Root or replacement Runtime is unaffected.
+The existing cancellation receipt includes the `classification` resource in
+`surfaces` and `pendingTargets`, with `cancellation_pending` while it is still
+held. Already drained Sessions release their claims independently. The Jev
+projection exposes `pendingClassifications` and `classificationDrained`; actual
+settlement publishes `jev_updated` without creating another Root terminal.
+These are current-process resource facts, not a rewrite of earlier Stop receipts.
+An unsupported Host can still use the direct adapter. That legacy HTTP request
+has no native immediate-abort operation: Stop fences its late business result
+and retains its pending resource until the request actually returns. This does
+not add retries, persisted execution state or a second cancellation framework.
+
 ## Implemented paths
 
 - **Room task execution:** a user request can enter routing, planning, execution,
@@ -25,9 +61,10 @@ or that every scenario has been activated.
   use the existing Room/WorkStore owners. An admission receipt means admitted,
   not running or completed; release waits for the actual turn and its causal
   resources to settle.
-- **Room model routing:** the balanced profile uses GPT-6 Astra max for planning
-  and critical tasks, GPT-6 Sol max for complex work, and GPT-6 Luna max for
-  simple and routine work. The participant profile keeps the chosen Session
+- **Room model routing:** the balanced profile uses GPT-6.1 Sol medium for routine
+  execution, xhigh for planning, verification and complex integration, and
+  GPT-6 Luna max only for explicitly simple execution or synthesis. Astra is
+  selected only by an explicit model lock. The participant profile keeps the chosen Session
   models. Each dispatch checks the configured Provider's actual model catalog;
   an unavailable model produces a recoverable error instead of a silent
   downgrade. Role-card community notes are anecdotal guidance, not PAW scores.
@@ -36,15 +73,22 @@ or that every scenario has been activated.
   `jev_dangerous` policy automatically evaluates dangerous prepared operations
   through the existing approval owner. A failed Jev evaluation leaves the
   operation unexecuted and retryable; it does not fall back to another model.
-- **Room verification:** new roots default to `verificationMode=auto`. A
-  single direct responsibility prefers another available partner for review;
-  when only its executor is available, that partner may inspect the fixed result
-  in a separate verification turn. A bound structured verdict is still required.
-  `independent` always requires a different partner, as do planned tasks. Stored
-  roots without this policy retain independent verification.
+- **Room verification:** new roots default to `verificationMode=auto`. Jev
+  assesses the submitted result and current evidence after the executor drains.
+  It can deliver a sufficient result directly, or request an additional Pi
+  inspection when evidence is missing or the user requires it. Both choices are
+  recorded against the exact task and artifact revisions. `independent` always
+  requires a different partner. Stored roots without this policy retain
+  independent verification. Planning favors independent deliverables assigned
+  to different partners; dependencies represent actual prerequisites, not a
+  mandatory sequence of stages. Completed multi-task and file-delivery work
+  publishes a results report with deliverables, recorded verification and open
+  items in the public Room conversation. This uses the existing finalization
+  receipt and does not create another model turn; short text-only replies remain
+  direct answers.
 - **Tool approval:** configured Jev is preferred on the next new approval.
-  Confidence below 0.70 yields a denial without asking Luna to override it.
-  Transport/provider/response failures use the existing Luna Max fallback.
+  Confidence below 0.70 yields a denial without asking another model to override it.
+  Transport/provider/response failures use the current Codex approval-model fallback.
   A completed approval reuses its stored receipt.
 - **Knowledge reranking:** select `RAG_IME_KNOWLEDGE_RERANK_PROVIDER=typesafe-jev`
   in the Knowledge worker environment, restart that worker, and enable reranking

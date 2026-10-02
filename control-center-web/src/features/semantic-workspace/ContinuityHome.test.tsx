@@ -16,7 +16,7 @@ const facts: SpaceFacts = {
   organization: { pinned: false, placement: 'desk' }, executionAllowed: true, contextPack: {},
 };
 let sequence = 0;
-function setup(lose = false, rejection = false) {
+function setup(lose = false, rejection = false, onOpenIntent?: (key: string) => void) {
   const calls: string[] = [];
   const transport = new MockControlTransport({ routes: {
     'agent.continuity.read': { ok: true, items: [facts], failures: [] },
@@ -31,13 +31,25 @@ function setup(lose = false, rejection = false) {
   } });
   Object.defineProperty(transport, 'connectionIdentity', { value: `continuity-test-${++sequence}` });
   const onOpen = vi.fn();
-  const tree = () => <ControlTransportProvider transport={transport}><ContinuityHome spaceKeys={[facts.key]} onOpen={onOpen} /></ControlTransportProvider>;
+  const tree = () => <ControlTransportProvider transport={transport}><ContinuityHome spaceKeys={[facts.key]} onOpen={onOpen} onOpenIntent={onOpenIntent} /></ControlTransportProvider>;
   return { transport, calls, onOpen, tree, view: render(tree()) };
 }
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
 describe('source-backed resumption', () => {
+  it('warms only the exact open target on hover, focus and pointer intent without opening or resuming it', async () => {
+    const intent = vi.fn();
+    const { onOpen, transport } = setup(false, false, intent);
+    const target = await screen.findByRole('button', { name: /^知识库实验/ });
+    fireEvent.pointerEnter(target);
+    fireEvent.focus(target);
+    fireEvent.pointerDown(target);
+    expect(intent.mock.calls).toEqual([[facts.key], [facts.key], [facts.key]]);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(transport.requests.every(call => call.request.pathId === 'agent.continuity.read')).toBe(true);
+  });
+
   it('opens without executing and separates current facts from missing evidence', async () => {
     const { onOpen, transport } = setup();
     fireEvent.click(await screen.findByRole('button', { name: '查看进度：知识库实验' }));

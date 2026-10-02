@@ -1,188 +1,16 @@
-/*
- * Shared conversation-workspace layer.
- *
- * Session and Room are one product surface with two information models.
- * Everything that must look and behave identically
- * lives here, declared once against both class families, so the two can no
- * longer drift apart. Feature stylesheets keep only what is genuinely unique
- * to that workspace.
- *
- * Loaded from App.tsx before the lazily-imported feature stylesheets, so a
- * feature rule of equal specificity still wins when it needs to.
- */
-
-/* ---------------------------------------------------------------- shell -- */
-
-.shell-route-stage > main.agent-feature,
-.shell-route-stage > main.rooms-feature {
-  position: relative;
-  display: grid;
-  width: 100%;
-  height: calc(100dvh - var(--topbar-height));
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: var(--color-canvas);
-  transition: grid-template-columns var(--duration-panel) var(--ease-standard);
-}
-
-/* Dragging a divider must never pay for layout transitions or React work. */
-.agent-feature[data-resizing],
-.rooms-feature[data-resizing] {
-  cursor: col-resize;
-  user-select: none;
-  transition: none !important;
-}
-
-.agent-feature[data-resizing] *,
-.rooms-feature[data-resizing] * { pointer-events: none; }
-
-.agent-feature[data-resizing] .agent-pane-resizer,
-.rooms-feature[data-resizing] .room-pane-resizer { pointer-events: auto; }
-
-/* ------------------------------------------------------------ side rail -- */
-
-.agent-session-rail,
-.rooms-rail {
-  min-width: 0;
-  min-height: 0;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-chrome);
-}
-
-.agent-session-rail > header,
-.rooms-rail > header {
-  background: var(--color-rail-header-overlay);
-  display: flex;
-  min-height: var(--workspace-header-height);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: 6px 10px 6px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
-  background: var(--color-workspace-header-overlay);
-}
-
-.agent-session-rail > header strong,
-.rooms-rail > header strong {
-  font-size: var(--font-size-ui-strong);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-compact);
-  letter-spacing: var(--tracking-heading);
-}
-
-.agent-session-rail > header small,
-.rooms-rail > header small,
-.rooms-rail small {
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-caption);
-  line-height: var(--line-height-compact);
-}
-
-/* The rail header shares the workspace baseline with the conversation header
-   beside it, so its subtitle stays on one line rather than growing the bar.
-   Truncation alone holds the height — clamping with max-height would drop the
-   rail a pixel below the conversation header, which also carries a border. */
-
-.agent-session-rail > header > div,
-.agent-session-rail > header > span,
-.rooms-rail > header > span { min-width: 0; }
-
-.agent-session-rail > header strong,
-.agent-session-rail > header small,
-.rooms-rail > header strong,
-.rooms-rail > header small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ------------------------------------------------- conversation surface -- */
-
-.agent-conversation > *,
-.room-workspace > * { position: relative; z-index: 1; }
-
-.agent-conversation,
-.room-workspace {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
-  overflow: hidden;
-  background: var(--color-paper);
-  /*
-   * useComposerClearance() overwrites this with the dock's measured height on
-   * mount and on every resize. The literal is only the pre-measurement first
-   * paint, so it is a floor rather than the contract: nothing downstream may
-   * assume the dock is this tall.
-   */
+/* Shared Session/Room composer and renderer geometry. App-specific layout
+ * belongs to the PAWOS workspace; this layer owns the common controls. */
+.paw-session-workspace,
+.paw-room-workspace {
   --workspace-composer-clearance: 104px;
   --workspace-composer-gap: var(--space-2);
 }
 
-/*
- * Footer space always equals the real dock plus one gap. Font scaling,
- * attachment rows, the edit banner, the Room execution-phase strip and every
- * breakpoint change are already expressed in the dock's box, so none of them
- * can push it over the last message.
- */
-.agent-timeline__footer-space,
-.room-timeline__footer-space {
+.agent-timeline__footer-space {
   height: calc(var(--workspace-composer-clearance) + var(--workspace-composer-gap));
 }
 
-/*
- * The structure bar floats over a full-height timeline rather than stealing a
- * row from it, so the conversation reads as one continuous sheet of paper.
- * responsive.e2e.ts asserts these two selectors resolve to the same
- * background-color and backdrop-filter — declaring them together is what
- * makes that true by construction.
- */
-.agent-conversation__header,
-.room-workspace > header {
-  position: absolute;
-  z-index: 7;
-  top: 0;
-  right: 0;
-  left: 0;
-  display: flex;
-  min-width: 0;
-  min-height: var(--workspace-header-height);
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-soft) 70%, transparent);
-  background: var(--color-workspace-header-overlay);
-  -webkit-backdrop-filter: blur(14px) saturate(112%);
-  backdrop-filter: blur(14px) saturate(112%);
-}
-
-.agent-conversation__header strong,
-.room-workspace > header > span strong {
-  overflow: hidden;
-  font-size: var(--font-size-ui-strong);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-compact);
-  letter-spacing: var(--tracking-heading);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-conversation__header small,
-.room-workspace > header small {
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-caption);
-  line-height: var(--line-height-compact);
-}
-
-/* ------------------------------------------------------------- timeline -- */
-
-.agent-turn,
-.room-turn {
+.agent-turn {
   width: min(100%, var(--workspace-measure, 1160px));
   min-width: 0;
   box-sizing: border-box;
@@ -190,10 +18,7 @@
   padding: 10px 44px 3px 28px;
   overflow-x: clip;
 }
-
-/* User turns are the one place colour carries meaning in the transcript. */
-.agent-user-message,
-.room-user-message {
+.agent-user-message {
   width: fit-content;
   max-width: min(76%, 680px);
   padding: 10px 15px;
@@ -205,75 +30,29 @@
   overflow-wrap: anywhere;
 }
 
-.agent-user-message .agent-markdown,
-.room-user-message .agent-markdown {
+.agent-user-message .agent-markdown {
   font-family: var(--font-sans);
   font-size: var(--font-size-chat);
   line-height: var(--line-height-chat);
   letter-spacing: var(--tracking-body);
 }
-
-/*
- * Chat prose is the one region that should keep proportional numerals; the
- * tabular default set in typography.css is for chrome, metrics and tables.
- */
 .agent-markdown,
-.agent-user-message,
-.room-user-message { font-variant-numeric: normal; }
-
-/* ==================================================== motion language ==== */
-/*
- * One verb for content arriving: it *settles onto the grid*. A short rise of
- * 4px resolving to zero, paired with a fade, over 180ms on the standard ease.
- *
- * Both message families were a bare opacity fade, so nothing in the transcript
- * ever had a direction — results simply materialised, which is what made a
- * live conversation feel like a static document being redrawn. The rise is
- * deliberately below the threshold where it reads as "sliding": it registers
- * as placement, not as travel.
- *
- * What this language explicitly refuses: scale (reads as a SaaS bounce), blur
- * (reads as a photographic effect, not paper), and any page-turn or ink
- * metaphor. Precision, not nostalgia.
- *
- * Exits are not animated here — content leaving a transcript is rare, and when
- * chrome leaves it uses --motion-exit, which is faster than the enter on
- * purpose: waiting on something disappearing always feels slower than it is.
- */
+.agent-user-message { font-variant-numeric: normal; }
 @keyframes paper-settle {
   from { opacity: 0; transform: translateY(var(--distance-enter)); }
   to { opacity: 1; transform: none; }
 }
-
-/* Same object changing state must not re-enter: it crossfades in place. A tool
-   moving queued -> running -> done that re-ran the arrival animation read as
-   three different tools appearing in sequence. */
 @keyframes paper-restate {
   from { opacity: .35; }
   to { opacity: 1; }
 }
-
-/*
- * Results settle only inside a turn that is still live.
- *
- * A mount-triggered animation on every insert would re-fire whenever the
- * virtualiser recycles a row, so scrolling back through a long transcript
- * would replay every result's arrival — motion as noise, and the one thing
- * that would make long sessions worse rather than better. Gating on the
- * running turn means the animation can only run where something is genuinely
- * happening, and settled history stays perfectly still under the reader.
- */
 .agent-turn[data-turn-status='running'] .agent-structured-block,
 .agent-turn[data-turn-status='running'] .agent-unknown-block,
-.agent-turn[data-turn-status='running'] .agent-approval-block,
 .agent-turn[data-turn-status='running'] .agent-report-card,
 .agent-turn[data-turn-status='running'] .agent-file-block,
 .agent-turn[data-turn-status='running'] .agent-activity-row {
   animation: paper-settle var(--motion-enter) var(--ease-standard) both;
 }
-
-/* The status chip is the part that actually changes when a tool advances, so
-   it is the only part that moves. */
 .agent-activity-row [data-state] {
   animation: paper-restate var(--motion-exit) var(--ease-standard) both;
 }
@@ -287,15 +66,6 @@
   from { opacity: 0; transform: translateY(var(--distance-enter)); }
   to { opacity: 1; transform: none; }
 }
-
-/* ------------------------------------------------------------- composer -- */
-
-/*
- * The dock around the composer stays fully transparent; only the input body
- * gets a material, so the transcript keeps running underneath it. The toolbar
- * is absolutely positioned inside the input, which is why the textarea
- * reserves bottom padding for it.
- */
 .agent-composer,
 .room-composer {
   position: relative;
@@ -341,13 +111,7 @@
 
 .agent-composer textarea::placeholder,
 .room-composer textarea::placeholder { color: var(--color-text-tertiary); }
-
-/* The toolbar is the container every composer control collapses against.
-   Its inline size comes from the composer's own edges, never from the chips
-   inside it, so a PAWOS window drag re-evaluates the collapse on the same
-   frame as the resize — a viewport media query cannot see that at all. */
-.agent-composer__toolbar,
-.room-composer__toolbar {
+.agent-composer__toolbar {
   position: absolute;
   right: 6px;
   bottom: 4px;
@@ -361,8 +125,7 @@
   container: paw-composer-toolbar / inline-size;
 }
 
-.agent-composer__controls,
-.room-composer__controls {
+.agent-composer__controls {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -403,8 +166,6 @@
   box-shadow: none;
   cursor: not-allowed;
 }
-
-/* A failed, already-admitted Room turn is resumed from retained context. */
 .room-composer__send--continue:not(:disabled) {
   background: var(--color-success, #36b37e);
   color: #fff;
@@ -414,8 +175,6 @@
   background: color-mix(in srgb, var(--color-success, #36b37e) 86%, #17202b);
 }
 
-/* ----------------------------------------------------- status side pane -- */
-
 .agent-status-panel,
 .room-status-panel {
   min-width: 0;
@@ -423,29 +182,9 @@
   border-left: 1px solid var(--color-border);
   background: var(--color-chrome);
 }
+.workspace-pane-resizer:focus-visible { outline: none; }
 
-/* --------------------------------------------------------- interactions -- */
-
-/*
- * Shared press/hover choreography for the workspace's own controls. Kept to
- * translate + shadow so it composes with the reduced-motion reset instead of
- * fighting it.
- */
-@media (hover: hover) and (pointer: fine) {
-  .agent-session-row-shell:hover,
-  .rooms-rail > div > button:hover { background: var(--color-surface-hover); }
-}
-
-.agent-session-row:active,
-.rooms-rail > div > button:active { transform: translateY(1px); }
-
-/* Pane dividers are keyboard-resizable, so they get a real focus ring on the
-   grip rather than relying on a tinted hairline. */
-.workspace-pane-resizer:focus-visible,
-.shell-sidebar-resizer:focus-visible { outline: none; }
-
-.workspace-pane-resizer:focus-visible > svg,
-.shell-sidebar-resizer:focus-visible > svg {
+.workspace-pane-resizer:focus-visible > svg {
   border-color: var(--color-accent);
   background: var(--color-surface);
   box-shadow: var(--shadow-accent-focus), var(--shadow-2);
@@ -453,24 +192,11 @@
   transform: translate(-50%, -50%) scale(1.12);
 }
 
-.shell-sidebar-resizer:focus-visible > svg { transform: scale(1.12); }
-
-
-/* ============================== editorial composition ==============================
-   The macro grid applied: one reading measure, one symmetric gutter, speech as
-   ink rather than bubbles, and a composer that belongs to the sheet. Declared
-   last so it supersedes the earlier chrome treatments it replaces. */
-
-.agent-turn,
-.room-turn {
+.agent-turn {
   width: min(100%, var(--workspace-measure));
   padding: 12px var(--workspace-gutter) 4px;
 }
-
-/* The user's turn is their ink on the same paper — an inset wash, no border,
-   no chat-app blue. Colour is reserved for state, not speakers. */
-.agent-user-message,
-.room-user-message {
+.agent-user-message {
   max-width: min(66%, 620px);
   padding: 9px 14px 9px 13px;
   border: 0;
@@ -478,8 +204,6 @@
   border-radius: var(--radius-3) 1px 1px var(--radius-3);
   background: var(--color-paper-subtle);
 }
-
-/* Composer: refined floating island dock with glassmorphic backdrop filter and subtle border */
 .agent-composer,
 .room-composer {
   border: 1px solid var(--color-border-soft);
@@ -497,54 +221,17 @@
   box-shadow: 0 6px 28px -4px rgba(0, 0, 0, 0.12), 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
-.agent-composer-wrap,
-.room-composer-cluster {
+.agent-composer-wrap {
   width: min(100%, var(--workspace-measure));
   margin-inline: auto;
   padding: 8px var(--workspace-gutter) 16px;
 }
-
-.room-context-bar {
-  width: min(100%, var(--workspace-measure));
-  padding-inline: var(--workspace-gutter);
-}
-
-
-/* Rails recede like the nav: selection is ink and a thin rule, not a fill. */
-.agent-session-row-shell[data-selected='true'] {
-  background: color-mix(in srgb, var(--color-surface-hover) 46%, transparent);
-  box-shadow: inset 2px 0 0 var(--color-accent);
-}
-.rooms-rail > div > button[aria-current='true'] {
-  background: color-mix(in srgb, var(--color-surface-hover) 46%, transparent);
-  box-shadow: inset 2px 0 0 var(--color-accent);
-}
-.agent-session-row__copy strong { font-weight: var(--font-weight-medium); }
-.agent-session-row[aria-current='true'] .agent-session-row__copy strong,
-.rooms-rail > div > button[aria-current='true'] strong { font-weight: var(--font-weight-semibold); }
-
-
-/* ============== floating global actions never cover content ==============
-   The topbar's global actions float over the top-right of the workspace. That
-   is the conversation header only while the inspector is closed; once it opens,
-   the inspector's own header is what sits underneath. Clearance therefore has
-   to follow whichever element is actually rightmost, or the actions land on
-   top of the inspector title and its subtitle. */
 @media (min-width: 761px) {
   .agent-status-panel[data-open='true'] > header,
-  .room-status-panel[data-open='true'] > header {
+.room-status-panel[data-open='true'] > header {
     padding-right: var(--workspace-global-actions-clearance);
   }
-
-  /* With the inspector open the actions no longer overlap the conversation,
-     so it stops reserving room it does not need. */
-  .agent-feature[data-status-open='true'] .agent-conversation__actions,
-  .rooms-feature[data-status-open='true'] .room-header-actions {
-    margin-right: 0;
-  }
 }
-
-/* Inspector and conversation headers share one baseline and one edge. */
 .agent-status-panel > header,
 .room-status-panel > header {
   min-height: var(--workspace-header-height);
@@ -569,26 +256,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-
-/* ==================== conversation rendering system ====================
-   Shared anatomy for both workspaces: inserts settle in, disclose on one
-   timing, and never animate layout dimensions during streaming. */
-
-/* Media reserves its box before the bytes arrive, so a loading image cannot
-   push the transcript. */
-.agent-media-block img,
-.agent-media-block__frame {
-  aspect-ratio: var(--media-aspect, 16 / 10);
-  width: 100%;
-  height: auto;
-  max-height: 340px;
-  object-fit: contain;
-  background: var(--color-surface-subtle);
-}
-
-/* Contextual actions must be reachable without a pointer: always present on
-   touch, revealed by hover or keyboard focus otherwise, and never over text. */
 @media (hover: none), (pointer: coarse) {
   .agent-message-actions { opacity: 1; }
 }
@@ -600,16 +267,9 @@
 .agent-assistant-message-shell:focus-within .agent-message-actions {
   transition-duration: var(--motion-enter);
 }
-
-/* Disclosure shares one timing in both workspaces and animates only the grid
-   row — never width — so streaming never reflows sideways. */
 details.agent-activity--inline > summary > svg:last-child,
 .agent-rich-collapsible > summary > svg,
 .agent-status-section__chevron {
   transition: transform var(--motion-disclose) var(--ease-standard);
 }
-
-/* Streaming: the caret is the only moving thing, and the block it sits in
-   keeps a stable measure. */
-.agent-blocks[data-has-stream-tail='true'] .agent-markdown,
-.room-agent-lane__post .agent-markdown { contain: layout style; }
+.agent-blocks[data-has-stream-tail='true'] .agent-markdown { contain: layout style; }

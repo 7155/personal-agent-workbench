@@ -16,6 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from threading import RLock
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .db import sqlite_connection
 from .pi.values import PiRuntimeCommandRejected
 from .agent_capability_catalog import capability_disclosure_enabled, session_resource_disclosure_policy
@@ -672,6 +673,7 @@ class AgentService:
             audit_publisher=self._publish_room_intercom_audit,
         )
         self._approval_executor: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None
+        self._workspace_command_cancellation: Callable[[str], Callable[[], dict[str, object]]] | None = None
         self._memory_maintenance_probe: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None
         self._process_id_provider = process_id_provider
         self.eval_schedules = EvalScheduleStore(db_path)
@@ -971,6 +973,11 @@ class AgentService:
         probe: Callable[[Mapping[str, object]], Mapping[str, object]],
     ) -> None:
         self._memory_maintenance_probe = probe
+
+    def bind_workspace_command_cancellation(
+        self, begin: Callable[[str], Callable[[], dict[str, object]]],
+    ) -> None:
+        self._workspace_command_cancellation = begin
 
     def bind_eval_schedule_executor(
         self,
@@ -3118,93 +3125,6 @@ class AgentService:
             response=response,
         )
 
-    def _claim_room_start_gate(
-        self,
-        room_id: str,
-        *,
-        message: str,
-        client_message_id: str,
-        requested_participant_ids: Sequence[str],
-        work_item_id: str,
-        attachment_ids: Sequence[str],
-        retry_of_root_id: str,
-    ) -> dict[str, object] | None:
-        # Client IDs are the replay boundary for Room commands. Requests from
-        # older direct callers without one retain the pre-gate compatibility
-        # path; the Control Center always supplies one.
-        if not client_message_id:
-            return None
-        existing_gate = self.room_start_gates.get(room_id)
-        if (
-            existing_gate is not None
-            and existing_gate.get("status") == "confirmed"
-            and str(existing_gate.get("clientMessageId") or "") != client_message_id
-        ):
-            # The Room start boundary is crossed once. A later WorkItem owns a
-            # new command receipt, not a new alignment gate. The original
-            # client id still reaches `claim()` below so an exact retry can
-            # replay the stored first response and a mutated retry is rejected.
-            return None
-        target_ids = list(requested_participant_ids)
-        if not target_ids:
-            try:
-                _work, owner_id = self.room_work.authoritative_owner(
-                    work_item_id,
-                    room_id=room_id,
-                )
-                target_ids = [str(owner_id)]
-            except Exception:
-                target_ids = []
-        gate = self.room_start_gates.claim(
-            room_id=room_id,
-            objective_text=message,
-            client_message_id=client_message_id,
-            target_participant_ids=target_ids,
-            work_item_id=work_item_id,
-            attachment_ids=attachment_ids,
-            retry_of_root_id=retry_of_root_id,
-        )
-        if gate.get("status") == "pending" and not gate.get("idempotentReplay"):
-            event = self.room_events.publish(
-                room_id=room_id,
-                event_type="room_start_confirmation_required",
-                payload={
-                    "gateId": gate["gateId"],
-                    "objective": gate["objective"],
-                    "workItemId": gate["workItemId"],
-                    "targetParticipantIds": gate["targetParticipantIds"],
-                    "requiresConfirmation": True,
-                },
-                turn_id=str(gate["gateId"]),
-                topic_id=str(self.rooms.get(room_id).get("activeTopicId") or ""),
-            )
-            gate = {**gate, "event": event}
-        return gate
-
-    @staticmethod
-    def _room_start_confirmation_response(gate: Mapping[str, object]) -> dict[str, object]:
-        return {
-            "schemaVersion": "rag-ime.agent-room-message.v1",
-            "ok": True,
-            "accepted": False,
-            "status": "awaiting_confirmation",
-            "phase": "alignment",
-            "executionOwner": "session",
-            "roomId": gate["roomId"],
-            "clientMessageId": gate["clientMessageId"],
-            "workItemId": gate["workItemId"],
-            "startConfirmation": {
-                "gateId": gate["gateId"],
-                "status": gate["status"],
-                "objective": gate["objective"],
-                "workItemId": gate["workItemId"],
-                "targetParticipantIds": gate["targetParticipantIds"],
-                "requiresConfirmation": True,
-                "afterConfirmExecutionMode": "room_unrestricted",
-            },
-            "timelineEvents": ([gate["event"]] if isinstance(gate.get("event"), Mapping) else []),
-        }
-
     def _post_room_message_command(
         self,
         room_id: str,
@@ -3215,9 +3135,7 @@ class AgentService:
         requested_participant_ids: Sequence[str],
         work_item_id: str,
         attachment_ids: Sequence[str],
-        bypass_start_gate: bool = False,
     ) -> dict[str, object]:
-        del bypass_start_gate
         if not client_message_id:
             return self._post_room_message_once(
                 room_id,
@@ -3337,10 +3255,9 @@ class AgentService:
                 "idempotentReplay": gate["status"] != "pending",
             }
         confirmed = self.room_start_gates.confirm(room_id)
-        # The confirmation is the sole user-facing authorization boundary for
-        # ordinary Room work. Persist the overlay before dispatch, and also on
-        # idempotent replay so an older or restarted Host repairs participant
-        # Sessions instead of falling back to per-Tool approvals.
+        # Compatibility for a gate persisted by an older Host. Ordinary Room
+        # dispatch no longer creates a second start approval. Restore its
+        # participant overlay before replaying the original command receipt.
         self._activate_room_unrestricted_execution(room_id)
         stored = confirmed.get("response")
         if isinstance(stored, Mapping):
@@ -3368,7 +3285,6 @@ class AgentService:
             attachment_ids=[
                 str(value) for value in confirmed.get("attachmentIds", [])
             ],
-            bypass_start_gate=True,
         )
         self.room_start_gates.complete(
             room_id,
@@ -3860,6 +3776,13 @@ class AgentService:
             payload,
         )
 
+    def select_codemode_mode(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        self._require_mutable_session(session_id)
+        return self.session_policy.select_codemode_mode(
+            session_id,
+            payload,
+        )
+
     def update_session(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         self._require_mutable_session(session_id)
         return self.session_policy.update_session(session_id, payload)
@@ -3912,6 +3835,60 @@ class AgentService:
     def _forkable_session(self, session_id: str) -> dict[str, object]:
         return self.session_branching.forkable_session(session_id)
 
+    @staticmethod
+    def _room_public_projection_events(
+        events: Sequence[Mapping[str, object]],
+        *,
+        session_id: str,
+        participant_id: str,
+    ) -> list[Mapping[str, object]]:
+        """Keep route bindings beside public mirrors for Session projection.
+
+        ``user_message`` is the Room-side fast mirror and the Pi transcript
+        uses the later dispatch client id.  ``route_decision`` is the durable
+        join: it binds that dispatch to exactly one participant Session/root.
+        Without carrying it into the snapshot projector, the downstream layer
+        falls back to a short text/timestamp guess and duplicates long runs.
+        """
+
+        projected: list[Mapping[str, object]] = []
+        for event in events:
+            event_type = str(event.get("eventType") or "")
+            if event_type == "user_message":
+                projected.append(event)
+                continue
+            if (
+                event_type == "room_post"
+                and str(event.get("participantId") or "") == participant_id
+            ):
+                projected.append(event)
+                continue
+            if event_type != "route_decision":
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            target_session_id = str(
+                payload.get("targetSessionId")
+                or event.get("sourceSessionId")
+                or ""
+            )
+            target_participant_id = str(
+                payload.get("targetParticipantId")
+                or event.get("participantId")
+                or ""
+            )
+            if (
+                target_session_id == session_id
+                and (
+                    not target_participant_id
+                    or not participant_id
+                    or target_participant_id == participant_id
+                )
+            ):
+                projected.append(event)
+        return projected
+
     def _room_public_messages_for_session(
         self,
         session_id: str,
@@ -3932,16 +3909,11 @@ class AgentService:
         )
         return {
             "participantId": participant_id,
-            "events": [
-                event
-                for event in events
-                if event.get("eventType") == "user_message"
-                or (
-                    event.get("eventType") == "room_post"
-                    and str(event.get("participantId") or "")
-                    == participant_id
-                )
-            ],
+            "events": self._room_public_projection_events(
+                events,
+                session_id=session_id,
+                participant_id=participant_id,
+            ),
         }
 
     def _recent_room_public_messages_for_session(
@@ -3962,18 +3934,38 @@ class AgentService:
             room_id,
             limit=100,
         )
+        # ``recent_public_messages`` intentionally omits control events.  Read
+        # only the route decisions for the bounded user-message turns so the
+        # recent Session mirror carries the same dispatch identity as Pi's
+        # transcript without loading the full Room event history.
+        route_events: list[Mapping[str, object]] = []
+        seen_turn_ids: set[str] = set()
+        for event in events:
+            if not isinstance(event, Mapping):
+                continue
+            if str(event.get("eventType") or "") != "user_message":
+                continue
+            turn_id = str(event.get("turnId") or "")
+            if not turn_id or turn_id in seen_turn_ids:
+                continue
+            seen_turn_ids.add(turn_id)
+            route_events.extend(
+                self.rooms.list_events_for_turn(
+                    room_id,
+                    turn_id,
+                    event_types=("route_decision",),
+                    limit=100,
+                )
+            )
+        if route_events:
+            events = [*events, *route_events]
         return {
             "participantId": participant_id,
-            "events": [
-                event
-                for event in events
-                if event.get("eventType") == "user_message"
-                or (
-                    event.get("eventType") == "room_post"
-                    and str(event.get("participantId") or "")
-                    == participant_id
-                )
-            ],
+            "events": self._room_public_projection_events(
+                events,
+                session_id=session_id,
+                participant_id=participant_id,
+            ),
         }
 
 
@@ -4237,13 +4229,13 @@ class AgentService:
         with claim:
             self._assert_direct_agent_prompt_available(session_id)
             if not continuation:
-                self.room_turns.hold_priority((session_id,))
+                priority_reservation = self.room_turns.hold_priority((session_id,))
             try:
                 yield
             finally:
                 if not continuation:
                     self.room_turns.release_priority_session(
-                        session_id
+                        session_id, reservation=priority_reservation
                     )
 
     def _assert_direct_agent_prompt_available(
@@ -4385,7 +4377,16 @@ class AgentService:
 
     def abort(self, session_id: str) -> dict[str, object]:
         self._require_mutable_session(session_id)
-        return self.session_application.abort(session_id)
+        wait_commands = (self._workspace_command_cancellation(session_id)
+                         if self._workspace_command_cancellation is not None else None)
+        try:
+            receipt = self.session_application.abort(session_id)
+        finally:
+            commands = wait_commands() if wait_commands is not None else None
+        if commands is not None:
+            receipt["workspaceCommands"] = commands
+            receipt["ok"] = bool(receipt.get("ok")) and commands["drained"] is True
+        return receipt
 
     def compact(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         self._require_mutable_session(session_id)
@@ -5688,7 +5689,7 @@ class AgentService:
         self,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
-        """Run one redacted Trace through the Luna Max AI-Judge seam.
+        """Run one redacted Trace through the configured AI-Judge seam.
 
         AI Judge output is always persisted as an estimate.  Runtime or model
         output failures still produce a failed EvalRun with the effective
@@ -6035,7 +6036,7 @@ class AgentService:
                 response = self.runtime.complete_once(
                     request_id=request_id,
                     provider="openai-codex",
-                    model_id="gpt-5.6-luna",
+                    model_id=DEFAULT_AGENT_MODEL_ID,
                     thinking_level="max",
                     message=build_ai_judge_prompt(trace),
                     timeout_seconds=120.0,
@@ -6417,7 +6418,7 @@ class AgentService:
         child_dispatch_id = str(dispatch.get("childDispatchId") or "")
         self._recover_faulted_room_session(session_id)
         try:
-            self.room_turns.hold_priority_if_idle((session_id,))
+            priority_reservation = self.room_turns.hold_priority_if_idle((session_id,))
         except RoomSessionBusyError:
             self.wake_schedules.defer(
                 run_id,
@@ -6541,7 +6542,7 @@ class AgentService:
                     break
             return True
         finally:
-            self.room_turns.release_priority_session(session_id)
+            self.room_turns.release_priority_session(session_id, reservation=priority_reservation)
 
     def _resume_room_goal_if_paused(self, session_id: str) -> None:
         """Resume a paused participant Goal for an explicit user Room message.

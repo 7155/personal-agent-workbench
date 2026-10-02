@@ -298,6 +298,7 @@ export function personaPhase(persona: AgentPersonaV1): {
 export function modelDisplayName(profile?: string): string {
   const model = String(profile ?? '').split('/').at(-1) ?? '';
   return (({
+    'gpt-6.1-sol': 'GPT-6.1 Sol',
     'gpt-5.6-sol': 'GPT-5.6 Sol',
     'gpt-5.6-terra': 'GPT-5.6 Terra',
     'gpt-5.6-luna': 'GPT-5.6 Luna',

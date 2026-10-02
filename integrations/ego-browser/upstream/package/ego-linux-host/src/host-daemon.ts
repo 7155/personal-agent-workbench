@@ -16,7 +16,7 @@ import {
   type ChromeHandle,
 } from "./chrome-supervisor.js";
 import { loadConfig, type HostConfig } from "./config.js";
-import { createEgoRuntime, type EgoRuntime } from "./ego-runtime.js";
+import { createEgoRuntime, type EgoRuntime, type EgoRequestContext } from "./ego-runtime.js";
 import { makeEgoError } from "./errors.js";
 import {
   decodeLine,
@@ -330,6 +330,7 @@ export async function startDaemon(
   async function handleRequest(
     method: string,
     params: any,
+    context: EgoRequestContext,
   ): Promise<any> {
     if (method === "ping") {
       return { ok: true, version: HOST_VERSION };
@@ -382,7 +383,7 @@ export async function startDaemon(
     }
     if (method.startsWith("ego.")) {
       await ensureBrowserReady();
-      const result = await runtime.handle(method, params ?? {});
+      const result = await runtime.handle(method, params ?? {}, context);
       // Persist space mutations (best-effort)
       try {
         await spaceManager.save();
@@ -421,6 +422,16 @@ export async function startDaemon(
   const server: Server = createServer((socket) => {
     clients.add(socket);
     const lineBuf = new LineBuffer();
+    const controller = new AbortController();
+    const context: EgoRequestContext = {
+      cdpOwner: {
+        signal: controller.signal,
+        onMessage: (message) => writeToClient(socket, encodeEvent({
+          event: "cdp.message", params: { payload: JSON.stringify(message) },
+        })),
+      },
+      onEvent: (event) => writeToClient(socket, encodeEvent(event)),
+    };
 
     socket.on("data", (chunk) => {
       const lines = lineBuf.push(chunk);
@@ -434,7 +445,7 @@ export async function startDaemon(
               return;
             }
             id = msg.id;
-            const result = await handleRequest(msg.method, msg.params);
+            const result = await handleRequest(msg.method, msg.params, context);
             writeToClient(socket, encodeResponse({ id, result }));
           } catch (err) {
             if (id >= 0) {
@@ -447,9 +458,11 @@ export async function startDaemon(
 
     socket.on("close", () => {
       clients.delete(socket);
+      controller.abort();
     });
     socket.on("error", () => {
       clients.delete(socket);
+      controller.abort();
     });
   });
 

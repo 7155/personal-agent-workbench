@@ -5,6 +5,7 @@ from io import BytesIO
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from rag_ime.paw_browser_runtime import PawBrowserRuntime
@@ -195,6 +196,29 @@ class PawBrowserRuntimeTests(unittest.TestCase):
         self.assertIn("# PAW docs", result["markdown"])
         self.assertEqual(result["interactiveCount"], 2)
 
+    def test_electron_webview_screenshot_uses_visible_host_capture(self) -> None:
+        self.targets[0]["type"] = "webview"
+        self.runtime.profile_path.mkdir(parents=True, exist_ok=True)
+        self.runtime.host_pid_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
+        self.runtime.host_origin_file.write_text("http://127.0.0.1:54321\n", encoding="utf-8")
+        self.runtime.host_pid_file.with_suffix(".token").write_text("host-token\n", encoding="utf-8")
+
+        result = self.runtime.execute(
+            9222,
+            "screenshot",
+            {"tabId": self.runtime.tab_id("A1B2C3D4E5F6")},
+        )
+
+        self.assertEqual(result["screenshotDataUrl"], "data:image/png;base64,aG9zdC1waXhlbHM=")
+        self.assertTrue(any(
+            kind == "host" and params["url"].endswith("/__paw_browser/screenshot")
+            for kind, _method, params in self.calls
+        ))
+        self.assertFalse(any(
+            kind == "cdp" and method == "Page.captureScreenshot"
+            for kind, method, _params in self.calls
+        ))
+
     def test_closing_the_last_tab_keeps_a_blank_page_available(self) -> None:
         result = self.runtime.execute(
             9222,
@@ -212,6 +236,38 @@ class PawBrowserRuntimeTests(unittest.TestCase):
             self.assertEqual(self.runtime._default_json_request(
                 "GET", "http://127.0.0.1:9222/json/close/TEST",
             ), {})
+
+    def test_host_request_preserves_large_screenshot_json(self) -> None:
+        encoded = "x" * 100_001
+        payload = BytesIO((f'{{"ok":true,"data":"{encoded}"}}').encode("utf-8"))
+        with patch("rag_ime.paw_browser_runtime.urlopen", return_value=payload):
+            result = self.runtime._default_host_request(
+                "POST",
+                "http://127.0.0.1:54321/__paw_browser/screenshot",
+                {"targetId": "guest"},
+                "host-token",
+            )
+        self.assertEqual(result["data"], encoded)
+
+    def test_host_request_surfaces_bounded_http_error_body(self) -> None:
+        error = HTTPError(
+            "http://127.0.0.1:54321/__paw_browser/screenshot",
+            500,
+            "Internal Server Error",
+            None,
+            BytesIO('{"ok":false,"error":"当前网页不可用"}'.encode("utf-8")),
+        )
+        with patch("rag_ime.paw_browser_runtime.urlopen", side_effect=error):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"PAW Browser host returned HTTP 500: 当前网页不可用",
+            ):
+                self.runtime._default_host_request(
+                    "POST",
+                    "http://127.0.0.1:54321/__paw_browser/screenshot",
+                    {"targetId": "stale-target"},
+                    "host-token",
+                )
 
     def _json_request(self, method: str, url: str) -> object:
         self.calls.append(("json", method, url))
@@ -247,6 +303,8 @@ class PawBrowserRuntimeTests(unittest.TestCase):
         token: str,
     ) -> object:
         self.calls.append(("host", method, {"url": url, "payload": payload, "token": token}))
+        if url.endswith("/__paw_browser/screenshot"):
+            return {"ok": True, "mimeType": "image/png", "data": "aG9zdC1waXhlbHM="}
         self.targets.append(
             {
                 "id": "VISIBLE-GUEST",

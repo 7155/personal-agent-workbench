@@ -2240,7 +2240,7 @@ class AgentRoomServiceTests(unittest.TestCase):
         self.assertTrue(future_session["workspaceScopeGranted"])
         self.assertEqual(
             future_session["modelProfile"],
-            "openai-codex/gpt-5.6-sol",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(future_session["thinkingLevel"], "high")
         self.assertEqual(

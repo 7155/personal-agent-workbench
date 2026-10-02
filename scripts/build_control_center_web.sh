@@ -11,12 +11,7 @@ if paw_prebuilt_identity; then
 fi
 CONTROL_TRANSPORT="${RAG_IME_CONTROL_TRANSPORT:-mock}"
 BUILD_CHANNEL="${RAG_IME_CONTROL_BUILD_CHANNEL:-preview}"
-if [[ "$BUILD_CHANNEL" == "production" ]]; then
-  VITE_PAW_FRONTEND=paw-os
-else
-  VITE_PAW_FRONTEND="${VITE_PAW_FRONTEND:-paw-os}"
-fi
-FRONTEND_PRODUCT="$VITE_PAW_FRONTEND"
+FRONTEND_PRODUCT=paw-os
 
 [[ "$CONTROL_TRANSPORT" == "mock" || "$CONTROL_TRANSPORT" == "http" || "$CONTROL_TRANSPORT" == "native" ]] || {
   echo "RAG_IME_CONTROL_TRANSPORT must be mock, http, or native" >&2
@@ -24,10 +19,6 @@ FRONTEND_PRODUCT="$VITE_PAW_FRONTEND"
 }
 [[ "$BUILD_CHANNEL" == "preview" || "$BUILD_CHANNEL" == "production" ]] || {
   echo "RAG_IME_CONTROL_BUILD_CHANNEL must be preview or production" >&2
-  exit 2
-}
-[[ "$FRONTEND_PRODUCT" == "legacy" || "$FRONTEND_PRODUCT" == "paw-os" ]] || {
-  echo "VITE_PAW_FRONTEND must be legacy or paw-os" >&2
   exit 2
 }
 if [[ "$BUILD_CHANNEL" == "production" \
@@ -56,7 +47,6 @@ node "$ROOT/scripts/generate_control_center_contracts.mjs" --check
   fi
   VITE_CONTROL_TRANSPORT="$CONTROL_TRANSPORT" \
   VITE_BUILD_CHANNEL="$BUILD_CHANNEL" \
-  VITE_PAW_FRONTEND="$FRONTEND_PRODUCT" \
   VITE_PAW_PRODUCT_VERSION="${RAG_IME_PRODUCT_VERSION:-$(node -p "require('./package.json').version")}" \
   VITE_PAW_BUILD_COMMIT="${RAG_IME_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse HEAD)}" \
   VITE_PAW_BUILD_NUMBER="${RAG_IME_BUILD_NUMBER:-$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)}" \

@@ -24,6 +24,7 @@ const toolNames: Record<string, string> = {
   work_documents: '工作文档',
   workspace_job: '后台任务',
   subagent: '子 Agent',
+  codemode: '代码执行',
   skill_load: '读取技能说明',
   tool_load: '读取工具说明',
   workspace_list: '浏览项目文件',
@@ -144,6 +145,7 @@ export type AgentToolFamily =
   | 'generic';
 
 const toolFamilies: Record<string, AgentToolFamily> = {
+  codemode: 'terminal',
   bash: 'terminal',
   shell: 'terminal',
   workspace_shell: 'terminal',

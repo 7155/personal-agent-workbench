@@ -28,15 +28,19 @@ export interface RoomCollabTimelineProps {
   rootId?: string;
   active: boolean;
   onOpenParticipant?: (participantId: string) => void;
+  onSelectRoot?: (rootId: string) => void;
   onOpenSatellite?: (lane: CollabLane) => void;
 }
 
 /** Full Room stage. Pure projection over existing Room / Jev / Tool Agent state. */
-export function RoomCollabTimeline({ room, projection, graph, satellites, rootId, active, onOpenParticipant, onOpenSatellite, eventsPanel = true }: RoomCollabTimelineProps & { eventsPanel?: boolean }) {
-  const timeline = useRoomTimeline({ room, projection, graph, satellites, rootId, active });
+export function RoomCollabTimeline({ room, projection, graph, satellites, rootId, active, onOpenParticipant, onOpenSatellite, onSelectRoot, eventsPanel = true }: RoomCollabTimelineProps & { eventsPanel?: boolean }) {
+  const [selectedRoot, setSelectedRoot] = useState('');
+  const roots = projection ? selectPublicRoomTurnOrder(projection) : [];
+  const visibleRoot = rootId ?? (roots.includes(selectedRoot) ? selectedRoot : roots.at(-1));
+  const timeline = useRoomTimeline({ room, projection, graph, satellites, rootId: visibleRoot, active });
   if (!timeline) return null;
-  return <CollabTimelineStage timeline={timeline} active={active} eventsPanel={eventsPanel} renderAvatar={roomPlanetAvatarRenderer(active)}
-    onOpenLane={(lane) => lane.kind === 'partner' ? onOpenParticipant?.(lane.id) : lane.kind === 'satellite' ? onOpenSatellite?.(lane) : undefined} />;
+  return <div className="ctl-room">{!rootId && roots.length > 1 ? <div className="ctl-room__navigation"><label>协作轮次<select aria-label="选择 Room 协作轮次" value={visibleRoot} onChange={event => { setSelectedRoot(event.target.value); onSelectRoot?.(event.target.value); }}>{roots.map((id, index) => <option key={id} value={id}>{index + 1} · {projection?.turnsById[id]?.messageIds.map(messageId => projection.messagesById[messageId]).find(message => message?.role === 'user')?.text.slice(0, 64) || '协作记录'}</option>)}</select></label></div> : null}<CollabTimelineStage key={timeline.id} timeline={timeline} active={active} eventsPanel={eventsPanel} renderAvatar={roomPlanetAvatarRenderer(active)}
+    onOpenLane={(lane) => lane.kind === 'partner' ? onOpenParticipant?.(lane.id) : lane.kind === 'satellite' ? onOpenSatellite?.(lane) : undefined} /></div>;
 }
 
 /** Rail peek that expands into the full stage. */

@@ -1,7 +1,7 @@
 /* Current PAWOS Agent conversation projection.
    This file only styles classes emitted by AgentTimeline's production `fx`
    presentation. Workspace chrome, composer geometry and trace remain owned by
-   paw-os-agent-migrated-v1.css; shared rich renderers remain owned by agent.css. */
+   paw-os-agent.css; shared rich renderers remain owned by agent.css. */
 
 .paw-desktop-root .paw-session-workspace__conversation[data-message-flow='separated'] .agent-turn {
   padding: 0;
@@ -24,83 +24,11 @@
 /* Session 上下文 chips：对话开篇的一块居中铭牌，两侧 hairline 像章节起始线。
    一次性陈述工作区绑定与权限模式，随记录滚动，不占用固定视口
    （UR-011 / PF-CM-007）。 */
-.paw-desktop-root .paw-chatfx .fx-context-chips {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 0 22px;
-}
-
-.paw-desktop-root .paw-chatfx .fx-context-chips::before,
-.paw-desktop-root .paw-chatfx .fx-context-chips::after {
-  content: '';
-  height: 1px;
-  flex: 1 1 24px;
-  max-width: 120px;
-  background: linear-gradient(90deg, transparent, var(--paw-chat-border));
-}
-
-.paw-desktop-root .paw-chatfx .fx-context-chips::after {
-  background: linear-gradient(90deg, var(--paw-chat-border), transparent);
-}
-
-.paw-desktop-root .paw-chatfx .fx-context-chip {
-  display: inline-flex;
-  overflow: hidden;
-  max-width: 55%;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 11px 3px 9px;
-  border: 1px solid var(--paw-chat-border);
-  border-radius: 999px;
-  color: var(--paw-chat-text-secondary);
-  background: var(--paw-chat-surface);
-  box-shadow: 0 1px 2px rgb(24 32 43 / 4%);
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 16px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.paw-desktop-root .paw-chatfx .fx-context-chip > .paw-mark {
-  margin-inline-start: -1px;
-  color: var(--paw-chat-text-tertiary);
-}
-
-.paw-desktop-root .paw-chatfx .fx-context-chip__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.paw-desktop-root .paw-chatfx .fx-context-chip[data-tone='bound'] > .paw-mark { color: var(--paw-chat-ok); }
-.paw-desktop-root .paw-chatfx .fx-context-chip[data-tone='permission'] > .paw-mark { color: var(--paw-chat-warn); }
 
 /* Narrow Session window: the lead-in keeps stating the workspace binding and
    the permission mode, but says it with marks only. The words move into the
    accessibility tree instead of unmounting, and `title` keeps them one hover
    away (PF-CM-009/017). */
-@container paw-session-workspace (max-width: 560px) {
-  .paw-desktop-root .paw-chatfx .fx-context-chip {
-    max-width: none;
-    padding: 5px;
-  }
-
-  .paw-desktop-root .paw-chatfx .fx-context-chip > .paw-mark {
-    margin-inline-start: 0;
-  }
-
-  .paw-desktop-root .paw-chatfx .fx-context-chip__text {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
 
 .paw-desktop-root .paw-chatfx .paw-user-step {
   position: relative;

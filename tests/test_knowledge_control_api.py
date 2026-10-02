@@ -366,13 +366,16 @@ class KnowledgeControlApiTests(unittest.TestCase):
             {"title": "Governed knowledge builder"}
         )["session"]
 
+        call_sequence = 0
         def call(operation: str, **args: object) -> dict[str, Any]:
+            nonlocal call_sequence
+            call_sequence += 1
             return self.service.agent_tools.execute(
                 {
                     "schemaVersion": "rag-ime.agent-tool-call.v1",
                     "sessionId": session["id"],
                     "tool": "knowledge",
-                    "toolCallId": f"tool:knowledge:{operation}",
+                    "toolCallId": f"tool:knowledge:{operation}:{call_sequence}",
                     "args": {"op": operation, **args},
                 }
             )["result"]

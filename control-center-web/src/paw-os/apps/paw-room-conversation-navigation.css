@@ -88,3 +88,104 @@
   .paw-room-dispatch-detail__decision > svg { animation: none; }
 }
 [data-reduce-motion='true'] .paw-room-dispatch-detail__decision > svg { animation: none; }
+
+/* A typed Room final gets one compact outcome surface. The source Markdown
+   stays behind an explicit disclosure, while the final row can use the whole
+   reading area instead of inheriting the narrow prose column. */
+.ccui-assistant-turn:has(.paw-room-conversation__final-report) {
+  width: calc(100% - 40px);
+  max-width: none;
+}
+.paw-room-timeline > .ccui-conversation-surface .ccui-assistant-turn:has(.paw-room-conversation__final-report) {
+  width: calc(100% - 40px);
+}
+.paw-room-conversation__final-report {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 22px);
+  border: 1px solid color-mix(in srgb, var(--paw-accent, #2563eb) 24%, var(--paw-line, #dbe3ee));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paw-panel, #fff) 94%, var(--paw-accent, #2563eb) 6%);
+}
+.paw-room-conversation__final-report-head {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
+  align-items: start;
+  gap: 10px 20px;
+}
+.paw-room-conversation__final-report-head > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+}
+.paw-room-conversation__final-report-head small {
+  color: var(--paw-muted, #64748b);
+  font-size: 12px;
+}
+.paw-room-conversation__final-report-head strong {
+  color: var(--paw-ink, #0f172a);
+  font-size: 15px;
+}
+.paw-room-conversation__final-report-head strong[data-state='failed'] { color: var(--paw-danger, #b42318); }
+.paw-room-conversation__final-report-head strong[data-state='aborted'] { color: var(--paw-warning, #9a6700); }
+.paw-room-conversation__final-report-head p {
+  min-width: 0;
+  margin: 0;
+  color: var(--paw-ink, #0f172a);
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.paw-room-conversation__final-report-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--paw-accent, #2563eb);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  list-style: none;
+}
+.paw-room-conversation__final-report-details > summary::-webkit-details-marker { display: none; }
+.paw-room-conversation__final-report-details > summary svg { transition: transform 160ms ease; }
+.paw-room-conversation__final-report-details[open] > summary svg { transform: rotate(90deg); }
+.paw-room-conversation__final-report-details > summary:focus-visible { outline: 2px solid var(--paw-accent, #2563eb); outline-offset: 3px; }
+.paw-room-conversation__final-report-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--paw-line-soft, rgba(0, 0, 0, .08));
+}
+.paw-room-conversation__final-report-prose { min-width: 0; }
+.paw-room-conversation__final-report-prose .paw-reading-surface {
+  --reading-paragraph-gap: .65em;
+  max-width: none;
+}
+.paw-room-conversation__final-report-prose .paw-rich-prose :is(h1, h2, h3, h4) { margin-block: .9em .4em; }
+.paw-room-conversation__final-report-prose .paw-rich-prose :is(p, ul, ol) { margin-bottom: .65em; }
+.paw-room-conversation__final-report-prose .paw-rich-prose li { margin-block: .16em; }
+.paw-room-conversation__final-report-actions { display: flex; justify-content: flex-end; }
+.paw-room-conversation__final-report-evidence {
+  display: grid;
+  gap: 5px;
+  color: var(--paw-muted, #64748b);
+  font-size: 12px;
+}
+.paw-room-conversation__final-report-evidence strong { color: var(--paw-ink, #0f172a); }
+.paw-room-conversation__final-report-evidence ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
+.paw-room-conversation__final-report-evidence code { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .ccui-assistant-turn:has(.paw-room-conversation__final-report),
+  .paw-room-timeline > .ccui-conversation-surface .ccui-assistant-turn:has(.paw-room-conversation__final-report) { width: calc(100% - 20px); }
+  .paw-room-conversation__final-report-head { grid-template-columns: 1fr; gap: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .paw-room-conversation__final-report-details > summary svg { transition: none; }
+}
+[data-reduce-motion='true'] .paw-room-conversation__final-report-details > summary svg { transition: none; }

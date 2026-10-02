@@ -17,24 +17,27 @@ from tests import test_agent_approval_application as application_fixtures
 
 
 def catalog(provider="configured-provider"):
-    return [{"provider": provider, "id": "gpt-6-" + name, "thinkingLevels": ["high", "max"]}
-            for name in ("astra", "sol", "luna")]
+    return [{"provider": provider, "id": "gpt-6-" + name, "thinkingLevels": ["medium", "high", "xhigh", "max"]}
+            for name in ("astra", "sol", "luna")] + [{"provider": provider, "id": "gpt-6.1-sol", "thinkingLevels": ["medium", "high", "xhigh", "max"]}]
 
 
 class JevModelPolicyTests(unittest.TestCase):
     def test_role_cards_separate_sources_and_use_current_family(self):
         cards = model_cards()
-        self.assertEqual({card["modelId"] for card in cards}, {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"})
+        self.assertEqual({card["modelId"] for card in cards}, {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"})
         for card in cards:
+            if card["modelId"] == "gpt-6.1-sol":
+                self.assertEqual({e["sourceKind"] for e in card["evidence"]}, {"official", "user_policy"})
+                continue
             self.assertEqual({e["sourceKind"] for e in card["evidence"]}, {"official", "community", "user_policy"})
             self.assertTrue(card["limitations"])
-            self.assertEqual(card["defaultThinkingLevel"], "max")
+            self.assertEqual(card["defaultThinkingLevel"], "medium" if card["modelId"] == "gpt-6-sol" else "max")
             self.assertTrue(next(e["url"] for e in card["evidence"] if e["sourceKind"] == "community").startswith("https://www.reddit.com/"))
         cards[0]["strengths"].clear()
         self.assertTrue(model_cards()[0]["strengths"])
         self.assertIn("简单任务", model_role_guidance("gpt-6-luna", "execute"))
         self.assertIn("不授予新权限", model_role_guidance("gpt-6-sol", "verify"))
-        self.assertIn("优先使用 Sol max", next(e for e in cards[0]["evidence"] if e["sourceKind"] == "user_policy")["summary"])
+        self.assertIn("常规执行 medium", next(e for e in cards[0]["evidence"] if e["sourceKind"] == "user_policy")["summary"])
         self.assertEqual(model_role_guidance("other", "execute"), "")
 
     def test_default_and_old_root_policy_are_distinct(self):
@@ -50,7 +53,7 @@ class JevModelPolicyTests(unittest.TestCase):
                 normalize_policy(payload)
 
     def test_exact_model_tiers_and_planning(self):
-        self.assertEqual(select_model(catalog(), purpose="execute")["modelId"], "gpt-6-sol")
+        self.assertEqual(select_model(catalog(), purpose="execute")["modelId"], "gpt-6.1-sol")
         for purpose, difficulty, model in (
             ("plan", "simple", "sol"), ("plan", "routine", "sol"),
             ("plan", "complex", "sol"), ("plan", "critical", "sol"), ("execute", "simple", "luna"),
@@ -61,8 +64,23 @@ class JevModelPolicyTests(unittest.TestCase):
         ):
             with self.subTest(purpose=purpose, difficulty=difficulty):
                 chosen = select_model(catalog(), purpose=purpose, difficulty=difficulty)
-                self.assertEqual(chosen["modelProfile"], "configured-provider/gpt-6-" + model)
-                self.assertEqual(chosen["thinkingLevel"], "max")
+                self.assertEqual(chosen["modelProfile"], "configured-provider/" + ("gpt-6.1-sol" if model == "sol" else "gpt-6-luna"))
+                self.assertEqual(chosen["thinkingLevel"], "max" if model == "luna" else "xhigh" if purpose in {"plan", "verify"} or difficulty in {"complex", "critical"} else "medium")
+
+    def test_sol_61_is_preferred_but_explicit_profile_stays_exact(self):
+        models = catalog() + [{"provider": "configured-provider", "id": "gpt-6.1-sol",
+                              "api": "openai-codex-responses", "thinkingLevels": ["low", "medium", "high", "xhigh", "max"]}]
+        for purpose in ["plan", "execute", "verify", "synthesize"]:
+            self.assertEqual(select_model(models, purpose=purpose)["modelId"], "gpt-6.1-sol")
+        self.assertEqual(select_model(models, purpose="execute", locked_profile="configured-provider/gpt-6-sol")["modelId"], "gpt-6-sol")
+        with self.assertRaisesRegex(GraphConflict, "MODEL_UNAVAILABLE"):
+            select_model([m for m in catalog() if m["id"] != "gpt-6.1-sol"], purpose="execute")
+        with self.assertRaisesRegex(GraphConflict, "API_UNSUPPORTED"):
+            select_model([{**models[-1], "api": "openai-completions"}], purpose="execute")
+
+    def test_explicit_reasoning_level_is_not_replaced(self):
+        for level in ["medium", "xhigh", "max"]:
+            self.assertEqual(select_model(catalog(), purpose="plan", thinking_level=level)["thinkingLevel"], level)
 
     def test_no_alias_provider_or_reasoning_substitution(self):
         with self.assertRaisesRegex(GraphConflict, "MODEL_UNAVAILABLE"):
@@ -80,7 +98,7 @@ class JevModelPolicyTests(unittest.TestCase):
 
     def test_planning_does_not_upgrade_to_astra_when_sol_is_missing(self):
         with self.assertRaisesRegex(GraphConflict, "MODEL_UNAVAILABLE"):
-            select_model([row for row in catalog() if row["id"] != "gpt-6-sol"], purpose="plan")
+            select_model([row for row in catalog() if row["id"] != "gpt-6.1-sol"], purpose="plan")
         selected = select_model(catalog(), purpose="plan", difficulty="routine",
                                 locked_profile="configured-provider/gpt-6-astra")
         self.assertEqual(selected["modelId"], "gpt-6-astra")

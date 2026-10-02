@@ -31,12 +31,14 @@ from rag_ime.pi.host_client import PiRuntimeHostClient
 from rag_ime.pi.event_projection import runtime_primitive_capabilities
 from rag_ime.pi.runtime import (
     PiRuntimeHostManager,
+    _HostedSessionState,
 )
 from rag_ime.pi.values import (
     PiRuntimeCommandAcceptanceUnknown,
     PiRuntimeCommandRejected,
     PiRuntimeSettlementLookupTimeout,
 )
+from tests.sqlite_fixtures import copy_current_database
 
 
 FAKE_HOST = r'''#!/usr/bin/env python3
@@ -83,6 +85,7 @@ for line in sys.stdin:
                          "piVersion": "0.80.7", "capabilities": {"multiSession": True, "maxSessions": 4,
                          "settledEvents": True, "dynamicTools": True, "managedPlugins": True,
                          "sessionControlState": True,
+                         "sessionBoundAbort": True,
                          "sessionSkillAllowlist": True,
                          "sessionResourceDisclosure": True,
                          "sessionCandidateSkillPaths": True,
@@ -90,6 +93,8 @@ for line in sys.stdin:
                          "transientContext": True,
                          "statelessCompletion": True,
                          "conversationFork": True,
+                         "nativeMcpExecutionPolicy": True,
+                         "codemode": {"available": True, "modes": ["off", "on", "only"], "defaultMode": "on"},
                          "runtimePrimitives": {
                              "continuationEnvelope": os.environ.get("TEST_CONTINUATION_ENVELOPE", "2"),
                              "cancelScope": "1",
@@ -126,6 +131,7 @@ for line in sys.stdin:
             "sessionId": session_id, "piSessionId": "pi-" + session_id,
             "sessionFile": params.get("sessionFile") or str(pathlib.Path(os.environ["RAG_IME_PI_SESSION_DIR"]) / (session_id + ".jsonl")),
             "leafId": "", "messages": [], "thinkingLevel": params.get("thinkingLevel", "medium"),
+            "codemodeMode": params.get("codemodeMode", "on"),
             "model": model,
             "isIdle": True,
             "messageQueue": {"steering": [], "followUp": [], "steeringMode": "one-at-a-time",
@@ -220,6 +226,14 @@ for line in sys.stdin:
     elif method == "session.thinking.set":
         sessions[session_id]["thinkingLevel"] = params["level"]
         result(request, {"level": params["level"]})
+    elif method == "session.codemode.set":
+        sessions[session_id]["codemodeMode"] = params["mode"]
+        result(request, {
+            "schemaVersion": "rag-ime.pi-session-codemode.v1",
+            "sessionId": session_id,
+            "mode": params["mode"],
+            "snapshot": sessions[session_id],
+        })
     elif method == "session.prompt":
         # Match Pi's fresh UUID per prompt. Reusing a retired identity causes
         # later execution events to be correctly fenced as stale replays.
@@ -229,6 +243,39 @@ for line in sys.stdin:
         sessions[session_id]["activeTurnId"] = turn_id
         client_message_id = params.get("clientMessageId", "")
         sessions[session_id]["activeClientMessageId"] = client_message_id
+        if params["message"].startswith("preflight-handled"):
+            runtime_id = sessions[session_id]["piSessionId"]
+            settlement = {
+                "schemaVersion": "rag-ime.pi-turn-settlement.v1", "sessionId": session_id,
+                "runtimeSessionId": runtime_id, "turnId": turn_id, "clientMessageId": client_message_id,
+                "receipt": {"schemaVersion": "pi.agent-settled.v2", "receiptId": "handled:" + turn_id,
+                            "sessionId": runtime_id, "runId": turn_id, "scopeId": runtime_id + ":" + turn_id,
+                            "generation": 1, "disposition": "completed", "stopReason": "prompt_handled",
+                            "origin": "prompt_preflight", "settledAtMs": 200, "aborted": False,
+                            "pendingOperations": 0, "operations": {"pending": 0}, "operationCounts": {}}}
+            if params["message"] == "preflight-handled-wrong-client":
+                settlement["clientMessageId"] = "another-client"
+            elif params["message"] == "preflight-handled-without-origin":
+                settlement["receipt"].pop("origin")
+            elif params["message"] == "preflight-handled-aborted":
+                settlement["receipt"]["disposition"] = "aborted"
+                settlement["receipt"]["aborted"] = True
+                settlement["receipt"]["stopReason"] = "prompt_preflight_cancelled"
+            elif params["message"] == "preflight-handled-failed":
+                settlement["receipt"]["disposition"] = "failed"
+                settlement["receipt"]["stopReason"] = "fixture_failure"
+            sessions[session_id].setdefault("settlements", {})[turn_id] = settlement
+            sessions[session_id]["isIdle"] = True
+            sessions[session_id]["activeTurnId"] = ""
+            sessions[session_id]["activeClientMessageId"] = ""
+            if params["message"] == "preflight-handled-before-ack":
+                event(session_id, turn_id, client_message_id,
+                      {"type": "agent_settled", "receipt": settlement["receipt"]})
+            # By default drop the live event: the ACK carries the same
+            # durable receipt, not a made-up assistant message or a new run.
+            result(request, {"turnId": turn_id, "clientMessageId": client_message_id,
+                             "disposition": "handled", "settlement": settlement})
+            continue
         user_entry_id = "entry-user-" + str(len(sessions[session_id].get("forkItems", [])) + 1)
         assistant_entry_id = "entry-assistant-" + str(len(sessions[session_id].get("forkItems", [])) + 1)
         user_message = {"id": user_entry_id, "role": "user", "timestamp": 100,
@@ -479,6 +526,8 @@ class PiRuntimeV2Tests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-pi-v2-")
         self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        copy_current_database(self.root / "rag-ime.sqlite")
         self.fake_host = self.root / "fake-host"
         self.fake_host.write_text(FAKE_HOST, encoding="utf-8")
         self.fake_host.chmod(0o755)
@@ -533,6 +582,37 @@ class PiRuntimeV2Tests(unittest.TestCase):
             "stored": True,
             "status": "checkpointed",
         }
+
+    def test_turn_tool_evidence_reads_exact_durable_binding_without_starting_host(self):
+        session_id = self.first["id"]
+        transcript = self.runtime.config.session_dir / "bound-evidence.jsonl"
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        script = "console.log(" + json.dumps("公开合法操作" * 900) + ")"
+        entries = [{"type": "session", "id": "physical-evidence"},
+            {"type": "custom", "id": "binding", "parentId": "physical-evidence",
+                "customType": "rag-ime.pi-turn-binding", "data": {
+                    "schemaVersion": "rag-ime.pi-turn-binding.v1", "turnId": "bound-turn"}},
+            {"type": "message", "id": "user", "parentId": "binding",
+                "message": {"role": "user", "content": "private task"}},
+            {"type": "message", "id": "call", "parentId": "user",
+                "message": {"role": "assistant", "content": [{"type": "toolCall", "name": "browser",
+                    "id": "browser-call", "arguments": {"op": "run", "script": script}}]}},
+            {"type": "message", "id": "result", "parentId": "call",
+                "message": {"role": "toolResult", "toolCallId": "browser-call", "toolName": "browser",
+                    "details": {"schemaVersion": "rag-ime.browser-control.v1", "status": "completed"}}}]
+        transcript.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+        self.store.bind_runtime_session(session_id, driver_id="managed-pi", runtime_kind="pi_rpc",
+            external_session_id="physical-evidence", transcript_ref=str(transcript), branch_anchor="result",
+            binding_state="active", metadata={"protocolVersion": "2"}, message_count=3)
+        with patch.object(self.runtime, "_host_locked", side_effect=AssertionError("Host started")):
+            evidence = self.runtime.session_tool_evidence(session_id, turn_id="bound-turn")
+            self.assertEqual(len(evidence["toolHistoryEvents"]), 2)
+            self.assertEqual(evidence["toolHistoryEvents"][0]["payload"]["args"]["script"], script)
+            self.assertEqual(self.runtime.session_tool_evidence(session_id, turn_id="other-turn")["toolHistoryEvents"], [])
+            with self.assertRaises(AgentRuntimeError):
+                self.runtime.session_tool_evidence(self.second["id"], turn_id="bound-turn")
+        self.assertNotIn("private task", json.dumps(evidence))
+        self.assertIsNone(self.runtime._client)
 
     def test_runtime_status_is_a_local_projection_and_does_not_start_host(
         self,
@@ -635,6 +715,13 @@ class PiRuntimeV2Tests(unittest.TestCase):
                 approval_id,
             )
         )
+        # The control flag precedes asynchronous public event publication.
+        # Wait for the receipt this test inspects, rather than racing its writer.
+        _wait_until(lambda: any(
+            event.event_type == "approval_required"
+            and event.payload.get("approvalId") == approval_id
+            for event in self.events.replay(session_id)[0]
+        ))
         events, _ = self.events.replay(session_id)
         required = next(
             event
@@ -2111,7 +2198,11 @@ class PiRuntimeV2Tests(unittest.TestCase):
             transcript_ref=transcript.as_posix(),
             branch_anchor="recent-dangling-user",
             binding_state="active",
-            metadata={"protocolVersion": "2"},
+            metadata={
+                "protocolVersion": "2",
+                "codemodeAvailable": True,
+                "codemodeMode": "only",
+            },
             message_count=17,
         )
 
@@ -2138,13 +2229,15 @@ class PiRuntimeV2Tests(unittest.TestCase):
         self.assertEqual(
             texts,
             [
-                "问题 4", "回答 4",
+                "问题 1", "回答 1", "问题 2", "回答 2",
+                "问题 3", "回答 3", "问题 4", "回答 4",
                 "问题 5", "回答 5", "问题 6", "回答 6",
                 "问题 7", "回答 7", "问题 8", "回答 8",
                 "尚未完成的问题",
             ],
         )
         self.assertEqual(snapshot["toolHistoryEvents"], [])
+        self.assertEqual(snapshot["codemodeMode"], "only")
         self.assertNotIn("未选择的分支", json.dumps(snapshot, ensure_ascii=False))
 
     def test_recent_snapshot_parses_only_a_bounded_tail_of_a_large_linear_transcript(
@@ -2232,6 +2325,8 @@ class PiRuntimeV2Tests(unittest.TestCase):
         self.assertEqual(
             texts,
             [
+                "大对话问题 1", "大对话回答 1",
+                "大对话问题 2", "大对话回答 2",
                 "大对话问题 3", "大对话回答 3",
                 "大对话问题 4", "大对话回答 4",
                 "大对话问题 5", "大对话回答 5",
@@ -2240,7 +2335,9 @@ class PiRuntimeV2Tests(unittest.TestCase):
                 "大对话问题 8", "大对话回答 8",
             ],
         )
-        self.assertLess(parsed_line_count, 10_000)
+        # The authorized 24-turn window reads a larger bounded tail than the
+        # former six-turn contract while remaining far below a full scan.
+        self.assertLess(parsed_line_count, 15_000)
 
     def test_recent_snapshot_falls_back_when_selected_branch_anchor_is_outside_tail(
         self,
@@ -2394,6 +2491,324 @@ class PiRuntimeV2Tests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(full_snapshot.call_count, 1)
+
+    def test_terminal_settlement_advances_branch_cursor_before_recent_read(self) -> None:
+        session_id = str(self.first["id"])
+        turn_id = "turn-terminal-recent-refresh"
+        transcript = self.root / "sessions" / "terminal-recent-refresh.jsonl"
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        entries: list[dict[str, object]] = [
+            {"type": "session", "id": "pi-terminal-recent-refresh"},
+            {
+                "type": "message",
+                "id": "old-user",
+                "parentId": "pi-terminal-recent-refresh",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "上一轮问题"}],
+                },
+            },
+            {
+                "type": "message",
+                "id": "old-answer",
+                "parentId": "old-user",
+                "message": {
+                    "role": "assistant",
+                    "stopReason": "stop",
+                    "content": [{"type": "text", "text": "上一轮回答"}],
+                },
+            },
+            {
+                "type": "custom",
+                "id": "old-settlement",
+                "parentId": "old-answer",
+                "customType": "rag-ime.pi-turn-settlement",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                    "turnId": "turn-old",
+                },
+            },
+        ]
+        transcript.write_text(
+            "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries),
+            encoding="utf-8",
+        )
+        self.store.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-terminal-recent-refresh",
+            transcript_ref=transcript.as_posix(),
+            branch_anchor="old-settlement",
+            binding_state="active",
+            metadata={"protocolVersion": "2"},
+            message_count=2,
+        )
+        initial = self.runtime.recent_session_snapshot(session_id)
+        self.assertEqual(
+            [
+                block["data"]["text"]
+                for message in initial["messages"]
+                for block in message["blocks"]
+                if block["type"] == "text"
+            ],
+            ["上一轮问题", "上一轮回答"],
+        )
+
+        new_entries = [
+            {
+                "type": "custom",
+                "id": "new-binding",
+                "parentId": "old-settlement",
+                "customType": "rag-ime.pi-turn-binding",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-binding.v1",
+                    "turnId": turn_id,
+                    "clientMessageId": "client-terminal-recent-refresh",
+                },
+            },
+            {
+                "type": "message",
+                "id": "new-user",
+                "parentId": "new-binding",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "最新截图验收"}],
+                },
+            },
+            {
+                "type": "message",
+                "id": "new-answer",
+                "parentId": "new-user",
+                "message": {
+                    "role": "assistant",
+                    "stopReason": "stop",
+                    "content": [{"type": "text", "text": "screenshot HTTP500"}],
+                },
+            },
+            {
+                "type": "custom",
+                "id": "new-settlement",
+                "parentId": "new-answer",
+                "customType": "rag-ime.pi-turn-settlement",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                    "turnId": turn_id,
+                },
+            },
+        ]
+        with transcript.open("a", encoding="utf-8") as target:
+            target.write(
+                "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in new_entries)
+            )
+        assistant = new_entries[2]["message"]
+        self.runtime._states[session_id] = _HostedSessionState(
+            turn_id=turn_id,
+            last_agent_messages=[assistant],
+        )
+
+        self.runtime._handle_host_event({
+            "protocolVersion": "2",
+            "event": "agent.event",
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "payload": {"type": "agent_settled"},
+        })
+
+        binding = self.store.runtime_binding(session_id)
+        assert binding is not None
+        self.assertEqual(binding["branchAnchor"], "new-settlement")
+        recent = self.runtime.recent_session_snapshot(session_id)
+        texts = [
+            block["data"]["text"]
+            for message in recent["messages"]
+            for block in message["blocks"]
+            if block["type"] == "text"
+        ]
+        self.assertEqual(texts[-2:], ["最新截图验收", "screenshot HTTP500"])
+        self.assertTrue(recent["projectionCurrent"])
+        projection = self.store.recent_message_projection(session_id)
+        assert projection is not None
+        self.assertEqual(projection["branchAnchor"], "new-settlement")
+        self.assertEqual(
+            [
+                block["data"]["text"]
+                for message in projection["messages"]
+                for block in message["blocks"]
+                if block["type"] == "text"
+            ][-2:],
+            ["最新截图验收", "screenshot HTTP500"],
+        )
+
+    def test_cold_recent_read_recovers_terminal_branch_without_physical_last_row(
+        self,
+    ) -> None:
+        session_id = str(self.first["id"])
+        transcript = self.root / "sessions" / "cold-terminal-branch.jsonl"
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        entries: list[dict[str, object]] = [
+            {"type": "session", "id": "pi-cold-terminal-branch"},
+            {
+                "type": "message",
+                "id": "old-user",
+                "parentId": "pi-cold-terminal-branch",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "旧问题"}],
+                },
+            },
+            {
+                "type": "message",
+                "id": "old-answer",
+                "parentId": "old-user",
+                "message": {
+                    "role": "assistant",
+                    "stopReason": "stop",
+                    "content": [{"type": "text", "text": "旧回答"}],
+                },
+            },
+            {
+                "type": "custom",
+                "id": "old-settlement",
+                "parentId": "old-answer",
+                "customType": "rag-ime.pi-turn-settlement",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                    "turnId": "old-turn",
+                },
+            },
+        ]
+        transcript.write_text(
+            "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries),
+            encoding="utf-8",
+        )
+        self.store.bind_runtime_session(
+            session_id,
+            driver_id="managed-pi",
+            runtime_kind="pi_rpc",
+            external_session_id="pi-cold-terminal-branch",
+            transcript_ref=transcript.as_posix(),
+            branch_anchor="old-settlement",
+            binding_state="active",
+            message_count=2,
+            updated_at_ms=100,
+        )
+        initial = self.runtime.recent_session_snapshot(session_id)
+        new_entries = [
+            {
+                "type": "custom",
+                "id": "new-binding",
+                "parentId": "old-settlement",
+                "customType": "rag-ime.pi-turn-binding",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-binding.v1",
+                    "turnId": "new-turn",
+                    "clientMessageId": "client-new-turn",
+                },
+            },
+            {
+                "type": "message",
+                "id": "new-user",
+                "parentId": "new-binding",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "最新问题"}],
+                },
+            },
+            {
+                "type": "message",
+                "id": "new-answer",
+                "parentId": "new-user",
+                "message": {
+                    "role": "assistant",
+                    "stopReason": "stop",
+                    "content": [{"type": "text", "text": "最新回答"}],
+                },
+            },
+            {
+                "type": "custom",
+                "id": "new-settlement",
+                "parentId": "new-answer",
+                "customType": "rag-ime.pi-turn-settlement",
+                "data": {
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1",
+                    "turnId": "new-turn",
+                },
+            },
+            {
+                "type": "message",
+                "id": "fork-user",
+                "parentId": "old-settlement",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "分叉问题"}],
+                },
+            },
+            {
+                "type": "message",
+                "id": "fork-answer",
+                "parentId": "fork-user",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "分叉回答"}],
+                },
+            },
+        ]
+        with transcript.open("a", encoding="utf-8") as target:
+            target.write(
+                "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in new_entries)
+            )
+
+        # Simulate a prior repair that saved the old branch against the new
+        # file identity.  A fresh runtime must consult the durable settlement
+        # instead of returning this exact-looking stale cache.
+        identity = self.runtime._recent_projection_identity(session_id)
+        assert identity is not None
+        self.store.save_recent_message_projection(
+            session_id,
+            transcript_ref=str(identity["transcriptRef"]),
+            external_session_id=str(identity["externalSessionId"]),
+            branch_anchor="old-settlement",
+            transcript_device=int(identity["transcriptDevice"]),
+            transcript_inode=int(identity["transcriptInode"]),
+            transcript_size=int(identity["transcriptSize"]),
+            transcript_mtime_ns=int(identity["transcriptMtimeNs"]),
+            transcript_boundary_sha256=str(identity["transcriptBoundarySha256"]),
+            messages=list(initial["messages"]),
+            tool_history_events=list(initial.get("toolHistoryEvents") or []),
+        )
+        generation = int(self.store.runtime_binding(session_id)["generation"])
+        config = self.runtime.config
+        self.runtime.stop()
+        self.runtime = PiRuntimeHostManager(
+            config=config,
+            sessions=self.store,
+            events=self.events,
+        )
+
+        with patch.object(
+            self.runtime,
+            "_host",
+            side_effect=AssertionError("cold read must not start the Host"),
+        ):
+            recovered = self.runtime.recent_session_snapshot(session_id)
+
+        texts = [
+            block["data"]["text"]
+            for message in recovered["messages"]
+            for block in message["blocks"]
+            if block["type"] == "text"
+        ]
+        self.assertEqual(texts, ["旧问题", "旧回答", "最新问题", "最新回答"])
+        self.assertNotIn("分叉回答", texts)
+        self.assertTrue(recovered["projectionCurrent"])
+        binding = self.store.runtime_binding(session_id)
+        assert binding is not None
+        self.assertEqual(binding["branchAnchor"], "new-settlement")
+        self.assertEqual(binding["generation"], generation)
+        projection = self.store.recent_message_projection(session_id)
+        assert projection is not None
+        self.assertEqual(projection["branchAnchor"], "new-settlement")
 
     def test_large_append_returns_projection_while_one_background_repair_runs(
         self,
@@ -2702,6 +3117,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
         self.assertEqual(
             repaired_texts,
             [
+                "旧问题 1", "旧回答 1", "旧问题 2", "旧回答 2",
                 "旧问题 3", "旧回答 3", "旧问题 4", "旧回答 4",
                 "旧问题 5", "旧回答 5", "旧问题 6", "旧回答 6",
                 "旧问题 7", "旧回答 7",
@@ -2928,6 +3344,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
         self.assertEqual(
             texts,
             [
+                "旧问题 1", "旧回答 1", "旧问题 2", "旧回答 2",
                 "旧问题 3", "旧回答 3", "旧问题 4", "旧回答 4",
                 "旧问题 5", "旧回答 5", "旧问题 6", "旧回答 6",
                 "旧问题 7", "旧回答 7", "旧问题 8", "旧回答 8",
@@ -2992,9 +3409,9 @@ class PiRuntimeV2Tests(unittest.TestCase):
         snapshot = self.runtime.recent_session_snapshot(session_id)
         serialized = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
 
-        self.assertLessEqual(len(serialized), 64 * 1024)
+        self.assertLessEqual(len(serialized), 256 * 1024)
         self.assertIn("回答 8:", serialized.decode("utf-8"))
-        self.assertIn("近期快照已截断", serialized.decode("utf-8"))
+        self.assertNotIn("近期快照已截断", serialized.decode("utf-8"))
         self.assertNotIn("回答 1:", serialized.decode("utf-8"))
 
         transcript.write_text(
@@ -4054,6 +4471,111 @@ class PiRuntimeV2Tests(unittest.TestCase):
         self.assertEqual(opened[0]["params"]["toolManifest"][0]["name"], "memory")
         self.assertEqual(opened[0]["params"]["thinkingLevel"], "max")
 
+    def test_session_open_forwards_effective_codemode_mode_and_runtime_advertises_support(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.config = replace(self.runtime.config, codemode_mode="only")
+        self.runtime.ensure(session_id)
+
+        requests = [
+            json.loads(line)
+            for line in (self.root / "agent" / "host-requests.jsonl").read_text().splitlines()
+        ]
+        opened = next(request for request in requests if request["method"] == "session.open")
+        self.assertEqual(opened["params"]["codemodeMode"], "only")
+        self.assertEqual(
+            self.runtime.runtime_status()["capabilities"]["codemode"]["modes"],
+            ["off", "on", "only"],
+        )
+
+    def test_idle_codemode_setter_persists_effective_mode_without_rotating_binding(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        before = self.store.runtime_binding(session_id)
+        assert before is not None
+
+        selected = self.runtime.set_codemode_mode(session_id, mode="only")
+
+        self.assertEqual(selected["codemodeMode"], "only")
+        after = self.store.runtime_binding(session_id)
+        assert after is not None
+        self.assertEqual(after["generation"], before["generation"])
+        self.assertTrue(after["metadata"]["codemodeAvailable"])
+        self.assertEqual(after["metadata"]["codemodeMode"], "only")
+        self.assertEqual(
+            self.runtime.session_snapshot(session_id)["codemodeMode"],
+            "only",
+        )
+        self.assertEqual(self.store.get(session_id)["codemodeMode"], "only")
+        self.assertTrue(self.runtime.close_session(session_id))
+        reopened = self.runtime.ensure(session_id)
+        self.assertEqual(reopened["codemodeMode"], "only")
+        self.assertEqual(self.store.get(session_id)["codemodeMode"], "only")
+        requests = [
+            json.loads(line)
+            for line in (self.root / "agent" / "host-requests.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(
+            [request["method"] for request in requests].count("session.codemode.set"),
+            1,
+        )
+
+    def test_unsupported_host_never_projects_configured_or_snapshot_codemode(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        binding = self.store.runtime_binding(session_id)
+        assert binding is not None
+        self.runtime._host_capabilities["codemode"] = {
+            "available": False,
+            "modes": [],
+            "defaultMode": "",
+        }
+        self.store.update_runtime_binding_metadata(
+            session_id,
+            {"codemodeAvailable": False, "codemodeMode": "on"},
+            expected_generation=int(binding["generation"]),
+            expected_external_session_id=str(binding["externalSessionId"]),
+            expected_transcript_ref=str(binding["transcriptRef"]),
+            expected_branch_anchor=str(binding["branchAnchor"]),
+        )
+
+        self.assertNotIn("codemodeMode", self.store.get(session_id))
+        self.assertNotIn("codemodeMode", self.store.list()[0])
+        self.assertNotIn(
+            "codemodeMode",
+            self.store.list_page(projection_only=True)["items"][0],
+        )
+        with patch.object(
+            self.runtime,
+            "_inspection_snapshot",
+            return_value={"messages": [], "codemodeMode": "on"},
+        ):
+            self.assertNotIn(
+                "codemodeMode",
+                self.runtime.session_snapshot(session_id),
+            )
+
+    def test_warm_ensure_applies_changed_codemode_preference_only_when_idle(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        self.runtime._session_context_provider = lambda _session: {
+            "codemodeMode": "only",
+        }
+
+        prepared = self.runtime.ensure(session_id)
+
+        self.assertEqual(prepared["codemodeMode"], "only")
+        binding = self.store.runtime_binding(session_id)
+        assert binding is not None
+        self.assertEqual(binding["metadata"]["codemodeMode"], "only")
+        requests = [
+            json.loads(line)
+            for line in (self.root / "agent" / "host-requests.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(
+            [request["method"] for request in requests].count("session.codemode.set"),
+            1,
+        )
+
     def test_runtime_primitives_accept_only_supported_continuation_envelopes(self) -> None:
         self.assertEqual(
             runtime_primitive_capabilities({"continuationEnvelope": "1"})[
@@ -4739,6 +5261,11 @@ class PiRuntimeV2Tests(unittest.TestCase):
         _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
         second = self.runtime.prompt(session_id, "duplicate-across-native-followup")
         _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+        _wait_until(lambda: any(
+            event.event_type == "turn_completed"
+            and event.turn_id == second["turnId"]
+            for event in self.events.replay(session_id)[0]
+        ))
         self.assertNotEqual(first["turnId"], second["turnId"])
         completed = [event.turn_id for event in self.events.replay(session_id)[0]
                      if event.event_type == "turn_completed"]
@@ -4758,6 +5285,37 @@ class PiRuntimeV2Tests(unittest.TestCase):
                 f"second host reply for {session_id}",
             ],
         )
+
+    def test_native_capabilities_read_resident_owner_without_prompt_or_configuration_payload(self) -> None:
+        session_id = str(self.first["id"])
+        native = {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "codemodeMode": "on",
+                  "mcp": {"available": True, "active": True, "configErrorCount": 0,
+                          "servers": [{"name": "docs", "namespace": "mcp__docs", "scope": "global",
+                                      "enabled": True, "state": "connected", "exposure": "codemode",
+                                      "toolCount": 1, "url": "private-transport", "env": {"SECRET": "private"}}]},
+                  "tools": [{"name": "mcp__docs__search", "namespace": {"name": "mcp__docs", "instructions": "not-in-catalog"},
+                             "exposure": "codemode", "active": False, "routable": True,
+                             "description": "Search docs", "parameters": {"type": "object"}}]}
+        with patch.object(self.runtime, "_inspection_snapshot") as inspect, patch.object(self.runtime, "_require_client") as client:
+            client.return_value.send.return_value = {"nativeCapabilities": native}
+            response = self.runtime.native_capabilities(session_id)
+        inspect.assert_called_once_with(session_id, durable_fallback=False)
+        client.return_value.send.assert_called_once_with("tools.list", {"sessionId": session_id})
+        self.assertEqual(response["sessionId"], session_id)
+        self.assertEqual(response["tools"][0]["namespace"], {"name": "mcp__docs"})
+        self.assertFalse(response["tools"][0]["active"])
+        self.assertTrue(response["tools"][0]["routable"])
+        self.assertNotIn("private", json.dumps(response))
+        self.assertNotIn("not-in-catalog", json.dumps(response))
+
+    def test_native_capabilities_do_not_promote_an_unsupported_or_malformed_owner_to_empty_success(self) -> None:
+        session_id = str(self.first["id"])
+        for raw in ({}, {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "mcp": {"available": False}},
+                    {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "mcp": {"available": True, "servers": "invalid"}, "tools": []}):
+            with self.subTest(raw=raw), patch.object(self.runtime, "_inspection_snapshot"), patch.object(self.runtime, "_require_client") as client:
+                client.return_value.send.return_value = {"nativeCapabilities": raw}
+                with self.assertRaises(PiRuntimeError):
+                    self.runtime.native_capabilities(session_id)
 
     def test_v2_exposes_managed_skill_commands_to_the_composer(self) -> None:
         session_id = str(self.first["id"])
@@ -4916,6 +5474,155 @@ class PiRuntimeV2Tests(unittest.TestCase):
 
         self.assertEqual(self.store.runtime_binding(first_id), source_binding)
         self.assertIsNone(self.store.runtime_binding(second_id))
+
+    def test_handled_prompt_recovers_a_lost_settled_event_without_fabricating_output(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.prompt(session_id, "older ordinary reply", client_message_id="earlier-client")
+        _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+        handled = self.runtime.prompt(session_id, "preflight-handled", client_message_id="handled-client")
+        self.assertEqual(handled["disposition"], "handled")
+        self.assertTrue(handled["accepted"])
+        self.assertNotIn("abortRequested", handled)
+        self.assertEqual(self.store.get(session_id)["status"], "idle")
+        settlement = self.runtime.await_turn_settled(session_id, str(handled["turnId"]),
+            client_message_id="handled-client", timeout_seconds=1)
+        self.assertEqual(settlement["receipt"]["stopReason"], "prompt_handled")
+        self.assertNotIn("finalMessage", settlement["receipt"])
+        events = [event for event in self.events.replay(session_id)[0] if event.turn_id == handled["turnId"]]
+        self.assertEqual(sum(event.event_type == "turn_completed" for event in events), 1)
+        self.assertFalse(any(event.event_type == "message_completed" for event in events))
+        next_prompt = self.runtime.prompt(session_id, "next ordinary task", client_message_id="next-client")
+        self.assertTrue(next_prompt["accepted"])
+        _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+        self.assertEqual(sum(item["method"] == "session.prompt" for item in self._host_request_log()), 3)
+
+    def test_handled_ack_preserves_the_settlement_abort_outcome(self) -> None:
+        session_id = str(self.first["id"])
+        handled = self.runtime.prompt(session_id, "preflight-handled-aborted", client_message_id="handled-aborted")
+        self.assertEqual(handled["disposition"], "handled")
+        self.assertTrue(handled["abortRequested"])
+        self.assertEqual(self.store.get(session_id)["status"], "idle")
+        self.assertEqual(self.store.get(session_id)["lastMessagePreview"], "已停止。")
+        terminal = [event for event in self.events.replay(session_id)[0] if event.event_type == "turn_completed"]
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0].turn_id, handled["turnId"])
+        self.assertTrue(terminal[0].payload["aborted"])
+
+    def test_late_handled_ack_preserves_a_newer_prompt_reservation(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        client = self.runtime._require_client()
+        original_send = client.send
+        ack_received = threading.Event()
+        release_ack = threading.Event()
+        results: list[dict[str, object]] = []
+        errors: list[Exception] = []
+
+        def hold_ack(method, params=None, **kwargs):
+            result = original_send(method, params, **kwargs)
+            if method == "session.prompt":
+                ack_received.set()
+                if not release_ack.wait(5):
+                    raise TimeoutError("test did not release the captured ACK")
+            return result
+
+        def submit():
+            try:
+                results.append(self.runtime.prompt(session_id, "preflight-handled-before-ack", client_message_id="handled-original"))
+            except Exception as error:
+                errors.append(error)
+
+        with patch.object(client, "send", side_effect=hold_ack):
+            worker = threading.Thread(target=submit)
+            worker.start()
+            try:
+                self.assertTrue(ack_received.wait(5))
+                _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+                self.runtime.reserve_prompt_admission(session_id, client_message_id="newer-client")
+            finally:
+                release_ack.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["disposition"], "handled")
+        self.assertNotIn("abortRequested", results[0])
+        self.runtime.require_prompt_admission_active(session_id, client_message_id="newer-client")
+        self.assertEqual(self.store.get(session_id)["status"], "busy")
+
+    def test_terminal_projection_cannot_overwrite_a_new_prompt_reservation(self) -> None:
+        self._assert_terminal_projection_preserves_successor("preflight-handled", "idle")
+
+    def test_failed_terminal_projection_cannot_fault_a_new_prompt_reservation(self) -> None:
+        self._assert_terminal_projection_preserves_successor("preflight-handled-failed", "faulted")
+
+    def _assert_terminal_projection_preserves_successor(self, message: str, terminal_status: str) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        terminal_write_entered = threading.Event()
+        reservation_attempted = threading.Event()
+        reservation_finished = threading.Event()
+        release_terminal = threading.Event()
+        original_set_status = self.store.set_status
+        errors: list[Exception] = []
+        results: list[dict[str, object]] = []
+
+        def hold_terminal_write(sid, status, **kwargs):
+            if sid == session_id and status == terminal_status and threading.current_thread() is terminal_worker:
+                terminal_write_entered.set()
+                if not release_terminal.wait(5):
+                    raise TimeoutError("test did not release the terminal store write")
+            return original_set_status(sid, status, **kwargs)
+
+        def finish_old_prompt():
+            try:
+                results.append(self.runtime.prompt(session_id, message, client_message_id="old-owner"))
+            except Exception as error:
+                errors.append(error)
+
+        def reserve_new_prompt():
+            reservation_attempted.set()
+            try:
+                self.runtime.reserve_prompt_admission(session_id, client_message_id="new-owner")
+            except Exception as error:
+                errors.append(error)
+            finally:
+                reservation_finished.set()
+
+        terminal_worker = threading.Thread(target=finish_old_prompt)
+        reservation_worker = threading.Thread(target=reserve_new_prompt)
+        with patch.object(self.store, "set_status", side_effect=hold_terminal_write):
+            terminal_worker.start()
+            try:
+                self.assertTrue(terminal_write_entered.wait(5))
+                reservation_worker.start()
+                self.assertTrue(reservation_attempted.wait(5))
+                # Exercise the interleaving if admission can finish before the
+                # old store write. Correct serialization keeps it pending; the
+                # deadline only releases that barrier, not a timing assertion.
+                reservation_finished.wait(0.5)
+            finally:
+                release_terminal.set()
+                terminal_worker.join(5)
+                if reservation_worker.ident is not None:
+                    reservation_worker.join(5)
+        self.assertFalse(terminal_worker.is_alive())
+        self.assertFalse(reservation_worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["disposition"], "handled")
+        self.runtime.require_prompt_admission_active(session_id, client_message_id="new-owner")
+        self.assertEqual(self.store.get(session_id)["status"], "busy")
+
+    def test_handled_prompt_requires_an_exact_authoritative_no_run_receipt(self) -> None:
+        for message in ("preflight-handled-wrong-client", "preflight-handled-without-origin"):
+            with self.subTest(message=message):
+                session = self.store.create(title=message)
+                session_id = str(session["id"])
+                with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+                    self.runtime.prompt(session_id, message, client_message_id=message)
+                self.assertEqual(self.store.get(session_id)["status"], "busy")
+                self.assertFalse(any(event.event_type == "turn_completed" for event in self.events.replay(session_id)[0]))
+                with self.assertRaises(PiRuntimeError):
+                    self.runtime.prompt(session_id, "must not replay the handled effect")
 
     def test_prompt_rejects_a_second_turn_until_the_active_turn_settles(self) -> None:
         session_id = str(self.first["id"])
@@ -6522,6 +7229,75 @@ class PiRuntimeV2Tests(unittest.TestCase):
         with patch.object(client, "send", side_effect=observe_send):
             self.runtime.abort(session_id)
 
+    def test_cancelled_admission_ack_never_reopens_gateway_before_exact_abort(self) -> None:
+        self._assert_cancelled_admission_ack_stays_fenced("")
+
+    def test_cancelled_admission_ack_fence_failure_still_delivers_exact_abort(self) -> None:
+        self._assert_cancelled_admission_ack_stays_fenced("client:pending", fail_fence=True)
+
+    def _assert_cancelled_admission_ack_stays_fenced(self, client_id: str, *, fail_fence: bool = False) -> None:
+        session_id = str(self.first["id"])
+        turn_id = "turn:late-ack"
+        self.runtime.ensure(session_id)
+        client = self.runtime._require_client()
+        original_send, original_abort = client.send, self.runtime.abort
+        observed, targets = [], []
+
+        def send(method, params=None, *, timeout=None, before_write=None):
+            if method == "session.prompt":
+                if before_write:
+                    before_write()
+                self.runtime.abort_with_approval_fence(session_id,
+                    lambda identity: self.store.cancel_pending_approvals(session_id,
+                        turn_id=identity["turnId"], client_message_id=identity["clientMessageId"]))
+                return {"accepted": True, "turnId": turn_id}
+            if method == "session.abort":
+                targets.append(dict(params))
+                raise PiRuntimeCommandRejected("target retired", host_error_code="ABORT_TARGET_MISMATCH")
+            return original_send(method, params, timeout=timeout, before_write=before_write)
+
+        def inspect_before_abort(sid, **kwargs):
+            if "_expected_identity" in kwargs:
+                observed.append(self.runtime.is_gateway_turn_active(sid, turn_id, client_message_id=client_id))
+            return original_abort(sid, **kwargs)
+
+        original_cancel = self.store.cancel_pending_approvals
+        def cancel(sid, **kwargs):
+            if fail_fence and kwargs.get("turn_id") == turn_id:
+                raise OSError("isolated fence storage failure")
+            return original_cancel(sid, **kwargs)
+
+        original_set_status = self.store.set_status
+        def set_status(sid, status, **kwargs):
+            if fail_fence and self.runtime._states[sid].abort_requested_turn_id == turn_id:
+                raise OSError("isolated status storage failure")
+            return original_set_status(sid, status, **kwargs)
+
+        original_publish = self.events.publish
+        def publish(sid, *args, **kwargs):
+            if fail_fence and self.runtime._states[sid].abort_requested_turn_id == turn_id:
+                raise OSError("isolated event storage failure")
+            return original_publish(sid, *args, **kwargs)
+
+        with patch.object(client, "send", side_effect=send), \
+             patch.object(self.runtime, "abort", side_effect=inspect_before_abort), \
+             patch.object(self.store, "cancel_pending_approvals", side_effect=cancel), \
+             patch.object(self.store, "set_status", side_effect=set_status), \
+             patch.object(self.events, "publish", side_effect=publish), \
+             patch.object(self.runtime, "_deliver_pending_admission_abort", return_value=None):
+            if fail_fence:
+                with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+                    self.runtime.prompt(session_id, "stop during admission", client_message_id=client_id)
+            else:
+                self.assertTrue(self.runtime.prompt(session_id, "stop during admission", client_message_id=client_id)["abortRequested"])
+        self.assertEqual(observed, [False])
+        self.assertEqual(targets, [{"sessionId": session_id, "expectedTurnId": turn_id, "clientMessageId": client_id}])
+        self.assertFalse(self.runtime.is_gateway_turn_active(session_id, turn_id, client_message_id=client_id))
+        if not fail_fence:
+            with self.store._read_connect() as conn:
+                self.assertIsNotNone(conn.execute("SELECT 1 FROM agent_gateway_cancelled_turns WHERE session_id = ? AND turn_id = ?",
+                    (session_id, turn_id)).fetchone())
+
     def test_abort_during_prompt_admission_reaches_host_before_prompt_ack(
         self,
     ) -> None:
@@ -6598,19 +7374,21 @@ class PiRuntimeV2Tests(unittest.TestCase):
         with patch.object(client, "send", side_effect=delayed_send):
             prompt_thread = threading.Thread(target=run_prompt)
             prompt_thread.start()
-            self.assertTrue(prompt_entered.wait(1.0))
-
-            started = time.monotonic()
-            early_receipt = self.runtime.abort(session_id)
-            elapsed = time.monotonic() - started
-
-            self.assertLess(elapsed, 0.2)
-            self.assertTrue(early_receipt["pendingAdmission"])
-            self.assertTrue(abort_delivered.wait(1.0))
-            self.assertTrue(abort_settled.wait(1.0))
-            self.assertEqual(self.store.get(session_id)["status"], "idle")
-            release_prompt.set()
-            prompt_thread.join(timeout=2.0)
+            try:
+                self.assertTrue(prompt_entered.wait(1.0))
+                early_receipt = self.runtime.abort(session_id)
+                self.assertTrue(early_receipt["pendingAdmission"])
+                self.assertTrue(abort_delivered.wait(1.0))
+                self.assertTrue(abort_settled.wait(1.0))
+                # Cancellation reaches and settles at the Host while the
+                # original prompt ACK is still held by the explicit barrier.
+                self.assertFalse(release_prompt.is_set())
+                self.assertTrue(prompt_thread.is_alive())
+                self.assertEqual(prompt_result, {})
+                self.assertEqual(self.store.get(session_id)["status"], "idle")
+            finally:
+                release_prompt.set()
+                prompt_thread.join(timeout=2.0)
 
         self.assertFalse(prompt_thread.is_alive())
         self.assertEqual(prompt_error, [])

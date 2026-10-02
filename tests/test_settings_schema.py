@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 
 from rag_ime.agent_service import agent_service_from_settings
@@ -83,7 +84,7 @@ class SettingsSchemaTests(unittest.TestCase):
         self.assertEqual(defaults["agent"]["pi"]["idleTimeoutSeconds"], 900)
         self.assertTrue(defaults["agent"]["pi"]["systemProxy"])
         self.assertEqual(defaults["agent"]["pi"]["defaultRoleId"], "companion-future-v1")
-        self.assertEqual(defaults["agent"]["defaults"]["modelReference"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(defaults["agent"]["defaults"]["modelReference"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(defaults["agent"]["defaults"]["thinkingLevel"], "max")
         self.assertEqual(defaults["agent"]["defaults"]["executionMode"], "per_action")
         self.assertTrue(defaults["lexiconOrganization"]["enabled"])
@@ -91,7 +92,7 @@ class SettingsSchemaTests(unittest.TestCase):
         self.assertTrue(defaults["memory"]["automaticOrganization"]["enabled"])
         self.assertEqual(
             defaults["memory"]["automaticOrganization"]["model"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(
             defaults["memory"]["automaticOrganization"]["thinkingLevel"],
@@ -107,7 +108,7 @@ class SettingsSchemaTests(unittest.TestCase):
         self.assertTrue(defaults["memory"]["dreaming"]["enabled"])
         self.assertEqual(
             defaults["memory"]["dreaming"]["model"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(defaults["memory"]["dreaming"]["thinkingLevel"], "max")
         self.assertEqual(defaults["memory"]["dreaming"]["runsPerDay"], 2)
@@ -268,17 +269,19 @@ class SettingsSchemaTests(unittest.TestCase):
         self.assertEqual(unflatten_settings(flatten_settings(original)), original)
 
     def test_agent_default_is_future_but_an_explicit_legacy_role_is_preserved(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="rag-ime-role-default-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="rag-ime-role-default-") as temporary, ExitStack() as services:
             default_service = agent_service_from_settings(
                 Path(temporary) / "default.sqlite",
                 {"agent": {"pi": {}}},
                 wake_scheduler_enabled=False,
             )
+            services.callback(default_service.close)
             legacy_service = agent_service_from_settings(
                 Path(temporary) / "legacy.sqlite",
                 {"agent": {"pi": {"defaultRoleId": "companion-present-v1"}}},
                 wake_scheduler_enabled=False,
             )
+            services.callback(legacy_service.close)
 
             self.assertEqual(
                 default_service.configuration()["configuration"]["configuration"]["sessionDefaults"]["roleId"],
@@ -286,11 +289,11 @@ class SettingsSchemaTests(unittest.TestCase):
             )
             self.assertEqual(
                 default_service.configuration()["configuration"]["configuration"]["sessionDefaults"]["modelProfile"],
-                "openai-codex/gpt-5.6-luna",
+                "openai-codex/gpt-6.1-sol",
             )
             self.assertEqual(
                 default_service.configuration()["configuration"]["configuration"]["modelRouting"]["primary"],
-                {"modelProfile": "openai-codex/gpt-5.6-luna", "thinkingLevel": "max"},
+                {"modelProfile": "openai-codex/gpt-6.1-sol", "thinkingLevel": "max"},
             )
             self.assertEqual(
                 legacy_service.configuration()["configuration"]["configuration"]["sessionDefaults"]["roleId"],

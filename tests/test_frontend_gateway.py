@@ -240,7 +240,10 @@ class FrontendGatewayTests(unittest.TestCase):
                 )
             )
 
-            response = service.frontend_suggest(self._suggest_request())
+            try:
+                response = service.frontend_suggest(self._suggest_request())
+            finally:
+                service.close()
 
         self.assertEqual(response["schemaVersion"], "rag-ime.frontend-suggest-response.v1")
         self.assertTrue(any(item["origin"] == "native" for item in response["candidates"]))

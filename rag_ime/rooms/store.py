@@ -101,6 +101,10 @@ class AgentRoomStore:
         self._persistent_reads = bool(persistent_reads)
         self._read_lock = threading.RLock()
         self._read_connection: sqlite3.Connection | None = None
+        self._room_file_recovery_cache: dict[
+            tuple[str, int, int, int, int, int, str],
+            tuple[dict[str, object], ...],
+        ] = {}
 
     def initialize(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1822,7 +1826,7 @@ class AgentRoomStore:
         source_session_id: str = "",
         topic_id: str = "",
         created_at_ms: int | None = None,
-        retain_per_room: int = 2000,
+        retain_per_room: int | None = None,
     ) -> dict[str, object]:
         event, created = self._append_event(
             room_id=room_id,
@@ -1852,7 +1856,7 @@ class AgentRoomStore:
         source_session_id: str = "",
         topic_id: str = "",
         created_at_ms: int | None = None,
-        retain_per_room: int = 2000,
+        retain_per_room: int | None = None,
     ) -> tuple[dict[str, object] | None, bool]:
         """Append one durable public projection exactly once.
 
@@ -1926,7 +1930,7 @@ class AgentRoomStore:
             source_session_id=source_session_id,
             topic_id=topic_id,
             created_at_ms=created_at_ms,
-            retain_per_room=2000,
+            retain_per_room=None,
             projection_key=f"room-partner-terminal:{identity[0]}:{identity[1]}",
             child_terminal_identity=identity,
         )
@@ -2004,7 +2008,7 @@ class AgentRoomStore:
         source_session_id: str,
         topic_id: str,
         created_at_ms: int | None,
-        retain_per_room: int,
+        retain_per_room: int | None,
         projection_key: str,
         child_terminal_identity: tuple[str, str] | None = None,
     ) -> tuple[dict[str, object] | None, bool]:
@@ -2171,10 +2175,11 @@ class AgentRoomStore:
                     "UPDATE agent_room_participants SET last_spoke_at_ms = ? WHERE id = ?",
                     (timestamp, participant_id),
                 )
-            conn.execute(
-                "DELETE FROM agent_room_events WHERE room_id = ? AND sequence <= ?",
-                (room_id, max(0, sequence - max(100, int(retain_per_room)))),
-            )
+            if retain_per_room is not None:
+                conn.execute(
+                    "DELETE FROM agent_room_events WHERE room_id = ? AND sequence <= ?",
+                    (room_id, max(0, sequence - max(100, int(retain_per_room)))),
+                )
             self._append_jsonl(Path(str(room["room_file"])), event)
         return event, True
 
@@ -2197,6 +2202,158 @@ class AgentRoomStore:
                 (room_id, max(0, int(after_sequence)), bounded),
             ).fetchall()
         return [_room_event_payload(row) for row in rows]
+
+    def _validated_room_file_events(
+        self,
+        room_id: str,
+        room_file: object,
+        *,
+        last_sequence: int,
+        anchor_rows: Sequence[sqlite3.Row] = (),
+    ) -> list[dict[str, object]]:
+        """Read the append-only Room mirror without changing Room state.
+
+        SQLite is the write owner and its high-water mark is the recovery
+        boundary.  The JSONL mirror can therefore contribute an older prefix,
+        but only after every line up to that boundary is structurally valid,
+        contiguous from sequence one, and the supplied SQLite anchors match
+        exactly.  Stop at the database high-water mark so a line left behind
+        by a rolled-back append cannot be replayed or duplicated.
+        """
+        high_water = max(0, int(last_sequence))
+        if high_water == 0:
+            return []
+        path_text = str(room_file or "").strip()
+        if not path_text:
+            return []
+        path = Path(path_text).expanduser()
+        try:
+            initial_stat = path.stat()
+        except OSError:
+            return []
+        anchor_material = "\n".join(
+            ":".join(
+                str(row[column])
+                for column in (
+                    "sequence",
+                    "event_id",
+                    "room_id",
+                    "turn_id",
+                    "event_type",
+                    "participant_id",
+                    "source_session_id",
+                    "topic_id",
+                    "created_at_ms",
+                    "payload_json",
+                )
+            )
+            for row in anchor_rows
+        )
+        anchor_digest = hashlib.sha256(anchor_material.encode("utf-8")).hexdigest()
+        cache_key = (
+            str(path),
+            int(initial_stat.st_dev),
+            int(initial_stat.st_ino),
+            int(initial_stat.st_mtime_ns),
+            int(initial_stat.st_size),
+            high_water,
+            anchor_digest,
+        )
+        cached = self._room_file_recovery_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+        events: list[dict[str, object]] = []
+        expected_sequence = 1
+        prefix_bytes = 0
+        prefix_digest = hashlib.sha256()
+        try:
+            with path.open("r", encoding="utf-8", newline="") as stream:
+                for line in stream:
+                    if expected_sequence > high_water:
+                        break
+                    if not line.strip():
+                        return []
+                    candidate = json.loads(line)
+                    if not isinstance(candidate, dict):
+                        return []
+                    event = cast(dict[str, object], candidate)
+                    sequence = event.get("sequence")
+                    if (
+                        not isinstance(sequence, int)
+                        or isinstance(sequence, bool)
+                        or sequence != expected_sequence
+                        or str(event.get("roomId") or "") != room_id
+                        or str(event.get("eventId") or "")
+                        != f"{room_id}:{expected_sequence}"
+                        or str(event.get("resumeToken") or "")
+                        != f"{room_id}:{expected_sequence}"
+                    ):
+                        return []
+                    try:
+                        validate_contract(event, "agent-room-event.v1.json")
+                    except Exception:
+                        return []
+                    encoded_line = line.encode("utf-8")
+                    prefix_bytes += len(encoded_line)
+                    prefix_digest.update(encoded_line)
+                    events.append(event)
+                    expected_sequence += 1
+        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+            return []
+        if expected_sequence != high_water + 1:
+            return []
+        try:
+            final_stat = path.stat()
+        except OSError:
+            return []
+        if (
+            int(final_stat.st_dev) != int(initial_stat.st_dev)
+            or int(final_stat.st_ino) != int(initial_stat.st_ino)
+            or int(final_stat.st_size) < int(initial_stat.st_size)
+            or prefix_bytes > int(initial_stat.st_size)
+        ):
+            return []
+        if (final_stat.st_mtime_ns != initial_stat.st_mtime_ns
+            or final_stat.st_size != initial_stat.st_size):
+            # A live append beyond this SQLite snapshot does not invalidate
+            # its committed prefix. Verify those exact bytes again so an
+            # in-place prefix rewrite plus growth still fails closed.
+            try:
+                verified_digest = hashlib.sha256()
+                with path.open("rb") as stream:
+                    opened_stat = os.fstat(stream.fileno())
+                    if (opened_stat.st_dev, opened_stat.st_ino) != (initial_stat.st_dev, initial_stat.st_ino):
+                        return []
+                    remaining = prefix_bytes
+                    while remaining:
+                        chunk = stream.read(min(65536, remaining))
+                        if not chunk:
+                            return []
+                        remaining -= len(chunk)
+                        verified_digest.update(chunk)
+                current_stat = path.stat()
+                if ((current_stat.st_dev, current_stat.st_ino) != (initial_stat.st_dev, initial_stat.st_ino)
+                    or current_stat.st_size < initial_stat.st_size
+                    or verified_digest.digest() != prefix_digest.digest()):
+                    return []
+            except OSError:
+                return []
+        for row in anchor_rows:
+            sequence = int(row["sequence"])
+            if sequence < 1 or sequence > high_water:
+                return []
+            if not _room_event_matches_row(events[sequence - 1], row):
+                return []
+        cached_events = tuple(events)
+        self._room_file_recovery_cache = {
+            key: value
+            for key, value in self._room_file_recovery_cache.items()
+            if key[0] != str(path)
+        }
+        if len(self._room_file_recovery_cache) >= 64:
+            self._room_file_recovery_cache.pop(next(iter(self._room_file_recovery_cache)))
+        self._room_file_recovery_cache[cache_key] = cached_events
+        return events
 
     def control_events_for_turn(
         self, room_id: str, turn_id: str,
@@ -2391,12 +2548,26 @@ class AgentRoomStore:
         *,
         before_sequence: int = 0,
         limit: int = 100,
+        full_history: bool = False,
     ) -> dict[str, object]:
-        """Return one bounded retained-event page, oldest to newest."""
+        """Return one bounded Room history page, oldest to newest.
+
+        The default reads the bounded SQLite projection.  ``full_history``
+        opts into the validated append-only mirror so callers that need the
+        original prefix can recover it without mutating SQLite or republishing
+        old events into the live stream.
+        """
 
         self.get(room_id)
         bounded = max(1, min(int(limit), ROOM_HISTORY_PAGE_LIMIT))
         with self._connect() as conn:
+            # The committed high-water mark, retained bounds and anchors must
+            # belong to one snapshot while other Room events keep arriving.
+            conn.execute("BEGIN")
+            room_row = conn.execute(
+                "SELECT room_file, last_event_sequence FROM agent_rooms WHERE id = ?",
+                (room_id,),
+            ).fetchone()
             bounds = conn.execute(
                 """
                 SELECT COALESCE(MIN(sequence), 0) AS first_sequence,
@@ -2407,6 +2578,16 @@ class AgentRoomStore:
             ).fetchone()
             retained_first = int(bounds["first_sequence"]) if bounds is not None else 0
             retained_last = int(bounds["last_sequence"]) if bounds is not None else 0
+            anchor_rows: list[sqlite3.Row] = []
+            if full_history and retained_first > 1:
+                anchor_rows = conn.execute(
+                    """
+                    SELECT * FROM agent_room_events
+                    WHERE room_id = ?
+                    ORDER BY sequence ASC
+                    """,
+                    (room_id,),
+                ).fetchall()
             cursor = int(before_sequence)
             if cursor <= 0:
                 cursor = retained_last + 1
@@ -2420,7 +2601,26 @@ class AgentRoomStore:
                 """,
                 (room_id, cursor, bounded),
             ).fetchall()
-        items = [_room_event_payload(row) for row in rows]
+        full_events: list[dict[str, object]] = []
+        if full_history and room_row is not None and retained_first > 1:
+            full_events = self._validated_room_file_events(
+                room_id,
+                room_row["room_file"],
+                last_sequence=int(room_row["last_event_sequence"] or retained_last),
+                anchor_rows=anchor_rows,
+            )
+        if full_events:
+            retained_first = 1
+            retained_last = int(full_events[-1]["sequence"])
+            if int(before_sequence) <= 0:
+                cursor = retained_last + 1
+            eligible = [
+                event for event in full_events
+                if int(event["sequence"]) < cursor
+            ]
+            items = eligible[-bounded:]
+        else:
+            items = [_room_event_payload(row) for row in rows]
         first_sequence = int(items[0]["sequence"]) if items else 0
         last_sequence = int(items[-1]["sequence"]) if items else 0
         has_more = bool(items and retained_first < first_sequence)
@@ -2506,6 +2706,19 @@ class AgentRoomStore:
                 """,
                 (room_id,),
             ).fetchone()
+            history_anchor_rows: list[sqlite3.Row] = []
+            if conversation_only and bounds_row is not None:
+                retained_first = int(bounds_row["first_sequence"] or 0)
+                retained_last = int(bounds_row["last_sequence"] or 0)
+                if retained_last and retained_first > 1:
+                    history_anchor_rows = conn.execute(
+                        """
+                        SELECT * FROM agent_room_events
+                        WHERE room_id = ?
+                        ORDER BY sequence ASC
+                        """,
+                        (room_id,),
+                    ).fetchall()
             conversation_count_row: sqlite3.Row | None = None
             if conversation_only:
                 conversation_count_row = conn.execute(
@@ -2567,10 +2780,13 @@ class AgentRoomStore:
                 if boundary < int(event_rows[0]["sequence"]):
                     event_rows = conn.execute(
                         """
-                        SELECT * FROM agent_room_events
-                        WHERE room_id = ? AND sequence >= ? ORDER BY sequence ASC
+                        SELECT * FROM (
+                            SELECT * FROM agent_room_events
+                            WHERE room_id = ? AND sequence >= ?
+                            ORDER BY sequence DESC LIMIT ?
+                        ) ORDER BY sequence ASC
                         """,
-                        (room_id, boundary),
+                        (room_id, boundary, ROOM_CONVERSATION_EVENT_LIMIT),
                     ).fetchall()
             start_gate_row = conn.execute(
                 "SELECT room_id, status, objective_text, work_item_id, client_message_id, root_id, confirmed_at_ms FROM agent_room_start_gates WHERE room_id = ?",
@@ -2594,11 +2810,70 @@ class AgentRoomStore:
             raise RuntimeError("agent room event cursor is inconsistent with retained events")
         first_sequence = int(events[0]["sequence"]) if events else 0
         if conversation_only:
-            conversation_count = (
-                int(conversation_count_row["event_count"])
-                if conversation_count_row is not None
-                else 0
+            sidecar_events = (
+                self._validated_room_file_events(
+                    room_id,
+                    room_row["room_file"],
+                    last_sequence=last_sequence,
+                    anchor_rows=history_anchor_rows,
+                )
+                if retained_first > 1
+                else []
             )
+            sidecar_conversation_events = [
+                event
+                for event in sidecar_events
+                if event.get("eventType") != "participant_activity"
+            ]
+            conversation_truncated = False
+            if sidecar_events:
+                if len(sidecar_conversation_events) > ROOM_CONVERSATION_EVENT_LIMIT:
+                    # Keep the original user anchor even when a pathological
+                    # Room has more lightweight conversation events than the
+                    # wire contract can carry.  The remainder stays available
+                    # through full history paging.
+                    anchor_index = next(
+                        (
+                            index
+                            for index, event in enumerate(sidecar_conversation_events)
+                            if event.get("eventType") == "user_message"
+                        ),
+                        0,
+                    )
+                    anchor = sidecar_conversation_events[anchor_index]
+                    sidecar_conversation_events = [anchor] + [
+                        event
+                        for index, event in enumerate(sidecar_conversation_events)
+                        if index != anchor_index
+                    ][-(ROOM_CONVERSATION_EVENT_LIMIT - 1):]
+                    sidecar_conversation_events.sort(
+                        key=lambda event: int(event["sequence"])
+                    )
+                    conversation_truncated = True
+                events = sidecar_conversation_events
+                conversation_count = len(events)
+                deferred_event_count = max(0, len(sidecar_events) - len(events))
+                conversation_truncated = conversation_truncated or (
+                    len(events) < len(
+                        [
+                            event
+                            for event in sidecar_events
+                            if event.get("eventType") != "participant_activity"
+                        ]
+                    )
+                )
+            else:
+                conversation_count = (
+                    int(conversation_count_row["event_count"])
+                    if conversation_count_row is not None
+                    else 0
+                )
+                deferred_event_count = max(0, retained_count - conversation_count)
+                conversation_truncated = bool(
+                    conversation_count > len(events)
+                    or retained_first > 1
+                )
+            first_sequence = int(events[0]["sequence"]) if events else 0
             snapshot = {
                 "schemaVersion": "rag-ime.agent-room-conversation-snapshot.v1",
                 "ok": True,
@@ -2607,11 +2882,8 @@ class AgentRoomStore:
                 "firstEventSequence": first_sequence,
                 "cursorSequence": last_sequence,
                 "resumeToken": f"{room_id}:{last_sequence}" if last_sequence else "",
-                "deferredEventCount": max(0, retained_count - conversation_count),
-                "truncated": bool(
-                    conversation_count > len(events)
-                    or retained_first > 1
-                ),
+                "deferredEventCount": deferred_event_count,
+                "truncated": conversation_truncated,
             }
             validate_contract(
                 snapshot,
@@ -3089,6 +3361,36 @@ def _room_event_payload(row: sqlite3.Row) -> dict[str, object]:
     }
     validate_contract(payload, "agent-room-event.v1.json")
     return payload
+
+
+def _room_event_matches_row(
+    event: Mapping[str, object],
+    row: sqlite3.Row,
+) -> bool:
+    """Compare a recovered JSONL event with a durable SQLite anchor."""
+    try:
+        row_payload = json.loads(str(row["payload_json"] or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return (
+        str(event.get("eventId") or "") == str(row["event_id"] or "")
+        and str(event.get("roomId") or "") == str(row["room_id"] or "")
+        and int(event.get("sequence") or 0) == int(row["sequence"])
+        and str(event.get("turnId") or "") == str(row["turn_id"] or "")
+        and str(event.get("eventType") or "") == str(row["event_type"] or "")
+        and event.get("participantId")
+        == (
+            str(row["participant_id"])
+            if row["participant_id"] is not None
+            else None
+        )
+        and str(event.get("sourceSessionId") or "")
+        == str(row["source_session_id"] or "")
+        and str(event.get("topicId") or "") == str(row["topic_id"] or "")
+        and int(event.get("createdAtMs") or 0) == int(row["created_at_ms"])
+        and event.get("payload") == row_payload
+        and str(event.get("resumeToken") or "") == str(row["event_id"] or "")
+    )
 
 
 def _child_terminal_data(payload: Mapping[str, object]) -> Mapping[str, object]:

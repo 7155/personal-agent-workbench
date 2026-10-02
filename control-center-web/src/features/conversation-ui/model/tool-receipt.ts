@@ -21,5 +21,6 @@ export function toolReceiptPresentation(block: ToolCallBlock) {
   if (block.executionOutcome === 'not_started') return { status: 'pending' as const, label: '尚未执行', summary: '请求未发送到工具服务。' };
   const status = block.executionOutcome === 'applied' ? 'success' : block.status;
   const labels = { pending: '等待', running: '正在执行', success: '已完成', error: '失败', cancelled: '已停止' };
-  return { status, label: labels[status], summary: block.summary };
+  const dispatchLabels = { pending: '等待分派', running: '正在分派', success: '已分派', error: '分派失败', cancelled: '已停止' };
+  return { status, label: (block.receiptKind === 'dispatch' ? dispatchLabels : labels)[status], summary: block.summary };
 }

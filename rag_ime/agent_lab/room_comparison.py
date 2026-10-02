@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import time
 
+from ..agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .micro import canonical, decode, digest, write_private
 
 CASES = [
@@ -50,7 +51,7 @@ class RoomComparisonAdapter:
     def prepare(self,spec,job_id):
         if spec != {"taskId":"room-comparison"}:
             raise ValueError("Room comparison uses one fixed task and model contract")
-        public={"taskId":"room-comparison","caseCount":3,"model":"gpt-5.6-luna","thinkingLevel":"low",
+        public={"taskId":"room-comparison","caseCount":3,"model":DEFAULT_AGENT_MODEL_ID,"thinkingLevel":"low",
                 "armBudget":BUDGET,"caseSha256":digest(CASES),"synthetic":True}
         return {"publicSpec":public,"privateInput":{**public,"jobId":job_id}}
 

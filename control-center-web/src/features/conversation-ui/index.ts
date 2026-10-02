@@ -28,6 +28,17 @@ export {
   reorderQueuedDrafts,
 } from './model/queue';
 export { clearConversationScrollMemory } from './hooks/useSessionScrollMemory';
+export {
+  codeModeDetailsFromPayload,
+  codeModeOutputFromPayload,
+  codeModeOutputText,
+  codeModeSourceFromInput,
+  isCodeModeTool,
+  parseCodeModeDetails,
+  type CodeModeCall,
+  type CodeModeCallStatus,
+  type CodeModeDetails,
+} from './model/codemode';
 export type {
   AssistantBlock,
   AssistantMessage,

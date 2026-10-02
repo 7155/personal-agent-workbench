@@ -49,13 +49,13 @@ export function previewConfigurationValues(): Record<string, unknown> {
       automaticOrganization: {
         enabled: true,
         runsPerDay: 2,
-        model: 'gpt/gpt-5.6-luna',
+        model: 'openai-codex/gpt-6.1-sol',
         thinkingLevel: 'max',
       },
       dreaming: {
         enabled: true,
         runsPerDay: 2,
-        model: 'gpt/gpt-5.6-luna',
+        model: 'openai-codex/gpt-6.1-sol',
         thinkingLevel: 'max',
       },
       recall: { detailLevel: 'compact', timelineEnabled: true },

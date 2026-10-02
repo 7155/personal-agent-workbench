@@ -1,4 +1,5 @@
 import {
+  reconcileDuplicateRoomUserAcknowledgement,
   reduceRoomEvent,
   type RoomProjectionState,
 } from '@/contracts/room-reducer';
@@ -25,13 +26,18 @@ export function acceptedRoomTimelineEvents(response: unknown): UiRoomEvent[] {
 /** Merge the POST acknowledgement without racing the same SSE events. */
 export function mergeAcceptedRoomTimeline(
   state: RoomProjectionState,
-  response: unknown,
+  events: readonly UiRoomEvent[],
 ): RoomProjectionState {
   let next = state;
-  for (const event of acceptedRoomTimelineEvents(response)) {
+  for (const event of events) {
     const reduced = reduceRoomEvent(next, event);
-    if (reduced.disposition === 'snapshot-required') return state;
+    if (reduced.disposition === 'snapshot-required'
+      || reduced.disposition === 'ignored-foreign'
+      || reduced.disposition === 'ignored-snapshot-pending') return state;
     if (reduced.disposition === 'applied') next = reduced.state;
+    else if (reduced.disposition === 'ignored-duplicate') {
+      next = reconcileDuplicateRoomUserAcknowledgement(next, event);
+    }
   }
   return next;
 }

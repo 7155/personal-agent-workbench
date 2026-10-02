@@ -96,6 +96,7 @@ class MemoryNearBudgetEvaluationTests(unittest.TestCase):
                 "observedConnectionCount": 3,
             },
             production_file_identity_changed=True,
+            expected_model_id="gpt-5.6-luna",
         )
         encoded = json.dumps(summary, ensure_ascii=False, sort_keys=True)
 

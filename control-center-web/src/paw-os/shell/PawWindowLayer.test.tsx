@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { createRoomProjection, type RoomActivityProjection } from '@/contracts/room-reducer';
 import { createPreviewTransport } from '@/app/preview-control-transport';
+import { previewBackgroundJobs } from '@/features/agent/preview-data';
+import type { ControlRequest } from '@/platform/transport';
 import { pawApps, type PawAppId } from '../runtime/app-registry';
 import { createPawDesktopStore, fitReachablePawWindowBounds, pawWindowArea, type PawWindowBounds, type PawWindowNode } from '../runtime/desktop-store';
 import { PawDesktopProvider } from '../runtime/desktop-context';
@@ -42,6 +44,45 @@ afterEach(() => {
 });
 
 describe('PAWOS compositor window frame', () => {
+  it('activates the deferred observer only for Room focus, validates receipts, and keeps observing after focus leaves', async () => {
+    let job = previewBackgroundJobs('session-states').find((value) => value.status === 'running')!;
+    const malformed = { ...job, jobId: 'bg_invalid_contract', maxRunSeconds: 'not_a_number' };
+    const calls: ControlRequest[] = [];
+    const transport = createPreviewTransport();
+    const originalRequest = transport.request.bind(transport);
+    transport.request = async <T,>(request: ControlRequest): Promise<T> => {
+      calls.push(request);
+      const values: Record<string, unknown> = {
+        'agent.room.get': { room: { id: 'room-a', participants: [{ id: 'earth', sessionId: 'session-states', status: 'active' }] } },
+        'agent.session.backgroundJobs.list': { ok: true, schemaVersion: 'rag-ime.agent-background-job-list.v1', sessionId: 'session-states', items: [job, malformed] },
+        'agent.session.backgroundJob.get': { ok: true, job },
+        'browser.tabs': { ok: true, liveSnapshot: true, items: [] },
+        'browser.traces': { ok: true, items: [] },
+      };
+      return request.pathId in values ? values[request.pathId] as T : originalRequest<T>(request);
+    };
+    render(<ControlTransportProvider transport={transport}><PawDesktopProvider initialAppId="agent">
+      <CaptureDesktopApi /><PawWindowLayer />
+    </PawDesktopProvider></ControlTransportProvider>);
+    act(() => capturedDesktopApi!.getState().bindAgentMain('agent', { kind: 'room', id: 'room-a', title: 'Room' }));
+    expect(calls.some((call) => call.pathId === 'agent.session.backgroundJobs.list')).toBe(false);
+
+    act(() => capturedDesktopApi!.getState().setCollaborationFocusGroup('room:room-a'));
+    await waitFor(() => expect(Object.values(capturedDesktopApi!.getState().windows)
+      .filter((node) => node.target?.kind === 'process-terminal')).toHaveLength(1));
+    const terminal = Object.values(capturedDesktopApi!.getState().windows).find((node) => node.target?.kind === 'process-terminal')!;
+    expect(terminal.target).toMatchObject({ runId: job.jobId, sessionId: job.sessionId, roomId: 'room-a', backgroundObserver: true });
+    expect(Object.values(capturedDesktopApi!.getState().windows).some((node) => node.target?.id.includes('bg_invalid_contract'))).toBe(false);
+
+    act(() => capturedDesktopApi!.getState().setCollaborationFocusGroup(null));
+    await waitFor(() => expect(calls.some((call) => call.pathId === 'agent.session.backgroundJob.get')).toBe(true));
+    expect(capturedDesktopApi!.getState().windows[terminal.id]).toBeDefined();
+    job = { ...job, status: 'completed', exitCode: 0, endedAtMs: Date.now() };
+    await waitFor(() => expect(capturedDesktopApi!.getState().windows[terminal.id]).toBeUndefined(), { timeout: 6_000 });
+    expect(capturedDesktopApi!.getState().windows.agent).toBeDefined();
+    expect(calls.some((call) => call.pathId === 'agent.session.backgroundJob.cancel' || call.pathId === 'browser.command')).toBe(false);
+  });
+
   it('keeps App Center page navigation and refresh aligned without adding history entries', () => {
     window.history.replaceState(null, '', '?frontend=paw-os#/plugins?view=capabilities');
     const historyLength = window.history.length;
@@ -290,6 +331,15 @@ describe('PAWOS compositor window frame', () => {
     expect(shell.querySelector('.paw-window')).toBeNull();
     expect(shell.querySelector('.paw-window-titlebar')).toBeNull();
     expect(shell.querySelectorAll('.paw-window-resize')).toHaveLength(8);
+  });
+
+  it.each([['room', 'room-workspace'], ['session', 'agent-session']] as const)('preserves the full %s context name for an ellipsized caption', (targetKind, windowChrome) => {
+    const title = '一个较长但仍需识别的当前工作上下文名称';
+    render(<FrameHarness initial={{ x: 20, y: 30, width: 360, height: 560 }} onCommit={() => undefined}
+      targetKind={targetKind} windowChrome={windowChrome} title={title}><div>当前内容</div></FrameHarness>);
+    const shell = screen.getByLabelText(`${title}窗口`);
+    expect(within(shell).getByText(title)).toHaveAttribute('title', title);
+    expect(within(shell).getByText('当前内容')).toBeInTheDocument();
   });
 
   it('moves on the compositor and commits state only when the pointer finishes', () => {
@@ -961,7 +1011,7 @@ function LiveRoomChrome() {
   );
 }
 
-function FrameHarness({ appId = 'agent', children, collaborationRole, flowState, focusFrame, frameMode, initial, onCommit, overview, placement, targetKind, title = 'Rooms', windowChrome }: { appId?: PawAppId; children: React.ReactNode; collaborationRole?: 'primary' | 'satellite' | 'unrelated' | 'hidden'; flowState?: 'source' | 'arrival'; focusFrame?: PawWindowBounds; frameMode?: 'window' | 'focus-card' | 'planet'; initial: PawWindowBounds; onCommit: (bounds: PawWindowBounds) => void; overview?: boolean; placement?: 'maximized' | 'left' | 'right'; targetKind?: 'room' | 'participant'; title?: string; windowChrome?: string }) {
+function FrameHarness({ appId = 'agent', children, collaborationRole, flowState, focusFrame, frameMode, initial, onCommit, overview, placement, targetKind, title = 'Rooms', windowChrome }: { appId?: PawAppId; children: React.ReactNode; collaborationRole?: 'primary' | 'satellite' | 'unrelated' | 'hidden'; flowState?: 'source' | 'arrival'; focusFrame?: PawWindowBounds; frameMode?: 'window' | 'focus-card' | 'planet'; initial: PawWindowBounds; onCommit: (bounds: PawWindowBounds) => void; overview?: boolean; placement?: 'maximized' | 'left' | 'right'; targetKind?: 'room' | 'participant' | 'session'; title?: string; windowChrome?: string }) {
   const [bounds, setBounds] = useState(initial);
   return (
     <PawWindowFrame

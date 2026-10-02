@@ -170,16 +170,38 @@ class AgentSessionApplicationService:
         """Stop one Session and settle its pending approval state."""
 
         runtime_receipt: Mapping[str, object] = {}
-        try:
-            raw_runtime_receipt = self.runtime.abort(session_id)
-            if isinstance(raw_runtime_receipt, Mapping):
-                runtime_receipt = raw_runtime_receipt
-        finally:
+        runtime = self.runtime
+        fenced_abort = getattr(runtime, "abort_with_approval_fence", None)
+        if callable(fenced_abort):
+            approval_cancellation: dict[str, object] = {}
+            def before_abort(identity: Mapping[str, object]) -> None:
+                nonlocal approval_cancellation
+                approval_cancellation = dict(self.cancel_pending_approvals(
+                    session_id,
+                    reason="user_abort",
+                    turn_id=str(identity.get("turnId") or ""),
+                    client_message_id=(str(identity.get("clientMessageId") or "")
+                        if identity.get("pendingAdmission") is True else None),
+                ))
+            raw_runtime_receipt = fenced_abort(session_id, before_abort)
+        else:
+            # An older driver has no pre-RPC turn contract. Capture the exact
+            # existing IDs instead of turning an empty ACK into a future scan.
+            captured_ids = self.sessions.pending_approval_ids(session_id)
             approval_cancellation = self.cancel_pending_approvals(
                 session_id,
                 reason="user_abort",
-                turn_id=str(runtime_receipt.get("turnId") or ""),
+                approval_ids=captured_ids,
             )
+            raw_runtime_receipt = runtime.abort(session_id)
+            if isinstance(raw_runtime_receipt, Mapping) and raw_runtime_receipt.get("turnId"):
+                self.cancel_pending_approvals(
+                    session_id, reason="user_abort",
+                    turn_id=str(raw_runtime_receipt["turnId"]), approval_ids=captured_ids,
+                )
+                approval_cancellation = {**dict(approval_cancellation), "turnId": str(raw_runtime_receipt["turnId"])}
+        if isinstance(raw_runtime_receipt, Mapping):
+            runtime_receipt = raw_runtime_receipt
         return {
             "schemaVersion": "rag-ime.agent-abort.v1",
             "ok": True,

@@ -68,7 +68,7 @@ from scripts.run_rag_agent_ablation import (
 )
 
 
-_TEST_CHUNKER_DEPENDENCY_SURFACE = [
+_HISTORICAL_CHUNKER_DEPENDENCY_SURFACE = [
     {
         "qualifiedName": "rag_ime.knowledge_library.parsers._normalize_text",
         "sourceSha256": "08d29fb737c7a79b679af8679a883d9bd9a5e87aa0e4e68431a7d2bf9aae0b2f",
@@ -89,6 +89,15 @@ _TEST_CHUNKER_DEPENDENCY_SURFACE = [
         "qualifiedName": "rag_ime.knowledge_library.service._chunk_strategy_blocks",
         "sourceSha256": "ebed9f30e0bd7c125a230a949dfcc56951ff074080c47662b959fa9e69dc7e79",
     },
+]
+# The checked-in historical standard retains its original dependency identity.
+# Fresh test runs pin the unchanged current HEAD source, rather than rewriting
+# historical artifacts or deriving the expected fingerprint from the validator.
+_TEST_CHUNKER_DEPENDENCY_SURFACE = [
+    {**item, "sourceSha256": "a88fa1978905cece3f9573796b5a978644941dc8ff39ef9dbde77e6b4bf0abeb"}
+    if item["qualifiedName"] == "rag_ime.knowledge_library.service._chunk_document"
+    else dict(item)
+    for item in _HISTORICAL_CHUNKER_DEPENDENCY_SURFACE
 ]
 _TEST_CHUNK_MANIFEST_SERIALIZATION = {
     "schemaVersion": "rag-ime.rag-chunk-manifest-serialization.v1",
@@ -265,7 +274,7 @@ class RunRagAgentAblationTests(unittest.TestCase):
 
         service, gateway = Mock(), Mock()
         service.create_session.return_value = {"session": {"id": "agent:baseline"}}
-        service.ensure_runtime.return_value = {"state": {"model": {"provider": "openai-codex", "id": "gpt-5.6-sol"}, "thinkingLevel": "max"}}
+        service.ensure_runtime.return_value = {"state": {"model": {"provider": "openai-codex", "id": "gpt-6.1-sol"}, "thinkingLevel": "max"}}
         service.prompt.return_value = {"turnId": "turn:baseline"}
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "checkpoint.json"
@@ -337,7 +346,7 @@ class RunRagAgentAblationTests(unittest.TestCase):
         from scripts import run_rag_agent_ablation as runner
         service = Mock()
         service.create_session.return_value = {"session": {"id": "judge-owned"}}
-        service.ensure_runtime.return_value = {"state": {"model": {"provider": "openai-codex", "id": "gpt-5.6-sol"}, "thinkingLevel": "max"}}
+        service.ensure_runtime.return_value = {"state": {"model": {"provider": "openai-codex", "id": "gpt-6.1-sol"}, "thinkingLevel": "max"}}
         service.prompt.return_value = {"turnId": "judge-turn"}
         service.events.replay.return_value = ([], False)
         bindings = []
@@ -373,7 +382,7 @@ class RunRagAgentAblationTests(unittest.TestCase):
         from scripts import run_rag_agent_ablation as runner
         service, gateway = Mock(), Mock()
         service.create_session.return_value = {"session": {"id": "owned"}}
-        service.ensure_runtime.return_value = {"state": {"model": {"provider": "openai-codex", "id": "gpt-5.6-sol"}, "thinkingLevel": "max"}}
+        service.ensure_runtime.return_value = {"state": {"model": {"provider": "openai-codex", "id": "gpt-6.1-sol"}, "thinkingLevel": "max"}}
         service.prompt.return_value = {"turnId": "turn-owned"}
         service.abort.side_effect = RuntimeError("fixture abort failed")
         gateway.unbind_lineage.side_effect = RuntimeError("fixture unbind failed")
@@ -407,7 +416,7 @@ class RunRagAgentAblationTests(unittest.TestCase):
             standard["chunkManifest"]["manifestSha256"],
         )
         self.assertEqual(
-            _TEST_CHUNKER_DEPENDENCY_SURFACE,
+            _HISTORICAL_CHUNKER_DEPENDENCY_SURFACE,
             standard["chunking"]["dependencySurface"],
         )
         serialized = json.dumps(standard, ensure_ascii=False, sort_keys=True)
@@ -2104,10 +2113,10 @@ class RunRagAgentAblationTests(unittest.TestCase):
                 (agent_config / "settings.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual("gpt-5.6-sol", settings["defaultModel"])
+        self.assertEqual("gpt-6.1-sol", settings["defaultModel"])
         self.assertEqual("max", settings["defaultThinkingLevel"])
         self.assertEqual("sse", settings["transport"])
-        self.assertEqual("openai-codex/gpt-5.6-sol", receipt["model"])
+        self.assertEqual("openai-codex/gpt-6.1-sol", receipt["model"])
         self.assertTrue(receipt["openaiCodexOnly"])
         self.assertTrue(receipt["settingsSha256"])
 
@@ -2163,7 +2172,7 @@ class RunRagAgentAblationTests(unittest.TestCase):
         configuration = _evaluation_configuration_defaults()
 
         self.assertEqual(
-            "openai-codex/gpt-5.6-sol",
+            "openai-codex/gpt-6.1-sol",
             configuration["sessionDefaults"]["modelProfile"],
         )
         self.assertFalse(configuration["sessionDefaults"]["resumeLastSession"])
@@ -2178,7 +2187,7 @@ class RunRagAgentAblationTests(unittest.TestCase):
             set(configuration["modelRouting"]),
         )
         for route_id, route in configuration["modelRouting"].items():
-            self.assertEqual("openai-codex/gpt-5.6-sol", route["modelProfile"])
+            self.assertEqual("openai-codex/gpt-6.1-sol", route["modelProfile"])
             self.assertEqual(
                 "low" if route_id == "subagent" else "max",
                 route["thinkingLevel"],

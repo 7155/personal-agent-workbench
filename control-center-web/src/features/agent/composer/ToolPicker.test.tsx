@@ -86,6 +86,49 @@ describe('ToolPicker conversation capability presentation', () => {
     expect(screen.queryByRole('button', { name: /^知识库 \/ Agent RAG/ })).not.toBeInTheDocument();
     expect(props.onCapabilityPreferenceChange).not.toHaveBeenCalled();
   });
+  it('offers the memory switch directly and describes inherited opt-out as closed', async () => {
+    const value = catalog();
+    value.items[0].authorization = { state: 'denied', reason: 'existing_session_policy_does_not_authorize_tool' };
+    value.items[0].disclosure = { preference: 'inherit', effective: 'disabled', state: 'hidden', reason: 'inherited_global_default' };
+    value.items[0].effectiveScope = 'global_default';
+    const { user, props } = setup({ capabilityCatalog: value });
+    await open(user);
+    await user.click(screen.getByRole('button', { name: '查看记忆召回设置' }));
+    expect(screen.getByRole('button', { name: /^记忆召回 当前已关闭/ })).toBeInTheDocument();
+    expect(screen.queryByText('受权限限制')).not.toBeInTheDocument();
+    const preference = screen.getByRole('combobox', { name: '本对话记忆召回' });
+    expect(preference).toBeEnabled();
+    expect(preference).toHaveValue('inherit');
+    await user.selectOptions(preference, 'enabled');
+    expect(props.onCapabilityPreferenceChange).toHaveBeenCalledWith('tool:memory', 'enabled');
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
+  it('exposes the native codemode setting only when the Session snapshot provides it', async () => {
+    const onCodemodeModeChange = vi.fn();
+    const { user, props } = setup({ codemodeMode: 'on', onCodemodeModeChange });
+    await open(user);
+    const mode = screen.getByRole('combobox', { name: '代码执行编排方式' });
+    expect(mode).toHaveValue('on');
+    await user.selectOptions(mode, 'only');
+    expect(onCodemodeModeChange).toHaveBeenCalledWith('only');
+
+    cleanup();
+    const hidden = setup();
+    await open(hidden.user);
+    expect(screen.queryByRole('combobox', { name: '代码执行编排方式' })).not.toBeInTheDocument();
+  });
+  it('retains a real permission restriction when memory is enabled', () => {
+    const value = catalog();
+    value.items[0].authorization = { state: 'denied', reason: 'session_policy' };
+    expect(buildCapabilityRows(tools, previewSessions[0], value, previewSessions[0].id)[0]).toMatchObject({ state: 'denied' });
+  });
+  it.each([{ adjustmentDisabled: true }, { capabilityPolicyPending: true }])('locks the direct memory switch while busy: %j', async overrides => {
+    const { user, props } = setup(overrides);
+    await open(user);
+    await user.click(screen.getByRole('button', { name: '查看记忆召回设置' }));
+    expect(screen.getByRole('combobox', { name: '本对话记忆召回' })).toBeDisabled();
+    expect(props.onCapabilityPreferenceChange).not.toHaveBeenCalled();
+  });
   it.each([{ adjustmentDisabled: true }, { capabilityPolicyPending: true }])('locks preference updates while busy: %j', async overrides => {
     const { user, props } = setup(overrides); await open(user); await user.click(memory());
     expect(screen.getByLabelText('此对话如何使用')).toBeDisabled();

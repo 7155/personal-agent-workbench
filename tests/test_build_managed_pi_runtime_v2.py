@@ -25,6 +25,7 @@ from scripts.build_managed_pi_runtime_v2 import (
     SESSION_RUNTIME_CONTRACT,
     _SESSION_RUNTIME_SOURCE_KEYS,
     _copy_bundled_pi_packages,
+    _bundle_codemode_runtime_assets,
     _hash_extension_app_pi_packages,
     _copy_product_skills,
     _normalize_bundled_overlay_paths,
@@ -37,6 +38,7 @@ from scripts.build_managed_pi_runtime_v2 import (
     _source_revision,
     _skill_routing_projection,
     _smoke_oauth_runtime_modules,
+    _smoke_runtime,
     _verify_pi_worktree,
     _validated_skill_routing_catalog,
     _verified_session_runtime_contract,
@@ -60,6 +62,42 @@ SESSION_FLOW_SKILLS = {
     "systematic-debugging",
     "test-driven-implementation",
 }
+
+
+def _write_classification_contract_fixture(root: Path) -> tuple[Path, dict[str, Path]]:
+    contract = json.loads(SESSION_RUNTIME_CONTRACT.read_text(encoding="utf-8"))
+    classification_methods = ("classification.once", "classification.abort")
+    methods = [
+        *REQUIRED_RUNTIME_METHODS[:5],
+        *classification_methods,
+        *(method for method in REQUIRED_RUNTIME_METHODS[5:] if method not in classification_methods),
+    ]
+    contract["requiredMethods"] = methods
+    contract["handlerSources"]["classification"] = (
+        "integrations/rag-ime-runtime-host/src/classification.ts"
+    )
+    # Isolate the method/handler checks from the separate marker pin checks.
+    contract["requiredSourceMarkers"] = {
+        key: [f"marker:{key}"] for key in contract["handlerSources"]
+    }
+    sources = {}
+    for key, relative in contract["handlerSources"].items():
+        source = root / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        extra = ""
+        if key == "protocol":
+            extra = "export type RuntimeMethod = " + " ".join(
+                f'| "{method}"' for method in methods
+            ) + ";\n"
+        elif key == "runtimeHost":
+            extra = "switch (method) { " + " ".join(
+                f'case "{method}": break;' for method in methods
+            ) + " }\n"
+        source.write_text(f"// marker:{key}\n{extra}", encoding="utf-8")
+        sources[key] = source
+    contract_path = root / "session-runtime-host-contract.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    return contract_path, sources
 
 
 def _write_extension_app_fixture(
@@ -241,8 +279,19 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             ):
                 source = package_root / relative_path
                 source.parent.mkdir(parents=True, exist_ok=True)
+                inputs = [before for before, _after in replacements]
+                if relative_path == "src/runtime-host.ts":
+                    # A captured Pi 1.0 capability block, independent of the
+                    # overlay anchor: additive Host capabilities must survive.
+                    inputs = [
+                        "\t\t\t\t\t\tsessionControlState: true,\n"
+                        "\t\t\t\t\t\tsessionBoundAbort: true,\n"
+                        "\t\t\t\t\t\tsessionSnapshot: true,"
+                        if "sessionSnapshot: true" in value else value
+                        for value in inputs
+                    ]
                 source.write_text(
-                    "\n\n".join(before for before, _after in replacements),
+                    "\n\n".join(inputs),
                     encoding="utf-8",
                 )
 
@@ -266,6 +315,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             self.assertIn("candidateSkillPaths?: string[];", session_source)
             self.assertIn("options.candidateSkillPaths ?? [", session_source)
             self.assertIn("sessionCandidateSkillPaths: true", host_source)
+            self.assertEqual(host_source.count("sessionBoundAbort: true"), 1)
             self.assertIn("await optionalCandidateSkillPaths(params, cwd)", host_source)
             self.assertIn("allowedSkillNames.has(skill.name)", session_source)
             self.assertNotIn(
@@ -347,6 +397,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             relative_sources = {
                 "protocol": Path("integrations/rag-ime-runtime-host/src/protocol.ts"),
                 "runtimeHost": Path("integrations/rag-ime-runtime-host/src/runtime-host.ts"),
+                "classification": Path("integrations/rag-ime-runtime-host/src/classification.ts"),
                 "contextInspection": Path("integrations/rag-ime-runtime-host/src/debug-context.ts"),
                 "toolBridge": Path("integrations/rag-ime-runtime-host/src/tool-bridge.ts"),
                 "toolResults": Path("integrations/rag-ime-runtime-host/src/tool-artifact-buffer.ts"),
@@ -444,6 +495,55 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
         )
         self.assertEqual(len(digest), 64)
 
+    def test_session_contract_accepts_native_classification_protocol_and_handlers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            contract_path, _ = _write_classification_contract_fixture(root)
+            with patch("scripts.build_managed_pi_runtime_v2.SESSION_RUNTIME_CONTRACT", contract_path):
+                contract, digest = _verified_session_runtime_contract(root)
+            self.assertEqual(contract["requiredMethods"][5:7], ["classification.once", "classification.abort"])
+            self.assertEqual(len(digest), 64)
+
+    def test_session_contract_rejects_missing_classification_handler(self) -> None:
+        for method in ("classification.once", "classification.abort"):
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                contract_path, sources = _write_classification_contract_fixture(root)
+                host = sources["runtimeHost"]
+                host.write_text(host.read_text(encoding="utf-8").replace(f'case "{method}": break;', ""), encoding="utf-8")
+                with patch("scripts.build_managed_pi_runtime_v2.SESSION_RUNTIME_CONTRACT", contract_path):
+                    with self.assertRaisesRegex(ManagedPiRuntimeError, f"does not implement {method}"):
+                        _verified_session_runtime_contract(root)
+
+    def test_session_contract_rejects_classification_protocol_declaration_drift(self) -> None:
+        for change in ("missing", "reordered"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                contract_path, sources = _write_classification_contract_fixture(root)
+                protocol = sources["protocol"]
+                source = protocol.read_text(encoding="utf-8")
+                source = source.replace('| "classification.once"', "") if change == "missing" else source.replace(
+                    '| "classification.once" | "classification.abort"',
+                    '| "classification.abort" | "classification.once"',
+                )
+                protocol.write_text(source, encoding="utf-8")
+                with patch("scripts.build_managed_pi_runtime_v2.SESSION_RUNTIME_CONTRACT", contract_path):
+                    with self.assertRaisesRegex(ManagedPiRuntimeError, "methods do not match the Pi protocol"):
+                        _verified_session_runtime_contract(root)
+
+    def test_session_contract_rejects_missing_classification_source(self) -> None:
+        for change, reason in (("missing", "handler source is missing"), ("marker", "source marker is missing: classification")):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                contract_path, sources = _write_classification_contract_fixture(root)
+                if change == "missing":
+                    sources["classification"].unlink()
+                else:
+                    sources["classification"].write_text("// marker removed\n", encoding="utf-8")
+                with patch("scripts.build_managed_pi_runtime_v2.SESSION_RUNTIME_CONTRACT", contract_path):
+                    with self.assertRaisesRegex(ManagedPiRuntimeError, reason):
+                        _verified_session_runtime_contract(root)
+
     def test_public_pi_pin_uses_session_runtime_contract(self) -> None:
         contract = json.loads(
             SESSION_RUNTIME_CONTRACT.read_text(encoding="utf-8")
@@ -486,6 +586,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             {
                 "protocol": "integrations/rag-ime-runtime-host/src/protocol.ts",
                 "runtimeHost": "integrations/rag-ime-runtime-host/src/runtime-host.ts",
+                "classification": "integrations/rag-ime-runtime-host/src/classification.ts",
                 "contextInspection": "integrations/rag-ime-runtime-host/src/debug-context.ts",
                 "toolBridge": "integrations/rag-ime-runtime-host/src/tool-bridge.ts",
                 "toolResults": "integrations/rag-ime-runtime-host/src/tool-artifact-buffer.ts",
@@ -505,6 +606,8 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                 "models.list",
                 "completion.once",
                 "completion.cancel",
+                "classification.once",
+                "classification.abort",
                 "tools.list",
                 "tools.sync",
                 "session.open",
@@ -524,6 +627,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                 "session.abort",
                 "session.compact",
                 "session.model.set",
+                "session.codemode.set",
                 "session.thinking.set",
                 "session.close",
                 "room.dispatch",
@@ -817,6 +921,56 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                     "must be under integrations/rag-ime-runtime-host",
                 ):
                     _verified_session_runtime_contract(root)
+
+    def test_codemode_payload_preserves_native_worker_and_wasm(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "packages/coding-agent/src/extensions/codemode/worker.ts"
+            source.parent.mkdir(parents=True)
+            source.write_text("native worker source")
+            docs = root / "packages/coding-agent/docs/codemode.md"
+            docs.parent.mkdir(parents=True)
+            docs.write_text("Pi 1.0 codemode model API reference", encoding="utf-8")
+            package = root / "node_modules/quickjs-wasi"
+            package.mkdir(parents=True)
+            (package / "quickjs.wasm").write_bytes(b"native-wasm-fixture")
+            runtime = root / "payload/runtime-host"
+            runtime.mkdir(parents=True)
+            with patch("scripts.build_managed_pi_runtime_v2._run") as run:
+                self.assertTrue(_bundle_codemode_runtime_assets(
+                    esbuild=root / "esbuild", pi_root=root, runtime_dir=runtime))
+            self.assertEqual((runtime / "node_modules/quickjs-wasi/quickjs.wasm").read_bytes(), b"native-wasm-fixture")
+            command = run.call_args.args[0]
+            self.assertIn(str(source), command)
+            self.assertIn(f"--outfile={runtime / 'codemode-worker.js'}", command)
+            self.assertEqual(json.loads((runtime / "package.json").read_text()), {"type": "module"})
+            self.assertEqual(
+                (runtime / "docs/codemode.md").read_text(encoding="utf-8"),
+                docs.read_text(encoding="utf-8"),
+            )
+            (package / "quickjs.wasm").unlink()
+            with self.assertRaises(ManagedPiRuntimeError):
+                _bundle_codemode_runtime_assets(esbuild=root / "esbuild", pi_root=root, runtime_dir=root / "missing")
+
+    def test_runtime_smoke_rejects_an_advertised_version_mismatch(self) -> None:
+        result = {
+            "protocolVersion": "2",
+            "piVersion": "0.99.2",
+            "capabilities": {"multiSession": True, "sessionSkillAllowlist": True},
+        }
+        for reported_version in ("0.99.2", "1.0.0"):
+            result["piVersion"] = reported_version
+            response = {"ok": True, "result": result}
+            with patch("scripts.build_managed_pi_runtime_v2.subprocess.run") as run:
+                run.return_value.stdout = json.dumps(response) + "\n"
+                if reported_version == "1.0.0":
+                    self.assertEqual(
+                        _smoke_runtime(Path("node"), Path("host"), expected_pi_version="1.0.0"),
+                        response,
+                    )
+                else:
+                    with self.assertRaisesRegex(ManagedPiRuntimeError, "version does not match"):
+                        _smoke_runtime(Path("node"), Path("host"), expected_pi_version="1.0.0")
 
     def test_oauth_runtime_smoke_loads_every_lazy_module_and_derives_codex_auth(
         self,

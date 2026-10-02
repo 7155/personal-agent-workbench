@@ -22,12 +22,12 @@ import {
 import { PawAppProcess } from '../apps/PawApps';
 import { PawAppIcon } from './PawAppIcon';
 import { PawWindowChromeProvider } from './PawWindowChrome';
-import { PawBackgroundToolWindows } from './PawBackgroundToolWindows';
 import { useRoomProjectionBridge } from '@/features/rooms/state/projection-bridge';
 import { roomActivityFlowKind, roomWorkReviewFlow } from '@/features/rooms/room-flow-projection';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import { animateWindowArrival } from './window-arrival';
 
+const PawBackgroundToolWindows = lazy(() => import('./PawBackgroundToolWindows').then((module) => ({ default: module.PawBackgroundToolWindows })));
 const PawRoomProjectionKeeper = lazy(() => import('./PawRoomProjectionKeeper'));
 const PawRoomFocusParticipants = lazy(() => import('../apps/PawRoomFocusParticipants'));
 
@@ -230,7 +230,7 @@ export function PawWindowLayer() {
   }, [api]);
   return (
     <FeatureDesktopProvider bindAgentMain={bindAgentMain} bindRoomMain={bindRoomMain} collaborationFocusGroup={collaborationFocusGroup} closeWindow={closeWindow} openApp={openFeatureApp} openRoute={openFeatureRoute} openWindow={openFeatureWindow} setCollaborationFocusGroup={setCollaborationFocusGroup}>
-      {focusedRoomId || ids.some((id) => id.includes(':background:')) ? <PawBackgroundToolWindows /> : null}
+      {focusedRoomId || ids.some((id) => id.includes(':background:')) ? <Suspense fallback={null}><PawBackgroundToolWindows /></Suspense> : null}
       <div className="paw-window-layer" data-overview={overviewOpen || undefined} data-room-focus={focusedRoomId || undefined}>
         {focusedRoomId ? <>
           <div aria-hidden="true" className="paw-room-focus-plane" />
@@ -1130,7 +1130,7 @@ export function PawWindowFrame({ active, appId, bounds, children, collaborationR
                 {focusFrame ? null : <button aria-label={maximized ? '还原窗口' : '最大化窗口'} data-action={maximized ? 'restore' : 'maximize'} onClick={onToggleMaximize} title={maximized ? '还原' : '最大化'} type="button">{maximized ? <Minimize2 size={8} /> : <Maximize2 size={8} />}</button>}
                 {windowChrome ? <div className="paw-window-leading-slot" onDoubleClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} ref={setWindowLeadingChromeTarget} /> : null}
               </div>
-              {roomFocusPrimary ? null : <div className="paw-window-title"><PawAppIcon appId={identityIconId} size={16} /><strong>{title}</strong>{subtitle ? <small>{subtitle}</small> : null}</div>}
+              {roomFocusPrimary ? null : <div className="paw-window-title"><PawAppIcon appId={identityIconId} size={16} /><strong title={title}>{title}</strong>{subtitle ? <small>{subtitle}</small> : null}</div>}
               {windowChrome ? <div className="paw-window-chrome-slot" onDoubleClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} ref={setWindowChromeTarget} /> : null}
             </header>
             <MemoizedWindowBody>{children}</MemoizedWindowBody>

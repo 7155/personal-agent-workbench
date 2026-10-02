@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_workspace import (
     PreparedWorkspaceCommand,
     WorkspaceHarness,
@@ -25,7 +26,7 @@ AGENT_CASE_SCHEMA_VERSION = "rag-ime.swe-bench-agent-case.v1"
 RUN_SCHEMA_VERSION = "rag-ime.swe-bench-agent-run.v1"
 REPORT_SCHEMA_VERSION = "rag-ime.swe-bench-agent-eval.v1"
 OFFICIAL_DATASET_NAME = "princeton-nlp/SWE-bench_Verified"
-DEFAULT_MODEL_REFERENCE = "openai-codex/gpt-5.6-luna"
+DEFAULT_MODEL_REFERENCE = DEFAULT_AGENT_MODEL_PROFILE
 
 _SHA1 = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")

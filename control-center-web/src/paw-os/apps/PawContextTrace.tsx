@@ -14,7 +14,7 @@
  * - 状态合同：loading / unavailable / empty 如实呈现，不伪造装配数据。
  *
  * 样式：paw-os/styles/paw-os-agent-next.css 与
- * paw-os/styles/paw-os-agent-migrated-v1.css（类名 an-* / paw-agent-trace-v1-* 作用域）。
+ * paw-os/styles/paw-os-agent.css（类名 an-* / paw-agent-trace-v1-* 作用域）。
  */
 
 import {

@@ -389,6 +389,8 @@
 }
 
 .ui-segmented__item {
+  position: relative;
+  isolation: isolate;
   min-width: 56px;
   padding: 4px 10px;
   border: 0;
@@ -411,9 +413,18 @@
 }
 
 .ui-segmented__item[data-state='checked'] {
-  background: var(--color-surface);
-  box-shadow: var(--shadow-1);
   color: var(--color-text);
+}
+
+/* Only the selection surface moves; labels, focus and hit targets stay still. */
+.ui-segmented__selection {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--ui-segmented-selection-background, var(--color-surface));
+  box-shadow: var(--ui-segmented-selection-shadow, var(--shadow-1));
+  pointer-events: none;
 }
 
 .ui-segmented__item:disabled {
@@ -747,6 +758,15 @@ input[type='radio']:focus-visible {
   outline: none;
 }
 
+.ui-tabs__content[data-state='active'][data-motion-active='true'] {
+  animation: ui-panel-unfold 220ms var(--ease-standard);
+  transform-origin: 50% 0;
+}
+@keyframes ui-panel-unfold {
+  from { opacity: .4; transform: translateY(6px); clip-path: inset(0 0 8% 0); }
+  to { opacity: 1; transform: none; clip-path: inset(0); }
+}
+
 .ui-toast__viewport {
   position: fixed;
   z-index: 1120;
@@ -812,9 +832,54 @@ input[type='radio']:focus-visible {
 }
 
 .ui-skeleton {
+  position: relative;
+  overflow: hidden;
   min-height: 12px;
   border-radius: var(--radius-1);
   background: var(--color-surface-subtle);
+}
+
+.ui-skeleton::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  transform: translateX(-110%);
+  background: linear-gradient(100deg, transparent 15%, color-mix(in oklab, var(--color-text-secondary) 12%, transparent) 50%, transparent 85%);
+  pointer-events: none;
+}
+.ui-skeleton[data-motion-active='true']::after {
+  animation: ui-skeleton-scan 1.35s var(--ease-standard) 3;
+}
+@keyframes ui-skeleton-scan { to { transform: translateX(110%); } }
+
+/* An indeterminate rail communicates pending work without fabricating a %. */
+.ui-button[aria-busy='true'] { opacity: .85; cursor: progress; }
+.ui-button__progress {
+  position: absolute;
+  right: 8px;
+  bottom: 3px;
+  left: 8px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.ui-button__progress::before {
+  display: block;
+  width: 32%;
+  height: 100%;
+  background: currentColor;
+  opacity: .45;
+  content: '';
+}
+.ui-button[data-motion-active='true'] .ui-button__progress::before {
+  animation: ui-pending-rail 1.3s ease-in-out infinite;
+}
+.ui-button[data-motion-active='false'] .ui-spin { animation: none; }
+.ui-button[data-motion-active='false'] .ui-button__progress::before { width: 100%; opacity: .25; }
+@keyframes ui-pending-rail {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(420%); }
 }
 
 /* An absence is a side-note, not a hero: one compact left-aligned row. It
@@ -918,6 +983,10 @@ input[type='radio']:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .ui-disclosure__reveal { transition: none; }
+  .ui-tabs__content, .ui-skeleton::after, .ui-button__progress::before { animation: none !important; }
 }
 
 :root[data-reduce-motion='true'] .ui-disclosure__reveal { transition: none; }
+:root[data-reduce-motion='true'] .ui-tabs__content,
+:root[data-reduce-motion='true'] .ui-skeleton::after,
+:root[data-reduce-motion='true'] .ui-button__progress::before { animation: none !important; }

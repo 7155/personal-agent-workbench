@@ -849,7 +849,7 @@ class GovernedMemoryModelExecutorTests(unittest.TestCase):
             conn.row_factory = sqlite3.Row
             status = memory_curation_model_status(conn)
 
-        self.assertEqual(status["requiredModel"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(status["requiredModel"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(status["requiredThinkingLevel"], "max")
         self.assertEqual(status["minimumContextTokens"], 272_000)
         latest = status["runs"][0]
@@ -1911,7 +1911,10 @@ class GovernedMemoryModelExecutorTests(unittest.TestCase):
         )
 
     def test_legacy_gpt_alias_resolves_to_live_canonical_provider(self) -> None:
-        runtime = FakeMemoryRuntime(self.sessions, self.events)
+        runtime = FakeMemoryRuntime(self.sessions, self.events, models=[{
+            "provider": "openai-codex", "id": "gpt-6.1-sol", "thinkingLevels": ["max"],
+            "contextWindow": 372_000, "maxTokens": 128_000,
+        }])
 
         executor = build_governed_memory_model_executor(
             runtime,
@@ -1920,7 +1923,7 @@ class GovernedMemoryModelExecutorTests(unittest.TestCase):
             db_path=self.db_path,
         )
 
-        self.assertEqual(executor.reference, "openai-codex/gpt-5.6-luna")
+        self.assertEqual(executor.reference, "openai-codex/gpt-6.1-sol")
 
 
 if __name__ == "__main__":

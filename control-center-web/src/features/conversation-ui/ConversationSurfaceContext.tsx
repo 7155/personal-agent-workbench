@@ -44,6 +44,10 @@ export interface ConversationSurfaceController {
   /** Host action row under a card head; stays visible so an approval never
    *  hides behind a disclosure. */
   renderBlockAction?(block: AssistantBlock, message: AssistantMessage): ReactNode | undefined;
+  /** Host slot immediately after one public block, before the next block in
+   *  the same assistant loop. Use this for chronology-bound controls that
+   *  must not drift to the end of a multi-block card. */
+  renderBlockFooter?(block: AssistantBlock, message: AssistantMessage): ReactNode | undefined;
   /** Host slot below an assistant card (terminal receipts, session links). */
   renderMessageFooter?(message: AssistantMessage): ReactNode | undefined;
   renderMessageAvatar?(message: AssistantMessage): ReactNode | undefined;

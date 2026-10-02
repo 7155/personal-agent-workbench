@@ -4,6 +4,34 @@ import { pawExtensionApps } from '../extensions/registry';
 import { createPawDesktopStore, pawFocusWindowLayerSize, pawWindowArea, pawWindowLayerSize } from './desktop-store';
 
 describe('PAWOS desktop store', () => {
+  it('focuses the next visible window on minimize and restores the same window without duplicating it', () => {
+    const store = createPawDesktopStore();
+    const agent = store.getState().openApp('agent');
+    const files = store.getState().openApp('files');
+    store.getState().minimizeWindow(files);
+
+    expect(store.getState().activeWindowId).toBe(agent);
+    expect(store.getState().stack).toEqual([agent]);
+    expect(store.getState().windows[files]?.minimized).toBe(true);
+
+    store.getState().focusWindow(files);
+
+    expect(store.getState().activeWindowId).toBe(files);
+    expect(store.getState().stack).toEqual([agent, files]);
+    expect(store.getState().windows[files]?.minimized).toBe(false);
+    expect(Object.keys(store.getState().windows)).toEqual([agent, files]);
+  });
+
+  it('keeps Launchpad and Overview mutually exclusive in the current desktop owner', () => {
+    const store = createPawDesktopStore();
+    store.getState().setLaunchpadOpen(true);
+    expect(store.getState()).toMatchObject({ launchpadOpen: true, overviewOpen: false });
+    store.getState().setOverviewOpen(true);
+    expect(store.getState()).toMatchObject({ launchpadOpen: false, overviewOpen: true });
+    store.getState().setLaunchpadOpen(true);
+    expect(store.getState()).toMatchObject({ launchpadOpen: true, overviewOpen: false });
+  });
+
   it('keeps previously visible windows fully inside a narrower viewport', () => {
     const width = window.innerWidth;
     const height = window.innerHeight;

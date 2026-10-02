@@ -14,7 +14,7 @@ export const previewPersonas: AgentPersonaV1[] = [
     summary: '站在长期时间线上深思的构筑者，默认主持复杂任务，串联证据、工具、角色、实现与验收。',
     traits: ['沉稳', '工具编排'],
     visualProfile: { avatarAssetId: 'rag-ime-timeline-future-v1', symbolName: 'point.3.connected.trianglepath.dotted', accentToken: 'rose' },
-    defaults: { modelPolicy: 'fixed', memoryPolicy: 'personal-evidence-v1', toolProfileVersion: 'control-center-v1', modelProfile: 'openai-codex/gpt-5.6-sol', thinkingLevel: 'max' },
+    defaults: { modelPolicy: 'fixed', memoryPolicy: 'personal-evidence-v1', toolProfileVersion: 'control-center-v1', modelProfile: 'openai-codex/gpt-6.1-sol', thinkingLevel: 'max' },
     runtimeCharacteristics: { intelligence: '最高', speed: '较慢', context: '超长上下文，面向长期时间线', suitableTasks: ['复杂架构与深度实现', '多 Agent 主持和独立验收'], unsuitableTasks: ['只需快速扫读的低风险整理'], isDefault: true },
     safetyPolicyVersion: 'agent-core-v2', selectableModes: ['assistant', 'coordinator'],
   },
@@ -35,7 +35,7 @@ export const previewPersonas: AgentPersonaV1[] = [
       modelPolicy: 'fixed',
       memoryPolicy: 'personal-evidence-v1',
       toolProfileVersion: 'control-center-v1',
-      modelProfile: 'openai-codex/gpt-5.6-terra', thinkingLevel: 'max',
+      modelProfile: 'openai-codex/gpt-6.1-sol', thinkingLevel: 'max',
     },
     runtimeCharacteristics: { intelligence: '高', speed: '均衡', context: '长上下文，聚焦当前现场', suitableTasks: ['日常协作与项目推进', '整理证据并形成下一步'], unsuitableTasks: ['需要最深推演的复杂实现主持'], isDefault: false },
     safetyPolicyVersion: 'agent-core-v2',
@@ -58,7 +58,7 @@ export const previewPersonas: AgentPersonaV1[] = [
       modelPolicy: 'fixed',
       memoryPolicy: 'personal-evidence-v1',
       toolProfileVersion: 'control-center-v1',
-      modelProfile: 'openai-codex/gpt-5.6-luna', thinkingLevel: 'max',
+      modelProfile: 'openai-codex/gpt-6.1-sol', thinkingLevel: 'max',
     },
     runtimeCharacteristics: { intelligence: '中高', speed: '快速', context: '长上下文，擅长线索巡检', suitableTasks: ['快速理解意图与初步检索', '轻量执行和下一步整理'], unsuitableTasks: ['复杂架构主持', '高风险独立决策'], isDefault: false },
     safetyPolicyVersion: 'agent-core-v2',
@@ -70,7 +70,7 @@ export const previewPersonas: AgentPersonaV1[] = [
     summary: '超长档案的高速侦察与整理者，极快提取、聚类和交接线索，但不独自承担复杂实现与高风险结论。',
     traits: ['极速', '线索整理'],
     visualProfile: { avatarAssetId: 'rag-ime-timeline-flash-v1', symbolName: 'bolt', accentToken: 'neutral' },
-    defaults: { modelPolicy: 'fixed', memoryPolicy: 'personal-evidence-v1', toolProfileVersion: 'control-center-v1', modelProfile: 'openai-codex/gpt-5.6-luna', thinkingLevel: 'low' },
+    defaults: { modelPolicy: 'fixed', memoryPolicy: 'personal-evidence-v1', toolProfileVersion: 'control-center-v1', modelProfile: 'openai-codex/gpt-6.1-sol', thinkingLevel: 'low' },
     runtimeCharacteristics: { intelligence: '普通', speed: '极速', context: '超长上下文，擅长高速扫描', suitableTasks: ['超长材料高速扫读与提取', '归类、去重和格式转换'], unsuitableTasks: ['复杂推理', '复杂实现', '高风险决定', '最终验收'], isDefault: false },
     safetyPolicyVersion: 'agent-core-v2', selectableModes: ['assistant', 'coordinator'],
   },
@@ -157,7 +157,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: ['/Users/example/Projects/personal-agent-workbench'],
     messageCount: 4,
     lastMessagePreview: '三条工作线已经收束到同一个控制入口。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-memory',
@@ -195,7 +195,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: ['/Users/example/Projects/personal-agent-workbench'],
     messageCount: 1,
     lastMessagePreview: '请把待审问答做成更清楚的协作界面。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-runtime',
@@ -214,7 +214,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 7,
     lastMessagePreview: 'Sidecar 与 MLX predictor 都已恢复。',
-    modelProfile: 'openai/gpt-5.4-mini',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-long',
@@ -233,7 +233,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 120,
     lastMessagePreview: '用于验证长对话滚动与跟随行为。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-fresh',
@@ -252,7 +252,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 0,
     lastMessagePreview: '还没有消息',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-gallery',
@@ -271,7 +271,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 6,
     lastMessagePreview: '完整渲染族样例，用于视觉评审。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-states',
@@ -290,7 +290,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 3,
     lastMessagePreview: '运行中、失败与已停止三种状态。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   // Appended, never inserted: two model-picker tests pin the catalog by
   // position, so inserting a scenario earlier in this list silently breaks them.
@@ -311,7 +311,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 4,
     lastMessagePreview: '同一串对话里从快模型换到强模型。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-report',
@@ -330,7 +330,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: [],
     messageCount: 2,
     lastMessagePreview: '生成的 HTML 报告与原始数据一并交付。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
   {
     id: 'session-work-disclosure',
@@ -349,7 +349,7 @@ export const previewSessions: SessionSummary[] = [
     workspaceRoots: ['/Users/example/Projects/personal-agent-workbench'],
     messageCount: 3,
     lastMessagePreview: '最终结果保持可见，推理与工具过程可按需展开。',
-    modelProfile: 'openai/gpt-5.4',
+    modelProfile: 'openai-codex/gpt-6.1-sol',
   },
 ];
 
@@ -358,7 +358,7 @@ export function previewModelCatalog(sessionId: string): ModelCatalog {
     schemaVersion: 'rag-ime.agent-model-catalog.v1',
     ok: true,
     sessionId,
-    selected: { provider: 'openai', id: 'gpt-5.4' },
+    selected: { provider: 'openai-codex', id: 'gpt-6.1-sol' },
     thinkingLevel: 'medium',
     providers: [
       {
@@ -390,14 +390,14 @@ export function previewModelCatalog(sessionId: string): ModelCatalog {
         ],
       },
       {
-        id: 'gpt',
-        displayName: 'GPT',
+        id: 'openai-codex',
+        displayName: 'Codex',
         models: [
           {
-            provider: 'gpt',
-            id: 'gpt-5.6-luna',
-            name: 'GPT-5.6 Luna',
-            api: 'responses',
+            provider: 'openai-codex',
+            id: 'gpt-6.1-sol',
+            name: 'GPT-6.1 Sol',
+            api: 'openai-codex-responses',
             reasoning: true,
             thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
             supportsImages: true,

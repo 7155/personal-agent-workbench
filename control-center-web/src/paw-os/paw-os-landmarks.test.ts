@@ -3,7 +3,7 @@ import agentAppSource from './apps/PawAgentApp.tsx?raw';
 import browserAppSource from './apps/PawBrowserApp.tsx?raw';
 import roomWorkspaceSource from './apps/PawRoomWorkspace.tsx?raw';
 import sessionWorkspaceSource from './apps/PawSessionWorkspace.tsx?raw';
-import workbenchSource from './apps/PawWorkbenchMigrated.tsx?raw';
+import workbenchSource from './apps/PawWorkbench.tsx?raw';
 import desktopSource from './shell/PawDesktop.tsx?raw';
 import contextDebugSource from '@/features/context-debug/index.tsx?raw';
 import filesSource from '@/features/files/PawOsFilesApp.tsx?raw';

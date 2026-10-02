@@ -24,6 +24,7 @@ it('restores only the owning App Session and reuses the original full conversati
   } });
   show(transport);
   expect(await screen.findByTestId('original-agent')).toHaveTextContent('ours');
+  expect(transport.requests.find(x => x.request.pathId === 'agent.sessions.list')?.request).toMatchObject({ query: { projectionOnly: true }, timeoutMs: 15000, signal: expect.any(AbortSignal) });
   expect(seen.mock.lastCall?.[0].appearance).not.toBe('embedded');
   expect(transport.requests.some(x => x.request.pathId === 'agent.sessions.create')).toBe(false);
   await userEvent.click(screen.getByRole('button',{name:'选择地图地点'}));
@@ -269,4 +270,23 @@ it('deletes only selected typed IDs through the versioned layer service without 
   expect(JSON.parse(commands.at(-1)!.slice('/earth-layer-save '.length))).toMatchObject({layerId:'parcels',expectedRevision:1,features:[{id:'1',properties:{note:'保留'}},{id:2,properties:{note:'保留'}}]});
   expect(seenMap.mock.lastCall?.[0].projectLayers[0].revision).toBe(2);
   expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+});
+
+it('leaves restoration after a timeout and retries only the existing App directory', async () => {
+  let attempts = 0;
+  const transport = new MockControlTransport({ routes: {
+    'agent.sessions.list': () => {
+      if (++attempts === 1) throw new DOMException('读取超时，请重试。', 'TimeoutError');
+      return { items: [{ id: 'restored', title: 'Earth', mode: 'assistant', updatedAtMs: 1,
+        surfaceKind: 'extension_app', ownerAppId: manifest.id, surfaceKey: 'analysis', workspaceRoots: ['/work'] }] };
+    },
+    'agent.session.workspace.read': () => { throw new Error('No run yet'); },
+  } });
+  show(transport);
+  expect(await screen.findByRole('alert')).toHaveTextContent('读取超时');
+  expect(screen.queryByText('正在恢复 App 对话…')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: '重新读取' }));
+  expect(await screen.findByTestId('original-agent')).toHaveTextContent('restored');
+  expect(attempts).toBe(2);
+  expect(transport.requests.some(x => ['agent.sessions.create', 'agent.session.prompt'].includes(x.request.pathId))).toBe(false);
 });

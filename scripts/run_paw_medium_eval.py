@@ -16,12 +16,13 @@ import urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
 
+from rag_ime.agent_model_defaults import DEFAULT_AGENT_MODEL_ID, DEFAULT_AGENT_MODEL_PROFILE
 from rag_ime.agent_lab.micro import canonical,digest,turn_usage,write_private
 from rag_ime.agent_lab.medium import SEED,SPEC,UPDATE,create_workspace,verify_workspace,prepare_checkpoint,verify_delivery,task_seed,task_update,checkpoint_name
 from rag_ime.agent_lab.trial_execution import AgentLabTrialApplication
 from rag_ime.agent_lab.trials import AgentLabTrialStore
 
-MODEL={'provider':'openai-codex','model':'gpt-5.6-luna','thinkingLevel':'low'}
+MODEL={'provider':'openai-codex','model':DEFAULT_AGENT_MODEL_ID,'thinkingLevel':'low'}
 BUDGET={'maxProviderCallsPerArm':18,'maxObservedTokensPerArm':100000,'maxStages':3,'stageTimeoutSeconds':300,'maxOutputTokens':4096}
 WORKSPACE_TOOLS={'workspace_list','workspace_read','workspace_search','workspace_patch','workspace_edit','workspace_write','workspace_shell'}
 STAGES=[
@@ -117,7 +118,7 @@ class MediumAdapter:
         elif arm=='solo':
             sid=service.create_session({'title':'Lab medium · same Session','mode':'coordinator','executionMode':'workspace_managed',
                 '_internalWorkspaceScopeGrant':True,'workspaceRoots':[str(workspace)],'projectContextEnabled':True,
-                'piSkillsEnabled':False,'codexSkillsEnabled':False,'modelProfile':'openai-codex/gpt-5.6-luna','thinkingLevel':'low'})['session']['id']
+                'piSkillsEnabled':False,'codexSkillsEnabled':False,'modelProfile':DEFAULT_AGENT_MODEL_PROFILE,'thinkingLevel':'low'})['session']['id']
             sessions=[sid]*3
         else:
             room=service.create_room({'title':'Lab medium · durable ledger','routingPolicy':'manual_mentions','executionMode':'workspace_managed','workspaceRoots':[str(workspace)],

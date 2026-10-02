@@ -19,9 +19,32 @@ from rag_ime.agent_templates import agent_template, progressive_capability_polic
 from rag_ime.deepseek_config import load_deepseek_config
 from rag_ime.managed_pi_runtime import ManagedPiRuntimeError, discover_managed_pi_runtime
 from rag_ime.pi.provider_config import PiProviderConfigError, load_pi_provider_config
+from rag_ime.pi.model_additions import with_current_codex_models
 from rag_ime.pi.protocols import normalize_protocol_version
 
-__all__ = ["PiRuntimeConfig"]
+__all__ = ["CODEMODE_MODES", "PiRuntimeConfig", "normalize_codemode_mode"]
+
+
+CODEMODE_MODES = frozenset({"on", "only", "off"})
+
+
+def _typesafe_host_environment() -> Mapping[str, str]:
+    # Read the existing credential owner only when starting an owned Host.
+    # Settings may have changed since this immutable config was composed.
+    from rag_ime import jev
+
+    key = jev.api_key()
+    return {
+        "TYPESAFE_API_KEY": key,
+        "RAG_IME_PI_TYPESAFE_ENDPOINT": os.environ.get("TYPESAFE_API_URL", jev.JEV_ENDPOINT),
+    } if key else {}
+
+
+def normalize_codemode_mode(value: object, *, default: str = "on") -> str:
+    normalized = str(value or default).strip().lower()
+    if normalized not in CODEMODE_MODES:
+        raise ValueError("Pi codemode mode must be one of: on, only, off")
+    return normalized
 
 _DEFAULT_DEBUG_CONTEXT_MAX_BYTES = 5 * 1024 * 1024 * 1024
 
@@ -428,12 +451,18 @@ class PiRuntimeConfig:
     command_timeout_seconds: float = 15.0
     provider: str = ""
     model: str = ""
+    # Native Pi codemode is an additive per-Session capability. Keep the
+    # product default on while allowing a Session to request only/off.
+    codemode_mode: str = "on"
     extension_path: Path | None = None
     tools: tuple[str, ...] = ()
     tool_gateway_url: str = "http://127.0.0.1:8766/api/agent/tool/execute"
     tool_gateway_token: str = ""
     plugin_approval_token: str = ""
     provider_environment: Mapping[str, str] = field(default_factory=dict, repr=False)
+    typesafe_environment_resolver: Callable[[], Mapping[str, str]] | None = field(
+        default=None, repr=False, compare=False,
+    )
     model_providers: Mapping[str, Mapping[str, object]] = field(
         default_factory=dict, repr=False
     )
@@ -462,6 +491,11 @@ class PiRuntimeConfig:
 
     def __post_init__(self) -> None:
         normalize_protocol_version(self.protocol_version)
+        object.__setattr__(
+            self,
+            "codemode_mode",
+            normalize_codemode_mode(self.codemode_mode),
+        )
 
     @classmethod
     def from_environment(
@@ -570,6 +604,9 @@ class PiRuntimeConfig:
             ),
             provider=provider,
             model=model,
+            codemode_mode=normalize_codemode_mode(
+                os.environ.get("RAG_IME_PI_CODEMODE_MODE"),
+            ),
             extension_path=extension,
             tools=tools,
             tool_gateway_url=(
@@ -597,6 +634,7 @@ class PiRuntimeConfig:
                 maximum=60_000,
             ),
             provider_environment=provider_environment,
+            typesafe_environment_resolver=_typesafe_host_environment,
             model_providers=model_providers,
             model_base_url=model_base_url,
             model_configured=not bool(model_error),
@@ -693,6 +731,14 @@ class PiRuntimeConfig:
                 selected_model = configured_ids[0]
         return selected_provider, selected_model
 
+    def resolved_codemode_mode(self, session: Mapping[str, object]) -> str:
+        """Return the effective native codemode mode for one Session."""
+
+        return normalize_codemode_mode(
+            session.get("codemodeMode"),
+            default=self.codemode_mode,
+        )
+
     def child_environment(
         self, *, session: Mapping[str, object] | None = None
     ) -> dict[str, str]:
@@ -709,6 +755,12 @@ class PiRuntimeConfig:
         environment.update(
             {str(key): str(value) for key, value in self.provider_environment.items()}
         )
+        if self.typesafe_environment_resolver is not None:
+            classifier_environment = self.typesafe_environment_resolver()
+            for key in ("TYPESAFE_API_KEY", "RAG_IME_PI_TYPESAFE_ENDPOINT"):
+                environment.pop(key, None)
+                if value := classifier_environment.get(key):
+                    environment[key] = str(value)
         environment["RAG_IME_APP_SUPPORT_DIR"] = str(self.agent_dir.parent.parent)
         environment["PI_CODING_AGENT_DIR"] = str(self.agent_dir)
         environment["RAG_IME_PI_AGENT_DIR"] = str(self.agent_dir)
@@ -774,7 +826,7 @@ class PiRuntimeConfig:
             }
         if not providers:
             return
-        payload = {"providers": providers}
+        payload = {"providers": with_current_codex_models(providers)}
         encoded = (
             json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
         ).encode("utf-8")

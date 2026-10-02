@@ -79,6 +79,8 @@ class RuntimeModelCatalog(Protocol):
 class RuntimeSessionControls(Protocol):
     def command_catalog(self, session_id: str) -> list[dict[str, object]]: ...
 
+    def native_capabilities(self, session_id: str) -> dict[str, object]: ...
+
     def invoke_command(self, session_id: str, command: str) -> dict[str, object]: ...
 
     def model_catalog(self, session_id: str) -> dict[str, object]: ...
@@ -94,6 +96,10 @@ class RuntimeSessionControls(Protocol):
 
     def set_thinking_level(
         self, session_id: str, *, level: str
+    ) -> dict[str, object]: ...
+
+    def set_codemode_mode(
+        self, session_id: str, *, mode: str
     ) -> dict[str, object]: ...
 
 

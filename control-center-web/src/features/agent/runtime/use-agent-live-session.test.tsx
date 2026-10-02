@@ -6,6 +6,7 @@ import { HttpControlTransport } from '@/platform/http-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { useAgentLiveStore } from '../state/live-store';
 import { recentAgentSnapshotIsPresentable, useAgentLiveSession } from './use-agent-live-session';
+import { preloadRecentConversations } from '@/features/conversation-ui/conversation-preload';
 
 const SESSION_ID = 'session-shared';
 
@@ -16,6 +17,38 @@ afterEach(() => {
 });
 
 describe('useAgentLiveSession shared ownership', () => {
+  it('uses a recent projection warmed before a cold open without issuing a duplicate read or SSE warmup', async () => {
+    const recent = {
+      lastSequence: 4,
+      resumeToken: `${SESSION_ID}:4`,
+      status: 'idle',
+      messages: [{ id: 'assistant-1', role: 'assistant', status: 'completed', blocks: [{ type: 'text', data: { text: '已预加载' } }] }],
+      liveEvents: [],
+      snapshotScope: 'recent',
+      partial: true,
+    };
+    const transport = new MockControlTransport({ routes: {
+      'agent.session.snapshot': recent,
+    } });
+    const warmup = preloadRecentConversations(transport, [{ kind: 'session', id: SESSION_ID }]);
+    await expect(warmup.promise).resolves.toEqual([
+      expect.objectContaining({ kind: 'session', id: SESSION_ID, status: 'ready' }),
+    ]);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(1);
+    expect(transport.subscriptionCalls).toHaveLength(0);
+
+    const onSnapshot = vi.fn();
+    const window = renderHook(() => useAgentLiveSession({
+      sessionId: SESSION_ID,
+      transport,
+      onSnapshot,
+    }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(1);
+    expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ view: 'recent', hydrated: true }));
+    window.unmount();
+  });
+
   it('uses one snapshot and stream while two windows observe the same event', async () => {
     const transport = new MockControlTransport({
       routes: {

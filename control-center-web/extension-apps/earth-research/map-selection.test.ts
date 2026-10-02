@@ -33,3 +33,35 @@ it('keeps Earth Engine objects from separate collections with reused indices',()
   expect(selection?.features).toEqual([a,route,exclusion]);
   expect(updateSelection(selection,route,'remove','run')?.features).toEqual([a,exclusion]);
 });
+
+it('replaces or clears a selection without mutating the previous selection or its feature', () => {
+  const original: GeoJSON.Feature = {
+    type: 'Feature', id: 'a', properties: { id: 'object-a' },
+    geometry: { type: 'Point', coordinates: [120, 30] },
+  };
+  const previous = { runId: 'run', features: [original] };
+  const replacement: GeoJSON.Feature = {
+    type: 'Feature', id: 'b', properties: { id: 'object-b' },
+    geometry: { type: 'Point', coordinates: [121, 31] },
+  };
+  const before = structuredClone(previous);
+
+  expect(updateSelection(previous, replacement, 'replace', 'run')?.features).toEqual([replacement]);
+  expect(updateSelection(previous, null, 'replace', 'run')).toBeNull();
+  expect(previous).toEqual(before);
+  expect(previous.features[0]).toBe(original);
+});
+
+it('keeps selection in one run and deduplicates a stable object when its geometry changes', () => {
+  const original: GeoJSON.Feature = {
+    type: 'Feature', id: 'a', properties: { id: 'object-a' },
+    geometry: { type: 'Point', coordinates: [120, 30] },
+  };
+  const previous = { runId: 'run-before', features: [original] };
+  const edited: GeoJSON.Feature = { ...original, geometry: { type: 'Point', coordinates: [122, 32] } };
+
+  expect(updateSelection(previous, edited, 'upsert', 'run-before')).toEqual({ runId: 'run-before', features: [edited] });
+  expect(updateSelection(previous, edited, 'toggle', 'run-before')).toBeNull();
+  expect(updateSelection(previous, edited, 'upsert', 'run-after')).toEqual({ runId: 'run-after', features: [edited] });
+  expect(previous.features).toEqual([original]);
+});

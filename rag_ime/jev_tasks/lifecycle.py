@@ -14,6 +14,8 @@ from .graph import TaskGraph
 from .ledger import task_from_row
 from .skill_requirements import split_required_capabilities
 from .submission_contracts import validate_submission
+from .verification_route import accept_existing_evidence, existing_evidence_is_current
+from .completion_report import completion_report
 from .types import Candidate, Edge, GraphConflict, GraphError, canonical, digest, text
 
 PURPOSES = frozenset({"plan", "execute", "verify", "synthesize"})
@@ -72,6 +74,35 @@ class JevLifecycle:
         graph_id = binding["graph_id"]
         command_id = "plan-control:" + digest([graph_id, client_id])
         intent_hash = digest([graph_id, root_id, action, plan_hash, message, attachment_ids])
+        preflight = None
+        if action == 'approve_plan':
+            with self.ledger.connection() as conn:
+                prior = self.ledger.prior(conn, command_id, graph_id, intent_hash)
+                if prior:
+                    return {**prior, 'idempotentReplay': True}
+                approval = self.plan_approval(graph_id, conn)
+                needs_preflight = (approval and approval['planHash'] == plan_hash
+                    and approval['status'] in {'awaiting_approval', 'awaiting_input', 'deferred'}
+                    and 'tasks' in approval['proposal'])
+                if needs_preflight:
+                    captured = self.ledger.read_in_transaction(conn, graph_id, binding['controller_id'])
+                    prepared = self.validate_plan(conn, captured, approval['proposal'], check_eligibility=False)
+                    participants = self.service.rooms.get(captured.room_id, conn=conn)['participants']
+                    sessions = {p['sessionId']: self.service.sessions._get(conn, p['sessionId'])
+                                for p in participants}
+            if needs_preflight:
+                # Tool disclosure can start a cold catalog/runtime and persist
+                # owner metadata. Never do that while holding our own writer
+                # (or a read transaction that blocks its commit).
+                owners = {}
+                for item in prepared:
+                    required_tools, _required_skills = split_required_capabilities(item)
+                    targets = self.app.eligible_participants(captured,
+                        {**item, 'requiredCapabilities': required_tools}, include_busy=True)
+                    if not targets:
+                        raise GraphError('no authorized executor satisfies plan task: ' + item['key'])
+                    owners[item['key']] = targets
+                preflight = (captured, owners, sessions)
         with self.ledger.connection(write=True) as conn:
             prior = self.ledger.prior(conn, command_id, graph_id, intent_hash)
             if prior:
@@ -98,7 +129,15 @@ class JevLifecycle:
                         raise GraphConflict("answer the planner questions before approving execution")
                     row = conn.execute("SELECT planner_dispatch_id FROM agent_jev_plan_approvals WHERE graph_id=?", (graph_id,)).fetchone()
                     request = json.loads(conn.execute("SELECT request_json FROM agent_jev_runtime_effects WHERE effect_id=?", (row[0],)).fetchone()[0])
-                    self.apply_plan(conn, snapshot, request, approval["proposal"])
+                    owner_candidates = None
+                    if preflight is not None:
+                        captured, owner_candidates, sessions = preflight
+                        self.ledger.require_unchanged(conn, captured)
+                        selected = {p['sessionId'] for values in owner_candidates.values() for p in values}
+                        for session_id in selected:
+                            if self.service.sessions._get(conn, session_id) != sessions[session_id]:
+                                raise GraphConflict('executor policy changed during plan approval')
+                    self.apply_plan(conn, snapshot, request, approval["proposal"], owner_candidates=owner_candidates)
                     conn.execute("UPDATE agent_jev_plan_approvals SET status='approved',updated_at_ms=? WHERE graph_id=?",
                         (self.ledger.clock_ms(), graph_id))
                 elif action == "defer_plan":
@@ -397,15 +436,19 @@ class JevLifecycle:
         }
         if purpose == "plan":
             instructions = (
-                "为目标设计最小可验收计划，最多六项；简单目标可返回一项。不要执行任务。调用 room_partner op=plan_submit，"
+                "你是Jev委派的规划伙伴，不是Room Facilitator；Jev负责分派和验收，不加载facilitate-room或自行派遣。可用implementation-planning组织方案。为目标设计可验收计划，最多六项；简单目标可返回一项，多伙伴任务优先设计有实际收益的并行边界。不要执行任务。调用 room_partner op=plan_submit，"
                 'proposal={requirementsRevision,topologyRevision,tasks:[{key,objective,expectedOutput,acceptanceCriteria,ownerParticipantId,dependsOn,contextRefs,requiredCapabilities,writeTargets,difficulty:"simple|routine|complex|critical"}]}。'
-                "仅低风险、小范围、输入输出与验收都明确的执行任务标 simple；其余默认 routine 或更高，使用 Sol max。"
+                "仅低风险、小范围、输入输出与验收都明确的执行任务标 simple；其余默认 routine 或更高，使用 Sol 6.1；常规执行 medium，规划、复核和复杂责任 xhigh。"
                 "依赖用本次别名，不能有环。requiredCapabilities 使用 executionScope.capabilityIds 中的 Host 能力标识；"
                 "计划中的调用方法使用 tools/toolBindings 的可调用名称，而非隐藏的后端能力名。"
                 "验收描述用户要求的效果与真实证据；除非用户明确指定工具身份，不额外限定某个工具名或排除其授权原生映射。"
+                "工作区边界约束业务成果和项目修改；除非用户明确要求完全隔离，不把正常授权工具自动产生的缓存、日志或系统临时文件另加为禁止项。"
+                "保留真实失败和运行证据，不以清除历史日志作为修复条件，不给计划添加与用户成果无关的验收阻断。"
                 "仅当用户明确要求某 Skill 时，可用 skill:<精确名称> 表达必需 Skill，当前 Pi 目录须由 Host 核验，不得猜测名称或授权；"
                 "writeTargets 为授权工作区内的实际绝对文件路径，不修改文件时为空。contextRefs 只选本任务确需的已有资料引用。"
-                "按责任从workspaceParticipants指定ownerParticipantId。普通任务的独立verify由Jev按实际执行绑定选择非执行者，"
+                "按责任从workspaceParticipants指定ownerParticipantId。优先把能独立产出的责任分给不同伙伴并行执行，先约定接口与各自writeTargets，最后安排必要整合。"
+                "dependsOn只表达真实的数据或成果前置依赖，不要因为叙述先后或方便管理就把所有任务串行。无法拆分时如实保持单一责任，不虚构并行。"
+                "是否增加复核由Jev根据用户要求和当前证据判断；需要独立verify时按实际执行绑定选择非执行者，"
                 "plan_submit没有指定verify伙伴的字段；不得自行在objective或acceptanceCriteria中追加某个具名伙伴必须核验的条件。"
                 "如果用户明确要求具名独立检查，须把该检查作为单独交付任务，ownerParticipantId分配给未承担对应实现责任的指定伙伴，"
                 "用dependsOn表达交付顺序；不能仅在其他任务正文中承诺Jev会让指定伙伴执行自动verify。"
@@ -451,7 +494,7 @@ class JevLifecycle:
                 "若工具记录带receiptSemantics，按其指定schema理解owner字段；这只是语义说明，"
                 "权限/执行模式flags不是文件差异或网络调用证据，也不保证无副作用，仍按真实命令与成果独立判断。"
                 "需要完整投影时，用现有read工具读取readRef：path=该media://引用、offset=1、limit=2000；"
-                "按返回的行游标继续读取，直到没有下一页。offset/limit是行号，不是字节偏移；"
+                "按返回的nextLineOffset继续读取，直到没有下一页。长JSON行会无损分段，游标指向稳定分段；offset/limit不是字节偏移；"
                 "引用该readRef及具体eventId。worker私有tool-result://句柄不保证你能读取；"
                 "对原任务要求的工具效果，unavailable、partial或截断不得当作完整证明，你自己的复算也不能替代要求的worker执行证据。"
                 "partial只限制未覆盖的部分，不否定归档中已精确匹配的具体回执。"
@@ -459,6 +502,8 @@ class JevLifecycle:
                 "只按原任务验收标准判断，不增加新的交付条件或限定未要求的验证方法；不重写业务成果。"
                 "明确缺证据或具体返修原因；不可验证时如实返回 unverified。"
                 "artifactRevisions 固定本次工作区文件的实际内容版本；unavailable 时不得声称该文件已通过核验。"
+                "若包含 resolvedRef 和 relocationReceiptId，WorkDocument owner 已将同一任务的报告登记并迁至规范路径；"
+                "sourceRef 保留原提交名称，实际读取 resolvedRef 并核对版本，不要求重建登记前的旧副本。"
             )
         else:
             data["results"] = [
@@ -470,7 +515,7 @@ class JevLifecycle:
                 for t in snapshot.active_tasks if t.id != snapshot.root_work_id and t.state != "done"
             ]
             instructions = (
-                "综合已验收成果和所有未解决项，向用户交付一份完整回答；不要新做未授权工作。"
+                "任务结束后自动输出成果报告正文：结果概述、成果如何打开或使用、实际验证依据、限制与未完成项。宿主会追加真实任务的交付物与验收记录；不要新做未授权工作。"
                 "调用 room_partner op=final_submit，proposal={content:最终回答,evidenceRefs:[真实引用]}。不把 failed/unverified 说成成功。"
                 "unresolvedTasks是宿主记录的未解决原因；逐项说明，不把证据不足说成已观察到的产品缺陷。"
             )
@@ -568,7 +613,7 @@ class JevLifecycle:
     def validate_verdict(self, proposal):
         validate_submission("verification_submit", proposal)
 
-    def validate_plan(self, conn, snapshot, proposal):
+    def validate_plan(self, conn, snapshot, proposal, *, check_eligibility=True):
         policy = self.policy(snapshot.graph_id, conn)
         if (
             set(proposal) != {"requirementsRevision", "topologyRevision", "tasks"}
@@ -635,7 +680,7 @@ class JevLifecycle:
             ):
                 raise GraphError("unknown/self dependency")
         # Validate actual capabilities/write scope before persisting any task.
-        for item in prepared:
+        for item in prepared if check_eligibility else ():
             required_tools, _required_skills = split_required_capabilities(item)
             # A valid required Skill may be installed or enabled later. Keep
             # the task queued while real current availability is checked by
@@ -660,11 +705,12 @@ class JevLifecycle:
                 remaining.pop(key)
         return prepared
 
-    def apply_plan(self, conn, snapshot, request, proposal):
-        prepared = self.validate_plan(conn, snapshot, proposal)
+    def apply_plan(self, conn, snapshot, request, proposal, *, owner_candidates=None):
+        prepared = self.validate_plan(conn, snapshot, proposal, check_eligibility=owner_candidates is None)
         aliases = {}
         for item in prepared:
-            targets = self.app.eligible_participants(snapshot, item, include_busy=True)
+            targets = (owner_candidates[item['key']] if owner_candidates is not None
+                       else self.app.eligible_participants(snapshot, item, include_busy=True))
             owner = item.get("ownerParticipantId") or targets[0]["id"]
             child = self.service.room_work.create(
                 room_id=snapshot.room_id,
@@ -757,6 +803,11 @@ class JevLifecycle:
         if row is None:
             raise GraphConflict("current file result has no bound artifact verification")
         request = json.loads(row["request_json"])
+        proof = json.loads(row["result_json"])
+        if proof.get("source") == "jev_existing_evidence":
+            if not existing_evidence_is_current(self, snapshot, task, request, proof):
+                raise GraphConflict("Jev decision evidence changed; inspect the current result")
+            return
         if (request.get("subjectHash") != self.subject(snapshot, task, "verify",
                                                        artifact_revisions=request.get("artifactRevisions"))
             or not self.artifacts_match(snapshot, task, request,
@@ -780,7 +831,10 @@ class JevLifecycle:
             if digest(asdict(task)) != row["task_hash"]:
                 continue
             request = json.loads(row["request_json"])
-            if (request.get("subjectHash") != self.subject(snapshot, task, "verify",
+            if p.get("source") == "jev_existing_evidence":
+                if not existing_evidence_is_current(self, snapshot, task, request, p):
+                    continue
+            elif (request.get("subjectHash") != self.subject(snapshot, task, "verify",
                                                            artifact_revisions=request.get("artifactRevisions"))
                 or not self.artifacts_match(snapshot, task, request, proposal=p)):
                 continue
@@ -842,10 +896,11 @@ class JevLifecycle:
                     {},
                 ),
             ]
-            action, _ = self.app.driver.controller.decider.choose_action(
+            action, _ = self.app.choose_action(
+                event.graph_id,
                 {"context": {"objective": root.objective, "acceptance": root.acceptance,
                              "attachmentCount": len(attachment_ids)}},
-                actions, min_probability=0.0, min_margin=0.0,
+                actions,
             )
             abstained = action is None
             if action is None:
@@ -892,6 +947,9 @@ class JevLifecycle:
                     and facts[task.id].effects_reconciled
                     and not self.app.revisions.is_target_for(snapshot.graph_id, task.id)
                 ):
+                    routed = accept_existing_evidence(self, snapshot, task, facts[task.id], policy)
+                    if routed is not None:
+                        return routed
                     purpose, subject = "verify", task
                     break
             children = [t for t in snapshot.active_tasks if t.id != root.id]
@@ -1229,6 +1287,17 @@ class JevLifecycle:
             (snapshot.graph_id,),
         ).fetchone():
             raise GraphConflict("Root still has live or uncertain execution claims")
+        reviews = {task.id: dict(conn.execute(
+            "SELECT review_operability_verdict AS operabilityVerdict, "
+            "review_requirement_verdict AS requirementVerdict, review_reason AS reason "
+            "FROM agent_room_work_items WHERE id=?", (task.id,)).fetchone())
+            for task in snapshot.active_tasks}
+        delivery_revisions = {}
+        if any(task.artifacts for task in snapshot.active_tasks):
+            delivery_revisions = {task.id: self.app.materials.artifact_revisions(snapshot, task, snapshot.session_id)
+                                  for task in snapshot.active_tasks}
+        content = completion_report(content, snapshot.active_tasks, reviews, success=success,
+                                    artifact_revisions=delivery_revisions)
         value = {
             "finalizationId": "jev-final:" + snapshot.graph_id,
             "content": text(content, "final content", 16000),
@@ -1240,7 +1309,10 @@ class JevLifecycle:
             conn,
             work_id=snapshot.root_work_id,
             actor_participant_id=snapshot.participant_id,
-            summary=content,
+            # WorkItem.resultSummary is a 4,000-character preview. The full
+            # report remains in final_json and is published as the final reply.
+            summary=(content if len(content) <= 4000 else
+                     content[:3960] + "\n（完整成果报告见本轮最终答复。）"),
             success=success,
             evidence_refs=list(evidence),
             current_child_work_ids=[task.id for task in snapshot.active_tasks

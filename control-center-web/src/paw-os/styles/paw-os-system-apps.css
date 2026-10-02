@@ -1,0 +1,1346 @@
+/*
+ * PAWOS system Apps — shared window and control palette.
+ *
+ * The supplied archive defines composition, hierarchy, and state grammar only.
+ * Every datum and action rendered below still comes from the existing PAWOS
+ * feature owners, transports, native bridges, and guarded mutation workflows.
+ *
+ * Shape contract (Files App pattern): `.paw-system-app` is a *size container*
+ * that fills its window, `__frame` puts the rail beside the stage, and the
+ * stage is exactly two bands — a thin chrome strip that never scrolls and one
+ * workspace that absorbs every pixel a resize adds or removes. Nothing inside
+ * measures the viewport, so the App reflows from its own box whether it is
+ * maximized, half-snapped, or projected into a satellite frame. The rail
+ * collapses to icons from the App's own width rather than the window's, and
+ * the approvals route additionally locks its decision desk to the window
+ * height so the human queue is always inside the first viewport.
+ *
+ * One control language, one accent: Input Studio, App Center, System Monitor,
+ * and System Settings are four routes into the same PAWOS instrument, not
+ * four branded products. Every one of them shares the desktop's cool slate
+ * family (#f2f5f9 field, #0f172a ink), the shared cobalt accent from
+ * paw-os-controls.css (#1e57e7 / #2f6bff — the exact --paw-button-primary-bg
+ * / --paw-menu-selected-bg pair, not a fourth invented hue), and the control
+ * scale below. Identity is carried by *pace* instead: `data-stage` sets the
+ * gutter, section rhythm, reading measure, and empty-state weight each purpose
+ * deserves. A maximized Settings or Monitor window must still read as the same
+ * material as Input Studio, not a competing brand colour.
+ */
+
+.paw-desktop-root .paw-system-app {
+  /* Shared cobalt accent — identical across all four system Apps. Do not
+     reintroduce a per-App override here: that was the #5e5ce6 purple / teal /
+     blue-grey drift this stylesheet now guards against (see
+     PawSystemApps.test.tsx and paw-os-controls.test.ts). */
+  --paw-system-accent: #1e57e7;
+  --paw-system-accent-soft: rgb(30 87 231 / 10%);
+  --paw-system-stage: #f2f5f9;
+  --paw-system-surface: #fff;
+  --paw-system-fill: rgb(15 23 42 / 4.5%);
+  --paw-system-line: rgb(15 23 42 / 8.5%);
+  --paw-system-ink: #0f172a;
+  --paw-system-muted: #5f6c80;
+  /* One three-step radius scale, borrowed verbatim from paw-os-controls.css
+     instead of the 9/11/13/14px ad hoc values this file used to carry. */
+  --paw-system-radius-sm: var(--paw-control-radius, 8px);
+  --paw-system-radius-md: var(--paw-menu-radius, 10px);
+  --paw-system-radius-lg: var(--paw-panel-radius, 12px);
+  /* Stage pacing defaults; `data-stage` below tunes them per purpose. */
+  --paw-stage-chrome-h: 38px;
+  --paw-stage-gutter: 20px;
+  --paw-stage-rhythm: 13px;
+  --paw-stage-lead: 14px;
+  --paw-stage-measure: 100%;
+  --paw-stage-actions: 168px;
+
+  /* Bridge the shared cobalt into the generic --color-accent-* tokens that
+     the mounted feature content (input-method, plugins, observability,
+     diagnostics, context-debug, configuration…) already reads. Without this
+     bridge those routes fall back to the standalone-page design token
+     (an unrelated teal) and visibly clash with the cobalt rail right next to
+     them — the exact "per-App inventiveness" this migration removes. */
+  --color-accent: var(--paw-system-accent);
+  --color-accent-hover: color-mix(in srgb, var(--paw-system-accent) 86%, black);
+  --color-accent-pressed: color-mix(in srgb, var(--paw-system-accent) 76%, black);
+  --color-accent-strong: color-mix(in srgb, var(--paw-system-accent) 86%, black);
+  --color-accent-soft: color-mix(in srgb, var(--paw-system-accent) 12%, var(--paw-system-surface));
+  --color-accent-subtle: color-mix(in srgb, var(--paw-system-accent) 6%, var(--paw-system-surface));
+  --color-accent-border: color-mix(in srgb, var(--paw-system-accent) 40%, var(--color-border));
+  --color-accent-text: #fff;
+  /* Bridge the complete neutral palette; the dark theme overrides these
+     shared surface owners so nested controls retain coherent contrast. */
+  --color-canvas: var(--paw-system-stage);
+  --color-surface: var(--paw-system-surface);
+  --color-surface-raised: var(--paw-system-surface);
+  --color-surface-subtle: #f2f5f9;
+  --color-surface-hover: #edf2f8;
+  --color-surface-pressed: #e4ebf4;
+  --color-paper: var(--paw-system-surface);
+  --color-chrome: var(--paw-system-stage);
+  --color-border: #dce2ea;
+  --color-border-soft: #e7ebf1;
+  --color-border-strong: #a6b1c2;
+  --color-text: var(--paw-system-ink);
+  --color-text-primary: var(--paw-system-ink);
+  --color-text-secondary: #49566b;
+  --color-text-tertiary: var(--paw-system-muted);
+  --color-focus: var(--paw-system-accent);
+  color-scheme: light;
+  /* The App answers to its own box. `size` (not `inline-size`) so a short
+     window can trade chrome for workspace the same way a narrow one trades
+     rail labels for icons. Every reflow rule below queries this container,
+     never the viewport and never a media query. */
+  container: paw-sysapp / size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paw-system-stage);
+  color: var(--paw-system-ink);
+}
+
+/* Purpose, not palette. Four pacings of one material. */
+
+/* Studio: forms and live status. Wide, calm rows; the operator reads down. */
+.paw-desktop-root .paw-system-app[data-stage='studio'] {
+  --paw-stage-gutter: 20px;
+  --paw-stage-rhythm: 12px;
+  --paw-stage-lead: 13px;
+  --paw-stage-measure: 1180px;
+}
+
+/* Gallery: a catalogue is scanned across, so nothing caps its width and the
+   cards get the larger of the four rhythms. */
+.paw-desktop-root .paw-system-app[data-stage='gallery'] {
+  --paw-stage-gutter: 18px;
+  --paw-stage-rhythm: 14px;
+  --paw-stage-lead: 12px;
+}
+
+/* Instrument: monitoring density. Tighter lead, tabular figures, sections
+   packed close enough to compare two readings without scrolling. */
+.paw-desktop-root .paw-system-app[data-stage='instrument'] {
+  --paw-stage-gutter: 20px;
+  --paw-stage-rhythm: 11px;
+  --paw-stage-lead: 11px;
+}
+
+/* Sheet: a preference sheet, not a dashboard. One centred column with the
+   widest gutters, so a maximized Settings window does not stretch a checkbox
+   row across 1600px. */
+.paw-desktop-root .paw-system-app[data-stage='sheet'] {
+  --paw-stage-gutter: 24px;
+  --paw-stage-rhythm: 16px;
+  --paw-stage-lead: 16px;
+  --paw-stage-measure: 940px;
+}
+
+/* The approvals desk is a queue, not a document: it takes the whole stage. */
+.paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] {
+  --paw-stage-measure: 100%;
+}
+
+.paw-desktop-root .paw-system-app ::selection {
+  background: color-mix(in srgb, var(--paw-system-accent) 24%, transparent);
+  color: var(--paw-system-ink);
+}
+
+.paw-desktop-root .paw-system-app :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--paw-system-accent) 72%, white);
+  outline-offset: 2px;
+}
+
+/* Frame: rail beside stage ------------------------------------------------- */
+
+/* The rail width lives here rather than on the App, because a container can
+   never restyle itself — the narrow rule below has to reach a child. */
+.paw-desktop-root .paw-system-app__frame {
+  --paw-system-rail-w: 176px;
+  display: grid;
+  grid-template-columns: var(--paw-system-rail-w) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: grid-template-columns 220ms cubic-bezier(.2, .8, .3, 1);
+}
+
+.paw-desktop-root .paw-system-app__nav {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: rgb(251 253 255 / 96%);
+  border-right: 1px solid var(--paw-system-line);
+}
+
+.paw-desktop-root .paw-system-app__frame[data-sidebar-collapsed='true'] { --paw-system-rail-w: 48px; }
+
+.paw-desktop-root .paw-system-app__nav nav {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgb(15 23 42 / 20%) transparent;
+  scrollbar-width: thin;
+}
+
+/* Group labels carve the Settings rail into 通用 / Agent / 安全与信任 and
+   the Monitor rail into 实时 / 排查, so the eleven-page system area reads
+   as a table of contents instead of a flat list. */
+.paw-desktop-root .paw-system-app__nav nav .paw-system-app__nav-group {
+  margin: 10px 9px 2px;
+  color: var(--paw-system-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  user-select: none;
+}
+
+.paw-desktop-root .paw-system-app__nav nav .paw-system-app__nav-group:first-child {
+  margin-top: 2px;
+}
+
+.paw-desktop-root .paw-system-app__nav nav button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--paw-control-h, 32px);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--paw-system-radius-sm);
+  background: transparent;
+  color: var(--paw-system-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease-out, color 140ms ease-out;
+}
+
+.paw-desktop-root .paw-system-app__nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Each rail carries one honest number; everything else stays quiet. The
+   accent pill queues human decisions (approvals, install proposals); amber
+   relays self-reported health that deserves a check, not a verdict. A new
+   count settles in rather than popping — the element is keyed on its value,
+   so the motion only runs when the number actually changed. */
+.paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--paw-system-accent);
+  color: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  animation: paw-system-badge-settle 260ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+@keyframes paw-system-badge-settle {
+  from { opacity: 0; transform: scale(.72); }
+  60% { transform: scale(1.06); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge[data-tone='attention'] {
+  background: #b45309;
+}
+
+.paw-desktop-root .paw-system-app__nav nav button:hover {
+  background: var(--paw-system-fill);
+  color: var(--paw-system-ink);
+}
+
+.paw-desktop-root .paw-system-app__nav nav button[aria-current='page'] {
+  background: var(--paw-system-accent-soft);
+  color: var(--paw-system-ink);
+  font-weight: 650;
+}
+
+.paw-desktop-root .paw-system-app__nav nav button[aria-current='page'] > svg:first-child {
+  color: var(--paw-system-accent);
+}
+
+/* Stage: one chrome band, one workspace ------------------------------------ */
+
+.paw-desktop-root .paw-system-app__stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--paw-stage-chrome-h) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Fixed band. It never scrolls, never grows with content, and carries the
+   only page-level naming in the App — the window titlebar above it already
+   owns App identity and the traffic lights, so nothing here can collide with
+   them. */
+.paw-desktop-root .paw-system-app__chrome {
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 12px 0 var(--paw-stage-gutter);
+  background: #f5f8fb;
+  border-bottom: 1px solid var(--paw-system-line);
+  animation: paw-system-chrome-in 220ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+/* Only reserve room for a page toolbar when the page actually renders one. */
+.paw-desktop-root .paw-system-app__stage:has(.mgmt-page__native-actions) .paw-system-app__chrome {
+  padding-inline-end: var(--paw-stage-actions);
+}
+
+@keyframes paw-system-chrome-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.paw-desktop-root .paw-system-app__page-title {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--paw-system-ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Purpose sits beside the name instead of above the content, so entering a
+   page still lands on its form or decision desk rather than a hero header.
+   It is the first thing a narrowing window gives up. */
+.paw-desktop-root .paw-system-app__page-purpose {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--paw-system-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.paw-desktop-root .paw-system-app__page-purpose::before {
+  margin-right: 9px;
+  color: color-mix(in srgb, var(--paw-system-muted) 46%, transparent);
+  content: '│';
+}
+
+.paw-desktop-root .paw-system-app__workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Opacity only. A transform here would make the workspace a containing block
+   and tear the page toolbar out of the chrome band for the length of the
+   animation. */
+.paw-desktop-root .paw-system-app__page {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  animation: paw-system-page-in 200ms ease-out both;
+}
+
+@keyframes paw-system-page-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Shared operational canvas ------------------------------------------------ */
+
+/* One scroller per page, and it is the only band that absorbs resize. Both
+   axes stay reachable: a wide diagnostics table has to be scrollable inside
+   the workspace rather than clipped by it, and the window body's own
+   containment keeps that overflow from ever reaching the document. */
+.paw-desktop-root .paw-system-app .mgmt-page,
+.paw-desktop-root .paw-system-app .context-debug-feature {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--paw-system-stage);
+  color: var(--paw-system-ink);
+  scrollbar-color: rgb(15 23 42 / 22%) transparent;
+  scrollbar-width: thin;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-page > * {
+  width: 100%;
+  max-width: none;
+}
+
+/* A page's own actions belong in the App's chrome band, not in a second
+   sticky strip below it. The band is a row of the positioned stage, so the
+   toolbar lifts out of the scroller without being clipped by it and without
+   reserving any height inside the workspace. */
+.paw-desktop-root .paw-system-app .mgmt-page[data-paw-os-app] > .mgmt-page__native-actions {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 0;
+  height: var(--paw-stage-chrome-h);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.paw-desktop-root .paw-system-app .context-debug-header {
+  background: #f8fafc;
+  border-bottom: 1px solid var(--paw-system-line);
+}
+
+/* Selector reaches past management.css's own `:not(:has(native-actions))`
+   padding rule, so one band owns the workspace lead in every case. */
+.paw-desktop-root .paw-system-app .mgmt-page[data-paw-os-app] > .mgmt-page__body,
+.paw-desktop-root .paw-system-app .mgmt-page__body {
+  display: grid;
+  gap: var(--paw-stage-rhythm);
+  width: 100%;
+  max-width: var(--paw-stage-measure);
+  margin-inline: auto;
+  padding: var(--paw-stage-lead) var(--paw-stage-gutter) calc(var(--paw-stage-gutter) + 10px);
+}
+
+.paw-desktop-root .paw-system-app .mgmt-section {
+  min-width: 0;
+  margin: 0;
+  padding: 13px 16px;
+  overflow: hidden;
+  background: var(--paw-system-surface);
+  border: 1px solid var(--paw-system-line);
+  border-radius: var(--paw-system-radius-lg);
+  animation: paw-system-arrive 300ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-section + .mgmt-section {
+  border-top-color: var(--paw-system-line);
+}
+
+.paw-desktop-root .paw-system-app .mgmt-page__body > :nth-child(2) { animation-delay: 35ms; }
+.paw-desktop-root .paw-system-app .mgmt-page__body > :nth-child(3) { animation-delay: 70ms; }
+.paw-desktop-root .paw-system-app .mgmt-page__body > :nth-child(4) { animation-delay: 105ms; }
+
+/* Sections arrive with a short settle only — no blur, nothing that could
+   read as page-load flicker on a desktop surface. */
+@keyframes paw-system-arrive {
+  from { opacity: .74; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+.paw-desktop-root .paw-system-app .mgmt-section__header {
+  align-items: start;
+  margin: 0 0 10px;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-section__header h2 {
+  margin: 0 0 2px;
+  color: var(--paw-system-ink);
+  font-family: var(--font-sans, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif);
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: -.01em;
+  line-height: 1.25;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-section__header h2::before { display: none; }
+
+.paw-desktop-root .paw-system-app :is(.mgmt-section__header p, .mgmt-muted, small, dt) {
+  color: var(--paw-system-muted);
+}
+
+.paw-desktop-root .paw-system-app .mgmt-section__header p {
+  margin-top: 2px;
+  max-width: 72ch;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.paw-desktop-root .paw-system-app :is(button, .ui-button, select, input, .ui-input, .ui-select__trigger) {
+  font-family: inherit;
+}
+
+/* Native <select> now inherits the shared control language
+   (paw-os-controls.css); only the ui-* primitives keep the compact height —
+   the same --paw-control-h-sm every other PAWOS surface uses, not an
+   invented 30px. */
+.paw-desktop-root .paw-system-app :is(.ui-button, .ui-input, .ui-select__trigger) {
+  min-height: var(--paw-control-h-sm, 28px);
+  border-radius: var(--paw-system-radius-sm);
+}
+
+.paw-desktop-root .paw-system-app :is(.ui-button, button):active:not(:disabled) {
+  transform: scale(.975);
+}
+
+.paw-desktop-root .paw-system-app .ui-button[data-tone='primary'],
+.paw-desktop-root .paw-system-app .ui-button[aria-variant='primary'] {
+  background: var(--paw-system-accent);
+  color: #fff;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-status {
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-status[data-tone='info'] {
+  background: var(--paw-system-accent-soft);
+  color: var(--paw-system-accent);
+}
+
+.paw-desktop-root .paw-system-app .mgmt-status[data-tone='success'] i,
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .mgmt-status[data-tone='warning'] i {
+  animation: paw-system-status-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes paw-system-status-pulse {
+  50% { opacity: .36; transform: scale(.78); }
+}
+
+.paw-desktop-root .paw-system-app .mgmt-notice {
+  border-radius: var(--paw-system-radius-lg);
+  box-shadow: none;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-metric {
+  min-width: 0;
+  padding: 12px 13px;
+  background: var(--paw-system-fill);
+  border: 0;
+  border-radius: var(--paw-system-radius-md);
+}
+
+.paw-desktop-root .paw-system-app .mgmt-metric dt {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 610;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-metric > dd:not(.mgmt-metric__detail) {
+  margin-top: 4px;
+  color: var(--paw-system-ink);
+  font-size: 22px;
+  font-weight: 735;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.025em;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-metric__detail {
+  margin-top: 3px;
+  font-size: 13px;
+}
+
+.paw-desktop-root .paw-system-app .mgmt-loading,
+.paw-desktop-root .paw-system-app .ui-empty-state {
+  min-height: 180px;
+  border-radius: var(--paw-system-radius-lg);
+}
+
+/* Empty is a different sentence in each App: a catalogue with nothing in it
+   still has to look like a place you can browse, while an instrument reading
+   "nothing to report" should sit quietly at the top of the band. */
+.paw-desktop-root .paw-system-app[data-stage='gallery'] .ui-empty-state { min-height: 260px; }
+.paw-desktop-root .paw-system-app[data-stage='instrument'] .ui-empty-state { min-height: 148px; }
+.paw-desktop-root .paw-system-app[data-stage='sheet'] .ui-empty-state { min-height: 168px; }
+
+.paw-desktop-root .paw-system-resource-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  background: var(--paw-system-fill);
+  border-radius: var(--paw-system-radius-sm);
+  color: var(--paw-system-muted);
+  font-size: 14px;
+}
+
+.paw-desktop-root .paw-system-resource-state[data-state='error'] { color: #b42332; }
+.paw-desktop-root .paw-system-resource-state svg { flex: none; }
+.paw-desktop-root .paw-system-resource-state[data-state='loading'] svg { animation: paw-system-spin 850ms linear infinite; }
+.paw-desktop-root .paw-system-resource-state button { margin-left: auto; }
+
+@keyframes paw-system-spin { to { transform: rotate(360deg); } }
+
+/* Input Studio ------------------------------------------------------------- */
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] :is(.input-status-grid, .mgmt-grid-2, .input-settings-grid) {
+  gap: 11px;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] .input-status-item {
+  background: var(--paw-system-fill);
+  border: 0;
+  border-radius: var(--paw-system-radius-md);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] .input-status-item__icon,
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] .voice-native-action-group > span:first-child {
+  color: var(--paw-system-accent);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] :is(.input-mode-choice, .voice-service-choice, .input-settings-save) {
+  background: color-mix(in srgb, var(--paw-system-accent) 5%, white);
+  border-color: color-mix(in srgb, var(--paw-system-accent) 16%, transparent);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] :is(.history-table-wrap, .voice-connection-details, .voice-recognition-details, .voice-refinement-status) {
+  border-color: var(--paw-system-line);
+  border-radius: var(--paw-system-radius-md);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] .history-table th {
+  background: var(--paw-system-fill);
+  color: var(--paw-system-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: .055em;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='input-studio'] .history-table td {
+  border-bottom-color: var(--paw-system-line);
+  font-size: 14px;
+}
+
+/* App Center --------------------------------------------------------------- */
+
+.paw-desktop-root .paw-system-catalog-tools {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.paw-desktop-root .paw-system-catalog-tools > label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: min(420px, 100%);
+  padding-left: 9px;
+  background: #fff;
+  border: 1px solid var(--paw-system-line);
+  border-radius: var(--paw-system-radius-sm);
+  color: var(--paw-system-muted);
+}
+
+.paw-desktop-root .paw-system-catalog-tools > label:first-child .ui-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Decision tracks: honest counts over one Runtime list. The active track
+   borrows the App accent so narrowing never looks like a different dataset. */
+.paw-desktop-root .paw-system-catalog-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.paw-desktop-root .paw-system-catalog-tracks button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 6px 0 11px;
+  border: 1px solid var(--paw-system-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--paw-system-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 130ms ease-out, border-color 130ms ease-out, color 130ms ease-out;
+}
+
+.paw-desktop-root .paw-system-catalog-tracks button:hover {
+  border-color: color-mix(in srgb, var(--paw-system-accent) 30%, var(--paw-system-line));
+  color: var(--paw-system-ink);
+}
+
+.paw-desktop-root .paw-system-catalog-tracks button[data-active] {
+  border-color: color-mix(in srgb, var(--paw-system-accent) 45%, var(--paw-system-line));
+  background: var(--paw-system-accent-soft);
+  color: var(--paw-system-ink);
+  font-weight: 620;
+}
+
+.paw-desktop-root .paw-system-catalog-tracks button > span {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--paw-system-fill);
+  color: var(--paw-system-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 640;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.paw-desktop-root .paw-system-catalog-tracks button[data-active] > span {
+  background: color-mix(in srgb, var(--paw-system-accent) 16%, #fff);
+  color: var(--paw-system-accent);
+}
+
+/* The catalogue is the one grid that keeps filling the stage as the window
+   grows, because scanning many Packages at once is the point of the App. */
+.paw-desktop-root .paw-system-package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 12px;
+}
+
+.paw-desktop-root .paw-system-package {
+  display: grid;
+  grid-template-rows: auto minmax(44px, auto) 1fr auto;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 15px;
+  background: #fff;
+  border: 1px solid var(--paw-system-line);
+  border-radius: var(--paw-system-radius-lg);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
+}
+
+.paw-desktop-root .paw-system-package:hover {
+  border-color: color-mix(in srgb, var(--paw-system-accent) 24%, var(--paw-system-line));
+  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
+  transform: translateY(-1px);
+}
+
+.paw-desktop-root .paw-system-package > header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.paw-desktop-root .paw-system-package > header > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--paw-system-radius-sm);
+  background: var(--paw-system-accent);
+  color: #fff;
+}
+
+.paw-desktop-root .paw-system-package > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.paw-desktop-root .paw-system-package > header strong,
+.paw-desktop-root .paw-system-package > header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paw-desktop-root .paw-system-package > header strong { font-size: 14.5px; }
+.paw-desktop-root .paw-system-package > header small { font-size: 13px; }
+
+.paw-desktop-root .paw-system-package > p {
+  margin: 0;
+  color: var(--paw-system-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.paw-desktop-root .paw-system-package dl {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  margin: 0;
+}
+
+.paw-desktop-root .paw-system-package dl > div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 7px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.paw-desktop-root .paw-system-package dt {
+  display: flex;
+  align-items: start;
+  gap: 4px;
+}
+
+.paw-desktop-root .paw-system-package dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--paw-system-ink);
+}
+
+.paw-desktop-root .paw-system-package > footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--paw-system-line);
+  color: var(--paw-system-muted);
+  font-size: 13px;
+}
+
+.paw-desktop-root .paw-system-package > footer .ui-button { margin-left: auto; }
+
+.paw-desktop-root .paw-system-package-approval {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.paw-desktop-root .paw-system-package-approval > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.paw-desktop-root .paw-system-package-approval > span small { font-size: 13px; }
+.paw-desktop-root .paw-system-package-approval > div { display: flex; gap: 7px; margin-left: auto; }
+
+.paw-desktop-root .paw-system-app[data-system-app='app-center'] :is(.plugin-catalog__row, .installed-plugin, .plugin-proposal) {
+  border-color: var(--paw-system-line);
+  border-radius: var(--paw-system-radius-md);
+  box-shadow: none;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='app-center'] .plugin-lifecycle__installed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 11px;
+}
+
+/* System Monitor ----------------------------------------------------------- */
+
+/* Readings are compared, so every figure in the instrument is tabular. */
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] :is(.mgmt-metric, .mgmt-list, table, time, code) {
+  font-variant-numeric: tabular-nums;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .mgmt-metric {
+  background: #fff;
+  border: 1px solid var(--paw-system-line);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .mgmt-metric dt svg {
+  color: var(--paw-system-accent);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .observation-controls {
+  padding: 9px 11px;
+  background: var(--paw-system-surface);
+  border: 1px solid var(--paw-system-line);
+  border-radius: var(--paw-system-radius-md);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .observation-workspace {
+  gap: 13px;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] :is(.observation-timeline, .observation-trace) li button {
+  transition: background-color 130ms ease-out, color 130ms ease-out;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] :is(.observation-timeline, .observation-trace) li[data-active='true'] button {
+  background: color-mix(in srgb, var(--paw-system-accent) 12%, var(--paw-system-surface));
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .context-debug-session-viewer {
+  background: #fff;
+  border-color: var(--paw-system-line);
+  border-radius: var(--paw-system-radius-lg);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .context-debug-session-tree {
+  background: #f8f9fa;
+  border-right-color: var(--paw-system-line);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] :is(.context-debug-reader__code, pre) {
+  font-variant-numeric: tabular-nums;
+  scrollbar-color: rgb(255 255 255 / 24%) transparent;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .diagnostics-action-list {
+  display: grid;
+  gap: 10px;
+}
+
+/* System Settings ---------------------------------------------------------- */
+
+/* Agent defaults: one calm row for model + thinking, then four permission
+   positions as cards. The radio input stretches across its card so the whole
+   surface is the control; checked state borrows the app accent. */
+.paw-desktop-root .paw-agent-model {
+  display: grid;
+  grid-template-columns: minmax(240px, .52fr) minmax(0, .48fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.paw-desktop-root .paw-agent-model__field,
+.paw-desktop-root .paw-agent-model__thinking {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  min-width: 0;
+}
+
+.paw-desktop-root :is(.paw-agent-model__field, .paw-agent-model__thinking) > span {
+  color: var(--paw-system-ink);
+  font-size: 14px;
+  font-weight: 620;
+}
+
+/* Field skin comes from the shared control language; this rule keeps only the
+   grid-local sizing. A background shorthand here would erase the shared
+   chevron, so never reintroduce one. */
+.paw-desktop-root .paw-agent-model__field select {
+  width: 100%;
+  font-size: 14px;
+}
+
+/* Choosing a default model is the same gesture as choosing one mid-Session.
+   This lazy native-App entry does not load the full Agent feature stylesheet,
+   so the Settings owner carries the small option-row contract it actually
+   renders instead of paying for the whole conversation CSS chunk. */
+.paw-desktop-root .paw-agent-model__choices {
+  min-height: 0;
+  max-height: 268px;
+  padding: 6px 6px 8px;
+  overflow-y: auto;
+  border: 1px solid var(--paw-control-line);
+  border-radius: var(--paw-panel-radius);
+  background: var(--paw-control-bg);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.paw-desktop-root .paw-agent-model__choices:focus-within {
+  border-color: var(--paw-focus-line);
+  box-shadow: 0 0 0 3px var(--paw-focus-halo);
+}
+
+.paw-desktop-root .paw-agent-model__choices .agent-model-picker__group + .agent-model-picker__group { margin-top: 6px; }
+.paw-desktop-root .paw-agent-model__choices .agent-model-picker__group-name {
+  position: sticky;
+  z-index: 1;
+  top: -6px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px 4px;
+  background: linear-gradient(var(--paw-control-bg) 76%, transparent);
+  color: var(--paw-system-muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .02em;
+}
+.paw-desktop-root .paw-agent-model__choices .agent-model-picker__group-name small {
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+}
+.paw-desktop-root .paw-agent-model__choices [role='option'] {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--paw-system-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.paw-desktop-root .paw-agent-model__choices [role='option']:hover { background: var(--paw-system-fill); }
+.paw-desktop-root .paw-agent-model__choices [role='option']:focus-visible {
+  outline: 2px solid var(--paw-focus-line);
+  outline-offset: 1px;
+}
+.paw-desktop-root .paw-agent-model__choices [role='option'][aria-selected='true'] {
+  background: linear-gradient(90deg, var(--paw-system-accent-soft), transparent 78%);
+  box-shadow: inset 2px 0 0 var(--paw-system-accent);
+  color: var(--paw-system-accent);
+}
+.paw-desktop-root .paw-agent-model__choices [role='option'] > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.paw-desktop-root .paw-agent-model__choices [role='option'] strong,
+.paw-desktop-root .paw-agent-model__choices [role='option'] small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paw-desktop-root .paw-agent-model__choices [role='option'] strong { font-size: 13px; font-weight: 650; }
+.paw-desktop-root .paw-agent-model__choices [role='option'] small { color: var(--paw-system-muted); font-size: 12px; }
+.paw-desktop-root .paw-agent-model__choices .agent-model-picker__check {
+  opacity: 0;
+  color: var(--paw-system-accent);
+}
+.paw-desktop-root .paw-agent-model__choices [role='option'][aria-selected='true'] .agent-model-picker__check { opacity: 1; }
+.paw-desktop-root .paw-agent-model__choices .agent-model-picker__empty {
+  margin: 0;
+  padding: 24px 12px;
+  color: var(--paw-system-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* 自动选择 has no provider, so it holds the mark column open with a quiet
+   placeholder rather than letting its label slide out of the shared grid. */
+.paw-desktop-root .agent-model-picker__auto-mark {
+  width: 17px;
+  height: 17px;
+  border: 1.5px dashed var(--paw-control-line-strong);
+  border-radius: 5px;
+}
+
+.paw-desktop-root :is(.paw-agent-model__field, .paw-agent-model__thinking) small {
+  color: var(--paw-system-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.paw-desktop-root .paw-agent-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.paw-desktop-root .paw-agent-mode {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid var(--paw-system-line);
+  border-radius: var(--paw-system-radius-lg);
+  background: var(--paw-system-surface);
+  cursor: pointer;
+  transition: border-color 140ms ease-out, background-color 140ms ease-out;
+}
+
+.paw-desktop-root .paw-agent-mode:hover {
+  border-color: color-mix(in srgb, var(--paw-system-accent) 30%, var(--paw-system-line));
+}
+
+.paw-desktop-root .paw-agent-mode:has(input:checked) {
+  border-color: color-mix(in srgb, var(--paw-system-accent) 52%, var(--paw-system-line));
+  background: var(--paw-system-accent-soft);
+}
+
+.paw-desktop-root .paw-agent-mode:has(input:disabled) {
+  cursor: default;
+  opacity: .72;
+}
+
+.paw-desktop-root .paw-agent-mode:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--paw-system-accent) 72%, white);
+  outline-offset: 2px;
+}
+
+.paw-desktop-root .paw-agent-mode input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.paw-desktop-root .paw-agent-mode__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--paw-system-radius-sm);
+  background: var(--paw-system-fill);
+  color: var(--paw-system-muted);
+}
+
+.paw-desktop-root .paw-agent-mode:has(input:checked) .paw-agent-mode__icon {
+  background: color-mix(in srgb, var(--paw-system-accent) 16%, #fff);
+  color: var(--paw-system-accent);
+}
+
+.paw-desktop-root .paw-agent-mode__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.paw-desktop-root .paw-agent-mode__copy strong {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 640;
+}
+
+.paw-desktop-root .paw-agent-mode__copy strong em {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paw-system-accent) 14%, #fff);
+  color: var(--paw-system-accent);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.paw-desktop-root .paw-agent-mode__copy small {
+  color: var(--paw-system-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-settings'] :is(.configuration-destinations, .configuration-editor, .governance-columns) {
+  border-color: var(--paw-system-line);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-settings'] :is(.approvals-queue__list > li > button, .approvals-decision__card) {
+  border-color: var(--paw-system-line);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-settings'] .approvals-queue__list > li[data-active] > button {
+  border-color: color-mix(in srgb, var(--paw-system-accent) 42%, var(--paw-system-line));
+  background: var(--paw-system-accent-soft);
+}
+
+.paw-desktop-root .paw-system-app[data-system-app='system-settings'] .approvals-queue__list > li[data-active] :is(.approvals-queue__copy small, .approvals-queue__meta time) {
+  color: var(--paw-system-ink);
+}
+
+/* Approvals is a decision desk, not a report. While the window is wide enough
+   for the two-column desk (the feature collapses it below 900px, so this stays
+   keyed to the same paw-window width rather than the App's own), the route
+   locks to the window height: the pulse strip and queue filters stay put and
+   only the queue list and the decision pane scroll internally, so the human
+   queue never falls below the first viewport. */
+@container paw-window (min-width: 901px) {
+  .paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] .mgmt-page__body {
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] .approvals-desk {
+    min-height: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] .approvals-queue {
+    min-height: 0;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] .approvals-queue__list,
+  .paw-desktop-root .paw-system-app .mgmt-page[data-route-id='approvals'] .approvals-decision {
+    min-height: 0;
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-color: rgb(15 23 42 / 22%) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+/* Window reflow ------------------------------------------------------------ */
+
+/* Everything below answers `paw-sysapp` — the App's own box — so a System App
+   reflows identically whether it is a maximized window, a half-snapped one, or
+   a satellite projection. `paw-window` is only consulted where a feature owner
+   (approvals) already keys its own collapse to the window. */
+
+@container paw-sysapp (max-width: 880px) {
+  .paw-desktop-root .paw-system-app .mgmt-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Icon rail. The label is the only thing that goes; the accessible name, the
+   tooltip, and any live decision or health count all survive the collapse. */
+@container paw-sysapp (max-width: 560px) {
+  .paw-desktop-root .paw-system-app__frame { --paw-system-rail-w: 56px; }
+
+  .paw-desktop-root .paw-system-app__nav nav { padding-inline: 6px; }
+
+  .paw-desktop-root .paw-system-app__nav nav .paw-system-app__nav-group {
+    height: 9px;
+    margin: 4px 8px;
+    overflow: hidden;
+    border-top: 1px solid var(--paw-system-line);
+    color: transparent;
+  }
+
+  .paw-desktop-root .paw-system-app__nav nav button {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .paw-desktop-root .paw-system-app__nav-label { display: none; }
+
+  .paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    min-width: 17px;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  /* The band keeps the page name and gives up the purpose line first. */
+  .paw-desktop-root .paw-system-app__page-purpose { display: none; }
+  .paw-desktop-root .paw-system-app__stage:has(.mgmt-page__native-actions) .paw-system-app__chrome {
+    padding-inline-end: 104px;
+  }
+
+  /* Pacing tokens are re-declared on the frame, never on `.paw-system-app`:
+     a container query resolves against the container but may not restyle it. */
+  .paw-desktop-root .paw-system-app__frame { --paw-stage-gutter: 14px; --paw-stage-lead: 12px; }
+  .paw-desktop-root .paw-system-app .mgmt-section { padding: 14px; }
+  .paw-desktop-root .paw-system-package-grid { grid-template-columns: minmax(0, 1fr); }
+  .paw-desktop-root .paw-system-app[data-system-app='app-center'] .plugin-lifecycle__installed { grid-template-columns: minmax(0, 1fr); }
+  .paw-desktop-root .paw-system-catalog-tools { align-items: stretch; flex-direction: column; }
+  .paw-desktop-root .paw-system-catalog-tools > label:first-child { width: 100%; }
+  .paw-desktop-root .paw-system-package-approval { align-items: stretch; flex-direction: column; }
+  .paw-desktop-root .paw-system-package-approval > div { margin-left: 0; }
+}
+
+@container paw-sysapp (max-width: 420px) {
+  /* At phone-sized windows, labeled destinations above the page give the
+     working form its full width instead of reserving an opaque icon rail. */
+  .paw-desktop-root .paw-system-app__frame {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .paw-desktop-root .paw-system-app__nav {
+    flex-direction: row;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--paw-system-line);
+  }
+  .paw-desktop-root .paw-system-app__nav nav {
+    display: flex;
+    min-width: 0;
+    gap: 4px;
+    padding: 5px 8px;
+    overflow: auto hidden;
+  }
+  .paw-desktop-root .paw-system-app__nav nav .paw-system-app__nav-group { display: none; }
+  .paw-desktop-root .paw-system-app__nav nav button {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+  .paw-desktop-root .paw-system-app__nav-label { display: inline; }
+  .paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge {
+    position: static;
+  }
+  .paw-desktop-root .paw-system-app .mgmt-metrics { grid-template-columns: minmax(0, 1fr); }
+  .paw-desktop-root .paw-agent-model { grid-template-columns: minmax(0, 1fr); }
+  .paw-desktop-root .paw-agent-modes { grid-template-columns: minmax(0, 1fr); }
+  .paw-desktop-root .paw-system-package > header { grid-template-columns: 34px minmax(0, 1fr); }
+  .paw-desktop-root .paw-system-package > header .mgmt-status { grid-column: 2; justify-self: start; }
+}
+
+/* A short window spends its remaining height on the workspace, not on chrome:
+   the band tightens and the section rhythm closes up rather than pushing the
+   first control below the fold. */
+@container paw-sysapp (max-height: 420px) {
+  .paw-desktop-root .paw-system-app__frame {
+    --paw-stage-chrome-h: 32px;
+    --paw-stage-lead: 10px;
+    --paw-stage-rhythm: 10px;
+  }
+
+  .paw-desktop-root .paw-system-app .mgmt-section { padding-block: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paw-desktop-root .paw-system-app .mgmt-section { animation: none; }
+  .paw-desktop-root .paw-system-app__chrome,
+  .paw-desktop-root .paw-system-app__page,
+  .paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge { animation: none; }
+  .paw-desktop-root .paw-system-app .mgmt-status i,
+  .paw-desktop-root .paw-system-resource-state[data-state='loading'] svg { animation: none; }
+  .paw-desktop-root .paw-system-app__frame,
+  .paw-desktop-root .paw-system-app__nav nav button,
+  .paw-desktop-root .paw-system-package,
+  .paw-desktop-root .paw-system-catalog-tracks button,
+  .paw-desktop-root .paw-agent-mode,
+  .paw-desktop-root .paw-system-app :is(.ui-button, button) { transition: none; }
+}

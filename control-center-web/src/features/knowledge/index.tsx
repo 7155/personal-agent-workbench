@@ -110,6 +110,8 @@ import { usePageVisibility } from '@/platform/use-page-visibility';
 import './knowledge.css';
 
 type DetailTab = 'materials' | 'viewer' | 'search' | 'graph' | 'jobs' | 'settings';
+type KnowledgeImportState = { generation: number; pending: boolean; items: KnowledgeUploadItem[]; error: Error | null };
+type KnowledgeRebuildState = { generation: number; pending: boolean; accepted: boolean; error: unknown };
 
 const KNOWLEDGE_SEARCH_TIMEOUT_MS = 20_000;
 
@@ -140,7 +142,33 @@ function DocumentKnowledgeFeature() {
   const setSelectedDocumentId = (documentId: string) => reading.update((current) => current.documentId === documentId ? current : { ...current, documentId });
   const setFocusedHit = (focusHit: KnowledgeSearchHit | null) => reading.update((current) => current.focusHit === focusHit ? current : { ...current, focusHit });
   const [reparseDocument, setReparseDocument] = useState<KnowledgeDocument | null>(null);
-  const [uploadItems, setUploadItems] = useState<KnowledgeUploadItem[]>([]);
+  // Each operation keeps the library it started in. A later library selection
+  // changes the visible feedback, never the destination of an in-flight result.
+  const [imports, setImports] = useState<Record<string, KnowledgeImportState>>({});
+  const importsRef = useRef(imports);
+  const [rebuilds, setRebuilds] = useState<Record<string, KnowledgeRebuildState>>({});
+  const rebuildsRef = useRef(rebuilds);
+  const operationGeneration = useRef(0);
+  const viewIntent = useRef({ baseId: selectedBaseId, tab, generation: 0 });
+  if (viewIntent.current.baseId !== selectedBaseId || viewIntent.current.tab !== tab) {
+    viewIntent.current = { baseId: selectedBaseId, tab, generation: viewIntent.current.generation + 1 };
+  }
+  const importState = imports[selectedBaseId];
+  const rebuildState = rebuilds[selectedBaseId];
+  const updateImport = (baseId: string, generation: number, change: (current: KnowledgeImportState) => KnowledgeImportState) => {
+    const current = importsRef.current[baseId];
+    if (current?.generation !== generation) return;
+    const next = { ...importsRef.current, [baseId]: change(current) };
+    importsRef.current = next;
+    setImports(next);
+  };
+  const updateRebuild = (baseId: string, generation: number, patch: Partial<KnowledgeRebuildState>) => {
+    const current = rebuildsRef.current[baseId];
+    if (current?.generation !== generation) return;
+    const next = { ...rebuildsRef.current, [baseId]: { ...current, ...patch } };
+    rebuildsRef.current = next;
+    setRebuilds(next);
+  };
   const dialogTriggerRef = useRef<HTMLElement | null>(null);
   const libraryToolsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const queries = useKnowledgeLibraryQueries(selectedBaseId, queriesEnabled);
@@ -150,6 +178,7 @@ function DocumentKnowledgeFeature() {
   const documents = queries.documents.data ?? [];
   const detailQuery = useKnowledgeDocumentDetail(selectedBaseId, selectedDocumentId, queriesEnabled);
   const selectTab = (nextTab: DetailTab, replace = true) => {
+    viewIntent.current = { baseId: selectedBaseId, tab: nextTab, generation: viewIntent.current.generation + 1 };
     const next = new URLSearchParams(searchParams);
     next.set('tab', nextTab);
     if (selectedBaseId) next.set('base', selectedBaseId);
@@ -157,6 +186,7 @@ function DocumentKnowledgeFeature() {
     setSearchParams(next, { replace });
   };
   const openSource = (documentId: string, origin: 'materials' | 'search' | 'graph', focusHit: KnowledgeSearchHit | null = null) => {
+    viewIntent.current = { baseId: selectedBaseId, tab: 'viewer', generation: viewIntent.current.generation + 1 };
     reading.update((current) => ({ ...current, documentId, readerOrigin: origin, focusHit }));
     const next = new URLSearchParams(searchParams);
     next.set('base', selectedBaseId);
@@ -165,6 +195,7 @@ function DocumentKnowledgeFeature() {
     setSearchParams(next, { replace: true });
   };
   const selectBase = (baseId: string) => {
+    viewIntent.current = { baseId, tab: 'search', generation: viewIntent.current.generation + 1 };
     setSelectedBaseId(baseId);
     setSearchParams({ base: baseId, tab: 'search' }, { replace: true });
   };
@@ -198,10 +229,6 @@ function DocumentKnowledgeFeature() {
       setSelectedDocumentId(documents.find((item) => item.id === routeDocumentId)?.id ?? documents[0]?.id ?? '');
     }
   }, [documents, focusedHit?.documentId, queries.documents.isSuccess, routeBaseId, routeDocumentId, selectedBaseId, selectedDocumentId, tab]);
-
-  useEffect(() => {
-    setUploadItems([]);
-  }, [selectedBaseId]);
 
   const refresh = () => void Promise.all([
     queries.bases.refetch(),
@@ -255,13 +282,15 @@ function DocumentKnowledgeFeature() {
     },
   });
   const importMutation = useMutation({
-    mutationFn: async ({ retryItem, droppedFiles }: { retryItem?: KnowledgeUploadItem; droppedFiles?: File[] }) => {
-      if (!selectedBase) return [];
-      const parser = retryItem?.parser ?? selectedBase.parser;
+    mutationFn: async ({ base, generation, retryItem, droppedFiles }: { base: DocumentKnowledgeBase; generation: number; retryItem?: KnowledgeUploadItem; droppedFiles?: File[] }) => {
+      const parser = retryItem?.parser ?? base.parser;
+      const setUploadItems = (change: KnowledgeUploadItem[] | ((items: KnowledgeUploadItem[]) => KnowledgeUploadItem[])) => updateImport(base.id, generation, (current) => ({
+        ...current, items: typeof change === 'function' ? change(current.items) : change,
+      }));
       if (queries.transport.kind !== 'http') {
         try {
           const receipts = await importKnowledgeDocuments(queries.transport, {
-            kbId: selectedBase.id,
+            kbId: base.id,
             parserProvider: parser === 'mineru' ? 'mineru_local_http' : parser,
             maxFiles: 20,
           });
@@ -288,7 +317,7 @@ function DocumentKnowledgeFeature() {
         setUploadItems((current) => replaceUploadItem(current, item.id, { status: 'uploading', error: '' }));
         try {
           const [receipt] = await importKnowledgeDocuments(queries.transport, {
-            kbId: selectedBase.id,
+            kbId: base.id,
             files: item.file ? [item.file] : undefined,
             parserProvider: parser === 'mineru' ? 'mineru_local_http' : parser,
             maxFiles: 1,
@@ -305,16 +334,36 @@ function DocumentKnowledgeFeature() {
       if (errors.length) throw new Error(errors.join('\n'));
       return receipts;
     },
-    onSettled: () => invalidateBase(),
+    onSettled: (_receipts, error, input) => {
+      updateImport(input.base.id, input.generation, (current) => ({ ...current, pending: false, error }));
+      return invalidateBase(input.base.id);
+    },
   });
+  const beginImport = (input: { retryItem?: KnowledgeUploadItem; droppedFiles?: File[] } = {}) => {
+    if (!selectedBase || importsRef.current[selectedBase.id]?.pending) return;
+    const generation = ++operationGeneration.current;
+    const next = { ...importsRef.current, [selectedBase.id]: {
+      generation, pending: true, items: importsRef.current[selectedBase.id]?.items ?? [], error: null,
+    } };
+    importsRef.current = next;
+    setImports(next);
+    importMutation.mutate({ ...input, base: selectedBase, generation });
+  };
+  const clearImports = () => {
+    if (importsRef.current[selectedBaseId]?.pending) return;
+    const next = { ...importsRef.current };
+    delete next[selectedBaseId];
+    importsRef.current = next;
+    setImports(next);
+  };
   const retryMutation = useMutation({
-    mutationFn: ({ document, parser }: { document: KnowledgeDocument; parser: KnowledgeParserMode }) => selectedBase
-      ? retryKnowledgeDocument(queries.transport, selectedBase, document, { parser })
-      : Promise.reject(new Error('没有选中的知识库。')),
-    onSuccess: async () => {
-      setReparseDocument(null);
-      selectTab('jobs');
-      await invalidateBase();
+    mutationFn: ({ base, document, parser }: { base: DocumentKnowledgeBase; document: KnowledgeDocument; parser: KnowledgeParserMode; viewGeneration: number }) => retryKnowledgeDocument(queries.transport, base, document, { parser }),
+    onSuccess: async (_receipt, input) => {
+      if (viewIntent.current.baseId === input.base.id && viewIntent.current.generation === input.viewGeneration) {
+        setReparseDocument(null);
+        selectTab('jobs');
+      }
+      await invalidateBase(input.base.id);
     },
   });
   const deleteDocumentMutation = useMutation({
@@ -352,16 +401,26 @@ function DocumentKnowledgeFeature() {
     },
   });
   const rebuildMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedBase) throw new Error('没有选中的知识库。');
-      const preview = await previewKnowledgeReindex(queries.transport, selectedBase);
-      await rebuildKnowledgeBase(queries.transport, selectedBase, preview);
+    mutationFn: async ({ base }: { base: DocumentKnowledgeBase; generation: number; viewGeneration: number }) => {
+      const preview = await previewKnowledgeReindex(queries.transport, base);
+      await rebuildKnowledgeBase(queries.transport, base, preview);
     },
-    onSuccess: async () => {
-      selectTab('jobs');
-      await invalidateBase();
+    onSuccess: (_receipt, input) => {
+      if (viewIntent.current.baseId === input.base.id && viewIntent.current.generation === input.viewGeneration) selectTab('jobs');
+    },
+    onSettled: (_receipt, error, input) => {
+      updateRebuild(input.base.id, input.generation, { pending: false, accepted: !error, error });
+      return invalidateBase(input.base.id);
     },
   });
+  const beginRebuild = () => {
+    if (!selectedBase || rebuildsRef.current[selectedBase.id]?.pending) return;
+    const generation = ++operationGeneration.current;
+    const next = { ...rebuildsRef.current, [selectedBase.id]: { generation, pending: true, accepted: false, error: null } };
+    rebuildsRef.current = next;
+    setRebuilds(next);
+    rebuildMutation.mutate({ base: selectedBase, generation, viewGeneration: viewIntent.current.generation });
+  };
   const cancelJobMutation = useMutation({
     mutationFn: (jobId: string) => cancelKnowledgeJob(queries.transport, selectedBaseId, jobId),
     onSettled: () => invalidateBase(),
@@ -436,6 +495,7 @@ function DocumentKnowledgeFeature() {
                     workspace is the first object on screen. The web route keeps
                     the full header sheet. */}
                 {appSurface ? null : <KnowledgeBaseHeader base={selectedBase} worker={worker} />}
+                {rebuildState?.accepted ? <div className="knowledge-library__operation-receipt" role="status"><span>已提交“{selectedBase.name}”的索引重建请求，实际进展见处理记录。</span>{tab !== 'jobs' ? <Button onClick={() => selectTab('jobs')} size="small" variant="quiet">查看处理记录</Button> : null}</div> : null}
                 <Tabs className="knowledge-library__tabs" onValueChange={(value) => selectTab(asDetailTab(value))} value={tab}>
                   <TabsList aria-label="知识库管理视图">
                     <TabsTrigger value="search"><Search aria-hidden="true" size={14} />搜索</TabsTrigger>
@@ -469,21 +529,21 @@ function DocumentKnowledgeFeature() {
                       loading={queries.documents.isPending}
                       filter={reading.context.materialsFilter}
                       onFilterChange={(materialsFilter) => reading.update((current) => ({ ...current, materialsFilter }))}
-                      importError={importMutation.error as Error | null}
-                      importing={importMutation.isPending}
+                      importError={importState?.error ?? null}
+                      importing={importState?.pending ?? false}
                       onDelete={(document, trigger) => { rememberDialogTrigger(trigger); setDocumentToDelete(document); }}
-                      onClearUploads={() => { importMutation.reset(); setUploadItems([]); }}
-                      onImport={() => importMutation.mutate({})}
-                      onImportFiles={(files) => importMutation.mutate({ droppedFiles: files })}
+                      onClearUploads={clearImports}
+                      onImport={() => beginImport()}
+                      onImportFiles={(files) => beginImport({ droppedFiles: files })}
                       onOpen={(documentId) => openSource(documentId, 'materials')}
                       onReparse={(document, trigger) => { rememberDialogTrigger(trigger); setReparseDocument(document); }}
                       onRetryList={() => void queries.documents.refetch()}
                       onRetryDetail={() => void detailQuery.refetch()}
-                      onRetryUpload={(item) => importMutation.mutate({ retryItem: item })}
+                      onRetryUpload={(item) => beginImport({ retryItem: item })}
                       onSelect={(documentId) => { setFocusedHit(null); setSelectedDocumentId(documentId); }}
-                      pendingDocumentId={retryMutation.isPending ? retryMutation.variables?.document.id ?? '' : ''}
+                      pendingDocumentId={retryMutation.isPending && retryMutation.variables?.base.id === selectedBaseId ? retryMutation.variables.document.id : ''}
                       selectedDocumentId={selectedDocumentId}
-                      uploadItems={uploadItems}
+                      uploadItems={importState?.items ?? []}
                     />
                   </TabsContent>
                   <TabsContent value="viewer">
@@ -562,12 +622,12 @@ function DocumentKnowledgeFeature() {
                       onSaveChunking={(chunkingConfig) => updateMutation.mutate({ chunkingConfig })}
                       onSaveRetrieval={(retrievalConfig) => updateMutation.mutate({ retrievalConfig })}
                       onPreviewChunking={(documentId, config) => chunkPreviewMutation.mutate({ documentId, config })}
-                      onRebuild={() => rebuildMutation.mutate()}
+                      onRebuild={beginRebuild}
                       parserData={queries.parsers.data}
                       pending={updateMutation.isPending}
                       updateError={updateMutation.error}
-                      rebuildError={rebuildMutation.error}
-                      rebuilding={rebuildMutation.isPending}
+                      rebuildError={rebuildState?.error}
+                      rebuilding={rebuildState?.pending ?? false}
                       chunkPreview={chunkPreviewMutation.data ?? null}
                       chunkPreviewError={chunkPreviewMutation.error}
                       chunkPreviewing={chunkPreviewMutation.isPending}
@@ -621,7 +681,7 @@ function DocumentKnowledgeFeature() {
         document={reparseDocument}
         error={retryMutation.error}
         loading={retryMutation.isPending}
-        onConfirm={(parser) => { if (reparseDocument) retryMutation.mutate({ document: reparseDocument, parser }); }}
+        onConfirm={(parser) => { if (reparseDocument && selectedBase) retryMutation.mutate({ base: selectedBase, document: reparseDocument, parser, viewGeneration: viewIntent.current.generation }); }}
         onOpenChange={(open) => { if (!open) { setReparseDocument(null); retryMutation.reset(); } }}
         returnFocusRef={dialogTriggerRef}
       />

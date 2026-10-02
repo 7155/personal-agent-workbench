@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/primitives';
 import agentCss from '../agent.css?raw';
-import agentMigratedCss from '@/paw-os/styles/paw-os-agent-migrated-v1.css?raw';
+import agentMigratedCss from '@/paw-os/styles/paw-os-agent.css?raw';
 import { CodeContentBlock } from './CodeDiffRenderers';
 
 afterEach(cleanup);

@@ -6,19 +6,15 @@ import { ControlConnectionMonitor } from '@/app/control-connection-monitor';
 import { GlobalFeedbackProvider } from '@/components/feedback';
 import { ToastProvider, TooltipProvider } from '@/components/primitives';
 import { MotionProvider } from '@/design/motion';
-import { PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { ThemeProvider } from '@/design/themes';
 import { useFilePreviewStore } from '@/features/agent/file-preview/file-preview-store';
 import { ProductIdentityProvider } from '@/features/identity/product-identity';
-import { resolveFrontendProduct, type FrontendProduct } from './frontend-product';
 import { standaloneSurfaceForPath } from './standalone-surface';
 import '@/design/tokens.css';
 import '@/design/typography.css';
 import '@/design/workspace.css';
 import '@/components/primitives/primitives.css';
-import '@/components/primitives/showcase.css';
 import '@/components/feedback/feedback.css';
-import '@/components/layout/layout.css';
 
 const FilePreviewHost = lazy(async () => ({
   default: (await import('@/features/agent/file-preview/FilePreviewHost')).FilePreviewHost,
@@ -32,15 +28,11 @@ const ScreenAssistant = lazy(async () => ({
   default: (await import('@/features/screen-assistant/ScreenAssistant')).ScreenAssistant,
 }));
 
-const LegacyProductApp = lazy(async () => ({
-  default: (await import('./LegacyProductApp')).LegacyProductApp,
-}));
-
 const StandaloneEvolutionReportPage = lazy(async () => ({
   default: (await import('@/features/evolution-report/standalone')).StandaloneEvolutionReportPage,
 }));
 
-export function App({ frontendProduct }: { frontendProduct?: FrontendProduct } = {}) {
+export function App() {
   const location = typeof window === 'undefined' ? { pathname: '/', search: '' } : window.location;
   const standaloneSurface = standaloneSurfaceForPath(
     location.pathname,
@@ -49,49 +41,38 @@ export function App({ frontendProduct }: { frontendProduct?: FrontendProduct } =
   if (standaloneSurface === 'evolution-report') {
     return (
       <ThemeProvider forcedTheme="light">
-        <PawOsAppearanceProvider>
-          <MotionProvider>
-            <Suspense fallback={<ProductLoading />}>
-              <StandaloneEvolutionReportPage />
-            </Suspense>
-          </MotionProvider>
-        </PawOsAppearanceProvider>
+        <MotionProvider>
+          <Suspense fallback={<ProductLoading />}>
+            <StandaloneEvolutionReportPage />
+          </Suspense>
+        </MotionProvider>
       </ThemeProvider>
     );
   }
 
-  const product = frontendProduct ?? resolveFrontendProduct({
-    configured: import.meta.env.VITE_PAW_FRONTEND,
-    search: typeof window === 'undefined' ? '' : window.location.search,
-  });
-
   return (
     <ThemeProvider>
-      <PawOsAppearanceProvider>
-        <MotionProvider>
-        <TooltipProvider delayDuration={350}>
-          <ToastProvider>
-            <GlobalFeedbackProvider>
-              <ControlTransportProvider>
-                <ControlConnectionMonitor />
-                <FilePreviewLayer />
-                <QueryClientProvider client={queryClient}>
-                  <ProductIdentityProvider>
-                    <Suspense fallback={<ProductLoading />}>
-                      {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : product === 'paw-os' ? (
-                        <PawOsApp />
-                      ) : (
-                        <LegacyProductApp />
-                      )}
-                    </Suspense>
-                  </ProductIdentityProvider>
-                </QueryClientProvider>
-              </ControlTransportProvider>
-            </GlobalFeedbackProvider>
-          </ToastProvider>
-        </TooltipProvider>
-        </MotionProvider>
-      </PawOsAppearanceProvider>
+      <MotionProvider>
+      <TooltipProvider delayDuration={350}>
+        <ToastProvider>
+          <GlobalFeedbackProvider>
+            <ControlTransportProvider>
+              <ControlConnectionMonitor />
+              <FilePreviewLayer />
+              <QueryClientProvider client={queryClient}>
+                <ProductIdentityProvider>
+                  <Suspense fallback={<ProductLoading />}>
+                    {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : (
+                      <PawOsApp />
+                    )}
+                  </Suspense>
+                </ProductIdentityProvider>
+              </QueryClientProvider>
+            </ControlTransportProvider>
+          </GlobalFeedbackProvider>
+        </ToastProvider>
+      </TooltipProvider>
+      </MotionProvider>
     </ThemeProvider>
   );
 }

@@ -32,10 +32,10 @@ class MemoryMaintenanceSettingsTests(unittest.TestCase):
         self.assertTrue(settings.dreaming_enabled)
         self.assertEqual(
             settings.automatic_organization_model,
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(settings.automatic_organization_thinking_level, "max")
-        self.assertEqual(settings.dreaming_model, "openai-codex/gpt-5.6-luna")
+        self.assertEqual(settings.dreaming_model, "openai-codex/gpt-6.1-sol")
         self.assertEqual(settings.dreaming_thinking_level, "max")
         self.assertEqual(settings.automatic_organization_interval_seconds, 43_200)
         self.assertEqual(settings.dreaming_interval_seconds, 43_200)

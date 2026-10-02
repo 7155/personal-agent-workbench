@@ -15,13 +15,13 @@ from rag_ime.text_utils import stable_text_hash
 
 class ActiveRagDebugServerTests(unittest.TestCase):
     def test_debug_service_caps_active_rag_request_to_the_visible_generation_budget(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DebugImeService(
-                DebugServerConfig(
-                    db_path=Path(temp_dir) / "active-rag-budget.sqlite",
-                    seed_if_empty=False,
-                )
-            )
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            closing(DebugImeService(DebugServerConfig(
+                db_path=Path(temp_dir) / "active-rag-budget.sqlite",
+                seed_if_empty=False,
+            ))) as service,
+        ):
             service.settings_update({"activeRag.latencyBudgetMs": 6000})
 
             capped = service._active_rag_request_from_payload(
@@ -43,13 +43,13 @@ class ActiveRagDebugServerTests(unittest.TestCase):
         self.assertEqual(shorter.latency_budget_ms, 4000)
 
     def test_debug_service_normalizes_accessibility_window_context(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DebugImeService(
-                DebugServerConfig(
-                    db_path=Path(temp_dir) / "active-rag-window.sqlite",
-                    seed_if_empty=False,
-                )
-            )
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            closing(DebugImeService(DebugServerConfig(
+                db_path=Path(temp_dir) / "active-rag-window.sqlite",
+                seed_if_empty=False,
+            ))) as service,
+        ):
             request = service._active_rag_request_from_payload(
                 {
                     "selectedText": "结合当前窗口继续写",
@@ -87,13 +87,13 @@ class ActiveRagDebugServerTests(unittest.TestCase):
         self.assertEqual(request.window_context["nodes"][0]["value"], "真实窗口语义")
 
     def test_debug_service_enriches_and_revalidates_application_semantics(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DebugImeService(
-                DebugServerConfig(
-                    db_path=Path(temp_dir) / "active-rag-zed.sqlite",
-                    seed_if_empty=False,
-                )
-            )
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            closing(DebugImeService(DebugServerConfig(
+                db_path=Path(temp_dir) / "active-rag-zed.sqlite",
+                seed_if_empty=False,
+            ))) as service,
+        ):
             semantics = {
                 "source": "zed_workspace_state",
                 "projectName": "Project",
@@ -138,13 +138,13 @@ class ActiveRagDebugServerTests(unittest.TestCase):
         self.assertNotIn("absolutePath", json.dumps(app_semantics))
 
     def test_debug_service_blocks_sensitive_active_rag_without_storing_hash_or_candidate(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DebugImeService(
-                DebugServerConfig(
-                    db_path=Path(temp_dir) / "active-rag-sensitive.sqlite",
-                    seed_if_empty=False,
-                )
-            )
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            closing(DebugImeService(DebugServerConfig(
+                db_path=Path(temp_dir) / "active-rag-sensitive.sqlite",
+                seed_if_empty=False,
+            ))) as service,
+        ):
             secret = "password=hunter2"
 
             blocked = service.active_rag_start(
@@ -206,13 +206,13 @@ class ActiveRagDebugServerTests(unittest.TestCase):
             validate_contract(ready, "active-rag-status.v1.json")
 
     def test_active_rag_preview_is_read_only_and_redacts_selected_text(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DebugImeService(
-                DebugServerConfig(
-                    db_path=Path(temp_dir) / "active-rag-debug.sqlite",
-                    seed_if_empty=False,
-                )
-            )
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            closing(DebugImeService(DebugServerConfig(
+                db_path=Path(temp_dir) / "active-rag-debug.sqlite",
+                seed_if_empty=False,
+            ))) as service,
+        ):
             selected_text = "这段真实选区只允许显式请求进入后端，不能出现在默认调试响应"
             current_context = "通过辅助功能捕获的光标上下文"
 
@@ -255,13 +255,13 @@ class ActiveRagDebugServerTests(unittest.TestCase):
         self.assertNotIn(current_context, json.dumps(preview["diagnostics"], ensure_ascii=False))
 
     def test_missing_and_unknown_privacy_block_before_retrieval_provider_or_hash(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DebugImeService(
-                DebugServerConfig(
-                    db_path=Path(temp_dir) / "active-rag-privacy.sqlite",
-                    seed_if_empty=False,
-                )
-            )
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            closing(DebugImeService(DebugServerConfig(
+                db_path=Path(temp_dir) / "active-rag-privacy.sqlite",
+                seed_if_empty=False,
+            ))) as service,
+        ):
             secret = "selected text must not be hashed or sent"
             with patch.object(
                 service.active_rag,

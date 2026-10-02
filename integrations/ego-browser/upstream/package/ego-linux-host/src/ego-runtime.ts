@@ -5,7 +5,7 @@
  * blocks on snapshot / page-domain CDP.
  */
 
-import type { CdpBridge } from "./cdp-bridge.js";
+import type { CdpBridge, CdpRawOwner } from "./cdp-bridge.js";
 import { makeEgoError } from "./errors.js";
 import type { RpcEvent } from "./rpc.js";
 import { snapshotPage, type SnapshotOptions } from "./snapshot-engine.js";
@@ -28,8 +28,13 @@ export type EgoRuntimeDeps = {
   version?: string;
 };
 
+export type EgoRequestContext = {
+  cdpOwner: CdpRawOwner;
+  onEvent(event: RpcEvent): void;
+};
+
 export type EgoRuntime = {
-  handle(method: string, params?: any): Promise<any>;
+  handle(method: string, params?: any, context?: EgoRequestContext): Promise<any>;
   /** Subscribe to runtime-pushed events (cdp.message, cdp.sendError). */
   onEvent(handler: (ev: RpcEvent) => void): () => void;
   /**
@@ -111,8 +116,8 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
     };
   }
 
-  function emitSendError(message: string, error_code?: string): void {
-    emit({
+  function emitSendError(message: string, error_code?: string, context?: EgoRequestContext): void {
+    (context?.onEvent ?? emit)({
       event: "cdp.sendError",
       params: {
         message,
@@ -184,7 +189,7 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
 
   async function sendCDPMessage(params: {
     payload?: string;
-  }): Promise<{ ok: true }> {
+  }, context?: EgoRequestContext): Promise<{ ok: true }> {
     const raw = params?.payload;
     if (typeof raw !== "string" || raw === "") {
       throw makeEgoError(
@@ -200,6 +205,7 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
       emitSendError(
         `invalid CDP payload JSON: ${err instanceof Error ? err.message : String(err)}`,
         "EGO_INVALID_ARGUMENT",
+        context,
       );
       return { ok: true };
     }
@@ -211,12 +217,13 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
       emitSendError(
         "task space is under user control; claim or takeOver before page ops",
         "EGO_TASK_SPACE_USER_IN_CONTROL",
+        context,
       );
       return { ok: true };
     }
 
     try {
-      deps.getCdp().sendRaw(msg);
+      deps.getCdp().sendRaw(msg, context?.cdpOwner);
       if (method === "Target.activateTarget" && deps.activateVisibleTarget) {
         await deps.activateVisibleTarget(String(msg?.params?.targetId || ""));
       }
@@ -233,7 +240,7 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
           : typeof err === "string"
             ? err
             : String(err);
-      emitSendError(message, code);
+      emitSendError(message, code, context);
     }
     return { ok: true };
   }
@@ -454,7 +461,7 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
     return { ok: true };
   }
 
-  async function handle(method: string, params: any = {}): Promise<any> {
+  async function handle(method: string, params: any = {}, context?: EgoRequestContext): Promise<any> {
     const name = normalizeMethod(method);
     switch (name) {
       case "listTaskSpaces":
@@ -484,7 +491,7 @@ export function createEgoRuntime(deps: EgoRuntimeDeps): EgoRuntime {
       case "snapshot":
         return snapshot(params);
       case "sendCDPMessage":
-        return sendCDPMessage(params);
+        return sendCDPMessage(params, context);
       default:
         throw makeEgoError(
           "EGO_INVALID_ARGUMENT",

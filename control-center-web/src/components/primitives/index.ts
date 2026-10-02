@@ -6,7 +6,6 @@ export * from './Field';
 export * from './IconButton';
 export * from './Menu';
 export * from './Popover';
-export * from './PrimitivesShowcase';
 export * from './Select';
 export * from './SegmentedControl';
 export * from './Skeleton';

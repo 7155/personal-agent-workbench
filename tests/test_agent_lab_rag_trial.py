@@ -38,7 +38,7 @@ class AgentLabRagTrialTests(unittest.TestCase):
             prepared_path=self.host / "prepared.json", answer_cases_path=self.host / "answers.json",
             answer_evidence_qrels_path=self.host / "qrels.json", retrieval_report_path=self.host / "retrieval.json",
             source_agent_config=config, pi_runtime_payload=payload,
-            pricing_config=self.pricing, pricing_published_date="2026-09-01")
+            pricing_config=self.pricing, pricing_published_date="2026-09-01", judge_model="gpt-5.6-sol")
         self.adapter = AgentLabRagTrialAdapter(self.root / "artifacts", assets=self.assets)
         runtime = patch("rag_ime.managed_pi_runtime.snapshot_managed_pi_runtime_payload", side_effect=lambda path, **_: SimpleNamespace(
             manifest_sha256=hashlib.sha256((Path(path) / "manifest.json").read_bytes()).hexdigest()))
@@ -77,6 +77,18 @@ class AgentLabRagTrialTests(unittest.TestCase):
                 conn.execute("INSERT INTO agent_runtime_events VALUES (?,?)", ("provider_request_failed" if failed else "provider_request_completed",
                     json.dumps({"provider": "openai-codex", "model": model, "usage": usage})))
             conn.commit()
+
+    def test_new_default_controls_and_judge_freeze_current_model_without_running(self):
+        from dataclasses import replace
+        from scripts import run_rag_agent_ablation as runner
+        assets = replace(self.assets, judge_model=self.assets_type.__dataclass_fields__["judge_model"].default)
+        adapter = self.adapter_type(self.root / "latest", assets=assets)
+        spec = {key:value for key,value in self.spec.items() if key != "model"}
+        with patch.object(runner, "_run", side_effect=AssertionError("prepare must not run")) as run:
+            frozen = adapter.prepare(spec, "latest-default")
+        run.assert_not_called()
+        self.assertEqual(frozen["publicSpec"]["model"], "gpt-6.1-sol")
+        self.assertEqual(frozen["publicSpec"]["judgeModel"], "gpt-6.1-sol")
 
     def test_prepare_is_read_only_and_freezes_bounded_controls_without_public_secrets(self):
         from scripts import run_rag_agent_ablation as runner

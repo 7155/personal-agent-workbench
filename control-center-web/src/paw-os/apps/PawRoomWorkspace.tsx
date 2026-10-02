@@ -1,5 +1,5 @@
 import { useRoomReadingRecovery, useRoomViewRecovery } from '@/features/semantic-workspace/reading-recovery';
-import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
+import { recoveryScope, useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { JevCompanion } from '@/features/semantic-workspace/JevCompanion';
 import { JevPolicyControls } from '@/features/semantic-workspace/JevPolicyControls';
 import { JevPlanReview } from '@/features/semantic-workspace/JevPlanReview';
@@ -11,6 +11,7 @@ import { jevAbstention, jevStatusLabel, jevTaskCountLabel, pendingJevInput } fro
 import {
   Archive,
   ChartGantt,
+  ChevronDown,
   CircleAlert,
   ExternalLink,
   Focus,
@@ -32,7 +33,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger, Select } from '@/components/primitives';
 import { isComposerAttachmentMimeType } from '@/contracts/attachment-policy';
@@ -63,9 +64,12 @@ import {
   selectActivePublicRoomTurn,
   selectPublicRoomTurnOrder,
 } from '@/features/rooms/runtime/room-execution-lanes';
+import { roomSendJournal, type RoomSendAttempt } from '@/features/rooms/runtime/room-send-journal';
+import { startRoomSend } from '@/features/rooms/application/room-send';
 import { useRoomLiveSession } from '@/features/rooms/runtime/use-room-live-session';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import { PawWindowChromePortal, usePawWindowChromeTarget } from '../shell/PawWindowChrome';
+import { roomCancellationOutcome } from '@/features/rooms/runtime/room-cancellation';
 import { roomProjection, useRoomLiveStore } from '@/features/rooms/state/live-store';
 import {
   parseRoomPermissionPolicy,
@@ -78,6 +82,7 @@ import {
 } from '@/features/rooms/room-types';
 import { PawRoomConversation, roomProcessWindowRequest } from './PawRoomConversation';
 import { PawRoomLiveFocusOverview, RoomCollabTimelineLive } from './PawRoomLiveFocusOverview';
+import { PawRoomResponseStatus } from './PawRoomResponseStatus';
 import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 import { useRoomObserverAutoOpen, useRoomWorkStatusVisible } from './room-observer-preference';
 import { PawRoomWorkStatus } from './PawRoomWorkStatus';
@@ -132,7 +137,7 @@ const JEV_RAIL_PREFERENCE_KEY = 'paw.jev.task-rail.v1';
 
 function useJevRailPreference(): ['open' | 'closed', (value: 'open' | 'closed') => void] {
   const [value, setValue] = useState<'open' | 'closed'>(() => {
-    try { return globalThis.localStorage?.getItem(JEV_RAIL_PREFERENCE_KEY) === 'closed' ? 'closed' : 'open'; } catch { return 'open'; }
+    try { return globalThis.localStorage?.getItem(JEV_RAIL_PREFERENCE_KEY) === 'open' ? 'open' : 'closed'; } catch { return 'closed'; }
   });
   const update = useCallback((next: 'open' | 'closed') => {
     setValue(next);
@@ -217,6 +222,8 @@ export function PawRoomWorkspace({
   const recovery = useWorkspaceRecovery<RoomAttachmentReceipt>(`room:${recordId}`, initialDraft ?? '');
   const { draft, setDraft, attachments, setAttachments } = recovery;
   const [sending, setSending] = useState(false);
+  const sendJournal = roomSendJournal(transport, recordId);
+  const pendingSend = useSyncExternalStore(sendJournal.subscribe, sendJournal.getSnapshot);
   const [optimisticSteer, setOptimisticSteer] = useState<OptimisticSteerReceipt | null>(null);
   const optimisticSteerRef = useRef<OptimisticSteerReceipt | null>(null);
   const [loading, setLoading] = useState(true);
@@ -224,6 +231,7 @@ export function PawRoomWorkspace({
   const [connectionError, setConnectionError] = useState('');
   const [panel, setPanel] = useState<RoomToolPanel | 'none'>('none');
   const [partnerSettingsOpen, setPartnerSettingsOpen] = useState(false);
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const [embeddedFocusActive, setEmbeddedFocusActive] = useState(false);
   const roomFocusGroup = `room:${recordId}`;
   const desktopFocusGroup = desktop?.collaborationFocusGroup;
@@ -243,7 +251,7 @@ export function PawRoomWorkspace({
   // The desktop roster and selected partner own details in external focus.
   // Derive this immediately so a restored inline inspector never claims space.
   const visiblePanel = externalCollaborationFocus || jevEnabled && panel === 'focus' ? 'none' : panel;
-  const visibleView = jevEnabled ? 'conversation' : externalCollaborationFocus ? 'rounds' : view;
+  const visibleView = jevEnabled ? view === 'timeline' ? 'timeline' : 'conversation' : externalCollaborationFocus ? 'rounds' : view;
   const [selectedParticipantId, setSelectedParticipantId] = useState('');
   const collaborationTriggerRef = useRef<HTMLButtonElement>(null);
   const [abortingTurnIds, setAbortingTurnIds] = useState<Set<string>>(() => new Set());
@@ -307,6 +315,7 @@ export function PawRoomWorkspace({
   }, [recordId]);
 
   const projection = useRoomLiveStore((state) => state.projections[recordId]);
+  const roundHistoryReady = useRoomLiveStore((state) => Boolean(state.snapshotsByRoomId[recordId]));
   const focusProjection = useMemo(
     () => record ? buildRoomFocusProjection(record, projection) : undefined,
     [projection, record],
@@ -388,7 +397,7 @@ export function PawRoomWorkspace({
    * Runtime send path, until this turn settles — so it can still be reordered,
    * edited, or pulled back into the composer on stop. */
   const queue = useConversationQueue({
-    busy: (jevEnabled ? jev.busy || jev.awaitingPlan || jev.loading || jev.creating || Boolean(jev.pendingInput || jev.pendingPlan || jev.planSending || jev.error) || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)) || sending,
+    busy: (jevEnabled ? jev.busy || jev.awaitingPlan || jev.loading || jev.creating || Boolean(jev.pendingInput || jev.pendingPlan || jev.planSending || jev.error) || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)) || sending || Boolean(pendingSend),
     conversationId: recordId,
     send: (value) => { void send(value); },
   });
@@ -424,6 +433,13 @@ export function PawRoomWorkspace({
     options: { question?: PendingRoomQuestion; retryOfRootId?: string; preserveDraft?: boolean } = {},
   ): Promise<boolean> {
     if (!record || record.status !== 'active' || sending) return false;
+    const pending = sendJournal.getSnapshot();
+    if (pending) {
+      // Identical text can answer a different question or target a new Root.
+      // Only the explicit recovery action may replay the old binding.
+      setError('上次发送尚未确认，请先核实上次发送；新草稿会保留。');
+      return false;
+    }
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return false; }
     const authoritativeQuestion = roomProjection(recordId).pendingUserQuestion;
     const answersQuestion = Boolean(
@@ -432,7 +448,10 @@ export function PawRoomWorkspace({
       && options.question.postId === authoritativeQuestion.postId
       && options.question.rootId === authoritativeQuestion.rootId
     );
-    const message = rawValue.trim() || (attachments.length ? '请查看附件。' : '');
+    // Continue/retry belongs to the retained turn, not to the next composer
+    // draft. Explicit uncertain-command recovery uses its journal copy below.
+    const composerAttachments = options.preserveDraft ? [] : attachments;
+    const message = rawValue.trim() || (composerAttachments.length ? '请查看附件。' : '');
     if (!message) return false;
     if (jevEnabled && !answersQuestion) {
       if (jev.loading && !jev.liveSnapshot || jev.error) {
@@ -441,12 +460,12 @@ export function PawRoomWorkspace({
         return false;
       }
       if ((jev.busy || activeTurn && !jev.liveSnapshot) && !pendingJevInput(transport, recordId)) {
-        if (attachments.length) { setError('附件已保留，当前任务结束后可以发送。'); return false; }
+        if (composerAttachments.length) { setError('附件已保留，当前任务结束后可以发送。'); return false; }
         const queued = queue.enqueue(rawValue);
         if (queued && !options.preserveDraft) setDraft('');
         return queued;
       }
-      const selectedAttachments = attachments;
+      const selectedAttachments = composerAttachments;
       setSending(true); setError('');
       try {
         const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
@@ -462,7 +481,7 @@ export function PawRoomWorkspace({
       } finally { setSending(false); }
     }
     const steering = Boolean(activeTurn && !answersQuestion);
-    if (steering && attachments.length) {
+    if (steering && composerAttachments.length) {
       setError('当前回合执行中只能发送文字干预；图片会保留到下一轮。');
       return false;
     }
@@ -492,31 +511,8 @@ export function PawRoomWorkspace({
       setError('当前回合还没有可点名的伙伴，请稍后重试。');
       return false;
     }
-    const selectedAttachments = answersQuestion ? [] : attachments;
-    setSending(true);
-    if (!options.preserveDraft) setDraft('');
-    if (!answersQuestion) setAttachments([]);
-    setError('');
-    if (!steering) {
-      useRoomLiveStore.getState().appendOptimistic(recordId, {
-        clientMessageId,
-        text: message,
-        attachments: selectedAttachments,
-        nowMs: Date.now(),
-        ...(answersQuestion && authoritativeQuestion ? { answerToPostId: authoritativeQuestion.postId } : {}),
-        ...(options.retryOfRootId ? { retryOfRootId: options.retryOfRootId } : {}),
-      });
-    } else {
-      const receipt = {
-        clientActionId: clientMessageId,
-        message,
-        participantId: steerParticipantId,
-      } satisfies OptimisticSteerReceipt;
-      optimisticSteerRef.current = receipt;
-      setOptimisticSteer(receipt);
-    }
-    try {
-      const response = await transport.request<Record<string, unknown>>(steering && activeTurn
+    const selectedAttachments = answersQuestion ? [] : composerAttachments;
+    const request: ControlRequest = steering && activeTurn
         ? {
             pathId: 'agent.room.participant.steer',
             params: { roomId: recordId },
@@ -544,41 +540,63 @@ export function PawRoomWorkspace({
                 ? { workItemId: activeWork.id }
                 : {}),
             },
-          });
-      const requestedStart = asRecord(asRecord(response).startConfirmation);
-      let acceptedResponse = response;
-      if (requestedStart.status === 'pending' && typeof requestedStart.gateId === 'string') {
-        // Current Hosts treat the Room dispatch itself as authorization and
-        // never return this field.  When an older durable command receipt is
-        // replayed, cross the obsolete one-time gate internally so the user
-        // still gets one send action and never sees a second approval UI.
-        acceptedResponse = await transport.request<Record<string, unknown>>({
-          pathId: 'agent.room.startGate.confirm',
-          params: { roomId: recordId },
-          body: { gateId: requestedStart.gateId, decision: 'confirm' },
+          };
+    return deliverRoomSend({ request, clientMessageId, rawValue, attachments: selectedAttachments, status: 'sending', preserveDraft: options.preserveDraft });
+  }
+
+  async function deliverRoomSend(attempt: RoomSendAttempt): Promise<boolean> {
+    if (!record || record.status !== 'active') return false;
+    const delivery = startRoomSend(transport, recordId, attempt);
+    if (!delivery) return false;
+    const preserveDraft = delivery.attempt.preserveDraft ?? false;
+    const { clientMessageId, rawValue, attachments: selectedAttachments } = delivery.attempt;
+    const body = asRecord(delivery.attempt.request.body);
+    const message = String(body.message);
+    const steering = delivery.attempt.request.pathId === 'agent.room.participant.steer';
+    const answersQuestion = Boolean(body.answerToPostId);
+    const steerParticipantId = String(body.participantId ?? '');
+    setSending(true);
+    if (!preserveDraft) setDraft(current => current.trim() === rawValue.trim() ? '' : current);
+    if (!answersQuestion) setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
+    setError('');
+    if (steering) {
+      const receipt = {
+        clientActionId: clientMessageId,
+        message,
+        participantId: steerParticipantId,
+      } satisfies OptimisticSteerReceipt;
+      optimisticSteerRef.current = receipt;
+      setOptimisticSteer(receipt);
+    }
+    try {
+      const result = await delivery.settled;
+      if (result.status !== 'accepted') {
+        if (steering) clearOptimisticSteer(clientMessageId);
+        if (!preserveDraft) setDraft((current) => current || rawValue);
+        if (!answersQuestion) setAttachments((current) => {
+          const restored = new Map(current.map((attachment) => [attachment.mediaId, attachment]));
+          for (const attachment of selectedAttachments) if (!restored.has(attachment.mediaId)) restored.set(attachment.mediaId, attachment);
+          return [...restored.values()].slice(0, 8);
         });
+        setError(result.status === 'uncertain'
+          ? 'Room 发送尚未确认。核实上次发送会使用原请求，避免重复执行。'
+          : roomErrorText(result.error, 'Room 消息未被接收，请重试。'));
+        return false;
       }
-      useRoomLiveStore.getState().acceptMessage(recordId, acceptedResponse);
-      const timelineEvents = asRecord(acceptedResponse).timelineEvents;
-      if (Array.isArray(timelineEvents)) acknowledgeOptimisticSteer(timelineEvents);
-      const workItem = asWorkItem(asRecord(acceptedResponse).workItem);
-      if (workItem) onRoomUpdated({
-        ...record,
-        workItems: [...(record.workItems ?? []).filter((item) => item.id !== workItem.id), workItem],
-      });
-      followRoomTimelineIfReaderAtEnd(timelineRef.current);
+      try {
+        const timelineEvents = result.response.timelineEvents;
+        if (Array.isArray(timelineEvents)) acknowledgeOptimisticSteer(timelineEvents);
+        const workItem = asWorkItem(result.response.workItem);
+        if (workItem) onRoomUpdated({
+          ...record,
+          workItems: [...(record.workItems ?? []).filter((item) => item.id !== workItem.id), workItem],
+        });
+        followRoomTimelineIfReaderAtEnd(timelineRef.current);
+      } catch {
+        // Presentation failure cannot undo an accepted command or invite replay.
+        setError('消息已接收，但界面暂未更新，请重新同步。');
+      }
       return true;
-    } catch (reason) {
-      if (!steering) useRoomLiveStore.getState().discardOptimistic(recordId, clientMessageId);
-      if (steering) clearOptimisticSteer(clientMessageId);
-      if (!options.preserveDraft) setDraft((current) => current || rawValue);
-      if (!answersQuestion) setAttachments((current) => {
-        const restored = new Map(current.map((attachment) => [attachment.mediaId, attachment]));
-        for (const attachment of selectedAttachments) if (!restored.has(attachment.mediaId)) restored.set(attachment.mediaId, attachment);
-        return [...restored.values()].slice(0, 8);
-      });
-      setError(roomErrorText(reason, 'Room 消息没有发送，请重试。'));
-      return false;
     } finally {
       setSending(false);
     }
@@ -616,8 +634,11 @@ export function PawRoomWorkspace({
         params: { roomId: recordId },
         body: { roomTurnId: rootId, clientRequestId: `paw-room-abort-${crypto.randomUUID()}` },
       });
-      if (receipt.ok === true && receipt.status !== 'cancellation_pending') {
+      const outcome = roomCancellationOutcome(receipt);
+      if (outcome === 'terminated') {
         useRoomLiveStore.getState().abortTurn(recordId, rootId, Date.now());
+      } else if (outcome === 'already_terminal') {
+        retrySnapshot();
       } else {
         setError('停止信号已送达，仍在等待所有伙伴返回终止回执。');
       }
@@ -922,7 +943,7 @@ export function PawRoomWorkspace({
   }, [record?.participants, selectedParticipantId]);
   useEffect(() => {
     if (!desktop || !record) return;
-    desktop.bindRoomMain?.({ kind: 'room', id: record.id, title: record.title, subtitle: record.description });
+    desktop.bindRoomMain?.({ kind: 'room', id: record.id, title: record.title, subtitle: undefined });
   }, [desktop, record]);
   /* status overlay 克制：为 0 的计数是噪音，状态行只亮出真实存在的工作。 */
   const submittedPartnerCount = focusProjection?.partners.filter((partner) => partner.state === 'completed').length ?? 0;
@@ -937,14 +958,14 @@ export function PawRoomWorkspace({
      才用 Sol 命名这个 Room 的原点，否则统一叫「主 Room」。 */
   const coordinatorActive = focusProjection ? roomFocusHasCoordinator(focusProjection.partners) : false;
   const originLabel = roomFocusOriginLabel(coordinatorActive);
-  const visibleError = error || connectionError || (jevEnabled && jev.pendingInput ? '上次发送尚未确认，原内容与附件仍保留。' : jevEnabled && jev.pendingPlan ? '上次方案操作尚未确认。' : '');
+  const visibleError = error || connectionError || (pendingSend?.status === 'uncertain' ? '上次发送尚未确认，原请求仍保留。' : '') || (jevEnabled && jev.pendingInput ? '上次发送尚未确认，原内容与附件仍保留。' : jevEnabled && jev.pendingPlan ? '上次方案操作尚未确认。' : '');
   const syncOffline = Boolean(connectionError) && connectionError !== ROOM_WORKSPACE_MISSING_TEXT;
   const visibleRecoveryState = syncOffline ? 'failed' : recoveryState;
   const hasRoomHistory = Boolean(projection?.turnOrder.length);
   const roomContentReady = Boolean(record && projection && (
     hasRoomHistory || (!loading && recoveryState === 'synced' && !connectionError)
   ));
-  useRoomReadingRecovery(timelineRef, `room:${recordId}`, roomContentReady, visibleView);
+  useRoomReadingRecovery(timelineRef, `room:${recordId}`, roomContentReady && visibleView !== 'rounds', visibleView);
   const roomRecoverySurface = connectionError || recoveryState === 'failed' ? (
     <section aria-label="Room 记录暂时不可用" className="paw-room-workspace__recovery" role="region">
       <CircleAlert aria-hidden="true" size={24} />
@@ -975,7 +996,14 @@ export function PawRoomWorkspace({
     if (queue.queue.length) setDraft(queue.restoreToDraft(draft));
     if (jevEnabled && jev.liveSnapshot) void jev.stop(); else void abortTurn(activeRootId);
   };
-  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-agent-mode={jevEnabled ? 'jev' : undefined} data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
+  const roomChromeControls = <div aria-label="Room 窗口控制" onFocusCapture={event => {
+    // A partly clipped item can receive focus without the browser revealing
+    // its full hit target. Keep keyboard navigation inside the view strip.
+    event.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+  }} className="paw-room-window-chrome" data-controls-expanded={controlsExpanded} data-agent-mode={jevEnabled ? 'jev' : undefined} data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
+    <button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起 Room 控件' : '展开 Room 控件'} onClick={() => setControlsExpanded(value => !value)}><ChevronDown size={15} /><span>视图</span></button>
+    <button type="button" aria-pressed={visibleView === 'timeline'} aria-label={visibleView === 'timeline' ? '返回 Room 对话' : '查看 Room 协作全景'} onClick={() => { setView(visibleView === 'timeline' ? 'conversation' : 'timeline'); setPanel('none'); exitCollaborationFocus(); }}><ChartGantt size={15} /><span>协作</span></button>
+    <button type="button" aria-label="查看 Room 任务" onClick={() => jevEnabled ? setJevRail(true) : setPanel('focus')}><ListChecks size={15} /></button>
     {jevEnabled ? <span aria-label="Agent 中的 Jev 任务模式" className="paw-room-workspace__mode">Jev</span> : coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
     {jevEnabled ? <nav aria-label="Jev 工作台视图"><button type="button" aria-pressed={visiblePanel === 'none'} onClick={() => setPanel('none')}><MessageCircle size={14} /><span>对话与进展</span></button><button type="button" aria-pressed={visiblePanel === 'governance'} onClick={() => setPanel('governance')}><Users size={14} /><span>伙伴与设置</span></button></nav> : !externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
       <button aria-label="对话与结果" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>对话与结果</span></button>
@@ -1017,8 +1045,9 @@ export function PawRoomWorkspace({
     setJevRail(true);
     requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('.paw-jev-rail button')?.focus({ preventScroll: true }));
   };
-  /* The plan and clarification forms are part of the transcript tail. Keep
-     reading position otherwise; this is an explicit jump requested by the user. */
+  /* The plan and clarification forms are anchored to the plan card inside the
+     current round. Keep reading position otherwise; this is an explicit jump
+     requested by the user. */
   const focusJevPlan = () => {
     const plan = timelineRef.current?.querySelector<HTMLElement>('.jev-plan-review');
     if (!plan) return;
@@ -1043,20 +1072,21 @@ export function PawRoomWorkspace({
   return (
     <section
       ref={workspaceRef}
-      className={`paw-room-workspace paw-room-workspace--migrated-v1${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
+      className={`paw-room-workspace paw-room-workspace--conversation${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
       data-agent-mode={jevEnabled ? 'jev' : 'room'}
       data-collaboration-mode={!jevEnabled && collaborationFocusActive}
       data-external-focus={externalCollaborationFocus || undefined}
       data-panel={visiblePanel}
       data-view={visibleView}
       data-window-chrome={windowChromeTarget ? 'portal' : 'fallback'}
+      data-controls-expanded={controlsExpanded}
       data-room-id={recordId}
       data-status={chromeStatus}
     >
       {windowChromeTarget ? <PawWindowChromePortal>{roomChromeControls}</PawWindowChromePortal> : <header className="paw-room-workspace__header">{roomChromeControls}</header>}
 
       <WorkspaceRecoveryNotice recovery={recovery} />
-      {!externalCollaborationFocus && !jevEnabled ? <section aria-label="Room 当前协作" className="paw-room-workspace__signal">
+      {controlsExpanded && !externalCollaborationFocus && !jevEnabled ? <section aria-label="Room 当前协作" className="paw-room-workspace__signal">
         <div className="paw-room-workspace__objective">
           <div><strong>{(focusProjection?.goal.title !== '主话题' && focusProjection?.goal.title) || (activeTopic?.title !== '主话题' && activeTopic?.title) || record?.description || record?.title || activeWork?.objective || '当前协作'}</strong></div>
           <span>{`${activeParticipants.length} 颗行星 · ${focusProjection?.workItems.length ?? 0} 项任务`}{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
@@ -1069,7 +1099,7 @@ export function PawRoomWorkspace({
       </section> : null}
 
       <div className="paw-room-workspace__body" data-jev-layout={jevEnabled && visiblePanel === 'none' ? 'team' : undefined} data-jev-rail={jevEnabled && visiblePanel === 'none' ? jevRailVisible ? jevRailNarrow ? 'overlay' : 'open' : 'closed' : undefined}>
-        {jevEnabled && visiblePanel === 'none' ? <JevCompanion presentation="stage" execution={jev} room={record} active={active && pageVisible} connected={!connectionError} onStop={stopCurrentWork}
+        {controlsExpanded && jevEnabled && visiblePanel === 'none' ? <JevCompanion presentation="stage" execution={jev} room={record} active={active && pageVisible} connected={!connectionError} onStop={stopCurrentWork}
           lead={jevLead} trailing={jevRailToggle} onOpenTasks={jevRailAvailable ? openJevRail : undefined} onOpenPlan={focusJevPlan} /> : null}
         {jevEnabled && visiblePanel === 'none' && jevRailVisible ? <>
           {jevRailNarrow ? <button type="button" className="paw-jev-rail__scrim" aria-label="关闭任务栏" tabIndex={-1} onClick={() => setJevRail(false)} /> : null}
@@ -1094,6 +1124,8 @@ export function PawRoomWorkspace({
                 room={record}
                 projection={projection}
                 roomId={recordId}
+                graph={jevEnabled ? jevGraph : undefined}
+                onSelectRoot={jevEnabled ? rootId => { const graph = jev.items.find(item => item.rootId === rootId); if (graph) jev.selectGraph(graph.id); } : undefined}
                 onOpenParticipant={openParticipantById}
               />
             </div>
@@ -1113,6 +1145,9 @@ export function PawRoomWorkspace({
             <div className="paw-room-timeline" ref={timelineRef}>
               {roomContentReady && projection && record ? (
                 <PawRoomRoundSheet
+                  readingRecoveryKey={recoveryScope(transport, `room:${recordId}`)}
+                  readingRecoveryReady={roundHistoryReady}
+                  participantDestination={participantProcessLocation === 'room-transcript' ? 'room-transcript' : collaborationFocusActive ? 'observer' : 'session'}
                   onOpenParticipant={selectAndOpenParticipant}
                   onResumeBlocked={resumeBlockedWorkItem}
                   projection={projection}
@@ -1125,6 +1160,7 @@ export function PawRoomWorkspace({
             </div>
           ) : <div className="paw-room-timeline" ref={timelineRef}>
               {roomContentReady && projection && record ? <PawRoomConversation
+                active={active && liveActive && !loading}
                 collaborationMode={jevEnabled ? 'jev' : 'room'}
                 graph={jevEnabled ? jev.snapshot : null}
                 empty={loading
@@ -1158,7 +1194,7 @@ export function PawRoomWorkspace({
                 onRetryTurn={(message, retryOfRootId) => void send(message, { retryOfRootId, preserveDraft: true })}
                 onContinueTurn={(rootId) => void send('继续。请基于当前 Room 已保留的上下文、工具结果和伙伴进展接着完成，不要重复已经完成的操作。', { preserveDraft: true })}
                 projection={projection}
-                tail={jevEnabled ? <JevPlanReview execution={jev} room={record} onAdjust={() => {
+                planReview={jevEnabled ? <JevPlanReview execution={jev} room={record} onAdjust={() => {
                   setDraft(value => value || '我想调整方案：');
                   composerRegionRef.current?.querySelector<HTMLTextAreaElement>('textarea[aria-label="协作消息"]')?.focus();
                 }} /> : undefined}
@@ -1168,6 +1204,10 @@ export function PawRoomWorkspace({
           </div>}
 
           <div className="paw-room-workspace__composer" ref={composerRegionRef}>
+              <PawRoomResponseStatus submitting={sending || jevEnabled && jev.creating}
+                busy={jevEnabled ? jev.busy || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)}
+                stopping={jevEnabled ? jev.stopping : abortingActiveTurn}
+                graph={jevEnabled ? jev.liveSnapshot : null} />
               {!jevEnabled && workStatusVisible && focusProjection && workStatus ? <PawRoomWorkStatus
                 key={recordId}
                 focus={focusProjection}
@@ -1208,7 +1248,9 @@ export function PawRoomWorkspace({
                 <div className="paw-room-workspace__error" role="alert">
                   <CircleAlert size={14} />
                   <span>{visibleError}{jevEnabled && jev.pendingInput ? ` · 原请求含 ${jev.pendingInput.attachmentIds?.length ?? 0} 项附件` : ''}</span>
-                  {jevEnabled && jev.pendingInput ? (
+                  {pendingSend ? (
+                    <button disabled={sending || pendingSend.status === 'sending'} onClick={() => void deliverRoomSend(pendingSend)} type="button">核实上次发送</button>
+                  ) : jevEnabled && jev.pendingInput ? (
                     <button disabled={sending || jev.creating} onClick={() => void retryJevAdmission()} type="button">重试上次发送</button>
                   ) : jevEnabled && jev.pendingPlan ? (
                     <button disabled={sending || Boolean(jev.planSending)} onClick={() => void retryJevPlan()} type="button">核实上次方案操作</button>
@@ -1269,6 +1311,7 @@ export function PawRoomWorkspace({
                     attachments={attachments}
                     sending={sending}
                     uncertainSubmission={jevEnabled && Boolean(jev.pendingInput)}
+                    awaitingExecutionStart={!jevEnabled && activeTurn?.status === 'queued'}
                     taskBusyState={jevEnabled ? jev.busy || activeTurn && !jev.liveSnapshot
                       ? jev.liveSnapshot?.phase === 'route' && jevAbstention(jev.liveSnapshot) ? 'waiting' : 'running'
                       : undefined : taskBusyState}

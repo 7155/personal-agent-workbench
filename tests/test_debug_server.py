@@ -325,11 +325,13 @@ class DebugImeServiceTests(unittest.TestCase):
             "RAG_IME_PINYIN_FUZZY_S_SH": os.environ.get("RAG_IME_PINYIN_FUZZY_S_SH"),
             "RAG_IME_PINYIN_FUZZY_N_L": os.environ.get("RAG_IME_PINYIN_FUZZY_N_L"),
         }
+        self.addCleanup(self._restore_optimizer_env)
         os.environ["RAG_IME_AI_AFTER_COMMIT_ONLY"] = "0"
         os.environ["RAG_IME_ENABLE_COMPOSING_MODEL"] = "1"
         os.environ["RAG_IME_ENABLE_PINYIN_CONSTRAINED_MODEL"] = "1"
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-debug-test-")
-        self.service = DebugImeService(
+        self.addCleanup(self.tmp.cleanup)
+        self.service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "rag-ime.sqlite",
                 static_dir=Path("debug"),
@@ -337,13 +339,18 @@ class DebugImeServiceTests(unittest.TestCase):
             )
         )
 
-    def tearDown(self) -> None:
+    def _new_service(self, config: DebugServerConfig) -> DebugImeService:
+        service = DebugImeService(config)
+        # LIFO cleanup closes every owned service before its database directory.
+        self.addCleanup(service.close)
+        return service
+
+    def _restore_optimizer_env(self) -> None:
         for key, value in self._optimizer_env.items():
             if value is None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
-        self.tmp.cleanup()
 
     def test_health_and_seed_use_local_sqlite(self) -> None:
         health = self.service.health()
@@ -418,14 +425,14 @@ class DebugImeServiceTests(unittest.TestCase):
             },
             clear=False,
         ):
-            sidecar = DebugImeService(
+            sidecar = self._new_service(
                 DebugServerConfig(
                     db_path=sidecar_db,
                     seed_if_empty=False,
                     server_name="sidecar server",
                 )
             )
-            gateway = DebugImeService(
+            gateway = self._new_service(
                 DebugServerConfig(
                     db_path=gateway_db,
                     seed_if_empty=False,
@@ -458,7 +465,7 @@ class DebugImeServiceTests(unittest.TestCase):
             {"RAG_IME_AGENT_GATEWAY_ENABLED": "1"},
             clear=False,
         ):
-            sidecar = DebugImeService(
+            sidecar = self._new_service(
                 DebugServerConfig(
                     db_path=db_path,
                     seed_if_empty=False,
@@ -522,9 +529,168 @@ class DebugImeServiceTests(unittest.TestCase):
             self.assertEqual(payload["code"], "AGENT_GATEWAY_REQUIRED")
             self.assertFalse(payload["ok"])
 
+    def test_passive_sidecar_proxies_jev_reads_and_commands_to_gateway_owner(self) -> None:
+        gateway_requests: list[tuple[str, str, bytes]] = []
+        gateway_auth_headers: list[tuple[str, str]] = []
+
+        class GatewayHandler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802 - stdlib API
+                gateway_requests.append(("GET", self.path, b""))
+                gateway_auth_headers.append(
+                    (
+                        self.headers.get("X-RAG-IME-Admin-Token", ""),
+                        self.headers.get("Origin", ""),
+                    )
+                )
+                body = json.dumps(
+                    {
+                        "schemaVersion": "owner-jev.v1",
+                        "graphId": "graph:owner",
+                        "executionStatus": "running",
+                    }
+                ).encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):  # noqa: N802 - stdlib API
+                length = int(self.headers.get("Content-Length") or "0")
+                body = self.rfile.read(length)
+                gateway_requests.append(("POST", self.path, body))
+                gateway_auth_headers.append(
+                    (
+                        self.headers.get("X-RAG-IME-Admin-Token", ""),
+                        self.headers.get("Origin", ""),
+                    )
+                )
+                response = {"schemaVersion": "owner-jev-command.v1", "ok": True}
+                encoded = json.dumps(response).encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, *args):
+                pass
+
+        gateway_server = ThreadingHTTPServer(("127.0.0.1", 0), GatewayHandler)
+        gateway_thread = Thread(target=gateway_server.serve_forever, daemon=True)
+        gateway_thread.start()
+        self.addCleanup(gateway_server.server_close)
+        self.addCleanup(gateway_thread.join, 2)
+        self.addCleanup(gateway_server.shutdown)
+
+        db_path = Path(self.tmp.name) / "passive-jev-proxy.sqlite"
+        with patch.dict(
+            os.environ,
+            {
+                "RAG_IME_AGENT_GATEWAY_ENABLED": "1",
+                "RAG_IME_AGENT_GATEWAY_URL": (
+                    f"http://127.0.0.1:{gateway_server.server_port}"
+                ),
+            },
+            clear=False,
+        ):
+            sidecar = self._new_service(
+                DebugServerConfig(
+                    db_path=db_path,
+                    seed_if_empty=False,
+                    server_name="sidecar server",
+                )
+            )
+        self.addCleanup(sidecar.close)
+        sidecar.settings_update(
+            {
+                "managementSecurity.requireToken": True,
+                "managementSecurity.token": "proxy-token",
+            }
+        )
+
+        class Handler(DebugRequestHandler):
+            pass
+
+        Handler.service = sidecar
+        Handler.static_dir = Path("debug")
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.shutdown)
+
+        room = quote("room:test", safe="")
+        graph = quote("graph:owner", safe="")
+        base = f"http://127.0.0.1:{server.server_port}/api/agent/rooms/{room}/jev"
+        with patch.object(sidecar.agent, "jev_workspace") as local_read, patch.object(
+            sidecar.agent, "jev_command"
+        ) as local_command:
+            with urlopen(f"{base}?graphId={graph}", timeout=5) as response:
+                read_payload = json.loads(response.read().decode("utf-8"))
+            command_body = {"action": "retry_route", "graphId": "graph:owner"}
+            command_request = Request(
+                base,
+                data=json.dumps(command_body).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": f"http://127.0.0.1:{server.server_port}",
+                    "X-RAG-IME-Admin-Token": "proxy-token",
+                },
+                method="POST",
+            )
+            with urlopen(command_request, timeout=5) as response:
+                command_payload = json.loads(response.read().decode("utf-8"))
+
+        local_read.assert_not_called()
+        local_command.assert_not_called()
+        self.assertEqual(read_payload["executionStatus"], "running")
+        self.assertTrue(command_payload["ok"])
+        self.assertEqual(
+            gateway_requests[0][0:2],
+            ("GET", f"/api/agent/rooms/{room}/jev?graphId={graph}"),
+        )
+        self.assertEqual(
+            gateway_requests[1][0:2],
+            ("POST", f"/api/agent/rooms/{room}/jev"),
+        )
+        self.assertEqual(json.loads(gateway_requests[1][2]), command_body)
+        self.assertEqual(gateway_auth_headers[0], ("", ""))
+        self.assertEqual(gateway_auth_headers[1], ("proxy-token", ""))
+
+    def test_missing_role_book_returns_json_not_found(self) -> None:
+        class Handler(DebugRequestHandler):
+            pass
+
+        Handler.service = self.service
+        Handler.static_dir = Path("debug")
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = (
+                f"http://127.0.0.1:{server.server_port}/api/agent/role-book"
+                "?roleId=missing-role&roleVersion=1"
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(url, timeout=5)
+            error = raised.exception
+            try:
+                self.assertEqual(error.code, HTTPStatus.NOT_FOUND)
+                payload = json.loads(error.read().decode("utf-8"))
+            finally:
+                error.close()
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
+        self.assertEqual(payload, {"ok": False, "error": "role book not found"})
+
     def test_explicit_memory_prepare_drains_empty_batches_until_one_draft(self) -> None:
         db_path = Path(self.tmp.name) / "manual-curation-drain.sqlite"
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(db_path=db_path, seed_if_empty=False)
         )
         organizer = EmptyThenDraftMemoryOrganizer()
@@ -616,7 +782,7 @@ class DebugImeServiceTests(unittest.TestCase):
             },
             clear=False,
         ):
-            service = DebugImeService(DebugServerConfig(db_path=db_path, seed_if_empty=False))
+            service = self._new_service(DebugServerConfig(db_path=db_path, seed_if_empty=False))
         try:
             self.assertIsInstance(service.core, LocalSqliteCoreClient)
             assert isinstance(service.core, LocalSqliteCoreClient)
@@ -674,7 +840,7 @@ class DebugImeServiceTests(unittest.TestCase):
             )
 
         vector_core = LocalSqliteCoreClient(db_path, embedding_provider=MarsEmbeddingProvider(), vector_weight=2.0)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=db_path,
                 core=vector_core,
@@ -750,7 +916,7 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertEqual(before["activeProviderVectors"], 1)
         self.assertEqual(before["activeProviderRetrievalDocVectors"], 0)
 
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=db_path,
                 core=vector_core,
@@ -779,7 +945,7 @@ class DebugImeServiceTests(unittest.TestCase):
         )
 
         vector_core = LocalSqliteCoreClient(db_path, embedding_provider=MarsEmbeddingProvider(), vector_weight=2.0)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=db_path,
                 core=vector_core,
@@ -1095,7 +1261,7 @@ class DebugImeServiceTests(unittest.TestCase):
                 query="候选展示方式",
             )
         )
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=db_path,
                 static_dir=Path("debug"),
@@ -1137,7 +1303,7 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertEqual(cached["rankingDiagnostics"]["evidenceSourceCounts"]["rag"], 1)
 
     def test_rime_suggest_prediction_first_merge_is_debuggable_and_cache_separated(self) -> None:
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "prediction-first-cache.sqlite",
                 static_dir=Path("debug"),
@@ -1191,7 +1357,7 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertTrue(prediction_first["predictionFirst"]["policy"]["rimeCompositionOwnedByRime"])
 
     def test_prediction_live_trace_redacts_text_and_reports_lanes(self) -> None:
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "prediction-live-trace.sqlite",
                 static_dir=Path("debug"),
@@ -1230,7 +1396,7 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertTrue(frame["traceEvents"])
 
     def test_management_context_ignores_all_doctor_probe_sessions(self) -> None:
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "management-context-doctor-filter.sqlite",
                 static_dir=Path("debug"),
@@ -1269,7 +1435,7 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertTrue(latest["foregroundContext"]["applied"])
 
     def test_prediction_live_trace_http_endpoint(self) -> None:
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "prediction-live-trace-http.sqlite",
                 static_dir=Path("debug"),
@@ -1325,7 +1491,7 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertEqual(drop_payload["frameCount"], 1)
 
     def test_rime_suggest_cache_hit_rebinds_frontend_transaction_fields(self) -> None:
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "prediction-first-transaction-cache.sqlite",
                 static_dir=Path("debug"),
@@ -1529,7 +1695,7 @@ class DebugImeServiceTests(unittest.TestCase):
     def test_rime_suggest_cache_key_includes_vector_index_state(self) -> None:
         predictor = FakePredictionProvider()
         core = VectorAwareFixtureCore()
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "cache-vector-state.sqlite",
                 core=core,
@@ -2547,7 +2713,7 @@ class DebugImeServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         script.chmod(0o755)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "input-source.sqlite",
                 static_dir=Path("debug"),
@@ -2589,7 +2755,7 @@ class DebugImeServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         script.chmod(0o755)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "input-source-http.sqlite",
                 static_dir=Path("debug"),
@@ -2637,7 +2803,7 @@ class DebugImeServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         script.chmod(0o755)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "input-source-missing.sqlite",
                 static_dir=Path("debug"),
@@ -2673,7 +2839,7 @@ class DebugImeServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         script.chmod(0o755)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "input-source-third-party-missing.sqlite",
                 static_dir=Path("debug"),
@@ -2712,7 +2878,7 @@ class DebugImeServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         script.chmod(0o755)
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "input-source-rag-ime-missing.sqlite",
                 static_dir=Path("debug"),
@@ -2740,7 +2906,7 @@ class DebugImeServiceTests(unittest.TestCase):
             self.service.action({"actionType": "unknown", "memoryId": "event:1"})
 
     def test_debug_service_can_use_injected_shared_core_adapter(self) -> None:
-        service = DebugImeService(
+        service = self._new_service(
             DebugServerConfig(
                 db_path=Path(self.tmp.name) / "fixture-core.sqlite",
                 core=FixtureCoreClient(),

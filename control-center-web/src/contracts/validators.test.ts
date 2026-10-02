@@ -31,6 +31,13 @@ describe('generated JSON contracts', () => {
     const fixtures = [
       approvalFixture, eventFixture, mediaFixture, maintenanceFixture,
       messageFixture, sessionFixture,
+      {
+        schemaVersion: 'rag-ime.agent-session-codemode-selection.v1',
+        ok: true,
+        sessionId: 'agent:ptc',
+        codemodeMode: 'only',
+        capability: { available: true, modes: ['on', 'only', 'off'], defaultMode: 'on' },
+      },
     ];
     const samples: unknown[] = [null, false, 0, '', [], {}, ...fixtures];
     for (const fixture of fixtures) {
@@ -84,7 +91,10 @@ describe('generated JSON contracts', () => {
   });
 
   it('builds a stable schema index for every source contract', () => {
-    expect(Object.keys(contractSchemas)).toHaveLength(171);
+    expect(Object.keys(contractSchemas)).toHaveLength(172);
+    expect(contractSchemas['agent-session-codemode-selection.v1'].$id).toBe(
+      'rag-ime.contract.agent-session-codemode-selection.v1',
+    );
     expect(contractSchemas['trace-optimization.v1'].$id).toBe(
       'rag-ime.contract.trace-optimization.v1',
     );

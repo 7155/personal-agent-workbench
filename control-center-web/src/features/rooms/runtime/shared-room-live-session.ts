@@ -1,7 +1,7 @@
 import { createRoomDeltaBatcher } from '@/contracts/batching';
 import {
-  parseRoomConversationSnapshot,
   parseRoomEventSnapshot,
+  parseRoomEventPage,
   type RoomConversationSnapshot,
   type RoomEventSnapshot,
 } from '@/contracts/room-reducer';
@@ -11,7 +11,8 @@ import {
   retryAfterMsFromError,
 } from '@/platform/recovery-policy';
 import type { ControlTransport } from '@/platform/transport';
-import { useRoomLiveStore } from '../state/live-store';
+import { readRoomConversationSnapshot } from '@/features/conversation-ui/conversation-preload';
+import { useRoomLiveStore, type RoomHistoryMetadata } from '../state/live-store';
 import { acceptedRoomEvents, isRoomCursorReset } from '../state/room-event-window';
 
 const ROOM_RECOVERY_BASE_DELAY_MS = 1_000;
@@ -34,6 +35,10 @@ export interface RoomLiveSessionCallbacks {
 
 export type RoomRecoveryState = 'recovering' | 'failed' | 'synced';
 export type RoomLiveSnapshot = RoomConversationSnapshot | RoomEventSnapshot;
+interface RoomSnapshotRead {
+  snapshot: RoomLiveSnapshot;
+  history?: RoomHistoryMetadata;
+}
 
 export interface RoomLiveSessionLease {
   retry(): void;
@@ -271,25 +276,55 @@ function createSharedRoomLiveSession(
     }
   }
 
-  async function requestFullSnapshot(signal: AbortSignal): Promise<RoomEventSnapshot> {
-    return parseRoomEventSnapshot(await transport.request({
+  async function requestFullSnapshot(signal: AbortSignal): Promise<RoomSnapshotRead & { snapshot: RoomEventSnapshot }> {
+    const snapshot = parseRoomEventSnapshot(await transport.request({
       pathId: 'agent.room.snapshot',
       params: { roomId },
       signal,
+      timeoutMs: 15000,
     }));
+    const current = useRoomLiveStore.getState();
+    const cached = current.historyByRoomId[roomId];
+    if (cached?.firstSequence === 1 && !(current.projections[roomId] && isRoomCursorReset(current.projections[roomId]))
+      && cached.events.some(event => event.sequence === snapshot.firstSequence - 1)) return { snapshot };
+    // Show the lightweight conversation immediately, then fill the persisted
+    // prefix in bounded pages. Never replace it with a tail that silently
+    // forgets its Jev owner or the earlier partner/tool receipts.
+    const pages: UiRoomEvent[][] = [];
+    let history: RoomHistoryMetadata | undefined;
+    let before = snapshot.firstSequence;
+    while (before > 1) {
+      signal.throwIfAborted();
+      const page = parseRoomEventPage(await transport.request({
+        pathId: 'agent.room.history', params: { roomId },
+        query: { beforeSequence: before, limit: 200 }, signal, timeoutMs: 15000,
+      }));
+      if (page.roomId !== roomId) throw new TypeError('Room history belongs to another Room');
+      history = { hasMore: page.hasMore, retainedFirstSequence: page.retainedFirstSequence,
+        retainedPrefixTruncated: page.retainedPrefixTruncated };
+      if (!page.items.length) break;
+      if (page.lastSequence !== before - 1 || page.firstSequence >= before) {
+        throw new TypeError('Room history did not extend the requested prefix');
+      }
+      pages.push(page.items);
+      before = page.firstSequence;
+      if (!page.hasMore) break;
+    }
+    if (!pages.length) return { snapshot, history };
+    const events = [...pages.reverse().flat(), ...snapshot.events];
+    return { snapshot: { ...snapshot, events, firstSequence: events[0]!.sequence, truncated: events[0]!.sequence > 1 }, history };
   }
 
   async function requestPreferredSnapshot(
     signal: AbortSignal,
     forceFull: boolean,
-  ): Promise<RoomLiveSnapshot> {
+    useConversationCache: boolean,
+  ): Promise<RoomSnapshotRead> {
     if (forceFull) return requestFullSnapshot(signal);
     try {
-      return parseRoomConversationSnapshot(await transport.request({
-        pathId: 'agent.room.conversationSnapshot',
-        params: { roomId },
-        signal,
-      }));
+      return { snapshot: await readRoomConversationSnapshot(transport, roomId, signal, {
+        useCache: useConversationCache,
+      }) };
     } catch (error) {
       // Rolling upgrades can briefly pair a new frontend with an older local
       // Runtime. The existing full snapshot is the safe compatibility path.
@@ -318,13 +353,13 @@ function createSharedRoomLiveSession(
     const controller = new AbortController();
     enrichmentController = controller;
     try {
-      const snapshot = await requestFullSnapshot(controller.signal);
+      const { snapshot, history } = await requestFullSnapshot(controller.signal);
       if (!active || requestGeneration !== generation) return;
       batcher.flush();
       if (!active || requestGeneration !== generation) return;
       const snapshotApplied = useRoomLiveStore
         .getState()
-        .replaySnapshotWithTail(roomId, snapshot, liveTail);
+        .replaySnapshotWithTail(roomId, snapshot, liveTail, history);
       if (!snapshotApplied) {
         requireFullSnapshot();
         return;
@@ -389,25 +424,31 @@ function createSharedRoomLiveSession(
     connected = false;
     snapshotController = new AbortController();
     try {
-      const snapshot = await requestPreferredSnapshot(
+      const { snapshot, history } = await requestPreferredSnapshot(
         snapshotController.signal,
         forceFull,
+        latestSnapshot === undefined,
       );
       if (!active || requestGeneration !== generation) return;
       if (snapshot.room.id !== roomId) throw new TypeError('Room snapshot belongs to another Room');
       const store = useRoomLiveStore.getState();
       const conversationSnapshot = snapshot.schemaVersion
         === 'rag-ime.agent-room-conversation-snapshot.v1';
+      const projectionBefore = store.projections[roomId];
       const snapshotApplied = conversationSnapshot
         ? store.replayConversationSnapshot(roomId, snapshot)
-        : store.replaySnapshot(roomId, snapshot);
+        : store.replaySnapshot(roomId, snapshot, history);
+      const cachedConversationReady = conversationSnapshot
+        && !projectionBefore?.needsSnapshot
+        && 'cursorSequence' in snapshot
+        && projectionBefore?.lastSequence === snapshot.cursorSequence;
       if (!snapshotApplied && useRoomLiveStore.getState().projections[roomId]?.needsSnapshot) {
         throw new Error('Room snapshot has not reached the recovery cursor');
       }
       const resumeToken = useRoomLiveStore.getState().projections[roomId]?.resumeToken
         || snapshot.resumeToken;
       setLoading(false);
-      if (snapshotApplied) {
+      if (snapshotApplied || cachedConversationReady) {
         publishSnapshot(snapshot);
       }
       const subscriptionGeneration = requestGeneration;

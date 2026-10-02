@@ -45,6 +45,7 @@ const guestRegistry = new Map();
 const pendingTabs = new Map();
 const activeDownloads = new Map();
 const hostToken = crypto.randomBytes(24).toString('hex');
+const maxBrowserScreenshotBytes = 8 * 1024 * 1024;
 let browserStartPage = readBrowserStartPage();
 
 function readBrowserStartPage() {
@@ -193,6 +194,17 @@ function activateVisibleTarget(targetId) {
   return { ok: true, targetId };
 }
 
+async function captureVisibleTarget(targetId) {
+  const entry = [...guestRegistry.values()].find((guest) => guest.targetId === targetId);
+  if (!entry || entry.contents.isDestroyed()) throw new Error('当前网页不可用');
+  const image = await entry.contents.capturePage();
+  const data = image.toPNG();
+  if (data.length > maxBrowserScreenshotBytes) {
+    throw new Error('浏览器截图超过 8 MiB 限制');
+  }
+  return { ok: true, mimeType: 'image/png', data: data.toString('base64'), targetId };
+}
+
 const primaryInstance = app.requestSingleInstanceLock({ profilePath: paths.profilePath });
 if (!primaryInstance) {
   app.quit();
@@ -227,7 +239,12 @@ async function startPrimaryInstance() {
   fs.writeFileSync(paths.hostPidFile.replace(/\.pid$/, '.token'), `${hostToken}\n`, { encoding: 'utf8', mode: 0o600 });
   const configuredFrontendPort = String(process.env.PAW_FRONTEND_PORT || '').trim();
   hostServer = await startPawHostServer({
-    browserBridge: { activateTarget: activateVisibleTarget, createTab: createVisibleTab, token: hostToken },
+    browserBridge: {
+      activateTarget: activateVisibleTarget,
+      captureScreenshot: captureVisibleTarget,
+      createTab: createVisibleTab,
+      token: hostToken,
+    },
     fallbackToEphemeralPort: configuredFrontendPort === '',
     frontendEntry: paths.frontendEntry,
     controlOrigin: process.env.PAW_CONTROL_ORIGIN || 'http://127.0.0.1:8768',

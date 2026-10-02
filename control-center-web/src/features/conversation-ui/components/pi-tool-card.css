@@ -19,6 +19,33 @@
 .pi-tool-body .pi-tool-empty { color:var(--color-text-secondary,#71756f); margin:5px 0 0; padding:10px 0; font-size:var(--text-label); }
 .pi-tool-body .pi-tool-uncertain { color:var(--color-warning,#946b35); font-size:var(--text-label); margin:0 0 9px; }
 .pi-tool-body [hidden] { display:none!important; }
+.pi-code-mode-body { gap:10px; }
+.pi-code-mode-section { min-width:0; border:1px solid var(--color-border,#e3e4de); border-radius:6px; background:var(--color-surface-subtle,#f5f5f1); overflow:hidden; }
+.pi-code-mode-section > header { display:flex; min-height:30px; align-items:center; justify-content:space-between; gap:8px; padding:6px 9px; border-bottom:1px solid var(--color-border,#e3e4de); color:var(--color-text,#252824); }
+.pi-code-mode-section > header strong { font-size:var(--text-label); font-weight:600; }
+.pi-code-mode-section > header small { color:var(--color-text-secondary,#71756f); font-size:11px; }
+.pi-code-mode-section > pre { max-height:300px; margin:0; padding:10px 11px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--color-text,#252824); font:var(--text-label)/1.65 var(--font-mono,ui-monospace,monospace); }
+.pi-code-mode-calls { display:grid; gap:0; margin:0; padding:0; list-style:none; }
+.pi-code-mode-call { display:grid; grid-template-columns:18px minmax(0,1fr) auto; gap:8px; align-items:start; padding:8px 9px; border-bottom:1px solid var(--color-border,#e3e4de); }
+.pi-code-mode-call:last-child { border-bottom:0; }
+.pi-code-mode-call__status { display:grid; width:18px; height:18px; place-items:center; border-radius:50%; color:var(--color-text-secondary,#71756f); font-weight:700; }
+.pi-code-mode-call[data-call-status=running] .pi-code-mode-call__status { color:var(--color-accent,#426358); }
+.pi-code-mode-call[data-call-status=ok] .pi-code-mode-call__status { color:var(--color-success,#4b8b63); }
+.pi-code-mode-call[data-call-status=error] .pi-code-mode-call__status { color:var(--color-danger,#b75d4b); }
+.pi-code-mode-call__main { display:grid; min-width:0; gap:2px; }
+.pi-code-mode-call__main strong { color:var(--color-text,#252824); font-size:var(--text-label); font-weight:600; }
+.pi-code-mode-call__main code { overflow:hidden; color:var(--color-text-secondary,#71756f); font:11px/1.45 var(--font-mono,ui-monospace,monospace); text-overflow:ellipsis; white-space:nowrap; }
+.pi-code-mode-call__main small { overflow-wrap:anywhere; color:var(--color-danger,#b75d4b); font-size:11px; line-height:1.45; }
+.pi-code-mode-call__main .pi-code-mode-call__id { color:var(--color-text-tertiary,#959891); font:10px/1.4 var(--font-mono,ui-monospace,monospace); }
+.pi-code-mode-call__meta { color:var(--color-text-secondary,#71756f); font:11px/1.4 var(--font-mono,ui-monospace,monospace); white-space:nowrap; }
+.pi-code-mode-call__main summary { cursor:pointer; display:grid; gap:3px; min-width:0; }
+.pi-code-mode-call__main summary:focus-visible { outline:2px solid var(--color-accent); outline-offset:3px; }
+.pi-code-mode-call__main pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; }
+.pi-code-mode-call__main>small:last-child { color:var(--color-text-secondary); }
+.pi-code-mode-full-output { display:grid; gap:3px; margin:0; color:var(--color-text-secondary,#71756f); font-size:11px; }
+.pi-code-mode-full-output code { overflow-wrap:anywhere; color:var(--color-text,#252824); font:11px/1.45 var(--font-mono,ui-monospace,monospace); }
+.pi-code-mode-host-detail { min-width:0; }
+.pi-code-mode-host-detail > *:first-child { margin-top:0; }
 .ccui-tool-card[data-design=pi-receipt] :is(button,pre):focus-visible { outline:2px solid var(--color-accent,#426358); outline-offset:3px; }
 .ccui-tool-card[data-design=pi-receipt]>.ccui-tool-action { padding:10px 14px; border-top:1px solid var(--color-border,#e3e4de); }
 @media(max-width:580px) { .ccui-tool-card[data-design=pi-receipt] .ccui-tool-main { display:grid; gap:1px; } .ccui-tool-card[data-design=pi-receipt] .ccui-tool-main>span { font-size:var(--text-label); } .ccui-tool-card[data-design=pi-receipt]>.ccui-tool-head { gap:8px; padding:11px; } .ccui-tool-card[data-design=pi-receipt] .ccui-tool-state-label { max-width:70px; overflow-wrap:anywhere; } }

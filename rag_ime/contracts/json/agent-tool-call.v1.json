@@ -12,6 +12,15 @@
     },
     "toolCallId": {"type": "string", "minLength": 1},
     "sourceLoopId": {"type": "string", "minLength": 1, "maxLength": 240},
+    "executionBinding": {
+      "type": "object",
+      "required": ["turnId", "clientMessageId"],
+      "properties": {
+        "turnId": {"type": "string", "minLength": 1, "maxLength": 240},
+        "clientMessageId": {"type": "string", "maxLength": 240}
+      },
+      "additionalProperties": false
+    },
     "args": {"type": "object"},
     "roomCapability": {"type": "object"},
     "loadReceiptId": {"type": "string"},
