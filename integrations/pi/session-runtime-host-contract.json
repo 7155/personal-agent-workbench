@@ -10,6 +10,8 @@
     "models.list",
     "completion.once",
     "completion.cancel",
+    "classification.once",
+    "classification.abort",
     "tools.list",
     "tools.sync",
     "session.open",
@@ -53,6 +55,7 @@
   "handlerSources": {
     "protocol": "integrations/rag-ime-runtime-host/src/protocol.ts",
     "runtimeHost": "integrations/rag-ime-runtime-host/src/runtime-host.ts",
+    "classification": "integrations/rag-ime-runtime-host/src/classification.ts",
     "contextInspection": "integrations/rag-ime-runtime-host/src/debug-context.ts",
     "toolBridge": "integrations/rag-ime-runtime-host/src/tool-bridge.ts",
     "toolResults": "integrations/rag-ime-runtime-host/src/tool-artifact-buffer.ts",
@@ -73,6 +76,12 @@
       "sessionCancelOperationRegistry: true",
       "sessionBoundAbort: true",
       "statelessCompletion: true",
+      "statelessClassification: true",
+      "case \"classification.once\"",
+      "case \"classification.abort\"",
+      "classificationParams(params)",
+      "this.modelRuntime.classify(model, context, {",
+      "await scope.cancel(\"classification_aborted\");",
       "await Promise.all([host.plugins.initialize(), host.nativePackages.initialize()]);",
       "case \"room.dispatch\"",
       "case \"room.cancel\"",
@@ -84,6 +93,14 @@
       "case \"plugins.install\"",
       "case \"plugins.uninstall\"",
       "case \"plugins.rollback\""
+    ],
+    "classification": [
+      "export const MANAGED_CLASSIFIER = Object.freeze(",
+      "export function classificationId(",
+      "export function classificationDispatch(",
+      "export function trustedClassificationEndpoint(",
+      "export function classificationParams(",
+      "export function publicClassificationResult("
     ],
     "contextInspection": [
       "const MAX_TOOLS_PER_TURN = 96;",

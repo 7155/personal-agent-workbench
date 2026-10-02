@@ -92,6 +92,8 @@ REQUIRED_RUNTIME_METHODS = (
     "models.list",
     "completion.once",
     "completion.cancel",
+    "classification.once",
+    "classification.abort",
     "tools.list",
     "tools.sync",
     "session.open",
@@ -135,6 +137,7 @@ REQUIRED_RUNTIME_METHODS = (
 _SESSION_RUNTIME_SOURCE_KEYS = (
     "protocol",
     "runtimeHost",
+    "classification",
     "contextInspection",
     "toolBridge",
     "toolResults",
