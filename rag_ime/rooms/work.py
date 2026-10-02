@@ -1688,21 +1688,18 @@ class AgentRoomWorkStore:
         self._notify_terminal(result)
         return result
 
-    def _accept_over_proposed_payload(
-        self,
-        conn: sqlite3.Connection,
-        row: sqlite3.Row,
-        *,
-        superseded_by_work_id: str,
+    def _jev_acceptance_payload(
+        self, conn: sqlite3.Connection, row: sqlite3.Row,
     ) -> dict[str, object] | None:
-        proposed_operability = str(row["proposed_operability_verdict"] or "")
-        proposed_requirement = str(row["proposed_requirement_verdict"] or "")
-        blocking_operability = proposed_operability in {"failed", "unverified"}
-        blocking_requirement = proposed_requirement in {
-            "not_satisfied",
-            "unverified",
-        }
-        if not blocking_operability and not blocking_requirement:
+        # Root identity alone does not make ordinary Room work a Jev task.
+        # Use the same persisted membership as GraphLedger; malformed tasks
+        # inside a real graph must still fail strict Jev validation.
+        graph = conn.execute(
+            "SELECT graph_id FROM agent_jev_graphs "
+            "WHERE room_id=? AND root_turn_id=? AND mode='jev'",
+            (row["room_id"], row["root_turn_id"]),
+        ).fetchone()
+        if graph is None:
             return None
         # Jev's verifier is an ordinary, separately bound Pi
         # purpose, not a synthetic child WorkItem. Its durable receipt must
@@ -1715,10 +1712,10 @@ class AgentRoomWorkStore:
             "SELECT v.dispatch_id,v.result_json,json_extract(e.request_json,'$.ownerId') AS verifier_id FROM agent_jev_verifications v "
             "JOIN agent_jev_runtime_effects e ON e.effect_id=v.dispatch_id "
             "JOIN agent_jev_aux_settlements s ON s.dispatch_id=v.dispatch_id "
-            "WHERE v.task_id=? AND v.task_hash=? AND e.state='accepted' "
+            "WHERE v.graph_id=? AND v.task_id=? AND v.task_hash=? AND e.state='accepted' "
             "AND json_extract(e.request_json,'$.purpose')='verify' "
             "AND json_extract(s.result_json,'$.status')='applied'",
-            (row["id"], task_hash)).fetchone()
+            (graph["graph_id"], row["id"], task_hash)).fetchone()
         if verification:
             verdict = json.loads(verification["result_json"])
             if verdict.get("operabilityVerdict") == "passed" and verdict.get("requirementVerdict") == "satisfied":
@@ -1737,11 +1734,11 @@ class AgentRoomWorkStore:
             "JOIN agent_jev_host_roots h ON h.graph_id=v.graph_id "
             "JOIN agent_jev_commands c ON c.command_id=json_extract(v.result_json,'$.decisionId') "
             "AND c.graph_id=v.graph_id "
-            "WHERE v.task_id=? AND v.task_hash=? AND v.dispatch_id=? AND e.state='accepted' "
+            "WHERE v.graph_id=? AND v.task_id=? AND v.task_hash=? AND v.dispatch_id=? AND e.state='accepted' "
             "AND COALESCE(json_extract(e.request_json,'$.purpose'),'execute')='execute' "
             "AND json_extract(v.result_json,'$.source')='jev_existing_evidence' "
             "AND c.operation='verification_route' AND json_extract(h.policy_json,'$.verificationMode')='auto'",
-            (row["id"], task_hash, row["accepted_turn_id"])).fetchone()
+            (graph["graph_id"], row["id"], task_hash, row["accepted_turn_id"])).fetchone()
         if decided:
             verdict = json.loads(decided["result_json"])
             choice = json.loads(decided["choice_json"])
@@ -1751,6 +1748,27 @@ class AgentRoomWorkStore:
                 return {"verificationMode": "jev_existing_evidence",
                         "verificationDecisionId": verdict["decisionId"],
                         "verificationHash": digest(canonical(verdict))}
+        return None
+
+    def _accept_over_proposed_payload(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        superseded_by_work_id: str,
+    ) -> dict[str, object] | None:
+        proposed_operability = str(row["proposed_operability_verdict"] or "")
+        proposed_requirement = str(row["proposed_requirement_verdict"] or "")
+        blocking_operability = proposed_operability in {"failed", "unverified"}
+        blocking_requirement = proposed_requirement in {
+            "not_satisfied",
+            "unverified",
+        }
+        if not blocking_operability and not blocking_requirement:
+            return None
+        jev_receipt = self._jev_acceptance_payload(conn, row)
+        if jev_receipt is not None:
+            return jev_receipt
         if not superseded_by_work_id:
             raise ValueError(
                 "cannot accept passed/satisfied over Partner proposed "
