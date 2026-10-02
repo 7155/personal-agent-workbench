@@ -7,7 +7,7 @@ import {
 } from '@/contracts/room-reducer';
 import { parseRoomEvent } from '@/contracts/validators';
 
-import { mergeAcceptedRoomTimeline } from './accepted-room-timeline';
+import { acceptedRoomTimelineEvents, mergeAcceptedRoomTimeline } from './accepted-room-timeline';
 
 describe('mergeAcceptedRoomTimeline', () => {
   it('shows the canonical acknowledgement immediately and ignores the same SSE replay', () => {
@@ -55,7 +55,7 @@ describe('mergeAcceptedRoomTimeline', () => {
       }),
     ];
 
-    const accepted = mergeAcceptedRoomTimeline(optimistic, { timelineEvents });
+    const accepted = mergeAcceptedRoomTimeline(optimistic, acceptedRoomTimelineEvents({ timelineEvents }));
     expect(accepted.lastSequence).toBe(2);
     expect(accepted.messageOrder).toEqual(['post-user-1']);
     expect(accepted.messagesById['post-user-1'].clientMessageId).toBe('client-1');
@@ -68,7 +68,7 @@ describe('mergeAcceptedRoomTimeline', () => {
     expect(accepted.activityOrder).toHaveLength(1);
     expect(accepted.activitiesById[accepted.activityOrder[0]].summary).toBe('澄·今 已接手');
 
-    const sameHttpReplay = mergeAcceptedRoomTimeline(accepted, { timelineEvents });
+    const sameHttpReplay = mergeAcceptedRoomTimeline(accepted, acceptedRoomTimelineEvents({ timelineEvents }));
     expect(sameHttpReplay).toEqual(accepted);
     const sameSseReplay = reduceRoomEvent(
       accepted,
@@ -78,18 +78,23 @@ describe('mergeAcceptedRoomTimeline', () => {
     expect(sameSseReplay.state).toBe(accepted);
   });
 
+  it('keeps malformed acknowledgement items out of the validated event batch', () => {
+    const valid = event(1, 'participant_status', { status: 'working' });
+    expect(acceptedRoomTimelineEvents({ timelineEvents: [{ sequence: 1 }, valid] })).toEqual([parseRoomEvent(valid)]);
+  });
+
   it('does not partially apply an acknowledgement that would create a sequence gap', () => {
     const initial = reduceRoomEvent(
       createRoomProjection('room-1'),
       parseRoomEvent(event(1, 'participant_status', { status: 'room_created' })),
     ).state;
-    const merged = mergeAcceptedRoomTimeline(initial, {
+    const merged = mergeAcceptedRoomTimeline(initial, acceptedRoomTimelineEvents({
       timelineEvents: [event(3, 'route_decision', {
         rootId: 'root-1',
         dispatchId: 'dispatch-1',
         targetParticipantId: 'participant-1',
       })],
-    });
+    }));
 
     expect(merged).toBe(initial);
     expect(merged.lastSequence).toBe(1);

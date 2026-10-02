@@ -80,4 +80,31 @@ describe('render-only tool receipt UI', () => {
     expect(screen.getByText('最终结果')).toBeInTheDocument();
     expect(screen.getByText('/tmp/codemode-output.txt')).toBeInTheDocument();
   });
+
+  it.each([
+    { status: 'running', calls: ['ok'], complete: true, expected: '脚本执行中' },
+    { status: 'running', calls: ['ok'], complete: false, expected: '脚本执行中' },
+    { status: 'running', calls: [], complete: false, expected: '脚本执行中' },
+    { status: 'pending', calls: ['ok'], complete: false, expected: '脚本状态待确认' },
+    { status: 'pending', calls: [], complete: false, expected: '脚本状态待确认' },
+    { status: 'error', calls: ['running'], complete: false, expected: '脚本失败' },
+    { status: 'cancelled', calls: ['running'], complete: false, expected: '已停止' },
+    { status: 'success', calls: ['ok'], complete: false, expected: '脚本完成' },
+  ] as const)('keeps the outer codemode state authoritative: $status / $calls / $complete', ({ status, calls, complete, expected }) => {
+    render(<ToolCard block={{ ...block, name: 'codemode', status, codeMode: {
+      calls: calls.map((childStatus, index) => ({ id: `child-${index}`, name: 'read', args: '{}', status: childStatus })),
+      nestedCallsComplete: complete,
+    } }} />);
+    const summary = document.querySelector('.ccui-tool-main > span');
+    expect(summary).toHaveTextContent(expected);
+    if (status !== 'success') expect(summary).not.toHaveTextContent('脚本完成');
+  });
+
+  it('does not let completed nested calls hide an unknown outer execution outcome', () => {
+    render(<ToolCard block={{ ...block, name: 'codemode', status: 'success', executionOutcome: 'unknown', codeMode: {
+      calls: [{ id: 'child', name: 'read', args: '{}', status: 'ok' }], nestedCallsComplete: false,
+    } }} />);
+    expect(screen.getByText('回执待核实')).toBeInTheDocument();
+    expect(document.querySelector('.ccui-tool-main > span')).not.toHaveTextContent('脚本完成');
+  });
 });

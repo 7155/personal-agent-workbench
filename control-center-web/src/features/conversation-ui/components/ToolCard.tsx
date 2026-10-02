@@ -135,10 +135,12 @@ function CodeModeCallRow({ call }: { call: CodeModeCall }) {
 function codeModeSummary(details: CodeModeDetails, status: ReturnType<typeof toolReceiptPresentation>['status']): string {
   const running = details.calls.filter(call => call.status === 'running').length;
   const completeness = details.nestedCallsComplete === false ? ' · 部分恢复' : '';
-  if (running) return `${running} 个嵌套调用进行中${completeness}`;
-  if (details.calls.length) return `${details.calls.length} 个嵌套调用${completeness} · ${status === 'error' ? '脚本失败' : status === 'cancelled' ? '已停止' : '脚本完成'}`;
-  if (details.nestedCallsComplete === false) return `脚本${status === 'error' ? '失败' : status === 'cancelled' ? '已停止' : '完成'} · 嵌套回执部分恢复`;
-  return status === 'running' ? '脚本执行中' : status === 'error' ? '脚本失败' : status === 'cancelled' ? '已停止' : '脚本完成';
+  // Child receipts describe observed calls, not the outer script's lifecycle.
+  const scriptState = { pending: '脚本状态待确认', running: '脚本执行中', success: '脚本完成', error: '脚本失败', cancelled: '已停止' }[status];
+  if (status === 'running' && running) return `${running} 个嵌套调用进行中${completeness}`;
+  if (details.calls.length) return `${details.calls.length} 个嵌套调用${completeness} · ${scriptState}`;
+  if (details.nestedCallsComplete === false) return `${scriptState} · 嵌套回执部分恢复`;
+  return scriptState;
 }
 
 function codeModeCallStatusLabel(status: CodeModeCall['status']): string {

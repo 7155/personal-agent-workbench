@@ -147,8 +147,27 @@ export function PawAgentApp({
     const includeSessions = selection.kind !== 'room' || directoryNeeded;
     const includeRooms = selection.kind !== 'session' || directoryNeeded;
     const includeRoleModels = selection.kind === 'new';
+    const publishSessions = (page: unknown) => {
+      if (!isCurrent()) return;
+      startTransition(() => {
+        if (!isCurrent()) return;
+        // Keep the explicitly targeted Partner Session, while ordinary rails
+        // hide Room-owned Sessions. Each page is an accumulated directory.
+        const listed = sessionItems(page, { includeAppOwned: true }).filter((item) => (
+          !item.roomParticipant || item.id === selectedSessionId
+        ));
+        const listedIds = new Set(listed.map((item) => item.id));
+        for (const id of Object.keys(optimisticSessionsRef.current)) {
+          if (listedIds.has(id)) delete optimisticSessionsRef.current[id];
+        }
+        setSessions([
+          ...Object.values(optimisticSessionsRef.current),
+          ...listed.filter((item) => !optimisticSessionsRef.current[item.id]),
+        ]);
+      });
+    };
     const sessionRead = includeSessions
-      ? readSessionCatalog(transport, showArchived, isCurrent, controller.signal)
+      ? readSessionCatalog(transport, showArchived, isCurrent, controller.signal, publishSessions)
       : Promise.resolve(undefined);
     /* Room and role metadata can render while a visible Session catalog pages
      * through older records. Every result still belongs to this request id. */
@@ -194,28 +213,10 @@ export function PawAgentApp({
       ...(includeRooms ? [roomResult] : []),
       ...(includeRoleModels ? [modelResult] : []),
     ].filter((result) => result.status === 'rejected').length;
-    /* Keep the full Session directory and its completion state together, but
-     * do not make Room/role projection wait for the last Session page. */
+    /* Rows are already visible; only the loading/error summary waits for the
+     * complete directory and independent metadata to settle. */
     startTransition(() => {
       if (!isCurrent()) return;
-      if (sessionResult.status === 'fulfilled') {
-        /* Room Partner Sessions stay out of the ordinary work-record rail, but
-         * a planet window must retain the one explicitly targeted Session so it
-         * can render the same complete workspace as any other Session. */
-        const listed = sessionResult.value === undefined ? null : sessionItems(sessionResult.value, { includeAppOwned: true }).filter((item) => (
-          !item.roomParticipant || item.id === selectedSessionId
-        ));
-        if (listed) {
-          const listedIds = new Set(listed.map((item) => item.id));
-          for (const id of Object.keys(optimisticSessionsRef.current)) {
-            if (listedIds.has(id)) delete optimisticSessionsRef.current[id];
-          }
-          setSessions([
-            ...Object.values(optimisticSessionsRef.current),
-            ...listed.filter((item) => !optimisticSessionsRef.current[item.id]),
-          ]);
-        }
-      }
       if (failures) setLoadError(failures === 4 ? 'Agent 工作记录暂时无法读取。' : '部分 Agent 目录暂时不可用。');
       setLoading(false);
     });

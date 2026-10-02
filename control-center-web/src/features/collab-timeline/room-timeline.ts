@@ -69,6 +69,7 @@ interface Dispatch {
   startMs: number;
   endMs?: number;
   failed: boolean;
+  aborted: boolean;
   model: string;
   workItemId: string;
 }
@@ -160,7 +161,7 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
       ?? (role === 'coordinator' && !parentId ? '协调本轮' : '执行任务');
     const model = jev?.model ?? '';
     if (model) models.set(laneId, model);
-    dispatches.set(dispatchId, { id: dispatchId, laneId, parentId, sourceLaneId, purpose, label, startMs: activity.createdAtMs, failed: false, model, workItemId: text(payload.workItemId) || jev?.taskId || '' });
+    dispatches.set(dispatchId, { id: dispatchId, laneId, parentId, sourceLaneId, purpose, label, startMs: activity.createdAtMs, failed: false, aborted: false, model, workItemId: text(payload.workItemId) || jev?.taskId || '' });
     involved.add(laneId);
     handoffs.push({
       id: `d:${dispatchId}`,
@@ -193,7 +194,8 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
       const dispatch = dispatches.get(text(payload.childDispatchId) || text(payload.dispatchId));
       if (dispatch && dispatch.endMs === undefined) {
         dispatch.endMs = activity.createdAtMs;
-        dispatch.failed = phase !== 'completed';
+        dispatch.failed = phase === 'failed';
+        dispatch.aborted = phase === 'aborted';
         if (dispatch.failed) {
           const kind = PURPOSE_KIND[dispatch.purpose];
           if (kind === 'plan' || kind === 'execute' || kind === 'review') phaseFailures.add(kind);
@@ -279,18 +281,26 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     }
   }
 
-  // Participant turn terminals end any still-open dispatch of that lane.
+  // Exact dispatch receipts precede the legacy participant fallback. A
+  // participant may finish several dispatches long before the Root ends.
+  for (const dispatchId of turn?.terminalDispatchIds ?? []) {
+    const dispatch = dispatches.get(dispatchId);
+    if (!dispatch) continue;
+    dispatch.failed ||= (turn?.failedDispatchIds ?? []).includes(dispatchId);
+    dispatch.aborted ||= (turn?.abortedDispatchIds ?? []).includes(dispatchId);
+    if (dispatch.endMs !== undefined) continue;
+    const failureReceipt = activities.find(activity => activity.kind === 'turn_failed'
+      && text(activity.payload.dispatchId) === dispatchId);
+    const completedMessage = messages.filter(message => message.dispatchId === dispatchId
+      && message.completedAtMs !== undefined).at(-1);
+    dispatch.endMs = failureReceipt?.createdAtMs ?? completedMessage?.completedAtMs ?? turn?.updatedAtMs ?? nowMs;
+  }
   for (const participantId of turn?.terminalParticipantIds ?? []) {
     for (const dispatch of dispatches.values()) {
-      if (dispatch.laneId === participantId && dispatch.endMs === undefined && !live) dispatch.endMs = turn?.updatedAtMs ?? nowMs;
-    }
-  }
-  for (const [dispatchId, participantId] of Object.entries(turn?.dispatchParticipantIds ?? {})) {
-    const dispatch = dispatches.get(dispatchId);
-    if (dispatch && dispatch.endMs === undefined && (turn?.terminalDispatchIds ?? []).includes(dispatchId)) {
-      dispatch.endMs = messages.filter((message) => message.dispatchId === dispatchId).at(-1)?.createdAtMs ?? turn?.updatedAtMs ?? nowMs;
-      dispatch.failed = (turn?.failedDispatchIds ?? []).includes(dispatchId);
-      void participantId;
+      if (dispatch.laneId !== participantId || dispatch.endMs !== undefined || live) continue;
+      dispatch.endMs = turn?.updatedAtMs ?? nowMs;
+      dispatch.failed = (turn?.failedParticipantIds ?? []).includes(participantId);
+      dispatch.aborted = (turn?.abortedParticipantIds ?? []).includes(participantId);
     }
   }
 
@@ -317,7 +327,7 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     let cursor = dispatch.startMs;
     const push = (segmentKind: CollabSegmentKind, from: number, to: number, label: string, isOpen: boolean) => {
       if (to - from < 1) return;
-      segments.push({ id: `s:${dispatch.id}:${segments.length}`, laneId: dispatch.laneId, kind: segmentKind, startMs: from, endMs: to, open: isOpen, label, failed: dispatch.failed && !isOpen && to === end });
+      segments.push({ id: `s:${dispatch.id}:${segments.length}`, laneId: dispatch.laneId, kind: segmentKind, startMs: from, endMs: to, open: isOpen, label, failed: dispatch.failed && !isOpen && to === end, aborted: dispatch.aborted && !isOpen && to === end });
     };
     if (children.length) {
       const waitFrom = Math.max(cursor, children[0]!.startMs);
@@ -409,7 +419,7 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
     const state: CollabLaneState = !own.length ? 'idle'
       : stopping && current ? 'waiting' : stopped && current ? 'stopped'
         : current && live ? lastSegment?.kind === 'wait' ? 'waiting' : lastSegment?.kind === 'review' ? 'reviewing' : lastSegment?.kind === 'plan' || lastSegment?.kind === 'synthesize' ? 'thinking' : 'working'
-          : own.some((dispatch) => dispatch.failed) ? 'error' : 'done';
+          : own.some((dispatch) => dispatch.failed) ? 'error' : own.some((dispatch) => dispatch.aborted) ? 'stopped' : 'done';
     lanes.push({
       id: participant.id, kind: 'partner', label: roomPlanetName(participant.ordinal), ordinal: participant.ordinal,
       role: roleLabel(participant), depth: 0, state,
@@ -476,7 +486,7 @@ export function buildRoomCollabTimeline(input: RoomTimelineInput): CollabTimelin
   const taskDispatches = [...dispatches.values()].map(dispatch => ({
     id: dispatch.id, taskId: dispatch.workItemId, fromLaneId: dispatch.sourceLaneId, toLaneId: dispatch.laneId,
     objective: taskMap.get(dispatch.workItemId)?.objective || jevEffects.get(dispatch.id)?.objective || dispatch.label,
-    state: dispatch.failed ? 'failed' : dispatch.endMs !== undefined ? 'submitted' : live ? 'active' : stopped ? 'cancelled' : 'unknown',
+    state: dispatch.failed ? 'failed' : dispatch.aborted ? 'cancelled' : dispatch.endMs !== undefined ? 'submitted' : live ? 'active' : stopped ? 'cancelled' : 'unknown',
     atMs: dispatch.startMs,
   }));
   const totalWork = graph ? realGraphTasks.length : seenWork.size;

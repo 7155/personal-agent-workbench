@@ -717,7 +717,8 @@ def durable_tool_history_events(
         raw_result = _pi_tool_result(raw)
         raw_args = tool_arguments.get(tool_call_id, {})
         nested_calls = public_codemode_nested_calls(raw,
-            inspectable_arguments=bool(evidence_turn_id and turn_id == evidence_turn_id))
+            inspectable_arguments=bool(evidence_turn_id and turn_id == evidence_turn_id),
+            include_results=True)
         for nested_index, nested_call in enumerate(nested_calls):
             nested_id = str(nested_call.get("id") or "").strip()
             nested_name = str(nested_call.get("name") or "").strip() or "tool"
@@ -735,7 +736,7 @@ def durable_tool_history_events(
                 "isError": nested_status in {"error", "cancelled"},
                 "status": nested_status,
             }
-            for key in ("durationMs", "error", "cost", "result", "argumentSource"):
+            for key in ("durationMs", "error", "cost", "argumentSource", "argumentsBytes"):
                 if nested_call.get(key) is not None:
                     nested_payload[key] = nested_call[key]
             events.append(
@@ -755,13 +756,23 @@ def durable_tool_history_events(
             tool_names[nested_id] = nested_name
             tool_arguments[nested_id] = dict(nested_args)
             if nested_status in {"ok", "error", "cancelled"}:
+                finished_payload = dict(nested_payload)
+                nested_result = nested_call.get("result")
+                if isinstance(nested_result, Mapping):
+                    finished_payload["result"] = _pi_tool_result(nested_result)
+                    finished_payload["resultSource"] = nested_call["resultSource"]
+                    finished_payload["isError"] = runtime_tool_result_is_error(
+                        nested_name, nested_result,
+                        reported_is_error=bool(nested_payload["isError"]))
+                if nested_call.get("resultUnavailable"):
+                    finished_payload["resultUnavailable"] = nested_call["resultUnavailable"]
                 events.append(
                     (
                         nested_id,
                         "tool_finished",
                         turn_id,
                         created_at_ms + nested_index,
-                        nested_payload,
+                        finished_payload,
                         source_sequence + 0.4 + (nested_index / 1_000)
                         if source_sequence is not None
                         else None,
@@ -779,7 +790,9 @@ def durable_tool_history_events(
             ),
         }
         if nested_calls:
-            payload["nestedCalls"] = nested_calls
+            payload["nestedCalls"] = [{key: value for key, value in call.items()
+                                       if key not in {"result", "resultSource", "resultUnavailable"}}
+                                      for call in nested_calls]
             nested_receipt = as_mapping(raw.get("nestedCalls"))
             if isinstance(nested_receipt.get("complete"), bool):
                 payload["nestedCallsComplete"] = nested_receipt["complete"]
@@ -1039,4 +1052,6 @@ def _pi_tool_result(raw: Mapping[str, object]) -> dict[str, object]:
     content = raw.get("content")
     if content is not None:
         result["content"] = inspectable_tool_result(content)
+    if "structuredContent" in raw:
+        result["structuredContent"] = inspectable_tool_result(raw["structuredContent"])
     return result

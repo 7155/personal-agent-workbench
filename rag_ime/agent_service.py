@@ -4313,13 +4313,13 @@ class AgentService:
         with claim:
             self._assert_direct_agent_prompt_available(session_id)
             if not continuation:
-                self.room_turns.hold_priority((session_id,))
+                priority_reservation = self.room_turns.hold_priority((session_id,))
             try:
                 yield
             finally:
                 if not continuation:
                     self.room_turns.release_priority_session(
-                        session_id
+                        session_id, reservation=priority_reservation
                     )
 
     def _assert_direct_agent_prompt_available(
@@ -6493,7 +6493,7 @@ class AgentService:
         child_dispatch_id = str(dispatch.get("childDispatchId") or "")
         self._recover_faulted_room_session(session_id)
         try:
-            self.room_turns.hold_priority_if_idle((session_id,))
+            priority_reservation = self.room_turns.hold_priority_if_idle((session_id,))
         except RoomSessionBusyError:
             self.wake_schedules.defer(
                 run_id,
@@ -6617,7 +6617,7 @@ class AgentService:
                     break
             return True
         finally:
-            self.room_turns.release_priority_session(session_id)
+            self.room_turns.release_priority_session(session_id, reservation=priority_reservation)
 
     def _resume_room_goal_if_paused(self, session_id: str) -> None:
         """Resume a paused participant Goal for an explicit user Room message.

@@ -12,6 +12,8 @@ import { LabKnowledgeRecord } from './LabKnowledgeRecord';
 import { LabRetrievalRun, LabRetrievalHitMetrics } from './LabRetrievalEvidence';
 
 type Page = 'sources' | 'index' | 'evaluation';
+type UploadAttempt = { stopped: boolean; phase: 'reading' | 'hashing' | 'begin' | 'chunk' | 'seal' | 'import'; uploadId?: string };
+type UploadProgress = { message: string; stopping: boolean; canStop: boolean };
 type Draft = { page: Page; corpusId: string; datasetId: string; indexId: string; sourcePath: string; datasetPath: string;
   query: string; strategy: string; size: number; overlap: number; embedding: string; count: number; profile: RetrievalProfile;
   corpusFields: Record<string, string>; datasetFields: Record<string, string>; noDataset: boolean; datasetMode: 'import' | 'agent' };
@@ -37,12 +39,15 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding, 
   const [sourceFile, setSourceFile] = useState<File>(); const [datasetFile, setDatasetFile] = useState<File>();
   const [recordId, setRecordId] = useState(initialJobId);
   useEffect(() => { setRecordId(initialJobId); }, [initialJobId]);
-  const [error, setError] = useState(''); const [uploadProgress, setUploadProgress] = useState('');
+  const [error, setError] = useState(''); const [uploadProgress, setUploadProgress] = useState<UploadProgress>();
   const [showBases, setShowBases] = useState(false); const [baseId, setBaseId] = useState('');
-  const lastJob = useRef(''); const uploadStop = useRef(false);
+  const lastJob = useRef(''); const uploadAttempt = useRef<UploadAttempt | undefined>(undefined);
   const patch = (value: Partial<Draft>) => setDraft((current) => ({ ...current, ...value }));
   useEffect(() => { try { sessionStorage.setItem(key, JSON.stringify(draft)); } catch { /* Current inputs remain in this component. */ } }, [key, draft]);
-  useEffect(() => () => { uploadStop.current = true; }, []);
+  useEffect(() => {
+    setUploadProgress(undefined);
+    return () => { uploadAttempt.current = undefined; };
+  }, [key]);
   const query = useQuery({ queryKey: ['lab-knowledge', connection, project.projectId],
     queryFn: async ({ signal }) => parseKnowledgeState((await readLabProject(transport, project.projectId, '', undefined, signal)).knowledge),
     retry: false, refetchOnWindowFocus: true,
@@ -70,42 +75,76 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding, 
     if (result?.kind === 'index') patch({ indexId: selectedJob.jobId });
     if (result?.kind === 'dataset') patch({ datasetId: selectedJob.jobId, noDataset: false });
   }, [selectedJob]);
-  const command = async (value: Record<string, JsonValue>) => {
+  const checkUpload = (attempt: UploadAttempt) => {
+    if (uploadAttempt.current !== attempt || attempt.stopped) throw new Error('所选文件与字段已保留，需要时可重新发起。');
+  };
+  const command = async (value: Record<string, JsonValue>, attempt?: UploadAttempt) => {
+    if (attempt) checkUpload(attempt);
     setError('');
     const receipt = await onCommand(value);
+    if (attempt) checkUpload(attempt);
     if (receipt?.job) lastJob.current = receipt.job.jobId;
     if (receipt) await query.refetch();
+    if (attempt) checkUpload(attempt);
     return receipt;
   };
-  const upload = async (file: File) => {
+  const upload = async (file: File, attempt: UploadAttempt) => {
     if (file.size <= 0 || file.size > 300 * 1024 * 1024) throw new Error('请选择非空文件，最多 300 MB。');
-    setUploadProgress(`正在读取 ${file.name}…`);
+    const progress = (phase: UploadAttempt['phase'], message: string) => {
+      checkUpload(attempt);
+      attempt.phase = phase;
+      setUploadProgress({ message, stopping: false, canStop: true });
+    };
+    progress('reading', `正在读取 ${file.name}…`);
     const bytes = await file.arrayBuffer();
+    progress('hashing', `正在校验 ${file.name}…`);
     const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((value) => value.toString(16).padStart(2, '0')).join('');
-    if (uploadStop.current) throw new Error('上传已停止，可以重新选择原文件继续。');
+    progress('begin', `正在准备上传 ${file.name}…`);
     const started = await onCommand({ operation: 'upload_begin', name: file.name, bytes: file.size, sha256: hash });
     const uploadId = started?.upload?.uploadId;
+    attempt.uploadId = uploadId;
     if (!uploadId) throw new Error('上传尚未确认，请先核对原操作。');
+    checkUpload(attempt);
     const chunkBytes = started.upload?.chunkBytes ?? 512 * 1024;
     for (let offset = 0; offset < bytes.byteLength; offset += chunkBytes) {
-      if (uploadStop.current) throw new Error('上传已停止，可以重新选择原文件继续。');
+      checkUpload(attempt);
       const part = new Uint8Array(bytes.slice(offset, offset + chunkBytes)); let binary = '';
       for (let start = 0; start < part.length; start += 8192) binary += String.fromCharCode(...part.subarray(start, start + 8192));
-      setUploadProgress(`正在上传 ${file.name} · ${Math.round(offset / file.size * 100)}%`);
+      progress('chunk', `正在上传 ${file.name} · 已确认 ${Math.floor(offset / file.size * 100)}%`);
       if (!await onCommand({ operation: 'upload_chunk', uploadId, index: offset / chunkBytes, data: btoa(binary) })) throw new Error('上传分片尚未确认，请先核对原操作。');
+      checkUpload(attempt);
     }
+    progress('seal', `分片已确认，正在核对 ${file.name} 的接收结果…`);
     if (!await onCommand({ operation: 'upload_seal', uploadId })) throw new Error('文件接收结果尚未确认，请核对原操作。');
+    checkUpload(attempt);
     return uploadId;
   };
+  const stopUpload = () => {
+    const attempt = uploadAttempt.current;
+    if (!attempt || attempt.stopped || attempt.phase === 'import') return;
+    attempt.stopped = true;
+    const waiting = { reading: '文件读取结束', hashing: '文件校验结束', begin: '上传初始化回执', chunk: '当前分片回执', seal: '文件接收回执' }[attempt.phase];
+    setUploadProgress({ message: `正在停止，等待${waiting}。已发出的请求可能仍会完成，后续不再发起导入。`, stopping: true, canStop: true });
+  };
   const importFile = async (kind: 'corpus' | 'dataset') => {
-    setError(''); uploadStop.current = false;
+    // Keep ownership until the outstanding receipt settles, even after Stop.
+    if (uploadAttempt.current) return;
+    const attempt: UploadAttempt = { stopped: false, phase: 'reading' };
+    uploadAttempt.current = attempt;
+    setError('');
     try {
       const file = kind === 'corpus' ? sourceFile : datasetFile;
-      const source: Record<string, JsonValue> = file ? { uploadId: await upload(file) } : { path: kind === 'corpus' ? draft.sourcePath : draft.datasetPath };
+      const source: Record<string, JsonValue> = file ? { uploadId: await upload(file, attempt) } : { path: kind === 'corpus' ? draft.sourcePath : draft.datasetPath };
+      checkUpload(attempt);
+      attempt.phase = 'import';
+      if (file) setUploadProgress({ message: '文件已接收，正在提交导入…', stopping: false, canStop: false });
       await command({ operation: kind === 'corpus' ? 'import_corpus' : 'import_dataset', ...source,
-        ...(kind === 'dataset' ? { corpusId: corpus!.jobId } : {}), fields: kind === 'corpus' ? draft.corpusFields : draft.datasetFields });
-    } catch (reason) { setError(projectError(reason)); }
-    finally { setUploadProgress(''); }
+        ...(kind === 'dataset' ? { corpusId: corpus!.jobId } : {}), fields: kind === 'corpus' ? draft.corpusFields : draft.datasetFields }, attempt);
+    } catch (reason) {
+      if (uploadAttempt.current === attempt) setError(`${attempt.stopped ? '后续操作已停止，未发起资料导入。' : ''}${projectError(reason)}${attempt.uploadId ? ` 上传记录：${attempt.uploadId}` : ''}`);
+    } finally {
+      if (uploadAttempt.current === attempt) { uploadAttempt.current = undefined; setUploadProgress(undefined); }
+    }
   };
   const evaluate = (split: 'development' | 'holdout') => !retrievalProfileError(draft.profile, index?.dense.provider.semantic === true, index?.reranker.configured === true) && command({ operation: 'evaluate', indexId: index!.jobId,
     datasetId: dataset!.datasetId, profile: { ...draft.profile }, split });
@@ -130,7 +169,7 @@ export function LabKnowledge({ project, busy, onCommand, onBind, onOpenBinding, 
     {query.isPending ? <p role="status">正在读取知识库实验…</p> : null}
     {query.isError ? <p role="alert" className="lab-project-error">{projectError(query.error)}</p> : null}
     {error ? <p role="alert" className="lab-project-error">{error}</p> : null}
-    {uploadProgress ? <div className="lab-knowledge-status" role="status"><span>{uploadProgress}</span><Button size="small" onClick={() => { uploadStop.current = true; }}>停止上传</Button></div> : null}
+    {uploadProgress ? <div className="lab-knowledge-status" role="status" aria-live="polite"><span>{uploadProgress.message}</span>{uploadProgress.canStop ? <Button size="small" disabled={uploadProgress.stopping} onClick={stopUpload}>{uploadProgress.stopping ? '正在停止' : '停止上传'}</Button> : null}</div> : null}
     {active.map((job) => <div key={job.jobId} className="lab-knowledge-status" role="status"><div><strong>{labels[job.publicSpec.operation]} · {stateLabels[job.state]}</strong><p>{query.isError ? '当前进度尚未确认；原任务仍保留。' : job.progress || '等待执行'}</p></div><Button size="small" disabled={busy || job.state === 'cancelling'} onClick={() => void command({ operation: 'cancel', jobId: job.jobId })}>停止任务</Button></div>)}
     {!active.length && state?.jobs[0] && ['failed', 'interrupted', 'cancelled'].includes(state.jobs[0].state) ? <p role="status" className="lab-knowledge-status">{labels[state.jobs[0].publicSpec.operation]} · {stateLabels[state.jobs[0].state]}。{state.jobs[0].result?.message || '原记录已保留。检查来源或配置后，可以重新发起；不会自动重跑。'}</p> : null}
     {draft.page === 'sources' ? <div className="lab-knowledge-section">

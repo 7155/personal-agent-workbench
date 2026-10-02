@@ -1,6 +1,7 @@
 import { LoaderCircle } from 'lucide-react';
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cn } from './utils';
+import { useMotionActivity } from '@/design/motion';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
 export type ButtonSize = 'small' | 'medium' | 'large';
@@ -28,6 +29,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
+  const motionActive = useMotionActivity();
   return (
     <button
       ref={ref}
@@ -37,6 +39,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-variant={variant}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
+      data-motion-active={motionActive}
       {...props}
     >
       <span className="ui-button__icon" aria-hidden="true">
@@ -48,6 +51,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           {trailingIcon}
         </span>
       ) : null}
+      {loading ? <span aria-hidden="true" className="ui-button__progress" /> : null}
     </button>
   );
 });

@@ -1945,38 +1945,37 @@ class RoomPartnerApplicationService:
                 or self.pending_removal(room_id, str(target["id"]))):
                 raise ValueError("target Partner changed or is pending removal before batch dispatch")
 
+        priority_reservation = None
         try:
             if reserved_session_ids:
-                self.room_turns.hold_priority_if_idle(
+                priority_reservation = self.room_turns.hold_priority_if_idle(
                     reserved_session_ids,
                     ensure_available=ensure_active,
                 )
         except RoomSessionBusyError:
             raise ValueError("one or more target Partners are currently busy") from None
-        busy = [
-            target
-            for target, session_id in zip(targets, target_session_ids, strict=True)
-            if session_id in reserved_session_ids and not self.room_target_idle(
-                session_id,
-                allow_user_priority=True,
-            )
-        ]
-        if busy:
-            for session_id in reserved_session_ids:
-                self.room_turns.release_priority_session(session_id)
-            names = "、".join(
-                str(item.get("displayName") or "Partner") for item in busy
-            )
-            raise ValueError(f"target Partners are currently busy: {names}")
-
-        phase = _required_text(args, "phase", maximum=120)
-        wave_uuid = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"rag-ime:{room_id}:{root_id}:{tool_call_id}",
-        )
-        wave_id = f"room-wave:{wave_uuid}"
-        indexed_results: dict[int, dict[str, object]] = {}
         try:
+            busy = [
+                target
+                for target, session_id in zip(targets, target_session_ids, strict=True)
+                if session_id in reserved_session_ids and not self.room_target_idle(
+                    session_id,
+                    allow_user_priority=True,
+                )
+            ]
+            if busy:
+                names = "、".join(
+                    str(item.get("displayName") or "Partner") for item in busy
+                )
+                raise ValueError(f"target Partners are currently busy: {names}")
+
+            phase = _required_text(args, "phase", maximum=120)
+            wave_uuid = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"rag-ime:{room_id}:{root_id}:{tool_call_id}",
+            )
+            wave_id = f"room-wave:{wave_uuid}"
+            indexed_results: dict[int, dict[str, object]] = {}
             with ThreadPoolExecutor(
                 max_workers=len(tasks),
                 thread_name_prefix="room-partner-wave",
@@ -2015,11 +2014,10 @@ class RoomPartnerApplicationService:
                             "parallelSize": len(tasks),
                         }
         finally:
-            # dispatch_target releases successful reservations. This final pass
-            # also clears reservations for tasks that failed before Pi accepted
-            # their Session turn.
+            # The wave acquired these reservations and releases them once,
+            # including tasks that failed before dispatch_target was reached.
             for session_id in reserved_session_ids:
-                self.room_turns.release_priority_session(session_id)
+                self.room_turns.release_priority_session(session_id, reservation=priority_reservation)
 
         results = [indexed_results[index] for index in range(len(tasks))]
         accepted = sum(
@@ -2312,226 +2310,240 @@ class RoomPartnerApplicationService:
                 or self.pending_removal(room_id, target_id)):
                 raise ValueError("target Partner changed or is pending removal before dispatch")
 
+        priority_reservation = None
         if not priority_reserved:
             try:
-                self.room_turns.hold_priority_if_idle(
+                priority_reservation = self.room_turns.hold_priority_if_idle(
                     [target_session_id],
                     ensure_available=ensure_active,
                 )
             except RoomSessionBusyError:
                 raise ValueError("target Partner is currently busy") from None
-            if not self.room_target_idle(
-                target_session_id,
-                allow_user_priority=True,
-            ):
-                self.room_turns.release_priority_session(target_session_id)
-                raise ValueError("target Partner is currently busy")
+        dispatch_started = False
+        turn_bound = False
+        try:
+            if not priority_reserved:
+                if not self.room_target_idle(
+                    target_session_id,
+                    allow_user_priority=True,
+                ):
+                    raise ValueError("target Partner is currently busy")
 
-        decision = self.rooms.plan_routes(
-            room_id,
-            task,
-            requested_participant_ids=[target_id],
-            conversation_only=False,
-        )[0]
-        child_dispatch_id = existing_dispatch_id or (
-            "room-child:"
-            + str(
-                uuid.uuid5(
-                    uuid.NAMESPACE_URL,
-                    f"rag-ime:{room_id}:{root_id}:{tool_call_id}",
+            decision = self.rooms.plan_routes(
+                room_id,
+                task,
+                requested_participant_ids=[target_id],
+                conversation_only=False,
+            )[0]
+            child_dispatch_id = existing_dispatch_id or (
+                "room-child:"
+                + str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"rag-ime:{room_id}:{root_id}:{tool_call_id}",
+                    )
                 )
             )
-        )
-        work_item = self._create_delegated_work(
-            room_id=room_id,
-            root_id=root_id,
-            topic_id=str(room.get("activeTopicId") or ""),
-            tool_call_id=tool_call_id,
-            source=source,
-            target=target,
-            task=task,
-            expected_output=expected_output,
-            acceptance_criteria=criteria,
-            requested_work_item_id=requested_work_item_id,
-            retry_terminal=retry_terminal,
-            expected_revision=expected_revision,
-            retry_reason=retry_reason,
-        )
-        if self.dispatch_store is not None:
-            existing_record = self.dispatch_store.register(
-                child_dispatch_id=child_dispatch_id,
+            work_item = self._create_delegated_work(
                 room_id=room_id,
                 root_id=root_id,
-                parent_dispatch_id=parent_dispatch_id,
+                topic_id=str(room.get("activeTopicId") or ""),
                 tool_call_id=tool_call_id,
-                source_participant_id=str(source["id"]),
-                source_session_id=str(source["sessionId"]),
-                target_participant_id=target_id,
-                target_session_id=target_session_id,
-                work_item_id=str(work_item["id"]),
-            )
-        decision.update(
-            {
-                # A Partner Tool dispatch is an explicit coordinator
-                # delegation, not a fresh invitation from the user.  Keep the
-                # distinction in the public route event so Room projections do
-                # not attribute this child Session to the user.
-                "reason": "partner_delegate",
-                "rootId": root_id,
-                "dispatchId": child_dispatch_id,
-                "targetSessionId": target_session_id,
-                "parentDispatchId": parent_dispatch_id,
-                "child": True,
-                "toolCallId": tool_call_id,
-                **({"waveId": wave_id} if wave_id else {}),
-                **({"phaseName": phase} if phase else {}),
-                "parallelIndex": parallel_index,
-                "parallelSize": parallel_size,
-                **(
-                    {
-                        "workItemId": str(work_item["id"]),
-                        "workItemState": str(work_item.get("state") or ""),
-                    }
-                    if work_item
-                    else {}
-                ),
-            }
-        )
-        topic_id = str(room.get("activeTopicId") or "")
-        self.room_events.publish(
-            room_id=room_id,
-            event_type="route_decision",
-            payload=decision,
-            turn_id=root_id,
-            participant_id=target_id,
-            source_session_id=target_session_id,
-            topic_id=topic_id,
-        )
-        self.room_events.publish(
-            room_id=room_id,
-            event_type="participant_activity",
-            payload={
-                "activityKind": "child",
-                "phase": "started",
-                "parentParticipantId": str(source["id"]),
-                "targetParticipantId": target_id,
-                "parentDispatchId": parent_dispatch_id,
-                "childDispatchId": child_dispatch_id,
-                "toolCallId": tool_call_id,
-                "task": task[:1_200],
-                "expectedOutput": expected_output,
-                "acceptanceCriteria": criteria,
-                **({"workItem": dict(work_item)} if work_item else {}),
-                **({"waveId": wave_id} if wave_id else {}),
-                **({"phaseName": phase} if phase else {}),
-                "parallelIndex": parallel_index,
-                "parallelSize": parallel_size,
-            },
-            turn_id=root_id,
-            participant_id=str(source["id"]),
-            source_session_id=str(source["sessionId"]),
-            topic_id=topic_id,
-        )
-        self.begin_room_turn(
-            target_session_id,
-            root_id,
-            topic_id,
-            dispatch_id=child_dispatch_id,
-            child=True,
-        )
-        previous_accepted_turn_id = str(work_item.get("acceptedTurnId") or "")
-        work_claimed = False
-        if self.room_work is not None and previous_accepted_turn_id != root_id:
-            work_item = self.room_work.claim_dispatch(
-                str(work_item["id"]),
-                room_id=room_id,
-                owner_participant_id=target_id,
-                assignment_key=str(work_item["assignmentKey"]),
-                previous_accepted_turn_id=previous_accepted_turn_id,
-                room_turn_id=root_id,
-            )
-            work_claimed = True
-        unread = self.rooms.unread_public_messages(
-            room_id,
-            target_id,
-            topic_id=topic_id,
-            exclude_turn_id=root_id,
-            limit=12,
-        )
-        task_message = _partner_task_message(
-            source=source,
-            task=task,
-            expected_output=expected_output,
-            acceptance_criteria=criteria,
-        )
-        dispatched = self.room_dispatch.dispatch_target(
-            room=room,
-            target=target,
-            decision=decision,
-            message=task_message,
-            room_turn_id=root_id,
-            topic_id=topic_id,
-            unread=unread,
-            work_item=work_item or None,
-            attachment_ids=(),
-        )
-        if dispatched.get("accepted") is not True:
-            cancelled = (
-                dispatched.get("cancelled") is True
-                or str(dispatched.get("status") or "") == "cancelled"
-            )
-            self._fail_delegated_work(
-                work_item,
                 source=source,
                 target=target,
-                root_id=root_id,
-                previous_accepted_turn_id=previous_accepted_turn_id,
-                work_claimed=work_claimed,
-                reason=str(dispatched.get("error") or "Partner rejected task"),
-                cancelled=cancelled,
+                task=task,
+                expected_output=expected_output,
+                acceptance_criteria=criteria,
+                requested_work_item_id=requested_work_item_id,
+                retry_terminal=retry_terminal,
+                expected_revision=expected_revision,
+                retry_reason=retry_reason,
             )
             if self.dispatch_store is not None:
-                self.dispatch_store.settle(
-                    child_dispatch_id,
-                    status="cancelled" if cancelled else "failed",
-                    result="",
-                    completion_source=(
-                        "dispatch_cancelled"
-                        if cancelled
-                        else "dispatch_rejected"
-                    ),
-                    error=str(dispatched.get("error") or "Partner rejected task"),
+                existing_record = self.dispatch_store.register(
+                    child_dispatch_id=child_dispatch_id,
+                    room_id=room_id,
+                    root_id=root_id,
+                    parent_dispatch_id=parent_dispatch_id,
+                    tool_call_id=tool_call_id,
+                    source_participant_id=str(source["id"]),
+                    source_session_id=str(source["sessionId"]),
+                    target_participant_id=target_id,
+                    target_session_id=target_session_id,
+                    work_item_id=str(work_item["id"]),
                 )
-            raise RuntimeError(str(dispatched.get("error") or "Partner rejected task"))
-        record = (
-            self.dispatch_store.mark_dispatched(
-                child_dispatch_id,
-                target_session_turn_id=str(
-                    dispatched.get("sessionTurnId") or ""
-                ),
-            )
-            if self.dispatch_store is not None
-            else None
-        )
-        result = self._delegate_receipt(
-            room_id=room_id,
-            root_id=root_id,
-            child_dispatch_id=child_dispatch_id,
-            target=target,
-            work_item=work_item,
-            record=record,
-            idempotent_replay=False,
-        )
-        if wave_id:
-            result.update(
+            decision.update(
                 {
-                    "waveId": wave_id,
-                    "phase": phase,
+                    # A Partner Tool dispatch is an explicit coordinator
+                    # delegation, not a fresh invitation from the user.  Keep the
+                    # distinction in the public route event so Room projections do
+                    # not attribute this child Session to the user.
+                    "reason": "partner_delegate",
+                    "rootId": root_id,
+                    "dispatchId": child_dispatch_id,
+                    "targetSessionId": target_session_id,
+                    "parentDispatchId": parent_dispatch_id,
+                    "child": True,
+                    "toolCallId": tool_call_id,
+                    **({"waveId": wave_id} if wave_id else {}),
+                    **({"phaseName": phase} if phase else {}),
                     "parallelIndex": parallel_index,
                     "parallelSize": parallel_size,
+                    **(
+                        {
+                            "workItemId": str(work_item["id"]),
+                            "workItemState": str(work_item.get("state") or ""),
+                        }
+                        if work_item
+                        else {}
+                    ),
                 }
             )
-        return result
+            topic_id = str(room.get("activeTopicId") or "")
+            self.room_events.publish(
+                room_id=room_id,
+                event_type="route_decision",
+                payload=decision,
+                turn_id=root_id,
+                participant_id=target_id,
+                source_session_id=target_session_id,
+                topic_id=topic_id,
+            )
+            self.room_events.publish(
+                room_id=room_id,
+                event_type="participant_activity",
+                payload={
+                    "activityKind": "child",
+                    "phase": "started",
+                    "parentParticipantId": str(source["id"]),
+                    "targetParticipantId": target_id,
+                    "parentDispatchId": parent_dispatch_id,
+                    "childDispatchId": child_dispatch_id,
+                    "toolCallId": tool_call_id,
+                    "task": task[:1_200],
+                    "expectedOutput": expected_output,
+                    "acceptanceCriteria": criteria,
+                    **({"workItem": dict(work_item)} if work_item else {}),
+                    **({"waveId": wave_id} if wave_id else {}),
+                    **({"phaseName": phase} if phase else {}),
+                    "parallelIndex": parallel_index,
+                    "parallelSize": parallel_size,
+                },
+                turn_id=root_id,
+                participant_id=str(source["id"]),
+                source_session_id=str(source["sessionId"]),
+                topic_id=topic_id,
+            )
+            turn_bound = True
+            self.begin_room_turn(
+                target_session_id,
+                root_id,
+                topic_id,
+                dispatch_id=child_dispatch_id,
+                child=True,
+            )
+            previous_accepted_turn_id = str(work_item.get("acceptedTurnId") or "")
+            work_claimed = False
+            if self.room_work is not None and previous_accepted_turn_id != root_id:
+                work_item = self.room_work.claim_dispatch(
+                    str(work_item["id"]),
+                    room_id=room_id,
+                    owner_participant_id=target_id,
+                    assignment_key=str(work_item["assignmentKey"]),
+                    previous_accepted_turn_id=previous_accepted_turn_id,
+                    room_turn_id=root_id,
+                )
+                work_claimed = True
+            unread = self.rooms.unread_public_messages(
+                room_id,
+                target_id,
+                topic_id=topic_id,
+                exclude_turn_id=root_id,
+                limit=12,
+            )
+            task_message = _partner_task_message(
+                source=source,
+                task=task,
+                expected_output=expected_output,
+                acceptance_criteria=criteria,
+            )
+            dispatch_started = True
+            dispatched = self.room_dispatch.dispatch_target(
+                room=room,
+                target=target,
+                decision=decision,
+                message=task_message,
+                room_turn_id=root_id,
+                topic_id=topic_id,
+                unread=unread,
+                work_item=work_item or None,
+                attachment_ids=(),
+                release_priority_on_exit=False,
+            )
+            if dispatched.get("accepted") is not True:
+                cancelled = (
+                    dispatched.get("cancelled") is True
+                    or str(dispatched.get("status") or "") == "cancelled"
+                )
+                self._fail_delegated_work(
+                    work_item,
+                    source=source,
+                    target=target,
+                    root_id=root_id,
+                    previous_accepted_turn_id=previous_accepted_turn_id,
+                    work_claimed=work_claimed,
+                    reason=str(dispatched.get("error") or "Partner rejected task"),
+                    cancelled=cancelled,
+                )
+                if self.dispatch_store is not None:
+                    self.dispatch_store.settle(
+                        child_dispatch_id,
+                        status="cancelled" if cancelled else "failed",
+                        result="",
+                        completion_source=(
+                            "dispatch_cancelled"
+                            if cancelled
+                            else "dispatch_rejected"
+                        ),
+                        error=str(dispatched.get("error") or "Partner rejected task"),
+                    )
+                raise RuntimeError(str(dispatched.get("error") or "Partner rejected task"))
+            record = (
+                self.dispatch_store.mark_dispatched(
+                    child_dispatch_id,
+                    target_session_turn_id=str(
+                        dispatched.get("sessionTurnId") or ""
+                    ),
+                )
+                if self.dispatch_store is not None
+                else None
+            )
+            result = self._delegate_receipt(
+                room_id=room_id,
+                root_id=root_id,
+                child_dispatch_id=child_dispatch_id,
+                target=target,
+                work_item=work_item,
+                record=record,
+                idempotent_replay=False,
+            )
+            if wave_id:
+                result.update(
+                    {
+                        "waveId": wave_id,
+                        "phase": phase,
+                        "parallelIndex": parallel_index,
+                        "parallelSize": parallel_size,
+                    }
+                )
+            return result
+        except Exception:
+            if turn_bound and not dispatch_started:
+                self.cancel_room_turn(target_session_id, root_id)
+            raise
+        finally:
+            if not priority_reserved:
+                self.room_turns.release_priority_session(target_session_id, reservation=priority_reservation)
 
     def _retry(
         self,

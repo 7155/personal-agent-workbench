@@ -1,11 +1,13 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRoomProjection, reduceRoomEvents } from '@/contracts/room-reducer';
+import { roomEventFixture } from '@/test/fixtures/events';
 import { parseJevSnapshot } from '@/features/semantic-workspace/jev-execution';
 import { collabDemoRoom, subagentRun } from './fixtures';
 import { buildSessionCollabTimeline } from './session-timeline';
 import { buildRoomCollabTimeline } from './room-timeline';
-import { collabPhasesFromEvidence, collabFocusAt } from './model';
+import { collabPhasesFromEvidence, collabFocusAt, collabLaneStateAt } from './model';
 import { CollabTimelineStage } from './CollabTimelineStage';
 import { SessionCollabTimeline } from './SessionCollabTimeline';
 
@@ -15,6 +17,60 @@ const base = Date.UTC(2026, 8, 29, 9);
 const run = () => subagentRun({ id: 'a', parent: 's', task: '检查文本', template: 'worker', createdAtMs: base, completedAtMs: base + 20_000, tools: 3 });
 
 describe('timeline evidence boundaries', () => {
+  it('keeps exact sequential dispatch completion times and failures after the Root ends', () => {
+    const { room } = collabDemoRoom();
+    let sequence = 0;
+    const event = (second: number, eventType: string, participantId: string | null, payload: Record<string, unknown>) => ({
+      ...roomEventFixture(++sequence, eventType, { rootId: 'root-1', ...payload }),
+      roomId: room.id, turnId: 'root-1', createdAtMs: base + second * 1000,
+      participantId, sourceSessionId: participantId ? `session-${participantId}` : '',
+    });
+    const projection = reduceRoomEvents(createRoomProjection(room.id), [
+      event(0, 'user_message', null, { messageId: 'user-1', text: '连续复核', mode: 'jev', graphId: 'graph-1' }),
+      event(1, 'route_decision', 'p-earth', { dispatchId: 'review-1', targetParticipantId: 'p-earth', purpose: 'verify' }),
+      event(8, 'participant_delta', 'p-earth', { dispatchId: 'review-1', messageId: 'answer-1', delta: '第一次复核' }),
+      event(10, 'turn_completed', 'p-earth', { dispatchId: 'review-1' }),
+      event(20, 'route_decision', 'p-earth', { dispatchId: 'review-2', targetParticipantId: 'p-earth', purpose: 'verify' }),
+      event(24, 'participant_delta', 'p-earth', { dispatchId: 'review-2', messageId: 'answer-2', delta: '第二次复核' }),
+      event(30, 'turn_completed', 'p-earth', { dispatchId: 'review-2' }),
+      event(40, 'route_decision', 'p-mars', { dispatchId: 'review-failed', targetParticipantId: 'p-mars', purpose: 'verify' }),
+      event(45, 'participant_delta', 'p-mars', { dispatchId: 'review-failed', messageId: 'failed-answer', delta: '复核进行中' }),
+      event(50, 'turn_failed', 'p-mars', { dispatchId: 'review-failed', error: '复核失败' }),
+      event(100, 'turn_failed', null, { status: 'failed', error: '任务未通过' }),
+    ]);
+    expect(Object.values(projection.messagesById).find(message => message.dispatchId === 'review-failed')).toMatchObject({ status: 'failed', completedAtMs: base + 50_000 });
+    const model = buildRoomCollabTimeline({ room, projection, nowMs: base + 100_000 });
+    expect(model.segments.filter(segment => segment.laneId === 'p-earth').map(segment => segment.endMs)).toEqual([base + 10_000, base + 30_000]);
+    expect(model.segments.find(segment => segment.laneId === 'p-mars')).toMatchObject({ endMs: base + 50_000, failed: true });
+    expect(model.lanes.find(lane => lane.id === 'p-mars')?.state).toBe('error');
+    expect(model.dispatches?.find(dispatch => dispatch.id === 'review-failed')?.state).toBe('failed');
+  });
+
+  it.each([false, true])('shows cancelled dispatches as stopped with child receipt=%s', (childReceipt) => {
+    const { room } = collabDemoRoom();
+    let sequence = 0;
+    const event = (second: number, eventType: string, participantId: string | null, payload: Record<string, unknown>) => ({
+      ...roomEventFixture(++sequence, eventType, { rootId: 'root-1', ...payload }),
+      roomId: room.id, turnId: 'root-1', createdAtMs: base + second * 1000,
+      participantId, sourceSessionId: participantId ? `session-${participantId}` : '',
+    });
+    const projection = reduceRoomEvents(createRoomProjection(room.id), [
+      event(0, 'user_message', null, { text: '可取消任务', mode: 'jev', graphId: 'graph-1' }),
+      event(10, 'route_decision', 'p-mars', { dispatchId: 'cancelled', targetParticipantId: 'p-mars', purpose: 'execute' }),
+      event(45, 'participant_delta', 'p-mars', { dispatchId: 'cancelled', messageId: 'cancelled-message', delta: '执行中' }),
+      event(50, 'turn_completed', 'p-mars', { dispatchId: 'cancelled', status: 'aborted' }),
+      ...(childReceipt ? [event(50, 'participant_activity', 'p-earth', { activityKind: 'child', childDispatchId: 'cancelled', phase: 'aborted' })] : []),
+      event(100, 'turn_completed', null, { status: 'aborted' }),
+    ]);
+    expect(Object.values(projection.messagesById).find(message => message.dispatchId === 'cancelled')).toMatchObject({ status: 'aborted', completedAtMs: base + 50_000 });
+    const model = buildRoomCollabTimeline({ room, projection, nowMs: base + 100_000 });
+    const lane = model.lanes.find(item => item.id === 'p-mars')!;
+    expect(lane.state).toBe('stopped');
+    expect(model.dispatches?.find(dispatch => dispatch.id === 'cancelled')?.state).toBe('cancelled');
+    expect(model.segments.find(segment => segment.laneId === 'p-mars')).toMatchObject({ endMs: base + 50_000, aborted: true, failed: false });
+    expect(collabLaneStateAt(model, lane, base + 75_000).state).toBe('stopped');
+  });
+
   it('keeps superseded WorkItems out of current task counts without removing dispatch history', () => {
     const demo = collabDemoRoom();
     const rootId = Object.keys(demo.projection.turnsById)[0]!;

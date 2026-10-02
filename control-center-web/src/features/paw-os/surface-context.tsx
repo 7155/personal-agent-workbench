@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { PawOsDesktopAppId } from './model/app-registry';
 import type { PawOsWindowTarget } from './model/desktop';
+import { MotionActivityBoundary } from '@/design/motion';
 
 export type PawOsAppSurface = {
   appId: PawOsDesktopAppId;
@@ -99,7 +100,9 @@ export function PawOsAppSurfaceProvider({
     <PawOsAppSurfaceContext.Provider value={value}>
       <PawOsAppIdentityContext.Provider value={identity}>
         <PawOsAppActivityContext.Provider value={active}>
-          <PawOsAppCompactContext.Provider value={compact}>{children}</PawOsAppCompactContext.Provider>
+          <MotionActivityBoundary active={active}>
+            <PawOsAppCompactContext.Provider value={compact}>{children}</PawOsAppCompactContext.Provider>
+          </MotionActivityBoundary>
         </PawOsAppActivityContext.Provider>
       </PawOsAppIdentityContext.Provider>
     </PawOsAppSurfaceContext.Provider>

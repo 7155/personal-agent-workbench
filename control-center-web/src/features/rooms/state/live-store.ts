@@ -15,7 +15,7 @@ import {
   type RoomProjectionState,
 } from '@/contracts/room-reducer';
 import type { UiRoomEvent } from '@/contracts/ui-events';
-import { mergeAcceptedRoomTimeline } from '../runtime/accepted-room-timeline';
+import { acceptedRoomTimelineEvents, mergeAcceptedRoomTimeline } from '../runtime/accepted-room-timeline';
 import { publishRoomProjectionSnapshot } from './projection-bridge';
 import { acceptedRoomEvents, appendRoomEventWindow, canApplyRoomSnapshot, isRoomCursorReset } from './room-event-window';
 
@@ -150,41 +150,7 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
     for (const event of accepted) {
       if (event.turnId) changedTurnIds.add(event.turnId);
     }
-    let cache: RoomCacheUpdate = {};
-    const baseSnapshot = get().snapshotsByRoomId[roomId];
-    const currentWindow = get().historyByRoomId[roomId];
-    if (baseSnapshot && currentWindow && accepted.length) {
-      const mergedEvents = appendRoomEventWindow(roomId, currentWindow.events, accepted);
-      const firstSequence = mergedEvents[0]?.sequence ?? 0;
-      const latest = mergedEvents.at(-1);
-      const updatedSnapshot: RoomEventSnapshot = {
-        ...baseSnapshot,
-        room: {
-          ...baseSnapshot.room,
-          lastEventSequence: latest?.sequence ?? baseSnapshot.room.lastEventSequence,
-        },
-        events: mergedEvents,
-        firstSequence,
-        lastSequence: latest?.sequence ?? baseSnapshot.lastSequence,
-        resumeToken: latest?.resumeToken ?? baseSnapshot.resumeToken,
-        truncated: firstSequence > 1,
-      };
-      cache = {
-        historyByRoomId: {
-          ...get().historyByRoomId,
-          [roomId]: {
-            ...currentWindow,
-            events: mergedEvents,
-            firstSequence,
-            hasMore: currentWindow.hasMore || firstSequence > currentWindow.firstSequence,
-          },
-        },
-        snapshotsByRoomId: {
-          ...get().snapshotsByRoomId,
-          [roomId]: updatedSnapshot,
-        },
-      };
-    }
+    const cache = acceptedEventCacheUpdate(get(), roomId, accepted);
     if (projection !== current) {
       replaceProjection(set, get, roomId, projection, changedTurnIds, cache);
     }
@@ -253,8 +219,11 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
   },
   acceptMessage(roomId, response) {
     const current = roomProjection(roomId);
-    const next = mergeAcceptedRoomTimeline(current, response);
-    replaceProjection(set, get, roomId, next, allTurnIds(current, next));
+    const events = acceptedRoomTimelineEvents(response);
+    const next = mergeAcceptedRoomTimeline(current, events);
+    const accepted = acceptedRoomEvents(current, next, events);
+    replaceProjection(set, get, roomId, next, allTurnIds(current, next),
+      acceptedEventCacheUpdate(get(), roomId, accepted));
   },
   discardOptimistic(roomId, clientMessageId) {
     const current = roomProjection(roomId);
@@ -390,6 +359,46 @@ export function discardOptimisticRoomMessage(
 }
 
 type RoomCacheUpdate = Partial<Pick<RoomLiveStore, 'historyByRoomId' | 'snapshotsByRoomId'>>;
+
+/** HTTP acknowledgements and SSE share one retained event window owner. */
+function acceptedEventCacheUpdate(
+  state: RoomLiveStore,
+  roomId: string,
+  accepted: readonly UiRoomEvent[],
+): RoomCacheUpdate {
+  const baseSnapshot = state.snapshotsByRoomId[roomId];
+  const currentWindow = state.historyByRoomId[roomId];
+  if (!baseSnapshot || !currentWindow || !accepted.length) return {};
+  const events = appendRoomEventWindow(roomId, currentWindow.events, accepted);
+  const firstSequence = events[0]?.sequence ?? 0;
+  const latest = events.at(-1);
+  return {
+    historyByRoomId: {
+      ...state.historyByRoomId,
+      [roomId]: {
+        ...currentWindow,
+        events,
+        firstSequence,
+        hasMore: currentWindow.hasMore || firstSequence > currentWindow.firstSequence,
+      },
+    },
+    snapshotsByRoomId: {
+      ...state.snapshotsByRoomId,
+      [roomId]: {
+        ...baseSnapshot,
+        room: {
+          ...baseSnapshot.room,
+          lastEventSequence: latest?.sequence ?? baseSnapshot.room.lastEventSequence,
+        },
+        events,
+        firstSequence,
+        lastSequence: latest?.sequence ?? baseSnapshot.lastSequence,
+        resumeToken: latest?.resumeToken ?? baseSnapshot.resumeToken,
+        truncated: firstSequence > 1,
+      },
+    },
+  };
+}
 
 /** Publish cache and projection together: shell/Room subscribers must never see
  * fresh history alongside an old execution cursor, even for one notification. */

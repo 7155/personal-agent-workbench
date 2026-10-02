@@ -1409,6 +1409,8 @@ _TOOL_RESULT_SECRET_KEY = re.compile(
     r"token|secret|password|api.?key|authorization|cookie",
     re.IGNORECASE,
 )
+_TOOL_RESULT_MAX_NESTING = 64
+_JSON_STRING_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"', re.DOTALL)
 
 
 def inspectable_tool_result(value: object) -> object:
@@ -1420,25 +1422,31 @@ def inspectable_tool_result(value: object) -> object:
     result can still contain provider or browser authentication material.
     """
 
+    return _inspectable_tool_result(value, depth=0)
+
+
+def _inspectable_tool_result(value: object, *, depth: int) -> object:
+    if depth >= _TOOL_RESULT_MAX_NESTING:
+        return "[REDACTED_NESTING_LIMIT]"
     if isinstance(value, Mapping):
         return {
             str(raw_key): (
                 "[REDACTED_SECRET]"
                 if _TOOL_RESULT_SECRET_KEY.search(str(raw_key))
-                else inspectable_tool_result(raw_value)
+                else _inspectable_tool_result(raw_value, depth=depth + 1)
             )
             for raw_key, raw_value in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [inspectable_tool_result(item) for item in value]
+        return [_inspectable_tool_result(item, depth=depth + 1) for item in value]
     if value is None or isinstance(value, (bool, int, float)):
         return value
-    return _redact_tool_result_credentials(str(value))
+    return _redact_tool_result_credentials(str(value), depth=depth)
 
 
 def public_codemode_nested_calls(
     raw_result: object,
-    *, inspectable_arguments: bool = False,
+    *, inspectable_arguments: bool = False, include_results: bool = False,
 ) -> list[dict[str, object]]:
     """Project Pi's bounded nested-call receipt for a public timeline.
 
@@ -1446,10 +1454,11 @@ def public_codemode_nested_calls(
     ``nestedCalls`` record keeps real argument objects, while codemode's own
     ``details.calls`` record keeps compact previews, cancellation and model
     cost fields. Prefer the generic record and enrich it by id from details so
-    a replay has one child identity per call. Nested results are intentionally
-    absent here: live ``tool_execution_*`` events carry those real results and
-    a cold transcript does not contain them. A missing terminal status remains
-    running instead of being promoted to success.
+    a replay has one child identity per call. Modern native records can retain
+    bounded child results. Only the durable child projection requests those;
+    compact parent summaries do not duplicate them. Legacy records remain
+    missing evidence, and outer script text is never a child result. A missing
+    terminal status remains running instead of being promoted to success.
     """
 
     root = as_mapping(raw_result)
@@ -1480,6 +1489,19 @@ def public_codemode_nested_calls(
                 raw.get("status") or detail.get("status")
             ),
         }
+        if include_results and nested_calls:
+            parent_id = str(root.get("toolCallId") or "")
+            suffix = call_id.removeprefix(parent_id + "/") if parent_id else ""
+            # Native child ids encode the actual parent invocation. Do not
+            # attach a tool-authored details.calls result or an unrelated id.
+            if (parent_id and call_id.startswith(parent_id + "/")
+                and re.fullmatch(r"[1-9][0-9]*(?:/[1-9][0-9]*)*", suffix)
+                and raw.get("status") in ("ok", "error")):
+                if isinstance(raw.get("result"), Mapping):
+                    projected["result"] = inspectable_tool_result(raw["result"])
+                    projected["resultSource"] = "native_nested_call_result"
+                if raw.get("resultUnavailable") in ("size_limit", "not_serializable"):
+                    projected["resultUnavailable"] = raw["resultUnavailable"]
         arguments = _public_nested_call_arguments(
             raw.get("arguments")
             if raw.get("arguments") is not None
@@ -1555,16 +1577,43 @@ def _public_nested_call_arguments(value: object, *, inspectable: bool = False) -
     return {}
 
 
-def _redact_tool_result_credentials(value: str) -> str:
+def _redact_tool_result_credentials(value: str, *, depth: int = 0) -> str:
+    # Browser stdout and nested Tool receipts often encode a second JSON value.
+    # Use the same key/recursive projection as structured results, including
+    # escaped keys. Validate first, but never reserialize the whole result: that
+    # would round non-secret numbers and discard duplicate keys/escape spellings.
+    if value.lstrip().startswith(("{", "[", '\"')):
+        try:
+            decoded = json.loads(value)
+        except RecursionError:
+            return "[REDACTED_NESTING_LIMIT]"
+        except ValueError:
+            pass
+        else:
+            if isinstance(decoded, (dict, list, str)):
+                return _redact_json_string_tokens(value, depth=depth)
+
     redacted = re.sub(
         r"\bsk-[A-Za-z0-9_-]{6,}\b",
         "[REDACTED_SECRET]",
         value,
     )
+    # HTTP authentication/cookie headers contain spaces and semicolons. Mask
+    # the whole value, rather than only the first word (e.g. "Bearer").
     redacted = re.sub(
-        r"\b([A-Za-z0-9_]*(?:api[_-]?key|access[_-]?token|password|secret|authorization))"
-        r"(\s*(?:=|:)\s*)([^\s;'\"\\]+|\"[^\"]*\"|'[^']*')",
-        r"\1\2[REDACTED_SECRET]",
+        r"(?i)(\b(?:(?:proxy-)?authorization|(?:set-)?cookie)[ \t]*:[ \t]*)[^\r\n]+",
+        r"\1[REDACTED_SECRET]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?P<prefix>(?<![\w])(?P<key_quote>[\"']?)"
+        r"[A-Za-z0-9_-]*(?:api[_-]?key|token|password|secret|authorization|cookie)[A-Za-z0-9_-]*"
+        r"(?P=key_quote)\s*(?:=|:)\s*)"
+        r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s;,'\"\\}&]+)",
+        lambda match: match['prefix'] + (
+            match['value'][0] + "[REDACTED_SECRET]" + match['value'][0]
+            if match['value'].startswith(('\"', "'")) else "[REDACTED_SECRET]"
+        ),
         redacted,
         flags=re.IGNORECASE,
     )
@@ -1575,6 +1624,37 @@ def _redact_tool_result_credentials(value: str) -> str:
         redacted,
         flags=re.IGNORECASE,
     )
+
+
+def _redact_json_string_tokens(value: str, *, depth: int) -> str:
+    """Replace only secret spans in already-valid JSON, preserving other bytes."""
+    decoder = json.JSONDecoder()
+    parts: list[str] = []
+    consumed = 0
+    for token in _JSON_STRING_TOKEN.finditer(value):
+        if token.start() < consumed:
+            continue  # This string belonged to a fully redacted object/array.
+        text = json.loads(token.group())
+        after = token.end()
+        while after < len(value) and value[after].isspace():
+            after += 1
+        if after < len(value) and value[after] == ':':
+            if not _TOOL_RESULT_SECRET_KEY.search(text):
+                continue
+            start = after + 1
+            while value[start].isspace():
+                start += 1
+            _secret, end = decoder.raw_decode(value, start)
+            replacement = '"[REDACTED_SECRET]"'
+        else:
+            sanitized = _inspectable_tool_result(text, depth=depth + 1)
+            if sanitized == text:
+                continue
+            start, end = token.span()
+            replacement = json.dumps(sanitized, ensure_ascii=False)
+        parts.extend((value[consumed:start], replacement))
+        consumed = end
+    return ''.join((*parts, value[consumed:])) if parts else value
 
 
 def managed_media_content_url(session_id: str, media_id: str) -> str:

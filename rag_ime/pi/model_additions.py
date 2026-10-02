@@ -1,14 +1,19 @@
 """Explicit Pi catalog additions for models newer than the managed bundle."""
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
+from typing import cast
 
-def with_current_codex_models(providers):
+
+def with_current_codex_models(
+    providers: Mapping[str, Mapping[str, object]],
+) -> dict[str, Mapping[str, object]]:
     # Pi's normal models.json extension keeps OAuth and the Responses transport
     # owned by Pi. No credentials, endpoint override, or alternate client here.
     # Source: https://developers.openai.com/api/docs/models/gpt-6.1-sol (2026-09-30).
     result = dict(providers)
     codex = dict(result.get("openai-codex") or {})
-    models = list(codex.get("models") or [])
+    models = list(cast(Iterable[Mapping[str, object]], codex.get("models") or []))
     if not any(model.get("id") == "gpt-6.1-sol" for model in models):
         models.append({
             "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol",

@@ -115,6 +115,9 @@ class RoomSessionCancellationService:
                 room_turn_id,
                 resolve=_resolve_participant_id,
             )
+            priority_reservations = self.room_turns.priority_reservations(
+                session_id for _, session_id, _ in turn_targets
+            )
         for participant_id, session_id, dispatch_id in turn_targets:
             targets.setdefault(
                 participant_id,
@@ -239,6 +242,9 @@ class RoomSessionCancellationService:
                 latest = latest if isinstance(latest, Mapping) else {}
                 wake_session_id = str(latest.get("sessionId") or "")
                 if wake_session_id and wake_session_id not in chain_session_ids:
+                    priority_reservations.update(
+                        self.room_turns.priority_reservations((wake_session_id,))
+                    )
                     chain_session_ids.add(wake_session_id)
                     primary_session_ids.add(wake_session_id)
                     delegation_queue.append(wake_session_id)
@@ -417,9 +423,10 @@ class RoomSessionCancellationService:
                         topic_id=self.room_turns.topic_for_turn(room_turn_id),
                     )
                 self.room_turns.cancel(target["sessionId"], room_turn_id)
-            self.room_turns.release_priority(
-                primary_session_ids
-            )
+            # Stop may finish after another request has reserved the same
+            # Session. Release only the claims observed by this cancellation.
+            for session_id, reservation in priority_reservations.items():
+                self.room_turns.release_priority_session(session_id, reservation=reservation)
 
         final_event = self.room_events.publish(
             room_id=room_id,

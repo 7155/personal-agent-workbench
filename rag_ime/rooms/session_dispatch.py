@@ -271,7 +271,7 @@ class RoomSessionDispatchService:
             # ensure_available runs inside the registry lock, so the
             # participant re-check and the priority reservation remain the
             # single critical section they were as inline code.
-            self.room_turns.hold_priority_if_idle(
+            priority_reservation = self.room_turns.hold_priority_if_idle(
                 target_session_ids,
                 ensure_available=_ensure_participant_active,
             )
@@ -293,10 +293,10 @@ class RoomSessionDispatchService:
             # Status reads can fail before any Root/event is published. Only
             # this request's reservation is ours to release; otherwise every
             # later manual send would mistake the abandoned claim for work.
-            self.room_turns.release_priority(target_session_ids)
+            self.room_turns.release_priority(target_session_ids, reservation=priority_reservation)
             raise
         if busy_targets:
-            self.room_turns.release_priority(target_session_ids)
+            self.room_turns.release_priority(target_session_ids, reservation=priority_reservation)
             names = "、".join(str(item.get("displayName") or "Agent") for item in busy_targets)
             raise AgentCommandReceiptFailed(
                 f"Room participants are currently busy: {names}",
@@ -392,7 +392,7 @@ class RoomSessionDispatchService:
         except Exception:
             for session_id in target_session_ids:
                 self.room_turns.cancel(session_id, room_turn_id)
-            self.room_turns.release_priority(target_session_ids)
+            self.room_turns.release_priority(target_session_ids, reservation=priority_reservation)
             raise
 
         work_claimed = False
@@ -435,22 +435,27 @@ class RoomSessionDispatchService:
                     work_item_id=str(work_item["id"]),
                 )
         except Exception as exc:
-            for decision, target in zip(decisions, targets, strict=True):
-                self.room_turns.cancel(str(target["sessionId"]), room_turn_id)
-                self.room_events.publish(
-                    room_id=room_id,
-                    event_type="turn_failed",
-                    payload={
-                        "rootId": room_turn_id,
-                        "dispatchId": decision["dispatchId"],
-                        "error": _public_error(exc),
-                    },
-                    turn_id=room_turn_id,
-                    participant_id=str(target["id"]),
-                    source_session_id=str(target["sessionId"]),
-                    topic_id=topic_id,
-                )
-            self.room_turns.release_priority(target_session_ids)
+            try:
+                # No Runtime dispatch has started yet. Clear every pending
+                # binding before publishing fallible terminal projections.
+                for session_id in target_session_ids:
+                    self.room_turns.cancel(session_id, room_turn_id)
+                for decision, target in zip(decisions, targets, strict=True):
+                    self.room_events.publish(
+                        room_id=room_id,
+                        event_type="turn_failed",
+                        payload={
+                            "rootId": room_turn_id,
+                            "dispatchId": decision["dispatchId"],
+                            "error": _public_error(exc),
+                        },
+                        turn_id=room_turn_id,
+                        participant_id=str(target["id"]),
+                        source_session_id=str(target["sessionId"]),
+                        topic_id=topic_id,
+                    )
+            finally:
+                self.room_turns.release_priority(target_session_ids, reservation=priority_reservation)
             # The compatibility path historically failed synchronously when the
             # authoritative WorkItem changed between route planning and claim.
             # Do not turn that concurrency fence into a superficially successful
@@ -475,6 +480,7 @@ class RoomSessionDispatchService:
                         unread=unread_by_participant[str(target["id"])],
                         work_item=work_item,
                         attachment_ids=attachment_ids,
+                        release_priority_on_exit=False,
                     ): index
                     for index, (decision, target) in enumerate(
                         zip(decisions, targets, strict=True)
@@ -497,9 +503,10 @@ class RoomSessionDispatchService:
                     indexed_results[index] for index in range(len(indexed_results))
                 ]
         finally:
-            # Admission priority is only a short-lived reservation. Release it
-            # even if publishing an individual failure receipt also fails.
-            self.room_turns.release_priority(target_session_ids)
+            # This batch acquired the reservation, so it releases it once.
+            # A worker must not release early and let this cleanup erase a
+            # newer request's reservation for the same Session.
+            self.room_turns.release_priority(target_session_ids, reservation=priority_reservation)
 
         successful = [result for result in dispatch_results if result["accepted"] is True]
         if retry_dispatch_id and successful:
@@ -604,6 +611,7 @@ class RoomSessionDispatchService:
         root_id = str(request["rootId"])
         dispatch_id = str(request["dispatchId"])
         held = False
+        priority_reservation = None
         reserve_attempted = False
         prompt_attempted = False
         rejected = False
@@ -618,7 +626,7 @@ class RoomSessionDispatchService:
                 if self.room_turns.active_turn(session_id) == (root_id, dispatch_id):
                     if cancel:
                         self.room_turns.cancel(session_id, root_id)
-                    self.room_turns.release_priority_session(session_id)
+                    self.room_turns.release_priority_session(session_id, reservation=priority_reservation)
 
         try:
             purpose = str(request.get("purpose") or "execute")
@@ -639,7 +647,7 @@ class RoomSessionDispatchService:
             with self.room_turns.lock:
                 if self.room_turns.is_cancelled(session_id, root_id):
                     raise ValueError("Root stopped before admission")
-                self.room_turns.hold_priority_if_idle((session_id,))
+                priority_reservation = self.room_turns.hold_priority_if_idle((session_id,))
                 held = True
                 try:
                     if not self._room_target_idle(session_id, allow_user_priority=True):
@@ -652,7 +660,7 @@ class RoomSessionDispatchService:
                 except Exception:
                     # Still in the acquiring critical section, before another
                     # request can take an unbound priority reservation.
-                    self.room_turns.release_priority_session(session_id)
+                    self.room_turns.release_priority_session(session_id, reservation=priority_reservation)
                     raise
                 reserve_attempted = True
                 reserve()
@@ -908,6 +916,7 @@ class RoomSessionDispatchService:
         work_item: Mapping[str, object] | None,
         attachment_ids: Sequence[str],
         execution_context: str = "",
+        release_priority_on_exit: bool = True,
     ) -> dict[str, object]:
         session_id = str(target["sessionId"])
         participant_id = str(target["id"])
@@ -1020,7 +1029,8 @@ class RoomSessionDispatchService:
                 room_turn_id=room_turn_id, topic_id=topic_id, error=exc,
             )
         finally:
-            self.room_turns.release_priority_session(session_id)
+            if release_priority_on_exit:
+                self.room_turns.release_priority_session(session_id)
 
     def _accepted_dispatch(
         self, *, room: Mapping[str, object], target: Mapping[str, object],
@@ -1059,55 +1069,53 @@ class RoomSessionDispatchService:
         session_id = str(target["sessionId"])
         participant_id = str(target["id"])
         dispatch_id = str(decision["dispatchId"])
-        try:
-            self.room_turns.cancel(session_id, room_turn_id)
-            child = decision.get("child") is True
-            cause_code = _error_cause_code(error)
-            self.room_events.publish(
-                room_id=str(room["id"]),
-                event_type=(
-                    "participant_activity" if child else "turn_failed"
-                ),
-                payload=(
-                    {
-                        "activityKind": "child",
-                        "phase": "failed",
-                        "status": "dispatch_failed",
-                        "rootId": room_turn_id,
-                        "childDispatchId": dispatch_id,
-                        "dispatchId": dispatch_id,
-                        "parentDispatchId": str(
-                            decision.get("parentDispatchId") or ""
-                        ),
-                        "error": _public_error(error),
-                        **({"causeCode": cause_code} if cause_code else {}),
-                    }
-                    if child
-                    else {
-                        "rootId": room_turn_id,
-                        "dispatchId": dispatch_id,
-                        "error": _public_error(error),
-                        **({"causeCode": cause_code} if cause_code else {}),
-                    }
-                ),
-                turn_id=room_turn_id,
-                participant_id=participant_id,
-                source_session_id=session_id,
-                topic_id=topic_id,
-            )
-            return {
-                "participantId": participant_id,
-                "sessionId": session_id,
-                "dispatchId": dispatch_id,
-                "accepted": False,
-                "cancelled": False,
-                "status": "failed",
-                "sessionTurnId": "",
-                "error": _public_error(error),
-                "_exception": error,
-            }
-        finally:
-            self.room_turns.release_priority_session(session_id)
+        # The dispatch caller owns its priority reservation and cleanup.
+        self.room_turns.cancel(session_id, room_turn_id)
+        child = decision.get("child") is True
+        cause_code = _error_cause_code(error)
+        self.room_events.publish(
+            room_id=str(room["id"]),
+            event_type=(
+                "participant_activity" if child else "turn_failed"
+            ),
+            payload=(
+                {
+                    "activityKind": "child",
+                    "phase": "failed",
+                    "status": "dispatch_failed",
+                    "rootId": room_turn_id,
+                    "childDispatchId": dispatch_id,
+                    "dispatchId": dispatch_id,
+                    "parentDispatchId": str(
+                        decision.get("parentDispatchId") or ""
+                    ),
+                    "error": _public_error(error),
+                    **({"causeCode": cause_code} if cause_code else {}),
+                }
+                if child
+                else {
+                    "rootId": room_turn_id,
+                    "dispatchId": dispatch_id,
+                    "error": _public_error(error),
+                    **({"causeCode": cause_code} if cause_code else {}),
+                }
+            ),
+            turn_id=room_turn_id,
+            participant_id=participant_id,
+            source_session_id=session_id,
+            topic_id=topic_id,
+        )
+        return {
+            "participantId": participant_id,
+            "sessionId": session_id,
+            "dispatchId": dispatch_id,
+            "accepted": False,
+            "cancelled": False,
+            "status": "failed",
+            "sessionTurnId": "",
+            "error": _public_error(error),
+            "_exception": error,
+        }
 
 
 def _public_error(error: BaseException) -> str:

@@ -268,6 +268,32 @@
   color: var(--ccui-text);
 }
 
+.ccui-message-actions .ccui-copy-action {
+  display: inline-flex;
+  min-width: 78px;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--ccui-muted);
+  font-size: 12px;
+  transition: background-color 140ms ease, color 140ms ease, transform 90ms ease;
+}
+.ccui-copy-action:active:not(:disabled) { transform: scale(.97); }
+.ccui-copy-action[data-copy-state='success'] { color: var(--color-success); }
+.ccui-copy-action[data-copy-state='error'], .ccui-copy-error { color: var(--ccui-danger); }
+.ccui-copy-error { font-size: 12px; }
+.ccui-copy-action[data-copy-state='success'][data-motion-active='true'] svg {
+  animation: ccui-copy-confirm 220ms cubic-bezier(.2, .9, .3, 1);
+}
+.ccui-copy-action[data-copy-state='success'][data-motion-active='true'] path {
+  stroke-dasharray: 24;
+  animation: ccui-copy-check 220ms ease-out;
+}
+.ccui-copy-action[data-motion-active='false'] svg { animation: none; }
+@keyframes ccui-copy-confirm { 0% { transform: scale(.75); } 65% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes ccui-copy-check { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+
 /* Thinking --------------------------------------------------------------- */
 
 .ccui-thinking { margin: 2px 0 6px; color: var(--ccui-muted); }

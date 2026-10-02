@@ -1,6 +1,6 @@
 import { Archive, ArchiveRestore, BriefcaseBusiness, FilePlus2, FolderOpen, GitBranch, ListEnd, ListStart, ListTodo, LoaderCircle, MessageSquarePlus, MessagesSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelsTopLeft, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, Trash2, UserMinus, UserPlus, X } from 'lucide-react';
 import * as RadioGroup from '@radix-ui/react-radio-group';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
@@ -30,7 +30,7 @@ import {
   isComposerAttachmentMimeType,
 } from '@/contracts/attachment-policy';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
-import type { PickedFile } from '@/platform/transport';
+import type { ControlRequest, PickedFile } from '@/platform/transport';
 import {
   parseRoomEventPage,
   type RoomAttachmentReceipt,
@@ -91,6 +91,9 @@ import {
   selectRoomExecutionOverview,
   selectRoomTurnExecution,
 } from './runtime/room-execution-lanes';
+import { roomCancellationOutcome } from './runtime/room-cancellation';
+import { roomSendJournal, type RoomSendAttempt } from './runtime/room-send-journal';
+import { startRoomSend } from './application/room-send';
 import { useRoomLiveSession } from './runtime/use-room-live-session';
 import { useRoomLiveStore } from './state/live-store';
 import './rooms.css';
@@ -140,6 +143,7 @@ function RoomTimelineScrollHeader({ context }: { context?: RoomTimelineContext }
   return <>
     <div aria-hidden="true" className="room-timeline__header-space" />
     {context?.roomId ? <RoomHistoryControl
+      key={context.roomId}
       historyLoadRevision={context.historyLoadRevision}
       roomId={context.roomId}
     /> : null}
@@ -155,13 +159,17 @@ function RoomHistoryControl({
 }) {
   const transport = useControlTransport();
   const markerRef = useRef<HTMLDivElement>(null);
+  const historyRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { historyRequestRef.current?.abort(); }, []);
   const history = useRoomLiveStore((state) => state.historyByRoomId[roomId]);
   const prependHistory = useRoomLiveStore((state) => state.prependHistory);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function loadEarlier(): Promise<void> {
-    if (loading || !history?.hasMore || !history.firstSequence) return;
+    if (historyRequestRef.current || loading || !history?.hasMore || !history.firstSequence) return;
+    const controller = new AbortController();
+    historyRequestRef.current = controller;
     const requestedBefore = history.firstSequence;
     const scroller = markerRef.current?.closest<HTMLElement>('[data-virtuoso-scroller="true"]');
     const previousHeight = scroller?.scrollHeight ?? 0;
@@ -171,11 +179,13 @@ function RoomHistoryControl({
       const page = parseRoomEventPage(await transport.request({
         pathId: 'agent.room.history',
         params: { roomId },
+        signal: controller.signal,
         query: {
           beforeSequence: requestedBefore,
           limit: 200,
         },
       }));
+      if (controller.signal.aborted) return;
       let applied = false;
       flushSync(() => {
         applied = prependHistory(roomId, page);
@@ -185,13 +195,15 @@ function RoomHistoryControl({
       }
       if (scroller) {
         requestAnimationFrame(() => {
+          if (controller.signal.aborted || markerRef.current?.closest('[data-virtuoso-scroller="true"]') !== scroller) return;
           scroller.scrollTop += Math.max(0, scroller.scrollHeight - previousHeight);
         });
       }
     } catch (requestError) {
-      setError(publicErrorText(requestError, '暂时无法载入较早记录，请稍后重试。'));
+      if (!controller.signal.aborted) setError(publicErrorText(requestError, '暂时无法载入较早记录，请稍后重试。'));
     } finally {
-      setLoading(false);
+      if (historyRequestRef.current === controller) historyRequestRef.current = null;
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
@@ -256,13 +268,14 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [personas, setPersonas] = useState<AgentPersonaV1[]>([]);
   const [selectedId, setSelectedId] = useState(initialRoomId);
+  const sendJournal = roomSendJournal(transport, selectedId);
+  const pendingSend = useSyncExternalStore(sendJournal.subscribe, sendJournal.getSnapshot);
   const roomDraftsRef = useRef(roomDraftsStore);
   const roomAttachmentsRef = useRef(new Map<string, RoomAttachmentReceipt[]>());
   const roomErrorsRef = useRef(new Map<string, {
     message: string;
     source: 'connection' | 'operation';
   }>());
-  const roomSendLocksRef = useRef(new Set<string>());
   const selectedRoomIdRef = useRef('');
   const roomComposerRef = useRef<HTMLTextAreaElement>(null);
   const roomRailTriggerRef = useRef<HTMLButtonElement>(null);
@@ -774,6 +787,10 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
     } = {},
   ): Promise<boolean> {
     if (!room || room.status !== 'active') return false;
+    if (roomSendJournal(transport, room.id).getSnapshot()) {
+      setRoomError(room.id, '上次发送尚未确认，请先核实上次发送；新草稿会保留。');
+      return false;
+    }
     const includeComposerState = options.includeComposerState !== false;
     const authoritativeQuestion = useRoomLiveStore
       .getState()
@@ -798,7 +815,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
       setRoomError(room.id, '当前回合进行中时可以立即干预文字；图片请在下一轮发送。');
       return false;
     }
-    if (!message.trim() || roomSendLocksRef.current.has(room.id)) return false;
+    if (!message.trim()) return false;
     const addressedParticipants = pendingQuestionAnswer
       ? []
       : roomMentionedParticipants(activeParticipants, message, participantAliases);
@@ -814,33 +831,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
       return false;
     }
     const clientMessageId = `room-web-${crypto.randomUUID()}`;
-    roomTimelineFollowIntentRef.current = true;
-    roomSendLocksRef.current.add(room.id);
-    setSendingRoomIds((current) => new Set(current).add(room.id));
-    if (!steering) {
-      useRoomLiveStore.getState().appendOptimistic(
-        room.id,
-        {
-          clientMessageId,
-          text: message,
-          attachments: selectedAttachments,
-          nowMs: Date.now(),
-          ...(pendingQuestionAnswer && authoritativeQuestion
-            ? { answerToPostId: authoritativeQuestion.postId }
-            : {}),
-          ...(options.retryOfRootId
-            ? { retryOfRootId: options.retryOfRootId }
-            : {}),
-        },
-      );
-    }
-    if (includeComposerState) {
-      updateRoomDraft(room.id, '');
-      if (!pendingQuestionAnswer) updateRoomAttachments(room.id, []);
-    }
-    setRoomError(room.id, '');
-    try {
-      const response = await transport.request<Record<string, unknown>>(steering && activeRoomTurn
+    const request: ControlRequest = steering && activeRoomTurn
         ? {
             pathId: 'agent.room.participant.steer',
             params: { roomId: room.id },
@@ -875,9 +866,47 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
                 ? { workItemId: activeWork.id }
                 : {}),
             },
-          });
-      useRoomLiveStore.getState().acceptMessage(room.id, response);
-      const workItem = record(response).workItem;
+          };
+    return deliverRoomSend(room, { request, clientMessageId, rawValue: composerDraft,
+      attachments: selectedAttachments, status: 'sending', preserveDraft: !includeComposerState });
+  }
+
+  async function deliverRoomSend(room: RoomSummary, attempt: RoomSendAttempt): Promise<boolean> {
+    if (room.status !== 'active') return false;
+    const delivery = startRoomSend(transport, room.id, attempt);
+    if (!delivery) return false;
+    const { rawValue: composerDraft, attachments: selectedAttachments } = delivery.attempt;
+    const body = record(delivery.attempt.request.body);
+    const pendingQuestionAnswer = Boolean(body.answerToPostId);
+    const includeComposerState = !delivery.attempt.preserveDraft;
+    roomTimelineFollowIntentRef.current = true;
+    setSendingRoomIds((current) => new Set(current).add(room.id));
+    if (includeComposerState) {
+      if ((roomDraftsRef.current.get(room.id) ?? '').trim() === composerDraft.trim()) updateRoomDraft(room.id, '');
+      if (!pendingQuestionAnswer) updateRoomAttachments(room.id, current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
+    }
+    setRoomError(room.id, '');
+    try {
+      const result = await delivery.settled;
+      if (result.status !== 'accepted') {
+        if (includeComposerState) {
+          updateRoomDraft(room.id, roomDraftsRef.current.get(room.id) || composerDraft);
+          if (!pendingQuestionAnswer) {
+            updateRoomAttachments(room.id, (current) => {
+              const restored = new Map(current.map((item) => [item.mediaId, item]));
+              for (const item of selectedAttachments) {
+                if (!restored.has(item.mediaId)) restored.set(item.mediaId, item);
+              }
+              return [...restored.values()].slice(0, ROOM_ATTACHMENT_LIMIT);
+            });
+          }
+        }
+        setRoomError(room.id, result.status === 'uncertain'
+          ? 'Room 发送尚未确认。核实上次发送会使用原请求，避免重复执行。'
+          : publicErrorText(result.error, '消息暂时未发送，请稍后重试。'));
+        return false;
+      }
+      const workItem = result.response.workItem;
       if (isRoomWorkItem(workItem) && workItem.roomId === room.id) {
         setRooms((current) => current.map((item) => item.id === room.id
           ? {
@@ -890,26 +919,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
           : item));
       }
       return true;
-    } catch (requestError) {
-      if (!steering) {
-        useRoomLiveStore.getState().discardOptimistic(room.id, clientMessageId);
-      }
-      if (includeComposerState) {
-        updateRoomDraft(room.id, roomDraftsRef.current.get(room.id) || composerDraft);
-        if (!pendingQuestionAnswer) {
-          updateRoomAttachments(room.id, (current) => {
-            const restored = new Map(current.map((item) => [item.mediaId, item]));
-            for (const item of selectedAttachments) {
-              if (!restored.has(item.mediaId)) restored.set(item.mediaId, item);
-            }
-            return [...restored.values()].slice(0, ROOM_ATTACHMENT_LIMIT);
-          });
-        }
-      }
-      setRoomError(room.id, publicErrorText(requestError, '消息暂时未发送，请稍后重试。'));
-      return false;
     } finally {
-      roomSendLocksRef.current.delete(room.id);
       setSendingRoomIds((current) => {
         const next = new Set(current);
         next.delete(room.id);
@@ -930,7 +940,8 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
           clientRequestId: `room-abort-${crypto.randomUUID()}`,
         },
       });
-      if (receipt.ok !== true || receipt.status === 'cancellation_pending') {
+      const outcome = roomCancellationOutcome(receipt);
+      if (outcome === 'pending') {
         const pending = cancellationTargetLabels(receipt.pendingTargets);
         setRoomError(
           room.id,
@@ -938,6 +949,10 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
             ? `停止信号已送达，但仍在确认：${pending.join('、')}。可再次停止，界面不会把它误报为已结束。`
             : '停止信号已送达，但后台尚未返回完整终止凭据。可再次停止。',
         );
+        return;
+      }
+      if (outcome === 'already_terminal') {
+        retryRoomSnapshot();
         return;
       }
       useRoomLiveStore.getState().abortTurn(
@@ -1389,7 +1404,7 @@ export function RoomsFeature({ initialRoomId = '', pawOsWorkbench = false }: { i
           </div>
         </div> : <div aria-hidden="true" className="room-context-bar room-context-bar--empty" />}
         <div className="room-error-slot" aria-live="polite">
-          {error ? selectedRoomErrorSource === 'connection' && selectedRoomRecoveryState !== 'synced'
+          {pendingSend?.status === 'uncertain' ? <div className="room-error room-error--action" role="alert"><span>{error || '上次发送尚未确认，原请求仍保留。'}</span><Button disabled={!room || room.status !== 'active'} onClick={() => { if (room) void deliverRoomSend(room, pendingSend); }} size="small" variant="quiet">核实上次发送</Button></div> : error ? selectedRoomErrorSource === 'connection' && selectedRoomRecoveryState !== 'synced'
             ? selectedRoomRecoveryState === 'recovering'
               ? <p className="room-catalog-warning" role="status">正在恢复协作进度；已显示的对话不会丢失。</p>
               : <div className="room-error room-error--action" role="alert"><span>{error}</span><Button leadingIcon={<RefreshCw size={14} />} onClick={retryRoomSnapshot} size="small" variant="quiet">重试同步</Button></div>

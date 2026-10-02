@@ -609,20 +609,26 @@ class BrowserControlService:
                 """,
                 (min(max(int(limit), 1), 200),),
             ).fetchall()
+            steps_by_command: dict[str, list[dict[str, object]]] = {}
+            if rows:
+                command_ids = [str(row["command_id"]) for row in rows]
+                placeholders = ",".join("?" for _ in command_ids)
+                steps = connection.execute(
+                    f"""
+                    SELECT command_id, detail_json FROM browser_control_events
+                    WHERE command_id IN ({placeholders}) AND kind='ego_trace_step'
+                    ORDER BY created_at_ms ASC, event_id ASC
+                    """,
+                    command_ids,
+                ).fetchall()
+                for step in steps:
+                    steps_by_command.setdefault(str(step["command_id"]), []).append(
+                        self._json_object(step["detail_json"])
+                    )
             items = [
                 self._public_trace(
                     row,
-                    steps=[
-                        self._json_object(step["detail_json"])
-                        for step in connection.execute(
-                            """
-                            SELECT detail_json FROM browser_control_events
-                            WHERE command_id=? AND kind='ego_trace_step'
-                            ORDER BY created_at_ms ASC, event_id ASC
-                            """,
-                            (str(row["command_id"]),),
-                        ).fetchall()
-                    ],
+                    steps=steps_by_command.get(str(row["command_id"]), []),
                 )
                 for row in rows
             ]
@@ -1467,6 +1473,10 @@ class BrowserControlService:
         position = 0
         pending = ""
         while True:
+            # The producer may append its final line after this read reaches
+            # EOF and then set stop. Only a read begun after stop is set can
+            # prove that the completed process's trace has been drained.
+            final_read = stop.is_set()
             try:
                 with trace_path.open("r", encoding="utf-8") as stream:
                     stream.seek(position)
@@ -1483,7 +1493,7 @@ class BrowserControlService:
                     continue
                 if isinstance(value, Mapping):
                     self._record_ego_step(command_id, value)
-            if stop.is_set():
+            if final_read:
                 break
             stop.wait(0.06)
 

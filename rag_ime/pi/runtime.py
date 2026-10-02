@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from rag_ime.agent_events import AgentEventHub
+from rag_ime.agent_execution_policy import native_mcp_execution_allowed
 from rag_ime.agent_plugin_usage import AgentPluginUsageStore
 from rag_ime.agent_prompt_settings import normalize_prompt_settings
 from rag_ime.agent_runtime_failure import classify_runtime_failure
@@ -818,6 +819,7 @@ class PiRuntimeHostManager:
                     if memory_curation_session
                     else self.tool_catalog(session_id)
                 ),
+                "nativeMcpExecutionAllowed": self._native_mcp_execution_policy(session),
                 "noContextFiles": (
                     str(session.get("toolProfileVersion") or "")
                     in {
@@ -2308,7 +2310,9 @@ class PiRuntimeHostManager:
                 )
             )
 
-    def session_tool_evidence(self, session_id: str, *, turn_id: str) -> dict[str, object]:
+    def session_tool_evidence(
+        self, session_id: str, *, turn_id: str, client_message_id: str = "",
+    ) -> dict[str, object]:
         """Read one bound turn's durable tools without starting a model or Host.
 
         Callers validate task/dispatch authority before asking for this internal
@@ -2322,6 +2326,11 @@ class PiRuntimeHostManager:
             raise AgentRuntimeError("durable tool evidence is unavailable")
         messages, entries = durable_branch_messages(snapshot.get("entries") or [],
             leaf_id=str(snapshot.get("leafId") or ""))
+        if client_message_id and not any(
+            message.get("role") == "user" and message.get(DURABLE_TURN_ID_KEY) == turn_id
+            and message.get("clientMessageId") == client_message_id for message in messages
+        ):
+            raise AgentRuntimeError("durable tool evidence dispatch binding does not match")
         events = durable_tool_history_events(messages, session_id=session_id, raw_entries=entries,
             maximum_tools=None, maximum_public_chars=None, evidence_turn_id=turn_id)
         return {"sessionId": session_id, "turnId": turn_id, "toolHistoryEvents": [
@@ -3051,6 +3060,7 @@ class PiRuntimeHostManager:
                         "sessionId": source_session_id,
                         "targetSessionId": target_session_id,
                         "entryId": normalized_entry_id,
+                        "nativeMcpExecutionAllowed": self._native_mcp_execution_policy(target),
                     },
                     timeout=max(60.0, self.config.command_timeout_seconds),
                 )
@@ -3325,6 +3335,8 @@ class PiRuntimeHostManager:
         text = str(command).strip()
         if not text.startswith("/") or "\n" in text or "\r" in text:
             raise ValueError("Pi Package command must be one slash-command line")
+        if text.split()[0] == "/mcp" and not native_mcp_execution_allowed(self.sessions.get(session_id)):
+            raise PiRuntimeError("Native MCP is denied by this Session's execution policy")
         self._inspection_snapshot(session_id, durable_fallback=False)
         response = self._require_client().send(
             "session.command.invoke",
@@ -3815,12 +3827,17 @@ class PiRuntimeHostManager:
             return []
         return [dict(item) for item in self._tool_manifest_provider(session)]
 
+    def _native_mcp_execution_policy(self, session: Mapping[str, object]) -> bool:
+        allowed = native_mcp_execution_allowed(session)
+        if not allowed and self._host_capabilities.get("nativeMcpExecutionPolicy") is not True:
+            raise PiRuntimeError(
+                "Pi Runtime Host cannot enforce this Session's native MCP policy; update the managed Runtime"
+            )
+        return allowed
+
     def _sync_prompt_tool_manifest(
         self, session_id: str, client_message_id: str, client: PiRuntimeHostClient,
     ) -> None:
-        if self._tool_manifest_provider is None:
-            return
-
         def require_exact_admission() -> None:
             with self._lock:
                 if self._client is not client:
@@ -3835,7 +3852,11 @@ class PiRuntimeHostManager:
                      else self.tool_catalog(session_id))
             # Manifest construction may consult Room state. Do it outside the
             # Runtime lock, then recheck at the actual JSONL write boundary.
-            response = client.send("tools.sync", {"sessionId": session_id, "tools": tools},
+            response = client.send("tools.sync", {
+                "sessionId": session_id,
+                "tools": tools,
+                "nativeMcpExecutionAllowed": self._native_mcp_execution_policy(session),
+            },
                 before_write=require_exact_admission)
             if not isinstance(response.get("tools"), list):
                 raise PiRuntimeError("Pi returned an invalid tool synchronization receipt")

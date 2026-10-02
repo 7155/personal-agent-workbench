@@ -74,6 +74,45 @@ describe('PAWOS Agent App', () => {
     expect(rail.querySelector('.paw-agent-recents')).toHaveAttribute('aria-busy', 'true');
   });
 
+  it('shows the first Session page while later pages and model metadata are pending', async () => {
+    const laterPage = deferred<unknown>();
+    const metadata = deferred<unknown>();
+    const transport = createTransport({
+      modelCatalog: () => metadata.promise,
+      sessionCatalogHandler: (request) => request.query?.beforeId
+        ? laterPage.promise
+        : { items: [{ id: 'session-first', title: '首屏工作记录', mode: 'coordinator', status: 'idle', updatedAtMs: 2 }], hasMore: true, nextBeforeUpdatedAtMs: 2, nextBeforeId: 'session-first' },
+    });
+    renderAgent(transport);
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^首屏工作记录/ })).toBeInTheDocument();
+    expect(rail.querySelector('.paw-agent-recents')).toHaveAttribute('aria-busy', 'true');
+    await act(async () => {
+      laterPage.resolve({ items: [{ id: 'session-older', title: '更早工作记录', mode: 'coordinator', status: 'idle', updatedAtMs: 1 }], hasMore: false });
+      await laterPage.promise;
+    });
+    expect(await within(rail).findByRole('button', { name: /^更早工作记录/ })).toBeInTheDocument();
+    expect(within(rail).getByRole('button', { name: /^首屏工作记录/ })).toBeInTheDocument();
+    await act(async () => {
+      metadata.resolve({ providers: [], selected: {} });
+      await metadata.promise;
+    });
+    await waitFor(() => expect(rail.querySelector('.paw-agent-recents')).not.toHaveAttribute('aria-busy'));
+  });
+
+  it('retains a published first page and reports a failed later page', async () => {
+    const transport = createTransport({
+      sessionCatalogHandler: (request) => request.query?.beforeId
+        ? Promise.reject(new Error('older catalog page unavailable'))
+        : { items: [{ id: 'session-first', title: '已读取工作记录', mode: 'coordinator', status: 'idle', updatedAtMs: 2 }], hasMore: true, nextBeforeUpdatedAtMs: 2, nextBeforeId: 'session-first' },
+    });
+    renderAgent(transport);
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^已读取工作记录/ })).toBeInTheDocument();
+    expect(await within(rail).findByText('部分 Agent 目录暂时不可用。')).toBeInTheDocument();
+    await waitFor(() => expect(rail.querySelector('.paw-agent-recents')).not.toHaveAttribute('aria-busy'));
+  });
+
   it('aborts an abandoned Session page when switching to a closed Room directory', async () => {
     const firstPage = deferred<unknown>();
     const transport = createTransport({ sessionCatalogHandler: () => firstPage.promise });

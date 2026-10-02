@@ -91,6 +91,7 @@ for line in sys.stdin:
                          "transientContext": True,
                          "statelessCompletion": True,
                          "conversationFork": True,
+                         "nativeMcpExecutionPolicy": True,
                          "codemode": {"available": True, "modes": ["off", "on", "only"], "defaultMode": "on"},
                          "runtimePrimitives": {
                              "continuationEnvelope": os.environ.get("TEST_CONTINUATION_ENVELOPE", "2"),

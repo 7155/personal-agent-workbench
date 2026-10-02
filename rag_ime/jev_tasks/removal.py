@@ -323,8 +323,8 @@ class JevParticipantRemoval:
                         snapshot, command_id=removal_id + ":" + task.id,
                         task_id=task.id, target_participant_id=target,
                         execution=fact, reason=row["reason"] or "participant removal",
-                        on_applied=lambda conn: self.app._enqueue(
-                            conn, graph["graph_id"], removal_id + ":" + task.id, "reclaim_requested"))
+                        on_applied=lambda conn, graph_id=graph["graph_id"], command_id=removal_id + ":" + task.id: self.app._enqueue(
+                            conn, graph_id, command_id, "reclaim_requested"))
                     self.service.wake_scheduler.wake()
                     self._stage(removal_id, "awaiting_stop", task.id)
                     return
@@ -339,8 +339,8 @@ class JevParticipantRemoval:
                         "execution": execution_dict(fact)})
                 self.app.owner.apply(snapshot, candidate,
                     command_id=removal_id + ":transfer:" + task.id,
-                    on_applied=lambda conn: self.app._enqueue(
-                        conn, graph["graph_id"], removal_id + ":transfer:" + task.id,
+                    on_applied=lambda conn, graph_id=graph["graph_id"], command_id=removal_id + ":transfer:" + task.id: self.app._enqueue(
+                        conn, graph_id, command_id,
                         "assignment_changed"))
                 self.service.wake_scheduler.wake()
                 self._stage(removal_id, "transferring", task.id)

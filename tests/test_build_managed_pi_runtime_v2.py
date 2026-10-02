@@ -38,6 +38,7 @@ from scripts.build_managed_pi_runtime_v2 import (
     _source_revision,
     _skill_routing_projection,
     _smoke_oauth_runtime_modules,
+    _smoke_runtime,
     _verify_pi_worktree,
     _validated_skill_routing_catalog,
     _verified_session_runtime_contract,
@@ -826,6 +827,9 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             source = root / "packages/coding-agent/src/extensions/codemode/worker.ts"
             source.parent.mkdir(parents=True)
             source.write_text("native worker source")
+            docs = root / "packages/coding-agent/docs/codemode.md"
+            docs.parent.mkdir(parents=True)
+            docs.write_text("Pi 1.0 codemode model API reference", encoding="utf-8")
             package = root / "node_modules/quickjs-wasi"
             package.mkdir(parents=True)
             (package / "quickjs.wasm").write_bytes(b"native-wasm-fixture")
@@ -839,9 +843,33 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             self.assertIn(str(source), command)
             self.assertIn(f"--outfile={runtime / 'codemode-worker.js'}", command)
             self.assertEqual(json.loads((runtime / "package.json").read_text()), {"type": "module"})
+            self.assertEqual(
+                (runtime / "docs/codemode.md").read_text(encoding="utf-8"),
+                docs.read_text(encoding="utf-8"),
+            )
             (package / "quickjs.wasm").unlink()
             with self.assertRaises(ManagedPiRuntimeError):
                 _bundle_codemode_runtime_assets(esbuild=root / "esbuild", pi_root=root, runtime_dir=root / "missing")
+
+    def test_runtime_smoke_rejects_an_advertised_version_mismatch(self) -> None:
+        result = {
+            "protocolVersion": "2",
+            "piVersion": "0.99.2",
+            "capabilities": {"multiSession": True, "sessionSkillAllowlist": True},
+        }
+        for reported_version in ("0.99.2", "1.0.0"):
+            result["piVersion"] = reported_version
+            response = {"ok": True, "result": result}
+            with patch("scripts.build_managed_pi_runtime_v2.subprocess.run") as run:
+                run.return_value.stdout = json.dumps(response) + "\n"
+                if reported_version == "1.0.0":
+                    self.assertEqual(
+                        _smoke_runtime(Path("node"), Path("host"), expected_pi_version="1.0.0"),
+                        response,
+                    )
+                else:
+                    with self.assertRaisesRegex(ManagedPiRuntimeError, "version does not match"):
+                        _smoke_runtime(Path("node"), Path("host"), expected_pi_version="1.0.0")
 
     def test_oauth_runtime_smoke_loads_every_lazy_module_and_derives_codex_auth(
         self,

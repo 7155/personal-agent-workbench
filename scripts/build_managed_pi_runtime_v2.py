@@ -1979,6 +1979,13 @@ def _bundle_codemode_runtime_assets(
         raise ManagedPiRuntimeError("native codemode QuickJS WASM is missing")
     shutil.copytree(wasm_package, runtime_dir / "node_modules/quickjs-wasi")
     (runtime_dir / "package.json").write_text('{"type":"module"}\n', encoding="ascii")
+    # Pi 1.0 directs scripts to this reference from its model helpers. Keep
+    # getDocsPath() valid after relocation; older Pi sources have no such file.
+    codemode_docs = pi_root / "packages/coding-agent/docs/codemode.md"
+    if codemode_docs.is_file():
+        docs_dir = runtime_dir / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(codemode_docs, docs_dir / "codemode.md")
     _run([
         str(esbuild), str(source), "--bundle", "--platform=node",
         "--format=esm", "--target=node22", "--define:PI_BUNDLED_NODE=true",
@@ -2034,7 +2041,9 @@ def _smoke_oauth_runtime_modules(node: Path, runtime_dir: Path) -> dict[str, obj
     return response
 
 
-def _smoke_runtime(node: Path, entrypoint: Path) -> dict[str, object]:
+def _smoke_runtime(
+    node: Path, entrypoint: Path, *, expected_pi_version: str,
+) -> dict[str, object]:
     request = {
         "protocolVersion": "2",
         "id": "managed-runtime-build-smoke",
@@ -2075,6 +2084,11 @@ def _smoke_runtime(node: Path, entrypoint: Path) -> dict[str, object]:
         or not capabilities.get("sessionSkillAllowlist")
     ):
         raise ManagedPiRuntimeError("managed Pi Runtime Host smoke test did not negotiate protocol v2")
+    if result.get("piVersion") != expected_pi_version:
+        raise ManagedPiRuntimeError(
+            "managed Pi Runtime Host version does not match the packaged SDK: "
+            f"{result.get('piVersion')!r} != {expected_pi_version!r}"
+        )
     return response
 
 
@@ -2328,7 +2342,9 @@ def main(argv: list[str] | None = None) -> int:
                 oauth_smoke: dict[str, object] = {}
             else:
                 oauth_smoke = _smoke_oauth_runtime_modules(packaged_node, runtime_dir)
-                smoke = _smoke_runtime(packaged_node, bundled_entrypoint)
+                smoke = _smoke_runtime(
+                    packaged_node, bundled_entrypoint, expected_pi_version=pi_version,
+                )
             manifest = build_managed_pi_runtime_manifest(
                 staging,
                 runtime_version=runtime_version,

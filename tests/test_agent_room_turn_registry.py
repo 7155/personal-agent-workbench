@@ -136,6 +136,29 @@ class PriorityReservationTests(unittest.TestCase):
         self.registry.release_priority_session("b")
         self.assertEqual(self.registry.user_priority_sessions, {"c"})
 
+    def test_exact_reservation_release_preserves_a_newer_prebinding_claim(self) -> None:
+        first = self.registry.hold_priority_if_idle(["session", "peer"])
+        self.assertIsNotNone(first)
+        self.registry.release_priority_session("session")
+        second = self.registry.hold_priority_if_idle(["session"])
+        self.assertIsNot(first, second)
+        self.registry.release_priority(["session", "peer"], reservation=first)
+        self.assertEqual(self.registry.user_priority_sessions, {"session"})
+        self.assertEqual(self.registry.priority_reservations(["session", "peer"]), {"session": second})
+        self.registry.release_priority_session("session", reservation=second)
+        self.assertFalse(self.registry.user_priority_sessions)
+        self.assertFalse(self.registry.priority_reservations(["session"]))
+
+    def test_unconditional_hold_rotates_its_reservation_identity(self) -> None:
+        first = self.registry.hold_priority(["session"])
+        second = self.registry.hold_priority(["session"])
+        self.assertIsNotNone(first)
+        self.assertIsNot(first, second)
+        self.registry.release_priority_session("session", reservation=first)
+        self.assertEqual(self.registry.user_priority_sessions, {"session"})
+        self.registry.release_priority_session("session", reservation=second)
+        self.assertFalse(self.registry.user_priority_sessions)
+
     def test_session_turn_active_excludes_the_priority_set(self) -> None:
         """The direct-Agent guard never treated a priority hold as busy."""
 

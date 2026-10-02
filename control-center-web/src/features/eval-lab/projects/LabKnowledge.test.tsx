@@ -23,8 +23,24 @@ function mount(read: () => unknown, onCommand = vi.fn(async (_input: Record<stri
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); clients.push(client);
   const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': () => ({ ok: true, items: [project], project, supportedViews: [], knowledge: read() }) } });
   const onBind = vi.fn(async (_input: Record<string, JsonValue>): Promise<ProjectReceipt | undefined> => undefined); const onOpenBinding = vi.fn();
-  render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><LabKnowledge project={project} busy={false} onCommand={onCommand} onBind={onBind} onOpenBinding={onOpenBinding} /></ControlTransportProvider></QueryClientProvider>);
-  return { onCommand, onBind, client, transport };
+  const view = render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><LabKnowledge project={project} busy={false} onCommand={onCommand} onBind={onBind} onOpenBinding={onOpenBinding} /></ControlTransportProvider></QueryClientProvider>);
+  return { onCommand, onBind, client, transport, ...view };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+const uploadReceipt = (ready = false): ProjectReceipt => ({ ok: true, project, clientRequestId: 'test', replayed: false,
+  upload: { uploadId: 'upload-1', chunkBytes: 4, ready } });
+async function selectCorpusFile() {
+  await waitFor(() => expect(screen.getByRole('button', { name: '连接已有知识库' })).not.toBeDisabled());
+  const body = new TextEncoder().encode('test-file');
+  const file = new File([body], 'corpus.jsonl');
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => body.buffer });
+  fireEvent.change(screen.getByLabelText('选择语料文件'), { target: { files: [file] } });
+  fireEvent.click(screen.getByRole('button', { name: '整理资料' }));
+  return file;
 }
 
 describe('Knowledge resource frontend', () => {
@@ -135,6 +151,126 @@ describe('Knowledge resource frontend', () => {
     expect(chunks.every((input) => String(input.data).length < 710000)).toBe(true);
     expect(calls.at(-1)).toMatchObject({ uploadId: 'upload-1', operation: 'import_corpus' });
     expect(calls.at(-1)).not.toHaveProperty('path');
+  });
+
+  it.each([
+    { operation: 'upload_chunk', waiting: '当前分片回执', sealCalls: 0 },
+    { operation: 'upload_seal', waiting: '文件接收回执', sealCalls: 1 },
+  ])('stops after the pending $operation receipt without continuing to import', async ({ operation, waiting, sealCalls }) => {
+    vi.stubGlobal('crypto', webcrypto);
+    const pending = deferred<ProjectReceipt>();
+    const onCommand = vi.fn(async (input: Record<string, JsonValue>) => {
+      if (input.operation === operation && (operation !== 'upload_chunk' || input.index === 2)) return pending.promise;
+      return uploadReceipt();
+    });
+    mount(state, onCommand);
+    fireEvent.click(screen.getByText('文件字段不同？设置字段映射'));
+    fireEvent.change(screen.getByLabelText('来源 ID'), { target: { value: 'external_id' } });
+    const file = await selectCorpusFile();
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ operation,
+      ...(operation === 'upload_chunk' ? { index: 2 } : {}) })));
+    fireEvent.click(screen.getByRole('button', { name: '停止上传' }));
+    expect.soft(screen.getByRole('status')).toHaveTextContent(`正在停止，等待${waiting}`);
+    expect.soft(screen.queryByRole('button', { name: '正在停止' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '整理资料' })).toBeDisabled();
+    await act(async () => { pending.resolve(uploadReceipt(operation === 'upload_seal')); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '整理资料' })).not.toBeDisabled());
+    expect(onCommand.mock.calls.filter(([input]) => input.operation === 'upload_seal')).toHaveLength(sealCalls);
+    expect(onCommand).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'import_corpus' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('未发起资料导入');
+    expect(screen.getByRole('alert')).toHaveTextContent('upload-1');
+    expect((screen.getByLabelText('corpus.jsonl') as HTMLInputElement).files?.[0]).toBe(file);
+    expect(screen.getByLabelText('来源 ID')).toHaveValue('external_id');
+    fireEvent.click(screen.getByRole('button', { name: '整理资料' }));
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ operation: 'import_corpus', fields: { id: 'external_id' } })));
+    expect(onCommand.mock.calls.filter(([input]) => input.operation === 'upload_begin')).toHaveLength(2);
+    expect(onCommand.mock.calls.filter(([input]) => input.operation === 'import_corpus')).toHaveLength(1);
+  });
+
+  it('stops before hashing when file reading is still pending', async () => {
+    const digest = vi.fn();
+    vi.stubGlobal('crypto', { randomUUID: () => webcrypto.randomUUID(), subtle: { digest } });
+    const pending = deferred<ArrayBuffer>();
+    const { onCommand } = mount(state);
+    await waitFor(() => expect(screen.getByRole('button', { name: '连接已有知识库' })).not.toBeDisabled());
+    const file = new File(['test-file'], 'corpus.jsonl');
+    Object.defineProperty(file, 'arrayBuffer', { value: () => pending.promise });
+    fireEvent.change(screen.getByLabelText('选择语料文件'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: '整理资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '停止上传' }));
+    await act(async () => { pending.resolve(new ArrayBuffer(9)); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '整理资料' })).not.toBeDisabled());
+    expect(digest).not.toHaveBeenCalled();
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it.each(['upload_begin', 'upload_chunk', 'upload_seal'])('ignores a late %s receipt after leaving the component', async (operation) => {
+    vi.stubGlobal('crypto', webcrypto);
+    const pending = deferred<ProjectReceipt>();
+    const onCommand = vi.fn(async (input: Record<string, JsonValue>) => {
+      if (input.operation === operation && (operation !== 'upload_chunk' || input.index === 2)) return pending.promise;
+      return uploadReceipt();
+    });
+    const { unmount } = mount(state, onCommand);
+    await selectCorpusFile();
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ operation,
+      ...(operation === 'upload_chunk' ? { index: 2 } : {}) })));
+    const callsBeforeLeaving = onCommand.mock.calls.length;
+    unmount();
+    await act(async () => { pending.resolve(uploadReceipt(operation === 'upload_seal')); });
+    expect(onCommand).toHaveBeenCalledTimes(callsBeforeLeaving);
+  });
+
+  it('keeps an uncertain receipt visible after stopping and never retries it automatically', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const pending = deferred<ProjectReceipt | undefined>();
+    const onCommand = vi.fn(async (input: Record<string, JsonValue>) => input.operation === 'upload_seal' ? pending.promise : uploadReceipt());
+    mount(state, onCommand);
+    await selectCorpusFile();
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith({ operation: 'upload_seal', uploadId: 'upload-1' }));
+    fireEvent.click(screen.getByRole('button', { name: '停止上传' }));
+    await act(async () => { pending.resolve(undefined); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('文件接收结果尚未确认，请核对原操作');
+    expect(screen.getByRole('alert')).toHaveTextContent('upload-1');
+    expect(onCommand.mock.calls.filter(([input]) => input.operation === 'upload_seal')).toHaveLength(1);
+    expect(onCommand).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'import_corpus' }));
+  });
+
+  it('does not offer upload cancellation once the import request has been submitted', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const pending = deferred<ProjectReceipt>();
+    const onCommand = vi.fn(async (input: Record<string, JsonValue>) => input.operation === 'import_corpus' ? pending.promise : uploadReceipt());
+    mount(state, onCommand);
+    await selectCorpusFile();
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ operation: 'import_corpus' })));
+    expect(screen.getByRole('status')).toHaveTextContent('文件已接收，正在提交导入');
+    expect(screen.queryByRole('button', { name: '停止上传' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '整理资料' })).toBeDisabled();
+    await act(async () => { pending.resolve(uploadReceipt(true)); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '整理资料' })).not.toBeDisabled());
+  });
+
+  it('also stops dataset import after the last chunk while retaining its selected file', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const pending = deferred<ProjectReceipt>();
+    const onCommand = vi.fn(async (input: Record<string, JsonValue>) => input.operation === 'upload_chunk' ? pending.promise : uploadReceipt());
+    mount(ready, onCommand);
+    fireEvent.click(await screen.findByRole('button', { name: '评测' }));
+    const picker = await screen.findByLabelText('选择评测集文件');
+    await waitFor(() => expect(picker).not.toBeDisabled());
+    const bytes = new TextEncoder().encode('data');
+    const file = new File([bytes], 'dataset.csv');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer });
+    fireEvent.change(picker, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: '导入评测集' }));
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ operation: 'upload_chunk' })));
+    fireEvent.click(screen.getByRole('button', { name: '停止上传' }));
+    expect(screen.getByRole('status')).toHaveTextContent('正在停止，等待当前分片回执');
+    await act(async () => { pending.resolve(uploadReceipt()); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '导入评测集' })).not.toBeDisabled());
+    expect(onCommand).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'upload_seal' }));
+    expect(onCommand).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'import_dataset' }));
+    expect((screen.getByLabelText('dataset.csv') as HTMLInputElement).files?.[0]).toBe(file);
   });
 
   it('rejects incomplete evaluation responses instead of rendering false metrics', () => {

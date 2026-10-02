@@ -17,6 +17,7 @@ class PromptToolSyncTests(unittest.TestCase):
         self.runtime._open_sessions = {"session"}
         self.runtime._states = {"session": _HostedSessionState()}
         self.runtime._retired_host_turns = set()
+        self.runtime._host_capabilities = {"nativeMcpExecutionPolicy": True}
         self.runtime._cancel_idle_locked = Mock()
         self.runtime._schedule_idle_locked = Mock()
         self.runtime.config = SimpleNamespace(command_timeout_seconds=1)

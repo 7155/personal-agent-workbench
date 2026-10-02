@@ -8,6 +8,7 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -184,6 +185,135 @@ class BrowserControlServiceTests(unittest.TestCase):
         traces = self.service.traces()["items"]
         self.assertEqual([item["action"] for item in traces[:3]], ["reload", "forward", "back"])
         self.assertTrue(all(item["sourceKind"] == "agent" for item in traces[:3]))
+
+    def test_traces_batch_steps_without_changing_command_or_step_order(self) -> None:
+        with self.service._connection() as connection:
+            connection.executemany(
+                """
+                INSERT INTO browser_control_commands(
+                    command_id, device_id, session_id, action, payload_json,
+                    status, result_json, created_at_ms, completed_at_ms
+                ) VALUES (?, 'paw-browser', 'session-test', 'run', '{}',
+                          'completed', '{"ok":true,"summary":"done"}', ?, ?)
+                """,
+                [(f"command-{index}", index + 1, index + 2) for index in range(3)],
+            )
+            connection.executemany(
+                """
+                INSERT INTO browser_control_events(
+                    kind, device_id, command_id, detail_json, created_at_ms
+                ) VALUES (?, 'paw-browser', ?, ?, ?)
+                """,
+                [
+                    (kind, command_id, json.dumps({"event": "completed", "action": action, "atMs": timestamp}), timestamp)
+                    for kind, command_id, action, timestamp in [
+                        ("ego_trace_step", "command-2", "last", 3),
+                        ("ego_trace_step", "command-1", "other", 1),
+                        ("ego_trace_step", "command-2", "first", 1),
+                        ("ego_trace_step", "command-2", "second", 1),
+                        ("command_completed", "command-2", "ignored-kind", 1),
+                        ("ego_trace_step", "command-0", "outside-page", 1),
+                    ]
+                ],
+            )
+        statements: list[str] = []
+        original_connect = self.service._connect
+
+        def traced_connect():
+            connection = original_connect()
+            connection.set_trace_callback(statements.append)
+            return connection
+
+        with mock.patch.object(self.service, "_connect", side_effect=traced_connect):
+            result = self.service.traces(limit=2)
+
+        self.assertEqual(result["schemaVersion"], "rag-ime.browser-control.v1")
+        self.assertEqual(result["summary"], "已读取 2 条浏览器执行轨迹")
+        self.assertEqual([item["commandId"] for item in result["items"]], ["command-2", "command-1"])
+        self.assertEqual([step["action"] for step in result["items"][0]["steps"]], ["first", "second", "last"])
+        self.assertEqual([step["action"] for step in result["items"][1]["steps"]], ["other"])
+        self.assertEqual(result["items"][0]["result"], {"ok": True, "summary": "done"})
+        selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+        self.assertEqual(len(selects), 2)
+
+    def test_empty_traces_do_not_fetch_steps(self) -> None:
+        statements: list[str] = []
+        original_connect = self.service._connect
+
+        def traced_connect():
+            connection = original_connect()
+            connection.set_trace_callback(statements.append)
+            return connection
+
+        with mock.patch.object(self.service, "_connect", side_effect=traced_connect):
+            self.assertEqual(self.service.traces()["items"], [])
+        selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+        self.assertEqual(len(selects), 1)
+
+    def test_trace_collector_drains_a_final_append_when_stop_arrives_after_read(self) -> None:
+        stop = threading.Event()
+        final_step = {
+            "schemaVersion": "paw.ego-browser-step.v1",
+            "event": "completed",
+            "action": "click",
+            "atMs": 1,
+        }
+        final_line = json.dumps(final_step) + "\n"
+        stream = mock.MagicMock()
+
+        def read_before_process_exit():
+            # The current read already observed EOF. The process then appends
+            # its final line and exits before the collector checks the flag.
+            stop.set()
+            return ""
+
+        reads = iter([read_before_process_exit, lambda: final_line])
+        stream.read.side_effect = lambda: next(reads)()
+        stream.tell.side_effect = [0, len(final_line)]
+        trace_path = mock.MagicMock(spec=Path)
+        trace_path.open.return_value.__enter__.return_value = stream
+
+        with mock.patch.object(self.service, "_record_ego_step") as record:
+            self.service._collect_ego_trace("command-final", trace_path, stop)
+
+        self.assertEqual(stream.read.call_count, 2)
+        record.assert_called_once_with("command-final", final_step)
+
+    def test_trace_collector_joins_partial_final_line_and_skips_malformed_json(self) -> None:
+        stop = threading.Event()
+        final_step = {"event": "completed", "action": "click"}
+        final_line = json.dumps(final_step) + "\n"
+        boundary = len(final_line) // 2
+        stream = mock.MagicMock()
+
+        def read_before_process_exit():
+            stop.set()
+            return final_line[:boundary]
+
+        reads = iter([
+            read_before_process_exit,
+            lambda: final_line[boundary:] + "malformed trace\n",
+        ])
+        stream.read.side_effect = lambda: next(reads)()
+        stream.tell.side_effect = [boundary, len(final_line) + len("malformed trace\n")]
+        trace_path = mock.MagicMock(spec=Path)
+        trace_path.open.return_value.__enter__.return_value = stream
+
+        with mock.patch.object(self.service, "_record_ego_step") as record:
+            self.service._collect_ego_trace("command-final", trace_path, stop)
+
+        self.assertEqual(stream.read.call_count, 2)
+        record.assert_called_once_with("command-final", final_step)
+
+    def test_trace_collector_reads_once_when_process_already_stopped(self) -> None:
+        stop = threading.Event()
+        stop.set()
+        final_step = {"event": "completed", "action": "click"}
+        path = Path(self.temp.name) / "completed-trace.jsonl"
+        path.write_text(json.dumps(final_step) + "\n", encoding="utf-8")
+        with mock.patch.object(self.service, "_record_ego_step") as record:
+            self.service._collect_ego_trace("command-final", path, stop)
+        record.assert_called_once_with("command-final", final_step)
 
     def test_first_browser_command_starts_the_managed_browser_when_stopped(self) -> None:
         stopped = {"running": False, "connected": False, "debugPort": None}

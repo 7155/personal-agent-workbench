@@ -33,7 +33,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger, Select } from '@/components/primitives';
 import { isComposerAttachmentMimeType } from '@/contracts/attachment-policy';
@@ -64,9 +64,12 @@ import {
   selectActivePublicRoomTurn,
   selectPublicRoomTurnOrder,
 } from '@/features/rooms/runtime/room-execution-lanes';
+import { roomSendJournal, type RoomSendAttempt } from '@/features/rooms/runtime/room-send-journal';
+import { startRoomSend } from '@/features/rooms/application/room-send';
 import { useRoomLiveSession } from '@/features/rooms/runtime/use-room-live-session';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import { PawWindowChromePortal, usePawWindowChromeTarget } from '../shell/PawWindowChrome';
+import { roomCancellationOutcome } from '@/features/rooms/runtime/room-cancellation';
 import { roomProjection, useRoomLiveStore } from '@/features/rooms/state/live-store';
 import {
   parseRoomPermissionPolicy,
@@ -219,6 +222,8 @@ export function PawRoomWorkspace({
   const recovery = useWorkspaceRecovery<RoomAttachmentReceipt>(`room:${recordId}`, initialDraft ?? '');
   const { draft, setDraft, attachments, setAttachments } = recovery;
   const [sending, setSending] = useState(false);
+  const sendJournal = roomSendJournal(transport, recordId);
+  const pendingSend = useSyncExternalStore(sendJournal.subscribe, sendJournal.getSnapshot);
   const [optimisticSteer, setOptimisticSteer] = useState<OptimisticSteerReceipt | null>(null);
   const optimisticSteerRef = useRef<OptimisticSteerReceipt | null>(null);
   const [loading, setLoading] = useState(true);
@@ -391,7 +396,7 @@ export function PawRoomWorkspace({
    * Runtime send path, until this turn settles — so it can still be reordered,
    * edited, or pulled back into the composer on stop. */
   const queue = useConversationQueue({
-    busy: (jevEnabled ? jev.busy || jev.awaitingPlan || jev.loading || jev.creating || Boolean(jev.pendingInput || jev.pendingPlan || jev.planSending || jev.error) || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)) || sending,
+    busy: (jevEnabled ? jev.busy || jev.awaitingPlan || jev.loading || jev.creating || Boolean(jev.pendingInput || jev.pendingPlan || jev.planSending || jev.error) || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)) || sending || Boolean(pendingSend),
     conversationId: recordId,
     send: (value) => { void send(value); },
   });
@@ -427,6 +432,13 @@ export function PawRoomWorkspace({
     options: { question?: PendingRoomQuestion; retryOfRootId?: string; preserveDraft?: boolean } = {},
   ): Promise<boolean> {
     if (!record || record.status !== 'active' || sending) return false;
+    const pending = sendJournal.getSnapshot();
+    if (pending) {
+      // Identical text can answer a different question or target a new Root.
+      // Only the explicit recovery action may replay the old binding.
+      setError('上次发送尚未确认，请先核实上次发送；新草稿会保留。');
+      return false;
+    }
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return false; }
     const authoritativeQuestion = roomProjection(recordId).pendingUserQuestion;
     const answersQuestion = Boolean(
@@ -435,7 +447,10 @@ export function PawRoomWorkspace({
       && options.question.postId === authoritativeQuestion.postId
       && options.question.rootId === authoritativeQuestion.rootId
     );
-    const message = rawValue.trim() || (attachments.length ? '请查看附件。' : '');
+    // Continue/retry belongs to the retained turn, not to the next composer
+    // draft. Explicit uncertain-command recovery uses its journal copy below.
+    const composerAttachments = options.preserveDraft ? [] : attachments;
+    const message = rawValue.trim() || (composerAttachments.length ? '请查看附件。' : '');
     if (!message) return false;
     if (jevEnabled && !answersQuestion) {
       if (jev.loading && !jev.liveSnapshot || jev.error) {
@@ -444,12 +459,12 @@ export function PawRoomWorkspace({
         return false;
       }
       if ((jev.busy || activeTurn && !jev.liveSnapshot) && !pendingJevInput(transport, recordId)) {
-        if (attachments.length) { setError('附件已保留，当前任务结束后可以发送。'); return false; }
+        if (composerAttachments.length) { setError('附件已保留，当前任务结束后可以发送。'); return false; }
         const queued = queue.enqueue(rawValue);
         if (queued && !options.preserveDraft) setDraft('');
         return queued;
       }
-      const selectedAttachments = attachments;
+      const selectedAttachments = composerAttachments;
       setSending(true); setError('');
       try {
         const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
@@ -465,7 +480,7 @@ export function PawRoomWorkspace({
       } finally { setSending(false); }
     }
     const steering = Boolean(activeTurn && !answersQuestion);
-    if (steering && attachments.length) {
+    if (steering && composerAttachments.length) {
       setError('当前回合执行中只能发送文字干预；图片会保留到下一轮。');
       return false;
     }
@@ -495,31 +510,8 @@ export function PawRoomWorkspace({
       setError('当前回合还没有可点名的伙伴，请稍后重试。');
       return false;
     }
-    const selectedAttachments = answersQuestion ? [] : attachments;
-    setSending(true);
-    if (!options.preserveDraft) setDraft('');
-    if (!answersQuestion) setAttachments([]);
-    setError('');
-    if (!steering) {
-      useRoomLiveStore.getState().appendOptimistic(recordId, {
-        clientMessageId,
-        text: message,
-        attachments: selectedAttachments,
-        nowMs: Date.now(),
-        ...(answersQuestion && authoritativeQuestion ? { answerToPostId: authoritativeQuestion.postId } : {}),
-        ...(options.retryOfRootId ? { retryOfRootId: options.retryOfRootId } : {}),
-      });
-    } else {
-      const receipt = {
-        clientActionId: clientMessageId,
-        message,
-        participantId: steerParticipantId,
-      } satisfies OptimisticSteerReceipt;
-      optimisticSteerRef.current = receipt;
-      setOptimisticSteer(receipt);
-    }
-    try {
-      const response = await transport.request<Record<string, unknown>>(steering && activeTurn
+    const selectedAttachments = answersQuestion ? [] : composerAttachments;
+    const request: ControlRequest = steering && activeTurn
         ? {
             pathId: 'agent.room.participant.steer',
             params: { roomId: recordId },
@@ -547,41 +539,63 @@ export function PawRoomWorkspace({
                 ? { workItemId: activeWork.id }
                 : {}),
             },
-          });
-      const requestedStart = asRecord(asRecord(response).startConfirmation);
-      let acceptedResponse = response;
-      if (requestedStart.status === 'pending' && typeof requestedStart.gateId === 'string') {
-        // Current Hosts treat the Room dispatch itself as authorization and
-        // never return this field.  When an older durable command receipt is
-        // replayed, cross the obsolete one-time gate internally so the user
-        // still gets one send action and never sees a second approval UI.
-        acceptedResponse = await transport.request<Record<string, unknown>>({
-          pathId: 'agent.room.startGate.confirm',
-          params: { roomId: recordId },
-          body: { gateId: requestedStart.gateId, decision: 'confirm' },
+          };
+    return deliverRoomSend({ request, clientMessageId, rawValue, attachments: selectedAttachments, status: 'sending', preserveDraft: options.preserveDraft });
+  }
+
+  async function deliverRoomSend(attempt: RoomSendAttempt): Promise<boolean> {
+    if (!record || record.status !== 'active') return false;
+    const delivery = startRoomSend(transport, recordId, attempt);
+    if (!delivery) return false;
+    const preserveDraft = delivery.attempt.preserveDraft ?? false;
+    const { clientMessageId, rawValue, attachments: selectedAttachments } = delivery.attempt;
+    const body = asRecord(delivery.attempt.request.body);
+    const message = String(body.message);
+    const steering = delivery.attempt.request.pathId === 'agent.room.participant.steer';
+    const answersQuestion = Boolean(body.answerToPostId);
+    const steerParticipantId = String(body.participantId ?? '');
+    setSending(true);
+    if (!preserveDraft) setDraft(current => current.trim() === rawValue.trim() ? '' : current);
+    if (!answersQuestion) setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
+    setError('');
+    if (steering) {
+      const receipt = {
+        clientActionId: clientMessageId,
+        message,
+        participantId: steerParticipantId,
+      } satisfies OptimisticSteerReceipt;
+      optimisticSteerRef.current = receipt;
+      setOptimisticSteer(receipt);
+    }
+    try {
+      const result = await delivery.settled;
+      if (result.status !== 'accepted') {
+        if (steering) clearOptimisticSteer(clientMessageId);
+        if (!preserveDraft) setDraft((current) => current || rawValue);
+        if (!answersQuestion) setAttachments((current) => {
+          const restored = new Map(current.map((attachment) => [attachment.mediaId, attachment]));
+          for (const attachment of selectedAttachments) if (!restored.has(attachment.mediaId)) restored.set(attachment.mediaId, attachment);
+          return [...restored.values()].slice(0, 8);
         });
+        setError(result.status === 'uncertain'
+          ? 'Room 发送尚未确认。核实上次发送会使用原请求，避免重复执行。'
+          : roomErrorText(result.error, 'Room 消息未被接收，请重试。'));
+        return false;
       }
-      useRoomLiveStore.getState().acceptMessage(recordId, acceptedResponse);
-      const timelineEvents = asRecord(acceptedResponse).timelineEvents;
-      if (Array.isArray(timelineEvents)) acknowledgeOptimisticSteer(timelineEvents);
-      const workItem = asWorkItem(asRecord(acceptedResponse).workItem);
-      if (workItem) onRoomUpdated({
-        ...record,
-        workItems: [...(record.workItems ?? []).filter((item) => item.id !== workItem.id), workItem],
-      });
-      followRoomTimelineIfReaderAtEnd(timelineRef.current);
+      try {
+        const timelineEvents = result.response.timelineEvents;
+        if (Array.isArray(timelineEvents)) acknowledgeOptimisticSteer(timelineEvents);
+        const workItem = asWorkItem(result.response.workItem);
+        if (workItem) onRoomUpdated({
+          ...record,
+          workItems: [...(record.workItems ?? []).filter((item) => item.id !== workItem.id), workItem],
+        });
+        followRoomTimelineIfReaderAtEnd(timelineRef.current);
+      } catch {
+        // Presentation failure cannot undo an accepted command or invite replay.
+        setError('消息已接收，但界面暂未更新，请重新同步。');
+      }
       return true;
-    } catch (reason) {
-      if (!steering) useRoomLiveStore.getState().discardOptimistic(recordId, clientMessageId);
-      if (steering) clearOptimisticSteer(clientMessageId);
-      if (!options.preserveDraft) setDraft((current) => current || rawValue);
-      if (!answersQuestion) setAttachments((current) => {
-        const restored = new Map(current.map((attachment) => [attachment.mediaId, attachment]));
-        for (const attachment of selectedAttachments) if (!restored.has(attachment.mediaId)) restored.set(attachment.mediaId, attachment);
-        return [...restored.values()].slice(0, 8);
-      });
-      setError(roomErrorText(reason, 'Room 消息没有发送，请重试。'));
-      return false;
     } finally {
       setSending(false);
     }
@@ -619,8 +633,11 @@ export function PawRoomWorkspace({
         params: { roomId: recordId },
         body: { roomTurnId: rootId, clientRequestId: `paw-room-abort-${crypto.randomUUID()}` },
       });
-      if (receipt.ok === true && receipt.status !== 'cancellation_pending') {
+      const outcome = roomCancellationOutcome(receipt);
+      if (outcome === 'terminated') {
         useRoomLiveStore.getState().abortTurn(recordId, rootId, Date.now());
+      } else if (outcome === 'already_terminal') {
+        retrySnapshot();
       } else {
         setError('停止信号已送达，仍在等待所有伙伴返回终止回执。');
       }
@@ -940,7 +957,7 @@ export function PawRoomWorkspace({
      才用 Sol 命名这个 Room 的原点，否则统一叫「主 Room」。 */
   const coordinatorActive = focusProjection ? roomFocusHasCoordinator(focusProjection.partners) : false;
   const originLabel = roomFocusOriginLabel(coordinatorActive);
-  const visibleError = error || connectionError || (jevEnabled && jev.pendingInput ? '上次发送尚未确认，原内容与附件仍保留。' : jevEnabled && jev.pendingPlan ? '上次方案操作尚未确认。' : '');
+  const visibleError = error || connectionError || (pendingSend?.status === 'uncertain' ? '上次发送尚未确认，原请求仍保留。' : '') || (jevEnabled && jev.pendingInput ? '上次发送尚未确认，原内容与附件仍保留。' : jevEnabled && jev.pendingPlan ? '上次方案操作尚未确认。' : '');
   const syncOffline = Boolean(connectionError) && connectionError !== ROOM_WORKSPACE_MISSING_TEXT;
   const visibleRecoveryState = syncOffline ? 'failed' : recoveryState;
   const hasRoomHistory = Boolean(projection?.turnOrder.length);
@@ -1223,7 +1240,9 @@ export function PawRoomWorkspace({
                 <div className="paw-room-workspace__error" role="alert">
                   <CircleAlert size={14} />
                   <span>{visibleError}{jevEnabled && jev.pendingInput ? ` · 原请求含 ${jev.pendingInput.attachmentIds?.length ?? 0} 项附件` : ''}</span>
-                  {jevEnabled && jev.pendingInput ? (
+                  {pendingSend ? (
+                    <button disabled={sending || pendingSend.status === 'sending'} onClick={() => void deliverRoomSend(pendingSend)} type="button">核实上次发送</button>
+                  ) : jevEnabled && jev.pendingInput ? (
                     <button disabled={sending || jev.creating} onClick={() => void retryJevAdmission()} type="button">重试上次发送</button>
                   ) : jevEnabled && jev.pendingPlan ? (
                     <button disabled={sending || Boolean(jev.planSending)} onClick={() => void retryJevPlan()} type="button">核实上次方案操作</button>

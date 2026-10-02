@@ -962,7 +962,9 @@ export function abortRoomTurn(
   turnId: string,
   nowMs: number,
 ): RoomProjectionState {
-  if (!state.turnsById[turnId]) return state;
+  const turn = state.turnsById[turnId];
+  // A delayed HTTP cancellation receipt cannot replace an observed terminal.
+  if (!turn || (turn.status !== 'queued' && turn.status !== 'running')) return state;
   const next = cloneState(state);
   completeTurn(next, turnId, 'aborted', nowMs);
   return next;
@@ -2318,7 +2320,9 @@ function completeTurn(
   settleTurnActivities(state, turn, status, nowMs);
   for (const messageId of turn.messageIds) {
     const message = state.messagesById[messageId];
-    if (!message || message.role === 'user' || message.status === 'completed') continue;
+    // A Root terminal settles only unfinished messages. Earlier dispatch
+    // outcomes keep their status and exact completion timestamp.
+    if (!message || message.role === 'user' || ['completed', 'failed', 'aborted'].includes(message.status)) continue;
     state.messagesById[messageId] = {
       ...message,
       status: status === 'completed' ? 'completed' : status,

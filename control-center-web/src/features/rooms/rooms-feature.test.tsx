@@ -7,7 +7,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { createPreviewTransport } from '@/app/preview-control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { MockControlTransport } from '@/test/mock-transport';
-import { createRoomProjection, reduceRoomEvent } from '@/contracts/room-reducer';
+import { createRoomProjection, parseRoomEventSnapshot, reduceRoomEvent } from '@/contracts/room-reducer';
 import { parseRoomEvent } from '@/contracts/validators';
 import type { WorkDocumentV1 } from '@/contracts/work-documents';
 import { previewPersonas, previewTemplates } from '@/features/agent/preview-data';
@@ -379,6 +379,49 @@ describe('Rooms experience', () => {
       params: { roomId: 'room-a' },
       query: { beforeSequence: 3, limit: 200 },
     });
+  });
+
+  it.each(['failure', 'success'] as const)('does not carry a late history %s into another warm Room', async (outcome) => {
+    for (const roomId of ['room-a', 'room-b']) {
+      useRoomLiveStore.getState().replaySnapshot(roomId, parseRoomEventSnapshot(roomSnapshot(roomId, [
+        roomEvent(roomId, 3, 'user_message', { text: `${roomId} 最近消息` }),
+      ])));
+    }
+    const pendingA = deferred<unknown>();
+    const refresh = deferred<unknown>();
+    const transport = new MockControlTransport({ routes: {
+      'agent.rooms.list': { ok: true, items: [roomSummary('room-a', 'Room A'), roomSummary('room-b', 'Room B')] },
+      'agent.roles.list': { ok: true, items: previewPersonas },
+      'agent.room.snapshot': () => refresh.promise,
+      'agent.room.history': (request: ControlRequest) => request.params?.roomId === 'room-a'
+        ? pendingA.promise
+        : { schemaVersion: 'rag-ime.agent-room-event-page.v1', ok: true, roomId: 'room-b',
+          items: [roomEvent('room-b', 1, 'user_message', { text: 'Room B 较早消息' }),
+            roomEvent('room-b', 2, 'user_message', { text: 'Room B 中间消息' })],
+          firstSequence: 1, lastSequence: 2, nextBeforeSequence: 0, hasMore: false,
+          retainedFirstSequence: 1, retainedLastSequence: 3, retainedPrefixTruncated: false },
+    } });
+    const user = userEvent.setup();
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><RoomsFeature /></TooltipProvider></ControlTransportProvider>);
+    await screen.findByText('room-a 最近消息');
+    await user.click(screen.getByRole('button', { name: '模拟到达历史顶部' }));
+    await waitFor(() => expect(transport.requests.filter(call => call.request.pathId === 'agent.room.history')).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '打开协作空间：Room B' }));
+    await screen.findByText('room-b 最近消息');
+    const oldRequest = transport.requests.find(call => call.request.pathId === 'agent.room.history')!.request;
+    expect(oldRequest.signal?.aborted).toBe(true);
+    await act(async () => {
+      if (outcome === 'failure') pendingA.reject(new Error('Room A 历史请求失败'));
+      else pendingA.resolve({ schemaVersion: 'rag-ime.agent-room-event-page.v1', ok: true, roomId: 'room-a',
+        items: [roomEvent('room-a', 1, 'user_message', { text: 'A 已过期的分页结果' }),
+          roomEvent('room-a', 2, 'user_message', { text: 'A 旧分页结果尾' })],
+        firstSequence: 1, lastSequence: 2, nextBeforeSequence: 0, hasMore: false,
+        retainedFirstSequence: 1, retainedLastSequence: 3, retainedPrefixTruncated: false });
+    });
+    expect(useRoomLiveStore.getState().historyByRoomId['room-a']?.firstSequence).toBe(3);
+    expect(screen.queryByRole('button', { name: '重试较早记录' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '模拟到达历史顶部' }));
+    expect(await screen.findByText('Room B 较早消息')).toBeInTheDocument();
   });
 
   it('follows a newly appended Room turn only while the reader remains at the live edge', async () => {
@@ -2243,9 +2286,9 @@ describe('Rooms experience', () => {
     const send = screen.getByRole('button', { name: '发送消息' });
     fireEvent.click(send);
     fireEvent.click(send);
-    expect(transport.requests.filter(({ request }) => (
+    await waitFor(() => expect(transport.requests.filter(({ request }) => (
       request.pathId === 'agent.room.message' && request.params?.roomId === 'room-a'
-    ))).toHaveLength(1);
+    ))).toHaveLength(1));
 
     await user.click(screen.getByRole('button', { name: '打开协作空间：Room B' }));
     const roomBComposer = await screen.findByRole('textbox', { name: '协作消息' });
@@ -2263,7 +2306,65 @@ describe('Rooms experience', () => {
 
     await user.click(screen.getByRole('button', { name: '打开协作空间：Room A' }));
     expect(await screen.findByRole('textbox', { name: '协作消息' })).toHaveValue('A 只应发送一次');
-    expect(await screen.findByRole('alert')).toHaveTextContent('消息暂时未发送，请稍后重试。');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Room 发送尚未确认。');
+  });
+
+  it('reuses the complete uncertain request on explicit recovery across Room view remounts', async () => {
+    let attempts = 0;
+    const transport = new MockControlTransport({ routes: {
+      'agent.rooms.list': { ok: true, items: [roomSummary('room-a', 'Room A')] },
+      'agent.room.snapshot': roomSnapshot('room-a', []),
+      'agent.room.message': () => {
+        if (++attempts === 1) throw new TypeError('ACK lost after commit');
+        return { ok: true, accepted: true, idempotentReplay: true };
+      },
+    } });
+    const surface = () => <ControlTransportProvider transport={transport}><TooltipProvider><RoomsFeature /></TooltipProvider></ControlTransportProvider>;
+    const user = userEvent.setup();
+    const view = render(surface());
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.type(composer, '只执行一次');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    await waitFor(() => expect(composer).toHaveValue('只执行一次'));
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(attempts).toBe(1);
+    view.unmount();
+    render(surface());
+    const reopened = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.clear(reopened);
+    await user.type(reopened, '另一项新任务');
+    await user.click(await screen.findByRole('button', { name: '核实上次发送' }));
+    const requests = transport.requests.filter(({ request }) => request.pathId === 'agent.room.message');
+    expect(requests).toHaveLength(2);
+    expect(requests[1].request).toEqual(requests[0].request);
+    expect(reopened).toHaveValue('另一项新任务');
+  });
+
+  it('keeps a legacy start-gate retry bound to the original admitted request', async () => {
+    let confirmations = 0;
+    const transport = new MockControlTransport({ routes: {
+      'agent.rooms.list': { ok: true, items: [roomSummary('room-a', 'Room A')] },
+      'agent.room.snapshot': roomSnapshot('room-a', []),
+      'agent.room.message': { ok: true, startConfirmation: { status: 'pending', gateId: 'legacy-gate' } },
+      'agent.room.startGate.confirm': () => {
+        if (++confirmations === 1) throw Object.assign(new Error('legacy gate lookup rejected'), { status: 404 });
+        return { ok: true, accepted: true };
+      },
+    } });
+    const user = userEvent.setup();
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><RoomsFeature /></TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.type(composer, '继续旧版请求');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    await user.click(await screen.findByRole('button', { name: '核实上次发送' }));
+    const requests = transport.requests.filter(({ request }) => request.pathId === 'agent.room.message');
+    expect(requests).toHaveLength(2);
+    expect(requests[1].request).toEqual(requests[0].request);
+    const gates = transport.requests.filter(({ request }) => request.pathId === 'agent.room.startGate.confirm');
+    expect(gates).toHaveLength(2);
+    expect(gates.every(({ request }) => JSON.stringify(request.body) === JSON.stringify({ gateId: 'legacy-gate', decision: 'confirm' }))).toBe(true);
+    await waitFor(() => expect(screen.queryByRole('button', { name: '核实上次发送' })).not.toBeInTheDocument());
+    expect(composer).toHaveValue('');
   });
 
   it('removes an optimistic message and restores the draft when the real API rejects it', async () => {
@@ -2271,7 +2372,7 @@ describe('Rooms experience', () => {
       'agent.rooms.list': { ok: true, items: [roomSummary('room-a', '失败恢复协作空间')] },
       'agent.room.snapshot': roomSnapshot('room-a', []),
       'agent.room.message': () => {
-        throw new Error('POST /api/agent/rooms/room-a/messages failed: receipt=/tmp/private.json');
+        throw Object.assign(new Error('POST /api/agent/rooms/room-a/messages failed: receipt=/tmp/private.json'), { status: 400 });
       },
     } });
     const user = userEvent.setup();
@@ -4649,6 +4750,55 @@ describe('Rooms experience', () => {
       expect(String((request?.body as Record<string, unknown>)?.clientRequestId))
         .toMatch(/^room-abort-/);
     });
+    expect(screen.queryByRole('button', { name: '停止本轮任务' })).not.toBeInTheDocument();
+  });
+
+  it.each(['completed', 'failed'] as const)('preserves an SSE %s Root when a delayed Stop reports already_terminal', async (status) => {
+    const rootTurnId = 'room-turn:stop-race';
+    const runningEvent = roomEvent('room-a', 1, 'participant_status', { status: 'working' }, {
+      turnId: rootTurnId, participantId: 'room-a:p1', sourceSessionId: 'room-a:s1',
+    });
+    const response = deferred<Record<string, unknown>>();
+    const transport = new MockControlTransport({ routes: {
+      'agent.rooms.list': { ok: true, items: [roomSummary('room-a', '停止竞态')] },
+      'agent.room.snapshot': roomSnapshot('room-a', [runningEvent]),
+      'agent.roles.list': { ok: true, items: previewPersonas },
+      'agent.room.abort': () => response.promise,
+    } });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><RoomsFeature /></TooltipProvider></ControlTransportProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: '停止本轮任务' }));
+    act(() => { transport.emit('agent.room.events', roomEvent('room-a', 2,
+      status === 'failed' ? 'turn_failed' : 'turn_completed', { status }, { turnId: rootTurnId })); });
+    await waitFor(() => expect(useRoomLiveStore.getState().projections['room-a']?.turnsById[rootTurnId]?.status).toBe(status));
+    const before = useRoomLiveStore.getState().projections['room-a']!;
+    await act(async () => response.resolve({ ok: true, status: 'already_terminal' }));
+    await waitFor(() => expect(transport.requests.filter(call => call.request.pathId === 'agent.room.snapshot')).toHaveLength(2));
+    expect(useRoomLiveStore.getState().projections['room-a']).toBe(before);
+    expect(screen.queryByRole('button', { name: '停止本轮任务' })).not.toBeInTheDocument();
+  });
+
+  it('keeps execution active after already_terminal until a fresh snapshot confirms the actual result', async () => {
+    const rootTurnId = 'room-turn:stop-refresh';
+    const runningEvent = roomEvent('room-a', 1, 'participant_status', { status: 'working' }, {
+      turnId: rootTurnId, participantId: 'room-a:p1', sourceSessionId: 'room-a:s1',
+    });
+    const refreshed = deferred<ReturnType<typeof roomSnapshot>>();
+    let snapshotReads = 0;
+    const transport = new MockControlTransport({ routes: {
+      'agent.rooms.list': { ok: true, items: [roomSummary('room-a', '停止后恢复事实')] },
+      'agent.room.snapshot': () => ++snapshotReads === 1 ? roomSnapshot('room-a', [runningEvent]) : refreshed.promise,
+      'agent.roles.list': { ok: true, items: previewPersonas },
+      'agent.room.abort': { ok: true, status: 'already_terminal' },
+    } });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><RoomsFeature /></TooltipProvider></ControlTransportProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: '停止本轮任务' }));
+    await waitFor(() => expect(snapshotReads).toBe(2));
+    expect(useRoomLiveStore.getState().projections['room-a']?.turnsById[rootTurnId]?.status).toBe('running');
+    expect(screen.getByRole('button', { name: '停止本轮任务' })).toBeInTheDocument();
+    await act(async () => refreshed.resolve(roomSnapshot('room-a', [runningEvent,
+      roomEvent('room-a', 2, 'turn_completed', { status: 'completed' }, { turnId: rootTurnId }),
+    ])));
+    await waitFor(() => expect(useRoomLiveStore.getState().projections['room-a']?.turnsById[rootTurnId]?.status).toBe('completed'));
     expect(screen.queryByRole('button', { name: '停止本轮任务' })).not.toBeInTheDocument();
   });
 

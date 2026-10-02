@@ -25,10 +25,10 @@ export function acceptedRoomTimelineEvents(response: unknown): UiRoomEvent[] {
 /** Merge the POST acknowledgement without racing the same SSE events. */
 export function mergeAcceptedRoomTimeline(
   state: RoomProjectionState,
-  response: unknown,
+  events: readonly UiRoomEvent[],
 ): RoomProjectionState {
   let next = state;
-  for (const event of acceptedRoomTimelineEvents(response)) {
+  for (const event of events) {
     const reduced = reduceRoomEvent(next, event);
     if (reduced.disposition === 'snapshot-required') return state;
     if (reduced.disposition === 'applied') next = reduced.state;

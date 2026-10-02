@@ -45,80 +45,94 @@ export function useConversationQueue({
 }): ConversationQueueController {
   const [queue, setQueue] = useState<readonly QueuedDraft[]>([]);
   const [capReached, setCapReached] = useState(false);
+  // Admission and consumption happen synchronously in event handlers. React
+  // may defer/replay state updaters, so their return timing cannot decide
+  // whether the composer should clear or a draft has already been sent.
+  const queueRef = useRef<{ conversationId: string; items: readonly QueuedDraft[] }>({ conversationId, items: [] });
+  const replaceQueue = useCallback((items: readonly QueuedDraft[]) => {
+    if (queueRef.current.conversationId !== conversationId) return;
+    queueRef.current = { conversationId, items };
+    setQueue(items);
+  }, [conversationId]);
   const sendRef = useRef(send);
   sendRef.current = send;
 
   useEffect(() => {
-    setQueue([]);
+    queueRef.current = { conversationId, items: [] };
+    replaceQueue([]);
     setCapReached(false);
-  }, [conversationId]);
+  }, [conversationId, replaceQueue]);
 
   // Drain exactly one held draft once the current turn settles. Keeping this
   // in an effect makes the dependency on committed busy state explicit and
   // avoids racing the optimistic append the send path performs.
   useEffect(() => {
-    if (busy || queue.length === 0) return;
-    const [next, ...rest] = queue;
+    if (busy || queueRef.current.conversationId !== conversationId) return;
+    const [next, ...rest] = queueRef.current.items;
     if (!next) return;
-    setQueue(rest);
+    replaceQueue(rest);
     setCapReached(false);
     sendRef.current(next.text);
-  }, [busy, queue]);
+  }, [busy, conversationId, queue, replaceQueue]);
 
   const enqueue = useCallback((text: string) => {
     const value = text.trim();
     if (!value) return false;
-    let accepted = false;
-    setQueue((current) => {
-      const result = enqueueQueuedDraft(current, {
-        id: `queued-${crypto.randomUUID()}`,
-        text: value,
-        conversationId,
-        busy: true,
-        existingDepth: current.length,
-      }, cap);
-      accepted = result.accepted;
-      return result.queue;
-    });
-    setCapReached(!accepted);
-    return accepted;
-  }, [cap, conversationId]);
+    if (queueRef.current.conversationId !== conversationId) return false;
+    const current = queueRef.current.items;
+    const result = enqueueQueuedDraft(current, {
+      id: `queued-${crypto.randomUUID()}`,
+      text: value,
+      conversationId,
+      busy: true,
+      existingDepth: current.length,
+    }, cap);
+    if (result.accepted) replaceQueue(result.queue);
+    setCapReached(!result.accepted);
+    return result.accepted;
+  }, [cap, conversationId, replaceQueue]);
 
   const remove = useCallback((id: string) => {
-    setQueue((current) => removeQueuedDraft(current, id));
+    if (queueRef.current.conversationId !== conversationId) return;
+    replaceQueue(removeQueuedDraft(queueRef.current.items, id));
     setCapReached(false);
-  }, []);
+  }, [conversationId, replaceQueue]);
 
   const edit = useCallback((id: string, text: string) => {
-    setQueue((current) => editQueuedDraft(current, id, text));
-  }, []);
+    if (queueRef.current.conversationId !== conversationId) return;
+    replaceQueue(editQueuedDraft(queueRef.current.items, id, text));
+  }, [conversationId, replaceQueue]);
 
   const reorder = useCallback((activeId: string, overId: string) => {
-    setQueue((current) => reorderQueuedDrafts(current, activeId, overId));
-  }, []);
+    if (queueRef.current.conversationId !== conversationId) return;
+    replaceQueue(reorderQueuedDrafts(queueRef.current.items, activeId, overId));
+  }, [conversationId, replaceQueue]);
 
   const clear = useCallback(() => {
-    setQueue([]);
+    if (queueRef.current.conversationId !== conversationId) return;
+    replaceQueue([]);
     setCapReached(false);
-  }, []);
+  }, [conversationId, replaceQueue]);
 
   const sendNow = useCallback((id: string) => {
-    const item = queue.find((candidate) => candidate.id === id);
+    if (queueRef.current.conversationId !== conversationId) return;
+    const item = queueRef.current.items.find((candidate) => candidate.id === id);
     if (!item) return;
     // React may invoke state updater functions twice in StrictMode. Dispatching
     // from inside the updater therefore sent one human action to Runtime twice.
     // Resolve the immutable queued draft first, then keep the updater pure.
-    setQueue((current) => removeQueuedDraft(current, id));
+    replaceQueue(removeQueuedDraft(queueRef.current.items, id));
     setCapReached(false);
     sendRef.current(item.text);
-  }, [queue]);
+  }, [conversationId, replaceQueue]);
 
   const restoreToDraft = useCallback((currentText: string) => {
-    const restored = mergeQueueBackToDraft(queue, currentText);
-    setQueue([]);
+    if (queueRef.current.conversationId !== conversationId) return currentText;
+    const restored = mergeQueueBackToDraft(queueRef.current.items, currentText);
+    replaceQueue([]);
     setCapReached(false);
     return restored;
-  }, [queue]);
+  }, [conversationId, replaceQueue]);
 
   return { queue, capReached, enqueue, remove, edit, reorder, clear, sendNow, restoreToDraft };
 }

@@ -45,6 +45,7 @@ export interface CollabSegment {
   open: boolean;
   label: string;
   failed?: boolean;
+  aborted?: boolean;
 }
 
 export interface CollabHandoff {
@@ -228,7 +229,9 @@ export function collabLaneStateAt(timeline: CollabTimeline, lane: CollabLane, at
     const ended = timeline.segments.filter((item) => item.laneId === lane.id && item.endMs <= atMs);
     if (!ended.length) return { state: 'idle', label: '待命' };
     const last = ended.reduce((a, b) => (a.endMs >= b.endMs ? a : b));
-    return last.failed ? { state: 'error', label: `${last.label} · 失败` } : { state: 'done', label: `${last.label} · 已交回` };
+    return last.failed ? { state: 'error', label: `${last.label} · 失败` }
+      : last.aborted ? { state: 'stopped', label: `${last.label} · 已停止` }
+        : { state: 'done', label: `${last.label} · 已交回` };
   }
   const state: CollabLaneState = segment.kind === 'wait' ? 'waiting'
     : segment.kind === 'plan' || segment.kind === 'synthesize' ? 'thinking'

@@ -262,7 +262,8 @@ class JevMaterialService:
                 or actor.get("sessionId") != request.get("sessionId")):
                 return missing
             reader = getattr(self.service.runtime, "session_tool_evidence", None)
-            history = (reader(request["sessionId"], turn_id=receipt["turnId"]) if callable(reader)
+            history = (reader(request["sessionId"], turn_id=receipt["turnId"],
+                              client_message_id=request["dispatchId"]) if callable(reader)
                        else self.service.runtime.session_snapshot(request["sessionId"]))
         except (AttributeError, KeyError, ValueError, RuntimeError, OSError):
             return missing
@@ -285,7 +286,8 @@ class JevMaterialService:
         events = [event for event in events if event["payload"].get("toolName") != "browser"
                   or event["payload"].get("toolCallId") in browser_calls]
         starts = {e["payload"].get("toolCallId"): e for e in events if e["eventType"] == "tool_started"}
-        records, record_sizes, seen, finished_ids, omitted, partial = [], [], set(), set(), 0, False
+        records, record_sizes, seen, finished_ids, omitted = [], [], set(), set(), 0
+        partial = any(event["payload"].get("nestedCallsComplete") is False for event in bound_events)
         archive_bytes = len(canonical(binding).encode()) + 2000
         for event in events:
             payload = event["payload"]
@@ -303,7 +305,8 @@ class JevMaterialService:
             # child receipt) is missing evidence, not a still-running tool.
             finished_ids.add(call_id)
             raw = payload.get("result")
-            result_source = None
+            result_source = ("native_nested_call_result"
+                             if payload.get("resultSource") == "native_nested_call_result" else None)
             if not isinstance(raw, Mapping) and name == 'browser' and start:
                 native = start['payload']
                 parent = bound_starts.get(native.get('parentToolCallId'), {})
@@ -376,7 +379,7 @@ class JevMaterialService:
                 record["receiptSemantics"] = {**_COMMAND_RECEIPT_SEMANTICS, "receiptPath": "result.receipt"}
             elif isinstance(result, Mapping) and result.get("schemaVersion") == _COMMAND_RECEIPT_SEMANTICS["schemaVersion"]:
                 record["receiptSemantics"] = {**_COMMAND_RECEIPT_SEMANTICS, "receiptPath": "result"}
-            if not start or _source_truncated(raw):
+            if not start or _source_truncated(raw) or start.get("payload", {}).get("argumentsBytes"):
                 partial = True
             bounded = _bounded_evidence(record, _EVIDENCE_RECORD_BYTES)
             if bounded is not record:

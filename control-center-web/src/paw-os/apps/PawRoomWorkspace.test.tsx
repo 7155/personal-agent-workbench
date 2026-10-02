@@ -9,6 +9,7 @@ import { previewRoomSnapshot } from '@/app/preview-room-data';
 import { TooltipProvider } from '@/components/primitives';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import { ROOM_WORKSPACE_MISSING_TEXT } from '@/features/agent/public-error';
+import { parseRoomEvent } from '@/contracts/validators';
 import type { ControlRequest } from '@/platform/transport';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
@@ -108,6 +109,34 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByRole('textbox', { name: '协作消息' })).not.toHaveAttribute('placeholder', '立即干预当前回合…');
   });
 
+  it.each(['completed', 'failed'] as const)('preserves a %s Root when its pending Stop reports already_terminal', async (status) => {
+    const source = previewRoomSnapshot(`room-stop-race-${status}`);
+    const snapshot = { ...source, events: source.events.slice(0, 3),
+      room: { ...source.room, lastEventSequence: 3 }, lastSequence: 3, resumeToken: `${source.room.id}:3` };
+    const { controlTransport, transport } = renderRoom(900, vi.fn(), snapshot.room as unknown as RoomSummary, snapshot);
+    const originalRequest = controlTransport.request.bind(controlTransport);
+    let resolveAbort!: (response: Record<string, unknown>) => void;
+    const abortResponse = new Promise<Record<string, unknown>>(resolve => { resolveAbort = resolve; });
+    controlTransport.request = async <Response = unknown>(request: ControlRequest): Promise<Response> => {
+      if (request.pathId === 'agent.room.abort') return await abortResponse as Response;
+      return originalRequest<Response>(request);
+    };
+    await userEvent.click(await screen.findByRole('button', { name: '停止整轮协作' }));
+    const rootId = source.events[0]!.turnId;
+    act(() => useRoomLiveStore.getState().applyEvents(source.room.id, [parseRoomEvent({
+      ...source.events[0], sequence: 4, eventId: `${source.room.id}:4`, resumeToken: `${source.room.id}:4`,
+      eventType: status === 'failed' ? 'turn_failed' : 'turn_completed',
+      participantId: null, sourceSessionId: '', payload: { status },
+    })]));
+    const before = useRoomLiveStore.getState().projections[source.room.id]!;
+    await act(async () => resolveAbort({ ok: true, status: 'already_terminal' }));
+    await waitFor(() => expect(transport.requests.filter(call => call.request.pathId === 'agent.room.snapshot')).toHaveLength(2));
+    expect(useRoomLiveStore.getState().projections[source.room.id]).toBe(before);
+    expect(before.turnsById[rootId]?.status).toBe(status);
+    expect(screen.queryByRole('button', { name: '停止整轮协作' })).not.toBeInTheDocument();
+    expect(document.querySelector('.paw-room-workspace__runtime')).not.toHaveTextContent('本轮已停止');
+  });
+
   it('lets a stale Room replace its workspace instead of retrying an impossible sync', async () => {
     const { controlTransport, room, transport } = renderRoom(
       900,
@@ -192,7 +221,7 @@ describe('PAWOS Room collaboration tools', () => {
         throw Object.assign(new Error('Agent 3 is currently busy'), {
           payload: {
             code: 'AGENT_COMMAND_FAILED',
-            commandReceipt: { state: 'failed', clientMessageId: 'busy-message', causeCode: 'ROOM_PARTICIPANT_BUSY' },
+            commandReceipt: { state: 'failed', clientMessageId: (request.body as { clientMessageId: string }).clientMessageId, causeCode: 'ROOM_PARTICIPANT_BUSY' },
           },
         });
       },
@@ -282,6 +311,112 @@ describe('PAWOS Room collaboration tools', () => {
     expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveValue('还没发送的目标');
     expect(screen.queryByRole('status', { name: '正在恢复 Room 协作现场' })).not.toBeInTheDocument();
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.room.message')).toBe(false);
+  });
+
+  it('retries a lost Room ACK with the original request instead of starting a second task', async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    const { transport, remount } = renderRoom(900, vi.fn(), undefined, undefined, undefined, undefined, vi.fn(), (request) => {
+      if (request.pathId !== 'agent.room.message') return undefined;
+      attempts += 1;
+      if (attempts === 1) throw new TypeError('ACK connection lost after commit');
+      return { ok: true, accepted: true, idempotentReplay: true };
+    });
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    fireEvent.paste(composer, {
+      clipboardData: { files: [new File(['png'], 'retry.png', { type: 'image/png' })], items: [], getData: () => '' },
+    });
+    expect(await screen.findByLabelText('移除 retry.png')).toBeInTheDocument();
+    await user.type(composer, '只执行一次');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    await waitFor(() => expect(composer).toHaveValue('只执行一次'));
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
+    remount();
+    const reopenedComposer = await screen.findByRole('textbox', { name: '协作消息' });
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
+    await user.clear(reopenedComposer);
+    await user.type(reopenedComposer, '这是另一项任务');
+    await user.click(screen.getByRole('button', { name: '核实上次发送' }));
+    const requests = transport.requests.filter(({ request }) => request.pathId === 'agent.room.message');
+    expect(requests).toHaveLength(2);
+    expect(requests[1].request).toEqual(requests[0].request);
+    expect(reopenedComposer).toHaveValue('这是另一项任务');
+  });
+
+  it('keeps the next draft and its image out of Continue and its explicit lost-ACK recovery', async () => {
+    const source = previewRoomSnapshot('room-continue-draft');
+    const terminal = {
+      ...source.events[0], sequence: 4, eventId: `${source.room.id}:4`, resumeToken: `${source.room.id}:4`,
+      eventType: 'turn_failed', participantId: null, sourceSessionId: '',
+      payload: { status: 'failed', rootId: source.events[0].turnId, error: 'synthetic provider failure' },
+    };
+    const snapshot = { ...source, events: [...source.events.slice(0, 3), terminal],
+      room: { ...source.room, lastEventSequence: 4 }, lastSequence: 4, resumeToken: `${source.room.id}:4` };
+    let calls = 0;
+    const { transport } = renderRoom(900, vi.fn(), snapshot.room as unknown as RoomSummary, snapshot,
+      undefined, undefined, vi.fn(), (request) => {
+        if (request.pathId !== 'agent.room.message') return undefined;
+        if (++calls === 1) throw new TypeError('synthetic lost ACK');
+        return { ok: true, idempotentReplay: true };
+      });
+    const user = userEvent.setup();
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.type(composer, '下一条消息的草稿');
+    fireEvent.paste(composer, {
+      clipboardData: { files: [new File(['png'], 'next-draft.png', { type: 'image/png' })], items: [], getData: () => '' },
+    });
+    expect(await screen.findByLabelText('移除 next-draft.png')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '完整记录' }));
+    await user.click(screen.getByRole('button', { name: '继续' }));
+    await screen.findByRole('button', { name: '核实上次发送' });
+    const first = transport.requests.find(({ request }) => request.pathId === 'agent.room.message')!.request;
+    expect(first.body).toMatchObject({ attachmentIds: [] });
+    expect((first.body as Record<string, unknown>).message).toContain('不要重复已经完成的操作');
+    expect(composer).toHaveValue('下一条消息的草稿');
+    expect(screen.getByLabelText('移除 next-draft.png')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '核实上次发送' }));
+    const requests = transport.requests.filter(({ request }) => request.pathId === 'agent.room.message');
+    expect(requests).toHaveLength(2);
+    expect(requests[1].request).toEqual(first);
+    expect(composer).toHaveValue('下一条消息的草稿');
+    expect(screen.getByLabelText('移除 next-draft.png')).toBeInTheDocument();
+  });
+
+  it('keeps the original admission identity if local projection fails after a successful Room ACK', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderRoom(900, vi.fn(), undefined, undefined, undefined, undefined, vi.fn(),
+      { ok: true, accepted: true });
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.type(composer, '已接收的请求');
+    const accept = vi.spyOn(useRoomLiveStore.getState(), 'acceptMessage').mockImplementationOnce(() => {
+      throw new Error('local projection unavailable');
+    });
+    try {
+      await user.click(screen.getByRole('button', { name: '发送消息' }));
+      await user.click(await screen.findByRole('button', { name: '核实上次发送' }));
+      const requests = transport.requests.filter(({ request }) => request.pathId === 'agent.room.message');
+      expect(requests).toHaveLength(2);
+      expect(requests[1].request).toEqual(requests[0].request);
+    } finally { accept.mockRestore(); }
+  });
+
+  it('keeps an accepted command settled when its surface metadata callback fails', async () => {
+    const source = previewRoomSnapshot('room-presentation-failure');
+    const acceptedWork = { ...source.room.workItems[0], id: 'accepted-work-callback' };
+    const { onRoomUpdated, transport } = renderRoom(900, vi.fn(), source.room as unknown as RoomSummary, source,
+      undefined, undefined, vi.fn(), { ok: true, workItem: acceptedWork });
+    const user = userEvent.setup();
+    const composer = await screen.findByRole('textbox', { name: '协作消息' });
+    await user.type(composer, '这条请求已经接收');
+    onRoomUpdated.mockImplementation((updated: RoomSummary) => {
+      if (updated.workItems?.some(item => item.id === acceptedWork.id)) throw new Error('synthetic metadata render failure');
+    });
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(await screen.findByText('消息已接收，但界面暂未更新，请重新同步。')).toBeInTheDocument();
+    expect(composer).toHaveValue('');
+    expect(screen.queryByRole('button', { name: '核实上次发送' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
   });
 
   it('binds a normal Room message to the active executable WorkItem', async () => {
@@ -1199,6 +1334,7 @@ function renderRoom(
   };
   const focusState = { value: collaborationFocusGroup };
   const closeWindow = vi.fn();
+  const onRoomUpdated = vi.fn();
   const renderSurface = () => (
     <QueryClientProvider client={queryClient}>
       <ControlTransportProvider transport={transport}>
@@ -1228,7 +1364,7 @@ function renderRoom(
                 personas={[]}
                 record={room}
                 recordId={room.id}
-                onRoomUpdated={vi.fn()}
+                onRoomUpdated={onRoomUpdated}
               />
             </PawWindowFrame>
           </TooltipProvider>
@@ -1239,9 +1375,14 @@ function renderRoom(
   const rendered = render(renderSurface());
   return {
     closeWindow,
+    onRoomUpdated,
     transport: { requests },
     controlTransport: transport,
     ...rendered,
+    remount: () => {
+      rendered.rerender(<></>);
+      rendered.rerender(renderSurface());
+    },
     setDesktopFocusGroup: (next: string | null | undefined) => {
       focusState.value = next;
       rendered.rerender(renderSurface());

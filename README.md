@@ -262,6 +262,32 @@ flowchart TD
 
 扩展页面通过 `registerProductExtensionHosts()` 装配，OS 按宿主类型加载页面。职责边界由 [check_owner_boundaries.py](scripts/check_owner_boundaries.py) 检查。
 
+### Room 状态由谁负责
+
+经典 Room 与 PAWOS Room 是同一协作能力的两个界面入口。修改公共发送行为时，从共享 application 入口开始；不要在窗口里再实现一套请求事务、事件缓存或 Agent 循环。
+
+| 职责 | 唯一 owner 与源码入口 | 界限 |
+| --- | --- | --- |
+| 命令交付与显式重试 | [`startRoomSend`](control-center-web/src/features/rooms/application/room-send.ts) | 认领请求、提交、兼容旧回执、应用 ACK、结算失败；不决定 Pi 执行是否完成 |
+| 未确认请求的身份与恢复 | [`room-send-journal`](control-center-web/src/features/rooms/runtime/room-send-journal.ts) | 按连接和 Room 保存原请求；重开界面不自动重发，核实仍用同一身份与原参数 |
+| 快照、SSE 与断线恢复 | [`shared-room-live-session`](control-center-web/src/features/rooms/runtime/shared-room-live-session.ts) | 多个界面共享连接及恢复顺序；React hook 只管理订阅租约 |
+| 对话、活动与历史缓存 | [`live-store`](control-center-web/src/features/rooms/state/live-store.ts) · [`room-reducer`](control-center-web/src/contracts/room-reducer.ts) | HTTP ACK 和 SSE 汇入同一投影；窗口外壳只读 [`projection-bridge`](control-center-web/src/features/rooms/state/projection-bridge.ts) |
+| 草稿、附件与阅读位置 | [经典 Room](control-center-web/src/features/rooms/index.tsx) · [PAWOS Room](control-center-web/src/paw-os/apps/PawRoomWorkspace.tsx) | 界面保留输入、滚动和布局；继续旧任务不消费下一条草稿的附件 |
+| Root 与 Session 归属 | [`RoomTurnRegistry`](rag_ime/rooms/turn_registry.py) · [`RoomSessionDispatchService`](rag_ime/rooms/session_dispatch.py) | Room 负责显式派发及公共 Root 对应关系，模型和 Tool 循环仍归 Pi |
+| Root 停止与回执汇总 | [`RoomSessionCancellationService`](rag_ime/rooms/session_cancellation.py) | 按当前 Root 绑定向 Pi 及子执行传播停止；界面不能把请求成功当作停止完成 |
+
+普通发送链路是：界面构造意图 → application 认领原请求 → transport 提交 → Room 服务派发到 Pi → ACK/SSE 更新共享投影。Jev 的任务与方案操作继续由它自己的应用入口管理，不借普通 Room 发送事务重放。
+
+命令被接收、工具返回结果、Root 完成是不同事实。前端的 `sending` 只表示交付中的交互状态；WorkItem 元数据、工具卡片和裁剪后的历史不能替代执行终态凭据。修改这些边界时，先运行 [发送事务契约](control-center-web/src/features/rooms/application/room-send.test.ts)、[经典 Room 回归](control-center-web/src/features/rooms/rooms-feature.test.tsx) 与 [PAWOS Room 回归](control-center-web/src/paw-os/apps/PawRoomWorkspace.test.tsx)。
+
+### 前端交互与动效
+
+公共控件的反馈维护在 [primitives](control-center-web/src/components/primitives/)：选中背景移动，文字和点击目标保持稳定；面板仅在进入时揭示，流式内容更新不重新挂载；骨架扫光有次数上限，进行中的按钮使用不带百分比的指示轨。
+
+[`MotionProvider` / `MotionActivityBoundary`](control-center-web/src/design/motion.tsx) 统一用户偏好、系统减少动效、页面可见性和宿主展示活动。PAWOS 从已有 [surface context](control-center-web/src/features/paw-os/surface-context.tsx) 投影窗口活动，不把窗口尺寸或装饰动画变成新的执行状态。后台或减少动效时显示静态结果，任务与回执照常推进。
+
+[共享图片阅读器](control-center-web/src/features/conversation-ui/media/ImageGallery.tsx) 按图片来源与重试身份处理解码，缩放保持当前阅读位置；[消息复制反馈](control-center-web/src/features/conversation-ui/components/MessageActions.tsx) 等剪贴板实际接收后才显示成功。Knowledge 导入反馈属于发起操作的知识库；Lab 上传停止只阻断尚未提交的后续步骤，不声称已撤销服务器收到的请求。
+
 ## 开发与文档
 
 [CONTRIBUTING.md](CONTRIBUTING.md) 包含环境、测试与贡献流程；[release/README.md](release/README.md) 包含源码构建、安装、升级和回滚。源码开发需要 Python 3.12+、uv，以及前端要求的 Node / pnpm；完整 Agent 执行还需要符合合约的 managed Pi Runtime。

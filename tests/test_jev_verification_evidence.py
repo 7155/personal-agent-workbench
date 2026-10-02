@@ -166,7 +166,8 @@ class WorkerEvidenceTests(unittest.TestCase):
                 events.append(item)
         self.runtime.session_tool_evidence = Mock(return_value={"toolHistoryEvents": events})
         evidence = self.project(inline_byte_budget=6000)
-        self.runtime.session_tool_evidence.assert_called_once_with(self.worker["id"], turn_id="turn:a")
+        self.runtime.session_tool_evidence.assert_called_once_with(
+            self.worker["id"], turn_id="turn:a", client_message_id="dispatch:a")
         self.runtime.session_snapshot.assert_not_called()
         self.assertLessEqual(len(canonical(evidence).encode()), 6000)
         _receipt, body = self.read_media(evidence["readRef"].removeprefix("media://"), session_id=self.verifier["id"])
@@ -370,6 +371,35 @@ class WorkerEvidenceTests(unittest.TestCase):
         self.assertEqual(tool['result']['result']['stdout'], '{"observed":42}')
         self.assertEqual(tool['resultSource'], 'bound_browser_control_receipt')
         self.assertNotIn('private orchestration', canonical(evidence))
+
+    def test_cold_browser_sqlite_receipt_redacts_credentials_before_verifier_media_read(self):
+        browser = self.seed_nested_browser_receipt()
+        stdout = '{"observed":42,"password":"synthetic-password","access_token":"synthetic-access"}'
+        stderr = 'Authorization: Bearer synthetic-bearer\nCookie: session=synthetic-cookie; theme=dark\n'
+        with browser._connection() as conn:
+            conn.execute("UPDATE browser_control_commands SET result_json=?",
+                         (json.dumps({'ok': True, 'stdout': stdout, 'stderr': stderr, 'exitCode': 0}),))
+        self.runtime.session_tool_evidence = Mock(return_value={'toolHistoryEvents': self.nested_browser_events()})
+        evidence = self.project()
+        self.assertEqual(evidence['status'], 'available')
+        self.assertEqual(evidence['tools'][0]['resultSource'], 'bound_browser_control_receipt')
+        gateway = ControlToolGateway(sessions=self.sessions, management=object(), core=object(), project=object(),
+                                     collaboration=self.service)
+        read = gateway._read_internal_resource(self.verifier['id'], {'resourceRef': evidence['readRef']})
+        archived = json.loads(read['content'])
+        self.assertEqual(archived['tools'], evidence['tools'])
+        for secret in ('synthetic-password', 'synthetic-access', 'synthetic-bearer', 'synthetic-cookie'):
+            self.assertNotIn(secret, read['content'])
+            self.assertNotIn(secret, canonical(evidence))
+        result = archived['tools'][0]['result']['result']
+        self.assertEqual(json.loads(result['stdout'])['observed'], 42)
+        self.assertEqual(result['exitCode'], 0)
+        self.assertIn('[REDACTED_SECRET]', result['stderr'])
+        # Projection masks the shared copy, without rewriting the durable owner receipt.
+        with browser._connection() as conn:
+            original = json.loads(conn.execute('SELECT result_json FROM browser_control_commands').fetchone()[0])
+        self.assertEqual(original['stdout'], stdout)
+        self.assertEqual(original['stderr'], stderr)
 
     def test_cold_nested_browser_receipt_rejects_mismatch_and_ambiguity(self):
         browser = self.seed_nested_browser_receipt()
