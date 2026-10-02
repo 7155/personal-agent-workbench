@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-02T11:05:38.013372+00:00",
+  "generatedAt": "2026-10-02T12:11:23.508573+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-pi1-mac-iteration-20261002",
@@ -31,7 +31,7 @@
     },
     "earth_research": {
       "description": "Google Earth Agent extension App, Pi execution package, examples and tests.",
-      "pathCount": 115
+      "pathCount": 113
     },
     "brand_stellar": {
       "description": "User-selected branding and bounded stellar visual behavior.",
@@ -167,13 +167,13 @@
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
-      "pathCount": 218
+      "pathCount": 223
     }
   },
   "summary": {
-    "pathCount": 1854,
+    "pathCount": 1857,
     "dispositionCounts": {
-      "delete_old_implementation": 307,
+      "delete_old_implementation": 310,
       "keep_release": 1547
     },
     "groupCounts": {
@@ -183,7 +183,7 @@
       "composition_refactor": 32,
       "conversation_controls": 61,
       "conversation_v2_integration": 49,
-      "earth_research": 115,
+      "earth_research": 113,
       "jev_integration": 10,
       "knowledge_runtime": 12,
       "lab_backend": 74,
@@ -194,7 +194,7 @@
       "offline_installer": 12,
       "owner_boundaries": 15,
       "pi1_experience_iteration": 38,
-      "pi1_final_integration": 218,
+      "pi1_final_integration": 223,
       "pi_content_studio_v5_v6": 41,
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
@@ -2021,20 +2021,6 @@
       "reason": "Earth GIS workbench data, execution, reproducible delivery and focused regression coverage committed for this task."
     },
     {
-      "path": "control-center-web/extension-apps/earth-research/gis-state.test.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/gis-state.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "earth_research",
-      "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
-    },
-    {
       "path": "control-center-web/extension-apps/earth-research/layer-catalog.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -3197,6 +3183,20 @@
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
+      "path": "control-center-web/src/design/paw-os-themes.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/design/paw-os-themes.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/design/workspace.css",
       "status": "modified",
       "disposition": "keep_release",
@@ -3957,6 +3957,13 @@
       "status": "added",
       "group": "conversation_controls",
       "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/configuration/PawOsAppearanceSettings.test.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -5269,6 +5276,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/features/paw-os/model/desktop.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/paw-os/model/desktop.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -6422,6 +6436,13 @@
       "group": "pi1_final_integration",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/PawOsApp-appearance.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/PawOsApp.tsx",

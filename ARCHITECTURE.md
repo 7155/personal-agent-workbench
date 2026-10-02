@@ -53,6 +53,33 @@ Frontend paths beginning with `src/` are relative to `control-center-web/`.
 See the narrower [Pi](rag_ime/pi/README.md), [Lab](rag_ime/agent_lab/README.md),
 [Knowledge](rag_ime/knowledge_library/README.md) and [JEV](integrations/jev/README.md) maps before editing an owner.
 
+## Frontend composition and reading ownership
+
+The desktop store is the only window-state implementation. The retired desktop
+reducer and Earth GIS model were disconnected alternatives; Earth keeps its live
+map-selection owner. `ThemeProvider` retains the persisted light/dark/system
+preference, while the single blueprint appearance is a root attribute, not a
+second store or a no-op provider.
+
+`PawAgentApp` loads the selected Room or Session workspace through separate lazy
+boundaries. Existing workspace props and callbacks keep their ownership; switching
+views does not create another execution store. `PawWindowLayer` loads background
+Tool observers only when the existing activation policy needs them. Once active,
+the observer retains real receipt validation and running-job observation after
+focus leaves the Agent; closing a window is not cancellation.
+
+`PawRoomRoundSheet` owns reading intent, not execution state. Following the latest
+round survives streamed content growth and viewport resize. An explicit history
+read or disclosure interaction releases follow; returning to latest opts in again.
+One lifecycle-scoped resize observer measures the viewport and round layout, and
+is disconnected on cleanup. Layout-driven scroll events do not impersonate a
+reader choosing history. Navigation keeps the latest round reachable horizontally.
+
+Room activity summaries share one display fallback in `roomActivityPublicSummary`.
+Exact event enums receive readable labels, while diagnostic text and stored source
+evidence remain unchanged. The task sheet consumes this presentation at its
+activity-to-row boundary rather than maintaining another mapping.
+
 ## State authority and recovery
 
 | State | Writer and persistence | Recovery rule |
