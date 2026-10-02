@@ -243,6 +243,39 @@ for line in sys.stdin:
         sessions[session_id]["activeTurnId"] = turn_id
         client_message_id = params.get("clientMessageId", "")
         sessions[session_id]["activeClientMessageId"] = client_message_id
+        if params["message"].startswith("preflight-handled"):
+            runtime_id = sessions[session_id]["piSessionId"]
+            settlement = {
+                "schemaVersion": "rag-ime.pi-turn-settlement.v1", "sessionId": session_id,
+                "runtimeSessionId": runtime_id, "turnId": turn_id, "clientMessageId": client_message_id,
+                "receipt": {"schemaVersion": "pi.agent-settled.v2", "receiptId": "handled:" + turn_id,
+                            "sessionId": runtime_id, "runId": turn_id, "scopeId": runtime_id + ":" + turn_id,
+                            "generation": 1, "disposition": "completed", "stopReason": "prompt_handled",
+                            "origin": "prompt_preflight", "settledAtMs": 200, "aborted": False,
+                            "pendingOperations": 0, "operations": {"pending": 0}, "operationCounts": {}}}
+            if params["message"] == "preflight-handled-wrong-client":
+                settlement["clientMessageId"] = "another-client"
+            elif params["message"] == "preflight-handled-without-origin":
+                settlement["receipt"].pop("origin")
+            elif params["message"] == "preflight-handled-aborted":
+                settlement["receipt"]["disposition"] = "aborted"
+                settlement["receipt"]["aborted"] = True
+                settlement["receipt"]["stopReason"] = "prompt_preflight_cancelled"
+            elif params["message"] == "preflight-handled-failed":
+                settlement["receipt"]["disposition"] = "failed"
+                settlement["receipt"]["stopReason"] = "fixture_failure"
+            sessions[session_id].setdefault("settlements", {})[turn_id] = settlement
+            sessions[session_id]["isIdle"] = True
+            sessions[session_id]["activeTurnId"] = ""
+            sessions[session_id]["activeClientMessageId"] = ""
+            if params["message"] == "preflight-handled-before-ack":
+                event(session_id, turn_id, client_message_id,
+                      {"type": "agent_settled", "receipt": settlement["receipt"]})
+            # By default drop the live event: the ACK carries the same
+            # durable receipt, not a made-up assistant message or a new run.
+            result(request, {"turnId": turn_id, "clientMessageId": client_message_id,
+                             "disposition": "handled", "settlement": settlement})
+            continue
         user_entry_id = "entry-user-" + str(len(sessions[session_id].get("forkItems", [])) + 1)
         assistant_entry_id = "entry-assistant-" + str(len(sessions[session_id].get("forkItems", [])) + 1)
         user_message = {"id": user_entry_id, "role": "user", "timestamp": 100,
@@ -5441,6 +5474,155 @@ class PiRuntimeV2Tests(unittest.TestCase):
 
         self.assertEqual(self.store.runtime_binding(first_id), source_binding)
         self.assertIsNone(self.store.runtime_binding(second_id))
+
+    def test_handled_prompt_recovers_a_lost_settled_event_without_fabricating_output(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.prompt(session_id, "older ordinary reply", client_message_id="earlier-client")
+        _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+        handled = self.runtime.prompt(session_id, "preflight-handled", client_message_id="handled-client")
+        self.assertEqual(handled["disposition"], "handled")
+        self.assertTrue(handled["accepted"])
+        self.assertNotIn("abortRequested", handled)
+        self.assertEqual(self.store.get(session_id)["status"], "idle")
+        settlement = self.runtime.await_turn_settled(session_id, str(handled["turnId"]),
+            client_message_id="handled-client", timeout_seconds=1)
+        self.assertEqual(settlement["receipt"]["stopReason"], "prompt_handled")
+        self.assertNotIn("finalMessage", settlement["receipt"])
+        events = [event for event in self.events.replay(session_id)[0] if event.turn_id == handled["turnId"]]
+        self.assertEqual(sum(event.event_type == "turn_completed" for event in events), 1)
+        self.assertFalse(any(event.event_type == "message_completed" for event in events))
+        next_prompt = self.runtime.prompt(session_id, "next ordinary task", client_message_id="next-client")
+        self.assertTrue(next_prompt["accepted"])
+        _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+        self.assertEqual(sum(item["method"] == "session.prompt" for item in self._host_request_log()), 3)
+
+    def test_handled_ack_preserves_the_settlement_abort_outcome(self) -> None:
+        session_id = str(self.first["id"])
+        handled = self.runtime.prompt(session_id, "preflight-handled-aborted", client_message_id="handled-aborted")
+        self.assertEqual(handled["disposition"], "handled")
+        self.assertTrue(handled["abortRequested"])
+        self.assertEqual(self.store.get(session_id)["status"], "idle")
+        self.assertEqual(self.store.get(session_id)["lastMessagePreview"], "已停止。")
+        terminal = [event for event in self.events.replay(session_id)[0] if event.event_type == "turn_completed"]
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0].turn_id, handled["turnId"])
+        self.assertTrue(terminal[0].payload["aborted"])
+
+    def test_late_handled_ack_preserves_a_newer_prompt_reservation(self) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        client = self.runtime._require_client()
+        original_send = client.send
+        ack_received = threading.Event()
+        release_ack = threading.Event()
+        results: list[dict[str, object]] = []
+        errors: list[Exception] = []
+
+        def hold_ack(method, params=None, **kwargs):
+            result = original_send(method, params, **kwargs)
+            if method == "session.prompt":
+                ack_received.set()
+                if not release_ack.wait(5):
+                    raise TimeoutError("test did not release the captured ACK")
+            return result
+
+        def submit():
+            try:
+                results.append(self.runtime.prompt(session_id, "preflight-handled-before-ack", client_message_id="handled-original"))
+            except Exception as error:
+                errors.append(error)
+
+        with patch.object(client, "send", side_effect=hold_ack):
+            worker = threading.Thread(target=submit)
+            worker.start()
+            try:
+                self.assertTrue(ack_received.wait(5))
+                _wait_until(lambda: self.store.get(session_id)["status"] == "idle")
+                self.runtime.reserve_prompt_admission(session_id, client_message_id="newer-client")
+            finally:
+                release_ack.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["disposition"], "handled")
+        self.assertNotIn("abortRequested", results[0])
+        self.runtime.require_prompt_admission_active(session_id, client_message_id="newer-client")
+        self.assertEqual(self.store.get(session_id)["status"], "busy")
+
+    def test_terminal_projection_cannot_overwrite_a_new_prompt_reservation(self) -> None:
+        self._assert_terminal_projection_preserves_successor("preflight-handled", "idle")
+
+    def test_failed_terminal_projection_cannot_fault_a_new_prompt_reservation(self) -> None:
+        self._assert_terminal_projection_preserves_successor("preflight-handled-failed", "faulted")
+
+    def _assert_terminal_projection_preserves_successor(self, message: str, terminal_status: str) -> None:
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        terminal_write_entered = threading.Event()
+        reservation_attempted = threading.Event()
+        reservation_finished = threading.Event()
+        release_terminal = threading.Event()
+        original_set_status = self.store.set_status
+        errors: list[Exception] = []
+        results: list[dict[str, object]] = []
+
+        def hold_terminal_write(sid, status, **kwargs):
+            if sid == session_id and status == terminal_status and threading.current_thread() is terminal_worker:
+                terminal_write_entered.set()
+                if not release_terminal.wait(5):
+                    raise TimeoutError("test did not release the terminal store write")
+            return original_set_status(sid, status, **kwargs)
+
+        def finish_old_prompt():
+            try:
+                results.append(self.runtime.prompt(session_id, message, client_message_id="old-owner"))
+            except Exception as error:
+                errors.append(error)
+
+        def reserve_new_prompt():
+            reservation_attempted.set()
+            try:
+                self.runtime.reserve_prompt_admission(session_id, client_message_id="new-owner")
+            except Exception as error:
+                errors.append(error)
+            finally:
+                reservation_finished.set()
+
+        terminal_worker = threading.Thread(target=finish_old_prompt)
+        reservation_worker = threading.Thread(target=reserve_new_prompt)
+        with patch.object(self.store, "set_status", side_effect=hold_terminal_write):
+            terminal_worker.start()
+            try:
+                self.assertTrue(terminal_write_entered.wait(5))
+                reservation_worker.start()
+                self.assertTrue(reservation_attempted.wait(5))
+                # Exercise the interleaving if admission can finish before the
+                # old store write. Correct serialization keeps it pending; the
+                # deadline only releases that barrier, not a timing assertion.
+                reservation_finished.wait(0.5)
+            finally:
+                release_terminal.set()
+                terminal_worker.join(5)
+                if reservation_worker.ident is not None:
+                    reservation_worker.join(5)
+        self.assertFalse(terminal_worker.is_alive())
+        self.assertFalse(reservation_worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["disposition"], "handled")
+        self.runtime.require_prompt_admission_active(session_id, client_message_id="new-owner")
+        self.assertEqual(self.store.get(session_id)["status"], "busy")
+
+    def test_handled_prompt_requires_an_exact_authoritative_no_run_receipt(self) -> None:
+        for message in ("preflight-handled-wrong-client", "preflight-handled-without-origin"):
+            with self.subTest(message=message):
+                session = self.store.create(title=message)
+                session_id = str(session["id"])
+                with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+                    self.runtime.prompt(session_id, message, client_message_id=message)
+                self.assertEqual(self.store.get(session_id)["status"], "busy")
+                self.assertFalse(any(event.event_type == "turn_completed" for event in self.events.replay(session_id)[0]))
+                with self.assertRaises(PiRuntimeError):
+                    self.runtime.prompt(session_id, "must not replay the handled effect")
 
     def test_prompt_rejects_a_second_turn_until_the_active_turn_settles(self) -> None:
         session_id = str(self.first["id"])

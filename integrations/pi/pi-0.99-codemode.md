@@ -81,6 +81,31 @@ Older Hosts require upgrading for this path; PAW does not fall back to an
 unbound Stop. Pending admission uses its original non-empty client identity,
 or waits for the exact original turn when the client identity is empty.
 
+Pi 1.0 prompt admission distinguishes `started`, `queued` and `handled`.
+`handled` means an extension consumed the input; it does not by itself mean a
+model ran or the outcome succeeded. The paired Host returns the exact durable
+`rag-ime.pi-turn-settlement.v1` receipt with that ACK. PAW validates Session,
+turn, client identity, disposition and pending-operation count before reconciling
+it. A completed no-run receipt has `origin: prompt_preflight`,
+`stopReason: prompt_handled` and no `finalMessage`; an ordinary completed run
+still requires its native final assistant message. A handled command can instead
+carry an aborted settlement. Invalid or missing receipts remain acceptance
+unknown, because the extension may already have performed an effect.
+
+Preflight includes asynchronous extension/model preparation, including prompts
+started by an extension. Stop fences those exact prompt scopes before they can
+enter a model run. A hook that has not exited remains pending: neither a native
+idle snapshot nor the outer command returning proves that nested work drained.
+The Host retains its turn until the actual lifecycle drains, persists settlement
+before publishing it, and does not synthesize an assistant answer for a handled
+input. A lost live event can be repaired from the same ACK/durable receipt;
+recovery never runs the command again under a new identity.
+
+PAW writes the durable terminal Session projection while it still holds the
+admission lock, before releasing that turn's ownership. Notifications remain
+outside that lock and retain the exact turn identity. A late old completion may
+settle its own turn, but cannot overwrite a successor admission's busy state.
+
 History recovery still belongs to the classic Host/SessionManager. UI reset and
 retention cursors describe a projection and do not authorize execution. Keep
 unknown external effects unresolved until the original owner can reconcile

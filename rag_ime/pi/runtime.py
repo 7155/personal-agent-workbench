@@ -1613,6 +1613,22 @@ class PiRuntimeHostManager:
             # released above; a delayed failure must not clear a newer owner.
             raise
         turn_id = str(accepted.get("turnId") or "")
+        disposition = accepted.get("disposition", "started")
+        if not isinstance(disposition, str) or disposition not in {"started", "queued", "handled"}:
+            raise PiRuntimeCommandAcceptanceUnknown("Pi returned an unknown prompt disposition")
+        handled_settlement: dict[str, object] | None = None
+        if disposition == "handled":
+            try:
+                handled_settlement = self._validate_turn_settlement(
+                    as_mapping(accepted.get("settlement")), session_id=session_id,
+                    turn_id=turn_id, client_message_id=normalized_client_message_id,
+                )
+            except PiRuntimeError as exc:
+                # The extension may already have performed an effect. A bad
+                # terminal receipt is not a rejection that permits resending.
+                raise PiRuntimeCommandAcceptanceUnknown(
+                    "Pi handled the input but returned no matching terminal receipt"
+                ) from exc
         admission_fence_error: Exception | None = None
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
@@ -1686,11 +1702,19 @@ class PiRuntimeHostManager:
         # idle over a subsequent reservation/turn, including a pending Stop.
         result: dict[str, object] = {
             "accepted": True,
+            "disposition": disposition,
             "turnId": turn_id,
             "piEntryId": turn_id,
             "response": accepted,
         }
-        if abort_after_admission or already_aborting or already_retired:
+        if handled_settlement is not None:
+            # Reuse the exact terminal owner even when the live event was
+            # lost, arrived before ACK, or a newer admission now owns the UI.
+            self._reconcile_turn_settlement(handled_settlement)
+        if (abort_after_admission or already_aborting
+            or (already_retired and disposition != "handled")
+            or (handled_settlement is not None
+                and as_mapping(handled_settlement.get("receipt")).get("aborted") is True)):
             result["abortRequested"] = True
         if client_message_id:
             result["clientMessageId"] = str(client_message_id).strip()
@@ -1905,8 +1929,14 @@ class PiRuntimeHostManager:
         if not isinstance(aborted, bool) or aborted != (disposition == "aborted"):
             raise PiRuntimeError("Pi settlement abort state is inconsistent")
         final_message = as_mapping(receipt.get("finalMessage"))
+        handled_without_run = (
+            receipt.get("origin") == "prompt_preflight"
+            and receipt.get("stopReason") == "prompt_handled"
+            and "finalMessage" not in receipt
+        )
         if (
             disposition == "completed"
+            and not handled_without_run
             and (
                 str(final_message.get("role") or "").lower() != "assistant"
                 or not isinstance(final_message.get("content"), list)
@@ -5307,7 +5337,28 @@ class PiRuntimeHostManager:
                 if state.settle_timer is not None:
                     state.settle_timer.cancel()
                     state.settle_timer = None
+                public_message_count = sum(
+                    isinstance(message, Mapping)
+                    and pi_message_is_public(message)
+                    for message in messages
+                )
                 if aborted or not final_error:
+                    # Persist the terminal projection under the admission lock.
+                    # Releasing ownership first lets a new reservation's busy
+                    # status be overwritten by this old turn's idle write.
+                    if aborted:
+                        self.sessions.set_status(
+                            session_id,
+                            "idle",
+                            last_message_preview="已停止。",
+                        )
+                    else:
+                        self.sessions.set_status(
+                            session_id,
+                            "idle",
+                            message_count=public_message_count,
+                            last_message_preview=last_assistant_preview(messages),
+                        )
                     state.turn_id = ""
                     state.client_message_id = ""
                     state.stream_pi_message_id = ""
@@ -5321,12 +5372,9 @@ class PiRuntimeHostManager:
                     state.pending_ui_requests.clear()
                     self._status = "ready"
                     self._schedule_idle_locked()
+            # Observers may acquire Room locks; publish outside the Runtime
+            # lock, retaining the exact old turn identity for late consumers.
             if aborted:
-                self.sessions.set_status(
-                    session_id,
-                    "idle",
-                    last_message_preview="已停止。",
-                )
                 self.events.publish(
                     session_id,
                     "turn_completed",
@@ -5337,17 +5385,6 @@ class PiRuntimeHostManager:
             if final_error:
                 self._turn_failed(session_id, turn_id, PiRuntimeError(final_error))
                 return
-            public_message_count = sum(
-                isinstance(message, Mapping)
-                and pi_message_is_public(message)
-                for message in messages
-            )
-            self.sessions.set_status(
-                session_id,
-                "idle",
-                message_count=public_message_count,
-                last_message_preview=last_assistant_preview(messages),
-            )
             self.events.publish(
                 session_id,
                 "turn_completed",
@@ -5727,6 +5764,13 @@ class PiRuntimeHostManager:
             if state.settle_timer is not None:
                 state.settle_timer.cancel()
                 state.settle_timer = None
+            # The durable terminal projection and admission ownership change
+            # are one transition, just as for successful agent_settled events.
+            self.sessions.set_status(
+                session_id,
+                "idle" if aborted else "faulted",
+                last_message_preview="已停止。" if aborted else message,
+            )
             state.turn_id = ""
             state.client_message_id = ""
             state.stream_pi_message_id = ""
@@ -5745,11 +5789,6 @@ class PiRuntimeHostManager:
             # A cancelled Provider request may report a transport error after
             # Stop fenced this exact turn. The user action owns the terminal
             # meaning; late cancellation noise must not become a model error.
-            self.sessions.set_status(
-                session_id,
-                "idle",
-                last_message_preview="已停止。",
-            )
             self.events.publish(
                 session_id,
                 "turn_completed",
@@ -5761,7 +5800,6 @@ class PiRuntimeHostManager:
                 turn_id=turn_id,
             )
             return
-        self.sessions.set_status(session_id, "faulted", last_message_preview=message)
         self.events.publish(
             session_id,
             "turn_failed",
