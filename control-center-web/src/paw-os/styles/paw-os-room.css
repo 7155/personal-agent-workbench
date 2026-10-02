@@ -129,6 +129,17 @@
   user-select: none;
 }
 
+.paw-desktop-root .paw-room-window-chrome > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
+  min-height: 28px;
+  white-space: nowrap;
+}
+
 .paw-desktop-root .paw-room-window-chrome .paw-room-workspace__runtime > span { font-size: 12px; }
 .paw-desktop-root .paw-room-window-chrome[data-status='busy'] .paw-room-workspace__runtime i { background: var(--room-running, #1677d2); animation: paw-live-pulse 1.2s ease-in-out infinite; }
 .paw-desktop-root .paw-room-window-chrome[data-status='stopping'] .paw-room-workspace__runtime i { background: var(--room-waiting, #b56808); animation: none; }
@@ -158,6 +169,10 @@
    --paw-chrome-* ：两扇窗并排在桌面上时，标题栏里不能出现一冷一暖两种黑。
    Room 内部面板（.paw-room-tools__*）仍带着 v1 基线的暖褐色，留给 Room 轨。 */
 .paw-desktop-root .paw-room-window-chrome > nav {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
   display: inline-flex;
   align-items: center;
   gap: 1px;
@@ -178,6 +193,7 @@
 }
 
 .paw-desktop-root .paw-room-window-chrome nav button {
+  flex: 0 0 auto;
   min-height: 26px;
   display: inline-flex;
   align-items: center;
@@ -894,7 +910,7 @@
 @container paw-room-workspace (max-width: 520px) {
   .paw-desktop-root .paw-room-workspace--conversation .paw-room-workspace__header { gap: 6px; overflow: hidden; padding-inline: 8px; }
   .paw-desktop-root .paw-room-workspace__mode { display: none; }
-  .paw-desktop-root .paw-room-window-chrome > nav { min-width: 0; overflow: hidden; }
+  .paw-desktop-root .paw-room-window-chrome > nav { min-width: 0; overflow-x: auto; }
   .paw-desktop-root .paw-room-window-chrome nav button {
     width: auto;
     max-width: 100%;
@@ -956,6 +972,15 @@
     gap: 4px;
     padding-inline: 7px;
   }
+  /* Keep the fixed actions usable; only the view strip scrolls when there
+     is not enough titlebar space for all six views. Focus reveals its target. */
+  .paw-desktop-root .paw-room-window-chrome > button {
+    flex-basis: 28px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
+  .paw-desktop-root .paw-room-window-chrome > button > span { display: none; }
   .paw-desktop-root .paw-room-window-chrome nav button { width: 28px; justify-content: center; padding-inline: 0; }
   .paw-desktop-root .paw-room-window-chrome nav button > span { display: none; }
 }

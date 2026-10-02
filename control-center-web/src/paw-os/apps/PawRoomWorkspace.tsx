@@ -995,7 +995,11 @@ export function PawRoomWorkspace({
     if (queue.queue.length) setDraft(queue.restoreToDraft(draft));
     if (jevEnabled && jev.liveSnapshot) void jev.stop(); else void abortTurn(activeRootId);
   };
-  const roomChromeControls = <div aria-label="Room 窗口控制" className="paw-room-window-chrome" data-controls-expanded={controlsExpanded} data-agent-mode={jevEnabled ? 'jev' : undefined} data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
+  const roomChromeControls = <div aria-label="Room 窗口控制" onFocusCapture={event => {
+    // A partly clipped item can receive focus without the browser revealing
+    // its full hit target. Keep keyboard navigation inside the view strip.
+    event.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+  }} className="paw-room-window-chrome" data-controls-expanded={controlsExpanded} data-agent-mode={jevEnabled ? 'jev' : undefined} data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
     <button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起 Room 控件' : '展开 Room 控件'} onClick={() => setControlsExpanded(value => !value)}><ChevronDown size={15} /><span>视图</span></button>
     <button type="button" aria-pressed={visibleView === 'timeline'} aria-label={visibleView === 'timeline' ? '返回 Room 对话' : '查看 Room 协作全景'} onClick={() => { setView(visibleView === 'timeline' ? 'conversation' : 'timeline'); setPanel('none'); exitCollaborationFocus(); }}><ChartGantt size={15} /><span>协作</span></button>
     <button type="button" aria-label="查看 Room 任务" onClick={() => jevEnabled ? setJevRail(true) : setPanel('focus')}><ListChecks size={15} /></button>
