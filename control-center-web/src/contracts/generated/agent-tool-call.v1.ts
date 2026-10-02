@@ -51,6 +51,10 @@ export interface AgentToolCallV1 {
     | 'workspace_job';
   toolCallId: string;
   sourceLoopId?: string;
+  executionBinding?: {
+    turnId: string;
+    clientMessageId: string;
+  };
   args: {
     [k: string]: unknown;
   };

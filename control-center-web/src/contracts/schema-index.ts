@@ -870,6 +870,7 @@ export const contractSchemas = {
       "modelId": {
         "type": "string",
         "enum": [
+          "gpt-6.1-sol",
           "gpt-5.6-luna",
           "jev-latest",
           "jev-preview",
@@ -879,6 +880,7 @@ export const contractSchemas = {
       "modelProfile": {
         "type": "string",
         "enum": [
+          "openai-codex/gpt-6.1-sol",
           "openai-codex/gpt-5.6-luna",
           "typesafe/jev-latest",
           "typesafe/jev-preview",
@@ -10779,6 +10781,25 @@ export const contractSchemas = {
         "type": "string",
         "minLength": 1,
         "maxLength": 240
+      },
+      "executionBinding": {
+        "type": "object",
+        "required": [
+          "turnId",
+          "clientMessageId"
+        ],
+        "properties": {
+          "turnId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "clientMessageId": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "additionalProperties": false
       },
       "args": {
         "type": "object"

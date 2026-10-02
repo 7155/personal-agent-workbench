@@ -17,8 +17,9 @@ export interface AgentApprovalModelDecisionV1 {
   decision: 'approve' | 'deny';
   status: 'decided' | 'failed_closed';
   modelProvider: 'openai-codex' | 'typesafe';
-  modelId: 'gpt-5.6-luna' | 'jev-latest' | 'jev-preview' | 'jev-1.13.0';
+  modelId: 'gpt-6.1-sol' | 'gpt-5.6-luna' | 'jev-latest' | 'jev-preview' | 'jev-1.13.0';
   modelProfile:
+    | 'openai-codex/gpt-6.1-sol'
     | 'openai-codex/gpt-5.6-luna'
     | 'typesafe/jev-latest'
     | 'typesafe/jev-preview'
