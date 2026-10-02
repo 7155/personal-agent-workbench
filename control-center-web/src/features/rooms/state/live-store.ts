@@ -24,7 +24,11 @@ export interface RoomHistoryWindow {
   firstSequence: number;
   hasMore: boolean;
   retainedPrefixTruncated: boolean;
+  retainedFirstSequence?: number;
 }
+
+export type RoomHistoryMetadata = Pick<RoomHistoryWindow,
+  'hasMore' | 'retainedPrefixTruncated' | 'retainedFirstSequence'>;
 
 interface RoomLiveStore {
   projections: Record<string, RoomProjectionState>;
@@ -33,11 +37,12 @@ interface RoomLiveStore {
   historyByRoomId: Record<string, RoomHistoryWindow>;
   snapshotsByRoomId: Record<string, RoomEventSnapshot>;
   ensure(roomId: string): void;
-  replaySnapshot(roomId: string, snapshot: RoomEventSnapshot): boolean;
+  replaySnapshot(roomId: string, snapshot: RoomEventSnapshot, history?: RoomHistoryMetadata): boolean;
   replaySnapshotWithTail(
     roomId: string,
     snapshot: RoomEventSnapshot,
     liveTail: readonly UiRoomEvent[],
+    history?: RoomHistoryMetadata,
   ): boolean;
   replayConversationSnapshot(roomId: string, snapshot: RoomConversationSnapshot): boolean;
   applyEvents(roomId: string, events: readonly UiRoomEvent[]): boolean;
@@ -74,11 +79,11 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
       },
     }));
   },
-  replaySnapshot(roomId, snapshot) {
+  replaySnapshot(roomId, snapshot, history) {
     const current = roomProjection(roomId);
     if (!canApplyRoomSnapshot(current, snapshot.lastSequence)) return false;
     const rewound = isRoomCursorReset(current);
-    const merged = mergeSnapshotWindow(snapshot, rewound ? undefined : get().historyByRoomId[roomId]);
+    const merged = mergeSnapshotWindow(snapshot, rewound ? undefined : get().historyByRoomId[roomId], history);
     const next = replayRoomEventSnapshot(current, merged.snapshot);
     replaceProjection(set, get, roomId, next, allTurnIds(current, next), {
       historyByRoomId: {
@@ -92,7 +97,7 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
     });
     return true;
   },
-  replaySnapshotWithTail(roomId, snapshot, liveTail) {
+  replaySnapshotWithTail(roomId, snapshot, liveTail, history) {
     const current = roomProjection(roomId);
     // A deferred enrichment is not the recovery owner. Wait for the fresh
     // authoritative snapshot rather than mixing pre-gap or pre-restore tails.
@@ -100,7 +105,7 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
     const tail = appendRoomEventWindow(roomId, snapshot.events, liveTail);
     const latestTailSequence = tail.at(-1)?.sequence ?? snapshot.lastSequence;
     if (latestTailSequence < current.lastSequence) return false;
-    const merged = mergeSnapshotWindow(snapshot, get().historyByRoomId[roomId]);
+    const merged = mergeSnapshotWindow(snapshot, get().historyByRoomId[roomId], history);
     const events = appendRoomEventWindow(roomId, merged.window.events, liveTail);
     const latest = events.at(-1);
     const replaySnapshot: RoomEventSnapshot = {
@@ -173,6 +178,7 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
             ...window,
             hasMore: false,
             retainedPrefixTruncated: page.retainedPrefixTruncated,
+            retainedFirstSequence: page.retainedFirstSequence,
           },
         },
       }));
@@ -201,6 +207,7 @@ export const useRoomLiveStore = create<RoomLiveStore>((set, get) => ({
           firstSequence: mergedSnapshot.firstSequence,
           hasMore: page.hasMore,
           retainedPrefixTruncated: page.retainedPrefixTruncated,
+          retainedFirstSequence: page.retainedFirstSequence,
         },
       },
       snapshotsByRoomId: {
@@ -291,16 +298,21 @@ useRoomLiveStore.subscribe((state, previous) => {
 function mergeSnapshotWindow(
   snapshot: RoomEventSnapshot,
   existing?: RoomHistoryWindow,
+  history?: RoomHistoryMetadata,
 ): { snapshot: RoomEventSnapshot; window: RoomHistoryWindow } {
   let events = [...snapshot.events];
-  let hasMore = snapshot.firstSequence > 1;
-  let retainedPrefixTruncated = false;
+  let hasMore = history?.hasMore ?? (snapshot.firstSequence > 1);
+  let retainedPrefixTruncated = history?.retainedPrefixTruncated ?? false;
+  let retainedFirstSequence = history?.retainedFirstSequence;
   if (existing?.events.length && events.length) {
     const older = existing.events.filter((event) => event.sequence < snapshot.firstSequence);
     if (older.at(-1)?.sequence === snapshot.firstSequence - 1) {
       events = [...older, ...events];
-      hasMore = existing.hasMore;
-      retainedPrefixTruncated = existing.retainedPrefixTruncated;
+      hasMore = history?.retainedFirstSequence !== undefined
+        ? history.retainedFirstSequence < events[0]!.sequence
+        : existing.hasMore;
+      retainedPrefixTruncated = history?.retainedPrefixTruncated ?? existing.retainedPrefixTruncated;
+      retainedFirstSequence = history?.retainedFirstSequence ?? existing.retainedFirstSequence;
     }
   }
   const firstSequence = events[0]?.sequence ?? 0;
@@ -317,6 +329,7 @@ function mergeSnapshotWindow(
       firstSequence,
       hasMore,
       retainedPrefixTruncated,
+      ...(retainedFirstSequence !== undefined ? { retainedFirstSequence } : {}),
     },
   };
 }

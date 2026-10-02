@@ -348,7 +348,12 @@ function createSharedAgentLiveSession(
     controller: AbortController,
     allowRecentCache: boolean,
   ): Promise<boolean> {
-    let requestedView = request.view ?? preferredSnapshotView();
+    // Capture authority when the read starts. A full history request already
+    // in flight when a reset arrives must not become its replacement read.
+    const beforeRead = agentProjection(sessionId);
+    const recoveryCursor = beforeRead.needsSnapshot ? beforeRead.recoveryCursor : undefined;
+    const resetRead = recoveryCursor !== undefined && recoveryCursor < beforeRead.lastSequence;
+    let requestedView: AgentSnapshotView = resetRead ? 'full' : request.view ?? preferredSnapshotView();
     let value: unknown = undefined;
     try {
       while (true) {
@@ -417,7 +422,7 @@ function createSharedAgentLiveSession(
           || equalCursorRepairsGap
         );
       const hydrated = shouldHydrate
-        && useAgentLiveStore.getState().hydrate(sessionId, value);
+        && useAgentLiveStore.getState().hydrate(sessionId, value, { recoveryCursor });
       const repairedWithoutRegression = retainNewerTerminal
         && clearEqualCursorGap(sessionId, sequence, resumeToken);
       const snapshot = {
@@ -716,6 +721,7 @@ function clearEqualCursorGap(
       !current
       || !current.needsSnapshot
       || current.lastSequence !== sequence
+      || (current.recoveryCursor !== undefined && current.recoveryCursor !== sequence)
       || !isTerminalAgentProjection(current)
     ) return state;
     repaired = true;
@@ -728,6 +734,7 @@ function clearEqualCursorGap(
           lastEventId: nextResumeToken || current.lastEventId,
           resumeToken: nextResumeToken,
           needsSnapshot: false,
+          recoveryCursor: undefined,
           gap: undefined,
         },
       },

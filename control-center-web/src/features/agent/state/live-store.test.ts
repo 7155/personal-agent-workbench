@@ -10,6 +10,42 @@ afterEach(() => {
 });
 
 describe('Agent live store snapshot hydration', () => {
+  it('requires the reset owner and preserves only unresolved local admissions across a reset', () => {
+    const store = useAgentLiveStore.getState();
+    store.hydrateSnapshot(sessionId, {
+      messages: [message('old', 'assistant', 'old-turn', 'old epoch')],
+      liveEvents: [], lastSequence: 10, resumeToken: `${sessionId}:10`, status: 'idle',
+    });
+    store.appendOptimistic(sessionId, { clientMessageId: 'pending', text: 'not yet confirmed', nowMs: 11 });
+    store.applyEvents(sessionId, [{
+      ...event(6, '', 'snapshot_required', { reason: 'event_replay_gap' }),
+      eventId: `${sessionId}:snapshot-required:5`, resumeToken: `${sessionId}:snapshot-required:5`,
+    }]);
+    const before = useAgentLiveStore.getState().projections[sessionId];
+    const replacement: AgentSnapshot = {
+      messages: [], liveEvents: [], lastSequence: 5, resumeToken: `${sessionId}:5`, status: 'idle',
+    };
+    expect(store.hydrateSnapshot(sessionId, replacement)).toBe(false);
+    expect(store.hydrateSnapshot(sessionId, { ...replacement, lastSequence: 20 })).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toBe(before);
+    expect(store.hydrateSnapshot(sessionId, replacement, { recoveryCursor: 5 })).toBe(true);
+    const after = useAgentLiveStore.getState().projections[sessionId];
+    expect(after).toMatchObject({ lastSequence: 5, needsSnapshot: false });
+    expect(after.messagesById.old).toBeUndefined();
+    expect(after.messagesById[after.optimisticByClientMessageId.pending]?.blocks[0]?.data.text).toBe('not yet confirmed');
+    expect(after.recoveryCursor).toBeUndefined();
+  });
+
+  it('an ordinary gap or malformed reset identity cannot authorize a lower snapshot', () => {
+    const store = useAgentLiveStore.getState();
+    store.hydrateSnapshot(sessionId, { messages: [], liveEvents: [], lastSequence: 10, resumeToken: `${sessionId}:10` });
+    store.applyEvents(sessionId, [event(6, '', 'snapshot_required', {})]);
+    expect(store.hydrateSnapshot(sessionId, {
+      messages: [], liveEvents: [], lastSequence: 5, resumeToken: `${sessionId}:5`,
+    }, { recoveryCursor: 5 })).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toMatchObject({ lastSequence: 10, needsSnapshot: true });
+  });
+
   it('keeps a newer confirmed projection when reconnect hydration returns an older snapshot', () => {
     const confirmedSnapshot: AgentSnapshot = {
       messages: [],

@@ -18,11 +18,17 @@ import {
 } from '@/contracts/agent-reducer';
 import type { UiAgentEvent } from '@/contracts/ui-events';
 
+type AgentLiveProjection = AgentProjectionState & { recoveryCursor?: number };
+interface AgentSnapshotHydrationOptions {
+  /** Only a read started by the recovery owner after this control may rewind. */
+  recoveryCursor?: number;
+}
+
 interface AgentLiveStore {
-  projections: Record<string, AgentProjectionState>;
+  projections: Record<string, AgentLiveProjection>;
   ensure(sessionId: string): void;
-  hydrate(sessionId: string, value: unknown): boolean;
-  hydrateSnapshot(sessionId: string, snapshot: AgentSnapshot): boolean;
+  hydrate(sessionId: string, value: unknown, options?: AgentSnapshotHydrationOptions): boolean;
+  hydrateSnapshot(sessionId: string, snapshot: AgentSnapshot, options?: AgentSnapshotHydrationOptions): boolean;
   applyEvents(sessionId: string, events: readonly UiAgentEvent[]): boolean;
   applyBackgroundJobReceipt(sessionId: string, receipt: unknown): boolean;
   appendOptimistic(
@@ -76,16 +82,20 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       },
     }));
   },
-  hydrate(sessionId, value) {
+  hydrate(sessionId, value, options) {
     if (isRecord(value) && (
       value.ok === false
       || (typeof value.sessionId === 'string' && value.sessionId !== sessionId)
     )) return false;
-    return get().hydrateSnapshot(sessionId, agentSnapshotFromResponse(value));
+    return get().hydrateSnapshot(sessionId, agentSnapshotFromResponse(value), options);
   },
-  hydrateSnapshot(sessionId, snapshot) {
-    const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
-    if (snapshot.lastSequence < current.lastSequence) {
+  hydrateSnapshot(sessionId, snapshot, options) {
+    const current: AgentLiveProjection = get().projections[sessionId] ?? createAgentProjection(sessionId);
+    const recoveryCursor = current.recoveryCursor;
+    if (current.needsSnapshot && recoveryCursor !== undefined && snapshot.lastSequence < recoveryCursor) return false;
+    const reset = current.needsSnapshot && recoveryCursor !== undefined && recoveryCursor < current.lastSequence;
+    if (reset && options?.recoveryCursor !== recoveryCursor) return false;
+    if (snapshot.lastSequence < current.lastSequence && !reset) {
       const projection = mergeAgentSnapshotHistory(current, normalizeLegacyHistoryTurns(snapshot));
       if (projection === current) return false;
       set((state) => ({ projections: { ...state.projections, [sessionId]: projection } }));
@@ -99,7 +109,7 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
     // This keeps an idle terminal snapshot able to clear a stale spinner
     // without allowing a successful-looking empty response to erase text.
     const preserveHistory = (
-      current.messageOrder.length > 0
+      !reset && current.messageOrder.length > 0
       && snapshot.messages.length === 0
     );
     const hydratedSnapshot = preserveHistory
@@ -110,7 +120,7 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
             .filter((message): message is NonNullable<typeof message> => Boolean(message) && !message.id.startsWith('local:')),
         }
       : snapshot;
-    const projection = applyAgentSnapshot(current, normalizeLegacyHistoryTurns(hydratedSnapshot), {
+    const projection = applyAgentSnapshot(reset ? optimisticResetProjection(current) : current, normalizeLegacyHistoryTurns(hydratedSnapshot), {
       preserveConfirmedActivities: preserveHistory,
     });
     // Several call sites can request a snapshot outside the shared live owner.
@@ -132,7 +142,16 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
   },
   applyEvents(sessionId, events) {
     const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
-    const projection = reduceAgentEvents(current, events);
+    let projection: AgentLiveProjection = reduceAgentEvents(current, events);
+    for (const event of events) {
+      if (event.sessionId !== sessionId || event.eventType !== 'snapshot_required') continue;
+      const prefix = `${sessionId}:snapshot-required:`;
+      const suffix = event.resumeToken.startsWith(prefix) ? event.resumeToken.slice(prefix.length) : '';
+      const cursor = /^\d+$/.test(suffix) ? Number(suffix) : NaN;
+      if (Number.isSafeInteger(cursor) && cursor >= 0 && event.sequence === cursor + 1) {
+        projection = { ...projection, recoveryCursor: cursor };
+      }
+    }
     if (projection === current) return current.needsSnapshot;
     set((state) => ({
       projections: { ...state.projections, [sessionId]: projection },
@@ -232,10 +251,29 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
   },
 }));
 
-export function agentProjection(sessionId: string): AgentProjectionState {
+export function agentProjection(sessionId: string): AgentLiveProjection {
   return (
     useAgentLiveStore.getState().projections[sessionId] ?? createAgentProjection(sessionId)
   );
+}
+
+/** A reset replaces old confirmed history, while an unresolved local admission
+ * still belongs to its command receipt and must remain recoverable. */
+function optimisticResetProjection(current: AgentProjectionState): AgentProjectionState {
+  const next = createAgentProjection(current.sessionId);
+  for (const [clientMessageId, messageId] of Object.entries(current.optimisticByClientMessageId)) {
+    const message = current.messagesById[messageId];
+    if (!message) continue;
+    next.optimisticByClientMessageId[clientMessageId] = messageId;
+    next.messagesById[messageId] = message;
+    next.messageOrder.push(messageId);
+    const turn = current.turnsById[message.turnId];
+    if (turn && !next.turnsById[turn.id]) {
+      next.turnsById[turn.id] = turn;
+      next.turnOrder.push(turn.id);
+    }
+  }
+  return next;
 }
 
 function normalizeLegacyHistoryTurns(snapshot: AgentSnapshot): AgentSnapshot {
