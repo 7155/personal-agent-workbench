@@ -243,8 +243,19 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             ):
                 source = package_root / relative_path
                 source.parent.mkdir(parents=True, exist_ok=True)
+                inputs = [before for before, _after in replacements]
+                if relative_path == "src/runtime-host.ts":
+                    # A captured Pi 1.0 capability block, independent of the
+                    # overlay anchor: additive Host capabilities must survive.
+                    inputs = [
+                        "\t\t\t\t\t\tsessionControlState: true,\n"
+                        "\t\t\t\t\t\tsessionBoundAbort: true,\n"
+                        "\t\t\t\t\t\tsessionSnapshot: true,"
+                        if "sessionSnapshot: true" in value else value
+                        for value in inputs
+                    ]
                 source.write_text(
-                    "\n\n".join(before for before, _after in replacements),
+                    "\n\n".join(inputs),
                     encoding="utf-8",
                 )
 
@@ -268,6 +279,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
             self.assertIn("candidateSkillPaths?: string[];", session_source)
             self.assertIn("options.candidateSkillPaths ?? [", session_source)
             self.assertIn("sessionCandidateSkillPaths: true", host_source)
+            self.assertEqual(host_source.count("sessionBoundAbort: true"), 1)
             self.assertIn("await optionalCandidateSkillPaths(params, cwd)", host_source)
             self.assertIn("allowedSkillNames.has(skill.name)", session_source)
             self.assertNotIn(

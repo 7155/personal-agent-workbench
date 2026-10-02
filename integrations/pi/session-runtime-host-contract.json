@@ -71,6 +71,7 @@
     "runtimeHost": [
       "sessionAwaitSettled: true",
       "sessionCancelOperationRegistry: true",
+      "sessionBoundAbort: true",
       "statelessCompletion: true",
       "await Promise.all([host.plugins.initialize(), host.nativePackages.initialize()]);",
       "case \"room.dispatch\"",
@@ -107,7 +108,7 @@
       "async prompt(options:",
       "async queueMessage(options:",
       "async dispatchRoom(options:",
-      "abort(): Promise<PiSessionAbortReceipt>",
+      "abort(expected?: { turnId?: string; clientMessageId: string }): Promise<PiSessionAbortReceipt>",
       "async compact(customInstructions?: string)",
       "async setModel(provider: string, modelId: string, maxTokens?: number)",
       "setThinkingLevel(level:"

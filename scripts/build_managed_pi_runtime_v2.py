@@ -318,9 +318,7 @@ _RUNTIME_HOST_SOURCE_OVERLAYS: dict[
             + "function requiredBoolean",
         ),
         (
-            "\t\t\t\t\t\tsessionControlState: true,\n"
             "\t\t\t\t\t\tsessionSnapshot: true,",
-            "\t\t\t\t\t\tsessionControlState: true,\n"
             "\t\t\t\t\t\tsessionSkillAllowlist: true,\n"
             "\t\t\t\t\t\tsessionResourceDisclosure: true,\n"
             "\t\t\t\t\t\tsessionCandidateSkillPaths: true,\n"
