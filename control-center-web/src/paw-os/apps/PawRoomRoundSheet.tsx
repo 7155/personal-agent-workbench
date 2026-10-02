@@ -38,8 +38,14 @@ const sheetStateLabels: Record<string, string> = {
   aborted: '已停止',
 };
 
+type ParticipantDestination = 'session' | 'observer' | 'room-transcript';
+const participantOpenLabel = (name: string, destination: ParticipantDestination) => destination === 'observer'
+  ? `查看 ${name} 进展` : destination === 'room-transcript' ? `在 Room 中查看 ${name} 进展` : `打开 ${name} Session`;
+
 type RoomRoundSheetProps = {
   onOpenParticipant: (participantId: string) => void;
+  /** Labels describe the existing callback destination; no navigation is changed. */
+  participantDestination?: ParticipantDestination;
   /** Optional so compact surfaces keep their composer-less behavior. */
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   projection: RoomProjectionState;
@@ -60,6 +66,7 @@ export function PawRoomRoundSheet(props: RoomRoundSheetProps) {
 
 function RoomRoundSheet({
   onOpenParticipant,
+  participantDestination = 'session',
   onResumeBlocked,
   projection,
   readingRecoveryKey,
@@ -235,9 +242,12 @@ function RoomRoundSheet({
         ><i aria-hidden="true" />第 {index + 1} 轮{sheet.id === latestSheetId ? <small>最新</small> : null}</button>)}</div>
       </nav> : null}
     <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef}
-      onWheel={event => { if (event.deltaY < 0) releaseLatestFollow(); }}
+      onWheel={event => { cancelReadingRestore(); if (event.deltaY < 0) releaseLatestFollow(); }}
       onTouchMove={releaseLatestFollow}
-      onKeyDown={event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) releaseLatestFollow(); }}
+      onKeyDown={event => {
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) cancelReadingRestore();
+        if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) releaseLatestFollow();
+      }}
       onPointerDown={event => { if (event.target === event.currentTarget) releaseLatestFollow(); }}
       onScroll={(event) => {
         const node = event.currentTarget;
@@ -415,7 +425,7 @@ function RoomRoundSheet({
                               detailId={`${detailIdPrefix}-${domToken(row.key)}`}
                               expanded={expandedRows.has(row.key)}
                               key={row.key}
-                              onOpenParticipant={onOpenParticipant}
+                              onOpenParticipant={onOpenParticipant} participantDestination={participantDestination}
                               onResumeBlocked={onResumeBlocked}
                               onToggle={() => toggleRow(row.key)}
                               resumingWorkItemId={resumingWorkItemId}
@@ -430,14 +440,14 @@ function RoomRoundSheet({
                     ) : null}
                     <>
                       {starterRows.map((row) => (
-                        <StandaloneStarterPlanet key={row.key} onOpenParticipant={onOpenParticipant} row={row} selected={selectedParticipantId === row.participantId} />
+                        <StandaloneStarterPlanet key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} row={row} selected={selectedParticipantId === row.participantId} />
                       ))}
                       {standaloneTaskRow ? (
                         <StandaloneTaskPlanet
                           desktop={desktop}
                           detailId={`${detailIdPrefix}-${domToken(standaloneTaskRow.key)}`}
                           expanded={expandedRows.has(standaloneTaskRow.key)}
-                          onOpenParticipant={onOpenParticipant}
+                          onOpenParticipant={onOpenParticipant} participantDestination={participantDestination}
                           onResumeBlocked={onResumeBlocked}
                           onToggle={() => toggleRow(standaloneTaskRow.key)}
                           resumingWorkItemId={resumingWorkItemId}
@@ -453,16 +463,16 @@ function RoomRoundSheet({
               ) : null}
               <>
                 {coordinatorRows.map((row) => (
-                  <StandaloneCoordinatorSummary desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
+                  <StandaloneCoordinatorSummary desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                 ))}
                 {finalRows.map((row) => (
-                  <StandaloneResultPlanet desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
+                  <StandaloneResultPlanet desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                 ))}
                 {partnerResults.length ? (
                   <section aria-label="伙伴交付" className="paw-room-round__partner-results">
                     <header><h3>伙伴交付</h3><span>{partnerResults.length} 份结果</span></header>
                     {partnerResults.map((row) => (
-                      <PartnerResult desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} room={room} row={row} selected={selectedParticipantId === row.participantId} />
+                      <PartnerResult desktop={desktop} key={row.key} onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} room={room} row={row} selected={selectedParticipantId === row.participantId} />
                     ))}
                   </section>
                 ) : null}
@@ -527,6 +537,7 @@ function TaskPlanetRows({
   detailId,
   expanded,
   onOpenParticipant,
+  participantDestination,
   onResumeBlocked,
   onToggle,
   resumingWorkItemId,
@@ -539,6 +550,7 @@ function TaskPlanetRows({
   detailId: string;
   expanded: boolean;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   onToggle: () => void;
   resumingWorkItemId?: string;
@@ -627,7 +639,7 @@ function TaskPlanetRows({
               {expanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
             </button>
             <button
-              aria-label={`打开 ${row.celestialName} Session 窗口`}
+              aria-label={participantDestination === 'session' ? `打开 ${row.celestialName} Session 窗口` : participantOpenLabel(row.celestialName, participantDestination)}
               onClick={() => onOpenParticipant(row.participantId)}
               type="button"
             >
@@ -682,7 +694,7 @@ function TaskPlanetRows({
                       text={row.result}
                     />
                   </div>
-                ) : <p>结果尚未返回；打开行星 Session 可查看完整公开过程。</p>}
+                ) : <p>结果尚未返回；打开伙伴记录可查看公开过程。</p>}
                 {row.evidenceRefs.length ? (
                   <ul>
                     {row.evidenceRefs.map((ref) => {
@@ -696,7 +708,7 @@ function TaskPlanetRows({
                   </ul>
                 ) : null}
                 <button onClick={() => onOpenParticipant(row.participantId)} type="button">
-                  打开行星 Session 查看完整过程 <ExternalLink aria-hidden="true" size={13} />
+                  {participantDestination === 'session' ? '打开行星 Session 查看完整过程' : '查看伙伴公开过程'} <ExternalLink aria-hidden="true" size={13} />
                 </button>
               </section>
             </div>
@@ -748,12 +760,14 @@ function isCoordinatorRow(row: RoomRoundTaskRow, room: RoomSummary): boolean {
 function StandaloneCoordinatorSummary({
   desktop,
   onOpenParticipant,
+  participantDestination,
   room,
   row,
   selected,
 }: {
   desktop: ReturnType<typeof usePawOsDesktop>;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   room: RoomSummary;
   row: RoomRoundTaskRow;
   selected: boolean;
@@ -776,7 +790,7 @@ function StandaloneCoordinatorSummary({
       data-state={row.state}
       role="region"
     >
-      <ReportHeading onOpenParticipant={onOpenParticipant} row={row} title={title} />
+      <ReportHeading onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} row={row} title={title} />
       <div className="paw-room-round__prose">
         <MarkdownBody documentKey={`${row.key}:summary:${row.updatedAtMs}`} sessionId={row.sessionId} text={summary} />
       </div>
@@ -794,6 +808,7 @@ function StandaloneTaskPlanet({
   detailId,
   expanded,
   onOpenParticipant,
+  participantDestination,
   onResumeBlocked,
   onToggle,
   resumingWorkItemId,
@@ -806,6 +821,7 @@ function StandaloneTaskPlanet({
   detailId: string;
   expanded: boolean;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   onToggle: () => void;
   resumingWorkItemId?: string;
@@ -869,8 +885,8 @@ function StandaloneTaskPlanet({
           {expanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
           {expanded ? '收起详情' : '查看详情'}
         </button>
-        <button aria-label={`打开 ${row.celestialName} Session`} onClick={() => onOpenParticipant(row.participantId)} type="button">
-          打开 Session <ExternalLink aria-hidden="true" size={14} />
+        <button aria-label={participantOpenLabel(row.celestialName, participantDestination)} onClick={() => onOpenParticipant(row.participantId)} type="button">
+          {participantDestination === 'session' ? '打开 Session' : participantDestination === 'observer' ? '查看进展' : '在 Room 中查看'} <ExternalLink aria-hidden="true" size={14} />
         </button>
         {resumeError ? <span className="paw-room-round__resume-error" role="alert">{resumeError}</span> : null}
       </div>
@@ -900,7 +916,7 @@ function StandaloneTaskPlanet({
               <div className="paw-room-round__result">
                 <MarkdownBody documentKey={`${row.key}:result`} sessionId={row.sessionId} text={row.result} />
               </div>
-            ) : <p>结果尚未返回；打开行星 Session 可查看完整公开过程。</p>}
+            ) : <p>结果尚未返回；打开伙伴记录可查看公开过程。</p>}
             {row.evidenceRefs.length ? (
               <ul>
                 {row.evidenceRefs.map((ref) => {
@@ -950,10 +966,12 @@ function RowProgressHistory({ row, activityOnly = false }: { row: RoomRoundTaskR
 
 function StandaloneStarterPlanet({
   onOpenParticipant,
+  participantDestination,
   row,
   selected,
 }: {
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   row: RoomRoundTaskRow;
   selected: boolean;
 }) {
@@ -974,15 +992,17 @@ function StandaloneStarterPlanet({
         <span className="paw-room-round__row-state"><i aria-hidden="true" />尚未分配</span>
       </header>
       <div className="paw-room-round__standalone-body">
-        <strong>先和这颗行星说清楚要做什么</strong>
-        <p>进入 Session 后可以直接对话、补充上下文，或使用 Grill Me 把目标与取舍问清楚，再决定是否发起协作。</p>
+        <strong>{participantDestination === 'session' ? '先和这颗行星说清楚要做什么' : '查看这颗行星的公开记录'}</strong>
+        <p>{participantDestination === 'session' ? '进入 Session 后可以直接对话、补充上下文，或使用 Grill Me 把目标与取舍问清楚，再决定是否发起协作。'
+          : participantDestination === 'observer' ? '查看伙伴的公开进展与执行轨迹；需要直接对话时，可从观察窗进入完整 Session。'
+            : '在当前 Room 查看伙伴的公开进展与证据。'}</p>
       </div>
       <button
-        aria-label={`打开 ${row.celestialName} Session`}
+        aria-label={participantOpenLabel(row.celestialName, participantDestination)}
         onClick={() => onOpenParticipant(row.participantId)}
         type="button"
       >
-        打开 {row.celestialName} Session <ExternalLink aria-hidden="true" size={14} />
+        {participantOpenLabel(row.celestialName, participantDestination)} <ExternalLink aria-hidden="true" size={14} />
       </button>
     </section>
   );
@@ -991,12 +1011,14 @@ function StandaloneStarterPlanet({
 function StandaloneResultPlanet({
   desktop,
   onOpenParticipant,
+  participantDestination,
   room,
   row,
   selected,
 }: {
   desktop: ReturnType<typeof usePawOsDesktop>;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   room: RoomSummary;
   row: RoomRoundTaskRow;
   selected: boolean;
@@ -1015,7 +1037,7 @@ function StandaloneResultPlanet({
       data-state={row.state}
       role="region"
     >
-      <ReportHeading final onOpenParticipant={onOpenParticipant} row={row} title="最终结果" />
+      <ReportHeading final onOpenParticipant={onOpenParticipant} participantDestination={participantDestination} row={row} title="最终结果" />
       <div className="paw-room-round__final-outcome" data-state={row.state}>
         <small>报告摘要</small>
         <p>{reportOutcomePreview(result) || '完整报告可展开查看。'}</p>
@@ -1073,11 +1095,13 @@ function reportOutcomePreview(source: string): string {
 function ReportHeading({
   final = false,
   onOpenParticipant,
+  participantDestination,
   row,
   title,
 }: {
   final?: boolean;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   row: RoomRoundTaskRow;
   title: string;
 }) {
@@ -1090,7 +1114,7 @@ function ReportHeading({
         </span>
       </div>
       <button
-        aria-label={`打开 ${row.celestialName} Session`}
+        aria-label={participantOpenLabel(row.celestialName, participantDestination)}
         className="paw-room-round__report-author"
         onClick={() => onOpenParticipant(row.participantId)}
         type="button"
@@ -1107,12 +1131,14 @@ function ReportHeading({
 function PartnerResult({
   desktop,
   onOpenParticipant,
+  participantDestination,
   room,
   row,
   selected,
 }: {
   desktop: ReturnType<typeof usePawOsDesktop>;
   onOpenParticipant: (participantId: string) => void;
+  participantDestination: ParticipantDestination;
   room: RoomSummary;
   row: RoomRoundTaskRow;
   selected: boolean;
@@ -1142,7 +1168,7 @@ function PartnerResult({
             </div>
           ) : <p>此伙伴已提交产物与证据。</p>}
           <button
-            aria-label={`打开 ${row.celestialName} Session`}
+            aria-label={participantOpenLabel(row.celestialName, participantDestination)}
             className="paw-room-round__text-action"
             onClick={() => onOpenParticipant(row.participantId)}
             type="button"

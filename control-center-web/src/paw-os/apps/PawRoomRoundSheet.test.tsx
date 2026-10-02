@@ -83,7 +83,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     } finally { cleanup(); restoreLayout(); localStorage.clear(); }
   });
 
-  it('waits for the complete history before treating a missing saved round as cropped', () => {
+  it.each(['wheel-up', 'wheel-down', 'touch', 'page-down'] as const)('waits for complete history and preserves a newer %s reading intent', input => {
     localStorage.clear();
     const { flushFrames, restoreLayout } = mockRoundReadingLayout();
     try {
@@ -111,7 +111,9 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       const third = render(tree(partial, false));
       flushFrames();
       const reader = screen.getByRole('region', { name: 'Room 行星任务表' });
-      fireEvent.wheel(reader, { deltaY: -100 });
+      if (input === 'wheel-up' || input === 'wheel-down') fireEvent.wheel(reader, { deltaY: input === 'wheel-up' ? -100 : 100 });
+      else if (input === 'touch') fireEvent.touchMove(reader);
+      else fireEvent.keyDown(reader, { key: 'PageDown' });
       fireEvent.scroll(reader, { target: { scrollTop: 160 } });
       third.rerender(tree(projectionWithTwoRounds()));
       flushFrames();
@@ -167,6 +169,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       expect(revealLatestNavigation).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole('button', { name: '回到最新' })).not.toBeInTheDocument();
       contentHeight = 2600;
+      fireEvent.wheel(scroller, { deltaY: 100 });
       resize();
       expect(scroller.scrollTop).toBe(2250);
 
@@ -462,6 +465,23 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(reply).toHaveTextContent('这是已发出的回复，Room 仍在运行。');
     expect(within(reply).getByRole('status')).toHaveTextContent('进行中');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['observer', '查看 Earth 进展', '查看伙伴的公开进展与执行轨迹'],
+    ['room-transcript', '在 Room 中查看 Earth 进展', '在当前 Room 查看伙伴的公开进展与证据'],
+  ] as const)('describes the %s destination without promising a direct conversation', (destination, label, copy) => {
+    const projection = projectionWithProgress('尚未分配');
+    projection.turnsById['turn-1'] = { ...projection.turnsById['turn-1']!, activityIds: [], participantIds: [] };
+    projection.activitiesById = {}; projection.activityOrder = [];
+    const onOpenParticipant = vi.fn();
+    render(<PawRoomRoundSheet participantDestination={destination} onOpenParticipant={onOpenParticipant} projection={projection} room={roomWith([participant('participant-earth', 'session-earth', 0)])} />);
+    const starter = screen.getByRole('region', { name: 'Earth 未分配' });
+    expect(starter).toHaveTextContent(copy);
+    expect(starter).not.toHaveTextContent('Grill Me');
+    expect(starter).not.toHaveTextContent('可以直接对话');
+    fireEvent.click(within(starter).getByRole('button', { name: label }));
+    expect(onOpenParticipant).toHaveBeenCalledExactlyOnceWith('participant-earth');
   });
 
   it('keeps one unassigned planet out of the task table and preserves its Session actions', () => {

@@ -1147,6 +1147,7 @@ export function PawRoomWorkspace({
                 <PawRoomRoundSheet
                   readingRecoveryKey={recoveryScope(transport, `room:${recordId}`)}
                   readingRecoveryReady={roundHistoryReady}
+                  participantDestination={participantProcessLocation === 'room-transcript' ? 'room-transcript' : collaborationFocusActive ? 'observer' : 'session'}
                   onOpenParticipant={selectAndOpenParticipant}
                   onResumeBlocked={resumeBlockedWorkItem}
                   projection={projection}
@@ -1310,6 +1311,7 @@ export function PawRoomWorkspace({
                     attachments={attachments}
                     sending={sending}
                     uncertainSubmission={jevEnabled && Boolean(jev.pendingInput)}
+                    awaitingExecutionStart={!jevEnabled && activeTurn?.status === 'queued'}
                     taskBusyState={jevEnabled ? jev.busy || activeTurn && !jev.liveSnapshot
                       ? jev.liveSnapshot?.phase === 'route' && jevAbstention(jev.liveSnapshot) ? 'waiting' : 'running'
                       : undefined : taskBusyState}
