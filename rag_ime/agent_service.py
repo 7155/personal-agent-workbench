@@ -5689,7 +5689,7 @@ class AgentService:
         self,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
-        """Run one redacted Trace through the Luna Max AI-Judge seam.
+        """Run one redacted Trace through the configured AI-Judge seam.
 
         AI Judge output is always persisted as an estimate.  Runtime or model
         output failures still produce a failed EvalRun with the effective

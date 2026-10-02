@@ -22,7 +22,7 @@ DEFAULT_AI_JUDGE_EVALUATOR = MappingProxyType(
         "provider": "openai-codex",
         "model": DEFAULT_AGENT_MODEL_ID,
         "thinking": "max",
-        "displayName": "Luna Max",
+        "displayName": "GPT-6.1 Sol Max",
     }
 )
 AI_JUDGE_RUBRIC_VERSION = "trace-eval-ai-judge-v1"
@@ -42,7 +42,7 @@ class AiJudgeOutputError(ValueError):
 def effective_ai_judge_evaluator(
     requested: Mapping[str, object] | None = None,
 ) -> dict[str, str]:
-    """Resolve an explicit evaluator or the product's Luna Max default."""
+    """Resolve an explicit evaluator or the product's current model default."""
 
     if requested in (None, {}):
         return dict(DEFAULT_AI_JUDGE_EVALUATOR)

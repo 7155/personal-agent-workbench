@@ -101,7 +101,7 @@ def _invoke_post(
 
 
 class ObservabilityEvalServiceTests(unittest.TestCase):
-    def test_ai_judge_defaults_to_luna_max_and_records_estimate_authority(self) -> None:
+    def test_ai_judge_defaults_to_current_model_and_records_estimate_authority(self) -> None:
         class JudgeRuntime:
             def __init__(self) -> None:
                 self.calls: list[dict[str, object]] = []
@@ -139,7 +139,7 @@ class ObservabilityEvalServiceTests(unittest.TestCase):
                 "provider": "openai-codex",
                 "model": "gpt-6.1-sol",
                 "thinking": "max",
-                "displayName": "Luna Max",
+                "displayName": "GPT-6.1 Sol Max",
             })
             self.assertEqual(result["requestedEvaluator"], result["evaluator"])
             self.assertEqual(result["promptVersion"], "trace-eval-ai-judge-v1")
