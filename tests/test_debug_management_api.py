@@ -1480,7 +1480,7 @@ class DebugManagementApiTests(unittest.TestCase):
         self.assertEqual(status["automation"]["runsPerDay"], 2)
         self.assertEqual(
             status["automation"]["model"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(status["automation"]["curationProtocol"], "atom-first-v1")
         self.assertEqual(status["automation"]["targetSourceCount"], 1_000)
@@ -1489,7 +1489,7 @@ class DebugManagementApiTests(unittest.TestCase):
         self.assertEqual(status["automation"]["reservedContextTokens"], 72_000)
         self.assertEqual(
             status["modelCuration"]["requiredModel"],
-            "openai-codex/gpt-5.6-luna",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(status["modelCuration"]["requiredThinkingLevel"], "max")
         self.assertEqual(status["modelCuration"]["minimumContextTokens"], 272_000)

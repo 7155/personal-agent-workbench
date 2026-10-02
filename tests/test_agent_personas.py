@@ -89,7 +89,7 @@ class AgentPersonaStoreTests(unittest.TestCase):
     def test_builtin_and_user_runtime_defaults_are_persistent(self) -> None:
         self.assertEqual(
             self.store.runtime_defaults("companion-present-v1", "1"),
-            {"modelProfile": "openai-codex/gpt-5.6-terra", "thinkingLevel": "max"},
+            {"modelProfile": "openai-codex/gpt-6.1-sol", "thinkingLevel": "max"},
         )
         builtin = self.store.set_runtime_defaults(
             "companion-present-v1",

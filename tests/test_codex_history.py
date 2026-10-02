@@ -23,7 +23,8 @@ from rag_ime.codex_history import (
 )
 from rag_ime.input_quality import MEMORY_CONTEXT_OPT_IN_TAG
 from rag_ime.local_sqlite_core import LocalSqliteCoreClient
-from rag_ime.models import InputSuggestion
+from rag_ime.models import InputEvent, InputSuggestion
+from rag_ime.predictor import NullPredictionProvider
 
 
 class _MockComparisonPredictionHandler(BaseHTTPRequestHandler):
@@ -2037,6 +2038,78 @@ class CodexHistoryTests(unittest.TestCase):
             expanded_evidence=evidence,
             metadata={"insert_text": surface},
         )
+
+
+class CodexCliLifecycleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = self.enterContext(tempfile.TemporaryDirectory(prefix="paw-cli-lifecycle-"))
+        self.root = Path(temporary)
+        self.db_path = self.root / "rag-ime.sqlite"
+        self.core = LocalSqliteCoreClient(self.db_path)
+        self.addCleanup(self.core.close)
+        self.core.initialize()
+        self.predictor = NullPredictionProvider()
+
+    def test_cli_stages_release_workers_and_keep_borrowed_core_usable_on_success_and_error(self) -> None:
+        from rag_ime.cli import run_cache_probe, run_rime_sidecar_eval
+        from rag_ime.debug_server import DebugImeService
+
+        baseline = set(threading.enumerate())
+        cases = self.root / "cases.jsonl"
+        cases.write_text(json.dumps({"id": "empty-local-case", "query": "local-only", "expectedTerms": ["local-only"]}) + "\n")
+        with patch.object(self.core, "close", wraps=self.core.close) as close:
+            report = run_rime_sidecar_eval(
+                self.core, self.predictor, db_path=self.db_path, cases_file=cases,
+                project="test", match="any", repeat=1, max_visible_candidates=3,
+                max_side_candidates=3, sidecar_latency_budget_ms=100,
+                rime_cache_ttl_ms=400, force_side_candidates=False,
+            )
+            self.assertEqual(report["schemaVersion"], "rag-ime.rime-sidecar-eval.v1")
+            self.assertEqual(set(threading.enumerate()) - baseline, set())
+            cache = run_cache_probe(
+                self.core, self.predictor, db_path=self.db_path, project="test",
+                current_input="local-only", recent_context="", top_k=3, repeat=1,
+                rime_candidates=["本地"], rime_cache_ttl_ms=400, force_side_candidates=False,
+            )
+            self.assertIn("schemaVersion", cache)
+            self.assertEqual(set(threading.enumerate()) - baseline, set())
+            self.core.record_event(InputEvent(
+                event_id=None, created_at_ms=1, source="voice_final",
+                committed_text="真实后续读写", privacy_disposition="allowed", project="test",
+            ))
+            self.assertGreater(self.core.event_count(), 0)
+            with patch.object(DebugImeService, "cache_probe", side_effect=RuntimeError("CLI lifecycle sentinel")):
+                with self.assertRaisesRegex(RuntimeError, "CLI lifecycle sentinel"):
+                    run_cache_probe(
+                        self.core, self.predictor, db_path=self.db_path, project="test",
+                        current_input="local-only", recent_context="", top_k=3, repeat=1,
+                        rime_candidates=[], rime_cache_ttl_ms=400, force_side_candidates=False,
+                    )
+            self.assertEqual(set(threading.enumerate()) - baseline, set())
+            self.assertIsNotNone(self.core._read_connection)
+            self.assertGreater(self.core._read_connection.execute("SELECT COUNT(*) FROM input_events").fetchone()[0], 0)
+            self.assertGreater(self.core.event_count(), 0)
+            close.assert_not_called()
+
+    def test_default_service_close_adopts_core_and_owned_core_ignores_borrow_flag(self) -> None:
+        from rag_ime.debug_server import DebugImeService, DebugServerConfig
+
+        baseline = set(threading.enumerate())
+        with patch.object(self.core, "close", wraps=self.core.close) as close:
+            service = DebugImeService(DebugServerConfig(
+                db_path=self.db_path, core=self.core, predictor=self.predictor, seed_if_empty=False,
+            ))
+            service.close()
+            close.assert_called_once()
+        self.assertEqual(set(threading.enumerate()) - baseline, set())
+        service = DebugImeService(DebugServerConfig(
+            db_path=self.root / "owned.sqlite", predictor=self.predictor,
+            seed_if_empty=False, close_core_on_close=False,
+        ))
+        with patch.object(service.core, "close", wraps=service.core.close) as close:
+            service.close()
+            close.assert_called_once()
+        self.assertEqual(set(threading.enumerate()) - baseline, set())
 
 
 if __name__ == "__main__":

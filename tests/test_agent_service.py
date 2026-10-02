@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 from contextlib import closing
@@ -143,6 +144,7 @@ class _ForkRuntime:
 class AgentServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-agent-service-")
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.process_id = 100
         self.service = AgentService(
@@ -159,7 +161,6 @@ class AgentServiceTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.service.close()
-        self.tmp.cleanup()
 
     def _prepare_room_bound_approval(
         self,
@@ -5289,7 +5290,7 @@ class AgentServiceTests(unittest.TestCase):
 
             self.assertEqual(runtime["runtimeKind"], "gateway_http")
             self.assertEqual(runtime["driverId"], "test-gateway")
-            self.assertEqual(session["modelProfile"], "openai-codex/gpt-5.6-luna")
+            self.assertEqual(session["modelProfile"], "openai-codex/gpt-6.1-sol")
             self.assertEqual(factory.created_for, ["interactive"])
         finally:
             service.close()
@@ -5330,7 +5331,7 @@ class AgentServiceTests(unittest.TestCase):
 
         self.assertEqual(created["roleId"], "companion-firstlight-v1")
         self.assertEqual(created["roleVersion"], "1")
-        self.assertEqual(created["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(created["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(created["roleBookRevisionId"], "")
         self.assertEqual(created["toolProfileVersion"], "control-center-v1")
         renamed = self.service.update_session(str(created["id"]), {"title": "推进任务"})["session"]
@@ -5501,7 +5502,7 @@ class AgentServiceTests(unittest.TestCase):
         )["session"]
         self.assertEqual(session["roleId"], created_role["roleId"])
         self.assertEqual(session["roleVersion"], "1")
-        self.assertEqual(session["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(session["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(session["toolProfileVersion"], "control-center-v1")
 
         room = self.service.create_room(
@@ -5544,11 +5545,11 @@ class AgentServiceTests(unittest.TestCase):
         target_session = self.service.sessions.get(str(target["sessionId"]))
         self.assertEqual(
             source_session["modelProfile"],
-            "openai-codex/gpt-5.6-sol",
+            "openai-codex/gpt-6.1-sol",
         )
         self.assertEqual(
             target_session["modelProfile"],
-            "openai-codex/gpt-5.6-sol",
+            "openai-codex/gpt-6.1-sol",
         )
         item = {
             "id": "room-message:test",
@@ -6606,7 +6607,7 @@ class AgentServiceTests(unittest.TestCase):
         )["session"]
         session_id = str(session["id"])
         self.service.sessions.set_status(session_id, "busy")
-        for index in range(80):
+        for index in range(300):
             self.service.events.publish(
                 session_id,
                 "reasoning_summary",
@@ -6664,7 +6665,9 @@ class AgentServiceTests(unittest.TestCase):
                 view="recent",
             )
 
-        self.assertEqual(len(response["liveEvents"]), 48)
+        self.assertEqual(len(response["liveEvents"]), 256)
+        self.assertEqual(response["liveEvents"][0]["payload"]["summary"], "后台步骤 45")
+        self.assertEqual(response["liveEvents"][-1]["payload"]["summary"], "后台步骤 300")
         self.assertEqual(
             [item["id"] for item in response["items"]],
             ["recent:pending-user"],
@@ -7721,7 +7724,12 @@ class AgentServiceTests(unittest.TestCase):
             runtime_config=runtime_config,
             process_id_provider=lambda: self.process_id,
         )
+        self.addCleanup(service.close)
         available_models = [
+            {
+                "provider": "openai-codex", "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol",
+                "reasoning": True, "thinkingLevels": ["off", "low", "high", "xhigh", "max"],
+            },
             {
                 "provider": "openai-codex",
                 "id": "gpt-5.6-luna",
@@ -7754,22 +7762,22 @@ class AgentServiceTests(unittest.TestCase):
                 "modelPolicy": "fixed",
                 "memoryPolicy": "personal-evidence-v1",
                 "toolProfileVersion": "control-center-v1",
-                "modelProfile": "openai-codex/gpt-5.6-luna",
+                "modelProfile": "openai-codex/gpt-6.1-sol",
                 "thinkingLevel": "max",
             },
         )
-        self.assertEqual(initial_roles["companion-present-v1"]["modelProfile"], "openai-codex/gpt-5.6-terra")
+        self.assertEqual(initial_roles["companion-present-v1"]["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(initial_roles["companion-present-v1"]["thinkingLevel"], "max")
-        self.assertEqual(initial_roles["companion-future-v1"]["modelProfile"], "openai-codex/gpt-5.6-sol")
+        self.assertEqual(initial_roles["companion-future-v1"]["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(initial_roles["companion-future-v1"]["thinkingLevel"], "max")
-        self.assertEqual(initial_roles["companion-flash-v1"]["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(initial_roles["companion-flash-v1"]["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(initial_roles["companion-flash-v1"]["thinkingLevel"], "low")
         with patch.object(service.runtime, "available_models", return_value=available_models):
             catalog = service.role_model_catalog()
-        self.assertEqual(catalog["providers"][0]["models"][0]["name"], "GPT-5.6 Luna")
+        self.assertEqual(catalog["providers"][0]["models"][0]["name"], "GPT-6.1 Sol")
         self.assertEqual(
             catalog["selected"],
-            {"provider": "openai-codex", "id": "gpt-5.6-luna"},
+            {"provider": "openai-codex", "id": "gpt-6.1-sol"},
         )
         with patch.object(service.runtime, "available_models", return_value=available_models):
             updated = service.update_role_runtime_defaults(
@@ -7786,7 +7794,7 @@ class AgentServiceTests(unittest.TestCase):
             session = service.create_session(
                 {"title": "角色不决定模型", "roleId": "companion-present-v1", "roleVersion": "1"}
             )["session"]
-        self.assertEqual(session["modelProfile"], "openai-codex/gpt-5.6-luna")
+        self.assertEqual(session["modelProfile"], "openai-codex/gpt-6.1-sol")
         self.assertEqual(session["thinkingLevel"], "max")
         set_thinking.assert_not_called()
 
@@ -9939,6 +9947,21 @@ class AgentServiceTests(unittest.TestCase):
                 }
             )
         self.assertEqual(self.service.list_sessions()["items"], [])
+
+
+class AgentServiceFixtureLifecycleTests(unittest.TestCase):
+    def test_role_defaults_fixture_releases_extra_service_when_assertion_path_raises(self) -> None:
+        baseline = set(threading.enumerate())
+        case = AgentServiceTests("test_role_runtime_defaults_are_legacy_metadata_not_session_model_policy")
+        result = unittest.TestResult()
+        # Abort after the real additional service starts its workers. The
+        # original functional test remains separately discovered and unchanged.
+        with patch.object(AgentService, "list_roles", side_effect=RuntimeError("fixture lifecycle sentinel")):
+            case.run(result)
+        self.assertEqual(len(result.errors), 1)
+        self.assertIn("fixture lifecycle sentinel", result.errors[0][1])
+        self.assertEqual(set(threading.enumerate()) - baseline, set())
+        self.assertFalse(case.root.exists())
 
 
 if __name__ == "__main__":

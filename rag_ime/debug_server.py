@@ -508,6 +508,7 @@ class DebugServerConfig:
     knowledge_control: object | None = None
     memory_projection_worker_enabled: bool | None = None
     memory_projection_poll_interval_s: float | None = None
+    close_core_on_close: bool = True
 
 
 @dataclass
@@ -903,7 +904,7 @@ class DebugImeService:
             except Exception:
                 pass
         resources = (
-            self.core,
+            self.core if self.config.core is None or self.config.close_core_on_close else None,
             self.settings_store,
             self.system_terminal,
             self.memory_maintenance_jobs,

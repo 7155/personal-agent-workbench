@@ -13,7 +13,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Sequence
@@ -3441,106 +3441,107 @@ def run_rime_sidecar_eval(
 
     cases = load_eval_cases(cases_file)
     repeat_count = max(1, repeat)
-    service = DebugImeService(
+    with closing(DebugImeService(
         DebugServerConfig(
             db_path=db_path,
             project=project,
             core=core,
+            close_core_on_close=False,
             predictor=predictor,
             seed_if_empty=False,
             rime_cache_ttl_ms=max(0, rime_cache_ttl_ms),
         )
-    )
-    results = []
-    elapsed_ms_by_case: dict[str, int] = {}
-    side_counts: list[int] = []
-    visible_side_counts: list[int] = []
-    model_counts: list[int] = []
-    rag_counts: list[int] = []
-    trigger_refresh_count = 0
-    rag_lane_called_count = 0
-    rag_lane_timeout_count = 0
-    model_lane_called_count = 0
-    model_lane_timeout_count = 0
-    for repeat_index in range(1, repeat_count + 1):
-        for case_index, case in enumerate(cases, start=1):
-            eval_case = _case_for_eval_repeat(case, repeat_index=repeat_index, repeat_count=repeat_count)
-            payload = _rime_eval_payload(
-                eval_case,
-                request_seq=(repeat_index - 1) * len(cases) + case_index,
-                project=eval_case.project or project,
-                max_visible_candidates=max_visible_candidates,
-                max_side_candidates=max_side_candidates,
-                latency_budget_ms=sidecar_latency_budget_ms,
-                force_side_candidates=force_side_candidates,
-            )
-            started = time.perf_counter()
-            response = service.rime_suggest(payload)
-            elapsed_ms_by_case[eval_case.case_id] = int((time.perf_counter() - started) * 1000)
-            display_candidates = response.get("displayCandidates") if isinstance(response, dict) else []
-            side_suggestions = _rime_display_side_candidates_as_eval_suggestions(display_candidates)
-            rag_suggestions = _rime_rag_candidates_as_eval_suggestions(
-                response.get("ragCandidates") if isinstance(response, dict) else None
-            )
-            eval_suggestions = (
-                rag_suggestions
-                or side_suggestions
-            )
-            visible_side_counts.append(len(side_suggestions))
-            side_counts.append(len(side_suggestions) + len(rag_suggestions))
-            model_counts.append(sum(1 for item in side_suggestions if item.suggestion_type == "model_prediction"))
-            rag_counts.append(len(rag_suggestions))
-            trigger = response.get("triggerDecision") if isinstance(response, dict) else {}
-            if isinstance(trigger, dict) and trigger.get("shouldRefresh"):
-                trigger_refresh_count += 1
-            rag_lane = response.get("ragLane") if isinstance(response, dict) else {}
-            if isinstance(rag_lane, dict):
-                if bool(rag_lane.get("called")):
-                    rag_lane_called_count += 1
-                if bool(rag_lane.get("timedOut")):
-                    rag_lane_timeout_count += 1
-            model_lane = response.get("modelLane") if isinstance(response, dict) else {}
-            if isinstance(model_lane, dict):
-                if bool(model_lane.get("called")):
-                    model_lane_called_count += 1
-                if bool(model_lane.get("timedOut")):
-                    model_lane_timeout_count += 1
-            results.append(evaluate_suggestions(eval_case, eval_suggestions, match=match))
-    report = eval_report(results)
-    report["schemaVersion"] = "rag-ime.rime-sidecar-eval.v1"
-    report["casesFile"] = str(cases_file)
-    report["project"] = project
-    report["match"] = match
-    report["repeat"] = {
-        "requested": repeat_count,
-        "baseCaseCount": len(cases),
-        "effectiveCaseCount": len(results),
-    }
-    _attach_eval_latency(report, elapsed_ms_by_case)
-    health = service.health()
-    report["sidecar"] = {
-        "maxVisibleCandidates": max_visible_candidates,
-        "maxSideCandidates": max_side_candidates,
-        "latencyBudgetMs": max(30, int(sidecar_latency_budget_ms)),
-        "forceSideCandidates": force_side_candidates,
-        "triggerRefreshCount": trigger_refresh_count,
-        "totalSideCandidates": sum(side_counts),
-        "totalVisibleSideCandidates": sum(visible_side_counts),
-        "totalModelCandidates": sum(model_counts),
-        "totalRagCandidates": sum(rag_counts),
-        "hasSideCandidates": any(count > 0 for count in side_counts),
-        "ragLaneCalledCount": rag_lane_called_count,
-        "ragLaneTimeoutCount": rag_lane_timeout_count,
-        "ragLaneTimeoutRate": _rate(rag_lane_timeout_count, len(results)),
-        "modelLaneCalledCount": model_lane_called_count,
-        "modelLaneTimeoutCount": model_lane_timeout_count,
-        "modelLaneTimeoutRate": _rate(model_lane_timeout_count, len(results)),
-        "rimeSuggestCache": health.get("rimeSuggestCache"),
-        "suggestionCache": health.get("suggestionCache"),
-        "predictor": health.get("predictor"),
-    }
-    _attach_vector_stats(report, core)
-    return report
+    )) as service:
+        results = []
+        elapsed_ms_by_case: dict[str, int] = {}
+        side_counts: list[int] = []
+        visible_side_counts: list[int] = []
+        model_counts: list[int] = []
+        rag_counts: list[int] = []
+        trigger_refresh_count = 0
+        rag_lane_called_count = 0
+        rag_lane_timeout_count = 0
+        model_lane_called_count = 0
+        model_lane_timeout_count = 0
+        for repeat_index in range(1, repeat_count + 1):
+            for case_index, case in enumerate(cases, start=1):
+                eval_case = _case_for_eval_repeat(case, repeat_index=repeat_index, repeat_count=repeat_count)
+                payload = _rime_eval_payload(
+                    eval_case,
+                    request_seq=(repeat_index - 1) * len(cases) + case_index,
+                    project=eval_case.project or project,
+                    max_visible_candidates=max_visible_candidates,
+                    max_side_candidates=max_side_candidates,
+                    latency_budget_ms=sidecar_latency_budget_ms,
+                    force_side_candidates=force_side_candidates,
+                )
+                started = time.perf_counter()
+                response = service.rime_suggest(payload)
+                elapsed_ms_by_case[eval_case.case_id] = int((time.perf_counter() - started) * 1000)
+                display_candidates = response.get("displayCandidates") if isinstance(response, dict) else []
+                side_suggestions = _rime_display_side_candidates_as_eval_suggestions(display_candidates)
+                rag_suggestions = _rime_rag_candidates_as_eval_suggestions(
+                    response.get("ragCandidates") if isinstance(response, dict) else None
+                )
+                eval_suggestions = (
+                    rag_suggestions
+                    or side_suggestions
+                )
+                visible_side_counts.append(len(side_suggestions))
+                side_counts.append(len(side_suggestions) + len(rag_suggestions))
+                model_counts.append(sum(1 for item in side_suggestions if item.suggestion_type == "model_prediction"))
+                rag_counts.append(len(rag_suggestions))
+                trigger = response.get("triggerDecision") if isinstance(response, dict) else {}
+                if isinstance(trigger, dict) and trigger.get("shouldRefresh"):
+                    trigger_refresh_count += 1
+                rag_lane = response.get("ragLane") if isinstance(response, dict) else {}
+                if isinstance(rag_lane, dict):
+                    if bool(rag_lane.get("called")):
+                        rag_lane_called_count += 1
+                    if bool(rag_lane.get("timedOut")):
+                        rag_lane_timeout_count += 1
+                model_lane = response.get("modelLane") if isinstance(response, dict) else {}
+                if isinstance(model_lane, dict):
+                    if bool(model_lane.get("called")):
+                        model_lane_called_count += 1
+                    if bool(model_lane.get("timedOut")):
+                        model_lane_timeout_count += 1
+                results.append(evaluate_suggestions(eval_case, eval_suggestions, match=match))
+        report = eval_report(results)
+        report["schemaVersion"] = "rag-ime.rime-sidecar-eval.v1"
+        report["casesFile"] = str(cases_file)
+        report["project"] = project
+        report["match"] = match
+        report["repeat"] = {
+            "requested": repeat_count,
+            "baseCaseCount": len(cases),
+            "effectiveCaseCount": len(results),
+        }
+        _attach_eval_latency(report, elapsed_ms_by_case)
+        health = service.health()
+        report["sidecar"] = {
+            "maxVisibleCandidates": max_visible_candidates,
+            "maxSideCandidates": max_side_candidates,
+            "latencyBudgetMs": max(30, int(sidecar_latency_budget_ms)),
+            "forceSideCandidates": force_side_candidates,
+            "triggerRefreshCount": trigger_refresh_count,
+            "totalSideCandidates": sum(side_counts),
+            "totalVisibleSideCandidates": sum(visible_side_counts),
+            "totalModelCandidates": sum(model_counts),
+            "totalRagCandidates": sum(rag_counts),
+            "hasSideCandidates": any(count > 0 for count in side_counts),
+            "ragLaneCalledCount": rag_lane_called_count,
+            "ragLaneTimeoutCount": rag_lane_timeout_count,
+            "ragLaneTimeoutRate": _rate(rag_lane_timeout_count, len(results)),
+            "modelLaneCalledCount": model_lane_called_count,
+            "modelLaneTimeoutCount": model_lane_timeout_count,
+            "modelLaneTimeoutRate": _rate(model_lane_timeout_count, len(results)),
+            "rimeSuggestCache": health.get("rimeSuggestCache"),
+            "suggestionCache": health.get("suggestionCache"),
+            "predictor": health.get("predictor"),
+        }
+        _attach_vector_stats(report, core)
+        return report
 
 
 def run_cache_probe(
@@ -3559,27 +3560,28 @@ def run_cache_probe(
 ) -> dict[str, object]:
     from .debug_server import DebugImeService, DebugServerConfig
 
-    service = DebugImeService(
+    with closing(DebugImeService(
         DebugServerConfig(
             db_path=db_path,
             project=project,
             seed_if_empty=False,
             core=core,
+            close_core_on_close=False,
             predictor=predictor,
             rime_cache_ttl_ms=rime_cache_ttl_ms,
         )
-    )
-    return service.cache_probe(
-        {
-            "currentInput": current_input,
-            "recentContext": recent_context,
-            "project": project,
-            "topK": top_k,
-            "repeat": repeat,
-            "rimeCandidates": rime_candidates,
-            "forceSideCandidates": force_side_candidates,
-        }
-    )
+    )) as service:
+        return service.cache_probe(
+            {
+                "currentInput": current_input,
+                "recentContext": recent_context,
+                "project": project,
+                "topK": top_k,
+                "repeat": repeat,
+                "rimeCandidates": rime_candidates,
+                "forceSideCandidates": force_side_candidates,
+            }
+        )
 
 
 def run_squirrel_tryout_gate(
@@ -3658,18 +3660,20 @@ def run_squirrel_tryout_gate(
         expected_page_size=expected_rime_page_size,
     )
     build_report = _tryout_installed_rime_build(squirrel_config_path)
-    input_source_report = DebugImeService(
+    with closing(DebugImeService(
         DebugServerConfig(
             db_path=db_path,
             project=project,
             seed_if_empty=False,
             core=core,
+            close_core_on_close=False,
             predictor=predictor,
             input_source_id=input_source_id,
             input_source_check_script=input_source_check_script,
             input_source_require_hitoolbox=True,
         )
-    ).input_source_status()
+    )) as service:
+        input_source_report = service.input_source_status()
     input_source_audit = (
         _tryout_input_source_audit(input_source_id=input_source_id, input_source_check_script=input_source_check_script)
         if include_input_source_audit
@@ -4445,18 +4449,20 @@ def run_quality_gate(
     )
     input_source_report: dict[str, object] | None = None
     if require_input_source_ready:
-        input_source_report = DebugImeService(
+        with closing(DebugImeService(
             DebugServerConfig(
                 db_path=db_path,
                 project=project,
                 seed_if_empty=False,
                 core=core,
+                close_core_on_close=False,
                 predictor=predictor,
                 input_source_id=input_source_id,
                 input_source_check_script=input_source_check_script,
                 input_source_require_hitoolbox=True,
             )
-        ).input_source_status()
+        )) as service:
+            input_source_report = service.input_source_status()
     predictor_status = prediction_provider_status(
         predictor,
         probe_capabilities=bool(required_predictor_capabilities),
