@@ -1629,8 +1629,8 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);
     await user.type(composer, '完整历史还在恢复，但这一条必须立即发送');
     await user.keyboard('{Enter}');
-    expect(screen.getByText('Thinking')).toBeVisible();
-    expect(screen.getByText('Thinking').closest('.agent-first-response')).not.toBeNull();
+    expect(screen.getByText('等待响应')).toBeVisible();
+    expect(screen.getByText('等待响应').closest('.agent-first-response')).not.toBeNull();
     await waitFor(() => expect(
       transport.requests.some((request) => request.pathId === 'agent.session.prompt'),
     ).toBe(true));
@@ -1642,7 +1642,7 @@ describe('PAWOS Agent Session structural migration', () => {
       resolveFull?.({ ...recent, partial: false, snapshotScope: 'full' });
       await Promise.resolve();
     });
-    expect(screen.getByText('Thinking')).toBeVisible();
+    expect(screen.getByText('等待响应')).toBeVisible();
     expect(Object.keys(
       useAgentLiveStore.getState().projections[sessionId]?.optimisticByClientMessageId ?? {},
     )).toHaveLength(1);

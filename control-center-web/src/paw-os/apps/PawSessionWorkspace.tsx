@@ -1503,7 +1503,7 @@ export function PawSessionWorkspace({
           </div>
 
           <div className="paw-session-workspace__composer" data-read-only={evaluationSnapshot || undefined}>
-            {pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>Thinking</strong></div> : null}
+            {pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
             {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
               <CircleAlert size={14} aria-hidden="true" />
               <span>{attachmentError}</span>

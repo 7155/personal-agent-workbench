@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UiAgentMessage } from '@/contracts/ui-events';
 import { agentEventFixture } from '@/test/fixtures/events';
 import agentFxCss from '@/paw-os/styles/paw-os-agent-fx.css?raw';
@@ -10,9 +10,95 @@ import { AgentTurn } from './AgentTimeline';
 afterEach(() => {
   cleanup();
   useAgentLiveStore.getState().clear('session-status-polish');
+  vi.useRealTimers();
 });
 
 describe('conversation status polish', () => {
+  it('labels the whole turn clock honestly after tools finish without inventing reasoning or a terminal receipt', () => {
+    const now = 1_800_000_000_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [{ ...userMessage(sessionId, turnId), createdAtMs: now - 696_000, completedAtMs: now - 695_999 }],
+      liveEvents: [{
+        ...agentEventFixture(1, 'tool_finished', { toolCallId: 'finished-memory', toolName: 'memory', result: { ok: true } }),
+        sessionId, turnId, createdAtMs: now - 5_000,
+      }],
+      lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'busy', partial: true,
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    const pending = view.container.querySelector('.agent-assistant-pending')!;
+    expect(pending).toHaveTextContent('等待后续响应');
+    expect(pending).toHaveTextContent('本轮用时 11分 36秒');
+    expect(pending).toHaveTextContent('尚未收到本轮结束回执');
+    expect(pending).not.toHaveTextContent('Thinking');
+    expect(pending).not.toHaveTextContent('等待模型');
+    expect(pending.querySelector('time')).toHaveAttribute('aria-hidden', 'true');
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(pending).toHaveTextContent('本轮用时 11分 41秒');
+    expect(useAgentLiveStore.getState().projections[sessionId]?.turnsById[turnId]?.status).toBe('running');
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not show a live marker on an old running turn behind a newer terminal turn', () => {
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId)], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'busy', partial: true,
+    });
+    useAgentLiveStore.getState().appendOptimistic(sessionId, { clientMessageId: 'later-work', turnId: 'turn-later', text: '后续工作', nowMs: 1_000 });
+    useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(1, 'turn_completed', { status: 'completed' }), sessionId, turnId: 'turn-later', createdAtMs: 2_000,
+    }]);
+    expect(useAgentLiveStore.getState().projections[sessionId]?.turnsById[turnId]?.status).toBe('running');
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toBeInTheDocument();
+  });
+
+  it('keeps an explicit Provider retry visible behind a rejected follow-up and removes it on its terminal receipt', () => {
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId)], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'busy', partial: true,
+    });
+    useAgentLiveStore.getState().appendOptimistic(sessionId, { clientMessageId: 'rejected-work', turnId: 'turn-rejected', text: '后续请求', nowMs: 1_000 });
+    useAgentLiveStore.getState().applyEvents(sessionId, [
+      { ...agentEventFixture(1, 'turn_failed', { error: '运行中的请求仍在重试' }), sessionId, turnId: 'turn-rejected', createdAtMs: 2_000 },
+      { ...agentEventFixture(2, 'status_changed', { status: 'retrying', phase: 'provider_retry', activityState: 'running', summary: '模型连接暂时不可用，正在自动重试。' }), sessionId, turnId, createdAtMs: 2_100 },
+    ]);
+    expect(useAgentLiveStore.getState().projections[sessionId]?.status).toBe('retrying');
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('正在重试连接');
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('正在自动重试');
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(3, 'turn_failed', { error: '模型连接未恢复' }), sessionId, turnId, createdAtMs: 3_000,
+    }]));
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['reasoning_summary', { requestId: 'live-reasoning', source: 'provider_reasoning_summary', state: 'running', items: [], summary: '正在分析问题与下一步。' }, '正在分析'],
+    ['compaction_started', { reason: 'automatic' }, '正在整理上下文'],
+    ['tool_started', { toolCallId: 'live-memory', toolName: 'memory' }, '正在执行'],
+  ] as const)('keeps the reported %s phase separate from the whole-turn duration', (eventType, payload, phase) => {
+    const now = 1_800_000_000_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [{ ...userMessage(sessionId, turnId), createdAtMs: now - 696_000, completedAtMs: now - 695_999 }],
+      liveEvents: [{ ...agentEventFixture(1, eventType, payload), sessionId, turnId, createdAtMs: now - 2_000 }],
+      lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'busy', partial: true,
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent(phase);
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('本轮用时 11分 36秒');
+  });
+
   it('removes the thinking status as soon as the turn receives a terminal event', () => {
     const sessionId = 'session-status-polish';
     const turnId = 'turn-status-polish';

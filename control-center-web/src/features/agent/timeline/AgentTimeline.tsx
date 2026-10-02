@@ -181,6 +181,7 @@ type ProjectionDerivedViews = {
   retrySuccessors?: Map<string, string>;
   retryChildren?: Set<string>;
   userMessagesByClientId?: Map<string, AgentMessageProjection>;
+  workingTurnId?: string;
   retryRootUserIdsByTurn: Map<string, string[]>;
 };
 
@@ -234,6 +235,31 @@ export function visibleAgentTurnIds(
   if (includeRoomPublicPosts) views.visibleTurnIdsWithRoomPosts = result;
   else views.visibleTurnIds = result;
   return result;
+}
+
+function workingAgentTurnId(projection: AgentProjectionState | undefined): string {
+  if (!projection) return '';
+  const views = derivedViews(projection);
+  if (views.workingTurnId !== undefined) return views.workingTurnId;
+  // A rejected follow-up does not end the Runtime's explicit Provider retry.
+  if (projection.status === 'retrying') {
+    for (let index = projection.activityOrder.length - 1; index >= 0; index -= 1) {
+      const activity = projection.activitiesById[projection.activityOrder[index] ?? ''];
+      if (activity?.payload.phase === 'provider_retry' && activity.status === 'running'
+        && projection.turnsById[activity.turnId]?.status === 'running') {
+        return views.workingTurnId = activity.turnId;
+      }
+    }
+  }
+  // Match the Session workspace's newest visible turn fence. Historical
+  // running flags remain evidence, but do not own a live conversation marker.
+  for (let index = projection.turnOrder.length - 1; index >= 0; index -= 1) {
+    const turnId = projection.turnOrder[index] ?? '';
+    const turn = projection.turnsById[turnId];
+    if (!turn || (turn.messageIds.length === 0 && turn.activityIds.length === 0)) continue;
+    return views.workingTurnId = ['queued', 'running'].includes(turn.status) ? turnId : '';
+  }
+  return views.workingTurnId = '';
 }
 
 function retrySuccessorTurnIds(projection: AgentProjectionState): Map<string, string> {
@@ -1210,6 +1236,7 @@ export const AgentTurn = memo(function AgentTurn({
   const latestTurnId = useAgentLiveStore((state) => (
     state.projections[sessionId]?.turnOrder.at(-1) ?? ''
   ));
+  const workingTurnId = useAgentLiveStore((state) => workingAgentTurnId(state.projections[sessionId]));
   /* A terminal retry creates a linked attempt; an ambiguous admission reuses
      the same operation and optimistic turn. The control acknowledges only
      local submission, never a successful outcome. */
@@ -1278,7 +1305,8 @@ export const AgentTurn = memo(function AgentTurn({
         : '连接在最终回复生成前中断；请继续当前对话，或切换模型后继续。'
       : failure;
   const retryRequested = retryRequestedFor === `${turnId}:${turn.status}`;
-  const showWorking = showWorkingIndicator && (turn.status === 'queued' || turn.status === 'running');
+  const showWorking = showWorkingIndicator && workingTurnId === turnId
+    && (turn.status === 'queued' || turn.status === 'running');
   const turnSettled = turn.status === 'completed' || turn.status === 'failed' || turn.status === 'aborted';
   const timelineEntries = interleavedTurnEntries(
     [...assistantMessages, ...inlineUserMessages],
@@ -1548,7 +1576,11 @@ function AssistantWorkingState({
   }, []);
   const detail = useMemo(() => workingDetail(activities), [activities]);
   const latest = [...activities].reverse().find((activity) => activity.status === 'running');
-  const phase = latest?.kind === 'context_compaction' ? '正在整理上下文' : latest?.kind === 'reasoning_summary' ? '正在分析' : latest ? '正在执行' : 'Thinking';
+  const phase = latest?.payload.phase === 'provider_retry' ? '正在重试连接'
+    : latest?.kind === 'context_compaction' ? '正在整理上下文'
+    : latest?.kind === 'reasoning_summary' ? '正在分析'
+    : latest?.kind.startsWith('tool_') ? '正在执行'
+    : latest ? '正在处理' : '等待后续响应';
   return (
     <div className="agent-assistant-pending" role="status" aria-live="polite">
       <ConversationPlanetMark size="lg" state={stopping ? 'waiting' : 'thinking'} />
@@ -1556,7 +1588,7 @@ function AssistantWorkingState({
         {/* The elapsed clock ticks once a second. Inside a polite live region
             that made a screen reader read the whole strip every second, so the
             duration stays visual and the phase text carries the spoken update. */}
-        <strong>{stopping ? '正在停止' : phase} <time aria-hidden="true">{formatElapsed(nowMs - startedAtMs)}</time></strong>
+        <strong>{stopping ? '正在停止' : phase} <time aria-hidden="true">本轮用时 {formatElapsed(nowMs - startedAtMs)}</time></strong>
         <small>{stopping ? '正在取消当前模型与工具执行。' : detail}</small>
       </span>
       <i className="agent-working-dots" aria-hidden="true"><b /><b /><b /></i>
@@ -2019,12 +2051,14 @@ function workingDetail(activities: AgentActivityProjection[]): string {
   if (latest?.kind === 'reasoning_summary') {
     return latest.summary || '正在分析问题与下一步。';
   }
+  if (latest?.kind === 'context_compaction') return '正在整理上下文，以便继续本轮。';
   const tool = text(latest?.payload.toolName ?? latest?.payload.toolId).toLowerCase();
   if (tool.includes('memory')) return '正在读取并整理相关记忆，工具明细会实时显示在下方。';
   if (tool.includes('knowledge') || tool.includes('rag')) return '正在检索知识库，工具明细会实时显示在下方。';
   if (tool.includes('planning')) return '正在整理计划与下一步。';
-  if (latest) return '正在执行工具，进度和结果会实时显示在下方。';
-  return activities.length ? '已有步骤已结束，等待模型继续响应。' : '消息已收到，正在组织本轮响应。';
+  if (latest?.kind.startsWith('tool_')) return '正在执行工具，进度和结果会实时显示在下方。';
+  if (latest) return '正在处理本轮请求，后续进展会显示在对话中。';
+  return activities.length ? '已有步骤已结束，尚未收到本轮结束回执。' : '本轮尚未收到响应进展。';
 }
 
 function formatElapsed(durationMs: number): string {
