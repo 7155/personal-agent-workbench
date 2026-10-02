@@ -26,12 +26,12 @@ class VerticalAgentSelfTestSuiteTests(unittest.TestCase):
             report = run_vertical_agent_self_test_suite(root)
 
             self.assertEqual(report["status"], "completed")
-            self.assertEqual(report["totalCount"], 2)
-            self.assertEqual(report["passedCount"], 2)
+            self.assertEqual(report["totalCount"], 3)
+            self.assertEqual(report["passedCount"], 3)
             self.assertEqual(report["failedCount"], 0)
             self.assertEqual(
                 {item["appId"] for item in report["results"]},
-                {"sgg", "zhanggui-wenshu"},
+                {"earth-research", "sgg", "zhanggui-wenshu"},
             )
             self.assertTrue(all(item["providerCalls"] == 0 for item in report["results"]))
             self.assertTrue(all(item["productionWriteBlocked"] for item in report["results"]))

@@ -64,9 +64,11 @@ class JevFailureLifecycleTests(host.JevHostFixture):
         self.fail("No live " + purpose + " execution: " + json.dumps(self.app.projection(self.room["id"], created["graphId"]), ensure_ascii=False))
 
     def submit(self, effect, operation, proposal):
+        self._submission_sequence = getattr(self, "_submission_sequence", 0) + 1
         return self.gateway.execute({"schemaVersion": "rag-ime.agent-tool-call.v1",
             "sessionId": effect["request"]["sessionId"], "tool": "room_partner",
-            "toolCallId": "typed:" + effect["effectId"], "args": {"op": operation, "proposal": proposal}})["result"]
+            "toolCallId": f"typed:{effect['effectId']}:{self._submission_sequence}",
+            "args": {"op": operation, "proposal": proposal}})["result"]
 
     def finish(self, effect, *, failed=False):
         request = effect["request"]

@@ -391,7 +391,7 @@ class TraceRepairServiceTests(unittest.TestCase):
             self.assertEqual(run["changeReceiptId"], change["evidenceId"])
             self.assertEqual(run["testEvidenceId"], test["evidenceId"])
             self.assertEqual(run["testStatus"], "passed")
-            self.assertEqual(runtime.calls[0]["model_id"], "gpt-5.6-luna")
+            self.assertEqual(runtime.calls[0]["model_id"], "gpt-6.1-sol")
             self.assertEqual(runtime.calls[0]["thinking_level"], "max")
 
             repeated = service.recheck_trace_repair(

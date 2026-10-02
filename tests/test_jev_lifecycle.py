@@ -52,6 +52,7 @@ class JevLifecycleTests(host.JevHostFixture):
         ]
 
     def submit(self, effect, operation, proposal):
+        self._submission_sequence = getattr(self, "_submission_sequence", 0) + 1
         # Pi validates the projected tool schema before any HTTP call. Checking
         # only gateway.execute misses a dropped oneOf operation branch.
         from jsonschema import Draft202012Validator
@@ -70,7 +71,7 @@ class JevLifecycleTests(host.JevHostFixture):
                 "schemaVersion": "rag-ime.agent-tool-call.v1",
                 "sessionId": effect["request"]["sessionId"],
                 "tool": "room_partner",
-                "toolCallId": "tool:" + effect["effectId"],
+                "toolCallId": f"tool:{effect['effectId']}:{self._submission_sequence}",
                 "args": {"op": operation, "proposal": proposal},
             }
         )["result"]
