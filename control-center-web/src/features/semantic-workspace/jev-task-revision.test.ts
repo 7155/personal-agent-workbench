@@ -1,12 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ControlTransport } from '@/platform/transport';
 import { commandJevRevision, pendingJevRevision, readJevRevision, type JevRevisionInput } from './jev-task-revision';
 
 afterEach(() => sessionStorage.clear());
+let connectionIdentity: string;
+beforeEach(() => { connectionIdentity = `revision-test:${crypto.randomUUID()}`; });
 const input: JevRevisionInput = { action: 'revise_task', graphId: 'g', rootId: 'r', taskId: 'a', taskHash: 'hash', expectedTopologyRevision: 2,
   expectedRequirementsRevision: 1, objective: '调整世界高度', expectedOutput: '可运行世界', acceptanceCriteria: ['高度为64'], reason: '更新需求' };
 const receipt = { ok: true, graphId: 'g', changedTaskId: 'a', revisionId: 'revision:1', status: 'awaiting_drain' };
-const transport = (request: ReturnType<typeof vi.fn>, identity = 'revision-test') => ({ request, kind: 'http', connectionIdentity: identity } as unknown as ControlTransport);
+const transport = (request: ReturnType<typeof vi.fn>, identity = connectionIdentity) => ({ request, kind: 'http', connectionIdentity: identity } as unknown as ControlTransport);
 describe('task revision transport', () => {
   it('reads the server impact scope and rejects another task binding', async () => {
     const request = vi.fn().mockResolvedValue({ ok: true, ...input, available: true, affectedTaskIds: ['a', 'c'], downstreamTaskIds: ['c'], retainedAcceptedTaskIds: ['b'] });

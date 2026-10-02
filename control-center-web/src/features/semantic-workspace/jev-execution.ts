@@ -1,5 +1,6 @@
 import type { ControlRequest, ControlTransport } from '@/platform/transport';
 import { observeRequest } from './organization-request';
+import { JevCommandJournal } from './jev-command-journal';
 
 export type JevStrategy = 'auto' | 'direct' | 'plan';
 export type JevModelRouting = 'balanced' | 'participant';
@@ -208,110 +209,61 @@ export function jevStatusLabel(graph: JevSnapshot | null, loading = false) {
 }
 
 type CreateInput = { message: string; strategy?: JevStrategy; attachmentIds?: string[]; previousRootId?: string; modelRouting?: JevModelRouting; toolApprovalMode?: JevToolApproval; verificationMode?: JevVerificationMode; executionApproval?: boolean };
-type PendingCreate = { signature: string; clientMessageId: string; input: CreateInput; uncertain: boolean };
-// A transport-scoped admission key survives Home -> Room and mode changes.
-// Failed/uncertain requests keep their key; an explicit retry never creates a
-// second root. There is no automatic command replay during GET or reconnect.
-const pending = new WeakMap<ControlTransport, Map<string, PendingCreate>>();
-function pendingKey(transport: ControlTransport, roomId: string) {
-  const identity = transport.connectionIdentity || (transport.kind === 'native' ? 'native-local' : '');
-  return identity ? `paw.jev.pending.v1:${encodeURIComponent(identity)}:${encodeURIComponent(roomId)}` : '';
-}
-function pendingEntry(transport: ControlTransport, roomId: string): PendingCreate | undefined {
-  const cached = pending.get(transport)?.get(roomId);
-  if (cached) return cached;
-  const key = pendingKey(transport, roomId);
-  if (!key) return;
-  try {
-    const data = jevRecord(JSON.parse(sessionStorage.getItem(key) || 'null'));
-    if (typeof data.signature === 'string' && typeof data.clientMessageId === 'string' && typeof jevRecord(data.input).message === 'string') return data as PendingCreate;
-  } catch { /* A disabled browser store does not invent an accepted request. */ }
-}
-function storePending(transport: ControlTransport, roomId: string, value?: PendingCreate) {
-  let journal = pending.get(transport); if (!journal) { journal = new Map(); pending.set(transport, journal); }
-  if (value) journal.set(roomId, value); else journal.delete(roomId);
-  const key = pendingKey(transport, roomId);
-  // A remount cannot keep observing this process's in-flight promise. Treat
-  // the durable record as uncertain until a matching server receipt arrives.
-  if (key) try { if (value) sessionStorage.setItem(key, JSON.stringify({ ...value, uncertain: true })); else sessionStorage.removeItem(key); } catch { /* In-memory admission identity still survives view changes. */ }
-}
-export const pendingJevInput = (transport: ControlTransport, roomId: string) => pendingEntry(transport, roomId)?.input;
+// This is the historical admission comparison: a retry keeps the originally
+// captured previousRootId, even if the caller now observes a newer Root.
+const createSignature = (value: CreateInput) => JSON.stringify({ message: value.message, strategy: value.strategy ?? 'auto', attachmentIds: value.attachmentIds ?? [], modelRouting: value.modelRouting ?? 'balanced', toolApprovalMode: value.toolApprovalMode ?? 'dispatch', verificationMode: value.verificationMode ?? 'auto', executionApproval: value.executionApproval ?? false });
+const admissionJournal = new JevCommandJournal<CreateInput>({
+  storagePrefix: 'paw.jev.pending.v1', requestPrefix: 'paw-jev-',
+  conflictMessage: '上次发送尚未确认。请先用原内容重试，核实后再发送新任务。',
+  restoreInput: value => typeof jevRecord(value).message === 'string' ? value as CreateInput : undefined,
+  signature: createSignature,
+  rejectionStatuses: [400, 401, 403, 404, 413, 422],
+});
+export const pendingJevInput = (transport: ControlTransport, roomId: string) => admissionJournal.read(transport, roomId)?.input;
 export const uncertainJevInput = (transport: ControlTransport, roomId: string) => {
-  const attempt = pendingEntry(transport, roomId);
+  const attempt = admissionJournal.read(transport, roomId);
   return attempt?.uncertain ? attempt.input : undefined;
 };
 export function acknowledgeJevAdmission(transport: ControlTransport, roomId: string, items: JevGraphItem[]) {
-  const attempt = pendingEntry(transport, roomId);
-  if (!attempt?.uncertain || !items.some(item => item.clientMessageId === attempt.clientMessageId)) return false;
-  storePending(transport, roomId); return true;
+  return Boolean(admissionJournal.acknowledge(transport, roomId,
+    attempt => items.some(item => item.clientMessageId === attempt.clientMessageId)));
 }
 export async function createJevWork(transport: ControlTransport, roomId: string, input: CreateInput) {
-  const inputSignature = (value: CreateInput) => JSON.stringify({ message: value.message, strategy: value.strategy ?? 'auto', attachmentIds: value.attachmentIds ?? [], modelRouting: value.modelRouting ?? 'balanced', toolApprovalMode: value.toolApprovalMode ?? 'dispatch', verificationMode: value.verificationMode ?? 'auto', executionApproval: value.executionApproval ?? false });
-  const signature = inputSignature(input);
-  const previous = pendingEntry(transport, roomId);
-  if (previous && inputSignature(previous.input) !== signature) throw new Error('上次发送尚未确认。请先用原内容重试，核实后再发送新任务。');
-  const attempt = previous ?? { signature, clientMessageId: `paw-jev-${crypto.randomUUID()}`, input, uncertain: false };
-  storePending(transport, roomId, attempt);
-  try {
+  return admissionJournal.execute(transport, roomId, input, async attempt => {
     const result = jevRecord(await observeRequest<ControlRequest, unknown>(request => transport.request(request), { pathId: 'agent.jev.command', params: { roomId }, timeoutMs: 30_000, body: {
       action: 'create', ...attempt.input, strategy: attempt.input.strategy ?? 'auto', clientMessageId: attempt.clientMessageId,
     } }, { timeout: 'Jev 发送超时，尚未确认接收。可同步状态或重试同一次发送。', aborted: 'Jev 发送观察已取消，尚未确认接收。' }));
     if (result.ok !== true || result.accepted !== true || !text(result.graphId)) throw new Error('服务端未确认 Jev 任务已接收，请使用原内容重试。');
-    storePending(transport, roomId);
     return { ...result, graphId: text(result.graphId), rootId: text(result.rootId), clientMessageId: attempt.clientMessageId };
-  } catch (reason) {
-    const status = jevRecord(reason).status;
-    // A first request rejected before admission can be corrected. A retry of
-    // an earlier unknown outcome still needs reconciliation, even after 4xx.
-    const rejected = !attempt.uncertain && typeof status === 'number' && [400, 401, 403, 404, 413, 422].includes(status);
-    storePending(transport, roomId, rejected ? undefined : { ...attempt, uncertain: true });
-    throw reason;
-  }
+  });
 }
 
 export type JevPlanAction = 'approve_plan' | 'adjust_plan' | 'defer_plan';
 export type JevPlanCommand = { action: JevPlanAction; graphId: string; rootId: string; planHash: string; message?: string; attachmentIds?: string[] };
-type PendingPlan = { input: JevPlanCommand; clientMessageId: string; uncertain: boolean };
-const planPending = new WeakMap<ControlTransport, Map<string, PendingPlan>>();
-const planPendingKey = (transport: ControlTransport, roomId: string) => pendingKey(transport, roomId).replace('pending.v1:', 'plan.v1:');
-function planEntry(transport: ControlTransport, roomId: string): PendingPlan | undefined {
-  const cached = planPending.get(transport)?.get(roomId); if (cached) return cached;
-  const key = planPendingKey(transport, roomId); if (!key) return;
-  try {
-    const value = jevRecord(JSON.parse(sessionStorage.getItem(key) || 'null'));
-    const input = jevRecord(value.input);
-    if (typeof value.clientMessageId === 'string' && ['approve_plan', 'adjust_plan', 'defer_plan'].includes(text(input.action))
-      && text(input.graphId) && text(input.rootId) && typeof input.planHash === 'string') return value as PendingPlan;
-  } catch { /* Unknown delivery remains recoverable in this view. */ }
-}
-function storePlan(transport: ControlTransport, roomId: string, value?: PendingPlan) {
-  let journal = planPending.get(transport); if (!journal) { journal = new Map(); planPending.set(transport, journal); }
-  if (value) journal.set(roomId, value); else journal.delete(roomId);
-  const key = planPendingKey(transport, roomId);
-  if (key) try { if (value) sessionStorage.setItem(key, JSON.stringify({ ...value, uncertain: true })); else sessionStorage.removeItem(key); } catch { /* The live journal still preserves the exact plan binding. */ }
-}
+const planJournal = new JevCommandJournal<JevPlanCommand>({
+  storagePrefix: 'paw.jev.plan.v1', requestPrefix: 'paw-jev-plan-',
+  conflictMessage: '上次方案操作尚未确认。请先核实同一次操作。',
+  restoreInput(value) {
+    const input = jevRecord(value);
+    return ['approve_plan', 'adjust_plan', 'defer_plan'].includes(text(input.action))
+      && text(input.graphId) && text(input.rootId) && typeof input.planHash === 'string'
+      ? value as JevPlanCommand : undefined;
+  },
+  rejectionStatuses: [400, 401, 403, 404, 409, 413, 422],
+});
 export const uncertainJevPlan = (transport: ControlTransport, roomId: string) => {
-  const entry = planEntry(transport, roomId); return entry?.uncertain ? entry.input : undefined;
+  const entry = planJournal.read(transport, roomId); return entry?.uncertain ? entry.input : undefined;
 };
 export function acknowledgeJevPlan(transport: ControlTransport, roomId: string, graph: JevSnapshot | null) {
-  const entry = planEntry(transport, roomId);
-  if (!entry?.uncertain || graph?.graphId !== entry.input.graphId || graph.planApproval?.lastActionClientMessageId !== entry.clientMessageId) return;
-  storePlan(transport, roomId); return entry.input;
+  return planJournal.acknowledge(transport, roomId, entry => graph?.graphId === entry.input.graphId
+    && graph.planApproval?.lastActionClientMessageId === entry.clientMessageId);
 }
 export async function commandJevPlan(transport: ControlTransport, roomId: string, input: JevPlanCommand) {
-  const previous = planEntry(transport, roomId);
-  if (previous && JSON.stringify(previous.input) !== JSON.stringify(input)) throw new Error('上次方案操作尚未确认。请先核实同一次操作。');
-  const attempt = previous ?? { input, clientMessageId: `paw-jev-plan-${crypto.randomUUID()}`, uncertain: false };
-  storePlan(transport, roomId, attempt);
-  try {
+  return planJournal.execute(transport, roomId, input, async attempt => {
     const result = jevRecord(await observeRequest<ControlRequest, unknown>(request => transport.request(request), {
       pathId: 'agent.jev.command', params: { roomId }, timeoutMs: 30_000, body: { ...attempt.input, clientMessageId: attempt.clientMessageId },
     }, { timeout: '方案操作尚未确认，可核实同一次操作。' }));
-    if (result.ok !== true || result.graphId !== input.graphId) throw new Error('未收到匹配的方案回执，请核实同一次操作。');
-    storePlan(transport, roomId); return result;
-  } catch (reason) {
-    const status = jevRecord(reason).status;
-    const rejected = !attempt.uncertain && typeof status === 'number' && [400, 401, 403, 404, 409, 413, 422].includes(status);
-    storePlan(transport, roomId, rejected ? undefined : { ...attempt, uncertain: true }); throw reason;
-  }
+    if (result.ok !== true || result.graphId !== attempt.input.graphId) throw new Error('未收到匹配的方案回执，请核实同一次操作。');
+    return result;
+  });
 }

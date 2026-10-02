@@ -35,6 +35,7 @@ flowchart TD
 | Desktop and windows | `src/paw-os/PawOsApp.tsx`, app registry and workspace components | Execution completion; closing a window does not stop a task |
 | Session interaction | `src/features/agent/runtime/use-agent-live-session.ts`, `state/live-store.ts` | Durable transcript or authorization |
 | Room command delivery | `src/features/rooms/application/room-send.ts`, `runtime/room-send-journal.ts` | Model/Tool loops or Root completion |
+| JEV command delivery | `src/features/semantic-workspace/jev-command-journal.ts`, admission/plan/assignment/revision adapters | Business receipt validation or a second task scheduler |
 | Room projection | `runtime/shared-room-live-session.ts`, `state/live-store.ts`, `contracts/room-reducer.ts` | Automatic resubmission of an uncertain command |
 | HTTP/native transport | `src/platform`, `rag_ime/control_api`, `rag_ime/debug_server.py` | Business scheduling; route descriptors select existing application owners |
 | Session application | `rag_ime/agent_service.py`, Session application services and `agent_sessions.py` | Pi's model loop and compaction implementation |
@@ -58,6 +59,7 @@ See the narrower [Pi](rag_ime/pi/README.md), [Lab](rag_ime/agent_lab/README.md),
 | --- | --- | --- |
 | Draft, selected tab, reading position | Workspace UI state | Restore interaction state without issuing a model request |
 | Unconfirmed Room send | Shared send journal, scoped to connection and Room | Explicit retry keeps the original identity and original payload |
+| Unconfirmed JEV command | One command journal implementation, scoped to connection and operation/Room/task | Freeze the original input; join a live request on remount; restore an unknown outcome after reload without automatic replay |
 | UI execution projection | Shared live store, fed by ACK/snapshot/SSE | Resnapshot after a gap; never treat a visible message or old cache as execution authority |
 | Session identity/configuration | `AgentSessionStore`, PAW SQLite | Reopen the stored binding; preserve existing transcripts and explicit settings |
 | Session transcript and branch | Pi `SessionManager`, JSONL | Host reopens the branch; PAW's recent-message cache is disposable acceleration |
@@ -105,6 +107,17 @@ Admission, a successful Tool effect, a delivered Tool reply, and a completed
 Root are four facts. A network error proves none of their opposites. Recovery
 queries the original binding/receipt and preserves unknown outcomes. A new
 request ID is a new operation, not a safe recovery mechanism.
+
+JEV admission, plan decisions, task assignment and task revision share request
+identity, immutable pending input and persistence mechanics. Their adapters
+retain distinct input/receipt validation and definitive-rejection rules. An
+acknowledged request can release its journal slot before an old retry settles;
+only the entry that still owns that slot may clear or replace it. Transports
+with the same connection identity share a live promise. Anonymous transports
+remain separate, and a full page reload restores an uncertain command rather
+than pretending it still observes a promise. The four existing `sessionStorage`
+v1 keys and saved admission shape remain readable in both directions; no user
+data migration is required. Browser persistence is best effort when disabled.
 
 Foreground Gateway shell commands have a separate physical owner,
 `WorkspaceCommandOwner`, because cancelling the Pi HTTP client cannot kill a
