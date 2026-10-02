@@ -495,11 +495,36 @@ describe('PAWOS shell visual language', () => {
   });
 
   it('gives every window one titlebar height and one corner radius regardless of its App', () => {
-    // --paw-titlebar-h and --paw-radius are declared exactly once each in the
-    // structure owner and (where restated) agree with the visual owner, so
-    // the chrome scale can never fork between the two files that touch it.
-    expect(pawOsCss.match(/--paw-titlebar-h:/g)).toHaveLength(1);
-    expect(pawOsCss).toContain('--paw-titlebar-h: 40px;');
+    // One shared height governs both the absolute header and its body inset.
+    // Narrow conversation windows may add a caption row without hiding their
+    // controls; a focus-primary Room without a caption retains the default.
+    const defaultGeometry = rule(pawOsCss, '.paw-desktop-root');
+    const defaultHeight = Number(defaultGeometry.match(/--paw-titlebar-h:\s*(\d+)px;/)?.[1]);
+    expect(defaultHeight).toBe(40);
+    expect(rule(pawOsCss, '.paw-window-titlebar')).toContain('height: var(--paw-titlebar-h);');
+    expect(rule(pawOsCss, '.paw-window-body')).toContain('padding-top: var(--paw-titlebar-h);');
+
+    const contextStep = windowContainerStep(pawOsCss, '700px');
+    const conversationChrome = ":is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session'])";
+    const contextWindow = rule(contextStep,
+      `.paw-desktop-root .paw-window:has(> .paw-window-titlebar${conversationChrome} > .paw-window-title)`);
+    const contextTitlebar = rule(contextStep,
+      `.paw-desktop-root .paw-window > .paw-window-titlebar${conversationChrome}:has(> .paw-window-title)`);
+    const captionRows = contextTitlebar.match(/grid-template-rows:\s*(\d+)px (\d+)px;/);
+    expect(captionRows, 'a control row and a visible conversation-name row').not.toBeNull();
+    const [, controlsHeight, captionHeight] = captionRows!;
+    expect(Number(controlsHeight)).toBe(defaultHeight);
+    expect(Number(captionHeight)).toBe(24);
+    expect(Number(contextWindow.match(/--paw-titlebar-h:\s*(\d+)px;/)?.[1]))
+      .toBe(Number(controlsHeight) + Number(captionHeight));
+    expect(rule(contextStep,
+      `.paw-desktop-root .paw-window > .paw-window-titlebar${conversationChrome} > .paw-window-title`))
+      .toContain('grid-row: 2;');
+    // All other selectors must inherit this geometry, not invent another
+    // height token outside the default and the bounded caption context.
+    expect(pawOsCss.replace(defaultGeometry, '').replace(contextWindow, ''))
+      .not.toMatch(/--paw-titlebar-h:\s*/);
+
     const structureRadius = pawOsCss.match(/--paw-radius:\s*([^;]+);/)?.[1]?.trim();
     const visualRadius = shellCss.match(/--paw-radius:\s*([^;]+);/)?.[1]?.trim();
     expect(structureRadius, '--paw-radius in paw-os.css').toBe('12px');
@@ -516,6 +541,10 @@ describe('PAWOS shell visual language', () => {
       'paw-os-motion.css': motionCss,
       'paw-os-webmodel-v1.css': webmodelCss,
     })) {
+      if (name !== 'paw-os.css') {
+        expect(css, `${name} must inherit the structure owner's titlebar height`)
+          .not.toMatch(/--paw-titlebar-h:\s*/);
+      }
       expect(css, `${name} must not give one named App its own titlebar height`)
         .not.toMatch(/\[data-app='[a-z-]+'\][^{]*\.paw-window-titlebar(?!::)[^{]*\{[^}]*\bheight:/s);
       expect(css, `${name} must not give one named App its own window corner radius`)

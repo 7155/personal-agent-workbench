@@ -190,11 +190,23 @@ describe('PAWOS Agent Session structural migration', () => {
   it('keeps recovery visible after a heartbeat until the failed snapshot is repaired', async () => {
     const sessionId = 'session-stream-restores-without-snapshot';
     let failSnapshot = false;
+    let failedSnapshotReads = 0;
     const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
-      'agent.session.snapshot': () => { if (failSnapshot) throw new Error('snapshot temporarily unavailable'); return idleSessionRoutes()['agent.session.snapshot']; },
+      'agent.session.snapshot': () => {
+        if (failSnapshot) {
+          failedSnapshotReads += 1;
+          throw new Error('snapshot temporarily unavailable');
+        }
+        return idleSessionRoutes()['agent.session.snapshot'];
+      },
     });
     const observers: ControlEventObserver<unknown>[] = [];
-    vi.spyOn(transport, 'subscribe').mockImplementation((_request, observer) => { observers.push(observer); return () => undefined; });
+    const repairObservers: ControlEventObserver<unknown>[] = [];
+    vi.spyOn(transport, 'subscribe').mockImplementation((_request, observer) => {
+      observers.push(observer);
+      if (failedSnapshotReads > 0) repairObservers.push(observer);
+      return () => undefined;
+    });
     render(<ControlTransportProvider transport={transport}><TooltipProvider>
       <PawSessionWorkspace record={{ ...liveSession(), id: sessionId }} recordId={sessionId}
         onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
@@ -202,8 +214,13 @@ describe('PAWOS Agent Session structural migration', () => {
     await waitFor(() => expect(observers).toHaveLength(1));
     failSnapshot = true;
     act(() => observers[0]!.error?.(new Error('temporary disconnect')));
-    await waitFor(() => expect(observers.length).toBeGreaterThan(1), { timeout: 6000 });
-    act(() => observers.at(-1)!.stable?.(''));
+    // A full-history option update can resubscribe before a recovery read.
+    // Exercise the heartbeat only on the stream opened after an actual
+    // snapshot failure; connectivity alone does not imply a repair is needed.
+    await waitFor(() => expect(repairObservers.length).toBeGreaterThan(0), { timeout: 6000 });
+    expect(failedSnapshotReads).toBeGreaterThan(0);
+    expect(repairObservers.at(-1)).toBe(observers.at(-1));
+    act(() => repairObservers.at(-1)!.stable?.(''));
     expect(screen.queryByText('Session 操作没有完成，请重新同步后重试。')).not.toBeInTheDocument();
     expect(screen.getByText('正在恢复连接')).toBeVisible();
     failSnapshot = false;
