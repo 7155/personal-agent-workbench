@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-02T09:14:24.364777+00:00",
+  "generatedAt": "2026-10-02T11:05:38.013372+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-pi1-mac-iteration-20261002",
@@ -167,14 +167,14 @@
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
-      "pathCount": 209
+      "pathCount": 218
     }
   },
   "summary": {
-    "pathCount": 1845,
+    "pathCount": 1854,
     "dispositionCounts": {
       "delete_old_implementation": 307,
-      "keep_release": 1538
+      "keep_release": 1547
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -194,7 +194,7 @@
       "offline_installer": 12,
       "owner_boundaries": 15,
       "pi1_experience_iteration": 38,
-      "pi1_final_integration": 209,
+      "pi1_final_integration": 218,
       "pi_content_studio_v5_v6": 41,
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
@@ -6037,6 +6037,20 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-command-journal.ts",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/jev-command-recovery.test.ts",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/semantic-workspace/jev-execution.css",
@@ -12493,6 +12507,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_knowledge_control_api.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_knowledge_document_formats.py",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -12602,6 +12623,13 @@
       "status": "modified",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_management_work_contract.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -12722,6 +12750,13 @@
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "tests/test_observability_eval_api.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_owner_boundaries.py",
@@ -13011,6 +13046,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_settings_schema.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_settings_store.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -13088,6 +13130,13 @@
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
     },
     {
+      "path": "tests/test_trace_repair_http.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_vault_organizer.py",
       "status": "added",
       "disposition": "keep_release",
@@ -13100,6 +13149,20 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "tests/test_vertical_agent_harness.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_vertical_agent_suite.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_voice_input.py",
