@@ -200,8 +200,10 @@ bodies are replaced by safe errors; credentials are never public receipt fields.
 no drain proof. After the native scope releases its Provider operation the Host
 emits `runtime.notice` with `type: classification_settled` and the same IDs.
 PAW binds the notice to its original Host; stale events cannot release another
-call. A lost reply permits exact cancellation, never automatic reclassification.
-These calls do not create an Agent transcript or a durable billing ledger.
+call. After a lost reply this transport permits exact cancellation and does not
+retry or switch transports. The existing controller can authorize a bounded new
+decision generation; that is not recovery of the old Provider receipt. These
+calls do not create an Agent transcript or a durable billing ledger.
 
 The Room task decider uses this native path when supported. Only capability
 absence before dispatch permits the older HTTP adapter; a native error or lost

@@ -96,6 +96,21 @@ coalesced and flushed on page hide/unmount; blocked storage leaves reading usabl
 The legacy transcript/view keys remain valid, and standalone rounds can omit
 the optional recovery scope without depending on a transport provider.
 
+Conversation windows keep a visible context name on narrow screens. The shared
+titlebar/body height token expands with the caption row, so keeping the name
+does not cover controls or the composer. Completed Room status without renderable
+task rows uses a compact summary and retains access to collaboration records;
+zero explicit tasks must not hide runtime task rows or recovery actions.
+
+Session status labels describe observed phases rather than inferred model
+thinking. A timer measured from `turn.createdAtMs` is explicitly whole-turn time.
+When tools have ended without a turn settlement, the label reports waiting for
+further response; it does not fabricate completion or stop after an arbitrary
+duration. Only the current visible turn owns this marker, with an explicit
+Provider retry exception. A stale historical running flag is not a second live
+execution. The first-response presentation similarly says waiting for response
+without claiming reasoning events that have not arrived.
+
 Room activity summaries share one display fallback in `roomActivityPublicSummary`.
 Exact event enums receive readable labels, while diagnostic text and stored source
 evidence remain unchanged. The task sheet consumes this presentation at its
@@ -246,7 +261,9 @@ through the legacy HTTP adapter. The Runtime stays occupied until a matched
 terminal reply, an exact drained abort, a matched `classification_settled` notice
 or the original process exit proves release. A late notice/exit cannot release
 another Host or a successor dispatch. This in-memory classification boundary is
-not a durable exactly-once journal for Provider billing.
+not a durable exactly-once journal for Provider billing. The existing controller's
+bounded decision generations remain distinct from transport retries: making a
+new decision is not recovery of a lost Provider receipt.
 
 The compatibility adapter uses legacy `jev.evaluate` only when the Runtime has
 no classifier method or its negotiated Host declares no support, before any
