@@ -37,7 +37,8 @@ class ManagementPaginationTests(unittest.TestCase):
             )
 
     def tearDown(self) -> None:
-        self.service.management.close()
+        self.service.close()
+        self.core.close()
         self.tmp.cleanup()
 
     def test_history_clamps_limit_and_uses_cursor(self) -> None:

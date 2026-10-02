@@ -44,6 +44,7 @@ class MemoryProjectionLifecycleTests(unittest.TestCase):
             self.db_path,
             embedding_provider=provider,
         )
+        self.addCleanup(core.close)
         core.initialize()
         with core._connect() as conn:  # type: ignore[attr-defined]
             _insert_phrase(conn, "phrase:lifecycle", "生产投影生命周期")
@@ -109,6 +110,7 @@ class MemoryProjectionLifecycleTests(unittest.TestCase):
 
     def test_worker_start_failure_degrades_status_without_breaking_foreground_health(self) -> None:
         core = LocalSqliteCoreClient(self.db_path)
+        self.addCleanup(core.close)
         failing_worker = _FailingProjectionWorker()
         with patch(
             "rag_ime.debug_server.MemoryProjectionWorker",
@@ -145,10 +147,12 @@ class MemoryProjectionLifecycleTests(unittest.TestCase):
         self.assertEqual(failing_worker.stop_calls, 1)
 
     def test_agent_gateway_does_not_compete_for_projection_ownership(self) -> None:
+        core = LocalSqliteCoreClient(self.db_path)
+        self.addCleanup(core.close)
         service = DebugImeService(
             DebugServerConfig(
                 db_path=self.db_path,
-                core=LocalSqliteCoreClient(self.db_path),
+                core=core,
                 seed_if_empty=False,
                 server_name="agent gateway",
             )

@@ -23,6 +23,7 @@ class MemoryActionMutationTests(unittest.TestCase):
         self.core.initialize()
 
     def tearDown(self) -> None:
+        self.core.close()
         self.tmp.cleanup()
 
     def test_pin_updates_metadata_quality_weight_status_and_real_ranking(self) -> None:
@@ -345,7 +346,8 @@ class ManagementMemoryActionIntegrationTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        self.service.management.close()
+        self.service.close()
+        self.core.close()
         self.tmp.cleanup()
 
     def test_phrase_page_returns_real_memory_id_instead_of_display_hash(self) -> None:
