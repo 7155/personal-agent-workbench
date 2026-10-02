@@ -34,6 +34,45 @@ afterEach(() => {
 });
 
 describe('shared Room send application contract', () => {
+  it('keeps an SSE-completed Root unchanged throughout an exact lost-ACK retry and its duplicate receipt', async () => {
+    const userWire = {
+      schemaVersion: 'rag-ime.agent-room-event.v1', eventId: 'room-a:1', roomId: 'room-a', sequence: 1,
+      turnId: 'root-a', eventType: 'user_message', participantId: null, sourceSessionId: '',
+      topicId: '', createdAtMs: 1, resumeToken: 'room-a:1',
+      payload: { messageId: 'post-accepted', clientMessageId: 'message-1', text: 'original draft' },
+    };
+    const user = parseRoomEvent(userWire);
+    const completed = parseRoomEvent({ ...userWire, eventId: 'room-a:2', sequence: 2,
+      eventType: 'turn_completed', createdAtMs: 2, resumeToken: 'room-a:2',
+      payload: { rootId: 'root-a', status: 'completed' },
+    });
+    let calls = 0;
+    const transport = new MockControlTransport({ routes: { 'agent.room.message': () => {
+      if (++calls === 1) {
+        useRoomLiveStore.getState().applyEvents('room-a', [user, completed]);
+        throw new TypeError('lost ACK after completed SSE');
+      }
+      return { ok: true, idempotentReplay: true, timelineEvents: [userWire] };
+    } } });
+    expect((await startRoomSend(transport, 'room-a', attempt())!.settled).status).toBe('uncertain');
+    const before = useRoomLiveStore.getState().projections['room-a'];
+    expect(before.turnsById['root-a'].status).toBe('completed');
+    expect(before.turnOrder).toEqual(['root-a']);
+    const retry = startRoomSend(transport, 'room-a', attempt())!;
+    // The pending HTTP lookup itself must not create another queued UI round.
+    expect(useRoomLiveStore.getState().projections['room-a']).toBe(before);
+    expect((await retry.settled).status).toBe('accepted');
+    const after = useRoomLiveStore.getState().projections['room-a'];
+    expect(after).toBe(before);
+    expect(after.lastSequence).toBe(2);
+    expect(after.messageOrder).toEqual(['post-accepted']);
+    expect(after.turnOrder).toEqual(['root-a']);
+    expect(after.turnsById['root-a'].status).toBe('completed');
+    expect(after.optimisticByClientMessageId).toEqual({});
+    expect(roomSendJournal(transport, 'room-a').getSnapshot()).toBeUndefined();
+    expect(transport.requests[1].request).toEqual(transport.requests[0].request);
+  });
+
   it('claims one command synchronously across surfaces while allowing a different Room to send', async () => {
     const pending = deferred<{ ok: true }>();
     const transport = new MockControlTransport({ routes: { 'agent.room.message': pending.promise } });

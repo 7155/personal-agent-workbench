@@ -1,4 +1,5 @@
 import {
+  reconcileDuplicateRoomUserAcknowledgement,
   reduceRoomEvent,
   type RoomProjectionState,
 } from '@/contracts/room-reducer';
@@ -30,8 +31,13 @@ export function mergeAcceptedRoomTimeline(
   let next = state;
   for (const event of events) {
     const reduced = reduceRoomEvent(next, event);
-    if (reduced.disposition === 'snapshot-required') return state;
+    if (reduced.disposition === 'snapshot-required'
+      || reduced.disposition === 'ignored-foreign'
+      || reduced.disposition === 'ignored-snapshot-pending') return state;
     if (reduced.disposition === 'applied') next = reduced.state;
+    else if (reduced.disposition === 'ignored-duplicate') {
+      next = reconcileDuplicateRoomUserAcknowledgement(next, event);
+    }
   }
   return next;
 }

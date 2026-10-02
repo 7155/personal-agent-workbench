@@ -1009,6 +1009,20 @@ describe('RoomEventReducer', () => {
     });
   });
 
+  it('does not append another optimistic turn for an already accepted Room client identity', () => {
+    const accepted = reduceRoomEvent(createRoomProjection('room-1'), roomEvent(1, 'user_message', {
+      messageId: 'accepted-user', clientMessageId: 'already-accepted', text: 'original request',
+    })).state;
+    const retry = appendOptimisticRoomMessage(accepted, {
+      clientMessageId: 'already-accepted', text: 'changed retry must not rebind', nowMs: 100,
+    });
+    expect(retry).toBe(accepted);
+    expect(retry.messageOrder).toEqual(['accepted-user']);
+    expect(retry.turnOrder).toEqual(['room-turn-1']);
+    expect(retry.optimisticByClientMessageId).toEqual({});
+    expect(retry.messagesById['accepted-user'].text).toBe('original request');
+  });
+
   it('merges optimistic room input by clientMessageId and keeps unknown events', () => {
     const optimistic = appendOptimisticRoomMessage(createRoomProjection('room-1'), {
       clientMessageId: 'room-client-1',

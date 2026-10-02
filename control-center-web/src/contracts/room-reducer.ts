@@ -488,6 +488,14 @@ export function appendOptimisticRoomMessage(
 ): RoomProjectionState {
   if (!input.clientMessageId.trim()) throw new TypeError('clientMessageId must not be empty');
   if (state.optimisticByClientMessageId[input.clientMessageId]) return state;
+  // SSE can commit this input before a lost HTTP acknowledgement is retried.
+  // That lookup must not manufacture another queued turn for the same send.
+  if (Object.values(state.messagesById).some((message) => (
+    message.roomId === state.roomId
+    && message.role === 'user'
+    && message.projectionKind !== 'optimistic'
+    && message.clientMessageId === input.clientMessageId
+  ))) return state;
   const next = cloneState(state);
   const id = `local-room:${input.clientMessageId}`;
   const requestedAnswerToPostId = text(input.answerToPostId);
@@ -532,6 +540,29 @@ export function appendOptimisticRoomMessage(
   next.optimisticByClientMessageId[input.clientMessageId] = id;
   attachMessage(next, message);
   if (!answerToPostId) next.turnsById[turnId].status = 'queued';
+  return next;
+}
+
+/** A validated old HTTP user receipt can resolve its exact local placeholder
+ * after canonical history has been trimmed. Do not replay its old Root or
+ * advance the cursor; the acknowledgement owns only this presentation copy. */
+export function reconcileDuplicateRoomUserAcknowledgement(
+  state: RoomProjectionState,
+  event: UiRoomEvent,
+): RoomProjectionState {
+  if (event.roomId !== state.roomId || event.eventType !== 'user_message'
+    || event.sequence <= 0 || event.sequence > state.lastSequence) return state;
+  const clientMessageId = text(publicRoomPayload(event.payload).clientMessageId);
+  const messageId = state.optimisticByClientMessageId[clientMessageId];
+  const message = messageId ? state.messagesById[messageId] : undefined;
+  if (!messageId || !message || message.id !== messageId || message.roomId !== event.roomId
+    || message.clientMessageId !== clientMessageId || message.role !== 'user'
+    || message.projectionKind !== 'optimistic') return state;
+  const next = cloneState(state);
+  delete next.messagesById[messageId];
+  delete next.optimisticByClientMessageId[clientMessageId];
+  next.messageOrder = next.messageOrder.filter((id) => id !== messageId);
+  detachMessage(next, message);
   return next;
 }
 
