@@ -38,6 +38,7 @@ from rag_ime.pi.values import (
     PiRuntimeCommandRejected,
     PiRuntimeSettlementLookupTimeout,
 )
+from tests.sqlite_fixtures import copy_current_database
 
 
 FAKE_HOST = r'''#!/usr/bin/env python3
@@ -84,6 +85,7 @@ for line in sys.stdin:
                          "piVersion": "0.80.7", "capabilities": {"multiSession": True, "maxSessions": 4,
                          "settledEvents": True, "dynamicTools": True, "managedPlugins": True,
                          "sessionControlState": True,
+                         "sessionBoundAbort": True,
                          "sessionSkillAllowlist": True,
                          "sessionResourceDisclosure": True,
                          "sessionCandidateSkillPaths": True,
@@ -491,6 +493,8 @@ class PiRuntimeV2Tests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-pi-v2-")
         self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        copy_current_database(self.root / "rag-ime.sqlite")
         self.fake_host = self.root / "fake-host"
         self.fake_host.write_text(FAKE_HOST, encoding="utf-8")
         self.fake_host.chmod(0o755)
@@ -7042,6 +7046,75 @@ class PiRuntimeV2Tests(unittest.TestCase):
 
         with patch.object(client, "send", side_effect=observe_send):
             self.runtime.abort(session_id)
+
+    def test_cancelled_admission_ack_never_reopens_gateway_before_exact_abort(self) -> None:
+        self._assert_cancelled_admission_ack_stays_fenced("")
+
+    def test_cancelled_admission_ack_fence_failure_still_delivers_exact_abort(self) -> None:
+        self._assert_cancelled_admission_ack_stays_fenced("client:pending", fail_fence=True)
+
+    def _assert_cancelled_admission_ack_stays_fenced(self, client_id: str, *, fail_fence: bool = False) -> None:
+        session_id = str(self.first["id"])
+        turn_id = "turn:late-ack"
+        self.runtime.ensure(session_id)
+        client = self.runtime._require_client()
+        original_send, original_abort = client.send, self.runtime.abort
+        observed, targets = [], []
+
+        def send(method, params=None, *, timeout=None, before_write=None):
+            if method == "session.prompt":
+                if before_write:
+                    before_write()
+                self.runtime.abort_with_approval_fence(session_id,
+                    lambda identity: self.store.cancel_pending_approvals(session_id,
+                        turn_id=identity["turnId"], client_message_id=identity["clientMessageId"]))
+                return {"accepted": True, "turnId": turn_id}
+            if method == "session.abort":
+                targets.append(dict(params))
+                raise PiRuntimeCommandRejected("target retired", host_error_code="ABORT_TARGET_MISMATCH")
+            return original_send(method, params, timeout=timeout, before_write=before_write)
+
+        def inspect_before_abort(sid, **kwargs):
+            if "_expected_identity" in kwargs:
+                observed.append(self.runtime.is_gateway_turn_active(sid, turn_id, client_message_id=client_id))
+            return original_abort(sid, **kwargs)
+
+        original_cancel = self.store.cancel_pending_approvals
+        def cancel(sid, **kwargs):
+            if fail_fence and kwargs.get("turn_id") == turn_id:
+                raise OSError("isolated fence storage failure")
+            return original_cancel(sid, **kwargs)
+
+        original_set_status = self.store.set_status
+        def set_status(sid, status, **kwargs):
+            if fail_fence and self.runtime._states[sid].abort_requested_turn_id == turn_id:
+                raise OSError("isolated status storage failure")
+            return original_set_status(sid, status, **kwargs)
+
+        original_publish = self.events.publish
+        def publish(sid, *args, **kwargs):
+            if fail_fence and self.runtime._states[sid].abort_requested_turn_id == turn_id:
+                raise OSError("isolated event storage failure")
+            return original_publish(sid, *args, **kwargs)
+
+        with patch.object(client, "send", side_effect=send), \
+             patch.object(self.runtime, "abort", side_effect=inspect_before_abort), \
+             patch.object(self.store, "cancel_pending_approvals", side_effect=cancel), \
+             patch.object(self.store, "set_status", side_effect=set_status), \
+             patch.object(self.events, "publish", side_effect=publish), \
+             patch.object(self.runtime, "_deliver_pending_admission_abort", return_value=None):
+            if fail_fence:
+                with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+                    self.runtime.prompt(session_id, "stop during admission", client_message_id=client_id)
+            else:
+                self.assertTrue(self.runtime.prompt(session_id, "stop during admission", client_message_id=client_id)["abortRequested"])
+        self.assertEqual(observed, [False])
+        self.assertEqual(targets, [{"sessionId": session_id, "expectedTurnId": turn_id, "clientMessageId": client_id}])
+        self.assertFalse(self.runtime.is_gateway_turn_active(session_id, turn_id, client_message_id=client_id))
+        if not fail_fence:
+            with self.store._read_connect() as conn:
+                self.assertIsNotNone(conn.execute("SELECT 1 FROM agent_gateway_cancelled_turns WHERE session_id = ? AND turn_id = ?",
+                    (session_id, turn_id)).fetchone())
 
     def test_abort_during_prompt_admission_reaches_host_before_prompt_ack(
         self,

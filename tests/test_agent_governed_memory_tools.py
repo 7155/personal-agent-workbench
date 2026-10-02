@@ -1086,12 +1086,15 @@ class GovernedMemoryToolTests(unittest.TestCase):
         )
 
     def _execute(self, tool: str, operation: str, **args: object) -> dict[str, object]:
+        # Each helper invocation is a new model tool call. Proposal-level
+        # idempotency is still checked with repeated intent below the Gateway.
+        self.tool_call_ordinal = getattr(self, "tool_call_ordinal", 0) + 1
         return self.gateway.execute(
             {
                 "schemaVersion": "rag-ime.agent-tool-call.v1",
                 "sessionId": self.session["id"],
                 "tool": tool,
-                "toolCallId": f"tool:{tool}:{operation}",
+                "toolCallId": f"tool:{tool}:{operation}:{self.tool_call_ordinal}",
                 "args": {"op": operation, **args},
             }
         )

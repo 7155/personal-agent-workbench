@@ -424,6 +424,7 @@ class PiRuntimeHostManager:
                 "sessionControlState": bool(
                     capabilities.get("sessionControlState")
                 ),
+                "sessionBoundAbort": capabilities.get("sessionBoundAbort") is True,
                 "sessionSnapshot": True,
                 "settledEvents": True,
                 "statelessCompletion": (
@@ -471,6 +472,50 @@ class PiRuntimeHostManager:
                 and state.client_message_id == client_message_id
                 and state.abort_requested_turn_id != turn_id
             )
+
+    def is_gateway_turn_active(self, session_id: str, turn_id: str, *, client_message_id: str) -> bool:
+        """Observe exact Gateway ownership, including HTTP before prompt ACK.
+
+        Empty clientMessageId is an exact value for native Room turns, never a
+        wildcard. Only an unresolved locally dispatched admission may query
+        the already-open Host; this path never ensures or restores a Session.
+        """
+        if not session_id or not turn_id:
+            return False
+        with self._lock:
+            state = self._states.get(session_id)
+            client = self._client
+            if (client is None or not client.running or session_id not in self._open_sessions
+                or state is None or state.abort_pending_admission
+                or state.abort_requested_turn_id or turn_id in state.retired_turn_ids
+                or (session_id, turn_id) in self._retired_host_turns):
+                return False
+            if state.turn_id:
+                return state.turn_id == turn_id and state.client_message_id == client_message_id
+            if (not state.prompt_admission_in_flight or not state.prompt_dispatched
+                or state.admission_client_message_id != client_message_id
+                or not self._host_capabilities.get("sessionControlState")):
+                return False
+        # JSONL request dispatcher handles this read independently of tool
+        # execution. The client write lock is released before response waiting.
+        try:
+            observed = client.send("session.control_state", {"sessionId": session_id}, timeout=5)
+        except Exception:
+            return False
+        active = observed.get("activeTurn")
+        if (observed.get("sessionId") != session_id or observed.get("isIdle") is not False
+            or not isinstance(active, Mapping) or str(active.get("turnId") or "") != turn_id
+            or str(active.get("clientMessageId") or "") != client_message_id):
+            return False
+        with self._lock:
+            state = self._states.get(session_id)
+            return bool(self._client is client and client.running and session_id in self._open_sessions
+                and state is not None and not state.abort_pending_admission
+                and not state.abort_requested_turn_id and turn_id not in state.retired_turn_ids
+                and (session_id, turn_id) not in self._retired_host_turns
+                and ((state.turn_id == turn_id and state.client_message_id == client_message_id)
+                    or (not state.turn_id and state.prompt_admission_in_flight and state.prompt_dispatched
+                        and state.admission_client_message_id == client_message_id)))
 
     def panic_kill(self, *, requested_by: str, reason: str) -> dict[str, object]:
         """Immediately kill the registered Host process tree after admin auth."""
@@ -1568,6 +1613,7 @@ class PiRuntimeHostManager:
             # released above; a delayed failure must not clear a newer owner.
             raise
         turn_id = str(accepted.get("turnId") or "")
+        admission_fence_error: Exception | None = None
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
             owns_admission = (state.prompt_admission_in_flight
@@ -1594,8 +1640,25 @@ class PiRuntimeHostManager:
             if project_accepted:
                 state.turn_id = turn_id
                 state.client_message_id = normalized_client_message_id
+                if abort_after_admission:
+                    # ACK supplies the exact identity that pending Stop lacked.
+                    # Keep authority cancelled while handing it to bound abort;
+                    # a Gateway request may already have passed observation and
+                    # still be waiting to INSERT its approval.
+                    state.abort_requested_turn_id = turn_id
+                    try:
+                        self.sessions.cancel_pending_approvals(session_id, turn_id=turn_id)
+                    except Exception as exc:
+                        # Keep local authority closed and still deliver native
+                        # cancellation below; storage failure is not settlement.
+                        admission_fence_error = exc
                 self._status = "busy"
-                self.sessions.set_status(session_id, "busy", last_message_preview=public_prompt_preview)
+                try:
+                    self.sessions.set_status(session_id, "busy", last_message_preview=public_prompt_preview)
+                except Exception as exc:
+                    if not abort_after_admission:
+                        raise
+                    admission_fence_error = admission_fence_error or exc
         if project_accepted:
             if not already_aborting and not abort_after_admission:
                 self.events.publish(
@@ -1610,11 +1673,14 @@ class PiRuntimeHostManager:
                 # through the ordinary Pi Session abort path. Its timer owns
                 # the existing one-second escalation if the Host never settles.
                 try:
-                    self.abort_turn(session_id, turn_id=turn_id,
-                        client_message_id=normalized_client_message_id,
-                        cancel_id="prompt-stop:" + normalized_client_message_id)
+                    self.abort(session_id, _expected_identity={"turnId": turn_id,
+                        "clientMessageId": normalized_client_message_id})
                 except Exception:
                     pass
+        if admission_fence_error is not None:
+            raise PiRuntimeCommandAcceptanceUnknown(
+                "Pi accepted the cancelled admission, but its durable Stop fence could not be persisted"
+            ) from admission_fence_error
         # A retired turn's delayed ACK is still an acceptance receipt, but
         # terminal reconciliation owns its status. It must not clear or publish
         # idle over a subsequent reservation/turn, including a pending Stop.
@@ -3904,29 +3970,33 @@ class PiRuntimeHostManager:
         """Use Pi's native abort while prompt preflight ACK is still pending."""
 
         try:
+            if self._host_capabilities.get("sessionBoundAbort") is not True:
+                raise PiRuntimeError("Pi Runtime Host cannot bind Stop to its original admission; update the managed Runtime")
+            target: dict[str, object] = {"sessionId": session_id}
+            if admission_client_message_id:
+                target["expectedClientMessageId"] = admission_client_message_id
+            else:
+                turn_id = self.sessions.cancelled_gateway_admission_turn(session_id, "")
+                if not turn_id:
+                    raise PiRuntimeError("pending Room Stop needs its exact accepted turn before cancellation")
+                target.update(expectedTurnId=turn_id, clientMessageId="")
             self._require_client().send(
                 "session.abort",
-                {"sessionId": session_id},
+                target,
                 timeout=1.0,
             )
-        except Exception:
+        except Exception as exc:
             with self._lock:
                 state = self._states.get(session_id)
-                if (
-                    state is not None
-                    and state.admission_client_message_id
-                    == admission_client_message_id
-                ):
-                    state.admission_abort_dispatched = False
-            self.events.publish(
-                session_id,
-                "status_changed",
-                {
-                    "status": "aborting",
-                    "pendingAdmission": True,
-                    "escalated": True,
-                },
-            )
+                if (state is None or not state.prompt_admission_in_flight
+                    or state.admission_client_message_id != admission_client_message_id):
+                    return
+                state.admission_abort_dispatched = False
+                if isinstance(exc, PiRuntimeCommandRejected) and exc.host_error_code == "ABORT_TARGET_MISMATCH":
+                    return
+                self.events.publish(session_id, "status_changed", {
+                    "status": "aborting", "pendingAdmission": True, "escalated": True,
+                })
 
     def abort_turn(
         self,
@@ -4022,10 +4092,38 @@ class PiRuntimeHostManager:
                         value["projectionSync"] = {"state": "pending", "failedOperations": ["status_changed"]}
         return value
 
-    def abort(self, session_id: str) -> dict[str, object]:
+    def abort_with_approval_fence(
+        self,
+        session_id: str,
+        before_abort: Callable[[Mapping[str, object]], None],
+    ) -> dict[str, object]:
+        """Let the Session owner persist the selected Stop before Host RPC."""
+        return self.abort(session_id, _before_abort=before_abort)
+
+    def abort(
+        self,
+        session_id: str,
+        *,
+        _before_abort: Callable[[Mapping[str, object]], None] | None = None,
+        _expected_identity: Mapping[str, str] | None = None,
+    ) -> dict[str, object]:
+        abort_projection_failed = False
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
             turn_id = state.turn_id
+            client_message_id = state.client_message_id
+            if _expected_identity is not None and (
+                turn_id != _expected_identity["turnId"]
+                or client_message_id != _expected_identity["clientMessageId"]
+            ):
+                raise PiRuntimeTurnConflict("Stop target changed before its exact turn could be cancelled")
+            if _before_abort is not None:
+                _before_abort({
+                    "turnId": turn_id,
+                    "pendingAdmission": bool(not turn_id and state.prompt_admission_in_flight),
+                    "clientMessageId": (state.client_message_id if turn_id
+                        else state.admission_client_message_id),
+                })
             if turn_id and (
                 (session_id, turn_id) in self._retired_host_turns
                 or turn_id in state.retired_turn_ids
@@ -4135,6 +4233,8 @@ class PiRuntimeHostManager:
                 }
             # Mark the exact turn before sending the RPC. The host is allowed
             # to emit agent_settled before the abort ACK reaches this thread.
+            if self._host_capabilities.get("sessionBoundAbort") is not True:
+                raise PiRuntimeError("Pi Runtime Host cannot bind Stop to its original turn; update the managed Runtime")
             state.abort_requested_turn_id = turn_id
             if state.abort_timer is not None:
                 state.abort_timer.cancel()
@@ -4150,20 +4250,37 @@ class PiRuntimeHostManager:
             # second for the Host ACK. Stop feedback must not depend on a
             # provider, Tool, or process that is precisely what we are
             # attempting to cancel.
-            self.events.publish(
-                session_id,
-                "status_changed",
-                {"status": "aborting"},
-                turn_id=turn_id,
-            )
+            try:
+                self.events.publish(
+                    session_id,
+                    "status_changed",
+                    {"status": "aborting"},
+                    turn_id=turn_id,
+                )
+            except Exception:
+                if _expected_identity is None:
+                    raise
+                # A cancelled admission's ACK must still deliver exact native
+                # Stop even when its durable status projection is unavailable.
+                abort_projection_failed = True
         client = self._require_client()
         try:
             result = client.send(
                 "session.abort",
-                {"sessionId": session_id},
+                {"sessionId": session_id, "expectedTurnId": turn_id,
+                    "clientMessageId": client_message_id},
                 timeout=1.0,
             )
-        except Exception:
+        except Exception as exc:
+            if isinstance(exc, PiRuntimeCommandRejected) and exc.host_error_code == "ABORT_TARGET_MISMATCH":
+                # The Host proved this Stop did not touch its current target.
+                # Do not turn that rejection into a later shared-Host kill.
+                timer.cancel()
+                with self._lock:
+                    state = self._states.get(session_id)
+                    if state is not None and state.abort_timer is timer:
+                        state.abort_timer = None
+                raise
             with self._lock:
                 state = self._states.get(session_id)
                 if state is not None and state.abort_requested_turn_id == turn_id:
@@ -4195,6 +4312,9 @@ class PiRuntimeHostManager:
             or (response_turn_id != turn_id and not host_already_idle)
         ):
             raise PiRuntimeError("Pi Runtime Host returned an invalid Session abort receipt")
+        if abort_projection_failed:
+            result = dict(result)
+            result["projectionSync"] = {"state": "pending", "failedOperations": ["status_changed"]}
         if host_already_idle:
             # Pi owns the live Run. It can settle between PAW reading the local
             # turn fence and handling session.abort, in which case there is no

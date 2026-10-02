@@ -1014,7 +1014,7 @@ class AgentCapabilityPolicyTests(unittest.TestCase):
         self.assertIsInstance(collaboration, _RoomCapabilityGateway)
         with self.assertRaisesRegex(ValueError, "read-only policy"):
             gateway._execute_product_tool(
-                request={},
+                request={"sessionId": managed_id},
                 session=managed,
                 tool="workspace_patch",
                 args={"op": "apply"},

@@ -74,6 +74,7 @@ from .agent_routes import (
 )
 from .agent_tool_artifacts import AgentToolArtifactProjector
 from .agent_tools import ControlToolGateway
+from .agent_gateway_requests import GatewayRequestConflict, GatewayRequestUnresolved
 from .agent_workspace import WorkspaceHarnessError, WorkspaceSnapshotError
 from .adapter import InputMethodAdapter, SuggestionRequest
 from .assistant_overlay import build_assistant_overlay_payload, build_candidate_panel_payload
@@ -9680,6 +9681,18 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                     return
                 try:
                     result = self.service.agent_tools.execute(self._read_json())
+                except (GatewayRequestConflict, GatewayRequestUnresolved) as exc:
+                    self._write_json(
+                        HTTPStatus.CONFLICT,
+                        {
+                            "schemaVersion": "rag-ime.agent-tool-error.v1",
+                            "ok": False,
+                            "error": str(exc),
+                            "errorCode": exc.error_code,
+                            "retryable": False,
+                        },
+                    )
+                    return
                 except WorkspaceSnapshotError as exc:
                     self._write_json(
                         HTTPStatus.CONFLICT,

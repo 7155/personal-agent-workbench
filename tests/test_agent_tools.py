@@ -28,6 +28,7 @@ from rag_ime.agent_tools import (
 from rag_ime.agent_workspace import WorkspaceHarness, WorkspaceHarnessError
 from rag_ime.contracts.json_schema import validate_contract
 from rag_ime.work_documents import WorkDocumentService
+from tests.sqlite_fixtures import copy_current_database
 
 
 class _Management:
@@ -675,6 +676,8 @@ class _Facade:
 class ControlToolGatewayTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-agent-tools-")
+        self.addCleanup(self.tmp.cleanup)
+        copy_current_database(Path(self.tmp.name) / "rag-ime.sqlite")
         self.previous_support_dir = os.environ.get("RAG_IME_APP_SUPPORT_DIR")
         os.environ["RAG_IME_APP_SUPPORT_DIR"] = str(Path(self.tmp.name) / "support")
         self.store = AgentSessionStore(Path(self.tmp.name) / "rag-ime.sqlite")
@@ -2639,6 +2642,9 @@ class ControlToolGatewayTests(unittest.TestCase):
         self.assertEqual(self.store.agent_goal(session_id)["status"], "active")
 
         room_events.present = True
+        # A changed prerequisite is a new invocation, not a replay of the
+        # earlier admission whose outcome is retained under its original ID.
+        tool_call["toolCallId"] = "tool:terminal-ordering-after-result"
         completed = gateway.execute(tool_call)["result"]
         self.assertEqual(completed["goal"]["status"], "completed")
         self.assertEqual(
@@ -6204,11 +6210,12 @@ class ControlToolGatewayTests(unittest.TestCase):
         return self._tool_call("memory", operation, **args)
 
     def _tool_call(self, tool: str, operation: str, **args):
+        self.tool_call_ordinal = getattr(self, "tool_call_ordinal", 0) + 1
         return {
             "schemaVersion": "rag-ime.agent-tool-call.v1",
             "sessionId": self.session["id"],
             "tool": tool,
-            "toolCallId": "tool:1",
+            "toolCallId": f"tool:{self.tool_call_ordinal}",
             "args": {"op": operation, **args},
         }
 

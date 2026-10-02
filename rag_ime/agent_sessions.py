@@ -3322,18 +3322,40 @@ class AgentSessionStore:
             "createdAtMs": timestamp,
         }
 
+    def pending_approval_ids(self, session_id: str) -> tuple[str, ...]:
+        """Capture the finite legacy Stop scope without inventing a turn."""
+        self.get(session_id)
+        with self._read_connect() as conn:
+            return tuple(str(row[0]) for row in conn.execute(
+                "SELECT approval_id FROM agent_approvals WHERE session_id = ? AND state IN ('pending', 'approved')",
+                (session_id,),
+            ))
+
+    def cancelled_gateway_admission_turn(self, session_id: str, client_message_id: str) -> str:
+        """Return only one durably cancelled, unfinished admission's turn."""
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT request.turn_id FROM agent_gateway_requests AS request JOIN agent_gateway_cancelled_turns AS stopped ON stopped.session_id = request.session_id AND stopped.turn_id = request.turn_id WHERE request.session_id = ? AND request.client_message_id = ? AND request.turn_id <> '' AND (request.state <> 'completed' OR EXISTS (SELECT 1 FROM agent_approvals AS approval WHERE approval.session_id = request.session_id AND approval.tool_call_id = request.tool_call_id AND (approval.state IN ('pending', 'approved') OR (approval.state = 'stale' AND approval.decided_by = 'runtime-cancellation')))) LIMIT 2",
+                (session_id, client_message_id),
+            ).fetchall()
+        return str(rows[0][0]) if len(rows) == 1 else ""
+
     def cancel_pending_approvals(
         self,
         session_id: str,
         *,
         reason: str = "user_abort",
         turn_id: str = "",
+        client_message_id: str | None = None,
+        approval_ids: Sequence[str] | None = None,
         now_ms: int | None = None,
     ) -> dict[str, object]:
         """Close pending approvals when the owning turn is aborted.
 
-        The update is conditional and therefore safe to repeat after a late
-        runtime callback or a second stop request.
+        An exact turn never scans another bound turn. Unbound legacy rows are
+        limited to those present in this transaction (or an explicit captured
+        set). With no identity or captured set, the older Session-wide caller
+        retains its explicit legacy behavior.
         """
 
         self.get(session_id)
@@ -3342,8 +3364,18 @@ class AgentSessionStore:
         normalized_turn_id = " ".join(str(turn_id or "").split())[:240]
         cancelled: list[str] = []
         executing: list[str] = []
+        captured_ids = set(approval_ids) if approval_ids is not None else None
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            target_turn_ids = {normalized_turn_id} if normalized_turn_id else set()
+            if client_message_id is not None and not normalized_turn_id:
+                target_turn_ids.update(str(row[0]) for row in conn.execute(
+                    "SELECT DISTINCT request.turn_id FROM agent_gateway_requests AS request WHERE request.session_id = ? AND request.client_message_id = ? AND request.turn_id <> '' AND (request.state <> 'completed' OR EXISTS (SELECT 1 FROM agent_approvals AS approval WHERE approval.session_id = request.session_id AND approval.tool_call_id = request.tool_call_id AND approval.state IN ('pending', 'approved')))",
+                    (session_id, client_message_id),
+                ))
+            for target_turn_id in target_turn_ids:
+                conn.execute("INSERT OR IGNORE INTO agent_gateway_cancelled_turns VALUES (?, ?, ?)",
+                    (session_id, target_turn_id, timestamp))
             rows = conn.execute(
                 """
                 SELECT *
@@ -3355,10 +3387,17 @@ class AgentSessionStore:
             ).fetchall()
             for row in rows:
                 approval_id = str(row["approval_id"])
+                if captured_ids is not None and approval_id not in captured_ids:
+                    continue
+                causal_turn_id = str(row["causal_turn_id"] or "")
+                if causal_turn_id and (
+                    (target_turn_ids and causal_turn_id not in target_turn_ids)
+                    or (not target_turn_ids and client_message_id is not None)
+                ):
+                    continue
                 if int(row["execution_claimed_at_ms"] or 0) > 0:
                     executing.append(approval_id)
                     continue
-                causal_turn_id = str(row["causal_turn_id"] or "")
                 receipt = {
                     "schemaVersion": (
                         "rag-ime.agent-approval-cancellation.v1"
@@ -3412,6 +3451,7 @@ class AgentSessionStore:
         *,
         session_id: str,
         tool_call_id: str,
+        turn_id: str = "",
         room_context: Mapping[str, object] | None = None,
     ) -> Iterator[None]:
         """Bind one request identity to any approval created in this call.
@@ -3464,6 +3504,7 @@ class AgentSessionStore:
             {
                 "sessionId": normalized_session_id,
                 "toolCallId": normalized_tool_call_id,
+                "turnId": str(turn_id),
                 "roomContext": normalized_room_context,
             }
         )
@@ -3536,6 +3577,8 @@ class AgentSessionStore:
                 preview=preview,
                 supplied=causal_metadata,
             )
+            if request_context.get("turnId"):
+                causal["turnId"] = str(request_context["turnId"])
             if room_context is not None:
                 causal.update(
                     {
@@ -3766,7 +3809,12 @@ class AgentSessionStore:
                 row["current_execution_mode"],
                 tool_profile_version=row["current_tool_profile_version"],
             )
-            if current_mode == READ_ONLY_EXECUTION_MODE:
+            stopped = conn.execute("SELECT 1 FROM agent_gateway_cancelled_turns WHERE session_id = ? AND turn_id = ?",
+                (str(row["session_id"]), str(row["causal_turn_id"] or ""))).fetchone()
+            if stopped is not None:
+                conn.execute("UPDATE agent_approvals SET state = 'stale', decided_at_ms = ?, decided_by = 'runtime-cancellation' WHERE approval_id = ? AND state = 'approved' AND execution_claimed_at_ms = 0",
+                    (timestamp, approval_id))
+            elif current_mode == READ_ONLY_EXECUTION_MODE:
                 conn.execute(
                     """
                     UPDATE agent_approvals

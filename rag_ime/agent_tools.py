@@ -35,6 +35,7 @@ from .agent_execution_policy import (
 )
 from .agent_background_jobs import AgentBackgroundJobService
 from .agent_workspace_commands import WorkspaceCommandOwner
+from .agent_gateway_requests import GatewayRequestStore
 from .agent_memory_sources import AgentMemorySourceStore
 from .agent_role_book import AgentRoleBookStore
 from .agent_tool_ids import (
@@ -3103,6 +3104,7 @@ class ControlToolGateway:
         memory_enabled_provider: Callable[[], bool] | None = None,
     ) -> None:
         self.sessions = sessions
+        self.gateway_requests = GatewayRequestStore(sessions)
         self.management = management
         self.core = core
         self.project = project
@@ -3676,6 +3678,42 @@ class ControlToolGateway:
     def execute(self, payload: Mapping[str, object]) -> dict[str, object]:
         request = dict(payload)
         validate_contract(request, "agent-tool-call.v1.json")
+        tool, args = _normalize_runtime_tool_call(str(request["tool"]), request["args"])
+        request.update(tool=tool, args=args)
+        replay = self.gateway_requests.admit(request)
+        if replay is not None:
+            return replay
+        try:
+            response = self._execute_admitted(request)
+            self.gateway_requests.complete(request, response)
+            return response
+        except BaseException:
+            # Keep admission even if storage also fails: an unfinished claim is
+            # unknown on reopen and must never become a fresh effect.
+            try:
+                self.gateway_requests.unknown(request)
+            except Exception:
+                pass
+            raise
+
+    def _require_request_owner(self, request: Mapping[str, object]) -> None:
+        session_id = str(request["sessionId"])
+        binding = request.get("executionBinding")
+        if isinstance(binding, Mapping):
+            runtime = getattr(self.collaboration, "runtime", None)
+            inspect = getattr(runtime, "is_gateway_turn_active", None)
+            if not callable(inspect) or not inspect(session_id, str(binding["turnId"]),
+                client_message_id=str(binding["clientMessageId"])):
+                raise ValueError("tool request belongs to an inactive Runtime turn")
+        supplied = request.get("roomCapability")
+        if isinstance(supplied, Mapping):
+            live = self._room_dispatch_context(session_id)
+            if live is None or any(supplied.get(key) != live.get(key)
+                for key in ("roomId", "rootId", "dispatchId", "generation")):
+                raise ValueError("tool request belongs to a stale Room dispatch")
+
+    def _execute_admitted(self, request: Mapping[str, object]) -> dict[str, object]:
+        self._require_request_owner(request)
         session_id = str(request["sessionId"])
         session = self.sessions.get(session_id)
         if session.get("status") == "archived":
@@ -3746,6 +3784,10 @@ class ControlToolGateway:
         if tool == "workspace_shell":
             context = self._room_dispatch_context(session_id)
             def cancelled() -> bool:
+                try:
+                    self._require_request_owner(request)
+                except Exception:
+                    return True
                 if context is None:
                     return False
                 live = self._room_dispatch_context(session_id)
@@ -3771,6 +3813,7 @@ class ControlToolGateway:
         operation: str,
     ) -> dict[str, object]:
         session_id = str(session["id"])
+        self._require_request_owner(request)
         # Re-read immediately before authorization/approval so a waiting Room
         # Dispatch cannot apply a mutation after its workspace lease becomes
         # read-only.
@@ -3790,6 +3833,14 @@ class ControlToolGateway:
         # The overlay never changes the persisted Session mode or workspace
         # lease; ``approval_strategy`` still enforces both and hard fences.
         room_dispatch_context = self._room_dispatch_context(session_id)
+        supplied_room = request.get("roomCapability")
+        if isinstance(supplied_room, Mapping) and (
+            room_dispatch_context is None or any(
+                supplied_room.get(key) != room_dispatch_context.get(key)
+                for key in ("roomId", "rootId", "dispatchId", "generation")
+            )
+        ):
+            raise ValueError("tool request belongs to a stale Room dispatch")
         room_dispatch_authorized = (
             not read_only_policy_active(session)
             and room_dispatch_context is not None
@@ -3950,6 +4001,8 @@ class ControlToolGateway:
             with self.sessions.approval_creation_scope(
                 session_id=session_id,
                 tool_call_id=str(request["toolCallId"]),
+                turn_id=(str(request["executionBinding"]["turnId"])
+                    if isinstance(request.get("executionBinding"), Mapping) else ""),
                 room_context=(
                     room_dispatch_context
                     if room_dispatch_authorized
@@ -3970,6 +4023,7 @@ class ControlToolGateway:
             )
             if approval is None:
                 raise ValueError("approval preparation returned no approval")
+            self._require_request_owner(request)
             result = dict(result)
             result["approval"] = self.sessions.bind_approval_tool_call(
                 str(approval.get("approvalId") or ""),

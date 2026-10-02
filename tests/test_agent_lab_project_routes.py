@@ -128,7 +128,10 @@ class LabProjectRouteTests(unittest.TestCase):
                 execution = service.eval_lab_project_tool(session_id, "execution_read", {"bindingId": current["bindings"][0]["bindingId"]})
                 self.assertEqual([item["suiteId"] for item in execution["execution"]["items"]], [suite["suiteId"]])
                 self.assertNotIn(other_suite["suiteId"], str(execution))
-                self.assertTrue(gateway.execute(call)["result"]["replayed"])
+                # Gateway retries preserve the original response byte-for-byte;
+                # a fresh Tool invocation reaches the Lab command replay owner.
+                self.assertEqual(gateway.execute(call)["result"], published)
+                self.assertTrue(gateway.execute({**call, "toolCallId": "publish-artifact-again"})["result"]["replayed"])
                 write_app(Path(current['executionWorkspace']['path']))
                 prepared = service.eval_lab_project_tool(session_id,'command',{'action':'prepare_app',
                     'expectedRevision':published['project']['revision'],'clientRequestId':'prepare-app','input':{'directory':'app'}})
