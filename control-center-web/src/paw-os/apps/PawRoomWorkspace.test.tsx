@@ -34,6 +34,33 @@ afterEach(() => {
 });
 
 describe('PAWOS Room collaboration tools', () => {
+  it('restores the default round scroller within its connection-scoped Room reading owner', async () => {
+    const source = previewRoomSnapshot('room-reading-workspace');
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1600);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const top = this.dataset.roundId ? 100 - ((this.closest('.paw-room-rounds') as HTMLElement | null)?.scrollTop ?? 0) : 100;
+      return { top, bottom: top + 1600, height: 1600, left: 0, right: 700, width: 700, x: 0, y: top, toJSON: () => ({}) };
+    });
+    try {
+      const mounted = renderRoom(900, vi.fn(), source.room as unknown as RoomSummary, source);
+      Object.defineProperty(mounted.controlTransport, 'connectionIdentity', { value: 'reading-workspace-backend' });
+      mounted.remount();
+      await waitFor(() => expect(useRoomLiveStore.getState().snapshotsByRoomId[source.room.id]).toBeDefined());
+      const scroller = await screen.findByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      fireEvent.scroll(scroller, { target: { scrollTop: 200 } });
+      mounted.remount();
+      const restored = await screen.findByRole('region', { name: 'Room 行星任务表' });
+      await waitFor(() => expect(restored.scrollTop).toBe(200));
+      expect(restored).not.toBe(scroller);
+      expect(mounted.transport.requests.some(({ request }) => request.pathId === 'agent.room.message')).toBe(false);
+    } finally {
+      cleanup(); vi.restoreAllMocks();
+      for (const key of Object.keys(localStorage)) if (key.includes('reading-workspace-backend')) localStorage.removeItem(key);
+    }
+  });
+
   it('remembers the composer popup choice and gates automatic observers without sending', async () => {
     const user = userEvent.setup(); const openWindow = vi.fn();
     window.localStorage.setItem('pawos.room-observer-auto-open.v1', 'off');

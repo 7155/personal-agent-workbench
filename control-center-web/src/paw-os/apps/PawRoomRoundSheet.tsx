@@ -10,6 +10,7 @@ import { CopyAction } from '@/features/agent/timeline/rich/RichBlockTools';
 import { usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { usePageVisibility } from '@/platform/use-page-visibility';
+import { readRoomRoundReading, useRoomRoundReadingRecovery } from '@/features/semantic-workspace/reading-recovery';
 import {
   progressFallback,
   selectRoomRoundTaskSheets,
@@ -37,31 +38,45 @@ const sheetStateLabels: Record<string, string> = {
   aborted: '已停止',
 };
 
-export function PawRoomRoundSheet({
-  onOpenParticipant,
-  onResumeBlocked,
-  projection,
-  resumeErrorByRow,
-  resumingWorkItemId,
-  room,
-  selectedParticipantId,
-}: {
+type RoomRoundSheetProps = {
   onOpenParticipant: (participantId: string) => void;
   /** Optional so compact surfaces keep their composer-less behavior. */
   onResumeBlocked?: (row: RoomRoundTaskRow) => void | Promise<void>;
   projection: RoomProjectionState;
+  /** Optional connection/Room scope supplied by the owning workspace. */
+  readingRecoveryKey?: string;
+  /** A lightweight first page must not classify a saved older anchor as cropped. */
+  readingRecoveryReady?: boolean;
   resumeErrorByRow?: Record<string, string | undefined>;
   resumingWorkItemId?: string;
   room: RoomSummary;
   selectedParticipantId?: string;
-}) {
+};
+
+export function PawRoomRoundSheet(props: RoomRoundSheetProps) {
+  // A new Room/connection owns a new reading lifetime, including timer cleanup.
+  return <RoomRoundSheet key={props.readingRecoveryKey || props.room.id} {...props} />;
+}
+
+function RoomRoundSheet({
+  onOpenParticipant,
+  onResumeBlocked,
+  projection,
+  readingRecoveryKey,
+  readingRecoveryReady = true,
+  resumeErrorByRow,
+  resumingWorkItemId,
+  room,
+  selectedParticipantId,
+}: RoomRoundSheetProps) {
   const sheets = useMemo(
     () => selectRoomRoundTaskSheets(room, projection),
     [projection, room],
   );
-  const [sheetDisclosure, setSheetDisclosure] = useState<Record<string, boolean>>({});
-  const [historicalDisclosure, setHistoricalDisclosure] = useState<Record<string, boolean>>({});
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set());
+  const initialReading = useMemo(() => readRoomRoundReading(readingRecoveryKey), [readingRecoveryKey]);
+  const [sheetDisclosure, setSheetDisclosure] = useState<Record<string, boolean>>(() => Object.fromEntries(initialReading?.processDisclosure ?? []));
+  const [historicalDisclosure, setHistoricalDisclosure] = useState<Record<string, boolean>>(() => Object.fromEntries(initialReading?.historicalRoundIds.map(id => [id, true]) ?? []));
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set(initialReading?.expandedRowIds));
   const detailIdPrefix = useId();
   const desktop = usePawOsDesktop();
   const roundsRef = useRef<HTMLElement>(null);
@@ -71,12 +86,17 @@ export function PawRoomRoundSheet({
   const scrollSize = useRef({ content: 0, viewport: 0, width: 0 });
   const previousLatestSheetId = useRef('');
   const latestSheetId = sheets.at(-1)?.id ?? '';
-  const followingLatest = useRef(true);
-  const [awayFromLatest, setAwayFromLatest] = useState(false);
+  const followingLatest = useRef(initialReading?.followingLatest ?? true);
+  const [awayFromLatest, setAwayFromLatest] = useState(initialReading ? !initialReading.followingLatest : false);
   const [unseenRound, setUnseenRound] = useState(false);
   const pageVisible = usePageVisibility();
   const previousPartnerStates = useRef<Map<string, RoomRoundRowState> | null>(null);
   const [arrivingKeys, setArrivingKeys] = useState<readonly string[]>([]);
+  const cancelReadingRestore = useRoomRoundReadingRecovery(roundsRef, readingRecoveryKey, readingRecoveryReady && Boolean(sheets.length), initialReading, () => ({
+    followingLatest: followingLatest.current,
+    historicalRoundIds: Object.keys(historicalDisclosure).filter(id => historicalDisclosure[id]),
+    processDisclosure: Object.entries(sheetDisclosure), expandedRowIds: [...expandedRows],
+  }));
 
   useEffect(() => {
     const latest = sheets.at(-1);
@@ -96,12 +116,14 @@ export function PawRoomRoundSheet({
   }, [arrivingKeys]);
 
   const releaseLatestFollow = () => {
+    cancelReadingRestore();
     followingLatest.current = false;
     jumpingToLatest.current = false;
     jumpingToHistory.current = false;
   };
 
   const jumpToRound = (sheetId: string, toEnd = false) => {
+    cancelReadingRestore();
     followingLatest.current = toEnd && sheetId === latestSheetId;
     jumpingToLatest.current = followingLatest.current;
     jumpingToHistory.current = !followingLatest.current;

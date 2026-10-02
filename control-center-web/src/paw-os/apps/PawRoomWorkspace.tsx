@@ -1,5 +1,5 @@
 import { useRoomReadingRecovery, useRoomViewRecovery } from '@/features/semantic-workspace/reading-recovery';
-import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
+import { recoveryScope, useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { JevCompanion } from '@/features/semantic-workspace/JevCompanion';
 import { JevPolicyControls } from '@/features/semantic-workspace/JevPolicyControls';
 import { JevPlanReview } from '@/features/semantic-workspace/JevPlanReview';
@@ -315,6 +315,7 @@ export function PawRoomWorkspace({
   }, [recordId]);
 
   const projection = useRoomLiveStore((state) => state.projections[recordId]);
+  const roundHistoryReady = useRoomLiveStore((state) => Boolean(state.snapshotsByRoomId[recordId]));
   const focusProjection = useMemo(
     () => record ? buildRoomFocusProjection(record, projection) : undefined,
     [projection, record],
@@ -964,7 +965,7 @@ export function PawRoomWorkspace({
   const roomContentReady = Boolean(record && projection && (
     hasRoomHistory || (!loading && recoveryState === 'synced' && !connectionError)
   ));
-  useRoomReadingRecovery(timelineRef, `room:${recordId}`, roomContentReady, visibleView);
+  useRoomReadingRecovery(timelineRef, `room:${recordId}`, roomContentReady && visibleView !== 'rounds', visibleView);
   const roomRecoverySurface = connectionError || recoveryState === 'failed' ? (
     <section aria-label="Room 记录暂时不可用" className="paw-room-workspace__recovery" role="region">
       <CircleAlert aria-hidden="true" size={24} />
@@ -1144,6 +1145,8 @@ export function PawRoomWorkspace({
             <div className="paw-room-timeline" ref={timelineRef}>
               {roomContentReady && projection && record ? (
                 <PawRoomRoundSheet
+                  readingRecoveryKey={recoveryScope(transport, `room:${recordId}`)}
+                  readingRecoveryReady={roundHistoryReady}
                   onOpenParticipant={selectAndOpenParticipant}
                   onResumeBlocked={resumeBlockedWorkItem}
                   projection={projection}

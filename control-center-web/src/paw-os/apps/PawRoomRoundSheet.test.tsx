@@ -18,6 +18,107 @@ import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 afterEach(cleanup);
 
 describe('PawRoomRoundSheet (UR-170/172)', () => {
+  it('restores an old round and its reading offset after remount without resuming latest follow', () => {
+    localStorage.clear();
+    const { flushFrames, restoreLayout } = mockRoundReadingLayout();
+    try {
+      const tree = () => <PawRoomRoundSheet readingRecoveryKey="room-reading-a" onOpenParticipant={vi.fn()} projection={projectionWithTwoRounds()} room={roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)])} />;
+      const first = render(tree());
+      flushFrames();
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+      flushFrames();
+      fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
+      expect(scroller.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
+      first.unmount();
+      render(tree());
+      flushFrames();
+      const restored = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(restored.scrollTop).toBe(240);
+      expect(restored.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
+      expect(screen.getByRole('button', { name: '回到最新' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '回到最新' }));
+      flushFrames();
+      expect(restored.scrollTop).toBe(1100);
+    } finally {
+      cleanup(); restoreLayout(); localStorage.clear();
+    }
+  });
+  it('isolates Room reading scopes on a live switch and restores only once while new roots arrive', () => {
+    localStorage.clear();
+    const { flushFrames, restoreLayout } = mockRoundReadingLayout();
+    try {
+      const base = roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)]);
+      const tree = (id: string, projection = projectionWithTwoRounds()) => <PawRoomRoundSheet readingRecoveryKey={`reading:${id}`} onOpenParticipant={vi.fn()} projection={projection} room={{ ...base, id }} />;
+      const rendered = render(tree('a'));
+      flushFrames();
+      let scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
+      // Switch while the old scroll save is still queued: cleanup must flush A into A only.
+      rendered.rerender(tree('b'));
+      flushFrames();
+      scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(scroller.scrollTop).toBe(1100);
+      fireEvent.wheel(scroller, { deltaY: -100 });
+      fireEvent.scroll(scroller, { target: { scrollTop: 350 } });
+      rendered.rerender(tree('a'));
+      flushFrames();
+      scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(scroller.scrollTop).toBe(240);
+      // The recovered snapshot must not keep forcing 240 after the reader moves or a root arrives.
+      fireEvent.scroll(scroller, { target: { scrollTop: 300 } });
+      const later = projectionWithTwoRounds();
+      later.turnOrder.push('turn-3');
+      later.turnsById['turn-3'] = { ...later.turnsById['turn-2']!, id: 'turn-3', rootId: 'turn-3', createdAtMs: 8, messageIds: ['user-3'] };
+      later.messagesById['user-3'] = { ...later.messagesById['user-2']!, id: 'user-3', turnId: 'turn-3', text: '第三轮', createdAtMs: 8 };
+      later.messageOrder.push('user-3');
+      rendered.rerender(tree('a', later));
+      flushFrames();
+      expect(scroller.scrollTop).toBe(300);
+      expect(screen.getByRole('button', { name: '有新一轮对话' })).toBeInTheDocument();
+      rendered.rerender(tree('b'));
+      flushFrames();
+      expect(screen.getByRole('region', { name: 'Room 行星任务表' }).scrollTop).toBe(350);
+    } finally { cleanup(); restoreLayout(); localStorage.clear(); }
+  });
+
+  it('waits for the complete history before treating a missing saved round as cropped', () => {
+    localStorage.clear();
+    const { flushFrames, restoreLayout } = mockRoundReadingLayout();
+    try {
+      const room = roomWith([participant('participant-earth', 'session-earth', 0), participant('participant-mars', 'session-mars', 1)]);
+      const tree = (projection: RoomProjectionState, ready = true) => <PawRoomRoundSheet readingRecoveryKey="history-ready" readingRecoveryReady={ready} onOpenParticipant={vi.fn()} projection={projection} room={room} />;
+      const first = render(tree(projectionWithTwoRounds()));
+      flushFrames();
+      const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+      flushFrames();
+      fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
+      first.unmount();
+      const partial = projectionWithTwoRounds();
+      partial.turnOrder = ['turn-2']; delete partial.turnsById['turn-1'];
+      partial.messageOrder = ['user-2']; delete partial.messagesById['user-1'];
+      const second = render(tree(partial, false));
+      flushFrames();
+      const recovering = screen.getByRole('region', { name: 'Room 行星任务表' });
+      expect(recovering.scrollTop).toBe(0);
+      second.rerender(tree(projectionWithTwoRounds()));
+      flushFrames();
+      expect(recovering.scrollTop).toBe(240);
+      expect(recovering.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
+      second.unmount();
+      const third = render(tree(partial, false));
+      flushFrames();
+      const reader = screen.getByRole('region', { name: 'Room 行星任务表' });
+      fireEvent.wheel(reader, { deltaY: -100 });
+      fireEvent.scroll(reader, { target: { scrollTop: 160 } });
+      third.rerender(tree(projectionWithTwoRounds()));
+      flushFrames();
+      expect(reader.scrollTop).toBe(160);
+    } finally { cleanup(); restoreLayout(); localStorage.clear(); }
+  });
+
   it('follows latest through layout growth while preserving an explicit history read', async () => {
     const observers: { notify: () => void; observed: Set<Element>; disconnected: boolean }[] = [];
     vi.stubGlobal('ResizeObserver', class {
@@ -1710,4 +1811,22 @@ function roomWith(participants: RoomParticipant[]): RoomSummary {
     updatedAtMs: 1,
     participants,
   };
+}
+
+function mockRoundReadingLayout() {
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId; });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    const flushFrames = () => act(() => { for (const frame of frames.values()) frame(0); frames.clear(); });
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1600);
+    const viewport = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const scroller = this.closest('.paw-room-rounds') as HTMLElement | null;
+      const top = 100 + (this.dataset.roundId === 'turn-2' ? 600 : 0) - (this.dataset.roundId ? scroller?.scrollTop ?? 0 : 0);
+      return { top, bottom: top + 600, height: 600, left: 0, right: 700, width: 700, x: 0, y: top, toJSON: () => ({}) };
+    });
+    const originalScrollTo = HTMLElement.prototype.scrollTo;
+    HTMLElement.prototype.scrollTo = function (options?: ScrollToOptions | number, y?: number) { this.scrollTop = Math.max(0, Math.min(typeof options === 'number' ? y ?? 0 : options?.top ?? 0, 1100)); };
+    return { flushFrames, restoreLayout: () => { height.mockRestore(); viewport.mockRestore(); rect.mockRestore(); HTMLElement.prototype.scrollTo = originalScrollTo; vi.unstubAllGlobals(); } };
 }
