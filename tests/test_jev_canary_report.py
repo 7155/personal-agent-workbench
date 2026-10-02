@@ -200,7 +200,7 @@ class JevCanaryReportTests(unittest.TestCase):
         self.assertEqual(check["evidence"], [])
 
     def test_c_actual_admission_before_parent_acceptance_fails(self):
-        self.conn.execute("UPDATE agent_command_receipts SET updated_at_ms=31_000 WHERE client_message_id='worker-C'")
+        self.conn.execute("UPDATE agent_command_receipts SET updated_at_ms=? WHERE client_message_id=?", (31_000, "worker-C"))
         result = self.audit()
         self.assertEqual(result["checks"]["c_admitted_after_parent_acceptance"]["status"], "failed")
 

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-01T10:39:59.393978+00:00",
+  "generatedAt": "2026-10-02T05:28:06.995089+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "codex/paw-room-ptc-20261001",
+    "branch": "codex/paw-pi1-mac-iteration-20261002",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Preserve the released V1-V4 and current main owners. Integrate Pi Content V5 then Studio V6 with existing PAW typography and semantic colors. Pi remains the execution owner; synthetic UI checks, Runtime checks and installed-app acceptance are separate evidence boundaries. Preserve unrelated worktrees. Add user-authorized native Pi 0.99.2 codemode and Room recovery source; preserve the independent installed and real task acceptance boundaries."
+    "candidateCommitPolicy": "Preserve the released V1-V4 and current main owners. Integrate Pi Content V5 then Studio V6 with existing PAW typography and semantic colors. Pi remains the execution owner; synthetic UI checks, Runtime checks and installed-app acceptance are separate evidence boundaries. Preserve unrelated worktrees. Add user-authorized native Pi 0.99.2 codemode and Room recovery source; preserve the independent installed and real task acceptance boundaries. Preserve the exact Pi 1.0 paired baseline and scope Mac browser acceptance fixes without activating an installed Runtime."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -160,13 +160,17 @@
     "room_history_codemode": {
       "description": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks.",
       "pathCount": 61
+    },
+    "pi1_experience_iteration": {
+      "description": "Paired Pi 1.0 experience and runtime source, with scoped Mac acceptance fixes.",
+      "pathCount": 32
     }
   },
   "summary": {
-    "pathCount": 1601,
+    "pathCount": 1633,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1402
+      "keep_release": 1434
     },
     "groupCounts": {
       "local_docs": 122,
@@ -182,6 +186,7 @@
       "workspace_completion": 315,
       "conversation_v2_integration": 49,
       "memory_lifecycle": 15,
+      "pi1_experience_iteration": 32,
       "verification": 111,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -1437,11 +1442,25 @@
       "reason": "Keep shared metric labels readable without icons, including Memory lifecycle at desktop and narrow widths."
     },
     {
+      "path": "control-center-web/e2e/model-picker-layout.e2e.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Verify Session model options remain visible and clickable beside the bottom composer."
+    },
+    {
       "path": "control-center-web/e2e/pi-studio-v5-v6.e2e.ts",
       "disposition": "keep_release",
       "group": "pi_content_studio_v5_v6",
       "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/e2e/room-layout.e2e.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Verify actual Room conversation height, collapse controls and pointer-driven send across window sizes."
     },
     {
       "path": "control-center-web/e2e/workbench-design.e2e.ts",
@@ -2494,6 +2513,48 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/components/primitives/Button.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/InteractionMotion.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/SegmentedControl.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/Skeleton.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/Tabs.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/primitives.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/contracts/agent-reducer.test.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -2704,6 +2765,13 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "control-center-web/src/design/motion.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/design/workspace.css",
       "status": "modified",
       "disposition": "keep_release",
@@ -2835,6 +2903,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/file-preview.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "control-center-web/src/features/agent/file-preview/use-rich-html-url.ts",
@@ -3411,6 +3486,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/components/MessageActions.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/components/MessageActions.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3593,11 +3675,25 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/conversation-ui/queue-interaction.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/reading/reading-preferences.ts",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/use-conversation-queue.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "control-center-web/src/features/conversation-ui/workbench-tokens.css",
@@ -4342,6 +4438,13 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "control-center-web/src/features/knowledge/knowledge-operation-ownership.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/features/knowledge/knowledge-recovery.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -4615,6 +4718,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/features/paw-os/surface-context.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/features/planning/AgentWakeSchedules.tsx",
       "status": "modified",
       "group": "scheduled_tasks",
@@ -4655,6 +4765,20 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/application/room-send.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/application/room-send.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "control-center-web/src/features/rooms/assets/README.md",
@@ -4769,6 +4893,48 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/features/rooms/runtime/accepted-room-timeline.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/accepted-room-timeline.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/room-cancellation.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/room-cancellation.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/room-send-journal.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/room-send-journal.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "control-center-web/src/features/rooms/runtime/shared-room-live-session.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -4788,6 +4954,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/state/live-store.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "control-center-web/src/features/rooms/state/live-store.ts",
@@ -6930,6 +7103,34 @@
       "group": "room_history_codemode",
       "disposition": "keep_release",
       "reason": "Preserve Browser raw CDP caller identities while correlating internal host commands; regression coverage prevents response collisions."
+    },
+    {
+      "path": "integrations/ego-browser/upstream/package/ego-linux-host/src/ego-runtime.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "integrations/ego-browser/upstream/package/ego-linux-host/src/ego-runtime.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "integrations/ego-browser/upstream/package/ego-linux-host/src/host-daemon.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "integrations/ego-browser/upstream/package/ego-linux-host/src/host-daemon.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "integrations/jev/README.md",
@@ -10285,6 +10486,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_room_reservation_cancellation.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "tests/test_agent_room_send_admission.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -11076,6 +11284,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_native_mcp_policy.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
       "path": "tests/test_owner_boundaries.py",
       "status": "added",
       "disposition": "keep_release",
@@ -11130,6 +11345,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_pi_nested_tool_evidence.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "tests/test_pi_projection_boundaries.py",
@@ -11221,6 +11443,13 @@
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "tests/test_pi_tool_result_sanitizer.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
       "path": "tests/test_pi_turn_activity.py",

@@ -77,7 +77,9 @@
 }
 
 .paw-desktop-root .paw-window-titlebar[data-window-chrome='room-workspace'] {
-  grid-template-columns: var(--paw-titlebar-lead, 68px) minmax(112px, .45fr) minmax(204px, 1fr);
+  /* Reserve the controls' intrinsic width before ellipsizing the title.
+     Fractional chrome columns let expanded controls slide under the title. */
+  grid-template-columns: var(--paw-titlebar-lead, 68px) minmax(0, 1fr) auto;
   gap: 10px;
   padding-inline: 11px;
   border-bottom-color: #f0efed;
@@ -367,6 +369,9 @@
    edge the 协作态势 control that opens it sits on. Anything that re-orders the
    body markup keeps the affordance. */
 .paw-desktop-root .paw-room-workspace--migrated-v1 .paw-room-workspace__body {
+  /* Optional chrome/recovery rows may be absent. The conversation must occupy
+     the flexible last row, not the zero-height auto row left by a portal. */
+  grid-row: -2 / -1;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: 'room-main';
   background: var(--paw-chat-surface);
@@ -918,6 +923,13 @@
   .paw-desktop-root .paw-room-workspace--migrated-v1 .paw-room-workspace__composer { padding: 5px 7px 7px; }
   /* 窄窗与 Session 同一档收窄（agent-migrated 在 680px 下取 54px）。 */
   .paw-desktop-root .paw-room-workspace--migrated-v1 .paw-room-workspace__composer .room-composer textarea { min-height: 54px; }
+}
+
+@container paw-window (max-width: 1000px) {
+  /* Expanded navigation must fit beside the lights and its own collapse
+     control. Keep the labelled buttons accessible through their aria-labels. */
+  .paw-desktop-root .paw-room-window-chrome[data-controls-expanded='true'] nav button > span { display: none; }
+  .paw-desktop-root .paw-room-window-chrome[data-controls-expanded='true'] .paw-room-workspace__runtime > span { font-size: 0; }
 }
 
 @container paw-window (max-width: 700px) {

@@ -160,6 +160,7 @@ export function ModelPicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        side="top"
         aria-label="选择模型与推理强度"
         className="agent-model-picker"
         data-catalog-open={focusSection === 'model' || undefined}

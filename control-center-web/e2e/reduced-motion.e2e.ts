@@ -26,7 +26,9 @@ test('system Reduce Motion clamps route and indefinite animation', async ({ page
   });
 
   expect(motion.animationDuration).toBeLessThanOrEqual(1);
-  expect(motion.transitionDuration).toBeLessThanOrEqual(1);
+  // The comfort contract retains a brief 120 ms feedback transition while
+  // removing repeated animation; it does not make every state change instant.
+  expect(motion.transitionDuration).toBeLessThanOrEqual(120);
   expect(motion.animationIterations).not.toContain('infinite');
 
   const indefiniteAnimations = await page.evaluate(() =>
