@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,127 @@ describe('RoomComposer macOS input methods', () => {
     onSend: vi.fn(() => false),
     onQueue: vi.fn(() => true),
     onStop: vi.fn(),
+  });
+
+  it('accepts external recovery after local edit and clear leave the host draft unchanged', () => {
+    const common = queuedCommon();
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('a')}>Restore externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={setDraft} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    act(() => {
+      fireEvent.change(editor, { target: { value: 'a' } });
+      fireEvent.change(editor, { target: { value: '' } });
+    });
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Restore externally' }));
+    expect(editor).toHaveValue('a');
+    expect(common.onSend).not.toHaveBeenCalled();
+  });
+
+  it('applies an external clear during pending local publication even when the same clear was edited locally', () => {
+    const common = queuedCommon();
+    function Harness() {
+      const [draft, setDraft] = useState('原草稿');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('')}>Clear externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={setDraft} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    act(() => {
+      fireEvent.change(editor, { target: { value: '' } });
+      fireEvent.change(editor, { target: { value: '新的本地内容' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Clear externally' }));
+    });
+    expect(editor).toHaveValue('');
+    expect(common.onSend).not.toHaveBeenCalled();
+  });
+
+  it.each(['ABC_xyz_0123456789', '中文输入必须保留每个字符'])('keeps controlled host input and external replacements intact: %s', (value) => {
+    const common = { ...queuedCommon(), draft: '' };
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('')}>Clear externally</button>
+        <button onClick={() => setDraft(value.slice(0, 1))}>Restore an earlier value externally</button>
+        <button onClick={() => setDraft('恢复的外部草稿')}>Recover externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={(next) => { common.onDraftChange(next); setDraft(next); }} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    for (let index = 1; index <= value.length; index += 1) {
+      fireEvent.change(editor, { target: { value: value.slice(0, index) } });
+    }
+    expect(common.onDraftChange).toHaveBeenLastCalledWith(value);
+    expect(editor).toHaveValue(value);
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith(value);
+    expect(editor).toHaveValue(value);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear externally' }));
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Restore an earlier value externally' }));
+    expect(editor).toHaveValue(value.slice(0, 1));
+    fireEvent.click(screen.getByRole('button', { name: 'Recover externally' }));
+    expect(editor).toHaveValue('恢复的外部草稿');
+    expect(common.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the mention selection and newer text as the controlled host publishes edits', () => {
+    const common = { ...queuedCommon(), draft: '', room: {
+      id: 'room-mention-echo', status: 'active', participants: [{
+        id: 'earth', sessionId: 'earth-session', roleId: 'worker', roleVersion: '1',
+        displayName: 'Earth', ordinal: 0, status: 'active',
+      }],
+    } };
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return <TooltipProvider><RoomComposer {...common} draft={draft} onDraftChange={setDraft} /></TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    fireEvent.change(editor, { target: { value: '@' } });
+    fireEvent.change(editor, { target: { value: '@E' } });
+    expect(editor).toHaveValue('@E');
+    expect(screen.getByRole('listbox', { name: '选择要点名的伙伴' })).toBeVisible();
+    fireEvent.click(screen.getByRole('option', { name: /Earth/ }));
+    expect(editor).toHaveValue('@Earth ');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    fireEvent.change(editor, { target: { value: '@Earth ABC中文' } });
+    expect(editor).toHaveValue('@Earth ABC中文');
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('@Earth ABC中文');
+  });
+
+  it('keeps the next controlled draft after an accepted send and applies external clear and recovery', () => {
+    const common = { ...queuedCommon(), onSend: vi.fn(() => true) };
+    function Harness() {
+      const [draft, setDraft] = useState('第一条');
+      return <TooltipProvider>
+        <button onClick={() => setDraft('')}>Clear externally</button>
+        <button onClick={() => setDraft('恢复第一条')}>Recover externally</button>
+        <RoomComposer {...common} draft={draft} onDraftChange={setDraft} />
+      </TooltipProvider>;
+    }
+    render(<Harness />);
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('第一条');
+    expect(editor).toHaveValue('');
+    fireEvent.change(editor, { target: { value: '下一条 ABC中文' } });
+    expect(editor).toHaveValue('下一条 ABC中文');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear externally' }));
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Recover externally' }));
+    expect(editor).toHaveValue('恢复第一条');
+    expect(common.onSend).toHaveBeenCalledTimes(1);
   });
 
   it('shows awaiting execution without claiming it started and preserves supplement and queue callbacks', () => {

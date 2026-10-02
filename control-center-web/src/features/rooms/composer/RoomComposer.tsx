@@ -1,7 +1,6 @@
 import { AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Play, Send, Square } from 'lucide-react';
 import { Anchor as PopoverAnchor } from '@radix-ui/react-popover';
 import {
-  startTransition,
   useCallback,
   useEffect,
   useId,
@@ -174,8 +173,8 @@ export function RoomComposer({
   );
 
   useEffect(() => {
-    // A controlled host echoes our own typing. Preserve the caret's mention
-    // menu for that echo; reset only when the host supplies a different draft.
+    // The controlled host echoes typing in the same input update. Preserve
+    // the caret's mention menu for that echo; apply external replacements.
     if (draft === draftRef.current) return;
     draftRef.current = draft;
     setComposerDraft(draft);
@@ -191,7 +190,10 @@ export function RoomComposer({
 
   function publishDraft(value: string): void {
     draftRef.current = value;
-    startTransition(() => onDraftChange(value));
+    // Deferring the controlled value lets an older host echo overwrite newer
+    // local input. Keep the host and editor in the same urgent update; the
+    // string prop cannot distinguish a stale echo from a real recovery/clear.
+    onDraftChange(value);
   }
 
   function endComposition(event: CompositionEvent<HTMLTextAreaElement>): void {
