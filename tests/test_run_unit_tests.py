@@ -41,12 +41,32 @@ class DiagnosticUnitRunnerTests(unittest.TestCase):
         self.assertEqual(events[-1]["failures"], 1)
 
     def test_watchdog_dumps_stack_without_terminating_or_skipping_slow_test(self) -> None:
-        result, events = self.run_fixture("    def test_slow(self): time.sleep(0.15)\n", watchdog=0.05)
+        result, events = self.run_fixture("    def test_first_slow(self): time.sleep(0.15)\n    def test_next(self): pass\n", watchdog=0.05)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Timeout", result.stderr)
+        self.assertIn("Diagnostic stack watchdog", result.stderr)
         self.assertIn("diagnostic_fixture.py", result.stderr)
-        self.assertEqual(events[-1]["tests"], 1)
+        self.assertEqual(events[-1]["tests"], 2)
         self.assertEqual(events[-1]["skipped"], 0)
+
+    def test_success_exits_normally_and_releases_its_diagnostic_thread(self) -> None:
+        result, events = self.run_fixture("    def test_success(self): pass\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events[-1]["tests"], 1)
+        self.assertFalse(events[-1]["interrupted"])
+
+    def test_watchdog_exit_never_waits_for_asynchronous_native_cancellation(self) -> None:
+        result, events = self.run_fixture(
+            "    def test_guard(self):\n"
+            "        import faulthandler\n"
+            "        def forbidden(*args, **kwargs): raise AssertionError('native asynchronous watchdog used')\n"
+            "        faulthandler.dump_traceback_later = forbidden\n"
+            "        faulthandler.cancel_dump_traceback_later = forbidden\n"
+            "        time.sleep(0.15)\n",
+            watchdog=0.05,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Diagnostic stack watchdog", result.stderr)
+        self.assertEqual(events[-1]["failures"], 0)
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX SIGINT delivery")
     def test_interrupt_finishes_current_test_and_reports_incomplete_suite(self) -> None:

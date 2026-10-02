@@ -10,11 +10,38 @@ import sys
 import threading
 import time
 import unittest
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+
+@contextmanager
+def stack_watchdog(seconds: float, *, stream: TextIO | None = None) -> Iterator[None]:
+    """Sample stacks from a Python diagnostic thread; never stop a test."""
+    if seconds <= 0:
+        raise ValueError("watchdog interval must be positive")
+    output = stream if stream is not None else sys.stderr
+    stop = threading.Event()
+
+    def sample() -> None:
+        while not stop.wait(seconds):
+            try:
+                print(f"Diagnostic stack watchdog ({seconds:g}s; tests continue)", file=output, flush=True)
+                faulthandler.dump_traceback(file=output, all_threads=True)
+            except (OSError, ValueError):
+                return  # A closed diagnostic stream cannot invalidate test results.
+
+    thread = threading.Thread(target=sample, name="paw-unit-stack-watchdog", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
 
 
 class TimedResult(unittest.TextTestResult):
@@ -58,30 +85,29 @@ def main() -> int:
     timing = args.timing_jsonl.open("w", encoding="utf-8") if args.timing_jsonl else None
     started = time.monotonic()
     faulthandler.enable()
-    faulthandler.dump_traceback_later(args.watchdog_seconds, repeat=True)
-    try:
-        loader = unittest.TestLoader()
-        suite = loader.loadTestsFromNames(args.tests) if args.tests else loader.discover(str(ROOT / "tests"), pattern=args.pattern)
-        print(f"Loaded {suite.countTestCases()} tests in {time.monotonic() - started:.3f}s", file=sys.stderr, flush=True)
-        TimedResult.timing = timing
-        unittest.installHandler()
-        result = unittest.TextTestRunner(verbosity=2, resultclass=TimedResult).run(suite)
-        for module, elapsed in sorted(result.module_seconds.items(), key=lambda item: item[1], reverse=True):
-            print(f"Module time {elapsed:.3f}s {module}", file=sys.stderr)
-        if timing is not None:
-            timing.write(json.dumps({"event": "result", "seconds": time.monotonic() - started,
-                                    "tests": result.testsRun, "failures": len(result.failures),
-                                    "errors": len(result.errors), "skipped": len(result.skipped),
-                                    "interrupted": result.shouldStop}) + "\n")
-        if result.shouldStop:
-            print("Interrupted: suite is incomplete", file=sys.stderr)
-            return 130
-        return int(not result.wasSuccessful())
-    finally:
-        faulthandler.cancel_dump_traceback_later()
-        TimedResult.timing = None
-        if timing is not None:
-            timing.close()
+    with stack_watchdog(args.watchdog_seconds):
+        try:
+            loader = unittest.TestLoader()
+            suite = loader.loadTestsFromNames(args.tests) if args.tests else loader.discover(str(ROOT / "tests"), pattern=args.pattern)
+            print(f"Loaded {suite.countTestCases()} tests in {time.monotonic() - started:.3f}s", file=sys.stderr, flush=True)
+            TimedResult.timing = timing
+            unittest.installHandler()
+            result = unittest.TextTestRunner(verbosity=2, resultclass=TimedResult).run(suite)
+            for module, elapsed in sorted(result.module_seconds.items(), key=lambda item: item[1], reverse=True):
+                print(f"Module time {elapsed:.3f}s {module}", file=sys.stderr)
+            if timing is not None:
+                timing.write(json.dumps({"event": "result", "seconds": time.monotonic() - started,
+                                        "tests": result.testsRun, "failures": len(result.failures),
+                                        "errors": len(result.errors), "skipped": len(result.skipped),
+                                        "interrupted": result.shouldStop}) + "\n")
+            if result.shouldStop:
+                print("Interrupted: suite is incomplete", file=sys.stderr)
+                return 130
+            return int(not result.wasSuccessful())
+        finally:
+            TimedResult.timing = None
+            if timing is not None:
+                timing.close()
 
 
 if __name__ == "__main__":
