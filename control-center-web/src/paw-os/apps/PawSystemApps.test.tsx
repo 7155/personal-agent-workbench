@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { MotionProvider } from '@/design/motion';
-import { PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { ThemeProvider } from '@/design/themes';
 import { PawOsAppSurfaceProvider, PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import type { ControlRequest } from '@/platform/transport';
@@ -636,15 +635,13 @@ function SystemHarness({
       <QueryClientProvider client={client}>
         <ControlTransportProvider transport={transport}>
           <ThemeProvider>
-            <PawOsAppearanceProvider>
-              <MotionProvider>
-                <PawOsDesktopProvider openRoute={setRoute} openWindow={() => undefined}>
-                  <PawOsAppSurfaceProvider appId={appId} height={720} width={1_080}>
-                    <PawSystemApps appId={appId} initialRoute={route} />
-                  </PawOsAppSurfaceProvider>
-                </PawOsDesktopProvider>
-              </MotionProvider>
-            </PawOsAppearanceProvider>
+            <MotionProvider>
+              <PawOsDesktopProvider openRoute={setRoute} openWindow={() => undefined}>
+                <PawOsAppSurfaceProvider appId={appId} height={720} width={1_080}>
+                  <PawSystemApps appId={appId} initialRoute={route} />
+                </PawOsAppSurfaceProvider>
+              </PawOsDesktopProvider>
+            </MotionProvider>
           </ThemeProvider>
         </ControlTransportProvider>
       </QueryClientProvider>

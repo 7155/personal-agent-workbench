@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from 'react';
-import { usePawOsAppearance } from '@/design/paw-os-themes';
 import { pawAppForPath } from './runtime/app-registry';
 import { PawDesktopProvider, usePawDesktopApi } from './runtime/desktop-context';
 import type { PawDesktopStore } from './runtime/desktop-store';
@@ -13,13 +12,12 @@ import './styles/paw-os-stellar.css';
 import './styles/paw-os-stellar-dark.css';
 
 export function PawOsApp() {
-  const { theme } = usePawOsAppearance();
   const initialRoute = useMemo(() => currentHashRoute(), []);
   const initialApp = useMemo(() => pawAppForPath(initialRoute), [initialRoute]);
   return (
     <PawDesktopProvider initialAppId={initialApp?.id} initialRoute={initialRoute}>
       <PawOsRouteBridge />
-      <div className="paw-desktop-root" data-paw-theme={theme} data-paw-visual="stellar" data-testid="paw-os-product-root">
+      <div className="paw-desktop-root" data-paw-theme="blueprint" data-paw-visual="stellar" data-testid="paw-os-product-root">
         <PawDesktop />
       </div>
     </PawDesktopProvider>

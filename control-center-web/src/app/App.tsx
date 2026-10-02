@@ -6,7 +6,6 @@ import { ControlConnectionMonitor } from '@/app/control-connection-monitor';
 import { GlobalFeedbackProvider } from '@/components/feedback';
 import { ToastProvider, TooltipProvider } from '@/components/primitives';
 import { MotionProvider } from '@/design/motion';
-import { PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { ThemeProvider } from '@/design/themes';
 import { useFilePreviewStore } from '@/features/agent/file-preview/file-preview-store';
 import { ProductIdentityProvider } from '@/features/identity/product-identity';
@@ -42,42 +41,38 @@ export function App() {
   if (standaloneSurface === 'evolution-report') {
     return (
       <ThemeProvider forcedTheme="light">
-        <PawOsAppearanceProvider>
-          <MotionProvider>
-            <Suspense fallback={<ProductLoading />}>
-              <StandaloneEvolutionReportPage />
-            </Suspense>
-          </MotionProvider>
-        </PawOsAppearanceProvider>
+        <MotionProvider>
+          <Suspense fallback={<ProductLoading />}>
+            <StandaloneEvolutionReportPage />
+          </Suspense>
+        </MotionProvider>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <PawOsAppearanceProvider>
-        <MotionProvider>
-        <TooltipProvider delayDuration={350}>
-          <ToastProvider>
-            <GlobalFeedbackProvider>
-              <ControlTransportProvider>
-                <ControlConnectionMonitor />
-                <FilePreviewLayer />
-                <QueryClientProvider client={queryClient}>
-                  <ProductIdentityProvider>
-                    <Suspense fallback={<ProductLoading />}>
-                      {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : (
-                        <PawOsApp />
-                      )}
-                    </Suspense>
-                  </ProductIdentityProvider>
-                </QueryClientProvider>
-              </ControlTransportProvider>
-            </GlobalFeedbackProvider>
-          </ToastProvider>
-        </TooltipProvider>
-        </MotionProvider>
-      </PawOsAppearanceProvider>
+      <MotionProvider>
+      <TooltipProvider delayDuration={350}>
+        <ToastProvider>
+          <GlobalFeedbackProvider>
+            <ControlTransportProvider>
+              <ControlConnectionMonitor />
+              <FilePreviewLayer />
+              <QueryClientProvider client={queryClient}>
+                <ProductIdentityProvider>
+                  <Suspense fallback={<ProductLoading />}>
+                    {standaloneSurface === 'screen-assistant' || standaloneSurface === 'agent-capsule' ? <ScreenAssistant /> : (
+                      <PawOsApp />
+                    )}
+                  </Suspense>
+                </ProductIdentityProvider>
+              </QueryClientProvider>
+            </ControlTransportProvider>
+          </GlobalFeedbackProvider>
+        </ToastProvider>
+      </TooltipProvider>
+      </MotionProvider>
     </ThemeProvider>
   );
 }

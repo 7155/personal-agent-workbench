@@ -2,19 +2,18 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MotionProvider } from '@/design/motion';
-import { PAW_OS_THEME_STORAGE_KEY, PawOsAppearanceProvider } from '@/design/paw-os-themes';
 import { ThemeProvider } from '@/design/themes';
 import { pawOsAppRegistry } from '@/features/paw-os/model/app-registry';
 import { PawOsAppearanceSettings } from './PawOsAppearanceSettings';
 
+const LEGACY_APPEARANCE_KEY = 'paw-os.appearance.theme';
+
 function renderAppearance() {
   return render(
     <ThemeProvider>
-      <PawOsAppearanceProvider>
-        <MotionProvider>
-          <PawOsAppearanceSettings />
-        </MotionProvider>
-      </PawOsAppearanceProvider>
+      <MotionProvider>
+        <PawOsAppearanceSettings />
+      </MotionProvider>
     </ThemeProvider>,
   );
 }
@@ -52,12 +51,12 @@ describe('PAWOS appearance settings', () => {
   });
 
   it('keeps the PAWOS appearance identity storage independent from the global theme', () => {
-    window.localStorage.setItem(PAW_OS_THEME_STORAGE_KEY, 'ink-paper');
+    window.localStorage.setItem(LEGACY_APPEARANCE_KEY, 'ink-paper');
     renderAppearance();
 
     const themes = screen.getByRole('radiogroup', { name: 'PAWOS 主题' });
     expect(within(themes).getByDisplayValue('system')).toBeChecked();
-    expect(window.localStorage.getItem(PAW_OS_THEME_STORAGE_KEY)).toBe('ink-paper');
+    expect(window.localStorage.getItem(LEGACY_APPEARANCE_KEY)).toBe('ink-paper');
     expect(screen.queryByRole('radio', { name: /墨纸工作台|蓝图系统|冰川玻璃/ })).not.toBeInTheDocument();
   });
 

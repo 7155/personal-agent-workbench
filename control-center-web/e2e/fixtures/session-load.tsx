@@ -5,7 +5,6 @@ import { createPreviewTransport } from '../../src/app/preview-control-transport'
 import { TooltipProvider } from '../../src/components/primitives';
 import { MotionProvider } from '../../src/design/motion';
 import { ThemeProvider } from '../../src/design/themes';
-import { PawOsAppearanceProvider } from '../../src/design/paw-os-themes';
 import { previewAgentSnapshot } from '../../src/features/agent/preview-data';
 import { useAgentLiveStore } from '../../src/features/agent/state/live-store';
 import type { SessionSummary } from '../../src/features/agent/types';
@@ -77,10 +76,10 @@ document.addEventListener('input', event => {
   requestAnimationFrame(() => metrics.typing.push(performance.now() - started));
 });
 createRoot(document.getElementById('root')!).render(
-  <ThemeProvider><PawOsAppearanceProvider><MotionProvider><TooltipProvider>
+  <ThemeProvider><MotionProvider><TooltipProvider>
     <ControlTransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}>
       <div className="paw-desktop-root"><PawSessionWorkspace record={record} recordId={sessionId}
         onNewWork={() => undefined} onSessionCreated={() => undefined} onSessionUpdated={() => undefined} /></div>
     </QueryClientProvider></ControlTransportProvider>
-  </TooltipProvider></MotionProvider></PawOsAppearanceProvider></ThemeProvider>,
+  </TooltipProvider></MotionProvider></ThemeProvider>,
 );
