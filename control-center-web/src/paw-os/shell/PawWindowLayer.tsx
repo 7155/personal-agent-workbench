@@ -1130,7 +1130,7 @@ export function PawWindowFrame({ active, appId, bounds, children, collaborationR
                 {focusFrame ? null : <button aria-label={maximized ? '还原窗口' : '最大化窗口'} data-action={maximized ? 'restore' : 'maximize'} onClick={onToggleMaximize} title={maximized ? '还原' : '最大化'} type="button">{maximized ? <Minimize2 size={8} /> : <Maximize2 size={8} />}</button>}
                 {windowChrome ? <div className="paw-window-leading-slot" onDoubleClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} ref={setWindowLeadingChromeTarget} /> : null}
               </div>
-              {roomFocusPrimary ? null : <div className="paw-window-title"><PawAppIcon appId={identityIconId} size={16} /><strong>{title}</strong>{subtitle ? <small>{subtitle}</small> : null}</div>}
+              {roomFocusPrimary ? null : <div className="paw-window-title"><PawAppIcon appId={identityIconId} size={16} /><strong title={title}>{title}</strong>{subtitle ? <small>{subtitle}</small> : null}</div>}
               {windowChrome ? <div className="paw-window-chrome-slot" onDoubleClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} ref={setWindowChromeTarget} /> : null}
             </header>
             <MemoizedWindowBody>{children}</MemoizedWindowBody>

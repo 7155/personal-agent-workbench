@@ -333,6 +333,15 @@ describe('PAWOS compositor window frame', () => {
     expect(shell.querySelectorAll('.paw-window-resize')).toHaveLength(8);
   });
 
+  it.each([['room', 'room-workspace'], ['session', 'agent-session']] as const)('preserves the full %s context name for an ellipsized caption', (targetKind, windowChrome) => {
+    const title = '一个较长但仍需识别的当前工作上下文名称';
+    render(<FrameHarness initial={{ x: 20, y: 30, width: 360, height: 560 }} onCommit={() => undefined}
+      targetKind={targetKind} windowChrome={windowChrome} title={title}><div>当前内容</div></FrameHarness>);
+    const shell = screen.getByLabelText(`${title}窗口`);
+    expect(within(shell).getByText(title)).toHaveAttribute('title', title);
+    expect(within(shell).getByText('当前内容')).toBeInTheDocument();
+  });
+
   it('moves on the compositor and commits state only when the pointer finishes', () => {
     const commit = vi.fn();
     let processRenders = 0;
@@ -1002,7 +1011,7 @@ function LiveRoomChrome() {
   );
 }
 
-function FrameHarness({ appId = 'agent', children, collaborationRole, flowState, focusFrame, frameMode, initial, onCommit, overview, placement, targetKind, title = 'Rooms', windowChrome }: { appId?: PawAppId; children: React.ReactNode; collaborationRole?: 'primary' | 'satellite' | 'unrelated' | 'hidden'; flowState?: 'source' | 'arrival'; focusFrame?: PawWindowBounds; frameMode?: 'window' | 'focus-card' | 'planet'; initial: PawWindowBounds; onCommit: (bounds: PawWindowBounds) => void; overview?: boolean; placement?: 'maximized' | 'left' | 'right'; targetKind?: 'room' | 'participant'; title?: string; windowChrome?: string }) {
+function FrameHarness({ appId = 'agent', children, collaborationRole, flowState, focusFrame, frameMode, initial, onCommit, overview, placement, targetKind, title = 'Rooms', windowChrome }: { appId?: PawAppId; children: React.ReactNode; collaborationRole?: 'primary' | 'satellite' | 'unrelated' | 'hidden'; flowState?: 'source' | 'arrival'; focusFrame?: PawWindowBounds; frameMode?: 'window' | 'focus-card' | 'planet'; initial: PawWindowBounds; onCommit: (bounds: PawWindowBounds) => void; overview?: boolean; placement?: 'maximized' | 'left' | 'right'; targetKind?: 'room' | 'participant' | 'session'; title?: string; windowChrome?: string }) {
   const [bounds, setBounds] = useState(initial);
   return (
     <PawWindowFrame
