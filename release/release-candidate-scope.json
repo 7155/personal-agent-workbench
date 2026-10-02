@@ -163,14 +163,14 @@
     },
     "pi1_experience_iteration": {
       "description": "Paired Pi 1.0 experience and runtime source, with scoped Mac acceptance fixes.",
-      "pathCount": 32
+      "pathCount": 36
     }
   },
   "summary": {
-    "pathCount": 1633,
+    "pathCount": 1637,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1434
+      "keep_release": 1438
     },
     "groupCounts": {
       "local_docs": 122,
@@ -186,7 +186,7 @@
       "workspace_completion": 315,
       "conversation_v2_integration": 49,
       "memory_lifecycle": 15,
-      "pi1_experience_iteration": 32,
+      "pi1_experience_iteration": 36,
       "verification": 111,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -1456,11 +1456,32 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/reduced-motion.e2e.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Mac browser acceptance: accessible model selection and current motion, rich content or CSP regression contracts."
+    },
+    {
+      "path": "control-center-web/e2e/rich-blocks.e2e.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Mac browser acceptance: accessible model selection and current motion, rich content or CSP regression contracts."
+    },
+    {
       "path": "control-center-web/e2e/room-layout.e2e.ts",
       "status": "added",
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Verify actual Room conversation height, collapse controls and pointer-driven send across window sizes."
+    },
+    {
+      "path": "control-center-web/e2e/security.e2e.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Mac browser acceptance: accessible model selection and current motion, rich content or CSP regression contracts."
     },
     {
       "path": "control-center-web/e2e/workbench-design.e2e.ts",
@@ -2805,6 +2826,13 @@
       "group": "conversation_controls",
       "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/agent/composer/ModelPicker.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Mac browser acceptance: accessible model selection and current motion, rich content or CSP regression contracts."
     },
     {
       "path": "control-center-web/src/features/agent/composer/NativeMcpPanel.test.tsx",
