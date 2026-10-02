@@ -56,6 +56,7 @@ export function RoomComposer({
   attachments,
   sending,
   taskBusyState,
+  awaitingExecutionStart = false,
   busySubmitBehavior = 'steer',
   expandInDialog = false,
   uncertainSubmission = false,
@@ -83,6 +84,8 @@ export function RoomComposer({
   attachments: RoomAttachmentReceipt[];
   sending: boolean;
   taskBusyState?: 'running' | 'blocked' | 'waiting';
+  /** Public turn evidence is still queued; presentation only, never a dispatch gate. */
+  awaitingExecutionStart?: boolean;
   /** JEV holds a follow-up until the current graph settles; it does not steer a Room turn. */
   busySubmitBehavior?: 'steer' | 'queue';
   /** A compact workspace can move its one draft editor into a larger dialog. */
@@ -130,6 +133,8 @@ export function RoomComposer({
   const [activeIndex, setActiveIndex] = useState(0);
   const roomCanCompose = room?.status === 'active';
   const pendingAnswerMode = Boolean(pendingUserAnswer);
+  const awaitingStart = awaitingExecutionStart && taskBusyState === 'running' && !pendingAnswerMode;
+  const showRunning = taskBusyState === 'running' && !pendingAnswerMode && !awaitingStart;
   const roomCanSend = roomCanCompose;
   // Once Send snapshots its attachments, a pending network request must not
   // prevent preparing the next draft. Runtime execution still has its own gate.
@@ -395,8 +400,8 @@ export function RoomComposer({
         editorAction={<ComposerExpandButton expanded={expanded} onToggle={() => { setExpanded(!expanded); textareaRef.current?.focus(); }} />}
         onSurfacePress={() => textareaRef.current?.focus()}
         banner={<>{pastedText.pendingNotice}{taskBusyState || pendingAnswerMode ? (
-          <p className="room-composer__task-lock" role="status" data-running={taskBusyState === 'running' && !pendingAnswerMode || undefined}>
-            {taskBusyState === 'running' && !pendingAnswerMode ? <LoaderCircle className="room-composer__status-icon" size={14} aria-hidden /> : <MessageCircle size={14} aria-hidden />}
+          <p className="room-composer__task-lock" role="status" data-running={showRunning || undefined}>
+            {showRunning ? <LoaderCircle className="room-composer__status-icon" size={14} aria-hidden /> : <MessageCircle size={14} aria-hidden />}
             <span>
             {pendingAnswerMode
               ? '当前任务正在等待你的回答。这里只发送文字回答；点名和附件不会随回答发送。'
@@ -404,6 +409,8 @@ export function RoomComposer({
                 ? '附件已保留，当前协作结束后就能发送。'
               : taskBusyState === 'waiting'
                 ? '当前任务等待重新判断，原任务已保留。可在顶部继续；新消息会排入下一轮。'
+              : awaitingStart
+                ? '请求已排队，正在等待开始；可补充要求，或将新消息排到下一轮。'
               : busySubmitBehavior === 'queue'
                 ? '任务进行中 · 新消息不会打断当前执行，会排入下一轮'
               : taskBusyState === 'blocked'
@@ -486,7 +493,7 @@ export function RoomComposer({
             placeholder={pendingAnswerMode
               ? '回答伙伴正在等待的问题…'
               : taskBusyState
-                ? busySubmitBehavior === 'queue' ? '补充下一轮任务…' : '立即干预当前回合…'
+                ? busySubmitBehavior === 'queue' ? '补充下一轮任务…' : awaitingStart ? '补充当前请求…' : '立即干预当前回合…'
                 : composerPlaceholder(room)}
             aria-label="协作消息"
             aria-describedby={`${menuId}-hint`}
@@ -524,7 +531,7 @@ export function RoomComposer({
               : taskBusyState === 'blocked'
                 ? '告诉伙伴怎样继续'
                 : taskBusyState
-                  ? busySubmitBehavior === 'queue' ? '排入下一轮任务' : '立即干预当前回合'
+                  ? busySubmitBehavior === 'queue' ? '排入下一轮任务' : awaitingStart ? '补充当前请求' : '立即干预当前回合'
                   : '发送消息'}
             icon={canContinue ? <Play size={17} fill="currentColor" /> : <Send size={18} />}
             disabled={!canSend && !canContinue}

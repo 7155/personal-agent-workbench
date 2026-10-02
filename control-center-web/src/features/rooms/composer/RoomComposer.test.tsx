@@ -9,6 +9,102 @@ import { RoomComposer, roomMentionedParticipants } from './RoomComposer';
 afterEach(cleanup);
 
 describe('RoomComposer macOS input methods', () => {
+  const queuedCommon = () => ({
+    room: { id: 'room-awaiting-start', status: 'active', participants: [] },
+    personas: [],
+    draft: '补充发布边界',
+    attachments: [],
+    sending: false,
+    onDraftChange: vi.fn(),
+    onAttachmentsChange: vi.fn(),
+    onPasteImages: vi.fn(),
+    onPasteFromClipboard: vi.fn(),
+    onPickAttachments: vi.fn(),
+    onSend: vi.fn(() => false),
+    onQueue: vi.fn(() => true),
+    onStop: vi.fn(),
+  });
+
+  it('shows awaiting execution without claiming it started and preserves supplement and queue callbacks', () => {
+    const common = queuedCommon();
+    render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('请求已排队，正在等待开始；可补充要求，或将新消息排到下一轮。');
+    expect(status).not.toHaveTextContent('当前任务仍在执行');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(status.querySelector('.room-composer__status-icon')).not.toBeInTheDocument();
+    const editor = screen.getByRole('textbox', { name: '协作消息' });
+    expect(editor).toHaveAttribute('placeholder', '补充当前请求…');
+    const supplement = screen.getByRole('button', { name: '补充当前请求' });
+    expect(supplement).toBeEnabled();
+    fireEvent.click(supplement);
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('补充发布边界');
+    expect(common.onQueue).not.toHaveBeenCalled();
+    expect(editor).toHaveValue('补充发布边界');
+    fireEvent.click(screen.getByRole('button', { name: '排到当前回合之后' }));
+    expect(common.onQueue).toHaveBeenCalledExactlyOnceWith('补充发布边界');
+    expect(common.onSend).toHaveBeenCalledTimes(1);
+    expect(editor).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: '停止当前协作' }));
+    expect(common.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps evidence-confirmed running copy when execution is no longer awaiting start', () => {
+    const common = queuedCommon();
+    const view = render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart /></TooltipProvider>);
+    expect(screen.getByRole('status')).not.toHaveAttribute('data-running');
+    view.rerender(<TooltipProvider><RoomComposer {...common} taskBusyState="running" /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('当前任务仍在执行');
+    expect(status).toHaveAttribute('data-running', 'true');
+    expect(status.querySelector('.room-composer__status-icon')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '立即干预当前回合' })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveAttribute('placeholder', '立即干预当前回合…');
+  });
+
+  it('gives a pending answer priority over awaiting execution presentation', () => {
+    const common = queuedCommon();
+    render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart pendingUserAnswer /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('当前任务正在等待你的回答');
+    expect(status).not.toHaveTextContent('请求已排队');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toHaveAttribute('placeholder', '回答伙伴正在等待的问题…');
+    expect(screen.queryByRole('button', { name: '排到当前回合之后' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '发送问题回答' }));
+    expect(common.onSend).toHaveBeenCalledExactlyOnceWith('补充发布边界');
+    expect(common.onQueue).not.toHaveBeenCalled();
+  });
+
+  it('retains attachments ahead of awaiting execution copy without admitting a supplement or queue', () => {
+    const common = queuedCommon();
+    render(<TooltipProvider><RoomComposer {...common} taskBusyState="running" awaitingExecutionStart attachments={[{
+      mediaId: 'media-awaiting', fileName: 'proof.png', mimeType: 'image/png', byteSize: 8,
+      sha256: 'a'.repeat(64), roomId: 'room-awaiting-start',
+    }]} /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('附件已保留，当前协作结束后就能发送。');
+    expect(status).not.toHaveTextContent('请求已排队');
+    expect(status).not.toHaveAttribute('data-running');
+    const supplement = screen.getByRole('button', { name: '补充当前请求' });
+    const queue = screen.getByRole('button', { name: '排到当前回合之后' });
+    expect(supplement).toBeDisabled();
+    expect(queue).toBeDisabled();
+    fireEvent.click(supplement);
+    fireEvent.click(queue);
+    expect(common.onSend).not.toHaveBeenCalled();
+    expect(common.onQueue).not.toHaveBeenCalled();
+  });
+
+  it.each(['blocked', 'waiting'] as const)('does not replace the %s contract with awaiting execution copy', (state) => {
+    render(<TooltipProvider><RoomComposer {...queuedCommon()} taskBusyState={state} awaitingExecutionStart /></TooltipProvider>);
+    const status = screen.getByRole('status');
+    expect(status).not.toHaveTextContent('请求已排队');
+    expect(status).not.toHaveAttribute('data-running');
+    expect(screen.getByRole('button', { name: state === 'blocked' ? '告诉伙伴怎样继续' : '立即干预当前回合' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '排到当前回合之后' })).not.toBeInTheDocument();
+  });
+
   it('shows a route waiting state without implying that execution is running', () => {
     render(<TooltipProvider><RoomComposer
       room={{ id: 'room-waiting', status: 'active', participants: [] }} personas={[]} draft="下一轮补充"
