@@ -24,7 +24,14 @@ function readIntent(key: string): ResumeIntent | null {
   } catch { return null; }
 }
 
-export function ContinuityHome({ spaceKeys, onOpen }: { spaceKeys: string[]; onOpen: (key: string) => void }) {
+export function ContinuityHome({ spaceKeys, onOpen, onOpenIntent }: {
+  spaceKeys: string[]; onOpen: (key: string) => void; onOpenIntent?: (key: string) => void;
+}) {
+  const intentProps = (key: string) => ({
+    onFocus: () => onOpenIntent?.(key),
+    onPointerEnter: () => onOpenIntent?.(key),
+    onPointerDown: () => onOpenIntent?.(key),
+  });
   const transport = useControlTransport();
   const desktop = usePawOsDesktop();
   const mounted = useRef(true);
@@ -115,11 +122,11 @@ export function ContinuityHome({ spaceKeys, onOpen }: { spaceKeys: string[]; onO
     <header className="continuity-heading"><h2>继续工作</h2><button aria-label="刷新复工状态" type="button" disabled={loading || busy} onClick={refresh}><RefreshCw size={15} /></button></header>
     {error ? <p role="alert">{error}</p> : null}
     {notice ? <p role="status">{notice}</p> : null}
-    {pending ? <div className="continuity-pending" role="status">上次继续操作的结果尚待核实。<button disabled={busy} onClick={() => void resume(pending)} type="button">核实继续操作</button><button onClick={() => onOpen(pending.spaceKey)} type="button">查看原工作空间</button></div> : null}
+    {pending ? <div className="continuity-pending" role="status">上次继续操作的结果尚待核实。<button disabled={busy} onClick={() => void resume(pending)} type="button">核实继续操作</button><button {...intentProps(pending.spaceKey)} onClick={() => onOpen(pending.spaceKey)} type="button">查看原工作空间</button></div> : null}
     {loading ? <p role="status">正在核实目标、要求与成果…</p> : null}
     {!loading && !items.length && !error ? <p>从上方开始一段工作，或在工作空间目录中打开已有项目。</p> : null}
     {items.length ? <nav aria-label="选择复工空间" className="continuity-spaces">{items.map(item => <div className="continuity-row" key={item.key}>
-      <button className="continuity-open" type="button" onClick={() => onOpen(item.key)} title={item.title}><span className="continuity-row-title">{item.title}</span><span className="continuity-row-hint">{item.blockers[0] || item.candidates[0]?.text || item.goal?.objective || '打开对话，接着聊'}</span></button>
+      <button {...intentProps(item.key)} className="continuity-open" type="button" onClick={() => onOpen(item.key)} title={item.title}><span className="continuity-row-title">{item.title}</span><span className="continuity-row-hint">{item.blockers[0] || item.candidates[0]?.text || item.goal?.objective || '打开对话，接着聊'}</span></button>
       <button className="continuity-progress" type="button" aria-label={`查看进度：${item.title}`} aria-expanded={expanded && current?.key === item.key} onClick={() => choose(item.key)}><span>{item.running === true ? '正在执行' : item.blockers.length ? '遇到阻塞' : item.pendingDecisions.length ? '待你决定' : item.goal?.status === 'completed' ? '目标已完成' : item.goal?.status === 'cancelled' ? '已取消' : item.goal?.status === 'active' ? '待继续' : '查看进度'}</span><ChevronRight size={14} /></button>
     </div>)}</nav> : null}
     {current ? <details className="continuity-focus" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)} aria-busy={loading}>
@@ -133,7 +140,7 @@ export function ContinuityHome({ spaceKeys, onOpen }: { spaceKeys: string[]; onO
         <dt>当前约束</dt><dd>{current.constraints?.filter(Boolean).join('；') || current.goal?.successCriteria || '未单独记录验收约束。'}{current.decisions.filter(d => d.status === 'current' && d.text).map(d => <p key={d.id}>{d.text}</p>)}</dd>
         <dt>需要注意</dt><dd>{current.goal?.configured && current.goal.status !== 'active' ? `目标状态：${current.goal.status}；不会自动重新启动。` : current.missing[0]}</dd>
       </dl>
-      <div className="continuity-actions"><button type="button" onClick={() => onOpen(current.key)}>打开工作空间 <ArrowRight size={14} /></button>
+      <div className="continuity-actions"><button {...intentProps(current.key)} type="button" onClick={() => onOpen(current.key)}>打开工作空间 <ArrowRight size={14} /></button>
         <button type="button" disabled={busy || loading || !current.executionAllowed || Boolean(pending)} onClick={() => void suggest(current)}>梳理下一步</button></div>
       <p className="continuity-scope">梳理会将此空间的目标、最近对话片段、已采纳决定及成果引用发送给 Jev；不读取其他空间正文。</p>
       {proposal?.spaceKey === current.key ? <div className="continuity-proposal"><strong>{proposal.origin === 'user' ? '已选择下一步' : '建议下一步'}</strong><p>{proposal.text}</p><button type="button" disabled={busy || Boolean(pending) || loading || proposal.expiresAtMs <= Date.now()} onClick={() => void resume({ spaceKey: current.key, proposalId: proposal.id, commandId: crypto.randomUUID() })}>继续这一步</button></div> : null}

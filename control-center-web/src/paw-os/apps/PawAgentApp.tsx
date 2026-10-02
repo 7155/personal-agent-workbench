@@ -52,14 +52,10 @@ import '@/features/semantic-workspace/semantic-workspace.css';
 import { readSessionCatalog } from './session-catalog';
 import { PawWindowLeadingPortal, usePawWindowLeadingChromeTarget } from '../shell/PawWindowChrome';
 import { TraceAgentHandoffButton, type TraceAgentHandoffInput } from '@/features/trace-agent/handoff';
+import { initialAgentSelection, loadRoomWorkspace, loadSessionWorkspace, warmAgentWorkspace, type AgentSelection as Selection, type AgentWorkspaceKind } from './agent-workspace-loader';
 
-const PawSessionWorkspace = lazy(() => import('./PawSessionWorkspace').then((module) => ({ default: module.PawSessionWorkspace })));
-const PawRoomWorkspace = lazy(() => import('./PawRoomWorkspace').then((module) => ({ default: module.PawRoomWorkspace })));
-
-type Selection =
-  | { kind: 'new'; draft?: string }
-  | { kind: 'session'; id: string; draft?: string }
-  | { kind: 'room'; id: string; draft?: string; error?: string };
+const PawSessionWorkspace = lazy(loadSessionWorkspace);
+const PawRoomWorkspace = lazy(loadRoomWorkspace);
 
 export function PawAgentApp({
   initialRoute = '',
@@ -80,12 +76,13 @@ export function PawAgentApp({
   const [personas, setPersonas] = useState<AgentPersonaV1[]>([]);
   const [models, setModels] = useState<PiModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
-  const [selection, setSelection] = useState<Selection>(() => initialSelection(
+  const [selection, setSelection] = useState<Selection>(() => initialAgentSelection(
     initialRoute,
     target?.kind,
     target?.id,
     target?.kind === 'participant' ? target.roomId : undefined,
   ));
+  if (selection.kind !== 'new') warmAgentWorkspace(selection.kind);
   const [railOpen, setRailOpen] = useState(false);
   const [interfaceMode, setInterfaceMode] = useAgentInterfaceMode();
   const [organizationOpen, setOrganizationOpen] = useState(false);
@@ -136,7 +133,7 @@ export function PawAgentApp({
   }, [initialRoute, selectedSessionId]);
 
   useEffect(() => {
-    setSelection(initialSelection(initialRoute, targetKind, targetId, targetRoomId));
+    setSelection(initialAgentSelection(initialRoute, targetKind, targetId, targetRoomId));
     setRailOpen(false);
   }, [initialRoute, targetId, targetKind, targetRoomId]);
 
@@ -625,6 +622,7 @@ function ProjectFolder({
             <WorkRow
               active={selection.kind === 'session' && selection.id === session.id}
               key={session.id}
+              workspaceKind="session"
               projection={sessionFileProjection(session)}
               onClick={() => onOpenSession(session.id)}
               title={session.title}
@@ -671,7 +669,7 @@ function RoomWorkRow({ active, onClick, room }: { active: boolean; onClick: () =
     projection.state = running ? 'working' : latest.status === 'failed' ? 'attention'
       : ['completed', 'aborted'].includes(latest.status) ? 'complete' : 'neutral';
   }
-  return <WorkRow active={active} onClick={onClick} projection={projection} title={room.title}
+  return <WorkRow active={active} onClick={onClick} workspaceKind="room" projection={projection} title={room.title}
     extra={<RoomPlanetStrip room={room} projection={live && !live.needsSnapshot ? live : undefined} />} />;
 }
 
@@ -687,8 +685,8 @@ function RoomPlanetStrip({ room, projection }: { room: RoomSummary; projection?:
   </span>;
 }
 
-function WorkRow({ active, onClick, projection, title, trailing, extra }: { active: boolean; onClick: () => void; projection: WorkFileProjection; title: string; trailing?: ReactNode; extra?: ReactNode }) {
-  return <div className="paw-agent-row-shell" data-active={active || undefined} data-work-state={projection.state}><button aria-current={active ? 'page' : undefined} className="paw-agent-row" onClick={onClick} title={title} type="button"><FileText aria-hidden="true" size={15} /><span><strong>{title}</strong><small>{projection.meta}</small><small className="paw-agent-row__detail">{projection.detail}</small>{extra}</span></button>{trailing}</div>;
+function WorkRow({ active, onClick, projection, title, trailing, extra, workspaceKind }: { workspaceKind: AgentWorkspaceKind; active: boolean; onClick: () => void; projection: WorkFileProjection; title: string; trailing?: ReactNode; extra?: ReactNode }) {
+  return <div className="paw-agent-row-shell" data-active={active || undefined} data-work-state={projection.state}><button aria-current={active ? 'page' : undefined} className="paw-agent-row" onFocus={() => warmAgentWorkspace(workspaceKind)} onPointerEnter={() => warmAgentWorkspace(workspaceKind)} onPointerDown={() => warmAgentWorkspace(workspaceKind)} onClick={onClick} title={title} type="button"><FileText aria-hidden="true" size={15} /><span><strong>{title}</strong><small>{projection.meta}</small><small className="paw-agent-row__detail">{projection.detail}</small>{extra}</span></button>{trailing}</div>;
 }
 
 function SessionActions({ onArchive, onDelete, session }: { onArchive: () => void; onDelete: () => void; session: SessionSummary }) {
@@ -712,30 +710,6 @@ function RailNotice({ action, icon, text, traceHandoff }: {
     {icon}<span>{text}</span>{action ? <button onClick={action} type="button">重试</button> : null}
     {traceHandoff ? <TraceAgentHandoffButton handoff={traceHandoff} /> : null}
   </div>;
-}
-
-function initialSelection(
-  initialRoute: string,
-  targetKind?: PawOsWindowTarget['kind'],
-  targetId?: string,
-  targetRoomId?: string,
-): Selection {
-  const query = new URLSearchParams(initialRoute.split('?', 2)[1] ?? '');
-  const routeDraft = query.get('draft');
-  const draft = routeDraft?.trim() ? routeDraft : undefined;
-  const draftSelection = draft === undefined ? {} : { draft };
-  if (targetKind === 'session' && targetId) return { kind: 'session', id: targetId };
-  if (targetKind === 'room' && targetId) return { kind: 'room', id: targetId, ...draftSelection };
-  if (targetKind === 'participant' && targetRoomId) return { kind: 'room', id: targetRoomId, ...draftSelection };
-  if (initialRoute.startsWith('/rooms')) {
-    const roomId = query.get('room');
-    return roomId ? { kind: 'room', id: roomId, ...draftSelection } : { kind: 'new' };
-  }
-  const roomId = query.get('room');
-  if (roomId) return { kind: 'room', id: roomId, ...draftSelection };
-  const sessionId = query.get('session') || query.get('sessionId');
-  if (draft) return { kind: 'new', draft };
-  return sessionId ? { kind: 'session', id: sessionId } : { kind: 'new' };
 }
 
 function provisionalSessionRecord(id: string, title = ''): SessionSummary {

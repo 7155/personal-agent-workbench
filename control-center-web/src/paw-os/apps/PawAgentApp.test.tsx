@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -60,8 +60,17 @@ afterEach(() => {
 describe('PAWOS Agent App', () => {
   it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
     const transport = createTransport();
+    const mode = deferred<unknown>();
+    const originalRequest = transport.request.bind(transport);
+    transport.request = <T,>(request: ControlRequest): Promise<T> => request.pathId === 'agent.jev.get'
+      ? mode.promise as Promise<T> : originalRequest<T>(request);
     const roomRoute = '/agent?room=room-old&draft=room%20draft';
     const view = renderAgent(transport, { initialRoute: roomRoute });
+    try {
+      await waitFor(() => expect({ ...workspaceEvaluations }).toEqual({ session: 0, room: 1 }));
+      // Prewarming does not choose a JEV mode or mount the Room early.
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+    } finally { await act(async () => mode.resolve({ ok: true, mode: 'jev', items: [] })); }
 
     expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
     expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
@@ -76,6 +85,25 @@ describe('PAWOS Agent App', () => {
     expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
     expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
     expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+  });
+
+  it('warms an exact rail record on intent without selecting it or sending work', async () => {
+    const loader = await import('./agent-workspace-loader');
+    const warm = vi.spyOn(loader, 'warmAgentWorkspace');
+    try {
+      const transport = createTransport();
+      renderAgent(transport);
+      fireEvent.click(await screen.findByRole('button', { name: '打开工作记录' }));
+      const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+      const target = await within(rail).findByRole('button', { name: /^迁移作战室/ });
+      warm.mockClear();
+      fireEvent.pointerEnter(target);
+      fireEvent.focus(target);
+      fireEvent.pointerDown(target);
+      expect(warm.mock.calls).toEqual([['room'], ['room'], ['room']]);
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+      expect(transport.requests.some(({ request }) => ['agent.room.message', 'agent.session.prompt', 'agent.jev.command'].includes(request.pathId))).toBe(false);
+    } finally { warm.mockRestore(); }
   });
 
   it('announces a selected workspace while it loads and retains its draft when ready', async () => {

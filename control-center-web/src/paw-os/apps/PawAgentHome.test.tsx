@@ -14,12 +14,44 @@ import { ControlTransportHttpError } from '@/platform/http-transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import agentNextCss from '../styles/paw-os-agent-next.css?raw';
 import { PawAgentHome } from './PawAgentHome';
+import { warmAgentWorkspace } from './agent-workspace-loader';
+
+vi.mock('./agent-workspace-loader', async importOriginal => ({
+  ...await importOriginal<typeof import('./agent-workspace-loader')>(),
+  warmAgentWorkspace: vi.fn(),
+}));
+
 import { readRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { createAgentModeStore } from '@/features/semantic-workspace/agent-mode-store';
 
 afterEach(cleanup);
 
 describe('PAWOS Agent Home 首屏合同', () => {
+  it('warms only a precisely targeted recent card before navigation', async () => {
+    vi.mocked(warmAgentWorkspace).mockClear();
+    const { transport } = renderHome();
+    const target = await screen.findByRole('button', { name: /迁移作战室/ });
+    fireEvent.pointerEnter(target);
+    fireEvent.focus(target);
+    fireEvent.pointerDown(target);
+    expect(vi.mocked(warmAgentWorkspace).mock.calls).toEqual([['room'], ['room'], ['room']]);
+    expect(transport.requests.some(({ request }) => ['agent.runtime.ensure', 'agent.room.message', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
+  });
+
+  it('warms the exact Room entry from the default Jev continuity surface without starting work', async () => {
+    vi.mocked(warmAgentWorkspace).mockClear();
+    const facts = { key: `room:${room().id}`, title: 'Jev Room 精确记录', revision: 'v1', observedAtMs: 1000,
+      running: false, goal: null, requests: [], candidates: [], decisions: [], blockers: [], sources: [], missing: [],
+      pendingDecisions: [], deliveries: [], organization: { pinned: false, placement: 'desk' }, executionAllowed: true, contextPack: {} };
+    const { transport } = renderHome({ interfaceMode: 'jev', continuityRoute: { ok: true, items: [facts], failures: [] } });
+    const target = await screen.findByRole('button', { name: /^Jev Room 精确记录/ });
+    fireEvent.pointerEnter(target);
+    fireEvent.focus(target);
+    fireEvent.pointerDown(target);
+    expect(vi.mocked(warmAgentWorkspace).mock.calls).toEqual([['room'], ['room'], ['room']]);
+    expect(transport.requests.some(({ request }) => ['agent.continuity.suggest', 'agent.continuity.resume', 'agent.jev.command', 'agent.runtime.ensure'].includes(request.pathId))).toBe(false);
+  });
+
   it('starts the default Jev mode with three partners and its real graph command, preserving the authorization policy', async () => {
     const user = userEvent.setup();
     const onCreated = vi.fn();
@@ -658,6 +690,7 @@ function renderHome({
   imagePaste,
   onCreated = vi.fn(),
   promptRoute = { ok: true },
+  continuityRoute,
 }: {
   interfaceMode?: 'traditional' | 'jev';
   modelReference?: string;
@@ -667,6 +700,7 @@ function renderHome({
   imagePaste?: (input: AgentImagePasteOptions) => PickedFile[] | Promise<PickedFile[]>;
   onCreated?: Parameters<typeof PawAgentHome>[0]['onCreated'];
   promptRoute?: MockRouteHandler;
+  continuityRoute?: MockRouteHandler;
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const transport = new MockControlTransport({
@@ -697,6 +731,7 @@ function renderHome({
         },
       },
       'agent.session.prompt': promptRoute,
+      ...(continuityRoute ? { 'agent.continuity.read': continuityRoute } : {}),
     },
     ...(imagePaste ? { imagePaste } : {}),
   });
