@@ -831,6 +831,7 @@ class DebugImeService:
             },
         )
         self.agent.bind_approval_executor(self.agent_tools.apply_approval)
+        self.agent.bind_workspace_command_cancellation(self.agent_tools.workspace_commands.request_cancel)
         self.agent_tools.bind_auto_approval_executor(self.agent.auto_approve_pending)
         self.agent.bind_memory_maintenance_probe(self.agent_memory_maintenance_status)
         self.agent.bind_tool_manifest_provider(self.agent_tools.runtime_manifests)

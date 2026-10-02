@@ -34,6 +34,7 @@ from .agent_execution_policy import (
     unrestricted_workspace_policy_active,
 )
 from .agent_background_jobs import AgentBackgroundJobService
+from .agent_workspace_commands import WorkspaceCommandOwner
 from .agent_memory_sources import AgentMemorySourceStore
 from .agent_role_book import AgentRoleBookStore
 from .agent_tool_ids import (
@@ -3109,6 +3110,7 @@ class ControlToolGateway:
         self.knowledge_client = knowledge_client
         self.knowledge_control = knowledge_control
         self.workspace_harness = workspace_harness or WorkspaceHarness()
+        self.workspace_commands = WorkspaceCommandOwner(self.workspace_harness)
         self.background_jobs = background_jobs
         self.delegation = delegation
         self.collaboration = collaboration
@@ -3741,14 +3743,20 @@ class ControlToolGateway:
                 "workspace mutation is blocked by the active read-only policy"
             )
 
-        response = self._execute_product_tool(
-            request=request,
-            session=session,
-            tool=tool,
-            args=args,
-            spec=spec,
-            operation=operation,
-        )
+        if tool == "workspace_shell":
+            context = self._room_dispatch_context(session_id)
+            def cancelled() -> bool:
+                if context is None:
+                    return False
+                live = self._room_dispatch_context(session_id)
+                return live is None or any(live.get(key) != context.get(key)
+                    for key in ("roomId", "rootId", "dispatchId", "generation"))
+            with self.workspace_commands.call_scope(session_id, cancelled):
+                response = self._execute_product_tool(request=request, session=session, tool=tool,
+                                                      args=args, spec=spec, operation=operation)
+        else:
+            response = self._execute_product_tool(request=request, session=session, tool=tool,
+                                                  args=args, spec=spec, operation=operation)
         validate_contract(response, "agent-tool-result.v1.json")
         return response
 
@@ -3873,7 +3881,7 @@ class ControlToolGateway:
                 session,
                 args,
             )
-            result = self.workspace_harness.execute(prepared)
+            result = self.workspace_commands.execute(session_id, prepared)
         elif tool == "work_documents":
             handler_args = dict(args)
             handler_args["_sessionId"] = session_id
@@ -7287,7 +7295,7 @@ class ControlToolGateway:
             str(approval.get("sessionId") or "")
         ) and prepared.roots_digest != str(base_state.get("workspaceRootsSha256") or ""):
             raise ValueError("authorized workspace changed after approval preview")
-        receipt = self.workspace_harness.execute(prepared)
+        receipt = self.workspace_commands.execute(str(approval.get("sessionId") or ""), prepared)
         return {
             **receipt,
             "approvalId": str(approval.get("approvalId") or ""),

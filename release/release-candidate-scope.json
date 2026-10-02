@@ -163,14 +163,14 @@
     },
     "pi1_experience_iteration": {
       "description": "Paired Pi 1.0 experience and runtime source, with scoped Mac acceptance fixes.",
-      "pathCount": 36
+      "pathCount": 38
     }
   },
   "summary": {
-    "pathCount": 1637,
+    "pathCount": 1639,
     "dispositionCounts": {
       "delete_old_implementation": 199,
-      "keep_release": 1438
+      "keep_release": 1440
     },
     "groupCounts": {
       "local_docs": 122,
@@ -186,7 +186,7 @@
       "workspace_completion": 315,
       "conversation_v2_integration": 49,
       "memory_lifecycle": 15,
-      "pi1_experience_iteration": 36,
+      "pi1_experience_iteration": 38,
       "verification": 111,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -8246,6 +8246,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "rag_ime/agent_workspace_commands.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Terminate exact foreground Gateway command processes on Session or Room Stop and require physical drain in cancellation evidence."
+    },
+    {
       "path": "rag_ime/browser_control.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -11660,6 +11667,13 @@
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_workspace_command_cancellation.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "pi1_experience_iteration",
+      "reason": "Terminate exact foreground Gateway command processes on Session or Room Stop and require physical drain in cancellation evidence."
     },
     {
       "path": "tests/test_workspace_job_idempotency_gateway.py",

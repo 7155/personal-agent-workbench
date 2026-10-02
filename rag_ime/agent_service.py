@@ -672,6 +672,7 @@ class AgentService:
             audit_publisher=self._publish_room_intercom_audit,
         )
         self._approval_executor: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None
+        self._workspace_command_cancellation: Callable[[str], Callable[[], dict[str, object]]] | None = None
         self._memory_maintenance_probe: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None
         self._process_id_provider = process_id_provider
         self.eval_schedules = EvalScheduleStore(db_path)
@@ -971,6 +972,11 @@ class AgentService:
         probe: Callable[[Mapping[str, object]], Mapping[str, object]],
     ) -> None:
         self._memory_maintenance_probe = probe
+
+    def bind_workspace_command_cancellation(
+        self, begin: Callable[[str], Callable[[], dict[str, object]]],
+    ) -> None:
+        self._workspace_command_cancellation = begin
 
     def bind_eval_schedule_executor(
         self,
@@ -4461,7 +4467,16 @@ class AgentService:
 
     def abort(self, session_id: str) -> dict[str, object]:
         self._require_mutable_session(session_id)
-        return self.session_application.abort(session_id)
+        wait_commands = (self._workspace_command_cancellation(session_id)
+                         if self._workspace_command_cancellation is not None else None)
+        try:
+            receipt = self.session_application.abort(session_id)
+        finally:
+            commands = wait_commands() if wait_commands is not None else None
+        if commands is not None:
+            receipt["workspaceCommands"] = commands
+            receipt["ok"] = bool(receipt.get("ok")) and commands["drained"] is True
+        return receipt
 
     def compact(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         self._require_mutable_session(session_id)
