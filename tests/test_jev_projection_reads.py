@@ -1,10 +1,11 @@
 """Projection consistency and read cost on canonical stores, without a live Host."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import asdict
 import json
 import sqlite3
+import threading
 from unittest.mock import patch
 
 from tests.test_jev_host_application import JevHostFixture
@@ -83,13 +84,19 @@ class JevProjectionReadTests(JevHostFixture):
     @contextmanager
     def read_budget(self):
         original = sqlite3.connect
+        reader_thread = threading.get_ident()
         connections = []
         denied = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE,
                   sqlite3.SQLITE_CREATE_TABLE, sqlite3.SQLITE_DROP_TABLE, sqlite3.SQLITE_ALTER_TABLE}
         def connect(*args, **kwargs):
             conn = original(*args, **kwargs)
-            conn.set_authorizer(lambda action, *_: sqlite3.SQLITE_DENY if action in denied else sqlite3.SQLITE_OK)
-            connections.append(conn)
+            # The budget belongs to this synchronous projection call. Other
+            # service workers may use SQLite concurrently, including writes.
+            # Keep every connection on the calling thread in the budget so
+            # accidental extra or cross-database reads still fail the test.
+            if threading.get_ident() == reader_thread:
+                conn.set_authorizer(lambda action, *_: sqlite3.SQLITE_DENY if action in denied else sqlite3.SQLITE_OK)
+                connections.append(conn)
             return conn
         with patch('sqlite3.connect', side_effect=connect), patch.object(
             self.app.ledger, 'read_in_transaction', wraps=self.app.ledger.read_in_transaction
@@ -99,6 +106,29 @@ class JevProjectionReadTests(JevHostFixture):
             yield connections, snapshots
             settlement.assert_not_called()
             abort.assert_not_called()
+
+    def test_projection_read_budget_does_not_restrict_unrelated_background_connections(self):
+        created = self.create()
+        errors = []
+
+        def background_write():
+            try:
+                with closing(sqlite3.connect(":memory:")) as conn:
+                    conn.execute("CREATE TABLE unrelated_background_job (id INTEGER)")
+            except BaseException as exc:
+                errors.append(exc)
+
+        with self.read_budget() as (connections, snapshots):
+            worker = threading.Thread(target=background_write)
+            worker.start()
+            try:
+                self.app.projection(self.room['id'], created['graphId'])
+            finally:
+                worker.join(timeout=2.0)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(connections), 1)
+        self.assertEqual(snapshots.call_count, 1)
 
     def test_full_projection_matches_existing_owners_in_one_read_transaction(self):
         created, _ = self.populated()

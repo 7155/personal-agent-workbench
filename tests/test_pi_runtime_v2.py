@@ -7374,19 +7374,21 @@ class PiRuntimeV2Tests(unittest.TestCase):
         with patch.object(client, "send", side_effect=delayed_send):
             prompt_thread = threading.Thread(target=run_prompt)
             prompt_thread.start()
-            self.assertTrue(prompt_entered.wait(1.0))
-
-            started = time.monotonic()
-            early_receipt = self.runtime.abort(session_id)
-            elapsed = time.monotonic() - started
-
-            self.assertLess(elapsed, 0.2)
-            self.assertTrue(early_receipt["pendingAdmission"])
-            self.assertTrue(abort_delivered.wait(1.0))
-            self.assertTrue(abort_settled.wait(1.0))
-            self.assertEqual(self.store.get(session_id)["status"], "idle")
-            release_prompt.set()
-            prompt_thread.join(timeout=2.0)
+            try:
+                self.assertTrue(prompt_entered.wait(1.0))
+                early_receipt = self.runtime.abort(session_id)
+                self.assertTrue(early_receipt["pendingAdmission"])
+                self.assertTrue(abort_delivered.wait(1.0))
+                self.assertTrue(abort_settled.wait(1.0))
+                # Cancellation reaches and settles at the Host while the
+                # original prompt ACK is still held by the explicit barrier.
+                self.assertFalse(release_prompt.is_set())
+                self.assertTrue(prompt_thread.is_alive())
+                self.assertEqual(prompt_result, {})
+                self.assertEqual(self.store.get(session_id)["status"], "idle")
+            finally:
+                release_prompt.set()
+                prompt_thread.join(timeout=2.0)
 
         self.assertFalse(prompt_thread.is_alive())
         self.assertEqual(prompt_error, [])
