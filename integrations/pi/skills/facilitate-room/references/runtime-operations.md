@@ -89,3 +89,7 @@ unless the requested deliverable is the document itself.
 Use the PAW product `browser` Tool for web acceptance. Do not launch or drive a
 second desktop browser. Native foreground claims require the corresponding
 foreground receipt; source tests and screenshots alone do not prove them.
+
+## Jev-owned execution
+
+When the current execution pack identifies a Jev `purpose`, its task graph owns scheduling. Use `room_partner list` to read that bound purpose and its disclosed submission operation. For `plan`, submit a bounded typed plan with `plan_submit`; for `execute`, submit actual result/evidence with `result_submit`; for `verify`, independently inspect the fixed result then use `verification_submit`; for `synthesize`, use `final_submit`. These operations are available only to the matching live Pi execution. Do not use legacy delegate/retry/accept/return to bypass the graph. Stop remains the original Runtime stop. A submission receipt is not verification or execution drain; finish the turn after a successful submission.
