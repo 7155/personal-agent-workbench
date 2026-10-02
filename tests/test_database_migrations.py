@@ -2324,17 +2324,8 @@ class DatabaseMigrationTests(unittest.TestCase):
                 )
                 if str(row[1]).startswith("review")
             ]
-            self.assertEqual(
-                review_columns,
-                [
-                    "review_operability_verdict",
-                    "review_requirement_verdict",
-                    "review_evidence_refs_json",
-                    "review_reason",
-                    "reviewer_participant_id",
-                    "reviewed_at_ms",
-                ],
-            )
+            # Hook DDL belongs to the failed migration and must roll back.
+            self.assertEqual(review_columns, [])
             with self.assertRaisesRegex(sqlite3.OperationalError, "missing_table"):
                 apply_database_migrations(conn, migrations_dir=migrations)
             self.assertIsNone(

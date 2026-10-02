@@ -59,12 +59,7 @@ def apply_database_migrations(
         for row in conn.execute("SELECT version, checksum FROM schema_migrations ORDER BY version")
     }
     for migration in migrations:
-        existing_checksum = applied.get(migration.version)
-        if existing_checksum is not None and existing_checksum != migration.checksum:
-            raise MigrationChecksumError(
-                f"migration {migration.version:04d} checksum changed: "
-                f"database={existing_checksum} source={migration.checksum}"
-            )
+        _validate_migration_checksum(migration, applied.get(migration.version))
 
     newly_applied: list[int] = []
     timestamp = int(time.time() * 1000) if applied_at_ms is None else int(applied_at_ms)
@@ -73,8 +68,25 @@ def apply_database_migrations(
             continue
         hook = _MIGRATION_HOOKS.get(migration.version)
         with conn:
+            # The connection context manager does not begin a transaction for
+            # DDL. Acquire the write lock before hooks/SQL and recheck a receipt
+            # another initializer may have committed since our first read.
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+            if _migration_already_applied(conn, migration):
+                applied[migration.version] = migration.checksum
+                continue
             if hook is not None:
                 hook(conn, timestamp)
+                # 0185 owns a separately committed, idempotent rebuild so it
+                # can temporarily disable foreign keys. Its completed hook is
+                # a retry checkpoint; the remaining SQL and marker still need
+                # their own transaction and a fresh receipt check.
+                if not conn.in_transaction:
+                    conn.execute("BEGIN IMMEDIATE")
+                    if _migration_already_applied(conn, migration):
+                        applied[migration.version] = migration.checksum
+                        continue
             if migration.sql.strip():
                 _execute_sql_script(conn, migration.sql)
             conn.execute(
@@ -88,6 +100,24 @@ def apply_database_migrations(
         current_version=max(applied, default=0),
         migration_count=len(migrations),
     )
+
+
+def _validate_migration_checksum(migration: Migration, existing_checksum: str | None) -> None:
+    if existing_checksum is not None and existing_checksum != migration.checksum:
+        raise MigrationChecksumError(
+            f"migration {migration.version:04d} checksum changed: "
+            f"database={existing_checksum} source={migration.checksum}"
+        )
+
+
+def _migration_already_applied(conn: sqlite3.Connection, migration: Migration) -> bool:
+    row = conn.execute(
+        "SELECT checksum FROM schema_migrations WHERE version = ?", (migration.version,)
+    ).fetchone()
+    if row is None:
+        return False
+    _validate_migration_checksum(migration, str(row[0]))
+    return True
 
 
 def migration_status(
