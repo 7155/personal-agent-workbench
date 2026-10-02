@@ -184,7 +184,7 @@ class VoiceInputTests(unittest.TestCase):
         self.assertIn("copyToClipboardForRecovery", coordinator)
 
         delegate = (ROOT / "macos/RagImeVoice/VoiceApplicationDelegate.swift").read_text(encoding="utf-8")
-        page = (ROOT / "control-center-web/src/features/agent/index.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "control-center-web/src/paw-os/apps/PawSessionWorkspace.tsx").read_text(encoding="utf-8")
         for command in ("begin", "finish", "cancel"):
             notification = f"com.rag-ime.voice.agent-composer-{command}"
             self.assertIn(notification, delegate)
