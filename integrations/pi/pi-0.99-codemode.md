@@ -11,10 +11,11 @@ another Room execution owner.
 
 The managed builder requires `--pi-worktree`; this compatibility work does not
 change an installed Runtime, a release source pin, or any default application
-data. Select the separate Pi 1.0 candidate checkout explicitly. In the current
-development workspace it is the sibling `pi-1.0-candidate` directory; on another
-computer, use the candidate checkout's actual absolute path, not the old `pi`
-directory and not an unmodified upstream checkout.
+data. Select a clean detached build worktree at the reviewed Pi 1.0 candidate
+commit explicitly. If development uses a branch, preserve that checkout and use
+a separate detached build worktree at its committed revision. The directory
+name does not select a version; verify its commit and paired Host source rather
+than relying on an old default path or an unmodified upstream checkout.
 
 ```bash
 PI_WORKTREE=/absolute/path/to/pi-1.0-candidate
@@ -58,6 +59,48 @@ package version. The Pi 1.0 candidate reports `1.0.0` with protocol `2`, and the
 payload includes the relocated codemode worker, QuickJS WASM and the Pi 1.0
 codemode reference. A successful build is not proof that the app is using it;
 activation and foreground acceptance remain separate, explicitly selected steps.
+
+## Paired execution and recovery contract
+
+Version negotiation alone does not establish equivalent execution semantics.
+The Host captures `executionBinding` (turn and exact client-message identity)
+and Room capability before Gateway capacity waiting. The paired PAW validates
+that original binding, persists request identity and the original reply, and
+fences cancelled turns when claiming effects. Completed Gateway admissions replay their original serialized response, which
+may still require approval. The original approval ID resolves its eventual
+execution receipt; replaying admission does not repeat the effect. Pending or
+unknown admissions and changed arguments cannot execute again.
+An older unbound client keeps receipt deduplication but lacks this exact-turn
+fence. Upgrading only PAW is therefore insufficient for that guarantee.
+
+The Host must also advertise `sessionBoundAbort` for target-bound ordinary
+Stop. PAW fences the captured approval scope before the RPC; a missing ACK
+does not erase that fence, and a late ACK cannot cancel a newer turn's
+approvals. The Host rejects a changed target before signalling native resources.
+Older Hosts require upgrading for this path; PAW does not fall back to an
+unbound Stop. Pending admission uses its original non-empty client identity,
+or waits for the exact original turn when the client identity is empty.
+
+History recovery still belongs to the classic Host/SessionManager. UI reset and
+retention cursors describe a projection and do not authorize execution. Keep
+unknown external effects unresolved until the original owner can reconcile
+them. In particular, native remote MCP cancellation is a notification, not an
+acknowledgment that its server stopped a side effect.
+
+## Ledger upgrade and rollback boundary
+
+PAW migrations 0216 and 0217 are additive: request/Stop tables, exact turn/client
+columns and an index. Existing approval rows, transcripts and request replies
+are not rewritten. Old rows keep empty binding fields, so they cannot acquire
+an invented exact-turn identity; ambiguous historical effects remain unknown.
+
+Reverting source does not reverse these migrations. Keep the new tables and
+receipts, and do not activate an older unbound Host while executions or unknown
+effects remain. A downgrade requires quiescing the owners and reconciling their
+original identities first; there is no automatic data downgrade. Restoring an
+older database over new receipts can erase deduplication evidence and is not a
+safe rollback procedure. Normal upgrade/retry keeps the same database and uses
+the migration receipt/checksum contract.
 
 ## Durable scope
 

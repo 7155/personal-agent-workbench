@@ -117,7 +117,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-在开发服务器显示的地址后添加 `/?frontend=paw-os&controlTransport=mock`。这是公开演示模式，可以查看界面；真实模型调用、本机文件读取和完整原生 Browser 需要实际运行环境。开发后端与 Gateway 的步骤见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [源码构建指南](release/README.md#source-build-requirements)。
+在开发服务器显示的地址后添加 `/?controlTransport=mock`。这是公开演示模式，可以查看界面；真实模型调用、本机文件读取和完整原生 Browser 需要实际运行环境。开发后端与 Gateway 的步骤见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [源码构建指南](release/README.md#source-build-requirements)。
 
 ## 上手教程
 
@@ -207,7 +207,7 @@ Knowledge 的 RAGFlow 能力对齐、索引重建和回退边界见
 
 Room 出现实际文件记录后，可从任务栏或成果页打开 **成果桌**，按类型和文字查找、标记本窗口重点并追溯原任务。格式封面不是文件内容预览，验收要求不等于已通过；打开的是工作区当前文件，而不是交付时的冻结副本。完整任务与证据复用同一弹层，返回后保留选择与阅读位置。
 
-源码中的 **Jev 任务模式**连接计划、依赖分派、核验、返修和最终答复，执行仍由伙伴的 Pi Session 承担。当前平衡路由使用 GPT-6.1 Sol medium 执行普通任务，复杂规划和集成使用 xhigh；简单任务可选 Luna，额外复核按实际需要安排。界面展示真实执行回执及待解决项。配置、工具策略和真实执行验证方法见 [Jev 接入说明](integrations/jev/README.md)。这项源码能力不代表已有安装包已更新。
+源码中的 **Jev 任务模式**连接计划、依赖分派、核验、返修和最终答复，执行仍由伙伴的 Pi Session 承担。当前平衡路由使用 GPT-6.1 Sol medium 执行普通任务，复杂规划和集成使用 xhigh；明确简单的执行与汇总使用 GPT-6 Luna max，额外复核按实际需要安排。界面展示真实执行回执及待解决项。配置、工具策略和真实执行验证方法见 [Jev 接入说明](integrations/jev/README.md)。这项源码能力不代表已有安装包已更新。
 
 使用支持原生 codemode 的 Pi Runtime 时，可在当前对话的功能目录中选择**代码执行编排方式**：按需使用、仅代码编排或关闭。选择在对话空闲时生效；展开代码执行记录可核对其中的工具参数与结果。它复用同一套工具权限和执行链，不改变模型或推理强度；旧 Runtime 不显示该选项。
 
@@ -237,6 +237,8 @@ Room 出现实际文件记录后，可从任务栏或成果页打开 **成果桌
 
 Pi 负责 Session、模型与工具执行；PAW 负责工作空间、协作、记忆、评测与交付。界面通过命令、事件和快照恢复当前状态。
 
+[完整架构与状态归属](ARCHITECTURE.md)说明各层的持久化、取消、恢复、扩展与测试边界。
+
 ```mermaid
 flowchart TD
     UI[PAWOS 界面] -->|HTTP 命令与查询| GW[PAW Gateway]
@@ -264,7 +266,7 @@ flowchart TD
 
 ### Room 状态由谁负责
 
-经典 Room 与 PAWOS Room 是同一协作能力的两个界面入口。修改公共发送行为时，从共享 application 入口开始；不要在窗口里再实现一套请求事务、事件缓存或 Agent 循环。
+PAWOS 是产品的统一界面入口。修改 Room 发送行为时，从共享 application 入口开始；窗口复用它的请求事务、事件缓存与恢复，不另建 Agent 循环。
 
 | 职责 | 唯一 owner 与源码入口 | 界限 |
 | --- | --- | --- |
@@ -272,13 +274,13 @@ flowchart TD
 | 未确认请求的身份与恢复 | [`room-send-journal`](control-center-web/src/features/rooms/runtime/room-send-journal.ts) | 按连接和 Room 保存原请求；重开界面不自动重发，核实仍用同一身份与原参数 |
 | 快照、SSE 与断线恢复 | [`shared-room-live-session`](control-center-web/src/features/rooms/runtime/shared-room-live-session.ts) | 多个界面共享连接及恢复顺序；React hook 只管理订阅租约 |
 | 对话、活动与历史缓存 | [`live-store`](control-center-web/src/features/rooms/state/live-store.ts) · [`room-reducer`](control-center-web/src/contracts/room-reducer.ts) | HTTP ACK 和 SSE 汇入同一投影；窗口外壳只读 [`projection-bridge`](control-center-web/src/features/rooms/state/projection-bridge.ts) |
-| 草稿、附件与阅读位置 | [经典 Room](control-center-web/src/features/rooms/index.tsx) · [PAWOS Room](control-center-web/src/paw-os/apps/PawRoomWorkspace.tsx) | 界面保留输入、滚动和布局；继续旧任务不消费下一条草稿的附件 |
+| 草稿、附件与阅读位置 | [PAWOS Room](control-center-web/src/paw-os/apps/PawRoomWorkspace.tsx) | 界面保留输入、滚动和布局；继续旧任务不消费下一条草稿的附件 |
 | Root 与 Session 归属 | [`RoomTurnRegistry`](rag_ime/rooms/turn_registry.py) · [`RoomSessionDispatchService`](rag_ime/rooms/session_dispatch.py) | Room 负责显式派发及公共 Root 对应关系，模型和 Tool 循环仍归 Pi |
 | Root 停止与回执汇总 | [`RoomSessionCancellationService`](rag_ime/rooms/session_cancellation.py) | 按当前 Root 绑定向 Pi 及子执行传播停止；界面不能把请求成功当作停止完成 |
 
 普通发送链路是：界面构造意图 → application 认领原请求 → transport 提交 → Room 服务派发到 Pi → ACK/SSE 更新共享投影。Jev 的任务与方案操作继续由它自己的应用入口管理，不借普通 Room 发送事务重放。
 
-命令被接收、工具返回结果、Root 完成是不同事实。前端的 `sending` 只表示交付中的交互状态；WorkItem 元数据、工具卡片和裁剪后的历史不能替代执行终态凭据。修改这些边界时，先运行 [发送事务契约](control-center-web/src/features/rooms/application/room-send.test.ts)、[经典 Room 回归](control-center-web/src/features/rooms/rooms-feature.test.tsx) 与 [PAWOS Room 回归](control-center-web/src/paw-os/apps/PawRoomWorkspace.test.tsx)。
+命令被接收、工具返回结果、Root 完成是不同事实。前端的 `sending` 只表示交付中的交互状态；WorkItem 元数据、工具卡片和裁剪后的历史不能替代执行终态凭据。修改这些边界时，先运行 [发送事务契约](control-center-web/src/features/rooms/application/room-send.test.ts)、[共享恢复回归](control-center-web/src/features/rooms/runtime/use-room-live-session.test.tsx) 与 [PAWOS Room 回归](control-center-web/src/paw-os/apps/PawRoomWorkspace.test.tsx)。
 
 ### 前端交互与动效
 

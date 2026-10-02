@@ -51,8 +51,8 @@ or that every scenario has been activated.
   receipt and does not create another model turn; short text-only replies remain
   direct answers.
 - **Tool approval:** configured Jev is preferred on the next new approval.
-  Confidence below 0.70 yields a denial without asking Luna to override it.
-  Transport/provider/response failures use the existing Luna Max fallback.
+  Confidence below 0.70 yields a denial without asking another model to override it.
+  Transport/provider/response failures use the current Codex approval-model fallback.
   A completed approval reuses its stored receipt.
 - **Knowledge reranking:** select `RAG_IME_KNOWLEDGE_RERANK_PROVIDER=typesafe-jev`
   in the Knowledge worker environment, restart that worker, and enable reranking

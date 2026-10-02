@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-02T05:28:06.995089+00:00",
+  "generatedAt": "2026-10-02T09:14:24.364777+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-pi1-mac-iteration-20261002",
@@ -15,7 +15,7 @@
   "groups": {
     "local_docs": {
       "description": "Stop tracking local development records and their dedicated checks; preserve local files.",
-      "pathCount": 122
+      "pathCount": 121
     },
     "product_integration": {
       "description": "Integrate current product source and public contribution guidance.",
@@ -159,58 +159,63 @@
     },
     "room_history_codemode": {
       "description": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks.",
-      "pathCount": 61
+      "pathCount": 59
     },
     "pi1_experience_iteration": {
       "description": "Paired Pi 1.0 experience and runtime source, with scoped Mac acceptance fixes.",
       "pathCount": 38
+    },
+    "pi1_final_integration": {
+      "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
+      "pathCount": 209
     }
   },
   "summary": {
-    "pathCount": 1639,
+    "pathCount": 1845,
     "dispositionCounts": {
-      "delete_old_implementation": 199,
-      "keep_release": 1440
+      "delete_old_implementation": 307,
+      "keep_release": 1538
     },
     "groupCounts": {
-      "local_docs": 122,
+      "agent_capsule": 3,
+      "brand_stellar": 60,
+      "browser_recovery": 1,
+      "composition_refactor": 32,
+      "conversation_controls": 61,
+      "conversation_v2_integration": 49,
+      "earth_research": 115,
+      "jev_integration": 10,
+      "knowledge_runtime": 12,
+      "lab_backend": 74,
+      "lab_frontend": 54,
+      "lab_tools": 10,
+      "local_docs": 121,
+      "memory_lifecycle": 15,
+      "offline_installer": 12,
+      "owner_boundaries": 15,
+      "pi1_experience_iteration": 38,
+      "pi1_final_integration": 209,
+      "pi_content_studio_v5_v6": 41,
+      "pi_runtime_refactor": 23,
+      "portable_agent_ui": 8,
       "product_integration": 57,
+      "public_showcase": 30,
       "react_os_docs": 3,
       "refactor_docs_examples": 9,
-      "earth_research": 115,
-      "brand_stellar": 60,
-      "public_showcase": 30,
+      "refactor_integration": 23,
+      "refactor_verification": 66,
       "references_history": 8,
-      "room_history_codemode": 61,
-      "pi_content_studio_v5_v6": 41,
-      "workspace_completion": 315,
-      "conversation_v2_integration": 49,
-      "memory_lifecycle": 15,
-      "pi1_experience_iteration": 38,
+      "release_scope": 1,
+      "room_frontend": 20,
+      "room_history_codemode": 59,
+      "room_service_refactor": 43,
+      "scheduled_tasks": 25,
+      "second_brain": 24,
+      "session_full_access": 8,
+      "trace_optimization": 61,
       "verification": 111,
       "voice_desktop": 19,
-      "composition_refactor": 32,
-      "portable_agent_ui": 8,
-      "owner_boundaries": 15,
-      "conversation_controls": 61,
-      "trace_optimization": 61,
-      "scheduled_tasks": 25,
-      "session_full_access": 8,
-      "jev_integration": 10,
-      "lab_frontend": 54,
-      "second_brain": 24,
-      "knowledge_runtime": 12,
-      "room_frontend": 20,
-      "agent_capsule": 3,
-      "refactor_integration": 23,
-      "offline_installer": 12,
-      "room_service_refactor": 43,
-      "lab_backend": 74,
-      "pi_runtime_refactor": 23,
-      "browser_recovery": 1,
-      "lab_tools": 10,
-      "release_scope": 1,
-      "refactor_verification": 66
+      "workspace_completion": 315
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -246,10 +251,10 @@
     },
     {
       "path": "ARCHITECTURE.md",
-      "status": "deleted",
-      "disposition": "delete_old_implementation",
-      "group": "local_docs",
-      "reason": "Stop tracking local development records and their dedicated checks; preserve local files."
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "pi1_final_integration",
+      "reason": "Restore the requested public architecture and source ownership navigation for this paired candidate; local runtime status remains separate machine evidence."
     },
     {
       "path": "CHANGELOG.md",
@@ -1162,11 +1167,102 @@
       "reason": "Own the source previously located at paw-agent-chat-ui-kit-source.zip; preserve runtime behavior and attribution."
     },
     {
+      "path": "control-center-web/e2e/__screenshots__/product-scenes.e2e.ts/agent-preview-desktop-1280x820.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/product-scenes.e2e.ts/agent-preview-desktop-1440x900.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/product-scenes.e2e.ts/agent-preview-mobile-390x844.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/product-scenes.e2e.ts/agent-preview-mobile-430x932.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/product-scenes.e2e.ts/agent-preview-tablet-1024x768.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/responsive.e2e.ts/control-center-shell-desktop-1280x820.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/responsive.e2e.ts/control-center-shell-desktop-1440x900.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/responsive.e2e.ts/control-center-shell-mobile-390x844.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/responsive.e2e.ts/control-center-shell-mobile-430x932.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/__screenshots__/responsive.e2e.ts/control-center-shell-tablet-1024x768.png",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/accessibility.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/agent-streaming.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/e2e/collab-timeline.e2e.ts",
       "status": "added",
       "disposition": "keep_release",
       "group": "room_history_codemode",
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/e2e/collaboration-profile-control.e2e.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/e2e/conversation-rich-v2.e2e.ts",
@@ -1202,6 +1298,20 @@
       "disposition": "keep_release",
       "group": "room_history_codemode",
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/collaboration-profile.html",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/collaboration-profile.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/e2e/fixtures/conversation-rich-v2-assets.ts",
@@ -1372,6 +1482,27 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/fixtures/load.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/load.html",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/load.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/e2e/fixtures/pi-content-v5-assets.ts",
       "disposition": "keep_release",
       "group": "pi_content_studio_v5_v6",
@@ -1435,6 +1566,48 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/e2e/fixtures/session-load.html",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/fixtures/session-load.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/helpers.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/management-dark-accessibility.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/management-dynamic-type.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/management-overlays.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/e2e/management-visual-contracts.e2e.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -1449,6 +1622,20 @@
       "reason": "Verify Session model options remain visible and clickable beside the bottom composer."
     },
     {
+      "path": "control-center-web/e2e/navigation.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/observability.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/e2e/pi-studio-v5-v6.e2e.ts",
       "disposition": "keep_release",
       "group": "pi_content_studio_v5_v6",
@@ -1456,11 +1643,32 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/product-scenes.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/project-field-accessibility.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/e2e/reduced-motion.e2e.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Mac browser acceptance: accessible model selection and current motion, rich content or CSP regression contracts."
+    },
+    {
+      "path": "control-center-web/e2e/responsive.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/e2e/rich-blocks.e2e.ts",
@@ -1477,11 +1685,32 @@
       "reason": "Verify actual Room conversation height, collapse controls and pointer-driven send across window sizes."
     },
     {
+      "path": "control-center-web/e2e/route-health.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/e2e/security.e2e.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Mac browser acceptance: accessible model selection and current motion, rich content or CSP regression contracts."
+    },
+    {
+      "path": "control-center-web/e2e/session-room-interactions.e2e.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/e2e/tsconfig.json",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/e2e/workbench-design.e2e.ts",
@@ -2338,6 +2567,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/playwright.config.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/pnpm-lock.yaml",
       "status": "modified",
       "group": "product_integration",
@@ -2450,6 +2686,55 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/app/AppErrorBoundary.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/app/FrontendShell.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/app/FrontendShell.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/app/LegacyProductApp.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/app/app-recovery.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/app/frontend-product.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/app/frontend-product.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/app/mount-control-center.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -2513,6 +2798,20 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/app/router-recovery.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/app/router.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/app/standalone-surface.test.ts",
       "disposition": "keep_release",
       "group": "verification",
@@ -2527,11 +2826,88 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/components/layout/AppShell.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/AppShell.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/Navigation.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/ShellSidebarResizer.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/ShellSidebarResizer.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/ThemeMenu.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/WorkspacePaneResizer.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/components/layout/index.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/layout.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/components/layout/route-icons.ts",
-      "disposition": "keep_release",
+      "disposition": "delete_old_implementation",
       "group": "composition_refactor",
-      "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
-      "status": "modified"
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "status": "deleted"
+    },
+    {
+      "path": "control-center-web/src/components/layout/useHashRoute.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/layout/workspace-pane-resizer.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/components/primitives/Button.tsx",
@@ -2546,6 +2922,20 @@
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/PrimitivesShowcase.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/components/primitives/PrimitivesShowcase.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/components/primitives/SegmentedControl.tsx",
@@ -2569,11 +2959,25 @@
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
+      "path": "control-center-web/src/components/primitives/index.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/components/primitives/primitives.css",
       "status": "modified",
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/showcase.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/contracts/agent-reducer.test.ts",
@@ -2801,10 +3205,10 @@
     },
     {
       "path": "control-center-web/src/features/agent/agent-feature.test.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "pi_content_studio_v5_v6",
-      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
     },
     {
       "path": "control-center-web/src/features/agent/agent.css",
@@ -2899,10 +3303,10 @@
     },
     {
       "path": "control-center-web/src/features/agent/composer/tool-picker.css",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "conversation_controls",
-      "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
     },
     {
       "path": "control-center-web/src/features/agent/composer/tool-policy.ts",
@@ -2948,10 +3352,38 @@
     },
     {
       "path": "control-center-web/src/features/agent/index.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "conversation_controls",
-      "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
+    },
+    {
+      "path": "control-center-web/src/features/agent/layout/AgentPaneResizer.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/layout/AgentPaneResizer.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/marks/conversation-compact-chrome.test.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/agent/overlay-dialog.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/agent/portable/index.test.tsx",
@@ -2973,6 +3405,13 @@
       "disposition": "keep_release",
       "group": "portable_agent_ui",
       "reason": "Own the source previously located at control-center-web/src/features/eval-lab/projects/portable-agent-ui.css; preserve runtime behavior and attribution."
+    },
+    {
+      "path": "control-center-web/src/features/agent/preview-data.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/agent/public-error.test.ts",
@@ -3017,6 +3456,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.reset.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.test.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -3031,18 +3477,46 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/agent/send-stage-timing.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/send-stage-timing.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/sessions/AgentConversationState.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/agent/sessions/NewSessionDialog.test.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "session_full_access",
-      "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
     },
     {
       "path": "control-center-web/src/features/agent/sessions/NewSessionDialog.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "session_full_access",
-      "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
+    },
+    {
+      "path": "control-center-web/src/features/agent/sessions/SessionRail.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/agent/state/live-store.acknowledgement.test.ts",
@@ -3064,6 +3538,34 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/state/use-model-selection-controller.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/state/use-session-composer-inputs.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/surface-layout.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/surface-layout.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/agent/timeline/ActivitySummary.tsx",
@@ -3164,11 +3666,25 @@
       "reason": "Lossless reference archives, attribution and dated acceptance records."
     },
     {
+      "path": "control-center-web/src/features/agent/timeline/code-highlighting.test.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/conversation-content-groups.ts",
       "disposition": "keep_release",
       "group": "pi_content_studio_v5_v6",
       "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/conversation-status-polish.test.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/features/agent/timeline/progressive-markdown/ATTRIBUTION.md",
@@ -3304,6 +3820,27 @@
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
     },
     {
+      "path": "control-center-web/src/features/browser/browser-chrome.css",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/browser/browser-feature.test.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/browser/index.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/collab-timeline/CollabTimelineStage.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -3333,20 +3870,6 @@
     },
     {
       "path": "control-center-web/src/features/collab-timeline/collab-timeline.test.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "room_history_codemode",
-      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
-    },
-    {
-      "path": "control-center-web/src/features/collab-timeline/fixtures.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "room_history_codemode",
-      "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
-    },
-    {
-      "path": "control-center-web/src/features/collab-timeline/index.ts",
       "status": "added",
       "disposition": "keep_release",
       "group": "room_history_codemode",
@@ -4662,6 +5185,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/overview/api.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/overview/index.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/overview/management-features.test.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/overview/management-ui.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -4760,6 +5304,20 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/planning/index.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/planning/management-writes.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/planning/planning.css",
       "status": "modified",
       "group": "scheduled_tasks",
@@ -4788,11 +5346,200 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/project-field/index.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/island-geometry.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/island-geometry.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/project-documents.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/project-documents.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/project-field-projection.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/project-field-projection.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/project-field.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/project-field.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/prototype-data.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/reconstructed-personal-agent-project.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/semantic-zoom.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/project-field/semantic-zoom.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/roles/CollaborationProfileGovernancePanel.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/roles/CollaborationProfileGovernancePanel.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/roles/collaboration-profile-control-gate.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/roles/collaboration-profile-control-gate.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/roles/collaboration-profile-governance.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/roles/role-model.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomMemberBoundaryDialog.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomModulePanel.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomPaneResizer.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomPaneResizer.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/rooms/RoomPlanetAvatar.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomQuestionDialog.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomTaskGraph.markers.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomTaskGraph.peer-relations.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomTaskGraph.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/rooms/application/room-send.test.ts",
@@ -4873,10 +5620,10 @@
     },
     {
       "path": "control-center-web/src/features/rooms/index.tsx",
-      "status": "modified",
+      "status": "deleted",
       "group": "room_frontend",
-      "reason": "Improve Room reading, participant feedback and conversation controls.",
-      "disposition": "keep_release"
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/rooms/room-planet-avatar.css",
@@ -4900,6 +5647,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/rooms/room-surface-modules.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/rooms/room-types.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -4908,10 +5662,10 @@
     },
     {
       "path": "control-center-web/src/features/rooms/rooms-feature.test.tsx",
-      "disposition": "keep_release",
+      "disposition": "delete_old_implementation",
       "group": "pi_content_studio_v5_v6",
-      "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
-      "status": "modified"
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "status": "deleted"
     },
     {
       "path": "control-center-web/src/features/rooms/rooms.css",
@@ -4970,6 +5724,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/rooms/runtime/use-room-live-session.retention.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/features/rooms/runtime/use-room-live-session.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -4982,6 +5743,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/runtime/use-room-update-clock.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/rooms/state/live-store.test.ts",
@@ -5005,11 +5773,53 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/rooms/timeline/RoomTurn.activity.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/timeline/RoomTurn.chronology.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
       "path": "control-center-web/src/features/rooms/timeline/RoomTurn.tsx",
-      "disposition": "keep_release",
+      "disposition": "delete_old_implementation",
       "group": "workspace_completion",
-      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
-      "status": "modified"
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "status": "deleted"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/timeline/room-tool-presentation.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/timeline/room-tool-presentation.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/use-room-navigation-documents.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/use-room-task-session-facts.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/features/schedules/MemorySchedules.tsx",
@@ -5579,6 +6389,34 @@
       "reason": "Installed app naming and Electron voice control integration."
     },
     {
+      "path": "control-center-web/src/features/work-documents/index.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/work-documents/work-documents-feature.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/work-documents/work-documents.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/PawOsApp.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/JevCollaborationPanel.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -5668,6 +6506,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawContextTrace.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawJevTeamPanels.test.tsx",
@@ -5901,18 +6746,67 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawSystemApps.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawSystemApps.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawSystemAppsMigrated.test.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "verification",
-      "reason": "Regression checks for the included product changes."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawSystemAppsMigrated.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "product_integration",
-      "reason": "Integrate current product source and public contribution guidance."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbench.test.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbench.tsx",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbenchMigrated.test.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbenchMigrated.tsx",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbenchOperations.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawWorkbenchPlanningTools.tsx",
@@ -5957,11 +6851,39 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/entries/PawAgentAppEntry.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/entries/PawAgentCapsuleAppEntry.tsx",
       "disposition": "keep_release",
       "group": "agent_capsule",
       "reason": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/entries/PawBrowserAppEntry.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/entries/PawNativeAppEntry.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/entries/PawSatelliteEntry.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/apps/entries/PawTraceAgentAppEntry.tsx",
@@ -6489,6 +7411,20 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/paw-os/paw-os-landmarks.test.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/performance-boundaries.test.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/real-data-fixtures.test.ts",
       "status": "deleted",
       "disposition": "delete_old_implementation",
@@ -6622,6 +7558,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawFieldLede.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/PawRoomProjectionKeeper.tsx",
       "status": "modified",
       "group": "room_frontend",
@@ -6720,11 +7663,46 @@
       "reason": "User-selected branding and bounded stellar visual behavior."
     },
     {
-      "path": "control-center-web/src/paw-os/styles/paw-os-agent-migrated-v1.css",
+      "path": "control-center-web/src/paw-os/shell/wayfinder-running-motion.test.ts",
       "status": "modified",
-      "disposition": "keep_release",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent-composition.css",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent-fx.css",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent-migrated-v1.css",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "product_integration",
-      "reason": "Integrate current product source and public contribution guidance."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent-next.css",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-app-palette.test.ts",
@@ -6732,6 +7710,20 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-controls.css",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-controls.test.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-room-focus.css",
@@ -6742,10 +7734,10 @@
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-room-migrated-v1.css",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "room_frontend",
-      "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-room-progress.css",
@@ -6762,10 +7754,38 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/paw-os/styles/paw-os-room.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/paw-os/styles/paw-os-shell-migrated-v1.css",
-      "status": "modified",
+      "status": "deleted",
       "group": "product_integration",
-      "reason": "Integrate shared routes, dependencies and supporting product owners.",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-shell-visual.test.ts",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-shell.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-starfield.css",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -6784,10 +7804,73 @@
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-sys-apps-migrated-v1.css",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "product_integration",
-      "reason": "Integrate current product source and public contribution guidance."
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries."
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-sys-apps-migrated-v1.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-system-apps.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-system-apps.test.ts",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-tools-files-migrated-v1.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-tools-files.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-workbench-migrated-v1.css",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-workbench-migrated-v1.test.ts",
+      "status": "deleted",
+      "group": "pi1_final_integration",
+      "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
+      "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-workbench.css",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-workbench.test.ts",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os.css",
@@ -6874,6 +7957,13 @@
       "reason": "Installed app naming and Electron voice control integration."
     },
     {
+      "path": "control-center-web/src/test/fixtures/collab-timeline.ts",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "control-center-web/src/test/fixtures/room-visual.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -6900,6 +7990,13 @@
       "disposition": "delete_old_implementation",
       "group": "local_docs",
       "reason": "Stop tracking local development records and their dedicated checks; preserve local files."
+    },
+    {
+      "path": "design-system/rag-ime-control-center/pages/project-field.md",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "eval/execution-reliability/README.md",
@@ -7266,6 +8363,13 @@
       "status": "modified"
     },
     {
+      "path": "integrations/pi/skills/facilitate-room/references/runtime-operations.md",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "integrations/pi/skills/implementation-planning/SKILL.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -7378,6 +8482,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/activity_timeline_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/agent_approval_application.py",
       "status": "modified",
       "group": "room_service_refactor",
@@ -7466,6 +8577,13 @@
       "status": "modified",
       "group": "conversation_controls",
       "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_gateway_requests.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -7973,6 +9091,13 @@
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
+      "path": "rag_ime/agent_model_defaults.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/agent_prompt_application.py",
       "status": "modified",
       "group": "composition_refactor",
@@ -7998,6 +9123,13 @@
       "status": "modified",
       "group": "composition_refactor",
       "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/agent_roles.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -8253,11 +9385,25 @@
       "reason": "Terminate exact foreground Gateway command processes on Session or Room Stop and require physical drain in cancellation evidence."
     },
     {
+      "path": "rag_ime/ai_judge_eval.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/browser_control.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "rag_ime/cli.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "rag_ime/config_portability.py",
@@ -8456,6 +9602,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/db/migration_runner.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/db/migrations/0199_trace_optimization.sql",
       "status": "added",
       "disposition": "keep_release",
@@ -8573,6 +9726,20 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0216_gateway_request_identity.sql",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/db/migrations/0217_gateway_request_turn_binding.sql",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "rag_ime/debug_server.py",
@@ -9128,10 +10295,31 @@
       "status": "added"
     },
     {
+      "path": "rag_ime/memory_long_context_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/memory_maintenance_settings.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "rag_ime/memory_model_executor.py",
       "status": "modified",
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/memory_near_budget_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -9182,6 +10370,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "rag_ime/personal_memory_luna_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "rag_ime/pi/README.md",
@@ -9350,6 +10545,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "rag_ime/rag_benchmark_luna_graph.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "rag_ime/rag_benchmark_sandbox.py",
@@ -9574,6 +10776,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "rag_ime/swe_bench_agent_eval.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "rag_ime/trace_diagnostics.py",
@@ -9828,6 +11037,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "scripts/eval_memory_near_budget_gateway_luna.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "scripts/eval_owner_memory_model_updates.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "scripts/eval_paw_app_export_acceptance.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "scripts/eval_paw_context_continuation.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -9840,6 +11070,20 @@
       "disposition": "keep_release",
       "group": "lab_tools",
       "reason": "Operator scripts that import Lab owners or record current source paths."
+    },
+    {
+      "path": "scripts/eval_personal_context_dreaming_luna.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "scripts/eval_personal_memory_luna.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "scripts/export_agent_lab_candidate_evidence.py",
@@ -9875,6 +11119,13 @@
       "disposition": "keep_release",
       "group": "lab_tools",
       "reason": "Operator scripts that import Lab owners or record current source paths."
+    },
+    {
+      "path": "scripts/install_agent_gateway_launch_agent.sh",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "scripts/install_binary_payload.py",
@@ -9947,6 +11198,13 @@
       "reason": "Account for the already-committed plain-language Earth GIS acceptance runner."
     },
     {
+      "path": "scripts/run_enterpriseops_csm_eval.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "scripts/run_paw_medium_eval.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -9972,6 +11230,13 @@
       "status": "modified",
       "group": "refactor_integration",
       "reason": "Current imports, packaging inputs, Runtime source fingerprints and supported Python installation floor.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "scripts/run_unit_tests.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -10052,11 +11317,39 @@
       "status": "added"
     },
     {
+      "path": "tests/sqlite_fixtures.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_active_rag_debug_server.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_active_rag_service.py",
       "status": "modified",
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Explicit local note reuse through the existing Active RAG candidate and foreground acceptance owner."
+    },
+    {
+      "path": "tests/test_activity_timeline.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_activity_timeline_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_agent_app_owned_sessions.py",
@@ -10122,6 +11415,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_configuration.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_agent_delegation.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -10155,6 +11455,13 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_agent_knowledge_tool_management.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_agent_lab_agent_review.py",
@@ -10444,10 +11751,38 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_personas.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_agent_prompt_settings.py",
       "status": "modified",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_role_book.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_role_book_control.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_roles.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -10731,6 +12066,13 @@
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
     },
     {
+      "path": "tests/test_codex_history.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_control_api_route_policy.py",
       "disposition": "keep_release",
       "group": "verification",
@@ -10773,6 +12115,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_desktop_agent_tools.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_desktop_files.py",
       "status": "added",
       "group": "verification",
@@ -10801,6 +12150,13 @@
       "reason": "Existing executable regressions updated for the owning package."
     },
     {
+      "path": "tests/test_eval_owner_memory_model_updates.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_eval_schedule_api.py",
       "status": "modified",
       "group": "scheduled_tasks",
@@ -10819,6 +12175,13 @@
       "status": "modified",
       "group": "scheduled_tasks",
       "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_gateway_execution_identity.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -11214,6 +12577,13 @@
       "reason": "Shared Pi history and declared Lab HTTP error ownership with consumer and boundary regressions."
     },
     {
+      "path": "tests/test_latest_agent_model_defaults.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_license_decision.py",
       "group": "verification",
       "disposition": "keep_release",
@@ -11291,10 +12661,31 @@
       "status": "added"
     },
     {
+      "path": "tests/test_memory_long_context_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_memory_maintenance_settings.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_memory_model_executor.py",
       "status": "modified",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_memory_near_budget_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
     },
     {
@@ -11310,6 +12701,13 @@
       "group": "verification",
       "reason": "Verify integrated Memory, runtime and historical replay contracts.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_migration_atomicity.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_model_runtime.py",
@@ -11373,6 +12771,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_personal_memory_luna_evaluation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_pi_exact_turn_cancellation.py",
@@ -11501,6 +12906,20 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "tests/test_rag_agent_candidate_controls.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_rag_agent_scene_recipe.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_rag_benchmark_sandbox.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -11578,6 +12997,20 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_run_rag_agent_ablation.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_run_unit_tests.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
+    },
+    {
       "path": "tests/test_settings_store.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -11604,6 +13037,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_sqlite_fixtures.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_trace_diagnostic_http.py",
@@ -11660,6 +13100,13 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "tests/test_voice_input.py",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_work_documents.py",

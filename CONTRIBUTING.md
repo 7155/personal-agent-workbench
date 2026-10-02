@@ -44,6 +44,15 @@ fixtures, and guides; do not force-add private development records.
 - Do not introduce forwarding-only facades, service locators, universal base
   classes, or a second event/message protocol.
 
+The Control Center has one product entry: `src/app/App.tsx` mounts PAWOS.
+`src/paw-os` owns the desktop, windows and workspace composition;
+`src/features` owns shared domain state, API access and renderers. Hash routes
+resolve through the PAWOS App registry. Standalone report, screen-assistant and
+portable Agent surfaces reuse these owners. Do not add another frontend
+selector or a parallel page/router implementation. Product browser tests use
+this same entry with an isolated mock transport; component fixtures remain
+explicitly synthetic.
+
 ## Verification
 
 Run focused tests while working. Before a substantial pull request, run:
@@ -67,6 +76,21 @@ pnpm --dir control-center-web build
 Native or input-method changes also require the relevant build and an attended
 foreground test. A backend JSON response is not proof that a candidate was
 visible and selectable in Squirrel.
+
+For a slow or apparently stuck Python suite, use
+`uv run --locked python scripts/run_unit_tests.py --timing-jsonl /tmp/paw-unit-times.jsonl`.
+It runs the ordinary suite, records active tests and module timings, and prints
+periodic thread stacks without killing or skipping a test. An interrupted run
+reports incomplete status. Diagnose resource owners and setup cost before
+changing a timeout.
+
+Behavior fixtures may use `tests.sqlite_fixtures.copy_current_database` to copy
+a pristine database produced by the real migration chain. Each test still owns
+its database and runs normal product initialization. Empty/legacy migration,
+initialization, crash and durability tests must retain their specific starting
+state. Close services, workers and streams before removing temporary data.
+Preserve unique recovery assertions when consolidating tests; implementation
+shape or test count is not the acceptance criterion.
 
 For Jev Room changes, run `python3 -m unittest discover -s tests -p
 'test_jev*py'` and `python3 -m unittest tests.test_pi_exact_turn_cancellation`,
