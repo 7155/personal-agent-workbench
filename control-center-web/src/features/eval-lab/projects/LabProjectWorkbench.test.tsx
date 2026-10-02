@@ -54,11 +54,15 @@ describe('Agent-led Lab project container', () => {
     const current = project({ bindings, workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
       nodes: [{ id: 'review-new', kind: 'dataset', title: '新题集核对', status: 'running', summary: '正在核对', dependencies: [], source: 'runtime', ref: { kind: 'golden_job', id: 'review-new' }, evidenceRefs: [{ kind: 'golden_suite', id: 'new-suite' }] }],
       edges: [], counts: { running: 1, queued: 0, completed: 0, failed: 0 }, currentNodeId: 'review-new' } });
+    let completeProjectRead!: (value: ReturnType<typeof read>) => void;
+    const projectRead = new Promise<ReturnType<typeof read>>(resolve => { completeProjectRead = resolve; });
     const transport = new MockControlTransport({ routes: {
-      'agent.eval-lab.projects.get': read(current, [current]),
+      'agent.eval-lab.projects.get': () => projectRead,
       'agent.eval-lab.golden.get': { ok: true, items: [], suite: null },
     } });
     mount(transport, { initialProjectId: current.projectId });
+    expect(screen.getByRole('status')).toHaveTextContent('正在恢复项目与成果');
+    await act(async () => { completeProjectRead(read(current, [current])); await projectRead; });
     fireEvent.click(await screen.findByRole('button', { name: '查看新题集核对的运行记录' }));
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'new-suite')).toBe(true));
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.eval-lab.golden.get' && request.query?.suiteId === 'old-suite')).toBe(false);
