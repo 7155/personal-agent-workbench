@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-02T15:50:57.087695+00:00",
+  "generatedAt": "2026-10-02T16:58:48.380980+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-pi1-mac-iteration-20261002",
@@ -167,14 +167,14 @@
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
-      "pathCount": 234
+      "pathCount": 235
     }
   },
   "summary": {
-    "pathCount": 1868,
+    "pathCount": 1869,
     "dispositionCounts": {
       "delete_old_implementation": 310,
-      "keep_release": 1558
+      "keep_release": 1559
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -194,7 +194,7 @@
       "offline_installer": 12,
       "owner_boundaries": 15,
       "pi1_experience_iteration": 38,
-      "pi1_final_integration": 234,
+      "pi1_final_integration": 235,
       "pi_content_studio_v5_v6": 41,
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
@@ -12491,6 +12491,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_jev_root_classification_cancellation.py",
+      "status": "added",
+      "group": "pi1_final_integration",
+      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "disposition": "keep_release"
     },
     {
       "path": "tests/test_jev_runtime_adapter.py",

@@ -7,9 +7,10 @@ restart reconciles receipts without sending a prepared/uncertain operation.
 from __future__ import annotations
 
 import json
+import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
-from threading import Lock
+from threading import Event, Lock
 from pathlib import Path
 
 from .lifecycle import JevLifecycle
@@ -18,7 +19,7 @@ from rag_ime.rooms.work_transaction import TransactionHooks, guarded_work_transa
 
 from .materials import JevMaterialService
 from .controller import JevTaskController
-from .decider import JevChoices
+from .decider import JevChoices, NativeClassification
 from .effects import RuntimeEffects
 from .runtime_adapter import cancel_attempt, execution_drained, execution_settlement, recover_retired_attempt, recover_interrupted_attempt
 from .policy import normalize_policy, select_model, model_cards
@@ -53,6 +54,7 @@ class _ProjectionReads:
 class JevRoomApplication:
     def __init__(self, service, *, decider=None):
         self.service = service
+        self._classifications: dict[str, tuple[str, NativeClassification, Event]] = {}
         self.ledger = GraphLedger(service.db_path)
         self.owner = GuardedWorkOwner(service.room_work, self.ledger)
         self.effects = RuntimeEffects(
@@ -63,7 +65,7 @@ class JevRoomApplication:
             controller=JevTaskController(
                 self.ledger, self.owner, decider or JevChoices.from_paw(
                     runtime_provider=lambda: getattr(service, "runtime", None)
-                )
+                ), choose_action=self.choose_action,
             ),
             effects=self.effects,
             observe=self.observe,
@@ -264,11 +266,14 @@ class JevRoomApplication:
             graph_id, binding["controller_id"], executions, snapshot=snapshot)
         for effect in effects:
             effect["executionStatus"] = self.execution_status(effect, reads=reads)
+        pending_classifications = self.pending_classifications(graph_id)
         return {
             "ok": True,
             "mode": "jev",
             **view,
             "stopped": bool(policy["stopped"]),
+            "pendingClassifications": pending_classifications,
+            "classificationDrained": not pending_classifications,
             "phase": policy["phase"],
             "requirementsRevision": policy["requirements_revision"],
             "currentRootObjective": current_objective,
@@ -1144,6 +1149,19 @@ class JevRoomApplication:
                     (binding["graph_id"],),
                 )
             self.service.room_turns.record_cancellation(root_id, "jev-stop:" + root_id)
+            classifications = [entry for entry in self._classifications.values()
+                               if entry[0] == binding["graph_id"]]
+            for _, call, _ in classifications:
+                call.cancellation_event.set()
+        # Never hold the Room admission fence while waiting for the private pipe.
+        for _, call, _ in classifications:
+            cancel = getattr(call.runtime, "cancel_classification", None)
+            if callable(cancel):
+                try:
+                    cancel(call.request_id)
+                except Exception:
+                    # A failed signal is still pending, not proof of drain.
+                    pass
         self.service.room_work.cancel_root(
             room_id=room_id,
             root_turn_id=root_id,
@@ -1162,7 +1180,71 @@ class JevRoomApplication:
                 effect_id, reason="Root explicitly stopped before dispatch"
             )
         self.cleanup_nonadmission(binding["graph_id"])
-        return self.service.room_cancellation.abort_turn(room_id, room_turn_id=root_id)
+        def classification_surface():
+            pending = self.pending_classifications(binding["graph_id"])
+            return {"classification": {
+                "schemaVersion": "rag-ime.root-cancellation-surface.v1",
+                "surface": "classification", "state": "requested" if pending else "terminated",
+                "targetIds": [item["requestId"] for item in pending], "errors": [],
+            }}
+
+        result = self.service.room_cancellation.abort_turn(
+            room_id, room_turn_id=root_id, additional_surfaces=classification_surface,
+        )
+        result["pendingClassifications"] = self.pending_classifications(binding["graph_id"])
+        return result
+
+    def pending_classifications(self, graph_id):
+        with self.service.room_turns.lock:
+            return [{"requestId": call.request_id, "graphId": graph_id,
+                     "status": "cancellation_requested" if call.cancellation_event.is_set() else "pending"}
+                    for owner_graph, call, settled in self._classifications.values()
+                    if owner_graph == graph_id and not settled.is_set()]
+
+    def choose_action(self, graph_id, state, candidates):
+        """Bind both controller and auto-route choices to the stopped Root fence."""
+        request_id = "jev-classify:" + str(uuid.uuid4())
+        settled = Event()
+
+        def on_settled():
+            removed = False
+            with self.service.room_turns.lock:
+                entry = self._classifications.get(request_id)
+                if entry is not None and entry[1] is call:
+                    del self._classifications[request_id]
+                    removed = True
+                settled.set()
+            if removed and (call.started or call.cancellation_event.is_set()):
+                pending = self.pending_classifications(graph_id)
+                self.service.room_events.publish(
+                    room_id=root["room_id"], event_type="participant_status",
+                    turn_id=root["root_turn_id"], payload={
+                        "status": "jev_updated", "graphId": graph_id,
+                        "classificationRequestId": request_id,
+                        "classificationSettled": True,
+                        "classificationDrained": not pending,
+                        "pendingClassifications": pending,
+                    },
+                )
+
+        with self.service.room_turns.lock:
+            with self.ledger.connection() as conn:
+                root = conn.execute(
+                    "SELECT h.stopped,g.room_id,g.root_turn_id FROM agent_jev_host_roots h "
+                    "JOIN agent_jev_graphs g USING(graph_id) WHERE graph_id=?", (graph_id,)
+                ).fetchone()
+            if root is None or root["stopped"]:
+                raise DecisionUnavailable("Root stopped before classification admission")
+            call = NativeClassification(getattr(self.service, "runtime", None), request_id,
+                                        Event(), on_settled)
+            self._classifications[request_id] = (graph_id, call, settled)
+        try:
+            return self.driver.controller.decider.choose_action(
+                state, candidates, min_probability=0.0, min_margin=0.0, classification=call,
+            )
+        finally:
+            if not call.started:
+                on_settled()
 
     def reconcile_graph(self, binding):
         graph_id, controller = binding["graph_id"], binding["controller_id"]

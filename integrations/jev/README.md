@@ -35,6 +35,23 @@ Other listed Jev scenarios still use their existing adapter; this is a scoped
 transport migration, not removal of the canonical Room task owner. See the
 [paired protocol and cancellation boundaries](../pi/pi-0.99-codemode.md#stateless-native-classification).
 
+Root Stop also cancels an in-flight native controller or auto-route decision.
+Registration shares the existing stopped-Root admission fence; cancellation
+before the private pipe write prevents dispatch, and later cancellation targets
+the original Runtime request and dispatch. A cancellation signal does not prove
+drain. An unknown reply remains bound to that Root until the original Host
+reports settlement or exits; another Root or replacement Runtime is unaffected.
+The existing cancellation receipt includes the `classification` resource in
+`surfaces` and `pendingTargets`, with `cancellation_pending` while it is still
+held. Already drained Sessions release their claims independently. The Jev
+projection exposes `pendingClassifications` and `classificationDrained`; actual
+settlement publishes `jev_updated` without creating another Root terminal.
+These are current-process resource facts, not a rewrite of earlier Stop receipts.
+An unsupported Host can still use the direct adapter. That legacy HTTP request
+has no native immediate-abort operation: Stop fences its late business result
+and retains its pending resource until the request actually returns. This does
+not add retries, persisted execution state or a second cancellation framework.
+
 ## Implemented paths
 
 - **Room task execution:** a user request can enter routing, planning, execution,

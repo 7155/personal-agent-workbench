@@ -162,6 +162,25 @@ class RoomReservationCancellationTests(unittest.TestCase):
                     self.assertTrue(second.result(timeout=10)["accepted"])
         self.assertFalse(fixture.service.room_turns.user_priority_sessions)
 
+    def test_failed_additional_resource_observation_cannot_confirm_root_drain(self):
+        fixture = self.fixture
+        with patch.object(fixture.service, "prompt", return_value={"accepted": True, "turnId": "turn:before-stop"}):
+            accepted = fixture.send("additional-resource-observation")
+        def failed_observation():
+            raise OSError("private provider detail must not escape")
+        with patch.object(fixture.service, "abort", side_effect=self.typed_abort):
+            receipt = fixture.service.room_cancellation.abort_turn(
+                str(fixture.room["id"]), room_turn_id=accepted["roomTurnId"],
+                additional_surfaces=failed_observation,
+            )
+        self.assertFalse(receipt["ok"])
+        self.assertEqual(receipt["status"], "cancellation_pending")
+        self.assertEqual(receipt["pendingTargets"], ["additional_resources"])
+        self.assertEqual(receipt["surfaces"]["additional_resources"]["state"], "unknown")
+        self.assertNotIn("private provider detail", str(receipt))
+        events = fixture.service.rooms.list_events_for_turn(str(fixture.room["id"]), accepted["roomTurnId"])
+        self.assertFalse(any(event["eventType"] == "turn_completed" for event in events))
+
 
 if __name__ == "__main__":
     unittest.main()

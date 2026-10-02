@@ -66,6 +66,8 @@ class JevProjectionReadTests(JevHostFixture):
                          'activeVersion': t.id in active_ids,
                          'supersededByTaskId': superseded_by.get(t.id, '')}
                         for t in snapshot.tasks]},
+                    # This offline evaluator never admits a native classifier.
+                    pendingClassifications=[], classificationDrained=True,
                     stopped=bool(policy['stopped']), phase=policy['phase'],
                     requirementsRevision=policy['requirements_revision'],
                     currentRootObjective=owner[0] or snapshot.task(snapshot.root_work_id).objective,

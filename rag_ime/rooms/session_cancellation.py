@@ -56,6 +56,7 @@ class RoomSessionCancellationService:
         room_id: str,
         *,
         room_turn_id: str,
+        additional_surfaces: Callable[[], Mapping[str, Mapping[str, object]]] | None = None,
     ) -> dict[str, object]:
         room = self.rooms.get(room_id)
         events = self.rooms.control_events_for_turn(room_id, room_turn_id)
@@ -143,15 +144,27 @@ class RoomSessionCancellationService:
             reason=f"Cancelled with Room root {room_turn_id}",
         )
         if not active_targets:
+            surfaces = _additional_root_surfaces(additional_surfaces)
+            pending_targets = [name for name, proof in surfaces.items()
+                               if proof.get("state") != "terminated"]
+            if pending_targets:
+                self.room_events.publish(
+                    room_id=room_id, event_type="participant_status", turn_id=room_turn_id,
+                    topic_id=self.room_turns.topic_for_turn(room_turn_id), payload={
+                        "status": "cancellation_pending", "rootId": room_turn_id,
+                        "cancellationReceiptId": cancellation_receipt_id,
+                        "surfaces": surfaces, "pendingTargets": pending_targets,
+                    },
+                )
             return {
                 "schemaVersion": "rag-ime.agent-room-abort.v1",
-                "ok": True,
+                "ok": not pending_targets,
                 "roomId": room_id,
                 "roomTurnId": room_turn_id,
-                "status": "already_terminal",
+                "status": "cancellation_pending" if pending_targets else "already_terminal",
                 "cancellationReceiptId": cancellation_receipt_id,
-                "surfaces": {},
-                "pendingTargets": [],
+                "surfaces": surfaces,
+                "pendingTargets": pending_targets,
                 "partnerDispatches": partner_dispatches,
             }
 
@@ -393,15 +406,18 @@ class RoomSessionCancellationService:
             [str(item.get("childDispatchId") or "") for item in partner_dispatches],
             [],
         )
+        session_resources_pending = any(proof.get("state") != "terminated" for proof in surfaces.values())
+        for name, proof in _additional_root_surfaces(additional_surfaces).items():
+            surfaces[name] = _merge_root_surface(surfaces.get(name), proof)
         pending_targets = [
             surface
             for surface, proof in surfaces.items()
             if str(proof.get("state") or "") != "terminated"
         ]
 
-        if not pending_targets:
+        if not session_resources_pending:
             for target in active_targets:
-                publish_synthetic_terminal = self.room_turns.mark_cancelled_terminal(
+                publish_synthetic_terminal = not pending_targets and self.room_turns.mark_cancelled_terminal(
                     target["sessionId"],
                     room_turn_id,
                 )
@@ -458,6 +474,21 @@ class RoomSessionCancellationService:
             "partnerDispatches": partner_dispatches,
             "event": final_event,
         }
+
+
+def _additional_root_surfaces(callback):
+    if callback is None:
+        return {}
+    try:
+        result = callback()
+        if not isinstance(result, Mapping) or any(not isinstance(proof, Mapping) for proof in result.values()):
+            raise TypeError("Invalid additional Root resource proof")
+        return {name: dict(proof) for name, proof in result.items()}
+    except Exception as error:
+        # Failed observation never proves resource drain; do not expose bodies.
+        return {"additional_resources": _root_resource_surface(
+            "additional_resources", "unknown", [], [type(error).__name__],
+        )}
 
 
 def _public_error(error: BaseException) -> str:

@@ -896,10 +896,11 @@ class JevLifecycle:
                     {},
                 ),
             ]
-            action, _ = self.app.driver.controller.decider.choose_action(
+            action, _ = self.app.choose_action(
+                event.graph_id,
                 {"context": {"objective": root.objective, "acceptance": root.acceptance,
                              "attachmentCount": len(attachment_ids)}},
-                actions, min_probability=0.0, min_margin=0.0,
+                actions,
             )
             abstained = action is None
             if action is None:

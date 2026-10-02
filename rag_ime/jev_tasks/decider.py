@@ -8,6 +8,7 @@ import os
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from threading import Event
 
 from .types import (
     Candidate,
@@ -21,6 +22,17 @@ from .types import (
 
 ABSTAIN = "insufficient_evidence"
 DECISION_VERSION = "jev-task-choice/1"
+
+
+@dataclass
+class NativeClassification:
+    """One Root's original native call, independent of later Runtime replacement."""
+
+    runtime: object
+    request_id: str
+    cancellation_event: Event
+    on_settled: Callable[[], None]
+    started: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,6 +106,7 @@ class JevChoices:
         ):
             raise GraphError("invalid request budget")
         self._evaluate = evaluate
+        self._native_evaluate: Callable[[str, Mapping[str, object], NativeClassification | None], object] | None = None
         self.max_request_bytes = max_request_bytes
 
     @classmethod
@@ -112,28 +125,45 @@ class JevChoices:
         # the same TypeSafe model and answers, not a chat model guessing scores.
         from rag_ime import jev
 
-        def evaluate(state: str, questions: Mapping[str, object]) -> object:
+        def evaluate(state: str, questions: Mapping[str, object],
+                     classification: NativeClassification | None = None) -> object:
+            if classification is not None and classification.cancellation_event.is_set():
+                raise DecisionUnavailable("Root classification cancelled before admission")
             key = jev.api_key()
             if not key:
                 raise DecisionUnavailable("Jev key is not configured")
-            runtime = runtime_provider() if runtime_provider is not None else None
+            runtime = (classification.runtime if classification is not None else
+                       runtime_provider() if runtime_provider is not None else None)
             native = getattr(runtime, "classify_once", None)
             if callable(native):
+                lifecycle = {}
+                if classification is not None:
+                    classification.started = True
+                    lifecycle = {"cancellation_event": classification.cancellation_event,
+                                 "on_settled": classification.on_settled}
                 response = native(
-                    request_id=f"jev-classify:{uuid.uuid4()}", state=json.loads(state),
+                    request_id=classification.request_id if classification is not None else f"jev-classify:{uuid.uuid4()}",
+                    state=json.loads(state),
                     questions=questions, api_key=key,
                     endpoint=os.environ.get("TYPESAFE_API_URL", jev.JEV_ENDPOINT),
                     timeout_seconds=timeout_seconds,
+                    **lifecycle,
                 )
                 if response is not None:
                     if not isinstance(response, Mapping) or response.get("stopReason") != "stop":
                         raise DecisionUnavailable("Pi native classification did not complete")
                     return response
+                if classification is not None:
+                    classification.started = False
+            if classification is not None and classification.cancellation_event.is_set():
+                raise DecisionUnavailable("Root classification cancelled before fallback")
             # Only a missing method or pre-dispatch unsupported capability may
             # use the old adapter. Native exceptions never reach this branch.
             return jev.evaluate(state, questions, key=key, timeout_seconds=timeout_seconds)
 
-        return cls(evaluate, max_request_bytes=max_request_bytes)
+        result = cls(evaluate, max_request_bytes=max_request_bytes)
+        result._native_evaluate = evaluate
+        return result
 
     def choose(
         self,
@@ -142,6 +172,7 @@ class JevChoices:
         instructions: str,
         criteria: Mapping[str, str],
         question_id: str = "decision",
+        classification: NativeClassification | None = None,
     ) -> ChoiceResult:
         if not 2 <= len(criteria) <= 255:
             raise GraphError("Jev choice requires 2..255 options")
@@ -168,7 +199,9 @@ class JevChoices:
                 "decision exceeds byte budget; no controlling requirement was truncated"
             )
         try:
-            response = self._evaluate(canonical(dict(state)), questions)
+            response = (self._native_evaluate(canonical(dict(state)), questions, classification)
+                        if self._native_evaluate is not None else
+                        self._evaluate(canonical(dict(state)), questions))
         except Exception as exc:
             # Do not expose credentials/provider bodies in a front-facing error.
             raise DecisionUnavailable("Jev transport unavailable") from exc
@@ -181,6 +214,7 @@ class JevChoices:
         *,
         min_probability: float = 0.75,
         min_margin: float = 0.10,
+        classification: NativeClassification | None = None,
     ) -> tuple[Candidate | None, ChoiceResult | None]:
         probability(min_probability, "minimum probability")
         probability(min_margin, "minimum margin")
@@ -211,6 +245,7 @@ class JevChoices:
         }
         result = self.choose(
             packet,
+            classification=classification,
             criteria=criteria,
             instructions=(
                 "你在 Jev 第三工作模式中选择当前任务图的一项下一动作，不是在选择 Session 或 Room 模式。"

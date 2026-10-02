@@ -115,6 +115,7 @@ class _ClassificationCall:
     dispatch_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     dispatched: bool = False
     cancel_requested: bool = False
+    on_settled: Callable[[], None] | None = None
 
 
 def _session_resource_snapshot(
@@ -3560,6 +3561,8 @@ class PiRuntimeHostManager:
         api_key: str = "",
         endpoint: str = "",
         timeout_seconds: float = 12.0,
+        cancellation_event: threading.Event | None = None,
+        on_settled: Callable[[], None] | None = None,
     ) -> dict[str, object] | None:
         """Use Pi's native TypeSafe classifier without creating an Agent turn.
 
@@ -3568,41 +3571,55 @@ class PiRuntimeHostManager:
         unknown answer, stays on that original native request's path.
         Credentials travel only over the private Host pipe, never public state.
         """
-        identity = model_reference_part(request_id, field="requestId", maximum=200)
-        if not isinstance(state, Mapping) or not isinstance(questions, Mapping) or not questions:
-            raise ValueError("classification requires an object state and nonempty questions")
-        if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
-                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
-            raise ValueError("classification timeout must be finite and positive")
-        bounded_timeout = max(1.0, min(300.0, float(timeout_seconds)))
-        params: dict[str, object] = {
-            "requestId": identity, "state": dict(state), "questions": dict(questions),
-            "timeoutMs": int(bounded_timeout * 1000),
-        }
-        # Validate JSON before admission, without truncating the user's state.
-        json.dumps(params, allow_nan=False)
-        if api_key:
-            params["apiKey"] = api_key
-        if endpoint:
-            params["endpoint"] = endpoint
-        with self._lifecycle_lock:
-            client = self._host()
-            with self._lock:
-                if self._host_capabilities.get("statelessClassification") is not True:
-                    return None
-                if identity in self._classifications:
-                    raise PiRuntimeError("Pi classification request is already active")
-                self._cancel_idle_locked()
-                call = _ClassificationCall(client)
-                self._classifications[identity] = call
-                params["dispatchId"] = call.dispatch_id
-                self._status = "busy"
+        try:
+            if cancellation_event is not None and cancellation_event.is_set():
+                raise PiRuntimeCommandRejected("Pi classification cancelled before admission")
+            identity = model_reference_part(request_id, field="requestId", maximum=200)
+            if not isinstance(state, Mapping) or not isinstance(questions, Mapping) or not questions:
+                raise ValueError("classification requires an object state and nonempty questions")
+            if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
+                    or not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
+                raise ValueError("classification timeout must be finite and positive")
+            bounded_timeout = max(1.0, min(300.0, float(timeout_seconds)))
+            params: dict[str, object] = {
+                "requestId": identity, "state": dict(state), "questions": dict(questions),
+                "timeoutMs": int(bounded_timeout * 1000),
+            }
+            # Validate JSON before admission, without truncating the user's state.
+            json.dumps(params, allow_nan=False)
+            if api_key:
+                params["apiKey"] = api_key
+            if endpoint:
+                params["endpoint"] = endpoint
+            with self._lifecycle_lock:
+                client = self._host()
+                with self._lock:
+                    if self._host_capabilities.get("statelessClassification") is not True:
+                        unsupported = True
+                    else:
+                        unsupported = False
+                    if not unsupported:
+                        if identity in self._classifications:
+                            raise PiRuntimeError("Pi classification request is already active")
+                        self._cancel_idle_locked()
+                        call = _ClassificationCall(client, on_settled=on_settled)
+                        self._classifications[identity] = call
+                        params["dispatchId"] = call.dispatch_id
+                        self._status = "busy"
+        except Exception:
+            self._notify_classification_settled(on_settled)
+            raise
+        if unsupported:
+            # No native scope was created. Its caller may still enter the
+            # compatible direct adapter and owns that adapter's settlement.
+            return None
 
         def before_write() -> None:
             # Runs under the pipe write lock: cancellation either prevents
             # admission or follows the once command on that same ordered pipe.
             with self._lock:
-                if call.cancel_requested or self._classifications.get(identity) is not call:
+                if (call.cancel_requested or self._classifications.get(identity) is not call
+                        or (cancellation_event is not None and cancellation_event.is_set())):
                     raise PiRuntimeCommandRejected("Pi classification cancelled before dispatch")
                 call.dispatched = True
 
@@ -3643,6 +3660,16 @@ class PiRuntimeHostManager:
                     and not any(item.turn_id or item.prompt_admission_in_flight for item in self._states.values())):
                 self._status = "ready"
                 self._schedule_idle_locked()
+        self._notify_classification_settled(call.on_settled)
+
+    @staticmethod
+    def _notify_classification_settled(callback: Callable[[], None] | None) -> None:
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                # A consumer projection cannot prevent the Runtime settling.
+                pass
 
     def _abort_classification(self, identity: str, call: _ClassificationCall) -> bool:
         result = call.client.send("classification.abort", {"requestId": identity, "dispatchId": call.dispatch_id},
@@ -4850,6 +4877,7 @@ class PiRuntimeHostManager:
                         state.settle_timer.cancel()
                 self._open_sessions.clear()
                 self._active_completion_ids.clear()
+                classifications = tuple(self._classifications.values())
                 self._classifications.clear()
                 self._completion_sinks.clear()
                 self._states.clear()
@@ -4857,6 +4885,8 @@ class PiRuntimeHostManager:
                 projection_threads = tuple(self._recent_projection_threads)
             if client is not None:
                 client.stop()
+            for classification in classifications:
+                self._notify_classification_settled(classification.on_settled)
             current_thread = threading.current_thread()
             for thread in projection_threads:
                 if thread is not current_thread:
@@ -5955,9 +5985,11 @@ class PiRuntimeHostManager:
     def _handle_host_exit(self, exit_code: int | None, error: str, *,
                           source_client: PiRuntimeHostClient | None = None) -> None:
         with self._lock:
-            for identity, call in tuple(self._classifications.items()):
-                if source_client is None or call.client is source_client:
-                    del self._classifications[identity]
+            classifications = [(identity, call) for identity, call in self._classifications.items()
+                               if source_client is None or call.client is source_client]
+        for identity, call in classifications:
+            self._release_classification(identity, call)
+        with self._lock:
             if source_client is not None and self._client is not source_client:
                 return
             if self._intentional_stop:
