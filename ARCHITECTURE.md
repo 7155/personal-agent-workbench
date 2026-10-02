@@ -68,6 +68,14 @@ Tool observers only when the existing activation policy needs them. Once active,
 the observer retains real receipt validation and running-job observation after
 focus leaves the Agent; closing a window is not cancellation.
 
+`agent-workspace-loader` shares the selected workspace's module promise between
+intent warming and rendering. An exact Room/Session route starts its import in
+parallel with App admission; hovering, focusing or pressing an existing record
+warms that record's workspace. A generic Agent launch keeps its lightweight Home.
+The loader does not fetch conversation data, open a Session or call a Provider.
+Mode and target resolution still decide which workspace may mount. This removes
+an avoidable code-loading waterfall without inventing another data cache.
+
 `PawRoomRoundSheet` owns reading intent, not execution state. Following the latest
 round survives streamed content growth and viewport resize. An explicit history
 read or disclosure interaction releases follow; returning to latest opts in again.
@@ -260,6 +268,14 @@ avoid repeating schema construction. Migration tests still start from empty or
 explicit legacy schemas. Each test owns its database and closes its service,
 workers and streams. Diagnose slow tests with per-test timing and thread stacks;
 do not turn larger timeouts or skipped behavior into a passing result.
+
+Read-budget fixtures attribute SQLite connections to the operation's caller
+thread, across all databases; unrelated background work must not inherit that
+thread's read-only authorizer. Cancellation tests use a withheld prompt ACK to
+prove Stop can settle while the original admission remains pending, rather than
+requiring an arbitrary sub-second duration on a loaded machine. Fixture-owned
+services close before temporary storage is removed; a borrowed core remains its
+creator's cleanup responsibility.
 
 Focused checks precede broader regressions. Use the repository's `pnpm test`
 entry and the documented Python environment. Browser fixtures, staged Runtime
