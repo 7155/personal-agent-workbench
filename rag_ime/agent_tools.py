@@ -3232,6 +3232,7 @@ class ControlToolGateway:
         session_id = str(session.get("id") or "").strip()
         if session_id:
             session = self.sessions.get(session_id)
+        durable_engine = session.get("runtimeEngine") == "durable"
         session = self._session_with_scenario_context(session)
         manifest_items = self._manifest_items(session)
         capability_catalog = build_capability_catalog(
@@ -3283,20 +3284,19 @@ class ControlToolGateway:
             if manifest.get("enabled") is not True or manifest["id"] not in disclosed_tools:
                 continue
             operations = list(manifest.get("effectiveOperations") or [])
+            direct_workspace = durable_engine and tool_id in _WORKSPACE_TOOLS
             projections = [
                 copy.deepcopy(projection)
                 for projection in _RUNTIME_TOOL_PROJECTIONS.get(
                     str(manifest["id"]),
                     (),
                 )
-                if projection["operation"] in operations
+                if not direct_workspace and projection["operation"] in operations
             ]
-            # Pi owns the resident model-facing workspace names (ls/read/grep/
-            # find/edit/write/bash). PAW registers only its hidden governed
-            # workspace_* execution targets and declares which native name each
-            # target projects. Passing a native name as a backend manifest would
-            # collide with Pi's reserved tool namespace and prevent the Session
-            # from opening before the first model request.
+            # Classic Pi owns the resident ls/read/grep/find/edit/write/bash
+            # aliases and projects PAW's hidden governed targets. Durable loads
+            # those authorized targets directly: omit alias projections so its
+            # loader retains the canonical operation and required arguments.
             parameter_schema = _runtime_tool_parameter_schema(
                 str(manifest["id"]),
                 operations,
@@ -3324,6 +3324,7 @@ class ControlToolGateway:
                 spec.get("modelVisible") is False
                 and not audited_goal_for_facilitator
                 and not package_owned_connector
+                and not direct_workspace
             ):
                 item["modelVisible"] = False
             if projections:
