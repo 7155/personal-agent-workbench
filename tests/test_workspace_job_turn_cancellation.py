@@ -209,6 +209,24 @@ class WorkspaceJobTurnCancellationTests(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
 
+    def test_non_execution_owner_room_facade_stops_without_claiming_gateway_jobs(self):
+        room = self.service.create_room({'title': 'sidecar fixture',
+            'workspaceRoots': [str(self.root)], 'participants': [
+                {'roleId': 'companion-present-v1', 'roleVersion': '1'},
+                {'roleId': 'companion-firstlight-v1', 'roleVersion': '1'},
+            ]})['room']
+        self.session_id = str(room['participants'][0]['sessionId'])
+        self.jobs.execution_owner = False
+        with patch.object(self.jobs, 'request_turn_cancellation', wraps=self.jobs.request_turn_cancellation) as capture:
+            stopped = self.abort()
+        self.assertTrue(stopped['ok'])
+        self.assertEqual(stopped['runtimeReceipt']['turnId'], 'original')
+        self.assertNotIn('backgroundJobs', stopped)
+        capture.assert_not_called()
+        with self.assertRaisesRegex(AgentBackgroundJobError, 'owned by the Agent Gateway'):
+            self.jobs.start(self.session_id, self.prepared('forbidden-sidecar'), causal_metadata={'turnId': 'original'})
+        self.assertFalse((self.root / 'forbidden-sidecar.pid').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -4388,7 +4388,12 @@ class AgentService:
             nonlocal wait_jobs
             wait_jobs = self.background_jobs.request_turn_cancellation(session_id, identity)
         try:
-            receipt = self.session_application.abort(session_id, capture_cancellation=capture_jobs)
+            # A Room/control facade can stop its native Session, but only the
+            # Gateway job owner may fan out to standalone background processes.
+            receipt = self.session_application.abort(
+                session_id,
+                capture_cancellation=(capture_jobs if self.background_jobs.execution_owner else None),
+            )
         finally:
             commands = wait_commands() if wait_commands is not None else None
             jobs = wait_jobs() if wait_jobs is not None else None
