@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-03T04:51:16.565771+00:00",
+  "generatedAt": "2026-10-03T05:43:44.990773+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-main-integration-20261003",
@@ -171,14 +171,14 @@
     },
     "durable_desktop_iteration": {
       "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
-      "pathCount": 22
+      "pathCount": 23
     }
   },
   "summary": {
-    "pathCount": 1892,
+    "pathCount": 1893,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1576
+      "keep_release": 1577
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -187,7 +187,7 @@
       "composition_refactor": 32,
       "conversation_controls": 61,
       "conversation_v2_integration": 49,
-      "durable_desktop_iteration": 22,
+      "durable_desktop_iteration": 23,
       "earth_research": 113,
       "jev_integration": 10,
       "knowledge_runtime": 12,
@@ -4278,6 +4278,13 @@
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/use-conversation-queue.test.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/conversation-ui/use-conversation-queue.ts",
