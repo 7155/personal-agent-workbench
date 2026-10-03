@@ -105,6 +105,49 @@ class PiRuntimeConfigTests(unittest.TestCase):
         )
         self.assertEqual(room_environment["RAG_IME_AGENT_ROOM_BOUND"], "1")
 
+    def test_child_environment_preserves_node_ca_without_inheriting_secrets(self) -> None:
+        ca_path = str(self.root / "existing-ca.pem")
+        with mock.patch.dict(
+            os.environ,
+            {
+                "NODE_EXTRA_CA_CERTS": ca_path,
+                "OPENAI_API_KEY": "unrelated-test-secret",
+                "NODE_TLS_REJECT_UNAUTHORIZED": "0",
+                "NODE_OPTIONS": "--require=unrelated-module",
+            },
+            clear=True,
+        ):
+            child = self.config.child_environment()
+
+        self.assertEqual(child["NODE_EXTRA_CA_CERTS"], ca_path)
+        self.assertFalse(Path(ca_path).exists())
+        self.assertNotIn("OPENAI_API_KEY", child)
+        self.assertNotIn("NODE_TLS_REJECT_UNAUTHORIZED", child)
+        self.assertNotIn("NODE_OPTIONS", child)
+
+    def test_child_environment_node_ca_uses_explicit_override_and_omits_empty(self) -> None:
+        configured_ca = str(self.root / "provider-ca.pem")
+        configured = replace(
+            self.config,
+            provider_environment={"NODE_EXTRA_CA_CERTS": configured_ca},
+        )
+        for inherited in (
+            {},
+            {"NODE_EXTRA_CA_CERTS": ""},
+            {"NODE_EXTRA_CA_CERTS": "parent-ca.pem"},
+        ):
+            with self.subTest(inherited=inherited), mock.patch.dict(
+                os.environ, inherited, clear=True,
+            ):
+                self.assertEqual(
+                    configured.child_environment()["NODE_EXTRA_CA_CERTS"],
+                    configured_ca,
+                )
+                if not inherited.get("NODE_EXTRA_CA_CERTS"):
+                    self.assertNotIn(
+                        "NODE_EXTRA_CA_CERTS", self.config.child_environment(),
+                    )
+
     def test_codemode_mode_defaults_on_and_normalizes_environment_override(self) -> None:
         self.assertEqual(self.config.codemode_mode, "on")
         with mock.patch.dict(
@@ -491,7 +534,11 @@ class PiRuntimeConfigTests(unittest.TestCase):
         with (
             mock.patch.dict(
                 os.environ,
-                {"RAG_IME_PI_SYSTEM_PROXY": "off"},
+                {
+                    "RAG_IME_APP_SUPPORT_DIR": str(self.root / "support"),
+                    "RAG_IME_PI_EXECUTABLE": str(self.fake_pi),
+                    "RAG_IME_PI_SYSTEM_PROXY": "off",
+                },
                 clear=True,
             ),
             mock.patch(

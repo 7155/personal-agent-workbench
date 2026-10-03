@@ -750,6 +750,7 @@ class PiRuntimeConfig:
             "LC_ALL",
             "SSL_CERT_FILE",
             "SSL_CERT_DIR",
+            "NODE_EXTRA_CA_CERTS",
         )
         environment = {key: os.environ[key] for key in allowed if os.environ.get(key)}
         environment.update(
