@@ -320,8 +320,21 @@ class JevOutboxUpgradeTests(unittest.TestCase):
             self.db_path = self.root / "acceptance.sqlite"
             self.sessions = fixtures.AgentSessionStore(self.db_path)
             self.sessions.initialize()
-            self.session_records = [self.sessions.create(title="Jev 旧库 " + name)
-                                    for name in ("责任身份", "执行者 A", "执行者 B")]
+            # Seed the historical writer's rows, not the current writer's
+            # newer columns; the database must remain genuinely at v208.
+            self.session_records = [
+                {"id": f"session:legacy-{index}", "title": "Jev 旧库 " + name}
+                for index, name in enumerate(("责任身份", "执行者 A", "执行者 B"))
+            ]
+            with sqlite3.connect(self.db_path) as conn:
+                conn.executemany(
+                    "INSERT INTO agent_sessions "
+                    "(id,title,session_mode,role_id,role_version,model_profile,"
+                    "tool_profile_version,created_at_ms,updated_at_ms,last_opened_at_ms,status) "
+                    "VALUES(?,?,'assistant','assistant','1','legacy/fixture',"
+                    "'control-center-v1',100,100,100,'idle')",
+                    [(row["id"], row["title"]) for row in self.session_records],
+                )
             self.rooms = fixtures.AgentRoomStore(self.db_path, room_dir=self.root / "rooms")
             self.rooms.initialize()
             self.room = self.rooms.create(title="旧 Jev Root", routing_policy="moderator", participants=[

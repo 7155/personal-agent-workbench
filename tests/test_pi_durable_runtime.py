@@ -134,10 +134,10 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.runtime._host_capabilities = {"sessionControlState": True, "sessionBoundAbort": True,
             "sessionEngines": {"classic": {"available": True},
                                "durable": {"available": True, "experimental": True, "version": "1"}}}
-        self.id = self.session["id"]
+        self.session_id = self.session["id"]
 
     def open(self):
-        return self.runtime.ensure(self.id)
+        return self.runtime.ensure(self.session_id)
 
     def test_open_uses_isolated_store_and_preserves_recoverable_original_input(self):
         self.open()
@@ -148,9 +148,9 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.assertNotIn("codemodeMode", request[1])
         self.assertFalse(request[1].get("nativeMcpExecutionAllowed", False))
         self.assertTrue(Path(request[1]["durableStoreRef"]).is_relative_to((self.runtime.session_root / "durable").resolve()))
-        binding = self.store.runtime_binding(self.id)
+        binding = self.store.runtime_binding(self.session_id)
         self.assertEqual(binding["runtimeKind"], "pi_durable")
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
         self.assertFalse(any(method == "session.abort" for method, _ in self.host.calls))
 
     def test_missing_native_engine_capability_rejects_before_open_or_binding_change(self):
@@ -158,13 +158,13 @@ class PiDurableRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(PiRuntimeError, "Durable"):
             self.open()
         self.assertEqual(self.host.calls, [])
-        self.assertEqual(self.store.runtime_binding(self.id)["state"], "prepared")
+        self.assertEqual(self.store.runtime_binding(self.session_id)["state"], "prepared")
 
     def test_repeated_passive_open_never_resumes_or_retires_input(self):
         self.open()
         self.open()
         self.assertEqual([method for method, _ in self.host.calls], ["session.open", "session.control_state"])
-        self.assertEqual(self.store.get(self.id)["status"], "busy")
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
 
     def test_durable_open_eviction_reopens_idle_classic_peer_without_retiring_paused_peer(self):
         self.runtime._host_capabilities["nativeMcpExecutionPolicy"] = True
@@ -208,8 +208,8 @@ class PiDurableRuntimeTests(unittest.TestCase):
     def test_snapshot_and_recent_never_read_classic_jsonl_or_tail_cache(self):
         with patch.object(self.runtime, "_durable_history_snapshot", side_effect=AssertionError("JSONL read")), \
                 patch.object(self.runtime, "_recent_projection_identity", side_effect=AssertionError("file-tail cache")):
-            full = self.runtime.session_snapshot(self.id)
-            recent = self.runtime.recent_session_snapshot(self.id)
+            full = self.runtime.session_snapshot(self.session_id)
+            recent = self.runtime.recent_session_snapshot(self.session_id)
         self.assertEqual(full["messages"][0]["turnId"], "original-input")
         self.assertEqual(recent["messages"][0]["turnId"], "original-input")
         self.assertFalse(any(method == "session.resume" for method, _ in self.host.calls))
@@ -219,58 +219,58 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.host.next_error = PiRuntimeError("native storage unavailable")
         with patch.object(self.runtime, "_durable_history_snapshot", side_effect=AssertionError("JSONL fallback")):
             with self.assertRaisesRegex(PiRuntimeError, "native storage unavailable"):
-                self.runtime.session_snapshot(self.id)
+                self.runtime.session_snapshot(self.session_id)
 
     def test_cold_recent_status_does_not_infer_idle_from_absent_memory_state(self):
-        self.store.set_status(self.id, "busy")
+        self.store.set_status(self.session_id, "busy")
         projection = object.__new__(AgentMessageSnapshotService)
         projection.sessions = self.store
         projection._runtime_provider = lambda: self.runtime
-        result = projection._reconcile_session_status(self.id, self.store.get(self.id))
+        result = projection._reconcile_session_status(self.session_id, self.store.get(self.session_id))
         self.assertEqual(result["status"], "busy")
         self.assertEqual(self.host.calls, [])
 
     def test_explicit_resume_uses_original_identity_without_new_prompt(self):
         self.open()
-        result = self.runtime.resume_session(self.id, turn_id="original-input", client_message_id="original-client")
+        result = self.runtime.resume_session(self.session_id, turn_id="original-input", client_message_id="original-client")
         self.assertTrue(result["resumed"])
         request = next(params for method, params in self.host.calls if method == "session.resume")
-        self.assertEqual(request, {"sessionId": self.id, "turnId": "original-input", "clientMessageId": "original-client"})
+        self.assertEqual(request, {"sessionId": self.session_id, "turnId": "original-input", "clientMessageId": "original-client"})
         self.assertFalse(any(method == "session.prompt" for method, _ in self.host.calls))
 
     def test_resume_rejects_a_successor_instead_of_rebinding_old_input(self):
         self.open()
         self.host.snapshot["activeTurn"] = {"turnId": "successor", "clientMessageId": "new-client"}
         with self.assertRaises(PiRuntimeError):
-            self.runtime.resume_session(self.id, turn_id="original-input", client_message_id="original-client")
+            self.runtime.resume_session(self.session_id, turn_id="original-input", client_message_id="original-client")
         self.assertFalse(any(method == "session.resume" for method, _ in self.host.calls))
 
     def test_host_exit_preserves_recoverable_durable_but_faults_classic(self):
         self.open()
         self.runtime._states[self.classic["id"]] = _HostedSessionState(turn_id="classic-turn")
         self.runtime._handle_host_exit(1, "interrupted", source_client=self.host)
-        self.assertEqual(self.store.get(self.id)["status"], "busy")
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
         self.assertEqual(self.store.get(self.classic["id"])["status"], "faulted")
-        self.assertFalse(any(event.event_type == "turn_failed" for event in self.events.replay(self.id)[0]))
+        self.assertFalse(any(event.event_type == "turn_failed" for event in self.events.replay(self.session_id)[0]))
 
     def test_explicit_manager_stop_does_not_forge_idle_for_recoverable_input(self):
         self.open()
         self.runtime.stop()
-        self.assertEqual(self.store.get(self.id)["status"], "busy")
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
 
     def test_idle_settlement_probe_cannot_infer_a_durable_terminal_outcome(self):
         self.open()
         self.host.snapshot.update(isIdle=True, activeTurn=None)
-        self.runtime._settle_fallback_probe(self.id, "original-input")
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
-        self.assertFalse(any(event.event_type == "turn_completed" for event in self.events.replay(self.id)[0]))
+        self.runtime._settle_fallback_probe(self.session_id, "original-input")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
+        self.assertFalse(any(event.event_type == "turn_completed" for event in self.events.replay(self.session_id)[0]))
 
     def test_unsupported_controls_refuse_without_opening_native_session(self):
-        operations = [lambda: self.runtime.set_codemode_mode(self.id, mode="on"),
-                      lambda: self.runtime.fork_candidates(self.id),
-                      lambda: self.runtime.rewind_session(self.id, entry_id="old-entry"),
-                      lambda: self.runtime.invoke_command(self.id, "/skill:test")]
+        operations = [lambda: self.runtime.set_codemode_mode(self.session_id, mode="on"),
+                      lambda: self.runtime.fork_candidates(self.session_id),
+                      lambda: self.runtime.rewind_session(self.session_id, entry_id="old-entry"),
+                      lambda: self.runtime.invoke_command(self.session_id, "/skill:test")]
         for operation in operations:
             with self.subTest(operation=operation):
                 with self.assertRaisesRegex(PiRuntimeError, "Durable"):
@@ -279,7 +279,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
     def test_images_reject_before_prompt_admission_or_rpc(self):
         with self.assertRaisesRegex(PiRuntimeError, "Durable"):
-            self.runtime.prompt(self.id, "看图", client_message_id="image", images=[{"data": "dummy"}])
+            self.runtime.prompt(self.session_id, "看图", client_message_id="image", images=[{"data": "dummy"}])
         self.assertEqual(self.host.calls, [])
 
     def test_resume_unknown_stays_bound_to_original_input(self):
@@ -291,8 +291,8 @@ class PiDurableRuntimeTests(unittest.TestCase):
             return original_send(method, *args, **kwargs)
         self.host.send = send
         with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
-            self.runtime.resume_session(self.id, turn_id="original-input", client_message_id="original-client")
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
+            self.runtime.resume_session(self.session_id, turn_id="original-input", client_message_id="original-client")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
 
     def application(self):
         app = object.__new__(AgentSessionApplicationService)
@@ -335,7 +335,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
         policy = object.__new__(AgentSessionPolicyService)
         policy.sessions = self.store
         policy._runtime_provider = lambda: self.runtime
-        result = policy.model_catalog(self.id)
+        result = policy.model_catalog(self.session_id)
         self.assertEqual(result["runtimeEngine"], "durable")
         self.assertEqual(result["engineCapabilities"], ENGINE_CAPABILITIES)
         self.assertFalse(any(method == "session.resume" for method, _ in self.host.calls))
@@ -344,10 +344,10 @@ class PiDurableRuntimeTests(unittest.TestCase):
         app = self.application()
         app.runtime_status = self.runtime.runtime_status
         app.probe_memory_maintenance = Mock(side_effect=AssertionError("background classic maintenance"))
-        result = app.ensure_runtime({"sessionId": self.id})
+        result = app.ensure_runtime({"sessionId": self.session_id})
         self.assertTrue(result["state"]["recoverable"])
         self.assertFalse(any(method == "session.resume" for method, _ in self.host.calls))
-        result = app.resume_session(self.id, {"turnId": "original-input", "clientMessageId": "original-client"})
+        result = app.resume_session(self.session_id, {"turnId": "original-input", "clientMessageId": "original-client"})
         self.assertTrue(result["runtimeReceipt"]["resumed"])
         self.assertEqual(sum(method == "session.resume" for method, _ in self.host.calls), 1)
         self.assertFalse(any(method == "session.prompt" for method, _ in self.host.calls))
@@ -355,13 +355,13 @@ class PiDurableRuntimeTests(unittest.TestCase):
     def test_recent_uses_native_bounded_view_and_keeps_partial_cursor(self):
         self.open()
         self.host.snapshot.update(partial=True, historyCursor="older-page", projectionCurrent=True)
-        result = self.runtime.recent_session_snapshot(self.id)
-        self.assertEqual(self.host.calls[-1], ("session.snapshot", {"sessionId": self.id, "view": "recent"}))
+        result = self.runtime.recent_session_snapshot(self.session_id)
+        self.assertEqual(self.host.calls[-1], ("session.snapshot", {"sessionId": self.session_id, "view": "recent"}))
         self.assertTrue(result["partial"])
         self.assertEqual(result["historyCursor"], "older-page")
 
     def terminal_receipt(self):
-        return {"schemaVersion": "rag-ime.pi-turn-settlement.v1", "sessionId": self.id,
+        return {"schemaVersion": "rag-ime.pi-turn-settlement.v1", "sessionId": self.session_id,
             "turnId": "original-input", "clientMessageId": "original-client", "runtimeSessionId": "native-conversation",
             "receipt": {"schemaVersion": "pi.agent-settled.v2", "sessionId": "native-conversation",
                 "runId": "original-input", "scopeId": "native-conversation:original-input", "receiptId": "committed-outcome",
@@ -370,11 +370,11 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
     def test_recovery_awaits_original_persisted_settlement_without_reprompt_or_idle_retirement(self):
         self.host.settlement = self.terminal_receipt()
-        receipt = self.runtime.await_turn_settled(self.id, "original-input", client_message_id="original-client", timeout_seconds=2)
+        receipt = self.runtime.await_turn_settled(self.session_id, "original-input", client_message_id="original-client", timeout_seconds=2)
         self.assertEqual(receipt["receipt"]["receiptId"], "committed-outcome")
-        self.assertEqual(self.store.get(self.id)["status"], "idle")
+        self.assertEqual(self.store.get(self.session_id)["status"], "idle")
         self.assertFalse(any(method in {"session.prompt", "session.resume", "session.abort"} for method, _ in self.host.calls))
-        self.assertEqual(sum(event.event_type == "turn_completed" for event in self.events.replay(self.id)[0]), 1)
+        self.assertEqual(sum(event.event_type == "turn_completed" for event in self.events.replay(self.session_id)[0]), 1)
 
     def test_incomplete_settlement_cannot_clear_original_input(self):
         self.open()
@@ -383,48 +383,48 @@ class PiDurableRuntimeTests(unittest.TestCase):
         invalid["receipt"]["operations"]["pending"] = 1
         self.host.settlement = invalid
         with self.assertRaisesRegex(PiRuntimeError, "pending operations"):
-            self.runtime.await_turn_settled(self.id, "original-input", client_message_id="original-client", timeout_seconds=2)
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
-        self.assertEqual(self.store.get(self.id)["status"], "busy")
+            self.runtime.await_turn_settled(self.session_id, "original-input", client_message_id="original-client", timeout_seconds=2)
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
 
     def test_delayed_original_terminal_receipt_does_not_retire_successor(self):
         self.open()
-        state = self.runtime._states[self.id]
+        state = self.runtime._states[self.session_id]
         state.turn_id, state.client_message_id = "successor", "successor-client"
         self.host.settlement = self.terminal_receipt()
-        receipt = self.runtime.await_turn_settled(self.id, "original-input", client_message_id="original-client", timeout_seconds=2)
+        receipt = self.runtime.await_turn_settled(self.session_id, "original-input", client_message_id="original-client", timeout_seconds=2)
         self.assertEqual(receipt["turnId"], "original-input")
         self.assertEqual(state.turn_id, "successor")
-        self.assertEqual(self.store.get(self.id)["status"], "busy")
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
 
     def test_pending_abort_is_exact_and_does_not_infer_drain_or_kill_shared_host(self):
         self.open()
-        result = self.runtime.abort(self.id)
+        result = self.runtime.abort(self.session_id)
         self.assertFalse(result["lifecycle"]["drained"])
-        self.assertIn(("session.abort", {"sessionId": self.id, "expectedTurnId": "original-input",
+        self.assertIn(("session.abort", {"sessionId": self.session_id, "expectedTurnId": "original-input",
             "clientMessageId": "original-client"}), self.host.calls)
-        self.runtime._abort_fallback_expired(self.id, "original-input")
+        self.runtime._abort_fallback_expired(self.session_id, "original-input")
         self.assertTrue(self.host.running)
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
-        self.assertFalse(any(event.event_type == "turn_completed" for event in self.events.replay(self.id)[0]))
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
+        self.assertFalse(any(event.event_type == "turn_completed" for event in self.events.replay(self.session_id)[0]))
 
     def test_stop_before_native_prompt_write_preserves_existing_admission_fence(self):
         self.open()
-        state = self.runtime._states[self.id]
+        state = self.runtime._states[self.session_id]
         state.turn_id = ""
         state.client_message_id = ""
         state.recoverable = False
         self.host.snapshot.update(isIdle=True, activeTurn=None, recoverable=False, paused=False)
-        self.runtime.reserve_prompt_admission(self.id, client_message_id="new-command")
-        self.runtime.abort(self.id)
+        self.runtime.reserve_prompt_admission(self.session_id, client_message_id="new-command")
+        self.runtime.abort(self.session_id)
         with self.assertRaises(PiRuntimeError):
-            self.runtime.prompt(self.id, "新请求", client_message_id="new-command")
+            self.runtime.prompt(self.session_id, "新请求", client_message_id="new-command")
         self.assertFalse(any(method == "session.prompt" for method, _ in self.host.calls))
 
     def test_unfinished_paused_input_cannot_authorize_gateway_execution(self):
         self.open()
-        self.assertFalse(self.runtime.is_turn_active(self.id, "original-input", client_message_id="original-client"))
-        self.assertFalse(self.runtime.is_gateway_turn_active(self.id, "original-input", client_message_id="original-client"))
+        self.assertFalse(self.runtime.is_turn_active(self.session_id, "original-input", client_message_id="original-client"))
+        self.assertFalse(self.runtime.is_gateway_turn_active(self.session_id, "original-input", client_message_id="original-client"))
 
     def test_application_rejects_internal_surface_and_explicit_unsupported_skills(self):
         app = self.application()
@@ -437,18 +437,18 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
     def test_follow_up_admits_distinct_input_without_stealing_current_gateway_owner(self):
         self.open()
-        self.runtime._states[self.id].recoverable = False
-        result = self.runtime.prompt(self.id, "之后继续", client_message_id="queued-client", delivery="followUp")
+        self.runtime._states[self.session_id].recoverable = False
+        result = self.runtime.prompt(self.session_id, "之后继续", client_message_id="queued-client", delivery="followUp")
         self.assertEqual(result["turnId"], "queued-input")
         self.assertEqual(result["clientMessageId"], "queued-client")
-        self.assertEqual(self.runtime._states[self.id].turn_id, "original-input")
-        self.assertEqual(self.runtime._states[self.id].client_message_id, "original-client")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "original-input")
+        self.assertEqual(self.runtime._states[self.session_id].client_message_id, "original-client")
 
     def test_host_cannot_swap_storage_or_conversation_identity_on_snapshot(self):
         self.open()
         self.host.snapshot["durableConversationId"] = "other-conversation"
         with self.assertRaisesRegex(PiRuntimeError, "another storage binding"):
-            self.runtime.session_snapshot(self.id)
+            self.runtime.session_snapshot(self.session_id)
 
     def test_host_capability_mismatch_does_not_activate_prepared_binding(self):
         original_send = self.host.send
@@ -460,7 +460,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.host.send = send
         with self.assertRaisesRegex(PiRuntimeError, "incompatible Durable engine capabilities"):
             self.open()
-        self.assertEqual(self.store.runtime_binding(self.id)["state"], "prepared")
+        self.assertEqual(self.store.runtime_binding(self.session_id)["state"], "prepared")
 
     def test_durable_directory_symlink_is_rejected_before_host_open(self):
         self.runtime.session_root.mkdir()
@@ -471,11 +471,11 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.assertEqual(self.host.calls, [])
 
     def test_governance_catalog_never_advertises_native_mcp_or_codemode(self):
-        result = self.runtime.native_capabilities(self.id)
+        result = self.runtime.native_capabilities(self.session_id)
         self.assertFalse(result["mcp"]["available"])
         self.assertIsNone(result["codemodeMode"])
-        self.assertEqual(self.runtime.command_catalog(self.id), [])
-        self.assertEqual(self.runtime.skill_catalog(self.id), [])
+        self.assertEqual(self.runtime.command_catalog(self.session_id), [])
+        self.assertEqual(self.runtime.skill_catalog(self.session_id), [])
         self.assertEqual(self.host.calls, [])
 
     def test_capability_catalog_hides_native_skills_and_plugins_but_keeps_gateway_tools(self):
@@ -500,9 +500,9 @@ class PiDurableRuntimeTests(unittest.TestCase):
         gateway.sessions = self.store
         gateway.extensions = Mock()
         with self.assertRaisesRegex(ValueError, "Durable"):
-            gateway._plugins("propose_install", {"_sessionId": self.id, "packageSource": "dummy"})
+            gateway._plugins("propose_install", {"_sessionId": self.session_id, "packageSource": "dummy"})
         with self.assertRaisesRegex(ValueError, "Durable"):
-            gateway._apply_approved_operation({"toolId": "plugins", "operation": "apply", "sessionId": self.id})
+            gateway._apply_approved_operation({"toolId": "plugins", "operation": "apply", "sessionId": self.session_id})
         gateway.extensions.assert_not_called()
         gateway.extensions.preview.assert_not_called()
         gateway.extensions.apply.assert_not_called()
@@ -517,24 +517,24 @@ class PiDurableRuntimeTests(unittest.TestCase):
         gateway.extensions = Mock()
         gateway.gateway_requests = GatewayRequestStore(self.store)
         request = {"schemaVersion": "rag-ime.agent-tool-call.v1", "toolCallId": "plugin-attempt",
-            "sessionId": self.id, "tool": "plugins", "args": {"op": "propose_install", "packageSource": "dummy"}}
+            "sessionId": self.session_id, "tool": "plugins", "args": {"op": "propose_install", "packageSource": "dummy"}}
         with self.assertRaisesRegex(ValueError, "Durable"):
             gateway.execute(request)
-        self.assertEqual(self.store.pending_approval_ids(self.id), ())
+        self.assertEqual(self.store.pending_approval_ids(self.session_id), ())
         gateway.extensions.preview.assert_not_called()
 
     def test_cold_stop_observes_original_recoverable_input_before_cancellation(self):
-        self.store.set_status(self.id, "busy")
-        result = self.runtime.abort(self.id)
+        self.store.set_status(self.session_id, "busy")
+        result = self.runtime.abort(self.session_id)
         self.assertEqual(result["turnId"], "original-input")
         self.assertFalse(result["lifecycle"]["drained"])
         self.assertEqual([method for method, _ in self.host.calls], ["session.open", "session.abort"])
 
     def test_fresh_prompt_keeps_original_ack_and_governed_manifest_fence(self):
         self.host.initial_active = False
-        result = self.runtime.prompt(self.id, "新任务", client_message_id="new-command")
+        result = self.runtime.prompt(self.session_id, "新任务", client_message_id="new-command")
         self.assertEqual(result["turnId"], "new-input")
-        self.assertEqual(self.runtime._states[self.id].client_message_id, "new-command")
+        self.assertEqual(self.runtime._states[self.session_id].client_message_id, "new-command")
         manifest = next(params for method, params in self.host.calls if method == "tools.sync")
         self.assertFalse(manifest["nativeMcpExecutionAllowed"])
 
@@ -548,16 +548,16 @@ class PiDurableRuntimeTests(unittest.TestCase):
             return value
         self.host.send = send
         with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
-            self.runtime.prompt(self.id, "新任务", client_message_id="original-command")
+            self.runtime.prompt(self.session_id, "新任务", client_message_id="original-command")
         with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
-            self.runtime.prompt(self.id, "新任务", client_message_id="original-command")
+            self.runtime.prompt(self.session_id, "新任务", client_message_id="original-command")
         self.assertEqual(sum(method == "session.prompt" for method, _ in self.host.calls), 1)
-        self.assertTrue(self.runtime._states[self.id].prompt_dispatched)
-        self.assertEqual(self.runtime._states[self.id].admission_client_message_id, "original-command")
+        self.assertTrue(self.runtime._states[self.session_id].prompt_dispatched)
+        self.assertEqual(self.runtime._states[self.session_id].admission_client_message_id, "original-command")
 
     def test_recovered_history_is_passive_when_model_configuration_is_unavailable(self):
         self.runtime.config = replace(self.runtime.config, model_configured=False)
-        result = self.runtime.session_snapshot(self.id)
+        result = self.runtime.session_snapshot(self.session_id)
         self.assertEqual(result["messages"][0]["turnId"], "original-input")
         self.assertFalse(any(method in {"session.prompt", "session.resume"} for method, _ in self.host.calls))
 
@@ -571,7 +571,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
             room_public_messages=lambda _: None, room_recent_public_messages=lambda _: None)
         for view in ("", "recent"):
             with self.subTest(view=view):
-                result = projection.messages(self.id, view=view)
+                result = projection.messages(self.session_id, view=view)
                 self.assertEqual(result["runtimeEngine"], "durable")
                 self.assertTrue(result["paused"])
                 self.assertTrue(result["recoverable"])
@@ -582,30 +582,30 @@ class PiDurableRuntimeTests(unittest.TestCase):
     def test_resume_route_requires_exact_body_and_is_not_remote_executable(self):
         policy = default_route_policy()
         valid = ControlRequest(request_id="resume-request", path_id="agent.session.resume",
-            params={"sessionId": self.id}, body={"turnId": "original-input", "clientMessageId": "original-client"})
+            params={"sessionId": self.session_id}, body={"turnId": "original-input", "clientMessageId": "original-client"})
         policy.authorize(valid, ControlAccessContext.native())
         with self.assertRaises(ControlApiError):
             policy.authorize(ControlRequest(request_id="missing-identity", path_id="agent.session.resume",
-                params={"sessionId": self.id}, body={"turnId": "original-input"}), ControlAccessContext.native())
+                params={"sessionId": self.session_id}, body={"turnId": "original-input"}), ControlAccessContext.native())
         with self.assertRaises(ControlApiError):
             policy.authorize(valid, ControlAccessContext.remote(device_id="phone", scopes={"agent.write"}))
-        self.assertEqual(agent_session_route(f"/api/agent/sessions/{self.id}/resume"), (self.id, "resume"))
+        self.assertEqual(agent_session_route(f"/api/agent/sessions/{self.session_id}/resume"), (self.session_id, "resume"))
 
     def test_resume_application_cannot_resume_classic_or_a_different_original_input(self):
         app = self.application()
         with self.assertRaisesRegex(ValueError, "Durable"):
             app.resume_session(self.classic["id"], {"turnId": "original-input", "clientMessageId": "original-client"})
         with self.assertRaises(PiRuntimeError):
-            app.resume_session(self.id, {"turnId": "wrong-input", "clientMessageId": "original-client"})
+            app.resume_session(self.session_id, {"turnId": "wrong-input", "clientMessageId": "original-client"})
         self.assertFalse(any(method == "session.resume" for method, _ in self.host.calls))
 
     def test_service_resume_delegates_original_identity_through_existing_mutability_guard(self):
         service = object.__new__(AgentService)
         service._require_mutable_session = Mock()
         service.session_application = self.application()
-        result = service.resume_session(self.id, {"turnId": "original-input", "clientMessageId": "original-client"})
+        result = service.resume_session(self.session_id, {"turnId": "original-input", "clientMessageId": "original-client"})
         self.assertTrue(result["runtimeReceipt"]["resumed"])
-        service._require_mutable_session.assert_called_once_with(self.id)
+        service._require_mutable_session.assert_called_once_with(self.session_id)
         self.assertFalse(any(method == "session.prompt" for method, _ in self.host.calls))
 
     def test_real_http_handler_resumes_exact_input_after_execution_owner_guard(self):
@@ -614,7 +614,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
         agent.session_application = self.application()
         handler = object.__new__(DebugRequestHandler)
         handler.service = Mock(agent=agent)
-        handler.path = f"/api/agent/sessions/{self.id}/resume"
+        handler.path = f"/api/agent/sessions/{self.session_id}/resume"
         body = json.dumps({"turnId": "original-input", "clientMessageId": "original-client"}).encode()
         handler.headers = {"Content-Type": "application/json", "Content-Length": str(len(body))}
         handler.rfile = io.BytesIO(body)
@@ -633,12 +633,12 @@ class PiDurableRuntimeTests(unittest.TestCase):
     def test_retired_timer_does_not_query_closed_store(self):
         self.runtime._states.clear()
         with patch.object(self.store, "get", side_effect=AssertionError("retired timer queried closed store")):
-            self.runtime._settle_fallback_probe(self.id, "original-input")
-            self.runtime._abort_fallback_expired(self.id, "original-input")
+            self.runtime._settle_fallback_probe(self.session_id, "original-input")
+            self.runtime._abort_fallback_expired(self.session_id, "original-input")
 
     def test_partial_native_history_does_not_rewrite_total_message_count(self):
         self.open()
-        self.store.set_status(self.id, "busy", message_count=64)
+        self.store.set_status(self.session_id, "busy", message_count=64)
         self.host.snapshot.update(partial=True, historyCursor="older")
         blocks = Mock()
         blocks.hydrate_messages.side_effect = lambda _id, messages: messages
@@ -648,16 +648,16 @@ class PiDurableRuntimeTests(unittest.TestCase):
             background_jobs=Mock(list=Mock(return_value={"items": []})),
             room_public_messages=lambda _: None, room_recent_public_messages=lambda _: None)
         for view in ("", "recent"):
-            result = projection.messages(self.id, view=view)
+            result = projection.messages(self.session_id, view=view)
             self.assertTrue(result["partial"])
-            self.assertEqual(self.store.get(self.id)["messageCount"], 64)
+            self.assertEqual(self.store.get(self.session_id)["messageCount"], 64)
 
     def test_final_message_settlement_does_not_replace_durable_history_count_with_context_count(self):
         self.open()
-        self.store.set_status(self.id, "busy", message_count=64)
+        self.store.set_status(self.session_id, "busy", message_count=64)
         self.host.settlement = self.terminal_receipt()
-        self.runtime.await_turn_settled(self.id, "original-input", client_message_id="original-client", timeout_seconds=2)
-        self.assertEqual(self.store.get(self.id)["messageCount"], 64)
+        self.runtime.await_turn_settled(self.session_id, "original-input", client_message_id="original-client", timeout_seconds=2)
+        self.assertEqual(self.store.get(self.session_id)["messageCount"], 64)
 
 
 if __name__ == "__main__":
