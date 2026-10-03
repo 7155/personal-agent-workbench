@@ -321,7 +321,10 @@ export function PawSessionWorkspace({
   const queue = useConversationQueue({
     busy: busy || sending || durablePaused,
     conversationId: recordId,
-    send: (text) => { void send('prompt', text); },
+    send: (text) => {
+      if (!acceptsImmediateInput(text)) return false;
+      void send('prompt', text);
+    },
   });
   const pendingMemoryReview = projectionSlice.pendingMemoryReview;
   const pendingGenericInput = projectionSlice.pendingGenericInput;
@@ -623,6 +626,15 @@ export function PawSessionWorkspace({
     }
     if (rawDraft.trim() === '/branch') {
       setError('Pi Durable 暂不支持历史分支。草稿已保留。');
+      return false;
+    }
+    return true;
+  }
+
+  function acceptsImmediateInput(rawDraft: string): boolean {
+    if (!acceptsEngineInput(rawDraft)) return false;
+    if (durablePaused) {
+      setError('当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。');
       return false;
     }
     return true;
@@ -1677,8 +1689,7 @@ export function PawSessionWorkspace({
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
                 onSend={(delivery, value) => {
-                  if (!acceptsEngineInput(value)) return false;
-                  if (durablePaused) { setError('当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。'); return false; }
+                  if (!acceptsImmediateInput(value)) return false;
                   const input = userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value;
                   void send(delivery, editState ? value : messageWithWorkspaceContext(input, composerContext), input);
                 }}

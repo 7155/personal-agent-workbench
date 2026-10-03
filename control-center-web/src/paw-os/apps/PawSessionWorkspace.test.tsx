@@ -178,6 +178,51 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
   });
 
+  it('retains a held Durable message when immediate delivery is refused by its paused original task', async () => {
+    const sessionId = 'session-durable-paused-send-now';
+    const transport = new StubControlTransport('mock', { ...durablePausedRoutes(sessionId), 'agent.session.prompt': { ok: true } });
+    render(durableWorkspace(transport, sessionId, '原任务之后再做'));
+    await screen.findByRole('button', { name: '继续当前任务' });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: '消息' }), { key: 'Enter' });
+    const held = screen.getByRole('status', { name: '等待当前执行完成后发送的消息' });
+    fireEvent.click(within(held).getByRole('button', { name: '改为立即干预当前执行' }));
+    expect(held).toBeInTheDocument();
+    expect(held).toHaveTextContent('原任务之后再做');
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt' || request.pathId === 'agent.session.resume')).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.activeTurn).toEqual({
+      turnId: 'turn-busy', clientMessageId: 'original-client',
+    });
+  });
+
+  it.each(['drain', 'sendNow'] as const)('retains a queued message edited to an unsupported Durable branch at %s consumption', async mode => {
+    const sessionId = `session-durable-edited-queue-${mode}`;
+    const transport = busySessionTransport(sessionId);
+    render(durableWorkspace(transport, sessionId, '先允许这条普通消息'));
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { emitStreamDelta(transport, sessionId); });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(composer).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: '先允许这条普通消息' }));
+    const panel = screen.getByRole('region', { name: '排队中的消息' });
+    fireEvent.click(within(panel).getByRole('button', { name: '编辑' }));
+    fireEvent.change(within(panel).getByRole('textbox', { name: '编辑排队消息' }), { target: { value: '/branch' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '保存' }));
+    expect(within(panel).getByRole('listitem')).toHaveTextContent('/branch');
+    if (mode === 'drain') act(() => { emitTurnCompleted(transport, sessionId); });
+    else fireEvent.click(within(panel).getByRole('button', { name: '改为干预' }));
+    expect(panel).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: '排队中的消息' })).getByRole('listitem')).toHaveTextContent('/branch');
+    expect(composer).toHaveValue('');
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt'
+      || request.pathId === 'agent.session.forks.list' || request.pathId === 'agent.session.forks.create')).toBe(false);
+    // The native owner may still refresh after settlement; unrelated render
+    // and catalog traffic must not turn a rejected head into a consumed draft.
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('region', { name: '排队中的消息' })).toHaveTextContent('/branch');
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
   it.each(['branch', 'attachment'] as const)('keeps unsupported Durable %s input out of the busy queue', async kind => {
     const sessionId = `session-durable-queue-${kind}`;
     const transport = busySessionTransport(sessionId);
@@ -1366,7 +1411,15 @@ describe('PAWOS Agent Session structural migration', () => {
 
   it('does not turn an accepted Stop into a failure by awaiting the full archive', async () => {
     const sessionId = 'session-stop-does-not-await-history';
-    let fullRequests = 0;
+    const archive = deferred<unknown>();
+    let archiveSettled = false;
+    void archive.promise.then(() => { archiveSettled = true; });
+    const loadFullArchive = vi.fn(() => archive.promise);
+    const stopped = parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:2`, sessionId,
+      turnId: 'turn-stop-fast', sequence: 2, createdAtMs: 2,
+      eventType: 'turn_completed', payload: { status: 'aborted' }, resumeToken: `${sessionId}:2`,
+    });
     const transport = new StubControlTransport('mock', {
       'agent.session.snapshot': (request: ControlRequest) => request.query?.view === 'recent'
         ? {
@@ -1388,10 +1441,7 @@ describe('PAWOS Agent Session structural migration', () => {
             partial: true,
             snapshotScope: 'recent',
           }
-        : (() => {
-            fullRequests += 1;
-            throw new Error('full archive temporarily unavailable');
-          })(),
+        : loadFullArchive(),
       'agent.session.models': {},
       'agent.session.commands': {},
       'agent.tools.list': {},
@@ -1399,12 +1449,13 @@ describe('PAWOS Agent Session structural migration', () => {
       'agent.session.abort': { ok: true },
     });
     useAgentLiveStore.getState().clear(sessionId);
-    render(
+    const view = render(
       <ControlTransportProvider transport={transport}>
         <TooltipProvider>
           <PawSessionWorkspace
             record={{ ...liveSession(), id: sessionId }}
             recordId={sessionId}
+            initialDraft="尚未发送的草稿"
             onNewWork={vi.fn()}
             onSessionCreated={vi.fn()}
             onSessionUpdated={vi.fn()}
@@ -1413,14 +1464,35 @@ describe('PAWOS Agent Session structural migration', () => {
       </ControlTransportProvider>,
     );
 
-    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
-    await userEvent.setup().click(screen.getByRole('button', { name: '停止当前回合' }));
-    await waitFor(() => expect(
-      transport.requests.filter((request) => request.pathId === 'agent.session.abort'),
-    ).toHaveLength(1));
-    await waitFor(() => expect(fullRequests).toBe(1));
-    expect(screen.queryByText(/Session 操作没有完成|full archive temporarily unavailable/)).not.toBeInTheDocument();
-    useAgentLiveStore.getState().clear(sessionId);
+    try {
+      // Initial full-history enrichment is already blocked, independently of
+      // Stop. Counting all full reads cannot distinguish it from retry traffic.
+      await waitFor(() => expect(loadFullArchive).toHaveBeenCalled());
+      expect(archiveSettled).toBe(false);
+      expect(transport.subscriptionCount('agent.session.events')).toBe(1);
+      await userEvent.setup().click(screen.getByRole('button', { name: '停止当前回合' }));
+      await waitFor(() => expect(
+        transport.requests.filter((request) => request.pathId === 'agent.session.abort'),
+      ).toHaveLength(1));
+      expect(transport.requests.find(request => request.pathId === 'agent.session.abort')).toMatchObject({
+        params: { sessionId }, body: {},
+      });
+      act(() => { transport.emit('agent.session.events', stopped); });
+      await waitFor(() => expect(screen.queryByRole('button', { name: '停止当前回合' })).not.toBeInTheDocument());
+      expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
+      expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('尚未发送的草稿');
+      expect(useAgentLiveStore.getState().projections[sessionId].turnsById['turn-stop-fast'].status).toBe('aborted');
+      expect(archiveSettled).toBe(false);
+      expect(screen.queryByText(/Session 操作没有完成|full archive temporarily unavailable/)).not.toBeInTheDocument();
+    } finally {
+      await act(async () => {
+        archive.resolve({ messages: [], liveEvents: [stopped], lastSequence: 2,
+          resumeToken: `${sessionId}:2`, status: 'idle' });
+        await archive.promise;
+      });
+      view.unmount();
+      useAgentLiveStore.getState().clear(sessionId);
+    }
   });
 
   it('sends exactly one held follow-up once the running turn settles', async () => {

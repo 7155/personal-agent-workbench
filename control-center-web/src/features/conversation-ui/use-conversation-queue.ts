@@ -40,7 +40,9 @@ export function useConversationQueue({
 }: {
   busy: boolean;
   conversationId: string;
-  send(text: string): void;
+  /** `false` is a synchronous refusal: keep the held draft for correction or
+   *  an explicit retry. Existing void callers accept the handoff. */
+  send(text: string): boolean | void;
   cap?: number;
 }): ConversationQueueController {
   const [queue, setQueue] = useState<readonly QueuedDraft[]>([]);
@@ -68,11 +70,11 @@ export function useConversationQueue({
   // avoids racing the optimistic append the send path performs.
   useEffect(() => {
     if (busy || queueRef.current.conversationId !== conversationId) return;
-    const [next, ...rest] = queueRef.current.items;
+    const next = queueRef.current.items[0];
     if (!next) return;
-    replaceQueue(rest);
+    if (sendRef.current(next.text) === false) return;
+    replaceQueue(removeQueuedDraft(queueRef.current.items, next.id));
     setCapReached(false);
-    sendRef.current(next.text);
   }, [busy, conversationId, queue, replaceQueue]);
 
   const enqueue = useCallback((text: string) => {
@@ -121,9 +123,9 @@ export function useConversationQueue({
     // React may invoke state updater functions twice in StrictMode. Dispatching
     // from inside the updater therefore sent one human action to Runtime twice.
     // Resolve the immutable queued draft first, then keep the updater pure.
+    if (sendRef.current(item.text) === false) return;
     replaceQueue(removeQueuedDraft(queueRef.current.items, id));
     setCapReached(false);
-    sendRef.current(item.text);
   }, [conversationId, replaceQueue]);
 
   const restoreToDraft = useCallback((currentText: string) => {

@@ -45,6 +45,10 @@ older input cannot cancel the next task.
 | Managed plugins and Pi/Codex Skills | Unavailable |
 | Images, conversation fork/rewrite and command catalog | Unavailable |
 
+An explicit `maxTokens` override on model selection is also unavailable because
+native Conversation streaming does not carry it. Normal model/thinking selection
+uses the configured native model policy.
+
 Unsupported actions are rejected by both the product and Host boundaries.
 Creation/send retains unsupported attached images and the draft for correction.
 A withdrawn Host capability blocks Durable creation; it does not silently fall
