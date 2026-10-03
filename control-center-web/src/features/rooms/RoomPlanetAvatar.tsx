@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { useMotionActivity } from '@/design/motion';
 import atlas from './assets/planet-bodies-v1.png';
 import { roomPlanetName } from './room-copy';
 import './room-planet-avatar.css';
@@ -26,6 +27,7 @@ export function RoomPlanetAvatar({ ordinal, size = 32, className, decorative = f
   ordinal: number; size?: number; className?: string; decorative?: boolean; activity?: RoomPlanetActivity;
 }) {
   const clipId = useId();
+  const motionActive = useMotionActivity();
   const index = Number.isInteger(ordinal) && ordinal >= 0 ? ordinal : 0;
   const frame = FRAMES[index];
   const name = roomPlanetName(index);
@@ -39,6 +41,7 @@ export function RoomPlanetAvatar({ ordinal, size = 32, className, decorative = f
         : [0, 3, 5, 7].includes(index) ? 'open' : 'smile';
   return <svg aria-hidden={decorative || undefined} aria-label={decorative ? undefined : name}
     className={['room-planet-avatar', className].filter(Boolean).join(' ')} data-activity={activity}
+    data-motion-active={motionActive}
     data-expression={expression}
     data-room-planet={index} focusable="false" height={size}
     preserveAspectRatio="xMidYMid meet" role={decorative ? undefined : 'img'}

@@ -78,6 +78,13 @@
   45% { transform: translateY(-8%) scale(1.06); }
   100% { transform: translateY(0) scale(1); }
 }
+/* Pause decoration without changing the current identity or expression. */
+.room-planet-avatar[data-motion-active='false'],
+.room-planet-avatar[data-motion-active='false'] :is(.room-planet-eye, .room-planet-gaze, .room-planet-mouth) {
+  animation: none;
+  transform: none;
+  transition: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .room-planet-avatar[data-activity],
   .room-planet-avatar[data-activity] .room-planet-eye,
