@@ -182,7 +182,10 @@ class AgentSessionApplicationService:
             "memoryBootstrap": self.pending_memory_bootstrap(session),
         }
 
-    def abort(self, session_id: str) -> dict[str, object]:
+    def abort(
+        self, session_id: str, *,
+        capture_cancellation: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> dict[str, object]:
         """Stop one Session and settle its pending approval state."""
 
         runtime_receipt: Mapping[str, object] = {}
@@ -199,6 +202,8 @@ class AgentSessionApplicationService:
                     client_message_id=(str(identity.get("clientMessageId") or "")
                         if identity.get("pendingAdmission") is True else None),
                 ))
+                if capture_cancellation is not None:
+                    capture_cancellation(identity)
             raw_runtime_receipt = fenced_abort(session_id, before_abort)
         else:
             # An older driver has no pre-RPC turn contract. Capture the exact
@@ -216,6 +221,8 @@ class AgentSessionApplicationService:
                     turn_id=str(raw_runtime_receipt["turnId"]), approval_ids=captured_ids,
                 )
                 approval_cancellation = {**dict(approval_cancellation), "turnId": str(raw_runtime_receipt["turnId"])}
+                if capture_cancellation is not None:
+                    capture_cancellation(raw_runtime_receipt)
         if isinstance(raw_runtime_receipt, Mapping):
             runtime_receipt = raw_runtime_receipt
         return {

@@ -807,6 +807,85 @@ class AgentBackgroundJobService:
             for row in rows
         ]
 
+    def request_turn_cancellation(
+        self, session_id: str, identity: Mapping[str, object],
+    ) -> Callable[[], dict[str, object]]:
+        """Fence and capture one standalone turn; wait only outside Runtime locks."""
+        self._require_execution_owner()
+        turn_id = str(identity.get("turnId") or "")
+        turn_ids = {turn_id} if turn_id else set()
+        unresolved_job_ids: list[str] = []
+        now_ms = _now_ms()
+        with sqlite_connection(self.db_path, foreign_keys=True) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not turn_ids and identity.get("pendingAdmission") is True:
+                turn_ids.update(str(row[0]) for row in conn.execute(
+                    """SELECT DISTINCT request.turn_id FROM agent_gateway_requests AS request
+                       JOIN agent_gateway_cancelled_turns AS stopped
+                         ON stopped.session_id=request.session_id AND stopped.turn_id=request.turn_id
+                       WHERE request.session_id=? AND request.client_message_id=?
+                         AND (request.state<>'completed' OR EXISTS (
+                           SELECT 1 FROM agent_approvals AS approval
+                           WHERE approval.session_id=request.session_id
+                             AND approval.tool_call_id=request.tool_call_id
+                             AND approval.state IN ('pending','approved')))""",
+                    (session_id, str(identity.get("clientMessageId") or "")),
+                ))
+                # Completing the HTTP receipt does not complete a background
+                # process. Its original admitted binding remains authoritative.
+                bound_jobs = conn.execute(
+                    """SELECT DISTINCT job.job_id, job.causal_turn_id
+                       FROM agent_background_jobs AS job
+                       JOIN agent_gateway_requests AS request
+                         ON request.session_id=job.session_id AND request.turn_id=job.causal_turn_id
+                       WHERE job.session_id=? AND request.client_message_id=?
+                         AND job.causal_turn_id<>'' AND job.room_bound=0
+                         AND job.status IN ('queued','running','cancelling')""",
+                    (session_id, str(identity.get("clientMessageId") or "")),
+                ).fetchall()
+                turn_ids.update(str(row[1]) for row in bound_jobs)
+                if len(turn_ids) > 1:
+                    # A reused client ID cannot select an original generation.
+                    unresolved_job_ids = sorted(str(row[0]) for row in bound_jobs)
+                    turn_ids.clear()
+            job_ids: list[str] = []
+            for target in sorted(turn_ids):
+                conn.execute("INSERT OR IGNORE INTO agent_gateway_cancelled_turns VALUES (?, ?, ?)",
+                             (session_id, target, now_ms))
+                job_ids.extend(str(row[0]) for row in conn.execute(
+                    """SELECT job_id FROM agent_background_jobs
+                       WHERE session_id=? AND causal_turn_id=? AND room_bound=0
+                         AND status IN ('queued','running','cancelling') ORDER BY job_id""",
+                    (session_id, target),
+                ))
+            for job_id in job_ids:
+                conn.execute("""UPDATE agent_background_jobs SET status='cancelling',
+                    cancel_requested_at_ms=?, updated_at_ms=?, error='user_abort'
+                    WHERE job_id=? AND status IN ('queued','running')""",
+                    (now_ms, now_ms, job_id))
+
+        def wait_for_jobs() -> dict[str, object]:
+            for job_id in job_ids:
+                self.cancel(session_id, job_id, reason="user_abort")
+            deadline = time.monotonic() + 2.0
+            while True:
+                pending = list(unresolved_job_ids)
+                for job_id in job_ids:
+                    row = self._row(session_id, job_id)
+                    # A missing identity or orphaned receipt cannot prove that
+                    # the original process group has physically drained.
+                    group_id = int(row["process_group_id"] or 0)
+                    if (str(row["status"]) not in {"completed", "failed", "cancelled"}
+                            or group_id <= 0 or _process_group_exists(group_id)):
+                        pending.append(job_id)
+                if unresolved_job_ids or not pending or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.02)
+            return {"schemaVersion": "rag-ime.agent-background-job-turn-cancellation.v1",
+                    "sessionId": session_id, "turnIds": sorted(turn_ids),
+                    "jobIds": job_ids, "pendingJobIds": pending, "drained": not pending}
+        return wait_for_jobs
+
     def _cancel_owned(
         self,
         session_id: str,
@@ -1448,6 +1527,7 @@ class AgentBackgroundJobService:
                 raise AgentBackgroundJobError("background job was cancelled before launch release")
             self._require_live_causal_epoch(conn, str(row["session_id"]), {
                 "roomBound": bool(row["room_bound"]),
+                "turnId": str(row["causal_turn_id"] or ""),
                 "goalId": str(row["causal_goal_id"] or ""),
                 "goalRevision": int(row["causal_goal_revision"] or 0),
             })
@@ -1654,6 +1734,12 @@ class AgentBackgroundJobService:
     ) -> None:
         if bool(causal["roomBound"]):
             return
+        turn_id = str(causal.get("turnId") or "")
+        if turn_id and conn.execute(
+            "SELECT 1 FROM agent_gateway_cancelled_turns WHERE session_id=? AND turn_id=?",
+            (session_id, turn_id),
+        ).fetchone() is not None:
+            raise AgentBackgroundJobError("background job turn was cancelled before launch")
         goal_id = str(causal["goalId"] or "")
         goal_revision = int(causal["goalRevision"] or 0)
         clauses: list[str] = []

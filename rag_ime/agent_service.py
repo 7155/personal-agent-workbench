@@ -4383,13 +4383,21 @@ class AgentService:
         self._require_mutable_session(session_id)
         wait_commands = (self._workspace_command_cancellation(session_id)
                          if self._workspace_command_cancellation is not None else None)
+        wait_jobs: Callable[[], dict[str, object]] | None = None
+        def capture_jobs(identity: Mapping[str, object]) -> None:
+            nonlocal wait_jobs
+            wait_jobs = self.background_jobs.request_turn_cancellation(session_id, identity)
         try:
-            receipt = self.session_application.abort(session_id)
+            receipt = self.session_application.abort(session_id, capture_cancellation=capture_jobs)
         finally:
             commands = wait_commands() if wait_commands is not None else None
+            jobs = wait_jobs() if wait_jobs is not None else None
         if commands is not None:
             receipt["workspaceCommands"] = commands
             receipt["ok"] = bool(receipt.get("ok")) and commands["drained"] is True
+        if jobs is not None:
+            receipt["backgroundJobs"] = jobs
+            receipt["ok"] = bool(receipt.get("ok")) and jobs["drained"] is True
         return receipt
 
     def compact(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
