@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-02T23:31:06.632322+00:00",
+  "generatedAt": "2026-10-03T04:51:16.565771+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "codex/paw-pi1-mac-iteration-20261002",
+    "branch": "codex/paw-main-integration-20261003",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Preserve the released V1-V4 and current main owners. Integrate Pi Content V5 then Studio V6 with existing PAW typography and semantic colors. Pi remains the execution owner; synthetic UI checks, Runtime checks and installed-app acceptance are separate evidence boundaries. Preserve unrelated worktrees. Add user-authorized native Pi 0.99.2 codemode and Room recovery source; preserve the independent installed and real task acceptance boundaries. Preserve the exact Pi 1.0 paired baseline and scope Mac browser acceptance fixes without activating an installed Runtime."
+    "candidateCommitPolicy": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -168,13 +168,17 @@
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
       "pathCount": 236
+    },
+    "durable_desktop_iteration": {
+      "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "pathCount": 22
     }
   },
   "summary": {
-    "pathCount": 1870,
+    "pathCount": 1892,
     "dispositionCounts": {
-      "delete_old_implementation": 310,
-      "keep_release": 1560
+      "delete_old_implementation": 316,
+      "keep_release": 1576
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -183,6 +187,7 @@
       "composition_refactor": 32,
       "conversation_controls": 61,
       "conversation_v2_integration": 49,
+      "durable_desktop_iteration": 22,
       "earth_research": 113,
       "jev_integration": 10,
       "knowledge_runtime": 12,
@@ -3029,6 +3034,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/contracts/generated/agent-model-catalog.v1.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/contracts/generated/agent-room-snapshot.v1.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -3300,6 +3312,13 @@
       "group": "pi_content_studio_v5_v6",
       "reason": "Integrate V5 content and V6 delivery views, retain existing authority and verify typography, contrast and interaction regressions.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/composer/command-catalog.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/agent/composer/permission-policy.ts",
@@ -5535,6 +5554,13 @@
       "disposition": "delete_old_implementation"
     },
     {
+      "path": "control-center-web/src/features/rooms/RoomPlanetAvatar.test.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/rooms/RoomPlanetAvatar.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -6466,6 +6492,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/paw-os/PawOsApp.test.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/paw-os/PawOsApp.tsx",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -6648,6 +6681,34 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomCollaboration.test.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomCollaboration.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomCollaborationDetails.test.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawRoomCollaborationDetails.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomConversation.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -6663,17 +6724,17 @@
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawRoomFocusOverview.test.tsx",
-      "disposition": "keep_release",
+      "disposition": "delete_old_implementation",
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
-      "status": "modified"
+      "status": "deleted"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawRoomFocusOverview.tsx",
-      "disposition": "keep_release",
+      "disposition": "delete_old_implementation",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
-      "status": "modified"
+      "status": "deleted"
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawRoomFocusParticipants.test.tsx",
@@ -6690,9 +6751,16 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomLiveFocusOverview.test.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "delete_old_implementation",
+      "status": "deleted"
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomLiveFocusOverview.tsx",
-      "status": "modified",
-      "disposition": "keep_release",
+      "status": "deleted",
+      "disposition": "delete_old_implementation",
       "group": "room_history_codemode",
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
@@ -7051,6 +7119,13 @@
       "disposition": "keep_release",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-room-collaboration.css",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
       "status": "added"
     },
     {
@@ -7558,6 +7633,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/paw-os/runtime/paw-os-copy-boundary.test.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/paw-os/runtime/runtime-tool-window.test.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -7635,11 +7717,18 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawFieldLede.test.tsx",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "delete_old_implementation",
+      "status": "deleted"
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/PawFieldLede.tsx",
-      "status": "modified",
+      "status": "deleted",
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
-      "disposition": "keep_release"
+      "disposition": "delete_old_implementation"
     },
     {
       "path": "control-center-web/src/paw-os/shell/PawRoomProjectionKeeper.tsx",
@@ -7747,6 +7836,34 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/paw-os/shell/wayfinder-work-projection.test.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/wayfinder-work-projection.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/window-close-route.test.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/window-close-route.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/paw-os/styles/paw-os-agent-composition.css",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -7801,6 +7918,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-motion.css",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-room-focus.css",
@@ -8382,6 +8506,13 @@
       "disposition": "keep_release",
       "group": "room_history_codemode",
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "integrations/pi/pi-durable.md",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "integrations/pi/rag-ime-control.ts",
@@ -9511,6 +9642,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/contracts/json/agent-model-catalog.v1.json",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "modified"
+    },
+    {
       "path": "rag_ime/contracts/json/agent-room-snapshot.v1.json",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -9817,6 +9955,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/db/migrations/0218_agent_session_runtime_engine.sql",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "rag_ime/debug_server.py",
@@ -12031,6 +12176,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_session_runtime_engine.py",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "tests/test_agent_sessions.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -12904,6 +13056,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_pi_durable_runtime.py",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "tests/test_pi_exact_turn_cancellation.py",
