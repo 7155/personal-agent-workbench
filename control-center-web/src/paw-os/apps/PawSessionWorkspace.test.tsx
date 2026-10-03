@@ -131,6 +131,56 @@ describe('PAWOS Agent Session structural migration', () => {
     } finally { view.unmount(); useAgentLiveStore.getState().clear(sessionId); }
   });
 
+  it('reopens a completed Durable session passively and sends a new message without resuming old work', async () => {
+    const sessionId = 'session-durable-completed-reopen';
+    const completed = durablePausedSnapshot(sessionId);
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': { ...completed, paused: false, recoverable: false, isIdle: true,
+        activeTurn: null, status: 'idle', items: [...completed.items, {
+          schemaVersion: 'rag-ime.agent-message.v1', id: `${sessionId}:assistant`, sessionId,
+          turnId: 'turn-busy', role: 'assistant', status: 'completed',
+          blocks: [{ id: `${sessionId}:answer`, type: 'text', status: 'completed',
+            presentationKind: 'markdown', data: { text: '原任务已经完成' } }],
+          attachments: [], citations: [], createdAtMs: 2, completedAtMs: 3,
+        }] },
+      'agent.session.prompt': { ok: true, turnId: 'new-input' },
+    });
+    const first = render(durableWorkspace(transport, sessionId, '', 'full'));
+    await screen.findByText('原任务已经完成', { selector: 'p' });
+    first.unmount();
+    useAgentLiveStore.getState().clear(sessionId);
+    const view = render(durableWorkspace(transport, sessionId, '开始一个不同的新任务', 'full'));
+    try {
+      await screen.findByText('原任务已经完成', { selector: 'p' });
+      await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+      const before = useAgentLiveStore.getState().projections[sessionId];
+      expect(before.durableRecovery).toEqual({ paused: false, recoverable: false, activeTurn: null });
+      expect(before.turnsById['turn-busy'].status).toBe('completed');
+      expect(view.container.querySelector('.paw-session-workspace')).toHaveAttribute('data-status', 'idle');
+      expect(view.container.querySelector('.paw-session-workspace__header')).toHaveAttribute('data-status', 'idle');
+      expect(screen.queryByRole('button', { name: '继续当前任务' })).not.toBeInTheDocument();
+      expect(screen.queryByText('任务已暂停，进度已保存')).not.toBeInTheDocument();
+      expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
+
+      const send = screen.getByRole('button', { name: '发送' });
+      expect(send).toBeEnabled();
+      await userEvent.setup().click(send);
+      await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+      const prompt = transport.requests.find(request => request.pathId === 'agent.session.prompt')!;
+      expect(prompt).toMatchObject({ params: { sessionId }, body: {
+        message: '开始一个不同的新任务', attachments: [], clientMessageId: expect.stringMatching(/^paw-/),
+      } });
+      expect(prompt.body).not.toHaveProperty('delivery');
+      expect(prompt.body).not.toHaveProperty('turnId');
+      expect(prompt.body).not.toHaveProperty('clientMessageId', 'original-client');
+      expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('');
+      expect(screen.queryByRole('status', { name: '等待当前执行完成后发送的消息' })).not.toBeInTheDocument();
+      expect(useAgentLiveStore.getState().projections[sessionId].turnsById['turn-busy'].status).toBe('completed');
+      expect(screen.getByText('原任务已经完成', { selector: 'p' })).toBeVisible();
+      expect(transport.requests.some(request => request.pathId === 'agent.session.resume')).toBe(false);
+    } finally { view.unmount(); useAgentLiveStore.getState().clear(sessionId); }
+  });
+
   it('keeps a paused Durable task static in the full workspace without losing its Stop control', async () => {
     const sessionId = 'session-durable-paused-chrome';
     const transport = new StubControlTransport('mock', durablePausedRoutes(sessionId));

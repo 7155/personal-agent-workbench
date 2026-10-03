@@ -579,6 +579,51 @@ class PiDurableRuntimeTests(unittest.TestCase):
                 self.assertEqual(result["activeTurn"], {"turnId": "original-input", "clientMessageId": "original-client"})
         self.assertFalse(any(method in {"session.prompt", "session.resume"} for method, _ in self.host.calls))
 
+    def test_completed_idle_host_reopen_projects_no_recovery_and_admits_distinct_prompt(self):
+        # The native wire is doubled with the corrected Host metadata. Real
+        # SQLite/Harness reopen behavior belongs to Pi's native regression.
+        original_send = self.host.send
+
+        def send(method, *args, **kwargs):
+            result = original_send(method, *args, **kwargs)
+            if method == "session.open":
+                self.host.snapshot.update(paused=False, recoverable=False, isIdle=True, activeTurn=None)
+                self.host.snapshot["messages"].append({
+                    "id": "assistant-completed", "role": "assistant", "content": "原任务已经完成",
+                    "_ragImeTurnId": "original-input", "stopReason": "stop",
+                })
+                result["snapshot"] = copy.deepcopy(self.host.snapshot)
+            return result
+
+        self.host.send = send
+        blocks = Mock()
+        blocks.hydrate_messages.side_effect = lambda _id, messages: messages
+        projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
+            workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
+            media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
+            background_jobs=Mock(list=Mock(return_value={"items": []})),
+            room_public_messages=lambda _: None, room_recent_public_messages=lambda _: None)
+        for view in ("", "recent"):
+            with self.subTest(view=view):
+                result = projection.messages(self.session_id, view=view)
+                self.assertEqual(result["runtimeEngine"], "durable")
+                self.assertFalse(result["paused"])
+                self.assertFalse(result["recoverable"])
+                self.assertTrue(result["projectionCurrent"])
+                self.assertIsNone(result["activeTurn"])
+                self.assertEqual(result["status"], "idle")
+                self.assertEqual([message["turnId"] for message in result["items"]],
+                                 ["original-input", "original-input"])
+        self.assertFalse(any(method in {"session.prompt", "session.resume", "session.abort"}
+                             for method, _ in self.host.calls))
+        result = self.runtime.prompt(self.session_id, "不同的新任务", client_message_id="new-distinct-client")
+        self.assertEqual(result["turnId"], "new-input")
+        self.assertEqual(result["clientMessageId"], "new-distinct-client")
+        prompts = [params for method, params in self.host.calls if method == "session.prompt"]
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(prompts[0]["clientMessageId"], "new-distinct-client")
+        self.assertFalse(any(method in {"session.resume", "session.abort"} for method, _ in self.host.calls))
+
     def test_resume_route_requires_exact_body_and_is_not_remote_executable(self):
         policy = default_route_policy()
         valid = ControlRequest(request_id="resume-request", path_id="agent.session.resume",

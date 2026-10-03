@@ -20,6 +20,11 @@ their transcripts retain their current owners.
    **继续当前任务** to resume that admitted input. Reloading, directory listing
    and history reads never trigger a model or Tool invocation.
 
+An empty Session or one whose original task has completed reopens idle, with
+`paused: false`, `recoverable: false` and no active recovery target. Send a new
+message normally; no continuation request or replay of completed work is needed.
+This product state does not start native scheduling during passive history reads.
+
 The continuation request contains the original `sessionId`, `turnId` and
 `clientMessageId`; it contains no new prompt. Repeated continuation joins the
 same native work or returns its saved settlement. Failed reads and missing or

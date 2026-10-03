@@ -92,6 +92,61 @@ class WorkspaceJobTurnCancellationTests(unittest.TestCase):
         self.assertFalse((self.root / 'late.pid').exists())
         self.start('next', 'next')
 
+    def test_stop_fences_an_inflight_start_before_its_database_insert(self):
+        entered, release = threading.Event(), threading.Event()
+        log_path = self.jobs._log_path
+        def held_log_path(job_id):
+            path = log_path(job_id)
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError('fixture admission was not released')
+            return path
+        with ThreadPoolExecutor(max_workers=1) as pool, \
+                patch.object(self.jobs, '_log_path', side_effect=held_log_path), \
+                patch.object(self.jobs.workspace_harness, 'spawn_background',
+                             wraps=self.jobs.workspace_harness.spawn_background) as spawn:
+            starting = pool.submit(self.start, 'late-insert', 'original')
+            self.assertTrue(entered.wait(5))
+            try:
+                stopped = self.abort()
+                self.assertTrue(stopped['backgroundJobs']['drained'])
+                self.assertEqual(stopped['backgroundJobs']['jobIds'], [])
+            finally:
+                release.set()
+            with self.assertRaisesRegex(AgentBackgroundJobError, 'cancelled'):
+                starting.result(timeout=5)
+            spawn.assert_not_called()
+        with sqlite_connection(self.jobs.db_path) as conn:
+            self.assertEqual(conn.execute(
+                'SELECT COUNT(*) FROM agent_background_jobs WHERE session_id=?',
+                (self.session_id,),
+            ).fetchone()[0], 0)
+        self.assertFalse((self.root / 'late-insert.pid').exists())
+        self.start('after-late-insert', 'successor')
+
+    def test_stop_ack_wait_never_cancels_a_successor_started_after_capture(self):
+        original = self.start('ack-original', 'original')
+        self.wait_file('ack-original.pid')
+        original_pid = int((self.root / 'ack-original.pid').read_text())
+        successor = []
+        def native_abort(session_id, before_abort):
+            before_abort({'turnId': 'original', 'clientMessageId': 'original-client'})
+            successor.append(self.start('ack-successor', 'successor'))
+            self.wait_file('ack-successor.pid')
+            return {'sessionId': session_id, 'turnId': 'original',
+                    'lifecycle': {'drained': True, 'idle': True}}
+        with patch.object(self.service.runtime, 'abort_with_approval_fence', side_effect=native_abort):
+            stopped = self.service.abort(self.session_id)
+        self.assertTrue(stopped['backgroundJobs']['drained'])
+        self.assertEqual(stopped['backgroundJobs']['turnIds'], ['original'])
+        self.assertEqual(stopped['backgroundJobs']['jobIds'], [original])
+        with self.assertRaises(ProcessLookupError):
+            os.kill(original_pid, 0)
+        self.assertEqual(self.jobs.status(self.session_id, successor[0])['job']['status'], 'running')
+        os.kill(int((self.root / 'ack-successor.pid').read_text()), 0)
+        with self.assertRaisesRegex(AgentBackgroundJobError, 'cancelled'):
+            self.start('ack-late-original', 'original')
+
     def test_stop_during_spawn_does_not_release_user_command(self):
         entered, release = threading.Event(), threading.Event()
         spawn = self.jobs.workspace_harness.spawn_background
