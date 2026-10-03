@@ -17,7 +17,7 @@ import { openPawOsRoute, usePawOsDesktop } from './surface-context';
 import { routePath } from './model/app-registry';
 import type { PawOsWindowTarget } from './model/desktop';
 import { roomPlanetObserverWindowRequest } from '@/paw-os/apps/room-satellite-auto-open';
-import { PawRoomLiveFocusOverview } from '@/paw-os/apps/PawRoomLiveFocusOverview';
+import { PawRoomCollaboration } from '@/paw-os/apps/PawRoomCollaboration';
 import { PawRoomGovernance } from '@/paw-os/apps/PawRoomWorkspace';
 import { PawRoomConversation } from '@/paw-os/apps/PawRoomConversation';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
@@ -381,7 +381,25 @@ function RoomPanelSatellite({ target }: { target: Extract<PawOsWindowTarget, { k
   const desktop = usePawOsDesktop();
   const transport = useControlTransport();
   const roomQuery = useRoomDetail(target.id);
-  const room = roomFromResponse(roomQuery.data, target.id);
+  const pageVisible = usePageVisibility();
+  const [liveRoomResponse, setLiveRoomResponse] = useState<unknown>();
+  const [liveError, setLiveError] = useState<unknown>();
+  const room = roomFromResponse(liveRoomResponse, target.id) ?? roomFromResponse(roomQuery.data, target.id);
+  // A visible main window may still be an unhydrated cold-restore placeholder.
+  // Read-only panels therefore hold their own lease on the existing shared
+  // controller; keeper/participant/main leases still share one Room stream.
+  const retryLive = useRoomLiveSession({
+    active: pageVisible && target.panel !== 'governance' && Boolean(room),
+    roomId: target.id,
+    transport,
+    onLoadingChange: () => undefined,
+    onSnapshot: (_roomId, snapshot) => { setLiveRoomResponse({ room: snapshot.room }); setLiveError(undefined); },
+    onMetadata: (_roomId, response) => setLiveRoomResponse(response),
+    onConnectionRestored: () => setLiveError(undefined),
+    onConnectionError: (_roomId, error) => setLiveError(error),
+    onRecoveryState: () => undefined,
+    onEvents: () => undefined,
+  });
   const projection = useRoomLiveStore((state) => state.projections[target.id]);
   const focus = useMemo(
     () => room && target.panel === 'focus' ? buildRoomFocusProjection(room, projection) : undefined,
@@ -406,10 +424,11 @@ function RoomPanelSatellite({ target }: { target: Extract<PawOsWindowTarget, { k
       {roomQuery.isPending ? <div className="paw-os-satellite__loading" role="status"><Skeleton /><Skeleton /></div> : null}
       {roomQuery.error ? <SatelliteLoadError error={roomQuery.error} icon={Network} onRetry={() => void roomQuery.refetch()} title="Room 面板没有打开" /> : null}
       {error ? <div className="paw-os-satellite__feedback" role="alert">{error}</div> : null}
+      {target.panel !== 'governance' && liveError ? <SatelliteLoadError error={liveError} icon={Network} onRetry={retryLive} title="Room 进展未同步" /> : null}
       {!roomQuery.isPending && !roomQuery.error && !room ? <SatelliteMissing actionLabel="回到 Room" copy="这个 Room 已不在当前 Room 清单中，可能已归档或删除。" icon={Network} route="rooms" title="找不到这个 Room" /> : null}
       {room ? (
         <div className="paw-os-satellite__room-panel-body">
-          {target.panel === 'focus' && focus ? <PawRoomLiveFocusOverview roomId={target.id} focus={focus} onOpenParticipant={openParticipant} /> : null}
+          {target.panel === 'focus' && focus ? <PawRoomCollaboration roomId={target.id} room={room} projection={projection} focus={focus} onOpenParticipant={openParticipant} /> : null}
           {target.panel === 'progress' ? <RoomStatusPanel room={room} roomId={target.id} projection={projection} open /> : null}
           {target.panel === 'governance' ? <PawRoomGovernance personas={personas} room={room} onError={setError} onRefresh={refresh} onRoomUpdated={() => { void roomQuery.refetch(); }} /> : null}
         </div>

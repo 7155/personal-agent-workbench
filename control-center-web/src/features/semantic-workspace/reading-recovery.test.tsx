@@ -93,3 +93,12 @@ it('retains the existing connection-scoped view and transcript storage contract'
   fireEvent.click(screen.getByRole('button', { name: 'conversation' }));
   expect(localStorage.getItem(scope + ':view')).toBe('messages');
 });
+
+it('keeps an ongoing Room in one continuous conversation and migrates the former automatic round view', () => {
+  const transport = new MockControlTransport();
+  Object.defineProperty(transport, 'connectionIdentity', { value: 'continuous-backend' });
+  const scope = recoveryScope(transport, 'room:a');
+  localStorage.setItem(scope + ':view', 'rounds');
+  render(<ControlTransportProvider transport={transport}><LegacyTranscript /></ControlTransportProvider>);
+  expect(screen.getByRole('button', { name: 'conversation' })).toBeInTheDocument();
+});

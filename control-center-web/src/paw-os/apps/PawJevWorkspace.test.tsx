@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -23,6 +23,32 @@ async function openRoomControls(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('Jev room-backed conversation flow', () => {
+  it('keeps every shared collaboration section reachable in Jev without returning to conversation or dispatching work', async () => {
+    const room = previewRoomSnapshot('jev-collaboration-sections').room as unknown as RoomSummary;
+    const transport = createPreviewTransport(); const original = transport.request.bind(transport);
+    const requests: ControlRequest[] = [];
+    transport.request = async <Response,>(request: ControlRequest): Promise<Response> => {
+      requests.push(request);
+      if (request.pathId === 'agent.room.get') return { ok: true, room } as Response;
+      if (request.pathId === 'agent.room.snapshot') return previewRoomSnapshot(room.id) as Response;
+      if (request.pathId === 'agent.jev.get') return { ok: true, mode: 'jev', items: [] } as Response;
+      return original<Response>(request);
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawRoomWorkspace interfaceMode="jev" personas={[]} record={room} recordId={room.id} onRoomUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider></QueryClientProvider>);
+    await screen.findByRole('textbox', { name: '协作消息' });
+    fireEvent.click(screen.getByRole('button', { name: '查看 Room 协作全景' }));
+    for (const name of ['消息往返', '任务与回执', '时间线']) {
+      fireEvent.click(screen.getByRole('tab', { name }));
+      expect(screen.getByRole('region', { name: 'Room 协作' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.queryByRole('region', { name: 'Room 公开对话' })).not.toBeInTheDocument();
+    }
+    expect(requests.some(request => ['agent.jev.command', 'agent.room.message', 'agent.room.abort'].includes(request.pathId))).toBe(false);
+  });
+
   it('opens a delivered file in Files with its producing Session without sending work or losing the draft', async () => {
     const user = userEvent.setup();
     const room = previewRoomSnapshot('jev-file-window').room as unknown as RoomSummary;

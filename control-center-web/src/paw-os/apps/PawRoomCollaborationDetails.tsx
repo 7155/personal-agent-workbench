@@ -16,6 +16,7 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { Disclosure } from '@/components/primitives';
 import { MarkdownBody } from '@/features/agent/timeline/MarkdownRenderer';
 import {
@@ -57,31 +58,19 @@ const selectionPriority: RoomFocusState[] = [
 
 const FLOW_PACKET_WINDOW = 18;
 
-/**
- * Sol collaboration console — the single Room 态势 surface. Mission chrome,
- * pulse, partner-only relationship graph, flow ledger and inspector all
- * project the same real Room data. The graph deliberately excludes Sol and
- * WorkItems as actors while keeping their task detail available in the
- * inspector (PF-CM-013, UR-023).
- */
-export function PawRoomFocusOverview({
+/** Task acceptance and relationship receipts. The collaboration container owns the overview. */
+export function PawRoomCollaborationDetails({
   focus,
-  hideMission = false,
   onOpenParticipant,
   onSelectParticipant,
   selectedParticipantId,
   satellitesByParticipant = {},
-  intercomStatus,
-  onRefreshTraffic,
 }: {
   focus: RoomFocusProjection;
-  hideMission?: boolean;
   onOpenParticipant?: (participantId: string, background?: boolean) => void;
   onSelectParticipant?: (participantId: string) => void;
   selectedParticipantId?: string;
   satellitesByParticipant?: RoomSatelliteSnapshots;
-  intercomStatus?: 'loading' | 'ready' | 'error';
-  onRefreshTraffic?: () => void;
 }) {
   const defaultSelection = useMemo(() => defaultFocusSelection(focus), [focus]);
   const mesh = useMemo(() => buildRoomFocusMesh(focus), [focus]);
@@ -118,30 +107,9 @@ export function PawRoomFocusOverview({
   const originLabel = roomFocusOriginLabel(coordinatorActive);
 
   return (
-    <section aria-label="Sol 协作态势" className="paw-room-focus-overview" data-coordinator={coordinatorActive || undefined}>
-      {!hideMission && coordinatorActive ? <header className="paw-room-focus-overview__mission">
-        <span aria-hidden="true" className="paw-room-focus-overview__sol"><i /></span>
-        <div>
-          <small>Sol · 当前目标</small>
-          <strong>{focus.goal.title}</strong>
-          {focus.goal.description ? <p>{focus.goal.description}</p> : null}
-        </div>
-        <div aria-label={`目标状态：${roomFocusStateLabel(focus.goal.state)}`} className="paw-room-focus-overview__mission-state" data-state={focus.goal.state}>
-          <i aria-hidden="true" />
-          <span>{roomFocusStateLabel(focus.goal.state)}</span>
-        </div>
-      </header> : !hideMission ? <header className="paw-room-focus-overview__mission paw-room-focus-overview__mission--dormant">
-        <div>
-          <small>等待主持</small>
-          <strong>{focus.goal.title}</strong>
-          <p>指定一位伙伴为「主持」后，Sol 协作态势与星空才会点亮。</p>
-        </div>
-      </header> : null}
-
-      <FocusPulse counts={focus.counts} />
-
+    <section aria-label="任务与回执详情" className="paw-room-focus-overview" data-coordinator={coordinatorActive || undefined}>
       <div className="paw-room-focus-overview__layout">
-      <FocusMeshGraph
+      <FocusTaskReceipts
         focus={focus}
         mesh={mesh}
         selection={selection}
@@ -150,17 +118,6 @@ export function PawRoomFocusOverview({
         selectedParticipantId={selectedParticipantId}
         satellitesByParticipant={satellitesByParticipant}
         onSelect={setSelection}
-      />
-
-      <FocusFlowLedger
-        flow={focus.flow}
-        originLabel={originLabel}
-        partners={focus.partners}
-        rootId={focus.goal.rootId}
-        workItems={focus.workItems}
-        intercomStatus={intercomStatus}
-        onOpenParticipant={onOpenParticipant}
-        onRefreshTraffic={onRefreshTraffic}
       />
 
       <FocusInspector
@@ -176,35 +133,8 @@ export function PawRoomFocusOverview({
   );
 }
 
-/** 任务脉搏 — the four real counters as one proportional bar plus the exact
- * numbers. Zero work renders a quiet track, never a fake segment. */
-function FocusPulse({ counts }: { counts: RoomFocusProjection['counts'] }) {
-  const segments = [
-    ['active', counts.active, '进行'],
-    ['review', counts.review, '复核'],
-    ['blocked', counts.blocked, '受阻'],
-    ['completed', counts.completed, '完成'],
-  ] as const;
-  const total = counts.active + counts.review + counts.blocked + counts.completed;
-  return (
-    <section aria-label="协作摘要" className="paw-room-focus-overview__pulse">
-      <div aria-hidden="true" className="paw-room-focus-overview__pulse-bar" data-empty={total === 0 || undefined}>
-        {segments.map(([tone, count]) => count > 0
-          ? <i data-tone={tone} key={tone} style={{ flexGrow: count }} title={`${count}`} />
-          : null)}
-      </div>
-      <dl className="paw-room-focus-overview__counts">
-        {segments.map(([tone, count, label]) => (
-          <div data-tone={tone} data-zero={count === 0 || undefined} key={tone}><dt>{label}</dt><dd>{count}</dd></div>
-        ))}
-      </dl>
-    </section>
-  );
-}
-
-/** Partner-only collaboration graph. Sol remains mission chrome and WorkItems
- * remain inspectable data; neither is drawn as a collaborator node. */
-function FocusMeshGraph({
+/** Readable task/partner selection and confirmed relationship receipts. */
+function FocusTaskReceipts({
   focus,
   mesh,
   onSelect,
@@ -225,12 +155,13 @@ function FocusMeshGraph({
 }) {
   const nodeLabels = useMemo(() => new Map(mesh.nodes.map((node) => [node.id, node.label])), [mesh.nodes]);
   return <section aria-label="协作网" className="paw-room-focus-overview__section paw-room-focus-overview__mesh">
-    <header><span><Waypoints aria-hidden="true" size={14} /><strong>协作行星</strong></span><small>{focus.partners.length} 位伙伴 · Session 卫星</small></header>
-    <div aria-label="协作网状图" className="paw-room-focus-overview__mesh-canvas" role="group" data-view="roster">
-      {mesh.nodes.map((node) => <FocusMeshNode
-        canvasHeight={mesh.height}
+    <header><span><Waypoints aria-hidden="true" size={14} /><strong>伙伴详情与回执</strong></span><small>{focus.partners.length} 位伙伴 · Session 卫星</small></header>
+    <div aria-label="任务与关系详情" className="paw-room-focus-overview__mesh-canvas" role="group" data-view="roster">
+      {focus.workItems.length ? <div className="paw-room-collaboration__work-items" role="group" aria-label="选择任务详情">{focus.workItems.map(work => <button key={work.id} type="button" aria-pressed={selection.kind === 'work' && selection.id === work.id} onClick={() => onSelect({ kind: 'work', id: work.id })}>{work.objective} · {roomWorkStatusLabel(work)}</button>)}</div> : null}
+      {mesh.nodes.map((node) => <PartnerReceiptButton
         key={node.id}
         node={node}
+        partner={focus.partners.find(partner => partner.participantId === node.refId)}
         satellites={satellitesByParticipant[node.refId]}
         onOpenParticipant={onOpenParticipant}
         onSelectParticipant={onSelectParticipant}
@@ -368,8 +299,8 @@ function MeshEdgeDetail({
   );
 }
 
-function FocusMeshNode({
-  canvasHeight,
+function PartnerReceiptButton({
+  partner,
   node,
   onOpenParticipant,
   onSelectParticipant,
@@ -377,7 +308,7 @@ function FocusMeshNode({
   selected,
   satellites,
 }: {
-  canvasHeight: number;
+  partner?: RoomFocusPartner;
   node: RoomFocusMeshNode;
   onOpenParticipant?: (participantId: string, background?: boolean) => void;
   onSelectParticipant?: (participantId: string) => void;
@@ -385,7 +316,6 @@ function FocusMeshNode({
   selected: boolean;
   satellites?: RoomSatelliteSnapshot;
 }) {
-  const position = { left: `${node.x}%`, top: `${Math.round((node.y / canvasHeight) * 10000) / 100}%` };
   const stateLabel = roomFocusStateLabel(node.state);
   return (
     <button
@@ -402,11 +332,10 @@ function FocusMeshNode({
          * foregrounding it never creates a second conversation identity. */
         onOpenParticipant?.(node.refId);
       }}
-      style={position}
       title={`${node.label} · ${node.sublabel} · ${node.responsibility}`}
       type="button"
     >
-      <i aria-hidden="true" className="paw-room-focus-overview__planet-body" style={planetTexture(node.label)} />
+      {partner?.ordinal !== undefined ? <RoomPlanetAvatar ordinal={partner.ordinal} size={42} decorative /> : <Waypoints aria-hidden="true" size={28} />}
       <span>
         <strong>{node.label}</strong>
         <small>{node.sublabel}</small>
@@ -495,7 +424,7 @@ export function FocusFlowLedger({
       </p> : null}
       {selectedPacket ? (
         <div className="paw-room-focus-overview__selected-message" ref={detailRef}>
-        <FocusTrafficRoute actorName={actorName} packet={selectedPacket} onOpenParticipant={onOpenParticipant} />
+        <FocusTrafficRoute partners={partners} actorName={actorName} packet={selectedPacket} onOpenParticipant={onOpenParticipant} />
         <div className="paw-room-focus-overview__packet-detail">
           <header>
             <strong>{packetKindLabel(selectedPacket.kind)}</strong>
@@ -570,17 +499,21 @@ export function FocusFlowLedger({
 /** One selected message has an explicit source and arrow into every actual
  * recipient. This path includes pending/failed messages and reverse replies;
  * it is traffic, independent of the confirmed responsibility graph above. */
-function FocusTrafficRoute({ actorName, packet, onOpenParticipant }: {
+function FocusTrafficRoute({ actorName, packet, onOpenParticipant, partners }: {
+  partners: readonly RoomFocusPartner[];
   actorName: (id: string) => string;
   packet: RoomFocusPacket;
   onOpenParticipant?: (id: string) => void;
 }) {
-  const actor = (id: string) => <button
+  const actor = (id: string) => {
+    const partner = partners.find(partner => partner.participantId === id);
+    return <button
     className="paw-room-focus-overview__route-actor"
     disabled={id === 'root' || !onOpenParticipant}
     onClick={() => onOpenParticipant?.(id)}
     type="button"
-  ><i aria-hidden="true" style={planetTexture(actorName(id))} /><strong>{actorName(id)}</strong></button>;
+  >{id === 'root' ? <span aria-hidden="true" className="ctl-avatar__sun" /> : partner?.ordinal !== undefined ? <RoomPlanetAvatar ordinal={partner.ordinal} size={42} decorative /> : <Waypoints aria-hidden="true" size={28} />}<strong>{actorName(id)}</strong></button>;
+  };
   return <div aria-label="选中消息的流转方向" className="paw-room-focus-overview__traffic-route" data-status={packet.status}>
     {actor(packet.sourceParticipantId)}
     <span className="paw-room-focus-overview__route-track"><span>{packetKindLabel(packet.kind)}</span><i aria-hidden="true"><ArrowRight size={16} /></i><strong>{flowStatusLabel(packet.status, packet)}</strong></span>
@@ -800,11 +733,6 @@ function packetClock(timestamp: number): string {
 
 function packetTimestamp(timestamp: number): string {
   return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp));
-}
-
-function planetTexture(name: string) {
-  const texture = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'].find((planet) => name.toLowerCase() === planet);
-  return texture ? { backgroundImage: `url("/paw-media/starfield/${texture}-1k.jpg")` } : undefined;
 }
 
 function satelliteBreakdown(snapshot: RoomSatelliteSnapshot): string {

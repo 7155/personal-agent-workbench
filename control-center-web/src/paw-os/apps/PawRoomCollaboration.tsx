@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { useMemo, type ComponentProps } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { AgentSubagentRunV1 } from '@/contracts/generated/agent-subagent-run.v1';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import type { JevSnapshot } from '@/features/semantic-workspace/jev-execution';
@@ -9,42 +9,62 @@ import type { RoomSummary } from '@/features/rooms/room-types';
 import { useControlTransport } from '@/app/control-transport';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import { hasActiveSubagentRuns, subagentRuns } from '@/features/agent/status/subagent-data';
-import { PawRoomFocusOverview } from './PawRoomFocusOverview';
-import type { RoomFocusProjection } from './room-focus-projection';
+import { FocusFlowLedger, PawRoomCollaborationDetails } from './PawRoomCollaborationDetails';
+import { buildRoomFocusProjection, roomFocusHasCoordinator, roomFocusOriginLabel, type RoomFocusProjection } from './room-focus-projection';
+import './paw-room-collaboration.css';
 import { hasRoomSatelliteSnapshot, mergeRoomMessageFlow, roomIntercomMessages, roomSatellites, type RoomSatelliteSnapshots } from './room-message-flow';
 
-/** Read-only joins over existing Pi/Room APIs. No Session is opened or started. */
-export function PawRoomLiveFocusOverview({
-  roomId,
-  active = true,
-  ...props
-}: ComponentProps<typeof PawRoomFocusOverview> & { roomId: string; active?: boolean }) {
-  const { rawSatellites: _raw, ...data } = useRoomLiveFocusData(roomId, props.focus, active);
-  return <PawRoomFocusOverview {...props} {...data} />;
-}
+export type RoomCollaborationSection = 'timeline' | 'messages' | 'tasks';
+type RoomCollaborationNavigation =
+  | { section: RoomCollaborationSection; onSectionChange: (section: RoomCollaborationSection) => void; initialSection?: never }
+  | { section?: never; onSectionChange?: never; initialSection?: RoomCollaborationSection };
+const sections: readonly RoomCollaborationSection[] = ['timeline', 'messages', 'tasks'];
+const sectionLabels = { timeline: '时间线', messages: '消息往返', tasks: '任务与回执' };
 
-/** Room timeline with each partner's retained Tool Agent satellites joined in. */
-export function RoomCollabTimelineLive({ roomId, focus, room, projection, graph, active = true, onOpenParticipant, onSelectRoot }: {
+/** One Room presentation owner, including legacy focus-window destinations.
+ * Execution/Stop identity stays in the existing Room/Pi owners. */
+export function PawRoomCollaboration({ roomId, focus, room, projection, graph, active = true, initialSection = 'timeline', onOpenParticipant, onSelectRoot, onSelectParticipant, selectedParticipantId, section: controlledSection, onSectionChange }: {
   roomId: string;
   focus?: RoomFocusProjection;
   room: RoomSummary;
   projection?: RoomProjectionState;
   graph?: JevSnapshot | null;
   onSelectRoot?: (rootId: string) => void;
+  onSelectParticipant?: (participantId: string) => void;
+  selectedParticipantId?: string;
   active?: boolean;
   onOpenParticipant?: (participantId: string) => void;
-}) {
+} & RoomCollaborationNavigation) {
   const desktop = usePawOsDesktop();
-  const empty = useMemo<RoomFocusProjection>(() => ({ goal: { title: '', description: '', rootId: '', state: 'idle' }, workItems: [], partners: [], handoffs: [], flow: [], rootEvidence: [], counts: { active: 0, review: 0, blocked: 0, completed: 0 } }), []);
-  const data = useRoomLiveFocusData(roomId, focus ?? empty, active);
-  const satellites = useMemo(() => Object.fromEntries((focus?.partners ?? []).map((partner) => [partner.sessionId, data.rawSatellites[partner.participantId] ?? []])), [focus, data.rawSatellites]);
-  return <RoomCollabTimeline room={room} projection={projection} graph={graph} onSelectRoot={onSelectRoot} satellites={satellites} active={active}
-    {...(onOpenParticipant ? { onOpenParticipant } : {})}
-    onOpenSatellite={(lane) => {
-      const owner = room.participants.find((participant) => participant.id === lane.parentId);
-      if (!owner || !desktop || !lane.runId) return;
-      desktop.openWindow({ appId: 'agent', target: { kind: 'subagent', id: lane.runId, sessionId: owner.sessionId, title: lane.label, subtitle: `卫星 · ${room.title}` } });
-    }} />;
+  const id = useId();
+  const [localSection, setLocalSection] = useState(initialSection);
+  const section = controlledSection ?? localSection;
+  const selectSection = (next: RoomCollaborationSection) => {
+    if (controlledSection === undefined) setLocalSection(next);
+    onSectionChange?.(next);
+  };
+  useEffect(() => { if (controlledSection === undefined) setLocalSection(initialSection); }, [controlledSection, initialSection, roomId]);
+  const projectionFocus = useMemo(() => focus ?? buildRoomFocusProjection(room, projection), [focus, room, projection]);
+  const data = useRoomLiveFocusData(roomId, projectionFocus, active);
+  const satellites = useMemo(() => Object.fromEntries(projectionFocus.partners.map(partner => [partner.sessionId, data.rawSatellites[partner.participantId] ?? []])), [projectionFocus, data.rawSatellites]);
+  return <section aria-label="Room 协作" className="paw-room-collaboration">
+    <div className="paw-room-collaboration__tabs" role="tablist" aria-label="Room 协作内容" onKeyDown={event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      const index = sections.indexOf(section);
+      const next = event.key === 'Home' ? sections[0] : event.key === 'End' ? sections[2] : sections[(index + (event.key === 'ArrowLeft' ? 2 : 1)) % sections.length];
+      event.preventDefault(); selectSection(next); document.getElementById(`${id}-${next}`)?.focus();
+    }}>{sections.map(item => <button key={item} id={`${id}-${item}`} type="button" role="tab" aria-selected={section === item} aria-controls={`${id}-content`} tabIndex={section === item ? 0 : -1} onClick={() => selectSection(item)}>{sectionLabels[item]}</button>)}</div>
+    <div role="tabpanel" id={`${id}-content`} aria-labelledby={`${id}-${section}`}>
+      {section === 'timeline' ? <RoomCollabTimeline room={room} projection={projection} graph={graph} onSelectRoot={onSelectRoot} satellites={satellites} active={active}
+        onOpenParticipant={onOpenParticipant}
+        onOpenSatellite={lane => {
+          const owner = room.participants.find(participant => participant.id === lane.parentId);
+          if (!owner || !desktop || !lane.runId) return;
+          desktop.openWindow({ appId: 'agent', target: { kind: 'subagent', id: lane.runId, sessionId: owner.sessionId, title: lane.label, subtitle: `卫星 · ${room.title}` } });
+        }} /> : section === 'messages' ? <FocusFlowLedger flow={data.focus.flow} originLabel={roomFocusOriginLabel(roomFocusHasCoordinator(data.focus.partners))} partners={data.focus.partners} rootId={data.focus.goal.rootId} workItems={data.focus.workItems} intercomStatus={data.intercomStatus} onRefreshTraffic={data.onRefreshTraffic} onOpenParticipant={onOpenParticipant} />
+          : <PawRoomCollaborationDetails onSelectParticipant={onSelectParticipant} selectedParticipantId={selectedParticipantId} focus={data.focus} satellitesByParticipant={data.satellitesByParticipant} onOpenParticipant={onOpenParticipant} />}
+    </div>
+  </section>;
 }
 
 /** Shared read-only data for the overview and the compact collaboration bar. */

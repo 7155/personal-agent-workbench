@@ -63,6 +63,17 @@ map-selection owner. `ThemeProvider` retains the persisted light/dark/system
 preference, while the single blueprint appearance is a root attribute, not a
 second store or a no-op provider.
 
+`PawDesktop` owns only the transient work-list/icon presentation choice. Its
+`PawWayfinderWork` consumer reads the existing continuation directory once,
+then applies the existing project assignments and archive preferences before
+display-only search and status filters. Full project context and galaxy views
+continue to read that unfiltered assigned projection. The work list provides
+complete names and roots with an inline, bounded conversation panel; the
+separate compact App shelf uses the same App registry and Launchpad. Icon mode
+retains saved positions, drag, selection and archive behavior. Neither layout
+starts execution, rewrites a project binding, or deletes history. Grid measuring
+and spatial interaction are restricted to icon mode.
+
 `usePresentationMotion` composes the reading surface's local preference with
 the existing `useMotionActivity` owner. Global reduced-motion settings,
 operating-system preferences, page visibility and host activity therefore gate
@@ -352,6 +363,62 @@ transaction. Concurrent initializers recheck the receipt under the write lock.
 The historical 0185 rebuild retains its separately committed, idempotent hook
 checkpoint because it temporarily disables foreign keys; its remaining SQL and
 receipt still commit together. A failure there retries from that checkpoint.
+
+## Room reading and collaboration presentation
+
+A Room is a continuous public conversation. A completed request followed by a
+supplement or “continue” stays in that conversation. Each execution Root remains
+an independent cancellation, retry and receipt identity; it is an execution
+record, not an automatically created user task or conversation chapter.
+
+```mermaid
+flowchart LR
+    Events[Room ordered events / retained snapshot] --> Projection[Room live projection]
+    Projection --> Reading[ConversationSurface: continuous reading]
+    Projection --> Records[RoundSheet: explicit execution records]
+    Projection --> Collaboration[PawRoomCollaboration]
+    PiReads[Pi satellites / Room intercom] --> Join[useRoomLiveFocusData: read-only join]
+    Join --> Collaboration
+    Collaboration --> Timeline[Shared CollabTimelineStage]
+    Collaboration --> Messages[FocusFlowLedger: reply / delivery evidence]
+    Collaboration --> Details[Task acceptance / relation receipts]
+    Avatar[RoomPlanetAvatar: canonical ordinal + shared motion gate] --> Timeline
+    Avatar --> Messages
+    Avatar --> Details
+```
+
+The Room workspace reading-view owner controls the time-line/message/task
+section selection in `PawRoomCollaboration`; a standalone observer owns its
+local selection. There is one active owner per surface. The
+ordinary task button, message-view alias and persisted `room + panel=focus`
+window target enter that owner. The retired complete Focus overview, mission
+pulse and display-name-to-texture lookup have no product consumers. Message
+filters, request/reply navigation, confirmation attempts, acceptance/evidence
+and unknown satellite states remain inspectable. JEV retains its task dependency,
+executor/verifier and plan controls; its execution panorama uses the same
+`CollabTimelineStage`. The optional 3D starfield retains its separate background
+textures, because it still has a real lazy entry and a different rendering role.
+
+Room identities come from participant ordinals, never display names. Missing
+legacy ordinal stays a neutral symbol. `useMotionActivity` owns decorative
+motion across OS reduce, the product setting, hidden pages and inactive hosts;
+pausing motion must not erase completion/error expressions.
+
+Reading view v2 migrates v1's automatically stored `rounds` preference to
+continuous conversation. Explicit v2 execution-record selection is recoverable;
+legacy non-round views and all transcript/reading anchors remain readable.
+The new task section also restores; its rollback preference maps to timeline. The
+legacy preference is also written for rollback. No event, history, Root or
+WorkItem is migrated or deleted.
+
+Desktop close is a composition action, not a runtime Stop. `closePawWindows`
+reconciles the reload URL only when its actual window owner was removed, and
+uses the surviving exact Room/Session or app subpage. Closing another window
+must not disturb the current route; fresh deep links retain their meaning.
+A generic Agent route remains owned by its main window after Home binds a
+Room or Session without changing the hash. Named observers and Room panels
+cannot claim that route. Removing its last owner returns the reload destination
+to the project field rather than reopening an intentionally closed Agent.
 
 ## Effective verification
 

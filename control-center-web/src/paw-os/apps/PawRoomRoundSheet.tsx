@@ -221,7 +221,7 @@ function RoomRoundSheet({
     return (
       <section aria-label="Room 行星任务表" className="paw-room-rounds paw-room-rounds--empty">
         <Orbit aria-hidden="true" size={24} />
-        <strong>等待第一轮任务</strong>
+        <strong>还没有执行记录</strong>
         <p>发送目标后，每颗行星会在同一张表里更新任务、阶段与公开进展。</p>
       </section>
     );
@@ -229,17 +229,17 @@ function RoomRoundSheet({
 
   return (
     <div className="paw-room-rounds-workspace" data-motion-paused={!pageVisible || undefined}>
-      {sheets.length > 1 ? <nav aria-label="对话轮次" className="paw-room-rounds__navigation">
-        <span>{sheets.length} 轮对话</span>
+      {sheets.length > 1 ? <nav aria-label="执行记录" className="paw-room-rounds__navigation">
+        <span>{sheets.length} 次执行</span>
         <div>{sheets.map((sheet, index) => <button
-          aria-label={`查看第 ${index + 1} 轮：${sheet.objective}`}
+          aria-label={`查看执行 ${index + 1}：${sheet.objective}`}
           data-state={sheet.status}
           key={sheet.id}
           ref={sheet.id === latestSheetId ? latestNavigationRef : undefined}
           onClick={() => jumpToRound(sheet.id)}
           title={sheet.objective}
           type="button"
-        ><i aria-hidden="true" />第 {index + 1} 轮{sheet.id === latestSheetId ? <small>最新</small> : null}</button>)}</div>
+        ><i aria-hidden="true" />执行 {index + 1}{sheet.id === latestSheetId ? <small>最新</small> : null}</button>)}</div>
       </nav> : null}
     <section aria-label="Room 行星任务表" className="paw-room-rounds" ref={roundsRef}
       onWheel={event => { cancelReadingRestore(); if (event.deltaY < 0) releaseLatestFollow(); }}
@@ -354,7 +354,7 @@ function RoomRoundSheet({
             onFocusCapture={(event) => { if (event.target instanceof Element && event.target.closest('.paw-room-session-round__reply')) preserveReading(event.target); }}
           >
             <header className="paw-room-session-round__prompt">
-              <span className="paw-room-session-round__number">第 {index + 1} 轮</span>
+              <span className="paw-room-session-round__number">执行 {index + 1}</span>
               {latest ? <div className="paw-room-session-round__objective">{prompt}</div> : <button
                 aria-controls={replyId}
                 aria-expanded={roundOpen}
@@ -483,7 +483,7 @@ function RoomRoundSheet({
       })}
     </section>
       {awayFromLatest || unseenRound ? <button className="paw-room-rounds__latest" onClick={() => jumpToRound(latestSheetId, true)} type="button">
-        <ArrowDown aria-hidden="true" size={16} />{unseenRound ? '有新一轮对话' : '回到最新'}
+        <ArrowDown aria-hidden="true" size={16} />{unseenRound ? '有新的执行记录' : '回到最新'}
       </button> : null}
     </div>
   );

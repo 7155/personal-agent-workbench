@@ -26,7 +26,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       const first = render(tree());
       flushFrames();
       const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
-      fireEvent.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+      fireEvent.click(screen.getByRole('button', { name: '查看执行 1：完成 Room 任务表' }));
       flushFrames();
       fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
       expect(scroller.querySelector('[data-round-id="turn-1"]')).toHaveAttribute('data-expanded', 'true');
@@ -76,7 +76,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       rendered.rerender(tree('a', later));
       flushFrames();
       expect(scroller.scrollTop).toBe(300);
-      expect(screen.getByRole('button', { name: '有新一轮对话' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '有新的执行记录' })).toBeInTheDocument();
       rendered.rerender(tree('b'));
       flushFrames();
       expect(screen.getByRole('region', { name: 'Room 行星任务表' }).scrollTop).toBe(350);
@@ -92,7 +92,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       const first = render(tree(projectionWithTwoRounds()));
       flushFrames();
       const scroller = screen.getByRole('region', { name: 'Room 行星任务表' });
-      fireEvent.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+      fireEvent.click(screen.getByRole('button', { name: '查看执行 1：完成 Room 任务表' }));
       flushFrames();
       fireEvent.scroll(scroller, { target: { scrollTop: 240 } });
       first.unmount();
@@ -142,7 +142,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       let contentHeight = 1600;
       let viewportHeight = 500;
       let viewportWidth = 700;
-      const latestNavigation = within(screen.getByRole('navigation', { name: '对话轮次' })).getAllByRole('button').at(-1)!;
+      const latestNavigation = within(screen.getByRole('navigation', { name: '执行记录' })).getAllByRole('button').at(-1)!;
       const revealLatestNavigation = vi.fn();
       Object.defineProperty(latestNavigation, 'scrollIntoView', { value: revealLatestNavigation });
       let offset = 0;
@@ -349,14 +349,14 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     fireEvent.scroll(scroller, { target: { scrollTop: 180 } });
     scrollTo.mockClear();
     rerender(<PawRoomRoundSheet onOpenParticipant={vi.fn()} projection={projectionWithTwoRounds()} room={room} />);
-    expect(screen.getByRole('button', { name: '有新一轮对话' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '有新的执行记录' })).toBeVisible();
     expect(scrollTo).not.toHaveBeenCalled();
     expect(reading).toBeVisible();
     expect(scroller.scrollTop).toBe(180);
-    await user.click(screen.getByRole('button', { name: '有新一轮对话' }));
+    await user.click(screen.getByRole('button', { name: '有新的执行记录' }));
     await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(1));
     expect(document.activeElement).toHaveAttribute('data-round-id', 'turn-2');
-    await user.click(screen.getByRole('button', { name: '查看第 1 轮：完成 Room 任务表' }));
+    await user.click(screen.getByRole('button', { name: '查看执行 1：完成 Room 任务表' }));
     await waitFor(() => expect(document.activeElement).toHaveAttribute('data-round-id', 'turn-1'));
     expect(screen.getByRole('button', { name: '折叠本轮任务' })).toHaveAttribute('aria-expanded', 'true');
   });

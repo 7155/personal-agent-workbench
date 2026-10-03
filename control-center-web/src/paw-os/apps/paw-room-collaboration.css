@@ -1,0 +1,11 @@
+.paw-room-collaboration { min-width: 0; min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
+.paw-room-collaboration > [role=tabpanel] { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; padding: 12px; }
+.paw-room-collaboration__tabs { flex: 0 0 auto; }
+.paw-room-collaboration__tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--paw-stellar-line, #d9e2ee); }
+.paw-room-collaboration__tabs button { flex: 1; min-width: 0; padding: 9px 6px; border: 0; border-radius: 9px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.paw-room-collaboration__tabs button[aria-selected='true'] { background: var(--paw-stellar-surface, #eef4fc); color: var(--paw-stellar-accent, #326bc7); }
+.paw-room-collaboration__tabs button:focus-visible { outline: 2px solid var(--paw-stellar-accent, #326bc7); outline-offset: 1px; }
+.paw-room-collaboration__work-items { grid-column: 1 / -1; display: grid; gap: 6px; padding: 8px 0; }
+.paw-room-collaboration__work-items button { padding: 8px; text-align: left; color: inherit; font: inherit; border: 1px solid var(--paw-stellar-line, #d9e2ee); border-radius: 7px; background: transparent; cursor: pointer; }
+.paw-room-collaboration__work-items button[aria-pressed='true'] { background: var(--paw-stellar-surface, #eef4fc); }
+.paw-room-focus-overview__route-actor > .ctl-avatar__sun { width: 42px; height: 42px; }

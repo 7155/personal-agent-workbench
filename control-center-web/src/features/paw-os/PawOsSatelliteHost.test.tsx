@@ -19,10 +19,21 @@ import { clearConversationScrollMemory } from '@/features/conversation-ui';
 import { MockControlTransport } from '@/test/mock-transport';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { PawOsSatelliteHost } from './PawOsSatelliteHost';
+import { PawOsApp } from '@/paw-os/PawOsApp';
+import { createPawDesktopStore } from '@/paw-os/runtime/desktop-store';
+import { previewRoomSnapshot } from '@/app/preview-room-data';
+import { createPreviewTransport } from '@/app/preview-control-transport';
+import { ThemeProvider } from '@/design/themes';
+import { MotionProvider } from '@/design/motion';
+import { GlobalFeedbackProvider } from '@/components/feedback';
+import { TooltipProvider, ToastProvider } from '@/components/primitives';
 import satelliteCss from './paw-os-satellite.css?raw';
 
+const initialTestUrl = window.location.href;
 afterEach(() => {
   cleanup();
+  localStorage.removeItem('pawos.desktop.v1');
+  window.history.replaceState(null, '', initialTestUrl);
   /* Reading position is remembered per conversation across mounts, so one
      test's scroll must not become the next test's starting point. */
   clearConversationScrollMemory();
@@ -35,6 +46,68 @@ afterEach(() => {
 });
 
 describe('PawOsSatelliteHost', () => {
+  it.each(['focus', 'progress'] as const)('hydrates a cold %s panel through the real desktop while its visible Room main is still unhydrated', async panel => {
+    const mounted = mountColdRoomPanel(panel, 'unhydrated');
+    try {
+      const main = document.querySelector('[data-paw-window-id="agent"]')!;
+      expect(main.querySelector('.paw-app-boot')).toBeInTheDocument();
+      const window = document.querySelector(`[data-paw-window-id="agent:${mounted.panelId}"]`)!;
+      fireEvent.pointerDown(window);
+      await within(window as HTMLElement).findByRole('button', { name: '关闭窗口' });
+      await waitFor(() => expect(window.querySelector('.paw-os-satellite--room-panel')).toBeInTheDocument());
+      expect(main.querySelector('.paw-app-boot')).toBeInTheDocument();
+      await waitFor(() => expect(mounted.transport.subscriptionCalls.filter(call => call.request.pathId === 'agent.room.events')).toHaveLength(1));
+      expect(useRoomLiveStore.getState().projections[mounted.roomId]?.turnOrder.length).toBeGreaterThan(0);
+      expect(mounted.transport.requests.some(call => ['agent.room.conversationSnapshot', 'agent.room.snapshot'].includes(call.request.pathId))).toBe(true);
+      const nextRoot = `${mounted.roomId}:live-next`;
+      const liveEvent = { ...mounted.snapshot.events[0], eventId: `${mounted.roomId}:live-next`,
+        sequence: mounted.snapshot.lastSequence + 1, turnId: nextRoot,
+        payload: { rootId: nextRoot, messageId: 'cold-live-message', text: '冷恢复后的新公开消息' },
+        resumeToken: `${mounted.roomId}:${mounted.snapshot.lastSequence + 1}` };
+      act(() => { expect(mounted.transport.emit('agent.room.events', liveEvent)).toBe(1); });
+      await waitFor(() => expect(useRoomLiveStore.getState().projections[mounted.roomId]?.turnOrder).toContain(nextRoot));
+      if (panel === 'focus') await within(window as HTMLElement).findByText(/^发出需求「冷恢复后的新公开消息」$/);
+      else await waitFor(() => expect(window.querySelector('.agent-status-turn')).toHaveTextContent('0 位伙伴'));
+      expect(main.querySelector('.paw-app-boot')).toBeInTheDocument();
+      fireEvent.click(within(window as HTMLElement).getByRole('button', { name: '关闭窗口' }));
+      await waitFor(() => expect(document.querySelector(`[data-paw-window-id="agent:${mounted.panelId}"]`)).toBeNull());
+      await waitFor(() => expect(mounted.transport.activeSubscriptionCount()).toBe(0));
+      expect(mounted.requests.some(call => ['agent.room.message', 'agent.room.abort', 'agent.jev.command'].includes(call.pathId))).toBe(false);
+    } finally { mounted.unmount(); }
+    expect(mounted.transport.activeSubscriptionCount()).toBe(0);
+  });
+
+
+  it.each([
+    ['focus', 'closed'], ['focus', 'minimized'],
+    ['progress', 'closed'], ['progress', 'minimized'],
+  ] as const)('keeps one shared Room subscription when the %s panel and existing keeper cover a %s main', async (panel, main) => {
+    const mounted = mountColdRoomPanel(panel, main);
+    try {
+      await waitFor(() => expect(mounted.transport.subscriptionCalls.filter(call => call.request.pathId === 'agent.room.events')).toHaveLength(1));
+      const window = document.querySelector(`[data-paw-window-id="agent:${mounted.panelId}"]`)!;
+      fireEvent.pointerDown(window);
+      await waitFor(() => expect(window.querySelector('.paw-os-satellite--room-panel')).toBeInTheDocument());
+      expect(useRoomLiveStore.getState().projections[mounted.roomId]?.turnOrder.length).toBeGreaterThan(0);
+      expect(mounted.transport.subscriptionCalls.filter(call => call.request.pathId === 'agent.room.events')).toHaveLength(1);
+      fireEvent.click(within(window as HTMLElement).getByRole('button', { name: '关闭窗口' }));
+      await waitFor(() => expect(mounted.transport.activeSubscriptionCount()).toBe(0));
+    } finally { mounted.unmount(); }
+    expect(mounted.transport.activeSubscriptionCount()).toBe(0);
+  });
+
+  it('keeps a governance-only cold panel as detail without acquiring a Room event lease', async () => {
+    const mounted = mountColdRoomPanel('governance', 'unhydrated');
+    try {
+      const window = document.querySelector(`[data-paw-window-id="agent:${mounted.panelId}"]`)!;
+      fireEvent.pointerDown(window);
+      await waitFor(() => expect(window.querySelector('.paw-room-governance')).toBeInTheDocument());
+      expect(mounted.transport.subscriptionCalls.filter(call => call.request.pathId === 'agent.room.events')).toHaveLength(0);
+      expect(mounted.transport.requests.some(call => ['agent.room.conversationSnapshot', 'agent.room.snapshot'].includes(call.request.pathId))).toBe(false);
+    } finally { mounted.unmount(); }
+    expect(mounted.transport.activeSubscriptionCount()).toBe(0);
+  });
+
   it('does not recreate a second Room conversation for a panel-less Room target', () => {
     const transport = new MockControlTransport();
 
@@ -648,14 +721,19 @@ describe('PawOsSatelliteHost', () => {
       kind: 'room', id: room.id, panel: 'focus', title: room.title,
     }, { openWindow });
 
-    const console = await screen.findByRole('region', { name: 'Sol 协作态势' });
-    expect(within(console).getByRole('group', { name: '协作网状图' })).toHaveTextContent('实现 Room 任务图交互');
-    expect(within(console).getByLabelText('往来事件')).toHaveTextContent('实现 Room 任务图交互');
+    const console = await screen.findByRole('region', { name: 'Room 协作' });
+    expect(screen.queryByRole('region', { name: 'Sol 协作态势' })).not.toBeInTheDocument();
+    fireEvent.click(within(console).getByRole('tab', { name: '任务与回执' }));
+    expect(within(console).getByRole('group', { name: '任务与关系详情' })).toHaveTextContent('实现 Room 任务图交互');
     expect(within(console).getByText('验收条件 · 1')).toBeInTheDocument();
     expect(within(console).getByRole('region', { name: '焦点详情' })).toHaveTextContent('等待独立复核');
     expect(container.querySelector('.room-cockpit')).not.toBeInTheDocument();
     expect(container.querySelector('.paw-os-satellite__hero')).not.toBeInTheDocument();
 
+    fireEvent.click(within(console).getByRole('tab', { name: '消息往返' }));
+    expect(within(console).getByLabelText('往来事件')).toHaveTextContent('实现 Room 任务图交互');
+    expect(console.querySelector('[style*="starfield/"]')).toBeNull();
+    fireEvent.click(within(console).getByRole('tab', { name: '任务与回执' }));
     fireEvent.click(within(console).getByRole('button', { name: '打开 Mars 伙伴窗口' }));
 
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({
@@ -1162,4 +1240,43 @@ function participantRoomConversationSnapshot(
     deferredEventCount: 0,
     truncated: false,
   };
+}
+
+
+function mountColdRoomPanel(panel: 'focus' | 'progress' | 'governance', main: 'unhydrated' | 'closed' | 'minimized') {
+  vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: false, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+  const roomId = `room-cold-${panel}-${main}`;
+  const snapshot = previewRoomSnapshot(roomId);
+  const room = snapshot.room as unknown as RoomSummary;
+  const transport = new MockControlTransport({ routes: {
+    'agent.room.get': { ok: true, room: snapshot.room },
+    'agent.room.snapshot': snapshot,
+    'agent.room.conversationSnapshot': { schemaVersion: 'rag-ime.agent-room-conversation-snapshot.v1', ok: true,
+      room: snapshot.room, events: snapshot.events, firstEventSequence: snapshot.firstSequence,
+      cursorSequence: snapshot.lastSequence, resumeToken: snapshot.resumeToken, deferredEventCount: 0, truncated: false },
+  } });
+  // Only the HTTP/stream boundary is doubled. Settings/directory reads remain
+  // offline preview fixtures; the real App/router/lazy window chain is mounted.
+  const preview = createPreviewTransport();
+  const request = transport.request.bind(transport);
+  const requests: Parameters<MockControlTransport['request']>[0][] = [];
+  transport.request = call => {
+    requests.push(call);
+    return call.pathId === 'agent.room.get' || call.pathId === 'agent.room.snapshot' || call.pathId === 'agent.room.conversationSnapshot'
+      ? request(call) : preview.request(call);
+  };
+  const desktop = createPawDesktopStore('agent');
+  desktop.getState().bindAgentMain('agent', { kind: 'room', id: roomId, title: 'Cold Room' });
+  if (main === 'closed') desktop.getState().closeWindow('agent');
+  if (main === 'minimized') desktop.getState().minimizeWindow('agent');
+  const panelId = `${roomId}:${panel}`;
+  desktop.getState().openApp('agent', { entityId: panelId, target: { kind: 'room', id: roomId, panel, title: 'Cold panel' } });
+  desktop.getState().openApp('system-settings', { initialRoute: '/appearance' });
+  localStorage.setItem('pawos.desktop.v1', JSON.stringify(desktop.getState()));
+  window.history.replaceState(null, '', '#/appearance');
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const rendered = render(<ThemeProvider><MotionProvider><TooltipProvider><ToastProvider><GlobalFeedbackProvider>
+    <ControlTransportProvider transport={transport}><QueryClientProvider client={client}><PawOsApp /></QueryClientProvider></ControlTransportProvider>
+  </GlobalFeedbackProvider></ToastProvider></TooltipProvider></MotionProvider></ThemeProvider>);
+  return { ...rendered, roomId, room, snapshot, transport, requests, panelId };
 }

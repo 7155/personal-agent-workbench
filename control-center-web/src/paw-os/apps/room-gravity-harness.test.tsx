@@ -12,7 +12,7 @@ import { PawOsSatelliteHost } from '@/features/paw-os/PawOsSatelliteHost';
 import type { RoomSummary } from '@/features/rooms/room-types';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { MockControlTransport } from '@/test/mock-transport';
-import { PawRoomFocusOverview } from './PawRoomFocusOverview';
+import { PawRoomCollaborationDetails } from './PawRoomCollaborationDetails';
 import { PawRoomConversation } from './PawRoomWorkspace';
 import { buildRoomFocusProjection, type RoomFocusProjection } from './room-focus-projection';
 import { buildRoomFocusMesh } from './room-focus-mesh';
@@ -185,22 +185,23 @@ describe('room gravity projection over the minecraft harness', () => {
   });
 
   it('renders the collaboration console as one mesh with owners, blockers and verifiers', () => {
-    const { container } = render(<PawRoomFocusOverview focus={harness.firstRoot.focus} onOpenParticipant={vi.fn()} />);
+    const { container } = render(<PawRoomCollaborationDetails focus={harness.firstRoot.focus} onOpenParticipant={vi.fn()} />);
 
-    // Pulse counters mirror the real numbers.
-    const pulse = screen.getByLabelText('协作摘要');
-    expect(pulse).toHaveTextContent('受阻');
-    expect(pulse.querySelectorAll('.paw-room-focus-overview__pulse-bar > i').length).toBeGreaterThanOrEqual(2);
+    // The projection owns exact counters; the details view retains every
+    // task and the strongest blocker without mounting a second pulse surface.
+    expect(screen.getByRole('group', { name: '选择任务详情' }).getElementsByTagName('button')).toHaveLength(harness.firstRoot.focus.workItems.length);
+    expect(screen.getByRole('region', { name: '焦点详情' })).toHaveTextContent('WorkDocument');
+    expect(container.querySelector('.paw-room-focus-overview__pulse')).toBeNull();
 
     // Gravity is a planet-to-planet relation graph. WorkItems remain in the
     // round task sheet and detail inspector, so they cannot duplicate the
     // same task as graph nodes here.
-    const mesh = screen.getByRole('group', { name: '协作网状图' });
+    const mesh = screen.getByRole('group', { name: '任务与关系详情' });
     const projectedMesh = buildRoomFocusMesh(harness.firstRoot.focus);
     // Partner nodes and relation labels are both intentionally keyboard
     // controls: selecting an edge opens its authoritative relation detail.
     fireEvent.click(within(mesh).getByText(/协作关系 ·/));
-    expect(within(mesh).getAllByRole('button')).toHaveLength(harness.focus.partners.length + projectedMesh.edges.length);
+    expect(within(mesh).getAllByRole('button')).toHaveLength(harness.focus.partners.length + projectedMesh.edges.length + harness.firstRoot.focus.workItems.length);
     expect(mesh.querySelector('.paw-room-focus-overview__mesh-node--work')).toBeNull();
     // The two wave planets stay clickable owners with their live states.
     expect(within(mesh).getByRole('button', { name: /^Venus，/ })).toBeInTheDocument();
@@ -217,7 +218,7 @@ describe('room gravity projection over the minecraft harness', () => {
     expect(screen.getByRole('region', { name: '焦点详情' })).toHaveTextContent('WorkDocument 尚未完成开工与交付同步');
 
     // The machine enum never leaks into the reader-facing console.
-    expect(screen.getByLabelText('Sol 协作态势').textContent).not.toContain('route_decision');
+    expect(screen.getByLabelText('任务与回执详情').textContent).not.toContain('route_decision');
   });
 
   it('keeps one row per task in the production snapshot window — the paper UI double-count is gone', () => {

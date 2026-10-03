@@ -107,13 +107,20 @@ export function useRoomReadingRecovery(ref: RefObject<HTMLDivElement | null>, sp
 }
 
 
-type RoomView = 'rounds' | 'conversation' | 'messages' | 'starfield' | 'timeline';
+type RoomView = 'rounds' | 'conversation' | 'messages' | 'tasks' | 'starfield' | 'timeline';
+const validRoomView = (value: string | null | false): value is RoomView =>
+  value === 'rounds' || value === 'conversation' || value === 'messages' || value === 'tasks' || value === 'starfield' || value === 'timeline';
 const readView = (key: string): RoomView => {
   try {
-    const value = key && localStorage.getItem(key + ':view');
-    if (value === 'conversation' || value === 'messages' || value === 'starfield' || value === 'timeline') return value;
+    const current = key && localStorage.getItem(key + ':view:v2');
+    if (validRoomView(current)) return current;
+    // v1 wrote "rounds" on first mount even without a user choice. Migrate that
+    // automatic presentation to continuous reading; explicit v2 inspection
+    // remains recoverable. Execution and reading anchors are untouched.
+    const legacy = key && localStorage.getItem(key + ':view');
+    if (validRoomView(legacy) && legacy !== 'rounds') return legacy;
   } catch { /* A default view remains usable. */ }
-  return 'rounds';
+  return 'conversation';
 };
 export function useRoomViewRecovery(spaceKey: string) {
   const transport = useControlTransport();
@@ -123,7 +130,7 @@ export function useRoomViewRecovery(spaceKey: string) {
   const setView = useCallback((value: RoomView) => setState({ key, value }), [key]);
   useEffect(() => {
     if (!key || state.key !== key) return;
-    try { localStorage.setItem(key + ':view', state.value); } catch { /* No execution depends on this preference. */ }
+    try { localStorage.setItem(key + ':view:v2', state.value); localStorage.setItem(key + ':view', state.value === 'tasks' ? 'timeline' : state.value); } catch { /* No execution depends on this preference. */ }
   }, [key, state]);
   return [view, setView] as const;
 }

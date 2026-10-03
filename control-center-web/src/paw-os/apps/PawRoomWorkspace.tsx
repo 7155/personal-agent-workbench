@@ -81,7 +81,7 @@ import {
   type RoomWorkItem,
 } from '@/features/rooms/room-types';
 import { PawRoomConversation, roomProcessWindowRequest } from './PawRoomConversation';
-import { PawRoomLiveFocusOverview, RoomCollabTimelineLive } from './PawRoomLiveFocusOverview';
+import { PawRoomCollaboration } from './PawRoomCollaboration';
 import { PawRoomResponseStatus } from './PawRoomResponseStatus';
 import { PawRoomRoundSheet } from './PawRoomRoundSheet';
 import { useRoomObserverAutoOpen, useRoomWorkStatusVisible } from './room-observer-preference';
@@ -251,7 +251,8 @@ export function PawRoomWorkspace({
   // The desktop roster and selected partner own details in external focus.
   // Derive this immediately so a restored inline inspector never claims space.
   const visiblePanel = externalCollaborationFocus || jevEnabled && panel === 'focus' ? 'none' : panel;
-  const visibleView = jevEnabled ? view === 'timeline' ? 'timeline' : 'conversation' : externalCollaborationFocus ? 'rounds' : view;
+  const visibleView = jevEnabled ? ['timeline', 'messages', 'tasks'].includes(view) ? view : 'conversation' : externalCollaborationFocus ? 'rounds' : view;
+  const collaborationView = ['timeline', 'messages', 'tasks'].includes(visibleView);
   const [selectedParticipantId, setSelectedParticipantId] = useState('');
   const collaborationTriggerRef = useRef<HTMLButtonElement>(null);
   const [abortingTurnIds, setAbortingTurnIds] = useState<Set<string>>(() => new Set());
@@ -1002,15 +1003,15 @@ export function PawRoomWorkspace({
     event.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
   }} className="paw-room-window-chrome" data-controls-expanded={controlsExpanded} data-agent-mode={jevEnabled ? 'jev' : undefined} data-coordinator={coordinatorActive || undefined} data-external-focus={externalCollaborationFocus || undefined} data-status={chromeStatus}>
     <button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起 Room 控件' : '展开 Room 控件'} onClick={() => setControlsExpanded(value => !value)}><ChevronDown size={15} /><span>视图</span></button>
-    <button type="button" aria-pressed={visibleView === 'timeline'} aria-label={visibleView === 'timeline' ? '返回 Room 对话' : '查看 Room 协作全景'} onClick={() => { setView(visibleView === 'timeline' ? 'conversation' : 'timeline'); setPanel('none'); exitCollaborationFocus(); }}><ChartGantt size={15} /><span>协作</span></button>
-    <button type="button" aria-label="查看 Room 任务" onClick={() => jevEnabled ? setJevRail(true) : setPanel('focus')}><ListChecks size={15} /></button>
+    <button type="button" aria-pressed={collaborationView} aria-label={collaborationView ? '返回 Room 对话' : '查看 Room 协作全景'} onClick={() => { setView(collaborationView ? 'conversation' : 'timeline'); setPanel('none'); exitCollaborationFocus(); }}><ChartGantt size={15} /><span>协作</span></button>
+    <button type="button" aria-label="查看 Room 任务" onClick={() => { if (jevEnabled) setJevRail(true); else { exitCollaborationFocus(); setPanel('none'); setView('tasks'); } }}><ListChecks size={15} /></button>
     {jevEnabled ? <span aria-label="Agent 中的 Jev 任务模式" className="paw-room-workspace__mode">Jev</span> : coordinatorActive && !externalCollaborationFocus ? <span aria-label="Agent 中的 Sol 协作模式" className="paw-room-workspace__mode">Sol</span> : null}
     {jevEnabled ? <nav aria-label="Jev 工作台视图"><button type="button" aria-pressed={visiblePanel === 'none'} onClick={() => setPanel('none')}><MessageCircle size={14} /><span>对话与进展</span></button><button type="button" aria-pressed={visiblePanel === 'governance'} onClick={() => setPanel('governance')}><Users size={14} /><span>伙伴与设置</span></button></nav> : !externalCollaborationFocus ? <nav aria-label="Room 工作台视图">
-      <button aria-label="对话与结果" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>对话与结果</span></button>
+      <button aria-label="执行记录" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'rounds'} data-room-view="rounds" onClick={() => { setView('rounds'); exitCollaborationFocus(); }} type="button"><ListChecks size={14} /><span>执行记录</span></button>
       <button aria-label="协作时间线" aria-pressed={view === 'timeline'} data-room-view="timeline" onClick={() => { setView('timeline'); exitCollaborationFocus(); }} type="button"><ChartGantt size={14} /><span>时间线</span></button>
       <button aria-label="消息流" aria-pressed={view === 'messages'} data-room-view="messages" onClick={() => { setView('messages'); exitCollaborationFocus(); }} type="button"><GitBranch size={14} /><span>消息流</span></button>
       <button aria-label="协同模式" aria-pressed={collaborationFocusActive} data-room-view="collaboration" onClick={enterCollaborationMode} ref={collaborationTriggerRef} type="button"><Focus size={14} /><span>协同模式</span></button>
-      <button aria-label="完整记录" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'conversation'} data-room-view="conversation" onClick={() => { setView('conversation'); exitCollaborationFocus(); }} type="button"><MessageCircle size={14} /><span>完整记录</span></button>
+      <button aria-label="对话" aria-pressed={!collaborationFocusActive && panel === 'none' && view === 'conversation'} data-room-view="conversation" onClick={() => { setView('conversation'); exitCollaborationFocus(); }} type="button"><MessageCircle size={14} /><span>对话</span></button>
       <button aria-label="星空" aria-pressed={view === 'starfield'} data-room-view="starfield" onClick={() => { setView('starfield'); exitCollaborationFocus(); }} type="button"><Orbit size={14} /><span>星空</span></button>
     </nav> : null}
     <div className="paw-room-workspace__runtime"><span data-terminal={!jevEnabled && workStatus?.state === 'stopped' ? 'aborted' : !jevEnabled && workStatus?.state === 'failed' ? 'failed' : undefined} data-compact-status={jevEnabled || externalCollaborationFocus ? undefined : workStatus?.state === 'stopped' ? '已停止' : workStatus?.state === 'failed' ? '失败' : undefined}><i />{runtimeStatusLabel}</span>{runtimeBusy ? <button aria-label={jevEnabled ? '停止 Jev 执行' : '停止整轮协作'} disabled={jevEnabled ? jev.stopping : abortingActiveTurn} onClick={stopCurrentWork} type="button"><StopCircle size={16} /></button> : null}</div>
@@ -1116,10 +1117,12 @@ export function PawRoomWorkspace({
               onExit={() => setView('conversation')}
               onOpenParticipant={openParticipantById}
             />
-          ) : visibleView === 'timeline' && record ? (
+          ) : (visibleView === 'timeline' || visibleView === 'messages' || visibleView === 'tasks') && record ? (
             <div className="paw-room-timeline-view">
-              <RoomCollabTimelineLive
+              <PawRoomCollaboration
                 active={liveActive}
+                section={visibleView === 'messages' ? 'messages' : visibleView === 'tasks' ? 'tasks' : 'timeline'}
+                onSectionChange={setView}
                 focus={focusProjection}
                 room={record}
                 projection={projection}
@@ -1127,18 +1130,6 @@ export function PawRoomWorkspace({
                 graph={jevEnabled ? jevGraph : undefined}
                 onSelectRoot={jevEnabled ? rootId => { const graph = jev.items.find(item => item.rootId === rootId); if (graph) jev.selectGraph(graph.id); } : undefined}
                 onOpenParticipant={openParticipantById}
-              />
-            </div>
-          ) : visibleView === 'messages' && focusProjection ? (
-            <div className="paw-room-message-workspace">
-              <PawRoomLiveFocusOverview
-                active={liveActive}
-                focus={focusProjection}
-                hideMission
-                roomId={recordId}
-                onOpenParticipant={openParticipantById}
-                onSelectParticipant={setSelectedParticipantId}
-                selectedParticipantId={selectedParticipantId}
               />
             </div>
           ) : visibleView === 'rounds' ? (
@@ -1346,6 +1337,7 @@ export function PawRoomWorkspace({
           panel={visiblePanel}
           personas={personas}
           focusProjection={focusProjection}
+          projection={projection}
           liveActive={liveActive}
           room={record}
           onSelectParticipant={setSelectedParticipantId}
@@ -1362,6 +1354,7 @@ function PawRoomToolWorkspace({
   onError,
   onOpenParticipant,
   onSelectParticipant,
+  selectedParticipantId,
   onPanelChange,
   onPopout,
   onRefresh,
@@ -1370,13 +1363,14 @@ function PawRoomToolWorkspace({
   personas,
   focusProjection,
   liveActive,
+  projection,
   room,
-  selectedParticipantId,
 }: {
   onClosePanel: () => void;
   onError: (message: string) => void;
   onOpenParticipant: (participantId: string, background?: boolean) => void;
   onSelectParticipant: (participantId: string) => void;
+  selectedParticipantId: string;
   onPanelChange: (panel: RoomToolPanel) => void;
   onPopout?: () => void;
   onRefresh: () => Promise<void>;
@@ -1384,9 +1378,9 @@ function PawRoomToolWorkspace({
   panel: RoomToolPanel;
   personas: AgentPersonaV1[];
   focusProjection?: RoomFocusProjection;
+  projection?: import('@/contracts/room-reducer').RoomProjectionState;
   liveActive: boolean;
   room: RoomSummary;
-  selectedParticipantId: string;
 }) {
   const tabId = useId();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -1436,11 +1430,13 @@ function PawRoomToolWorkspace({
       })}
     </nav>
     <div aria-labelledby={`${tabId}-${panel}`} className="paw-room-tools__content" id={`${tabId}-panel`} role="tabpanel">
-      {panel === 'focus' && focusProjection ? <PawRoomLiveFocusOverview
+      {panel === 'focus' && focusProjection ? <PawRoomCollaboration
         active={liveActive}
         focus={focusProjection}
         roomId={room.id}
-        hideMission
+        room={room}
+        projection={projection}
+        initialSection="tasks"
         onOpenParticipant={onOpenParticipant}
         onSelectParticipant={onSelectParticipant}
         selectedParticipantId={selectedParticipantId}

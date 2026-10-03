@@ -185,61 +185,10 @@
   color-scheme: inherit;
   scrollbar-color: var(--focus-line) transparent;
 }
-
-.paw-desktop-root .paw-room-focus-overview__mission,
-.paw-desktop-root .paw-room-focus-overview__pulse { grid-column: 1 / -1; }
 .paw-desktop-root .paw-room-focus-overview__layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 14px; min-width: 0; }
 .paw-desktop-root .paw-room-focus-overview :focus-visible { outline: 2px solid var(--focus-blue); outline-offset: 3px; }
 .paw-desktop-root .paw-room-focus-overview ::selection { background: #dce9fc; color: var(--focus-ink); }
 
-.paw-desktop-root .paw-room-focus-overview__mission {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--focus-line);
-  border-radius: 14px;
-  background: var(--focus-surface);
-  box-shadow: 0 8px 24px var(--focus-line);
-}
-
-.paw-desktop-root .paw-room-focus-overview__sol {
-  position: relative;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgb(39 131 222 / .16);
-  border-radius: 50%;
-  background: rgb(39 131 222 / .045);
-}
-
-.paw-desktop-root .paw-room-focus-overview__sol::before,
-.paw-desktop-root .paw-room-focus-overview__sol::after {
-  position: absolute;
-  border: 1px solid rgb(39 131 222 / .2);
-  border-radius: 50%;
-  content: '';
-}
-.paw-desktop-root .paw-room-focus-overview__sol::before { width: 22px; height: 10px; transform: rotate(-28deg); }
-.paw-desktop-root .paw-room-focus-overview__sol::after { width: 10px; height: 22px; transform: rotate(28deg); }
-.paw-desktop-root .paw-room-focus-overview__sol > i { z-index: 1; width: 8px; height: 8px; border-radius: 50%; background: #f5a623; box-shadow: 0 0 0 4px rgb(245 166 35 / .12); }
-
-.paw-desktop-root .paw-room-focus-overview__mission > div:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
-.paw-desktop-root .paw-room-focus-overview__mission small { color: var(--focus-muted); font-size: 12px; line-height: 16px; }
-.paw-desktop-root .paw-room-focus-overview__mission strong { overflow: hidden; font-size: 14px; font-weight: 680; letter-spacing: -.008em; text-overflow: ellipsis; white-space: nowrap; }
-.paw-desktop-root .paw-room-focus-overview__mission p { margin: 0; overflow: hidden; color: var(--focus-muted); font-size: 12px; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
-
-.paw-desktop-root .paw-room-focus-overview__mission--dormant {
-  border-style: dashed;
-  background: var(--focus-surface);
-}
-
-.paw-desktop-root .paw-room-focus-overview__mission--dormant strong { color: var(--focus-ink); }
-
-.paw-desktop-root .paw-room-focus-overview__mission-state,
 .paw-desktop-root .paw-room-focus-overview__state {
   display: inline-flex;
   align-items: center;
@@ -250,7 +199,6 @@
   white-space: nowrap;
 }
 
-.paw-desktop-root .paw-room-focus-overview__mission-state > i,
 .paw-desktop-root .paw-room-focus-overview__state > i {
   width: 6px;
   height: 6px;
@@ -258,51 +206,14 @@
   border-radius: 50%;
   background: var(--focus-muted);
 }
-
-.paw-desktop-root .paw-room-focus-overview [data-state='running'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='running'] > i { background: var(--focus-blue); box-shadow: 0 0 0 3px rgb(39 131 222 / .1); }
 .paw-desktop-root .paw-room-focus-overview [data-state='review'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='review'] > i,
-.paw-desktop-root .paw-room-focus-overview [data-state='waiting'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='waiting'] > i { background: var(--focus-amber); }
+.paw-desktop-root .paw-room-focus-overview [data-state='waiting'] .paw-room-focus-overview__state > i { background: var(--focus-amber); }
 .paw-desktop-root .paw-room-focus-overview [data-state='blocked'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview [data-state='failed'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='blocked'] > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='failed'] > i { background: var(--focus-red); }
-.paw-desktop-root .paw-room-focus-overview [data-state='completed'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='completed'] > i { background: var(--focus-green); }
+.paw-desktop-root .paw-room-focus-overview [data-state='failed'] .paw-room-focus-overview__state > i { background: var(--focus-red); }
+.paw-desktop-root .paw-room-focus-overview [data-state='completed'] .paw-room-focus-overview__state > i { background: var(--focus-green); }
 
 /* 任务脉搏 — the four real counters as one proportional bar. Segment widths
  * are the true counts; a zero count never draws a segment. */
-.paw-desktop-root .paw-room-focus-overview__pulse { display: grid; gap: 6px; }
-.paw-desktop-root .paw-room-focus-overview__pulse-bar {
-  display: flex;
-  height: 8px;
-  overflow: hidden;
-  gap: 2px;
-  border-radius: 999px;
-  background: var(--focus-line);
-}
-.paw-desktop-root .paw-room-focus-overview__pulse-bar > i { min-width: 10px; flex-basis: 0; border-radius: 999px; transition: flex-grow 320ms cubic-bezier(.23, 1, .32, 1); }
-.paw-desktop-root .paw-room-focus-overview__pulse-bar > i[data-tone='active'] { background: var(--focus-blue); animation: paw-room-focus-pulse-live 2.4s ease-in-out infinite; }
-.paw-desktop-root .paw-room-focus-overview__pulse-bar > i[data-tone='review'] { background: var(--focus-amber); }
-.paw-desktop-root .paw-room-focus-overview__pulse-bar > i[data-tone='blocked'] { background: var(--focus-red); }
-.paw-desktop-root .paw-room-focus-overview__pulse-bar > i[data-tone='completed'] { background: var(--focus-green); }
-
-.paw-desktop-root .paw-room-focus-overview__counts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin: 0;
-}
-.paw-desktop-root .paw-room-focus-overview__counts > div { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 4px; padding: 7px 9px; border: 1px solid var(--focus-line); border-radius: 10px; background: var(--focus-surface); }
-.paw-desktop-root .paw-room-focus-overview__counts > div[data-zero] { opacity: 1; }
-.paw-desktop-root .paw-room-focus-overview__counts dt { color: var(--focus-muted); font-size: 12px; }
-.paw-desktop-root .paw-room-focus-overview__counts dd { margin: 0; color: var(--focus-ink); font-size: 13px; font-weight: 680; font-variant-numeric: tabular-nums; }
-.paw-desktop-root .paw-room-focus-overview__counts [data-tone='active'] dd { color: var(--focus-blue); }
-.paw-desktop-root .paw-room-focus-overview__counts [data-tone='review'] dd { color: var(--focus-amber); }
-.paw-desktop-root .paw-room-focus-overview__counts [data-tone='blocked'] dd { color: var(--focus-red); }
-.paw-desktop-root .paw-room-focus-overview__counts [data-tone='completed'] dd { color: var(--focus-green); }
 
 .paw-desktop-root .paw-room-focus-overview__section {
   min-width: 0;
@@ -501,16 +412,8 @@
 .paw-desktop-root .paw-room-focus-overview__mesh-node > span > em { display: -webkit-box; overflow: hidden; color: var(--focus-muted); font-size: 12px; font-style: normal; font-weight: 570; line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 /* Planet marks keep their identity colors; the state ring is live state. */
-.paw-desktop-root .paw-room-focus-overview__mesh-node > i { width: 10px; height: 10px; border-radius: 50%; background: var(--focus-muted); box-shadow: 0 0 0 2.5px rgb(145 152 163 / .16); }
-.paw-desktop-root .paw-room-focus-overview__mesh-node--partner > i { width: 13px; height: 13px; background: #4b8fd0; }
-.paw-desktop-root .paw-room-focus-overview__mesh-node--partner[data-tone='1'] > i { background: #bd6355; }
-.paw-desktop-root .paw-room-focus-overview__mesh-node--partner[data-tone='2'] > i { background: #b9903f; }
-.paw-desktop-root .paw-room-focus-overview__mesh-node--partner[data-tone='3'] > i { background: #786bc2; }
-
-.paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='running'] > i { box-shadow: 0 0 0 2.5px rgb(39 131 222 / .28); }
 .paw-desktop-root .paw-room-focus-overview__mesh-node:is([data-state='review'], [data-state='waiting']) > i { box-shadow: 0 0 0 2.5px rgb(179 106 11 / .3); }
 .paw-desktop-root .paw-room-focus-overview__mesh-node:is([data-state='blocked'], [data-state='failed']) > i { box-shadow: 0 0 0 2.5px rgb(198 71 71 / .34); }
-.paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='completed'] > i { box-shadow: 0 0 0 2.5px rgb(36 138 77 / .26); }
 .paw-desktop-root .paw-room-focus-overview__mesh-node--partner[data-state='disconnected'] { opacity: .55; }
 
 /* Chronological flow ledger: every packet is a real public message, an
@@ -615,69 +518,29 @@
 .paw-desktop-root .paw-room-focus-overview__open:active { transform: scale(.985); }
 .paw-desktop-root .paw-room-focus-overview__empty { margin: 0; padding: 10px; color: var(--focus-muted); font-size: 12px; line-height: 16px; }
 
-/* Living signals: Sol breathes, running work pulses, the newest packet slides
- * in. Pure projection decoration — no data or order is implied by motion. */
-.paw-desktop-root .paw-room-focus-overview__sol > i { animation: paw-room-focus-sol-breathe 3.2s ease-in-out infinite; }
-.paw-desktop-root .paw-room-focus-overview [data-state='running'] .paw-room-focus-overview__state > i,
-.paw-desktop-root .paw-room-focus-overview__mission-state[data-state='running'] > i,
-.paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='running'] > i { animation: paw-room-focus-live 2.1s ease-in-out infinite; }
-.paw-desktop-root .paw-room-focus-overview__packets > li:last-child > button { animation: paw-room-focus-packet-enter 220ms cubic-bezier(.23, 1, .32, 1) both; }
+/* Selected evidence may enter briefly; running status stays a readable static label. */
 
 @keyframes paw-room-focus-inspector-enter {
   from { opacity: 0; transform: translateY(4px) scale(.992); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-@keyframes paw-room-focus-sol-breathe {
-  0%, 100% { box-shadow: 0 0 0 4px rgb(245 166 35 / .12); }
-  50% { box-shadow: 0 0 0 8px rgb(245 166 35 / .045); }
-}
-
-@keyframes paw-room-focus-live {
-  0%, 100% { box-shadow: 0 0 0 3px rgb(39 131 222 / .12); }
-  50% { box-shadow: 0 0 0 6px rgb(39 131 222 / .035); }
-}
-
-@keyframes paw-room-focus-packet-enter {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
-}
-
-@keyframes paw-room-focus-pulse-live {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .68; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .paw-desktop-root .paw-room-focus-overview__inspector { animation: none; }
   .paw-desktop-root .paw-room-focus-overview button { transition: none; }
-  .paw-desktop-root .paw-room-focus-overview__sol > i,
-  .paw-desktop-root .paw-room-focus-overview [data-state='running'] .paw-room-focus-overview__state > i,
-  .paw-desktop-root .paw-room-focus-overview__mission-state[data-state='running'] > i,
-  .paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='running'] > i,
-  .paw-desktop-root .paw-room-focus-overview__pulse-bar > i[data-tone='active'],
-  .paw-desktop-root .paw-room-focus-overview__packets > li:last-child > button { animation: none; }
-  .paw-desktop-root .paw-room-focus-overview__pulse-bar > i { transition: none; }
 }
 
 @media (max-width: 700px) {
   .paw-desktop-root .paw-room-focus-overview { padding: 10px; }
-  .paw-desktop-root .paw-room-focus-overview__mission { grid-template-columns: 34px minmax(0, 1fr); }
-  .paw-desktop-root .paw-room-focus-overview__mission-state { grid-column: 2; justify-self: start; }
 }
 
 /* The star chart carries participant identity; the selected traffic lane
    carries message direction. Motion is reserved for an in-flight delivery. */
-.paw-desktop-root .paw-room-focus-overview__mission,
 .paw-desktop-root .paw-room-focus-overview__inspector,
 .paw-desktop-root .paw-room-focus-overview__mesh-detail { box-shadow: none; }
 .paw-desktop-root .paw-room-focus-overview__section,
 .paw-desktop-root .paw-room-focus-overview__inspector { align-self: start; }
-.paw-desktop-root .paw-room-focus-overview__mission strong { font-size: 17px; white-space: normal; }
-.paw-desktop-root .paw-room-focus-overview__mission small,
 .paw-desktop-root .paw-room-focus-overview__inspector-copy > small { display: none; }
-.paw-desktop-root .paw-room-focus-overview__pulse-bar { height: 3px; border-radius: 0; }
-.paw-desktop-root .paw-room-focus-overview__counts > div { padding: 5px 2px; border: 0; border-radius: 0; background: transparent; }
 .paw-desktop-root .paw-room-focus-overview__section > header { min-height: 44px; flex-wrap: wrap; padding: 10px 14px; }
 .paw-desktop-root .paw-room-focus-overview__section > header strong { color: var(--focus-ink); font-size: 14px; }
 .paw-desktop-root .paw-room-focus-overview__mesh-canvas {
@@ -686,20 +549,7 @@
 .paw-desktop-root .paw-room-focus-overview__mesh-node { gap: 6px; padding: 7px 3px; }
 .paw-desktop-root .paw-room-focus-overview__mesh-node > span { gap: 3px; background: var(--focus-surface); }
 .paw-desktop-root .paw-room-focus-overview__mesh-node > span > strong { font-size: 15px; line-height: 20px; }
-.paw-desktop-root .paw-room-focus-overview__mesh-node > i.paw-room-focus-overview__planet-body,
-.paw-desktop-root .paw-room-focus-overview__route-actor > i {
-  display: block;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background-color: #8193b0;
-  background-position: 35% center;
-  background-size: auto 100%;
-  box-shadow: inset -10px -4px 13px rgb(3 9 21 / .55), 0 5px 10px rgb(34 49 72 / .12);
-  animation: none;
-}
 .paw-desktop-root .paw-room-focus-overview__mesh-node--partner[data-state='disconnected'] { opacity: 1; }
-.paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='disconnected'] > i { filter: grayscale(1); }
 .paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='running'] > span > small { color: var(--focus-blue); }
 .paw-desktop-root .paw-room-focus-overview__mesh-node[data-state='completed'] > span > small { color: var(--focus-green); }
 .paw-desktop-root .paw-room-focus-overview__satellite-count { display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: var(--focus-muted); font-size: 12px; line-height: 18px; }
@@ -771,14 +621,10 @@
 .paw-desktop-root .paw-room-focus-overview__satellites li:is([data-state='failed'], [data-state='contract_invalid'], [data-state='timed_out']) summary > i { background: var(--focus-red); }
 .paw-desktop-root .paw-room-focus-overview__satellites dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 10px; padding: 6px 0 10px; }
 .paw-desktop-root .paw-room-focus-overview__satellites dd { font-family: var(--font-mono); font-size: 12px; }
-.paw-desktop-root .paw-room-focus-overview__sol > i,
-.paw-desktop-root .paw-room-focus-overview__pulse-bar > i[data-tone='active'],
-.paw-desktop-root .paw-room-focus-overview__packets > li:last-child > button { animation: none; }
 
 @container room-focus (min-width: 720px) {
   .paw-desktop-root .paw-room-focus-overview__layout { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
-  .paw-desktop-root .paw-room-focus-overview__flow { grid-row: span 2; }
-  .paw-desktop-root .paw-room-focus-overview__inspector { grid-column: 1; }
+  .paw-desktop-root .paw-room-focus-overview__inspector { grid-column: 2; }
 }
 
 
@@ -806,7 +652,6 @@
     gap: 8px;
   }
   .paw-desktop-root .paw-room-focus-overview__mesh-canvas[data-view='roster'] .paw-room-focus-overview__mesh-node + .paw-room-focus-overview__mesh-node { border-top: 0; }
-  .paw-desktop-root .paw-room-focus-overview__mesh-canvas[data-view='roster'] .paw-room-focus-overview__mesh-node > i.paw-room-focus-overview__planet-body { width: 30px; height: 30px; }
   .paw-desktop-root .paw-room-focus-overview__mesh-canvas[data-view='roster'] .paw-room-focus-overview__mesh-node > span { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .paw-desktop-root .paw-room-focus-overview__mesh-canvas[data-view='roster'] .paw-room-focus-overview__mesh-node > span > em { display: none; }
   .paw-desktop-root .paw-room-focus-overview__mesh-canvas[data-view='roster'] .paw-room-focus-overview__satellite-breakdown { text-align: left; }
@@ -918,3 +763,5 @@
   .paw-desktop-root .paw-assignment__role { display: inline; }
   .paw-desktop-root .paw-assignment__connector { display: none; }
 }
+
+:root[data-reduce-motion='true'] .paw-room-focus-overview__inspector { animation: none; }

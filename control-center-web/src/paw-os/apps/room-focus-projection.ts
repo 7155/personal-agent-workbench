@@ -100,6 +100,8 @@ export interface RoomFocusPartner {
   sessionId: string;
   displayName: string;
   celestialName: string;
+  /** Canonical Room identity; legacy retained projections may omit it. */
+  ordinal?: number;
   collaborationRole?: RoomCollaborationRole;
   state: RoomFocusState;
   ownedWorkItemIds: string[];
@@ -247,6 +249,7 @@ export function buildRoomFocusProjection(
         sessionId: participant.sessionId,
         displayName: participant.displayName,
         celestialName: roomFocusCelestialName(participant.ordinal),
+        ordinal: participant.ordinal,
         collaborationRole: participant.collaborationRole,
         state,
         ownedWorkItemIds: owned.map((item) => item.id),
