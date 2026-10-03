@@ -1,7 +1,6 @@
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import desktopSource from '../shell/PawDesktop.tsx?raw';
-import fieldLedeSource from '../shell/PawFieldLede.tsx?raw';
 import appLoaderSource from '../apps/PawApps.tsx?raw';
 import appRuntimeSource from '../apps/PawAppsRuntime.tsx?raw';
 import appRegistrySource from './app-registry.ts?raw';
@@ -10,7 +9,6 @@ import terminalSource from '../../features/terminal/PawOsTerminalApp.tsx?raw';
 
 const visibleSurfaceFiles: Array<[string, string]> = [
   ['paw-os/shell/PawDesktop.tsx', desktopSource],
-  ['paw-os/shell/PawFieldLede.tsx', fieldLedeSource],
   ['paw-os/apps/PawApps.tsx', appLoaderSource],
   ['paw-os/apps/PawAppsRuntime.tsx', appRuntimeSource],
   ['paw-os/runtime/app-registry.ts', appRegistrySource],

@@ -334,34 +334,6 @@
   text-shadow: none;
 }
 
-.paw-desktop-root[data-paw-visual='stellar'] .paw-field-stage::before {
-  background: radial-gradient(50% 50% at 50% 50%, rgb(255 255 255 / .72), rgb(255 255 255 / .5) 70%, transparent);
-  box-shadow: none;
-}
-
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-field-lede__mark, .paw-field-lede__copy) {
-  color: var(--paw-stellar-muted);
-}
-
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-field-lede__title, .paw-field-lede__copy b) {
-  color: var(--paw-stellar-ink);
-}
-
-.paw-desktop-root[data-paw-visual='stellar'] .paw-field-lede__title em {
-  color: var(--paw-stellar-accent);
-}
-
-.paw-desktop-root[data-paw-visual='stellar'] .paw-field-lede__start {
-  color: #ffffff;
-  background: var(--paw-stellar-accent);
-  box-shadow: none;
-}
-
-.paw-desktop-root[data-paw-visual='stellar'] .paw-field-lede__start:hover {
-  background: #2e5da7;
-  box-shadow: none;
-}
-
 /* Desktop-owned transient surfaces are opaque so their text never depends
  * on which star or App happens to sit below a menu. */
 .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-menu, .paw-context-menu, .paw-wayfinder-work, .paw-wayfinder-work__project-content, .paw-wayfinder-work__context-sheet, .paw-archive-undo, .paw-launchpad) {

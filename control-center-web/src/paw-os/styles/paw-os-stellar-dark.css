@@ -105,22 +105,6 @@
   box-shadow: 0 0 7px 1px rgb(101 177 255 / 76%);
 }
 
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-field-stage::before {
-  background: radial-gradient(50% 50% at 50% 50%, rgb(9 24 53 / 80%), rgb(7 17 39 / 56%) 70%, transparent);
-}
-
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-field-lede__mark, .paw-field-lede__copy) {
-  color: var(--paw-stellar-muted);
-}
-
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-field-lede__title, .paw-field-lede__copy b) {
-  color: var(--paw-stellar-ink);
-}
-
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-field-lede__title em {
-  color: var(--paw-stellar-accent);
-}
-
 /* Desktop shortcuts remain readable against stars and retain a quiet halo so
  * labels do not compete with the particle field. */
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-desktop-shortcuts__label-ink, .paw-wayfinder-work__label-ink) {

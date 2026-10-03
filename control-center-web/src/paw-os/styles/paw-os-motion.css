@@ -62,25 +62,6 @@
   transition-duration: var(--paw-motion-feedback);
 }
 
-/* The Project Field column arrives once, when the desktop mounts: the lede's
- * four lines and then the identity rail settle on one clock, so the first
- * viewport reads as a sentence being said rather than as five panels
- * appearing at once. It is an arrival, not an ambient loop — nothing here
- * replays, and reduced motion drops the travel entirely below. */
-.paw-field-lede > *,
-.paw-desktop-shortcuts {
-  animation: paw-field-lede-arrive 460ms var(--paw-ease-out) both;
-}
-.paw-field-lede__title { animation-delay: 50ms; }
-.paw-field-lede__copy { animation-delay: 100ms; }
-.paw-field-lede__start { animation-delay: 150ms; }
-.paw-desktop-shortcuts { animation-delay: 210ms; }
-
-@keyframes paw-field-lede-arrive {
-  from { opacity: 0; transform: translate3d(0, 9px, 0); }
-  to { opacity: 1; transform: none; }
-}
-
 /* Dock press feedback rides the magnification transform through its own
  * multiplier, so pressing a magnified icon dips it without snapping the
  * proximity scale (owned by paw-os.css). */
@@ -529,18 +510,4 @@
   .paw-launchpad section > div > button:active {
     transform: none;
   }
-
-  /* The field column still arrives, but as a plain fade with no travel and no
-     stagger: one beat, everything at once. */
-  .paw-field-lede > *,
-  .paw-desktop-shortcuts {
-    animation-name: paw-field-lede-reduced-arrive;
-    animation-duration: 180ms;
-    animation-delay: 0ms !important;
-  }
-}
-
-@keyframes paw-field-lede-reduced-arrive {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }

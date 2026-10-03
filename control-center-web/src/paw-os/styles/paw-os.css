@@ -201,80 +201,6 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   transform: translateX(-50%);
   cursor: pointer;
 }
-/* Project Field stage — the first viewport's one composition.
-   The desktop used to be two matching white cards in opposite corners with
-   nothing between them. The subject now lives in a single left column: the
-   lede says what the machine is for, and the identity rail sits directly
-   under that sentence as its index, sharing one ground. The recent-work
-   instrument keeps the opposite corner, so the two surfaces read as a
-   statement and an instrument instead of as twins.
-   This file owns geometry only; the veil that grounds the column and every
-   ink on it belong to paw-os-shell.css. */
-.paw-field-stage {
-  position: absolute; z-index: 3;
-  left: 34px;
-  right: calc(var(--paw-work-w) + 24px + 44px);
-  top: 45%;
-  max-width: 548px;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 22px;
-  translate: 0 -52%;
-}
-/* The column's ground is an opening in the fog, not a fourth panel: one
-   feathered gradient with no border, radius or shadow. It costs a single
-   paint on promotion and cannot reach the sealed wallpaper underneath — the
-   chrome blur budget still belongs to menu bar, Dock and Launchpad.
-   The insets are symmetric on purpose: the veil's ellipse is inscribed in
-   this box, so the gradient reaches zero exactly at the box edge and the
-   opening can never show a clipped seam over the terrain. */
-.paw-field-stage::before {
-  position: absolute; z-index: -1;
-  inset: -200px -300px;
-  content: '';
-  pointer-events: none;
-}
-/* The lede is type, not a target: only its action answers the pointer, so a
-   rubber-band selection can still be drawn straight across the sentence. */
-.paw-field-lede { align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; pointer-events: none; }
-.paw-field-lede button { pointer-events: auto; }
-.paw-field-lede__mark {
-  display: flex; align-items: center; gap: 7px;
-  margin: 0 0 9px;
-  font-size: 12px; font-weight: 650; letter-spacing: .07em;
-}
-/* The same cobalt bar that opens the Agent home greeting: the desktop and
-   the App state their identity in one grammar. */
-.paw-field-lede__mark::before { width: 20px; height: 2px; flex: none; content: ''; }
-.paw-field-lede__mark span { letter-spacing: .1em; }
-.paw-field-lede__title {
-  margin: 0 0 10px;
-  font-size: clamp(27px, 2.5vw, 38px); font-weight: 720; letter-spacing: -.035em; line-height: 1.14;
-  text-wrap: balance;
-}
-.paw-field-lede__title em { font-style: normal; }
-.paw-field-lede__copy {
-  max-width: 31em;
-  margin: 0 0 18px;
-  font-size: 14px; font-weight: 450; line-height: 1.68;
-  text-wrap: pretty;
-}
-/* The three things that actually exist on the path the sentence describes.
-   Weight and ink only — no chip, no rule, no colour of their own — so the
-   line still reads as one sentence while those three words survive being
-   read from across a room. CJK breaks between any two characters, so each
-   keyed noun is held together: a term split down the middle stops being a
-   term. */
-.paw-field-lede__copy b { font-weight: 620; white-space: nowrap; }
-.paw-field-lede__start {
-  display: inline-flex; align-items: center; gap: 8px;
-  min-height: 36px; padding: 0 16px 0 18px;
-  border-radius: 999px;
-  font-size: 13.5px; font-weight: 650;
-  cursor: pointer;
-  transition: background-color 140ms ease, box-shadow 180ms var(--paw-ease-out), transform 180ms var(--paw-ease-out);
-}
-.paw-field-lede__start svg { flex: none; transition: transform 180ms var(--paw-ease-out); }
-.paw-field-lede__start:hover svg { transform: translateX(3px); }
-.paw-field-lede__start:active { transform: translateY(1px); }
 
 /* Identity rail — the lede's index. One tile per desktop identity, laid on
    the same veil the sentence sits on, so the first viewport carries no second
@@ -317,10 +243,6 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
 .paw-desktop-shortcuts button[data-minimized] > i {
   width: 6px;
   opacity: .55;
-}
-.paw-desktop[data-collaboration-focus] .paw-field-stage {
-  opacity: .44;
-  filter: saturate(.58);
 }
 
 /* Project folders and conversation files live directly on the PAWOS desktop.
@@ -1281,7 +1203,6 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    from the same token, so the fog field stays visible between them. */
 @media (max-width: 1050px) {
   .paw-wayfinder { --paw-work-w: 324px; }
-  .paw-field-stage { left: 26px; right: calc(var(--paw-work-w) + 20px + 32px); }
   .paw-wayfinder-work__bucket { grid-template-columns: 1fr; }
 }
 @media (max-width: 820px) {
@@ -1295,23 +1216,6 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   .paw-window-shell:not([data-focus-layout]):not([data-placement='maximized']) .paw-window-resize { display: none; }
   .paw-window-titlebar { grid-template-columns: var(--paw-titlebar-lead, 70px) minmax(0, 1fr) minmax(0, auto); }
   .paw-wayfinder { overflow: auto; padding-bottom: 92px; }
-  /* The narrow desktop stacks in reading order: the lede column joins the
-     flow first, then the work instrument, each still bounded. A stacked
-     column has no room left for a feathered opening, so its ground closes
-     into a bounded panel — the same answer the work instrument already
-     gives at this width. The ink is proven against that panel, never
-     against the bare fog. */
-  .paw-field-stage {
-    /* Still a stacking context, so the ground stays behind the column
-       instead of falling through to the wallpaper plane. */
-    position: relative; z-index: 1;
-    left: auto; right: auto; top: auto;
-    max-width: none; margin: 24px 36px 0; gap: 18px;
-    translate: none;
-  }
-  /* The panel's own edge lands on the same 20px gutter the work instrument
-     below it uses, so the stack reads as one column. */
-  .paw-field-stage::before { inset: -16px; border-radius: 16px; }
   .paw-wayfinder-work { position: relative; z-index: auto; top: auto; right: auto; width: auto; max-height: 330px; margin: 18px 20px 108px; }
   .paw-dock {
     max-width: calc(100% - 16px);
@@ -2033,12 +1937,6 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
     overflow: hidden;
   }
 }
-
-/* The desktop is a work surface, not a landing-page card: keep the wallpaper
-   quiet behind the draggable project identities. Project settings use the
-   folder's native context gesture (right-click / Shift+F10), not a second
-   invisible or hanging control. */
-.paw-desktop-root .paw-field-stage { display: none; }
 .paw-wayfinder-work__project-content-head > .paw-wayfinder-work__project-content-actions {
   display: flex;
   align-items: center;

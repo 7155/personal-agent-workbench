@@ -205,36 +205,7 @@ describe('PAWOS shell visual language', () => {
     expect(rule(shellCss, '.paw-desktop-root .paw-dock button[data-open]::after')).toContain('var(--paw-identity-dot');
   });
 
-  it('grounds the whole Project Field column on one blur-free veil instead of a second plate', () => {
-    // The first viewport is one composition: the lede and the identity rail
-    // share a single feathered opening in the fog, so the desktop carries a
-    // subject and one instrument instead of two matching corner cards. The
-    // veil is a gradient, never a fourth glass layer.
-    const veil = rule(shellCss, '.paw-desktop-root .paw-field-stage::before');
-    expect(veil).toContain('radial-gradient(');
-    expect(veil).not.toContain('backdrop-filter');
-    const stage = rule(pawOsCss, '.paw-field-stage');
-    expect(stage, 'the veil is a ground, not a card').not.toContain('border:');
-    expect(stage).not.toContain('box-shadow');
-    // Every ink on the column is proven against the veil's own floor — the
-    // weakest alpha the gradient reaches anywhere text is placed — composited
-    // over the darkest terrain the wallpaper can put underneath it (the near
-    // ridge crest, #202c46). Lowering that stop without re-proving the inks
-    // fails here.
-    expect(veil, 'the ink region never falls below the proven .78 stop')
-      .toContain('rgb(247 250 253 / .78) 70%');
-    // Inscribed radii: the opening fades to nothing exactly at its own box
-    // edge, so widening the column can never leave a clipped bright seam.
-    expect(veil).toContain('radial-gradient(50% 50% at 50% 50%');
-    expect(rule(pawOsCss, '.paw-field-stage::before')).toContain('inset: -200px -300px;');
-    const ground = composite('rgb(247 250 253 / .78)', '#202c46');
-    for (const ink of ['#0f172a', '#171a21', '#2c3645', '#414b5c']) {
-      expect(contrast(hexToRgb(ink), ground), `${ink} on the field veil`).toBeGreaterThanOrEqual(4.5);
-    }
-    // The one cobalt word in the composition is title-sized, so it answers
-    // the large-text threshold rather than the body one.
-    expect(contrast(hexToRgb('#1e50d8'), ground)).toBeGreaterThanOrEqual(3);
-    expect(contrast(hexToRgb('#ffffff'), hexToRgb('#1e50d8'))).toBeGreaterThanOrEqual(4.5);
+  it('keeps desktop App hit surfaces flat and uses visible running shapes', () => {
     // The desktop shortcut plane may own its neutral hover ink in the migrated
     // theme, but it must stay a flat hit surface: no blur or second chrome
     // plate can be introduced behind the real App icons.
