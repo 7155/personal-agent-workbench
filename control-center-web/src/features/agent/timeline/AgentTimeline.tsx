@@ -47,6 +47,7 @@ import {
   type AgentTurnSequenceEntry,
 } from './agent-turn-work-model';
 import { useAgentLiveStore } from '../state/live-store';
+import { MotionActivityBoundary } from '@/design/motion';
 import { isAgentNetworkInterruption, publicAgentErrorText } from '../public-error';
 import { hasUndurableAgentAttachments } from '../optimistic-attachments';
 import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
@@ -1171,6 +1172,10 @@ export const AgentTurn = memo(function AgentTurn({
   showWorkingIndicator?: boolean;
 }) {
   const turn = useAgentLiveStore((state) => state.projections[sessionId]?.turnsById[turnId]);
+  const paused = useAgentLiveStore((state) => {
+    const recovery = state.projections[sessionId]?.durableRecovery;
+    return recovery?.paused === true && recovery.activeTurn?.turnId === turnId;
+  });
   const stopping = useAgentLiveStore((state) => {
     const projection = state.projections[sessionId];
     return projection?.status === 'aborting'
@@ -1195,10 +1200,14 @@ export const AgentTurn = memo(function AgentTurn({
       .map((id) => projection?.messagesById[id])
       .filter((message): message is AgentMessageProjection => Boolean(message));
   }));
-  const activities = useAgentLiveStore(useShallow((state) => {
+  const projectedActivities = useAgentLiveStore(useShallow((state) => {
     const projection = state.projections[sessionId];
     return (projection?.turnsById[turnId]?.activityIds ?? []).map((id) => projection?.activitiesById[id]).filter(Boolean);
   }));
+  // Preserve native evidence in the store. Only the presentation of unfinished
+  // work waits while the owning Durable input is explicitly paused.
+  const activities = useMemo(() => paused ? projectedActivities.map(activity => activity.status === 'running'
+    ? { ...activity, status: 'waiting' as const } : activity) : projectedActivities, [paused, projectedActivities]);
   const admissionConfirmationState = useAgentLiveStore((state) => {
     const projection = state.projections[sessionId];
     for (const messageId of projection?.turnsById[turnId]?.messageIds ?? []) {
@@ -1305,7 +1314,7 @@ export const AgentTurn = memo(function AgentTurn({
         : '连接在最终回复生成前中断；请继续当前对话，或切换模型后继续。'
       : failure;
   const retryRequested = retryRequestedFor === `${turnId}:${turn.status}`;
-  const showWorking = showWorkingIndicator && workingTurnId === turnId
+  const showWorking = !paused && showWorkingIndicator && workingTurnId === turnId
     && (turn.status === 'queued' || turn.status === 'running');
   const turnSettled = turn.status === 'completed' || turn.status === 'failed' || turn.status === 'aborted';
   const timelineEntries = interleavedTurnEntries(
@@ -1313,8 +1322,8 @@ export const AgentTurn = memo(function AgentTurn({
     activities,
     activityPresentation,
   );
-  const turnWorkModel = buildAgentTurnWorkModel(turn.status, timelineEntries);
-  const streamingMessageId = activeStreamingMessageId(turn.status, assistantMessages);
+  const turnWorkModel = buildAgentTurnWorkModel(paused ? 'waiting' : turn.status, timelineEntries);
+  const streamingMessageId = paused ? '' : activeStreamingMessageId(turn.status, assistantMessages);
   const renderTimelineEntry = (entry: AgentTurnSequenceEntry) => entry.kind === 'message' ? (
     <div
       data-timeline-kind={entry.message.role === 'user' ? 'user-message' : 'message'}
@@ -1357,17 +1366,18 @@ export const AgentTurn = memo(function AgentTurn({
     </div>
   );
   return (
-    <article className="agent-turn" data-agent-turn-id={turnId} data-turn-status={turn.status}>
+    <MotionActivityBoundary active={!paused}>
+    <article className="agent-turn" data-agent-turn-id={turnId} data-turn-status={turn.status} data-paused={paused || undefined}>
       {dayStartLabel ? <div aria-hidden="true" className="agent-fx-day"><span>{dayStartLabel}</span></div> : null}
       {userIds.slice(0, 1).map((messageId) => <MessageView key={messageId} sessionId={sessionId} messageId={messageId} user presentation={presentation} userMessagePresentation={userMessagePresentation} forkAvailable={forkAvailable} rewriteAvailable={rewriteAvailable} historyTarget={activeTargetId === messageId} onForkFromMessage={onForkFromMessage} onEditMessage={onEditMessage} />)}
-      {assistantMessages.length > 0 || inlineUserMessages.length > 0 || activities.length > 0 || memoryRecallReceipt || failure || showWorking || admissionConfirmationState ? (
+      {assistantMessages.length > 0 || inlineUserMessages.length > 0 || activities.length > 0 || memoryRecallReceipt || failure || showWorking || paused || admissionConfirmationState ? (
         <div className="agent-assistant-turn">
           <div className="agent-assistant-turn__body">
             {/* fx keeps message side as identity (UR-075): no repeated
                 "Agent/状态" caption row; working/settled state is carried by
                 the pending strip and work disclosure below. */}
             {presentation === 'fx' ? null : (
-              <header><strong>Agent</strong><span>{showWorking ? (stopping ? '正在停止' : '正在处理') : turnStatusLabel(turn.status)}</span></header>
+              <header><strong>Agent</strong><span>{paused ? '已暂停' : showWorking ? (stopping ? '正在停止' : '正在处理') : turnStatusLabel(turn.status)}</span></header>
             )}
             {memoryRecallReceipt ? <MemoryRecallReceipt receipt={memoryRecallReceipt} /> : null}
             {presentation === 'fx' ? (
@@ -1377,7 +1387,7 @@ export const AgentTurn = memo(function AgentTurn({
                 renderEntry={renderTimelineEntry}
                 sessionId={sessionId}
                 turnId={turnId}
-                turnStatus={turn.status}
+                turnStatus={paused ? 'waiting' : turn.status}
                 updatedAtMs={turn.updatedAtMs}
               />
             ) : (
@@ -1389,6 +1399,10 @@ export const AgentTurn = memo(function AgentTurn({
                 visible work instead of staying pinned above completed steps.
                 New entries inserted above naturally carry it to the tail. */}
             {showWorking ? <AssistantWorkingState activities={activities} startedAtMs={turn.createdAtMs} stopping={stopping} /> : null}
+            {paused ? <div className="agent-assistant-pending" role="status" aria-live="polite">
+              <ConversationPlanetMark size="lg" state="waiting" motionActive={false} />
+              <span><strong>任务已暂停，进度已保存</strong><small>已保留本轮消息与工具记录，继续后接着执行原任务。</small></span>
+            </div> : null}
             {admissionConfirmationState ? (
               <AssistantAdmissionConfirmation state={admissionConfirmationState} />
             ) : null}
@@ -1441,6 +1455,7 @@ export const AgentTurn = memo(function AgentTurn({
         </div>
       ) : null}
     </article>
+    </MotionActivityBoundary>
   );
 });
 

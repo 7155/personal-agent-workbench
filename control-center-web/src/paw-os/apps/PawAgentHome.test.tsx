@@ -27,6 +27,56 @@ import { createAgentModeStore } from '@/features/semantic-workspace/agent-mode-s
 afterEach(cleanup);
 
 describe('PAWOS Agent Home 首屏合同', () => {
+  it('keeps Durable unavailable until the owned Host advertises it', () => {
+    renderHome();
+    expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: '会话执行方式' })).toHaveValue('classic');
+  });
+
+  it('creates an explicitly selected Durable Session and retains the server engine in admission', async () => {
+    const user = userEvent.setup();
+    const onCreated = vi.fn();
+    const { transport } = renderHome({ durableAvailable: true, onCreated,
+      createRoute: (request: ControlRequest) => ({ ok: true, session: {
+        id: 'session-durable', title: '持续工作', runtimeEngine: (request.body as Record<string, unknown>).runtimeEngine,
+      } }),
+    });
+    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '继续完善这个项目');
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(true));
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.sessions.create')?.request.body).toMatchObject({ runtimeEngine: 'durable' });
+    expect(onCreated).toHaveBeenCalledWith({ kind: 'session', id: 'session-durable' }, expect.objectContaining({ runtimeEngine: 'durable' }));
+  });
+
+  it('preserves pasted attachments and the draft while blocking unsupported Durable submission', async () => {
+    const user = userEvent.setup();
+    const imagePaste = vi.fn(() => []);
+    const { transport } = renderHome({ durableAvailable: true, imagePaste });
+    const input = screen.getByRole('textbox', { name: '描述你想完成的工作' });
+    await user.type(input, '查看这个图片');
+    fireEvent.paste(input, { clipboardData: { files: [new File(['image'], 'diagram.png', { type: 'image/png' })], items: [] } });
+    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+    expect(await screen.findByText(/Pi Durable 暂不支持附件/)).toBeVisible();
+    expect(input).toHaveValue('查看这个图片');
+    expect(screen.getByRole('button', { name: '移除 diagram.png' })).toBeVisible();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.sessions.create')).toBe(false);
+    expect(imagePaste).not.toHaveBeenCalled();
+  });
+
+  it('does not transfer a Durable selection into Room creation', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderHome({ durableAvailable: true, personas: [persona('planner', '规划者'), persona('builder', '执行者')] });
+    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('radio', { name: 'Room' }));
+    expect(screen.queryByRole('combobox', { name: '会话执行方式' })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '协作检查项目');
+    await user.click(screen.getByRole('button', { name: '开始 Room' }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.room.message')).toBe(true));
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.rooms.create')?.request.body).not.toHaveProperty('runtimeEngine');
+  });
+
   it('warms only a precisely targeted recent card before navigation', async () => {
     vi.mocked(warmAgentWorkspace).mockClear();
     const { transport } = renderHome();
@@ -683,6 +733,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
 
 function renderHome({
   interfaceMode = 'traditional',
+  durableAvailable = false,
   modelReference = 'inherit',
   models = [],
   personas = [],
@@ -691,8 +742,10 @@ function renderHome({
   onCreated = vi.fn(),
   promptRoute = { ok: true },
   continuityRoute,
+  createRoute,
 }: {
   interfaceMode?: 'traditional' | 'jev';
+  durableAvailable?: boolean;
   modelReference?: string;
   models?: PiModelOption[];
   personas?: AgentPersonaV1[];
@@ -701,6 +754,7 @@ function renderHome({
   onCreated?: Parameters<typeof PawAgentHome>[0]['onCreated'];
   promptRoute?: MockRouteHandler;
   continuityRoute?: MockRouteHandler;
+  createRoute?: MockRouteHandler;
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const transport = new MockControlTransport({
@@ -720,7 +774,7 @@ function renderHome({
       }),
       'agent.room.message': { ok: true },
       'agent.jev.command': { ok: true, accepted: true, graphId: 'jev-created', rootId: 'jev-root' },
-      'agent.sessions.create': {
+      'agent.sessions.create': createRoute ?? {
         ok: true,
         session: {
           id: 'session-created',
@@ -741,6 +795,7 @@ function renderHome({
         <TooltipProvider>
           <PawAgentHome
             interfaceMode={interfaceMode}
+            durableAvailable={durableAvailable}
             defaultModel="gpt/gpt-5.6-luna"
             models={models}
             personas={personas}

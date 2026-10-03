@@ -37,6 +37,7 @@ export type SessionSummary = Pick<
     | 'ownerAppId'
     | 'surfaceKey'
     | 'evaluationSnapshot'
+    | 'runtimeEngine'
   >> & {
     /** Optional until the Runtime session snapshot advertises Pi codemode mode. */
     codemodeMode?: CodemodeMode;

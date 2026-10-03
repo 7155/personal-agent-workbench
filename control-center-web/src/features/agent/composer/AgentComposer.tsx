@@ -152,6 +152,7 @@ export function AgentComposer({
   toolPickerQuery = '',
   helpRequest = 0,
   imageSupport = 'unknown',
+  attachmentsAvailable = true,
   showJumpLatest = false,
   unseenUpdates = 0,
   onJumpLatest,
@@ -189,7 +190,7 @@ export function AgentComposer({
   onCapabilityPreferenceChange?: (canonicalId: string, preference: CapabilityPreference) => void;
   onCodemodeModeChange?: (mode: CodemodeMode) => void;
   onProductCommand: (command: AgentProductCommandName) => void;
-  onSend: (delivery: AgentMessageDelivery, draft: string) => void;
+  onSend: (delivery: AgentMessageDelivery, draft: string) => boolean | void;
   onStop: () => void | Promise<void>;
   editState?: AgentComposerEditState;
   onEditPrevious?: () => void;
@@ -204,6 +205,7 @@ export function AgentComposer({
   toolPickerQuery?: string;
   helpRequest?: number;
   imageSupport?: 'supported' | 'unsupported' | 'unknown';
+  attachmentsAvailable?: boolean;
   showJumpLatest?: boolean;
   /** Messages and activities appended since the reader left the transcript
    *  end. `0` means they scrolled away and nothing has arrived since. */
@@ -229,7 +231,7 @@ export function AgentComposer({
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
-  const canAttach = Boolean(session && !sending && !busy && attachments.length < 8);
+  const canAttach = Boolean(attachmentsAvailable && session && !sending && !busy && attachments.length < 8);
   const pastedText = usePastedTextAttachments({ ownerId: session?.id ?? '', canImport: canAttach, onImport: onPasteImages });
   useComposerEditor(textareaRef, composerDraft, expanded);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
@@ -389,12 +391,12 @@ export function AgentComposer({
     /* A refused queue never reaches Runtime, so the draft has to stay exactly
        where the writer left it rather than vanish into a full queue. */
     if (delivery === 'queue' && !onQueue?.(value)) return;
+    if (delivery !== 'queue' && onSend(delivery, value) === false) return;
     setComposerDraft('');
     setPaletteOpen(false);
     setHelpOpen(false);
     setDismissedDraft(null);
     publishDraft('');
-    if (delivery !== 'queue') onSend(delivery, value);
   }
   function keyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     // WebKit can report isComposing=false on the Enter that commits an IME
@@ -566,7 +568,7 @@ export function AgentComposer({
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder={placeholder ?? composerPlaceholder(imageSupport)}
+            placeholder={placeholder ?? (attachmentsAvailable ? composerPlaceholder(imageSupport) : '给当前 Session 发消息…')}
             aria-label="消息"
             role={commandPanelVisible ? 'combobox' : undefined}
             aria-autocomplete={commandPanelVisible ? 'list' : undefined}

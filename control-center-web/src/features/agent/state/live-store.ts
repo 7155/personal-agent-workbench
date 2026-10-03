@@ -90,6 +90,7 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
     return get().hydrateSnapshot(sessionId, agentSnapshotFromResponse(value), options);
   },
   hydrateSnapshot(sessionId, snapshot, options) {
+    if (snapshot.sessionId !== undefined && snapshot.sessionId !== sessionId) return false;
     const current: AgentLiveProjection = get().projections[sessionId] ?? createAgentProjection(sessionId);
     const recoveryCursor = current.recoveryCursor;
     if (current.needsSnapshot && recoveryCursor !== undefined && snapshot.lastSequence < recoveryCursor) return false;

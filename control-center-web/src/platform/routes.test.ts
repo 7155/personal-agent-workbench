@@ -7,6 +7,13 @@ import {
 } from './routes';
 import { assertControlRequest, assertControlSubscription } from './transport';
 
+it('requires both original Durable input identities on the local explicit resume route', () => {
+  expect(resolveControlPath('agent.session.resume', { sessionId: 'session:paused' })).toBe('/api/agent/sessions/session%3Apaused/resume');
+  expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { turnId: 'original-turn' } })).toThrow();
+  expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { clientMessageId: 'original-client' } })).toThrow();
+  expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { turnId: 'original-turn', clientMessageId: 'original-client' } })).not.toThrow();
+});
+
 const canonicalPathIds = [
   'control.bootstrap',
   'control.capabilities',
@@ -105,6 +112,7 @@ const canonicalPathIds = [
   'agent.session.forks.list',
   'agent.session.forks.create',
   'agent.session.abort',
+  'agent.session.resume',
   'agent.session.review.resolve',
   'agent.session.ui.resolve',
   'agent.session.compact',

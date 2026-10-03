@@ -129,6 +129,7 @@ export function PawAgentHome({
   catalogError = '',
   catalogLoading = false,
   defaultModel,
+  durableAvailable = false,
   initialDraft,
   models,
   onCreated,
@@ -145,6 +146,7 @@ export function PawAgentHome({
   catalogError?: string;
   catalogLoading?: boolean;
   defaultModel: string;
+  durableAvailable?: boolean;
   initialDraft?: string;
   models: PiModelOption[];
   onCreated: (selection: Selection, created?: SessionSummary, createdRoom?: RoomSummary) => void;
@@ -161,6 +163,7 @@ export function PawAgentHome({
   const preferenceRead = useAgentPreferencesRead();
   const preferences = preferenceRead.preferences;
   const [mode, setMode] = useState<WorkMode>();
+  const [runtimeEngine, setRuntimeEngine] = useState<'classic' | 'durable'>('classic');
   const workMode = mode ?? (interfaceMode === 'jev' ? 'room' : 'session');
   const jevRoom = interfaceMode === 'jev' && workMode === 'room';
   const [jevModelRouting, setJevModelRouting] = useState<JevModelRouting>('balanced');
@@ -360,6 +363,16 @@ export function PawAgentHome({
   async function startWork(): Promise<void> {
     const message = prompt.trim() || (pendingAttachments.length || pendingClipboardPaste ? '请查看附件。' : '');
     if (!message || submitting) return;
+    if (workMode === 'session' && runtimeEngine === 'durable') {
+      if (!durableAvailable) {
+        setError('当前 Pi Runtime 暂不支持 Durable。请重新读取目录，或选择标准会话。');
+        return;
+      }
+      if (pendingAttachments.length || pendingClipboardPaste) {
+        setError('Pi Durable 暂不支持附件。请保留草稿并选择标准会话，或移除附件后继续。');
+        return;
+      }
+    }
     if (workMode === 'room' && !roomReady) {
       setError('当前没有足够的 Room 伙伴。');
       return;
@@ -387,6 +400,7 @@ export function PawAgentHome({
           pathId: 'agent.sessions.create',
           body: {
             title: workTitle(message),
+            ...(runtimeEngine === 'durable' ? { runtimeEngine } : {}),
             mode: sessionPermission.mode,
             executionMode,
             toolProfileVersion,
@@ -652,6 +666,19 @@ export function PawAgentHome({
                 </button>
               </span>
 
+              {workMode === 'session' ? (
+                <select
+                  aria-label="会话执行方式"
+                  className="an-chip"
+                  disabled={submitting}
+                  onChange={(event) => setRuntimeEngine(event.target.value === 'durable' ? 'durable' : 'classic')}
+                  value={runtimeEngine}
+                >
+                  <option value="classic">标准会话</option>
+                  <option disabled={!durableAvailable} value="durable">Pi Durable（实验）</option>
+                </select>
+              ) : null}
+
               <span className="an-anchor">
                 {workMode === 'room' ? (
                   <Popover open={optionsPanel === 'permission'} onOpenChange={(open) => setOptionsPanel(open ? 'permission' : null)}>
@@ -782,7 +809,9 @@ export function PawAgentHome({
           ) : null}
           {workMode === 'session' ? (
             <p className="an-mode-brief" id={modeBriefId}>
-              随时补充想法，也可以暂停。
+              {runtimeEngine === 'durable'
+                ? 'Pi Durable 保存任务执行进度，断线后可继续。当前支持文字与工具，暂不支持图片、插件和历史分支。'
+                : '随时补充想法，也可以暂停。'}
             </p>
           ) : availableRoomPersonas.length > 0 ? (
             <div className="an-mode-brief an-room-plan" id={modeBriefId}>
@@ -929,6 +958,7 @@ function createdSessionSummary(
     lastMessagePreview: firstMessage,
     executionMode,
     toolProfileVersion: text(raw.toolProfileVersion) || toolProfileVersion,
+    ...(raw.runtimeEngine === 'classic' || raw.runtimeEngine === 'durable' ? { runtimeEngine: raw.runtimeEngine } : {}),
   } as SessionSummary;
 }
 function createdRoomSummary(

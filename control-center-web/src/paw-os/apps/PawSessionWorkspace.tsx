@@ -126,7 +126,7 @@ export function sessionWorkspaceProjectionSlice(
 ) {
   const projection = state.projections[sessionId];
   return {
-    activeTurnId: latestActiveTurnId(projection),
+    activeTurnId: projection?.durableRecovery?.activeTurn?.turnId ?? latestActiveTurnId(projection),
     hasTurns: Boolean(projection?.turnOrder.length),
     pendingMemoryReview: latestWaitingActivity(
       projection,
@@ -141,6 +141,8 @@ export function sessionWorkspaceProjectionSlice(
       (activity) => activity.kind === 'approval_required' && approvalNeedsHumanDecision(activity.payload),
     ),
     telemetry: projection?.telemetry,
+    runtimeEngine: projection?.runtimeEngine,
+    durableRecovery: projection?.durableRecovery,
   };
 }
 
@@ -208,6 +210,9 @@ export function PawSessionWorkspace({
     (state) => sessionWorkspaceProjectionSlice(state, recordId),
   ));
   const [catalog, setCatalog] = useState<ModelCatalog>();
+  const durableSession = workspaceRecord.runtimeEngine === 'durable' || catalog?.runtimeEngine === 'durable' || projectionSlice.runtimeEngine === 'durable';
+  const durablePaused = projectionSlice.durableRecovery?.paused === true;
+  const classicHistoryAvailable = recordMetadataKnown && record?.id === recordId && !durableSession;
   const [commands, setCommands] = useState<AgentCommand[]>([]);
   const [tools, setTools] = useState<ToolManifest[]>([]);
   const [toolCatalogStatus, setToolCatalogStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
@@ -228,6 +233,19 @@ export function PawSessionWorkspace({
   }, [draft, setDraft, userMessagePresentation]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport } | undefined>(undefined);
+  const resumeOwnerRef = useRef({ recordId, transport });
+  resumeOwnerRef.current = { recordId, transport };
+  useEffect(() => {
+    setResuming(false);
+    return () => {
+      const request = resumeRequestRef.current;
+      if (request?.recordId === recordId && request.transport === transport) {
+        request.controller.abort(); resumeRequestRef.current = undefined;
+      }
+    };
+  }, [recordId, transport]);
   const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(state.projections[recordId]));
   const [stopping, setStopping] = useState(false);
   const [modelChanging, setModelChanging] = useState(false);
@@ -301,14 +319,14 @@ export function PawSessionWorkspace({
      the client until this turn settles, which is what keeps it editable,
      reorderable, revocable, and restorable when the turn is stopped. */
   const queue = useConversationQueue({
-    busy: busy || sending,
+    busy: busy || sending || durablePaused,
     conversationId: recordId,
     send: (text) => { void send('prompt', text); },
   });
   const pendingMemoryReview = projectionSlice.pendingMemoryReview;
   const pendingGenericInput = projectionSlice.pendingGenericInput;
   const pendingApproval = projectionSlice.pendingApproval;
-  const imageSupport = selectedModelImageSupport(catalog);
+  const imageSupport = durableSession ? 'unsupported' : selectedModelImageSupport(catalog);
 
   const loadFullSnapshot = useCallback(async (): Promise<void> => {
     if (!liveActive) return;
@@ -554,9 +572,66 @@ export function PawSessionWorkspace({
     }
   }
 
+  async function resumeCurrentTask(): Promise<void> {
+    const projection = agentProjection(recordId);
+    const recovery = projection.durableRecovery;
+    if (resumeRequestRef.current?.recordId === recordId && resumeRequestRef.current.transport === transport
+      || sending || stopping || modelChanging || projection.needsSnapshot
+      || !recovery?.paused || !recovery.recoverable || !recovery.activeTurn) return;
+    const { turnId, clientMessageId } = recovery.activeTurn;
+    resumeRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const request = { controller, recordId, transport };
+    resumeRequestRef.current = request;
+    const ownsRequest = () => !controller.signal.aborted && resumeRequestRef.current === request
+      && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
+    setResuming(true);
+    setError('');
+    try {
+      const response = asRecord(await transport.request({
+        pathId: 'agent.session.resume', params: { sessionId: recordId },
+        body: { turnId, clientMessageId }, signal: controller.signal,
+      }));
+      if (!ownsRequest()) return;
+      const receipt = asRecord(response.runtimeReceipt);
+      if (response.schemaVersion !== 'rag-ime.agent-session-resume.v1' || response.ok !== true
+        || response.sessionId !== recordId || response.turnId !== turnId || response.clientMessageId !== clientMessageId
+        || receipt.schemaVersion !== 'rag-ime.pi-session-resume.v1' || receipt.accepted !== true
+        || receipt.runtimeEngine !== 'durable' || typeof receipt.resumed !== 'boolean') {
+        throw new Error('Durable resume receipt is not confirmed');
+      }
+      // The ACK proves admission, not execution. Read the same Session and let
+      // current native metadata/events clear pause without a new prompt/turn.
+      const loaded = await loadAgentSnapshotRef.current();
+      if (ownsRequest() && !loaded) setError('恢复尚未确认，原任务与进度已保留。请重新同步后再继续。');
+    } catch {
+      if (!ownsRequest()) return;
+      await loadAgentSnapshotRef.current();
+      if (ownsRequest() && agentProjection(recordId).durableRecovery?.paused) {
+        setError('恢复尚未确认，原任务与进度已保留。可以重新同步，或再次继续当前任务。');
+      }
+    } finally {
+      if (ownsRequest()) { resumeRequestRef.current = undefined; setResuming(false); }
+    }
+  }
+
+  function acceptsEngineInput(rawDraft: string): boolean {
+    if (!durableSession) return true;
+    if (attachments.length) {
+      setError('Pi Durable 暂不支持附件。草稿和附件已保留，请移除附件后继续。');
+      return false;
+    }
+    if (rawDraft.trim() === '/branch') {
+      setError('Pi Durable 暂不支持历史分支。草稿已保留。');
+      return false;
+    }
+    return true;
+  }
+
   async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft): Promise<void> {
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
+    if (!acceptsEngineInput(rawDraft)) return;
     const value = rawDraft.trim();
     if (editState) {
       if (editState.resolving || !editState.entryId) {
@@ -606,7 +681,9 @@ export function PawSessionWorkspace({
       return;
     }
     if (value === '/new') { setDraft(''); onNewWork(); return; }
-    if (value === '/branch') { setDraft(''); openForkDialog(); return; }
+    if (value === '/branch') {
+      setDraft(''); openForkDialog(); return;
+    }
     if (isCommand(value, '/name')) {
       const title = value.slice('/name'.length).trim().slice(0, 120);
       if (!title) { setError('请在 /name 后输入新的 Session 名称。'); return; }
@@ -937,14 +1014,15 @@ export function PawSessionWorkspace({
   }
 
   function openForkDialog(initialEntryId = ''): void {
+    if (durableSession) { setError('Pi Durable 暂不支持历史分支。'); return; }
     setForkDialogNodes(conversationNodes(agentProjection(recordId)));
     setForkDialogInitialEntryId(initialEntryId);
     setForkDialogOpen(true);
   }
 
   async function beginEditMessage(messageId = ''): Promise<void> {
-    if (!record || busy || sending || !conversationRewriteAvailable || record.roomParticipant) {
-      setError(record?.roomParticipant
+    if (!record || busy || sending || !classicHistoryAvailable || !conversationRewriteAvailable || record.roomParticipant) {
+      setError(durableSession ? 'Pi Durable 暂不支持历史改写。' : record?.roomParticipant
         ? '这段对话属于 Room 伙伴，历史修改由 Room 管理。'
         : conversationRewriteAvailable
           ? '请等待当前回复结束后再修改历史消息。'
@@ -1015,6 +1093,7 @@ export function PawSessionWorkspace({
   }
 
   async function pickAttachments(): Promise<void> {
+    if (durableSession) { setAttachmentError('Pi Durable 暂不支持附件。'); return; }
     if (!transport.pickFiles) { setAttachmentError('当前环境不能选择附件，请将文件放入项目后告诉 Agent 文件名。'); return; }
     if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return; }
     const owner = recordId;
@@ -1032,6 +1111,7 @@ export function PawSessionWorkspace({
   }
 
   async function pasteFiles(files?: File[]): Promise<boolean> {
+    if (durableSession) { setAttachmentError('Pi Durable 暂不支持附件。'); return false; }
     if (!transport.pasteImages) { setAttachmentError('未能读取剪贴板文件，请改用选择附件。'); return false; }
     if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return false; }
     const owner = recordId;
@@ -1303,7 +1383,7 @@ export function PawSessionWorkspace({
 
   const title = workspaceRecord.title || '未命名 Session';
   const sessionChrome = (
-      <div className="paw-session-workspace__header" data-controls-expanded={controlsExpanded} data-status={stopping ? 'stopping' : busy ? 'busy' : 'idle'}>
+      <div className="paw-session-workspace__header" data-controls-expanded={controlsExpanded} data-status={stopping ? 'stopping' : durablePaused ? 'paused' : busy ? 'busy' : 'idle'}>
         {!windowChromeTarget ? <div className="paw-session-workspace__identity">
           <div>
             <span className="paw-session-workspace__breadcrumb"><small>Agent</small><i>/</i><strong>{title}</strong></span>
@@ -1323,6 +1403,8 @@ export function PawSessionWorkspace({
               ? '正在恢复连接'
             : stopping
             ? '正在停止'
+            : durablePaused
+              ? '已暂停'
             : busy
               ? '正在执行'
             : contextSnapshotState === 'restoring'
@@ -1385,13 +1467,13 @@ export function PawSessionWorkspace({
         data-chrome-in-window={windowChromeTarget ? true : undefined}
         data-appearance={appearance}
         data-panel={panel}
-        data-status={stopping ? 'stopping' : busy ? 'busy' : 'idle'}
+        data-status={stopping ? 'stopping' : durablePaused ? 'paused' : busy ? 'busy' : 'idle'}
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
       <WorkspaceRecoveryNotice recovery={recovery} />
       {controlsExpanded && !embedded && !evaluationSnapshot && workspaceView === 'conversation' ? <PawSessionFocusHeader
         title={title}
-        busy={busy}
+        busy={busy && !durablePaused}
         stopping={stopping}
         active={active}
         hasMessages={projectionSlice.hasTurns}
@@ -1440,8 +1522,8 @@ export function PawSessionWorkspace({
                 loading={loading}
                 modelSelectionAvailable={!evaluationSnapshot && Boolean(catalog)}
                 turnRecoveryDisabled={busy || sending || stopping || modelChanging}
-                forkAvailable={!evaluationSnapshot && !embedded && conversationForkAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
-                rewriteAvailable={!evaluationSnapshot && !embedded && conversationRewriteAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
+                forkAvailable={!evaluationSnapshot && !embedded && classicHistoryAvailable && conversationForkAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
+                rewriteAvailable={!evaluationSnapshot && !embedded && classicHistoryAvailable && conversationRewriteAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
                 jumpRequest={jumpRequest}
                 scrollToLatestRequest={scrollToLatestRequest}
                 onFollowStateChange={setTimelineFollow}
@@ -1503,7 +1585,12 @@ export function PawSessionWorkspace({
           </div>
 
           <div className="paw-session-workspace__composer" data-read-only={evaluationSnapshot || undefined}>
-            {pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
+            {durablePaused && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite">
+              <strong>任务已暂停，进度已保存</strong>
+              {projectionSlice.durableRecovery?.recoverable && projectionSlice.durableRecovery.activeTurn ? <button
+                aria-label="继续当前任务" disabled={resuming || sending || stopping || modelChanging}
+                onClick={() => void resumeCurrentTask()} type="button">{resuming ? '正在恢复…' : '继续当前任务'}</button> : null}
+            </div> : pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
             {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
               <CircleAlert size={14} aria-hidden="true" />
               <span>{attachmentError}</span>
@@ -1548,6 +1635,7 @@ export function PawSessionWorkspace({
               {composerContext?.kind === 'project' ? <WorkspaceProjectContext context={composerContext} /> : composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div><button aria-label="移除地图上下文" onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
               <AgentComposer
                 attachments={attachments}
+                attachmentsAvailable={!durableSession}
                 busy={busy}
                 capabilityCatalog={capabilityCatalog}
                 capabilityPolicyPending={capabilityMutation?.status === 'pending'}
@@ -1589,6 +1677,8 @@ export function PawSessionWorkspace({
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
                 onSend={(delivery, value) => {
+                  if (!acceptsEngineInput(value)) return false;
+                  if (durablePaused) { setError('当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。'); return false; }
                   const input = userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value;
                   void send(delivery, editState ? value : messageWithWorkspaceContext(input, composerContext), input);
                 }}
@@ -1600,7 +1690,7 @@ export function PawSessionWorkspace({
                 onPermissionChange={(selection) => void changePermission(selection)}
                 onWorkspaceRootsChange={() => void manageWorkspaceRoots()}
                 queueDepth={queue.queue.length}
-                onQueue={(value) => queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
+                onQueue={(value) => acceptsEngineInput(value) && queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
               />
               </>
             ) : null}
@@ -1684,9 +1774,9 @@ export function PawSessionWorkspace({
         sessionTitle={title}
         nodes={forkDialogNodes}
         initialEntryId={forkDialogInitialEntryId}
-        branchAvailable={conversationForkAvailable && !workspaceRecord.roomParticipant}
+        branchAvailable={classicHistoryAvailable && conversationForkAvailable && !workspaceRecord.roomParticipant}
         branchBlocked={busy || sending}
-        branchUnavailableReason={workspaceRecord.roomParticipant ? '这段对话属于 Room 伙伴，历史分支由 Room 管理。' : undefined}
+        branchUnavailableReason={durableSession ? 'Pi Durable 暂不支持历史分支。' : workspaceRecord.roomParticipant ? '这段对话属于 Room 伙伴，历史分支由 Room 管理。' : undefined}
         onOpenChange={setForkDialogOpen}
         onJump={(messageId) => setJumpRequest({ messageId, requestId: Date.now() })}
         onCreated={onSessionCreated}

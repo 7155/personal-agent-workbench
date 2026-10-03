@@ -88,6 +88,8 @@ export interface AgentProjectionState {
   optimisticByClientMessageId: Record<string, string>;
   diagnostics: ProjectionDiagnostic[];
   telemetry?: AgentSessionTelemetryV1;
+  runtimeEngine?: 'classic' | 'durable';
+  durableRecovery?: AgentDurableRecovery;
   messageQueue: AgentMessageQueue;
   todo: AgentTodoProjection;
   goal: AgentGoalProjection;
@@ -96,6 +98,12 @@ export interface AgentProjectionState {
   backgroundJobOrder: string[];
   lifecycleCancellationAuditsById: Record<string, AgentLifecycleCancellationAuditV1>;
   lifecycleCancellationAuditOrder: string[];
+}
+
+export interface AgentDurableRecovery {
+  paused: boolean;
+  recoverable: boolean;
+  activeTurn: { turnId: string; clientMessageId: string } | null;
 }
 
 export interface AgentMessageQueue {
@@ -118,6 +126,12 @@ export interface ProjectionReduction<State> {
 }
 
 export interface AgentSnapshot {
+  sessionId?: string;
+  runtimeEngine?: 'classic' | 'durable';
+  projectionCurrent?: boolean;
+  paused?: boolean;
+  recoverable?: boolean;
+  activeTurn?: AgentDurableRecovery['activeTurn'];
   messages: unknown[];
   liveEvents: unknown[];
   lastSequence: number;
@@ -481,6 +495,19 @@ export function reduceAgentEvent(
     // can restore a newer owner when its start was outside the event window.
     next.turnOrder = next.turnOrder.filter((id) => id !== event.turnId);
     next.turnOrder.splice(next.turnOrder.indexOf(currentTurnId), 0, event.turnId);
+  }
+  const recovery = next.durableRecovery;
+  if (recovery?.activeTurn?.turnId === event.turnId) {
+    if (event.eventType === 'turn_completed' || event.eventType === 'turn_failed') {
+      next.durableRecovery = { paused: false, recoverable: false, activeTurn: null };
+    } else if (recovery.paused && (
+      event.eventType === 'text_delta' && Boolean(text(payload.delta))
+      || event.eventType === 'tool_started'
+      || event.eventType === 'reasoning_summary' && payload.state !== 'completed'
+      || event.eventType === 'status_changed' && ['busy', 'working', 'retrying'].includes(text(payload.status))
+    )) {
+      next.durableRecovery = { ...recovery, paused: false, recoverable: false };
+    }
   }
   return { state: next, disposition: 'applied' };
 }
@@ -892,6 +919,7 @@ export function applyAgentSnapshot(
   snapshot: AgentSnapshot,
   options: { preserveConfirmedActivities?: boolean } = {},
 ): AgentProjectionState {
+  if (snapshot.sessionId !== undefined && snapshot.sessionId !== state.sessionId) return state;
   const inFlightAdmissionClientIds = new Set(
     Object.entries(state.optimisticByClientMessageId).flatMap(([
       clientMessageId,
@@ -1083,7 +1111,25 @@ export function applyAgentSnapshot(
   next.resumeToken = snapshot.resumeToken;
   next.needsSnapshot = false;
   next.gap = undefined;
+  next.runtimeEngine = snapshot.runtimeEngine ?? state.runtimeEngine;
+  // Current native control metadata owns recovery; transcript-only enrichment
+  // cannot invent or replace that authority. Assign after historical replay.
+  next.durableRecovery = snapshot.projectionCurrent === true
+    ? durableRecoveryFromSnapshot(snapshot, state.sessionId)
+    : state.durableRecovery;
+  const recoveryTurn = next.durableRecovery?.activeTurn;
+  if (recoveryTurn && ['completed', 'failed', 'aborted'].includes(next.turnsById[recoveryTurn.turnId]?.status)) {
+    next.durableRecovery = { paused: false, recoverable: false, activeTurn: null };
+  }
   return next;
+}
+
+function durableRecoveryFromSnapshot(snapshot: AgentSnapshot, sessionId: string): AgentDurableRecovery | undefined {
+  if (snapshot.runtimeEngine !== 'durable' || snapshot.sessionId !== sessionId
+    || typeof snapshot.paused !== 'boolean' || typeof snapshot.recoverable !== 'boolean'
+    || snapshot.activeTurn === undefined
+    || snapshot.recoverable && (!snapshot.paused || !snapshot.activeTurn)) return undefined;
+  return { paused: snapshot.paused, recoverable: snapshot.recoverable, activeTurn: snapshot.activeTurn };
 }
 
 /**
@@ -1451,12 +1497,22 @@ function removeProjectedMessage(
 
 export function agentSnapshotFromResponse(value: unknown): AgentSnapshot {
   const payload = record(value);
+  const activeTurn = record(payload.activeTurn);
+  const turnId = text(activeTurn.turnId);
+  const clientMessageId = text(activeTurn.clientMessageId);
   const messages = Array.isArray(payload.messages)
     ? payload.messages
     : Array.isArray(payload.items)
       ? payload.items
       : [];
   return {
+    ...(typeof payload.sessionId === 'string' ? { sessionId: payload.sessionId } : {}),
+    ...(payload.runtimeEngine === 'durable' || payload.runtimeEngine === 'classic' ? { runtimeEngine: payload.runtimeEngine } : {}),
+    ...(typeof payload.projectionCurrent === 'boolean' ? { projectionCurrent: payload.projectionCurrent } : {}),
+    ...(typeof payload.paused === 'boolean' ? { paused: payload.paused } : {}),
+    ...(typeof payload.recoverable === 'boolean' ? { recoverable: payload.recoverable } : {}),
+    ...(payload.activeTurn === null ? { activeTurn: null } : turnId.trim() && clientMessageId.trim()
+      ? { activeTurn: { turnId, clientMessageId } } : {}),
     messages,
     liveEvents: Array.isArray(payload.liveEvents) ? payload.liveEvents : [],
     lastSequence: integer(payload.lastSequence ?? payload.lastEventSequence),

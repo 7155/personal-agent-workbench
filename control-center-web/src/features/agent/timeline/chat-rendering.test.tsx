@@ -38,6 +38,24 @@ afterEach(() => {
 });
 
 describe('Agent chat rendering', () => {
+  it.each(['default', 'fx'] as const)('shows saved Durable pause without a running clock or decoration in %s presentation', presentation => {
+    useAgentLiveStore.getState().hydrate('session-1', {
+      sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true,
+      paused: true, recoverable: true, activeTurn: { turnId: 'turn-1', clientMessageId: 'original-input' },
+      items: [userMessage('session-1', 'turn-1')], status: 'busy', lastSequence: 2, resumeToken: 'session-1:2',
+      liveEvents: [agentEventFixture(1, 'tool_started', { toolCallId: 'kept-tool', toolName: 'read', args: { path: 'README.md' } }),
+        agentEventFixture(2, 'reasoning_summary', { summary: '保留的分析依据', state: 'running' })],
+    });
+    const before = useAgentLiveStore.getState().projections['session-1'];
+    const view = render(<AgentTurn sessionId="session-1" turnId="turn-1" presentation={presentation} onApprovalDecision={() => {}} />);
+    expect(screen.getByText('任务已暂停，进度已保存')).toBeInTheDocument();
+    expect(view.container.querySelector('.agent-working-dots')).toBeNull();
+    expect(screen.queryByText(/本轮用时/)).not.toBeInTheDocument();
+    expect(view.container.querySelector('[data-motion="active"]')).toBeNull();
+    expect(useAgentLiveStore.getState().projections['session-1'].activitiesById).toEqual(before.activitiesById);
+    expect(before.activitiesById[before.activityOrder[0]!].status).toBe('running');
+  });
+
   it.each([
     ['tool_started', { toolCallId: 'first-tool', toolName: 'read', args: { path: 'README.md' } }],
     ['text_delta', { delta: '已收到' }],

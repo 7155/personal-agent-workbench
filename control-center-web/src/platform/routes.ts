@@ -512,6 +512,7 @@ export const CONTROL_ROUTES = {
     path: '/api/agent/sessions',
     body: [
       'title',
+      'runtimeEngine',
       'mode',
       'roleId',
       'roleVersion',
@@ -649,6 +650,13 @@ export const CONTROL_ROUTES = {
     method: 'POST',
     path: '/api/agent/sessions/:sessionId/abort',
     params: { sessionId: null },
+  },
+  'agent.session.resume': {
+    method: 'POST',
+    path: '/api/agent/sessions/:sessionId/resume',
+    params: { sessionId: null },
+    body: ['turnId', 'clientMessageId'],
+    requiredBody: ['turnId', 'clientMessageId'],
   },
   'agent.session.review.resolve': {
     method: 'POST',

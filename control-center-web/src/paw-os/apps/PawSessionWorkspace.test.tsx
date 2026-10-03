@@ -60,6 +60,175 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it('keeps a paused Durable task static in the full workspace without losing its Stop control', async () => {
+    const sessionId = 'session-durable-paused-chrome';
+    const transport = new StubControlTransport('mock', durablePausedRoutes(sessionId));
+    const view = render(durableWorkspace(transport, sessionId, '', 'full'));
+    await screen.findByRole('button', { name: '继续当前任务' });
+    fireEvent.click(screen.getByRole('button', { name: '展开对话控件' }));
+    expect(screen.getByRole('button', { name: '停止当前回合' })).toBeEnabled();
+    expect(screen.queryByText('正在执行')).not.toBeInTheDocument();
+    expect(view.container.querySelector('.paw-session-workspace')).toHaveAttribute('data-status', 'paused');
+    expect(view.container.querySelector('.paw-session-workspace__header')).toHaveAttribute('data-status', 'paused');
+    expect(view.container.querySelector('.paw-session-focus')).not.toHaveAttribute('data-motion', 'active');
+    expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('preserves the original Durable busy and Stop binding before any native tape row is visible', async () => {
+    const sessionId = 'session-durable-paused-empty-tape';
+    const transport = new StubControlTransport('mock', { ...durablePausedRoutes(sessionId),
+      'agent.session.snapshot': { ...durablePausedSnapshot(sessionId), items: [] },
+      'agent.session.abort': { ok: true },
+    });
+    render(durableWorkspace(transport, sessionId, '保留后续草稿'));
+    await screen.findByRole('button', { name: '继续当前任务' });
+    const stop = screen.getByRole('button', { name: '停止本轮' });
+    const composer = screen.getByRole('textbox', { name: '消息' });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(composer).toHaveValue('');
+    expect(screen.getByRole('status', { name: '等待当前执行完成后发送的消息' })).toBeVisible();
+    expect(useAgentLiveStore.getState().projections[sessionId].turnOrder).toEqual([]);
+    expect(useAgentLiveStore.getState().projections[sessionId].messageOrder).toEqual([]);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
+    fireEvent.click(stop);
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.abort')).toHaveLength(1));
+    expect(transport.requests.find(request => request.pathId === 'agent.session.abort')).toMatchObject({ params: { sessionId }, body: {} });
+    expect(composer).toHaveValue('保留后续草稿');
+    expect(screen.queryByRole('status', { name: '等待当前执行完成后发送的消息' })).not.toBeInTheDocument();
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.activeTurn).toEqual({
+      turnId: 'turn-busy', clientMessageId: 'original-client',
+    });
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('opens a paused Durable task passively and resumes only its original binding after one explicit click', async () => {
+    const sessionId = 'session-durable-resume';
+    let paused = true;
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...durablePausedRoutes(sessionId),
+      'agent.session.snapshot': () => ({ ...durablePausedSnapshot(sessionId), paused, recoverable: paused }),
+      'agent.session.resume': () => reply.promise,
+    });
+    render(durableWorkspace(transport, sessionId, '保留后续草稿'));
+    const button = await screen.findByRole('button', { name: '继续当前任务' });
+    expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
+    fireEvent.click(button); fireEvent.click(button);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.resume')).toHaveLength(1);
+    expect(transport.requests.find(request => request.pathId === 'agent.session.resume')).toMatchObject({
+      params: { sessionId }, body: { turnId: 'turn-busy', clientMessageId: 'original-client' },
+    });
+    expect(button).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('保留后续草稿');
+    await act(async () => { paused = false; reply.resolve(durableResumeAck(sessionId)); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: '继续当前任务' })).not.toBeInTheDocument());
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.paused).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId].turnOrder).toEqual(['turn-busy']);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('retains a failed Durable resume and retries the same original identity without sending a prompt', async () => {
+    const sessionId = 'session-durable-resume-failed';
+    const transport = new StubControlTransport('mock', { ...durablePausedRoutes(sessionId),
+      'agent.session.resume': () => { throw new Error('resume_not_confirmed'); },
+    });
+    render(durableWorkspace(transport, sessionId, '仍保留的草稿'));
+    fireEvent.click(await screen.findByRole('button', { name: '继续当前任务' }));
+    await screen.findByText(/恢复尚未确认/);
+    const retry = screen.getByRole('button', { name: '继续当前任务' });
+    await waitFor(() => expect(retry).toBeEnabled());
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('仍保留的草稿');
+    fireEvent.click(retry);
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.resume')).toHaveLength(2));
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.resume').map(request => request.body)).toEqual([
+      { turnId: 'turn-busy', clientMessageId: 'original-client' }, { turnId: 'turn-busy', clientMessageId: 'original-client' },
+    ]);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('ignores a resume reply from a previous Session after the owning workspace changes', async () => {
+    const first = 'session-durable-resume-old'; const second = 'session-durable-resume-current';
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...durablePausedRoutes(first),
+      'agent.session.snapshot': (request: ControlRequest) => durablePausedSnapshot(String(request.params?.sessionId)),
+      'agent.session.resume': () => reply.promise,
+    });
+    const view = render(durableWorkspace(transport, first, '第一段草稿'));
+    fireEvent.click(await screen.findByRole('button', { name: '继续当前任务' }));
+    const pending = transport.requests.find(request => request.pathId === 'agent.session.resume')!;
+    view.rerender(durableWorkspace(transport, second, '第二段草稿'));
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.paused).toBe(true));
+    const currentReads = transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length;
+    await act(async () => { reply.resolve(durableResumeAck(first)); });
+    expect(pending.signal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: '继续当前任务' })).toBeEnabled();
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot')).toHaveLength(currentReads);
+    expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.paused).toBe(true);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('does not offer explicit Durable resume when the snapshot omits current original-input authority', async () => {
+    const sessionId = 'session-durable-resume-unknown';
+    const transport = new StubControlTransport('mock', { ...durablePausedRoutes(sessionId),
+      'agent.session.snapshot': { ...durablePausedSnapshot(sessionId), projectionCurrent: undefined, activeTurn: undefined },
+    });
+    render(durableWorkspace(transport, sessionId));
+    await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    expect(screen.queryByRole('button', { name: '继续当前任务' })).not.toBeInTheDocument();
+    expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it.each(['branch', 'attachment'] as const)('keeps unsupported Durable %s input out of the busy queue', async kind => {
+    const sessionId = `session-durable-queue-${kind}`;
+    const transport = busySessionTransport(sessionId);
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, runtimeEngine: 'durable' }} recordId={sessionId}
+        initialDraft={kind === 'branch' ? '/branch' : '保留带附件的草稿'}
+        initialAttachments={kind === 'attachment' ? [{ id: 'media_abcdefghijklmnop', name: 'diagram.png', mimeType: 'image/png', byteSize: 64, source: 'picker' }] : undefined}
+        appearance="embedded" showComposerControls onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { emitStreamDelta(transport, sessionId); });
+    fireEvent.keyDown(composer, { key: 'Escape' }); fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(composer).toHaveValue(kind === 'branch' ? '/branch' : '保留带附件的草稿');
+    expect(screen.queryByRole('status', { name: '等待当前执行完成后发送的消息' })).not.toBeInTheDocument();
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('keeps a recovered Durable draft and attachment without submitting to an unsupported engine', async () => {
+    const sessionId = 'session-durable-attachment';
+    const transport = idleSessionTransport();
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, runtimeEngine: 'durable' }} recordId={sessionId}
+        initialDraft="保留这个草稿" initialAttachments={[{ id: 'media_abcdefghijklmnop', name: 'diagram.png', mimeType: 'image/png', byteSize: 64, source: 'picker' }]}
+        appearance="embedded" showComposerControls
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await userEvent.setup().click(screen.getByRole('button', { name: '发送' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pi Durable 暂不支持附件');
+    expect(composer).toHaveValue('保留这个草稿');
+    expect(screen.getByText('diagram.png')).toBeVisible();
+    expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('does not let global Classic branch capability erase a Durable draft or open its history branch', async () => {
+    const sessionId = 'session-durable-branch';
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(), 'agent.runtime.get': { capabilities: { conversationFork: true, conversationRewrite: true } } });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, runtimeEngine: 'durable' }} recordId={sessionId}
+        initialDraft="/branch" appearance="embedded" showComposerControls
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pi Durable 暂不支持历史分支');
+    expect(composer).toHaveValue('/branch');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(transport.requests.some(request => request.pathId === 'agent.session.forks.create')).toBe(false);
+  });
+
   it('keeps the complete-history control visible after the full snapshot has loaded', async () => {
     const sessionId = 'session-history-control';
     const transport = new StubControlTransport('mock', {
@@ -2495,6 +2664,31 @@ function emitTurnCompleted(transport: StubControlTransport, sessionId: string): 
     payload: { messageId: 'turn-busy:assistant', status: 'completed' },
     resumeToken: `${sessionId}:2`,
   }));
+}
+
+function durablePausedSnapshot(sessionId: string) {
+  return { schemaVersion: 'rag-ime.agent-message-list.v1', sessionId,
+    runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
+    activeTurn: { turnId: 'turn-busy', clientMessageId: 'original-client' },
+    items: [{ schemaVersion: 'rag-ime.agent-message.v1', id: `${sessionId}:user`, sessionId,
+      turnId: 'turn-busy', clientMessageId: 'original-client', role: 'user', status: 'completed',
+      blocks: [{ id: `${sessionId}:text`, type: 'text', status: 'completed', presentationKind: 'markdown', data: { text: '继续原任务' } }],
+      attachments: [], citations: [], createdAtMs: 1, completedAtMs: 1 }],
+    liveEvents: [], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'busy' };
+}
+function durablePausedRoutes(sessionId: string): ConstructorParameters<typeof StubControlTransport>[1] {
+  return { ...idleSessionRoutes(), 'agent.session.snapshot': durablePausedSnapshot(sessionId) };
+}
+function durableResumeAck(sessionId: string) {
+  return { schemaVersion: 'rag-ime.agent-session-resume.v1', ok: true, sessionId, turnId: 'turn-busy', clientMessageId: 'original-client',
+    runtimeReceipt: { schemaVersion: 'rag-ime.pi-session-resume.v1', accepted: true, runtimeEngine: 'durable', resumed: true } };
+}
+function durableWorkspace(transport: StubControlTransport, sessionId: string, initialDraft = '', appearance: 'full' | 'embedded' = 'embedded') {
+  return <ControlTransportProvider transport={transport}><TooltipProvider>
+    <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, runtimeEngine: 'durable' }} recordId={sessionId}
+      initialDraft={initialDraft} appearance={appearance} showComposerControls fullHistoryOnOpen={false}
+      onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+  </TooltipProvider></ControlTransportProvider>;
 }
 
 function liveSession(): SessionSummary {

@@ -75,6 +75,7 @@ export function PawAgentApp({
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [personas, setPersonas] = useState<AgentPersonaV1[]>([]);
   const [models, setModels] = useState<PiModelOption[]>([]);
+  const [durableAvailable, setDurableAvailable] = useState(false);
   const [defaultModel, setDefaultModel] = useState('');
   const [selection, setSelection] = useState<Selection>(() => initialAgentSelection(
     initialRoute,
@@ -199,6 +200,9 @@ export function PawAgentApp({
           const catalog = parsePiModelCatalogOptions(modelResult.value);
           setModels(catalog.models);
           setDefaultModel(catalog.selectedReference);
+          setDurableAvailable(record(record(record(modelResult.value).sessionEngines).durable).available === true);
+        } else if (modelResult.status === 'rejected') {
+          setDurableAvailable(false);
         }
       });
       return [roomResult, roleResult, modelResult] as const;
@@ -470,6 +474,7 @@ export function PawAgentApp({
             catalogError={loadError}
             catalogLoading={loading}
             defaultModel={defaultModel}
+            durableAvailable={durableAvailable}
             initialDraft={selection.draft}
             key={`new:${selection.draft ?? ''}`}
             models={models}

@@ -24,6 +24,39 @@ import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
 import type { AgentLifecycleCancellationAuditV1 } from './generated/agent-lifecycle-cancellation-audit.v1';
 
 describe('AgentEventReducer', () => {
+  it('retains exact Durable paused input and tool receipts without settling the turn', () => {
+    const snapshot = agentSnapshotFromResponse({
+      sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true,
+      paused: true, recoverable: true, activeTurn: { turnId: 'turn-1', clientMessageId: 'original-input' },
+      items: [serverMessage('paused-user', 'user', 'turn-1', '保留原任务')],
+      liveEvents: [agentEvent(1, 'tool_started', { toolCallId: 'kept-tool', toolName: 'read' }),
+        agentEvent(2, 'tool_finished', { toolCallId: 'kept-tool', toolName: 'read', outputPreview: '已保存结果' })],
+      status: 'busy', lastSequence: 2, resumeToken: 'session-1:2',
+    });
+    const state = applyAgentSnapshot(createAgentProjection('session-1'), snapshot);
+    expect(state.durableRecovery).toEqual({ paused: true, recoverable: true, activeTurn: { turnId: 'turn-1', clientMessageId: 'original-input' } });
+    expect(state.runtimeEngine).toBe('durable');
+    expect(['running', 'waiting', 'queued']).toContain(state.turnsById['turn-1'].status);
+    expect(state.activitiesById[state.activityOrder[0]!].status).toBe('completed');
+    expect(state.messagesById['paused-user'].blocks[0]?.data.text).toBe('保留原任务');
+    const terminal = reduceAgentEvent(state, agentEvent(3, 'turn_completed', { status: 'completed' })).state;
+    expect(terminal.durableRecovery?.recoverable).toBe(false);
+    expect(terminal.durableRecovery?.paused).toBe(false);
+    expect(terminal.turnsById['turn-1'].status).toBe('completed');
+  });
+
+  it.each([
+    { projectionCurrent: false }, { sessionId: 'another-session' }, { sessionId: undefined },
+    { activeTurn: { turnId: 'turn-1' } }, { recoverable: 'true' }, { paused: undefined },
+  ])('does not invent Durable recovery authority from incomplete or foreign metadata %j', override => {
+    const state = applyAgentSnapshot(createAgentProjection('session-1'), agentSnapshotFromResponse({
+      sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true,
+      paused: true, recoverable: true, activeTurn: { turnId: 'turn-1', clientMessageId: 'original-input' },
+      items: [], liveEvents: [], status: 'busy', lastSequence: 0, ...override,
+    }));
+    expect(state.durableRecovery).toBeUndefined();
+  });
+
   it.each(['turn_completed', 'turn_failed'] as const)(
     'keeps the successor status when %s arrives for an older turn',
     (terminal) => {

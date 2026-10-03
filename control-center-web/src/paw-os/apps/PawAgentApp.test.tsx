@@ -58,6 +58,23 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('uses the owned catalog capability and preserves a Durable draft when a replacement Host withdraws support', async () => {
+    const user = userEvent.setup();
+    const available = createTransport({ modelCatalog: { providers: [], selected: {}, sessionEngines: { durable: { available: true } } } });
+    const view = renderAgent(available);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeEnabled());
+    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '继续已有目标');
+    const unavailable = createTransport();
+    view.rerender(agentTree(unavailable));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeDisabled());
+    expect(screen.getByRole('combobox', { name: '会话执行方式' })).toHaveValue('durable');
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+    expect(await screen.findByText(/当前 Pi Runtime 暂不支持 Durable/)).toBeVisible();
+    expect(screen.getByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('继续已有目标');
+    expect(unavailable.requests.some(({ request }) => request.pathId === 'agent.sessions.create' || request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
   it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
     const transport = createTransport();
     const mode = deferred<unknown>();

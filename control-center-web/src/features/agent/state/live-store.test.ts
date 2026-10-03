@@ -10,6 +10,29 @@ afterEach(() => {
 });
 
 describe('Agent live store snapshot hydration', () => {
+  it('updates current Durable pause metadata at the same cursor and keeps older history from replacing it', () => {
+    const store = useAgentLiveStore.getState();
+    const paused = { sessionId, runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
+      activeTurn: { turnId: 'paused-turn', clientMessageId: 'original-input' },
+      messages: [message('paused-user', 'user', 'paused-turn', '原任务')],
+      liveEvents: [event(1, 'paused-turn', 'text_delta', { delta: '已完成的部分' })],
+      lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'busy' };
+    expect(store.hydrate(sessionId, paused)).toBe(true);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.paused).toBe(true);
+    expect(store.hydrate(sessionId, { ...paused, paused: false, recoverable: false })).toBe(true);
+    const running = useAgentLiveStore.getState().projections[sessionId];
+    expect(running.durableRecovery?.paused).toBe(false);
+    expect(store.hydrate(sessionId, { ...paused, lastSequence: 0, messages: [{ ...message('older', 'assistant', 'history', '旧历史'), createdAtMs: 1, completedAtMs: 2 }] })).toBe(true);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toEqual(running.durableRecovery);
+    store.applyEvents(sessionId, [event(2, 'paused-turn', 'turn_completed', {})]);
+    const terminal = useAgentLiveStore.getState().projections[sessionId];
+    expect(terminal.status).toBe('idle');
+    expect(terminal.turnsById['paused-turn'].status).toBe('completed');
+    expect(store.hydrate(sessionId, { ...paused, lastSequence: 2 })).toBe(false);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toBe(terminal);
+    expect(terminal.durableRecovery?.recoverable).toBe(false);
+  });
+
   it('requires the reset owner and preserves only unresolved local admissions across a reset', () => {
     const store = useAgentLiveStore.getState();
     store.hydrateSnapshot(sessionId, {

@@ -68,14 +68,16 @@ export function buildCommandCatalog({
     ))
     .map((command): ProductCommand => ({
       ...command,
-      ...productCommandAvailability(command.name, {
+      ...(command.name === 'branch' && (session?.runtimeEngine === 'durable' || catalog?.runtimeEngine === 'durable')
+        ? { enabled: false, disabledReason: 'Pi Durable 暂不支持历史分支。' }
+        : productCommandAvailability(command.name, {
         session,
         catalog,
         tools,
         toolCatalogStatus,
         busy,
         sending,
-      }),
+      })),
     }));
   const reserved = new Set(
     productCommands.map((command) => command.invocation.toLowerCase()),
