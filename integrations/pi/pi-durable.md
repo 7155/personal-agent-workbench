@@ -33,6 +33,12 @@ receipts prove completion. Input during this drain is rejected as
 `SESSION_ABORTING` and can be retried after settlement. A delayed Stop for an
 older input cannot cancel the next task.
 
+Standalone background jobs follow that same original-turn fence. Stop captures
+their persisted binding before the native RPC and waits for their owned process
+groups outside the Runtime lock. Completed HTTP delivery is not process
+completion. Unknown or ambiguous identity remains pending, and Room-owned jobs
+remain with the Room cancellation owner.
+
 ## Supported boundary
 
 | Capability | Durable engine |
@@ -48,6 +54,11 @@ older input cannot cancel the next task.
 An explicit `maxTokens` override on model selection is also unavailable because
 native Conversation streaming does not carry it. Normal model/thinking selection
 uses the configured native model policy.
+
+Authorized `workspace_*` tools are discoverable directly in Durable, preserving
+their required `op` argument and existing Gateway permissions. Classic continues
+to use Pi's resident workspace aliases. Neither mode grants tools that the
+Session's disclosure or policy excludes.
 
 Unsupported actions are rejected by both the product and Host boundaries.
 Creation/send retains unsupported attached images and the draft for correction.
@@ -95,6 +106,13 @@ credentials and existing user history are not migrated.
 
 - PAW behavior: `python3 -m unittest tests.test_pi_durable_runtime` and the
   existing Runtime/Gateway regressions.
+- Workspace discovery: `python3 -m unittest tests.test_pi_durable_workspace_manifests`.
+  The native loader contract additionally requires the explicit
+  `PAW_PI_WORKSPACE_TOOL_TEST_HOST_DIST` path to the paired built Host dist;
+  without that path only this native case is skipped.
+- Physical background cancellation:
+  `python3 -m unittest tests.test_workspace_job_turn_cancellation` covers real
+  process groups, delayed effects, late admission and launch-release races.
 - Pi native behavior: the Host's `test/durable-product-session.test.ts` covers
   same-input recovery, unsafe-effect recovery, generation ownership, physical
   drain, lost responses and history after compaction. Native `abortRun` has

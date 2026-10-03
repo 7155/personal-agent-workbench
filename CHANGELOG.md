@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Expose authorized workspace tools to Pi Durable with their canonical operation
+  schema. Stop standalone background jobs using the original turn's persisted
+  fence, including after HTTP delivery; retain pending receipts when physical
+  drain cannot be established.
 - Add explicit experimental Pi Durable execution for new standalone Sessions:
   passive history/reopen, continuation of the original admitted task, exact
   cancellation with physical drain, and native history independent of model

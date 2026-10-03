@@ -238,6 +238,12 @@ Session Stop captures and fences its original scope before waiting for the
 Host ACK. The Host's `sessionBoundAbort` capability compares that target before
 signalling cancellation; rejected or missing ACKs cannot widen the target to
 another turn. Newer approvals remain outside an older Stop's captured scope.
+The same pre-RPC capture marks standalone background jobs by their original
+Session and causal turn. The existing cancelled-turn ledger fences insertion,
+spawn confirmation and launch release. Physical cancellation waits outside the
+Runtime lock. A completed Gateway HTTP receipt does not settle its background
+process; missing or ambiguous process identity remains pending. Room jobs keep
+their Room cancellation owner.
 Native remote MCP cancellation sends a cancellation notification; a remote
 server may ignore it. It is not proof that an external side effect stopped.
 
@@ -382,6 +388,10 @@ current policy. This is not an exactly-once guarantee for arbitrary external
 effects. Full public history reads native entries independently of the compacted
 model-context head; recent history remains a bounded suffix and cannot overwrite
 the persisted total message count.
+
+Durable discovers authorized `workspace_*` targets directly with their required
+`op` argument; Classic retains Pi's resident aliases and projections. Both use
+the same disclosure, permission and Gateway execution owners.
 
 Durable currently supports text, Gateway tools, compaction, exact Stop and
 explicit resume. Native MCP, Code Mode, managed plugins/Skills, images and
