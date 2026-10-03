@@ -9706,6 +9706,13 @@ export const contractSchemas = {
           "subagent_runtime"
         ]
       },
+      "runtimeEngine": {
+        "type": "string",
+        "enum": [
+          "classic",
+          "durable"
+        ]
+      },
       "codemodeMode": {
         "type": "string",
         "enum": [

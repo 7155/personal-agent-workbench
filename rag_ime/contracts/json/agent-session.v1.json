@@ -51,6 +51,7 @@
     "mode": {"type": "string", "enum": ["assistant", "coordinator"]},
     "status": {"type": "string", "enum": ["idle", "active", "busy", "faulted", "archived"]},
     "sessionKind": {"type": "string", "enum": ["conversation", "subagent_runtime"]},
+    "runtimeEngine": {"type": "string", "enum": ["classic", "durable"]},
     "codemodeMode": {"type": "string", "enum": ["on", "only", "off"]},
     "evaluationSnapshot": {"type": "boolean"},
     "surfaceKind": {"type": "string", "enum": ["agent", "extension_app", "builtin_app"]},

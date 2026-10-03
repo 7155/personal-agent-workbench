@@ -18,7 +18,8 @@ from rag_ime.db.migration_runner import (
     migration_status,
 )
 
-POST_0126_MIGRATIONS = tuple(range(127, 218))
+TESTED_SCHEMA_HEAD = 218
+POST_0126_MIGRATIONS = tuple(range(127, TESTED_SCHEMA_HEAD + 1))
 
 
 class DatabaseMigrationTests(unittest.TestCase):
@@ -41,7 +42,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 ),
             )
             self.assertEqual(second.applied_versions, ())
-            self.assertEqual(status["currentVersion"], 217)
+            self.assertEqual(status["currentVersion"], TESTED_SCHEMA_HEAD)
             self.assertEqual(status["pendingVersions"], [])
             self.assertTrue(status["ok"])
             tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1071,7 +1072,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 upgraded = apply_database_migrations(conn)
 
                 self.assertEqual(upgraded.applied_versions, (94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126) + POST_0126_MIGRATIONS)
-                self.assertEqual(upgraded.current_version, 217)
+                self.assertEqual(upgraded.current_version, TESTED_SCHEMA_HEAD)
                 self.assertEqual(
                     conn.execute(
                         "SELECT checksum FROM schema_migrations WHERE version=93"
@@ -1246,7 +1247,7 @@ class DatabaseMigrationTests(unittest.TestCase):
 
                 upgraded = apply_database_migrations(conn)
 
-                self.assertEqual(upgraded.applied_versions, tuple(range(153, 218)))
+                self.assertEqual(upgraded.applied_versions, tuple(range(153, TESTED_SCHEMA_HEAD + 1)))
                 self.assertEqual(
                     conn.execute(
                         """
@@ -1314,7 +1315,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
                 status = migration_status(conn)
                 self.assertTrue(status["ok"])
-                self.assertEqual(status["currentVersion"], 217)
+                self.assertEqual(status["currentVersion"], TESTED_SCHEMA_HEAD)
 
     def test_legacy_atoms_preserve_supersession_lineage_and_require_evidence(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rag-ime-migrations-0058-") as temporary:
@@ -2053,7 +2054,7 @@ class DatabaseMigrationTests(unittest.TestCase):
 
                 self.assertEqual(
                     result.applied_versions,
-                    tuple(range(135, 218)),
+                    tuple(range(135, TESTED_SCHEMA_HEAD + 1)),
                 )
                 todo = conn.execute(
                     """
@@ -2198,9 +2199,9 @@ class DatabaseMigrationTests(unittest.TestCase):
             upgraded = apply_database_migrations(conn, applied_at_ms=161)
             self.assertEqual(
                 upgraded.applied_versions,
-                tuple(range(160, 218)),
+                tuple(range(160, TESTED_SCHEMA_HEAD + 1)),
             )
-            self.assertEqual(upgraded.current_version, 217)
+            self.assertEqual(upgraded.current_version, TESTED_SCHEMA_HEAD)
             review_columns = {
                 str(row[1])
                 for row in conn.execute(
@@ -2267,7 +2268,7 @@ class DatabaseMigrationTests(unittest.TestCase):
 
             upgraded = apply_database_migrations(conn, applied_at_ms=185)
 
-            self.assertEqual(upgraded.applied_versions, tuple(range(185, 218)))
+            self.assertEqual(upgraded.applied_versions, tuple(range(185, TESTED_SCHEMA_HEAD + 1)))
             self.assertEqual(
                 conn.execute(
                     "SELECT run_kind FROM memory_cleanup_runs "

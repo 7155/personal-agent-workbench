@@ -107,6 +107,7 @@ SELECT
     s.session_mode,
     s.status,
     s.session_kind,
+    s.runtime_engine,
     s.surface_kind,
     s.owner_app_id,
     s.surface_key,
@@ -190,6 +191,7 @@ class AgentSessionStore:
         workspace_roots: Iterable[str] = (),
         shell_policy_version: str | None = None,
         session_kind: str = "conversation",
+        runtime_engine: str = "classic",
         evaluation_snapshot: bool = False,
         surface_kind: str = "agent",
         owner_app_id: str = "",
@@ -209,6 +211,8 @@ class AgentSessionStore:
         normalized_kind = str(session_kind or "").strip()
         if normalized_kind not in {"conversation", "subagent_runtime"}:
             raise ValueError("agent session kind must be conversation or subagent_runtime")
+        if runtime_engine not in {"classic", "durable"}:
+            raise ValueError("agent runtime engine must be classic or durable")
         if evaluation_snapshot and normalized_kind != "conversation":
             raise ValueError("evaluation snapshots must use the conversation session kind")
         normalized_surface, normalized_owner_app_id, normalized_surface_key = (
@@ -219,6 +223,10 @@ class AgentSessionStore:
                 require_surface_key=True,
             )
         )
+        if runtime_engine == "durable" and (
+            normalized_kind != "conversation" or normalized_surface != "agent" or evaluation_snapshot
+        ):
+            raise ValueError("durable runtime requires a standalone conversation")
         if normalized_kind != "conversation" and normalized_surface != "agent":
             raise ValueError("internal Agent sessions cannot be owned by an App surface")
         normalized_thinking = str(thinking_level or "").strip().lower()
@@ -320,6 +328,7 @@ class AgentSessionStore:
             json.dumps(roots, ensure_ascii=False, separators=(",", ":")),
             shell_policy,
             normalized_kind,
+            runtime_engine,
             1 if evaluation_snapshot else 0,
             normalized_surface,
             normalized_owner_app_id,
@@ -339,14 +348,28 @@ class AgentSessionStore:
                     workspace_scope_sha256, workspace_scope_granted_at_ms,
                     project_context_enabled,
                     pi_skills_enabled, codex_skills_enabled, workspace_roots_json,
-                    shell_policy_version, session_kind, evaluation_snapshot,
+                    shell_policy_version, session_kind, runtime_engine, evaluation_snapshot,
                     surface_kind, owner_app_id, surface_key,
                     created_at_ms, updated_at_ms,
                     last_opened_at_ms, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle')
                 """,
                 values,
             )
+            if runtime_engine == "durable":
+                # Fence the new engine in the same transaction as creation.
+                # Older classic adapters reject this binding instead of
+                # opening a Durable database as a classic JSONL transcript.
+                return self.bind_runtime_session(
+                    session_id,
+                    driver_id="managed-pi",
+                    runtime_kind="pi_durable",
+                    external_session_id=session_id,
+                    binding_state="prepared",
+                    metadata={"runtimeEngine": "durable"},
+                    updated_at_ms=timestamp,
+                    _connection=conn,
+                )
             return self._get(conn, session_id)
 
         if _connection is not None:
@@ -886,6 +909,7 @@ class AgentSessionStore:
         metadata: Mapping[str, object] | None = None,
         message_count: int = 0,
         updated_at_ms: int | None = None,
+        _connection: sqlite3.Connection | None = None,
     ) -> dict[str, object]:
         driver = _runtime_binding_text(driver_id, field="driverId", maximum=120)
         kind = _runtime_binding_text(runtime_kind, field="runtimeKind", maximum=80)
@@ -920,7 +944,8 @@ class AgentSessionStore:
         if len(metadata_json.encode("utf-8")) > 16_384:
             raise ValueError("runtime binding metadata is too large")
         timestamp = _timestamp(updated_at_ms)
-        with self._connect() as conn:
+        def bind(conn: sqlite3.Connection) -> dict[str, object]:
+            binding_anchor = anchor
             session = conn.execute(
                 "SELECT id FROM agent_sessions WHERE id = ?",
                 (session_id,),
@@ -936,8 +961,8 @@ class AgentSessionStore:
                 or str(existing["runtime_kind"]) != kind
             ):
                 raise ValueError("an Agent session cannot change runtime driver in place")
-            if existing is not None and not anchor:
-                anchor = str(existing["branch_anchor"] or "")
+            if existing is not None and not binding_anchor:
+                binding_anchor = str(existing["branch_anchor"] or "")
             generation = int(existing["generation"]) + 1 if existing is not None else 1
             created_at_ms = int(existing["created_at_ms"]) if existing is not None else timestamp
             try:
@@ -963,7 +988,7 @@ class AgentSessionStore:
                         kind,
                         external_id,
                         transcript,
-                        anchor,
+                        binding_anchor,
                         generation,
                         binding_state,
                         metadata_json,
@@ -987,7 +1012,12 @@ class AgentSessionStore:
                 f"UPDATE agent_sessions SET {', '.join(assignments)} WHERE id = ?",  # noqa: S608
                 (*values, session_id),
             )
-        return self.get(session_id)
+            return self._get(conn, session_id)
+
+        if _connection is not None:
+            return bind(_connection)
+        with self._connect() as conn:
+            return bind(conn)
 
     def prepare_session_file(
         self,
@@ -4397,6 +4427,7 @@ def _session_payload(
         "mode": str(row["session_mode"]),
         "status": str(row["status"]),
         "sessionKind": str(row["session_kind"]),
+        "runtimeEngine": str(row["runtime_engine"]),
         "evaluationSnapshot": bool(row["evaluation_snapshot"]),
         "surfaceKind": str(row["surface_kind"]),
         "ownerAppId": str(row["owner_app_id"]),
@@ -4472,6 +4503,7 @@ def _session_directory_payload(row: sqlite3.Row) -> dict[str, object]:
         "mode": str(row["session_mode"]),
         "status": str(row["status"]),
         "sessionKind": str(row["session_kind"]),
+        "runtimeEngine": str(row["runtime_engine"]),
         "surfaceKind": str(row["surface_kind"]),
         "ownerAppId": str(row["owner_app_id"]),
         "surfaceKey": str(row["surface_key"]),
