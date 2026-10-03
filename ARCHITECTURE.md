@@ -93,6 +93,13 @@ One lifecycle-scoped resize observer measures the viewport and round layout, and
 is disconnected on cleanup. Layout-driven scroll events do not impersonate a
 reader choosing history. Navigation keeps the latest round reachable horizontally.
 
+The round-task selector groups retained attempt IDs by logical Root once per
+projection, then reads that index for each sheet. Retry ancestry, a retained
+parent outside turn order, original ordering and complete available evidence
+keep their existing semantics. The index is local to the selector call: it
+does not persist or cache execution state, and a later delta cannot reuse stale
+grouping. This removes repeated whole-history scans without trimming history.
+
 The existing `reading-recovery` owner persists round IDs, viewport offset,
 following intent and disclosure preferences under the connection/Room scope.
 It stores no conversation text or execution payload. The rounds surface waits

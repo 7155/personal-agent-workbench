@@ -80,12 +80,27 @@ export function selectRoomRoundTaskSheets(
   room: RoomSummary,
   projection: RoomProjectionState,
 ): RoomRoundTaskSheet[] {
+  // Group retained attempts once for this immutable projection. A streaming
+  // delta must not rescan every retained turn for each public logical round.
+  const historyByRoot = new Map<string, Set<string>>();
+  for (const turnId of projection.turnOrder) {
+    const rootId = logicalRoomRootId(projection, turnId);
+    let attempts = historyByRoot.get(rootId);
+    if (!attempts) {
+      attempts = new Set();
+      historyByRoot.set(rootId, attempts);
+    }
+    attempts.add(turnId);
+  }
   return selectPublicRoomTurnOrder(projection).flatMap((turnId) => {
     const turn = projection.turnsById[turnId];
     if (!turn) return [];
     const sheetId = logicalRoomRootId(projection, turnId);
     const execution = selectRoomTurnExecution(projection, turnId);
-    const historyTurnIds = logicalRoomTurnIds(projection, sheetId);
+    const historyTurnIds = [...(historyByRoot.get(sheetId) ?? [])];
+    if (!historyTurnIds.includes(sheetId) && projection.turnsById[sheetId]) {
+      historyTurnIds.unshift(sheetId);
+    }
     const historyTurns = historyTurnIds
       .map((historyTurnId) => projection.turnsById[historyTurnId])
       .filter((historyTurn): historyTurn is RoomTurnProjection => Boolean(historyTurn));
@@ -586,19 +601,6 @@ function logicalRoomRootId(projection: RoomProjectionState, turnId: string): str
     current = parent;
   }
   return current;
-}
-
-function logicalRoomTurnIds(
-  projection: RoomProjectionState,
-  sheetId: string,
-): string[] {
-  const turnIds = unique(projection.turnOrder.filter((turnId) => (
-    logicalRoomRootId(projection, turnId) === sheetId
-  )));
-  if (!turnIds.includes(sheetId) && projection.turnsById[sheetId]) {
-    turnIds.unshift(sheetId);
-  }
-  return turnIds;
 }
 
 function latestUserMessage(

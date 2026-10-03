@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Group retained Room attempts once per projection instead of scanning all
+  turns for every round; preserve retry identities, ordering and available history.
+
 - Make collaboration replay, tools and images honor the shared reduced-motion
   and host-activity settings while retaining live receipts and manual inspection.
   Remove the duplicate reading-media subscription owner.
