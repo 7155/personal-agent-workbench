@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { useMotionActivity } from '@/design/motion';
 
 export type ReadingPreferences = Readonly<{
   size: 'standard' | 'large';
@@ -55,37 +56,9 @@ export function updateReadingPreferences(change: Partial<ReadingPreferences>) {
   catch { /* A storage denial must not disable reading controls. */ }
 }
 
-const environmentListeners = new Set<() => void>();
-let media: MediaQueryList | undefined;
-function environmentSnapshot(): number {
-  if (typeof document === 'undefined') return 0;
-  const reduced = typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  return (document.visibilityState === 'visible' ? 1 : 0) | (reduced ? 2 : 0);
-}
-function notifyEnvironment() { environmentListeners.forEach(listener => listener()); }
-function subscribeEnvironment(listener: () => void) {
-  environmentListeners.add(listener);
-  if (environmentListeners.size === 1 && typeof window !== 'undefined') {
-    document.addEventListener('visibilitychange', notifyEnvironment);
-    media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (media?.addEventListener) media.addEventListener('change', notifyEnvironment);
-    else media?.addListener?.(notifyEnvironment);
-  }
-  return () => {
-    environmentListeners.delete(listener);
-    if (!environmentListeners.size && typeof window !== 'undefined') {
-      document.removeEventListener('visibilitychange', notifyEnvironment);
-      if (media?.removeEventListener) media.removeEventListener('change', notifyEnvironment);
-      else media?.removeListener?.(notifyEnvironment);
-      media = undefined;
-    }
-  };
-}
-
 /** This gates decoration only. It must never pause a Runtime or change status labels. */
 export function usePresentationMotion(active = true): boolean {
   const preferences = useReadingPreferences();
-  const environment = useSyncExternalStore(subscribeEnvironment, environmentSnapshot, () => 0);
-  return active && environment === 1 && preferences.motion !== 'reduced';
+  const motionActive = useMotionActivity();
+  return active && motionActive && preferences.motion !== 'reduced';
 }

@@ -63,6 +63,14 @@ map-selection owner. `ThemeProvider` retains the persisted light/dark/system
 preference, while the single blueprint appearance is a root attribute, not a
 second store or a no-op provider.
 
+`usePresentationMotion` composes the reading surface's local preference with
+the existing `useMotionActivity` owner. Global reduced-motion settings,
+operating-system preferences, page visibility and host activity therefore gate
+the same decorative loops in collaboration, tools and images. There is no
+second media/visibility subscription owner in reading preferences. Disabling
+motion retains manual event inspection and live receipt updates; it never
+pauses a Pi Session or the Room event stream.
+
 `PawAgentApp` loads the selected Room or Session workspace through separate lazy
 boundaries. Existing workspace props and callbacks keep their ownership; switching
 views does not create another execution store. `PawWindowLayer` loads background

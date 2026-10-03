@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Make collaboration replay, tools and images honor the shared reduced-motion
+  and host-activity settings while retaining live receipts and manual inspection.
+  Remove the duplicate reading-media subscription owner.
+
 - Add receipt-based Room and Session collaboration timelines with on-demand
   replay, shared dialogs, partner lanes and separate return/acceptance states.
   Playback flicker remains reported on the user's browser despite passing
