@@ -622,6 +622,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                 "session.fork",
                 "session.rewind",
                 "session.prompt",
+                "session.resume",
                 "session.steer",
                 "session.follow_up",
                 "session.abort",

@@ -108,6 +108,7 @@ REQUIRED_RUNTIME_METHODS = (
     "session.fork",
     "session.rewind",
     "session.prompt",
+    "session.resume",
     "session.steer",
     "session.follow_up",
     "session.abort",
