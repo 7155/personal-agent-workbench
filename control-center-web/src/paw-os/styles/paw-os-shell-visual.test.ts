@@ -197,7 +197,7 @@ describe('PAWOS shell visual language', () => {
     // Desktop selection is the macOS treatment: the accent plate sits behind
     // the label text only and the icon dims — never a whole-cell wash or ring.
     expect(pawOsCss).not.toContain(".paw-desktop-shortcuts button[aria-pressed='true'] {");
-    expect(pawOsCss).not.toContain('.paw-desktop-shortcuts button:hover {');
+    expect(pawOsCss).not.toMatch(/^\.paw-desktop-shortcuts button:hover \{/m);
     expect(shellCss).toMatch(/\[aria-pressed='true'\][^{]*:is\(\.paw-desktop-shortcuts__label-ink, \.paw-wayfinder-work__label-ink\)\s*\{[^}]*background:\s*var\(--paw-selection-plate/s);
     expect(shellCss).toMatch(/\[aria-pressed='true'\][^{]*:is\(\.paw-app-icon, \.paw-wayfinder-work__folder-art, \.paw-wayfinder-work__file-art\)\s*\{[^}]*filter:\s*brightness\(/s);
     // The running pill is the one notification dot, in the App's own colour.
@@ -320,15 +320,22 @@ describe('PAWOS shell visual language', () => {
     expect(reduced).toContain('.paw-wayfinder-work__folder-art, .paw-wayfinder-work__file-art');
   });
 
-  it('anchors the one project window and lets App and dialogue names wrap naturally', () => {
-    const desktopProjectWindow = lastRule(pawOsCss, '.paw-wayfinder-work__project-content');
+  it('anchors the icon project window and gives work names and the inline panel normal flow', () => {
+    const desktopProjectWindow = lastRule(pawOsCss, '\n.paw-wayfinder-work__project-content');
     const narrowProjectWindow = lastRule(shellCss, '.paw-desktop-root .paw-wayfinder-work__project-content');
     expect(desktopProjectWindow).toContain('position: absolute');
     expect(desktopProjectWindow).not.toContain('position: fixed');
     expect(narrowProjectWindow).toContain('position: absolute');
     expect(narrowProjectWindow).not.toContain('position: fixed');
     expect(narrowProjectWindow).toContain('height: auto');
-    expect(lastRule(pawOsCss, '.paw-wayfinder-work__project-content-scroll')).toContain('overflow-y: auto');
+    expect(lastRule(pawOsCss, '\n.paw-wayfinder-work__project-content-scroll')).toContain('overflow-y: auto');
+    const work = ".paw-desktop-root .paw-wayfinder-work[data-work-layout='work']";
+    expect(rule(pawOsCss, `${work} .paw-wayfinder-work__project-content`)).toContain('position: relative');
+    expect(rule(pawOsCss, `${work} .paw-wayfinder-work__project-content-scroll`)).toContain('max-height: min(380px, 45vh)');
+    const workName = rule(pawOsCss, `${work} .paw-wayfinder-work__project > summary .paw-wayfinder-work__project-copy strong`);
+    expect(workName).toContain('max-width: none');
+    expect(workName).toContain('-webkit-line-clamp: unset');
+    expect(workName).toContain('text-align: left');
 
     for (const [name, css, selector] of [
       ['App name', pawOsCss, '.paw-desktop-shortcuts button strong'],
@@ -342,7 +349,7 @@ describe('PAWOS shell visual language', () => {
   });
 
   it('renders an opened project as a compact left-aligned conversation list', () => {
-    const projectWindow = lastRule(pawOsCss, '.paw-wayfinder-work__project-content');
+    const projectWindow = lastRule(pawOsCss, '\n.paw-wayfinder-work__project-content');
     const row = lastRule(pawOsCss, '.paw-wayfinder-work__project-content-scroll .paw-wayfinder-work__row');
     const copy = lastRule(pawOsCss, '.paw-wayfinder-work__project-content-scroll .paw-wayfinder-work__copy');
     const more = lastRule(pawOsCss, '.paw-wayfinder-work__project-content-scroll .paw-wayfinder-work__more');

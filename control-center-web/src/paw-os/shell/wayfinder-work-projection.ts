@@ -169,11 +169,7 @@ export function projectWayfinderWork({
     foldedCount += 1;
   }
 
-  const needle = query.trim().toLocaleLowerCase();
-  const matched = [...deduped.values()].filter((item) => (
-    !needle
-    || `${item.title}\n${item.project}\n${item.agents.join('\n')}`.toLocaleLowerCase().includes(needle)
-  ));
+  const matched = [...deduped.values()].filter((item) => matchesWayfinderWork(item, query));
 
   const buckets: WayfinderWorkBucket[] = (['today', 'week', 'earlier'] as const)
     .map((id) => ({
@@ -203,6 +199,14 @@ export function projectWayfinderWork({
     .sort((left, right) => (right.items[0]?.updatedAtMs ?? 0) - (left.items[0]?.updatedAtMs ?? 0));
 
   return { buckets, projects, rowCount: matched.length, foldedCount };
+}
+
+/** Search displayed work after any shell assignment, while retaining its real
+ * workspace roots. A project's label alone cannot distinguish same-name roots. */
+export function matchesWayfinderWork(item: WayfinderWorkItem, query: string, projectRoots: readonly string[] = []): boolean {
+  const needle = query.trim().toLocaleLowerCase();
+  return !needle || [item.title, item.project, ...item.workspaceRoots, ...projectRoots, ...item.agents]
+    .join('\n').toLocaleLowerCase().includes(needle);
 }
 
 /**

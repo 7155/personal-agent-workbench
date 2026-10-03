@@ -21,6 +21,7 @@ import {
 } from '../runtime/desktop-store';
 import { PawAppProcess } from '../apps/PawApps';
 import { PawAppIcon } from './PawAppIcon';
+import { closePawWindows } from './window-close-route';
 import { PawWindowChromeProvider } from './PawWindowChrome';
 import { useRoomProjectionBridge } from '@/features/rooms/state/projection-bridge';
 import { roomActivityFlowKind, roomWorkReviewFlow } from '@/features/rooms/room-flow-projection';
@@ -204,7 +205,7 @@ export function PawWindowLayer() {
     api.getState().setCollaborationFocusGroup(group);
   }, [api]);
   const closeWindow = useCallback((windowId: string) => {
-    api.getState().closeWindow(windowId);
+    closePawWindows(api, () => api.getState().closeWindow(windowId));
   }, [api]);
   const bindAgentMain = useCallback((
     windowId: string,
@@ -918,7 +919,7 @@ const PawWindow = memo(function PawWindow({ collaborationFocusGroup, flowState, 
       }}
       onClose={() => {
         if (inspector) { onDismissInspector(windowId); return; }
-        api.getState().closeWindow(windowId);
+        closePawWindows(api, () => api.getState().closeWindow(windowId));
       }}
       onFocus={() => {
         api.getState().focusWindow(windowId);

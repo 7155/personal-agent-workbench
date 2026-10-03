@@ -13,6 +13,7 @@ import { usePawDesktopApi } from '../runtime/desktop-context';
 import { PawWindowChromePortal } from './PawWindowChrome';
 import { PawWindowFrame, PawWindowLayer, openDesktopRoute, resizeWindowBounds, roomWindowFlowGroups } from './PawWindowLayer';
 import { pawExtensionApps } from '../extensions/registry';
+import { syncPawOsRoute } from '../PawOsApp';
 import windowLayerSource from './PawWindowLayer.tsx?raw';
 
 vi.mock('../apps/PawRoomFocusParticipants', () => ({
@@ -81,6 +82,51 @@ describe('PAWOS compositor window frame', () => {
     await waitFor(() => expect(capturedDesktopApi!.getState().windows[terminal.id]).toBeUndefined(), { timeout: 6_000 });
     expect(capturedDesktopApi!.getState().windows.agent).toBeDefined();
     expect(calls.some((call) => call.pathId === 'agent.session.backgroundJob.cancel' || call.pathId === 'browser.command')).toBe(false);
+  });
+
+  it('keeps an intentionally closed Settings window closed after reload into the exact remaining Room', async () => {
+    window.history.replaceState(null, '', '?frontend=paw-os#/agent?room=room-close');
+    const historyLength = window.history.length;
+    const hashchange = vi.fn();
+    window.addEventListener('hashchange', hashchange);
+    const view = () => <ControlTransportProvider transport={createPreviewTransport()}><PawDesktopProvider>
+      <CaptureDesktopApi /><PawWindowLayer />
+    </PawDesktopProvider></ControlTransportProvider>;
+    const mounted = render(view());
+    act(() => {
+      capturedDesktopApi!.getState().openApp('agent');
+      capturedDesktopApi!.getState().bindAgentMain('agent', { kind: 'room', id: 'room-close', title: '当前 Room' });
+      openDesktopRoute(capturedDesktopApi!, '/appearance');
+    });
+    const settings = document.querySelector('[data-paw-window-id="system-settings"]') as HTMLElement;
+    fireEvent.click(within(settings).getByRole('button', { name: '关闭窗口' }));
+    await waitFor(() => expect(capturedDesktopApi!.getState().windows['system-settings']).toBeUndefined());
+    expect(window.location.hash).toBe('#/agent?room=room-close');
+    expect(window.location.search).toBe('?frontend=paw-os');
+    expect(window.history.length).toBe(historyLength);
+    expect(hashchange).not.toHaveBeenCalled();
+    mounted.unmount(); // Existing persistence owner flushes the closed snapshot.
+    render(view());
+    act(() => syncPawOsRoute(capturedDesktopApi!));
+    expect(capturedDesktopApi!.getState().windows['system-settings']).toBeUndefined();
+    expect(capturedDesktopApi!.getState().windows.agent?.target).toMatchObject({ kind: 'room', id: 'room-close' });
+    window.removeEventListener('hashchange', hashchange);
+  });
+
+  it('preserves the exact active Room hash when an unrelated Settings window is closed', async () => {
+    render(<ControlTransportProvider transport={createPreviewTransport()}><PawDesktopProvider>
+      <CaptureDesktopApi /><PawWindowLayer />
+    </PawDesktopProvider></ControlTransportProvider>);
+    act(() => {
+      openDesktopRoute(capturedDesktopApi!, '/appearance');
+      capturedDesktopApi!.getState().openApp('agent');
+      capturedDesktopApi!.getState().bindAgentMain('agent', { kind: 'room', id: 'room-active', title: '当前 Room' });
+      window.history.replaceState(null, '', '#/rooms?room=room-active&view=history');
+    });
+    const settings = document.querySelector('[data-paw-window-id="system-settings"]') as HTMLElement;
+    fireEvent.click(within(settings).getByRole('button', { name: '关闭窗口' }));
+    await waitFor(() => expect(capturedDesktopApi!.getState().windows['system-settings']).toBeUndefined());
+    expect(window.location.hash).toBe('#/rooms?room=room-active&view=history');
   });
 
   it('keeps App Center page navigation and refresh aligned without adding history entries', () => {

@@ -38,6 +38,20 @@ function room(overrides: Partial<WayfinderWorkRoomSource> & { id: string }): Way
 }
 
 describe('projectWayfinderWork', () => {
+  it('searches full workspace paths without conflating duplicate project leaves', () => {
+    const sources = {
+      nowMs: NOW, rooms: [],
+      sessions: [
+        session({ id: 'first', title: '继续设计', workspaceRoots: ['/work/client-a/workspace'] }),
+        session({ id: 'second', title: '继续设计', workspaceRoots: ['/work/client-b/workspace'] }),
+      ],
+    };
+    expect(projectWayfinderWork(sources).projects).toHaveLength(2);
+    expect(projectWayfinderWork({ ...sources, query: '/work/client-b' }).projects).toMatchObject([
+      { id: '/work/client-b/workspace', label: 'workspace', items: [{ id: 'second' }] },
+    ]);
+  });
+
   it('reports only recorded fresh Room task counts and never infers Session percentages', () => {
     const input = {
       nowMs: NOW,

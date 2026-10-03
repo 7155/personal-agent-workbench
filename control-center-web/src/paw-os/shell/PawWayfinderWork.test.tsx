@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -28,13 +28,113 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => cleanup());
 
 describe('PawWayfinderWork', () => {
+  it('shows readable paths in the default work layout and searches the exact Session or Room to continue', async () => {
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, items: [
+        sessionRecord('client-a', '检查第一份设计', { workspaceRoots: ['/work/client-a/workspace'] }),
+      ] },
+      'agent.rooms.list': { ok: true, items: [{
+        id: 'client-b', title: '核对第二份设计', status: 'active', updatedAtMs: NOW,
+        workspaceRoots: ['/work/client-b/workspace'], participants: [], workItems: [],
+      }] },
+    } });
+    renderWorkPanel(transport);
+    const panel = screen.getByRole('region', { name: '最近工作' });
+    const search = within(panel).getByRole('searchbox', { name: '搜索最近工作' });
+    await screen.findByText('/work/client-a/workspace');
+    expect(within(panel).getByText('/work/client-b/workspace')).toBeInTheDocument();
+    expect(panel.querySelectorAll('[data-project-folder]')).toHaveLength(2);
+    fireEvent.change(search, { target: { value: '/work/client-b' } });
+    expect(panel.querySelectorAll('[data-project-folder]')).toHaveLength(1);
+    const folder = panel.querySelector<HTMLDetailsElement>('[data-project-folder]')!;
+    fireEvent.click(folder.querySelector('summary')!);
+    expect(folder).toHaveAttribute('open');
+    fireEvent.click(within(folder).getByRole('button', { name: /核对第二份设计/ }));
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem('pawos.desktop.v1') ?? '{}');
+      expect(saved.windows['agent:client-b']).toMatchObject({
+        initialRoute: '/agent?room=client-b', target: { kind: 'room', id: 'client-b' },
+      });
+    });
+    fireEvent.change(search, { target: { value: '检查第一份设计' } });
+    const sessionFolder = panel.querySelector<HTMLDetailsElement>('[data-project-folder]')!;
+    fireEvent.keyDown(sessionFolder.querySelector('summary')!, { key: 'Enter' });
+    fireEvent.click(within(sessionFolder).getByRole('button', { name: /检查第一份设计/ }));
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem('pawos.desktop.v1') ?? '{}');
+      expect(saved.windows['agent:client-a']).toMatchObject({
+        initialRoute: '/agent?session=client-a', target: { kind: 'session', id: 'client-a' },
+      });
+    });
+    expect(transport.requests.some(({ request }) => /create|prompt|send|stop/.test(request.pathId))).toBe(false);
+  });
+
+  it('filters after assignments and archives and never keeps stale running or attention signals', async () => {
+    let offline = false;
+    window.localStorage.setItem('pawos.desktop.v1', JSON.stringify({ wayfinder: {
+      layoutVersion: 3, iconPositions: {}, archived: ['session:hidden'],
+      projectAssignments: { 'session:moved': '/work/target' },
+    } }));
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.list': () => {
+        if (offline) throw new Error('offline');
+        return { ok: true, items: [
+          sessionRecord('moved', '移动的进行中工作', { status: 'busy', workspaceRoots: ['/work/source'] }),
+          sessionRecord('target', '原项目中的故障', { status: 'faulted', workspaceRoots: ['/work/target'] }),
+          sessionRecord('hidden', '归档的工作', { status: 'busy', workspaceRoots: ['/work/target'] }),
+        ] };
+      },
+      'agent.rooms.list': () => { if (offline) throw new Error('offline'); return { ok: true, items: [] }; },
+    } });
+    renderWorkPanel(transport, 1_000);
+    const panel = screen.getByRole('region', { name: '最近工作' });
+    const search = within(panel).getByRole('searchbox', { name: '搜索最近工作' });
+    await screen.findByText('/work/target');
+    fireEvent.change(search, { target: { value: '/work/target' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '进行中' }));
+    let folder = panel.querySelector<HTMLDetailsElement>('[data-project-folder]')!;
+    fireEvent.click(folder.querySelector('summary')!);
+    expect(within(folder).getByRole('button', { name: /移动的进行中工作/ })).toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: /归档的工作/ })).toBeNull();
+    fireEvent.click(within(panel).getByRole('button', { name: '待处理' }));
+    expect(within(panel).getByRole('button', { name: /原项目中的故障/ })).toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: /移动的进行中工作/ })).toBeNull();
+    offline = true;
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 1_100)); });
+    expect(within(panel).getByText('没有匹配的工作')).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: '全部' }));
+    folder = panel.querySelector<HTMLDetailsElement>('[data-project-folder]')!;
+    if (!folder.open) fireEvent.click(folder.querySelector('summary')!);
+    expect(within(folder).getAllByText(/已离线/)).toHaveLength(2);
+    expect(within(folder).queryByText(/运行 1|待处理 1/)).toBeNull();
+  });
+
+  it('keeps complete project context reachable after narrowing the continuation list', async () => {
+    renderWorkPanel(new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, items: [
+        sessionRecord('alpha', '正在查看的设计', { workspaceRoots: ['/work/design'] }),
+        sessionRecord('beta', '另一个可继续的任务', { workspaceRoots: ['/work/design'] }),
+      ] },
+      'agent.rooms.list': { ok: true, items: [] },
+    } }));
+    await screen.findByText('/work/design');
+    const panel = screen.getByRole('region', { name: '最近工作' });
+    fireEvent.change(within(panel).getByRole('searchbox', { name: '搜索最近工作' }), { target: { value: '正在查看的设计' } });
+    fireEvent.click(panel.querySelector('[data-wayfinder-project]')!);
+    expect(within(panel).queryByRole('button', { name: /另一个可继续的任务/ })).toBeNull();
+    fireEvent.click(within(panel).getByRole('button', { name: '打开 design 项目设置' }));
+    const context = screen.getByRole('dialog', { name: 'design 项目详情' });
+    expect(within(context).getByRole('button', { name: /正在查看的设计/ })).toBeInTheDocument();
+    expect(within(context).getByRole('button', { name: /另一个可继续的任务/ })).toBeInTheDocument();
+  });
+
   it('opens the folder list by default and offers the galaxy explicitly', async () => {
     const transport = new MockControlTransport({ routes: {
       'agent.sessions.list': { ok: true, items: [sessionRecord('s-galaxy', '星系中的工作')] },
       'agent.rooms.list': { ok: true, items: [] },
     } });
     render(<ControlTransportProvider transport={transport}><PawDesktopProvider>
-      <PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork /></PawWorkDirectoryProvider>
+      <PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork layout="icons" /></PawWorkDirectoryProvider>
     </PawDesktopProvider></ControlTransportProvider>);
     const panel = await screen.findByRole('region', { name: '最近工作' });
     await waitFor(() => expect(panel.querySelector('[data-wayfinder-project]')).toBeTruthy());
@@ -626,7 +726,7 @@ describe('PawWayfinderWork', () => {
     });
     render(
       <ControlTransportProvider transport={transport}>
-        <PawDesktopProvider><PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork /></PawWorkDirectoryProvider></PawDesktopProvider>
+        <PawDesktopProvider><PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork layout="icons" /></PawWorkDirectoryProvider></PawDesktopProvider>
       </ControlTransportProvider>,
     );
 
@@ -682,7 +782,7 @@ describe('PawWayfinderWork', () => {
     function SelectionHarness() {
       const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
       return (
-        <PawWayfinderWork
+        <PawWayfinderWork layout="icons"
           onSelectIcon={(iconId, additive) => setSelected((current) => {
             if (!additive) return new Set([iconId]);
             const next = new Set(current);
@@ -803,7 +903,7 @@ describe('PawWayfinderWork', () => {
     } });
     render(
       <ControlTransportProvider transport={transport}>
-        <PawDesktopProvider><PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork /></PawWorkDirectoryProvider></PawDesktopProvider>
+        <PawDesktopProvider><PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork layout="icons" /></PawWorkDirectoryProvider></PawDesktopProvider>
       </ControlTransportProvider>,
     );
 
@@ -820,10 +920,18 @@ function renderPanel(options: MockControlTransportOptions) {
   return render(
     <ControlTransportProvider transport={new MockControlTransport(options)}>
       <PawDesktopProvider>
-        <PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork /></PawWorkDirectoryProvider>
+        <PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={60_000}><PawWayfinderWork layout="icons" /></PawWorkDirectoryProvider>
       </PawDesktopProvider>
     </ControlTransportProvider>,
   );
+}
+
+function renderWorkPanel(transport: MockControlTransport, pollIntervalMs = 60_000) {
+  return render(<ControlTransportProvider transport={transport}><PawDesktopProvider>
+    <PawWorkDirectoryProvider initialPollDelayMs={0} pollIntervalMs={pollIntervalMs}>
+      <PawWayfinderWork />
+    </PawWorkDirectoryProvider>
+  </PawDesktopProvider></ControlTransportProvider>);
 }
 
 async function openProjectFolder(panel: HTMLElement, index = 0): Promise<HTMLDetailsElement> {

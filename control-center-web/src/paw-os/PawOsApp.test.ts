@@ -8,6 +8,15 @@ afterEach(() => {
 });
 
 describe('PAWOS route bridge', () => {
+  it('still honors a fresh Settings appearance deep link after an intentionally closed desktop snapshot', () => {
+    const old = createPawDesktopStore('system-settings', '/appearance');
+    old.getState().closeWindow('system-settings');
+    window.history.replaceState(null, '', '#/appearance');
+    const restored = createPawDesktopStore(undefined, undefined, old.getState());
+    syncPawOsRoute(restored);
+    expect(restored.getState().windows['system-settings']?.initialRoute).toBe('/appearance');
+  });
+
   it('opens a Lab deep link above a restored Room focus without closing its work', () => {
     const store = createPawDesktopStore('agent', '/agent?room=room-open');
     store.getState().bindAgentMain('agent', { kind: 'room', id: 'room-open', title: '正在协作' });
