@@ -125,6 +125,7 @@ export function AgentComposer({
   codemodeModePending = false,
   busy,
   stopping = false,
+  showStop = true,
   sending,
   submissionBlocked = false,
   modelChanging = false,
@@ -178,6 +179,8 @@ export function AgentComposer({
   codemodeModePending?: boolean;
   busy: boolean;
   stopping?: boolean;
+  /** Hosts with a separate exact-target control can hide this generic Stop. */
+  showStop?: boolean;
   sending: boolean;
   submissionBlocked?: boolean;
   modelChanging?: boolean;
@@ -623,7 +626,7 @@ export function AgentComposer({
         )}
         actions={(
           <>
-            {busy ? (
+            {busy && showStop ? (
               <IconButton
                 className="agent-composer__stop"
                 label={stopping || stopRequested ? '正在停止本轮' : '停止本轮'}

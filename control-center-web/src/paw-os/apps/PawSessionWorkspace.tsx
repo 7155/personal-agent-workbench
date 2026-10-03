@@ -276,6 +276,18 @@ export function PawSessionWorkspace({
   const [controlsExpanded, setControlsExpanded] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<SessionWorkspaceView>(embedded ? 'conversation' : traceFocusNodeId ? 'trace' : 'conversation');
   const [error, setError] = useState('');
+  const [compactionStopWarning, setCompactionStopWarning] = useState<{
+    recordId: string; transport: typeof transport; target: AgentCompactionTarget;
+  }>();
+  useEffect(() => {
+    // Only validated owner metadata may retire this target's uncertainty.
+    // A missing/history-only target cannot clear it or a separate turn Stop.
+    if (compactionTarget === undefined) return;
+    setCompactionStopWarning(current => current?.recordId === recordId && current.transport === transport
+      && !sameAgentCompactionTarget(current.target, compactionTarget) ? undefined : current);
+  }, [compactionTarget, recordId, transport]);
+  const compactionStopError = compactionStopWarning?.recordId === recordId && compactionStopWarning.transport === transport
+    ? STOP_UNCONFIRMED_TEXT : '';
   const [attachmentError, setAttachmentError] = useState('');
   const attachmentOwner = useRef(recordId);
   attachmentOwner.current = recordId;
@@ -284,7 +296,7 @@ export function PawSessionWorkspace({
   const [syncState, setSyncState] = useState<AgentRecoveryState>('recovering');
   const [hasSnapshot, setHasSnapshot] = useState(false);
   useEffect(() => { setSyncError(''); setSyncState('recovering'); setHasSnapshot(false); }, [recordId]);
-  const visibleError = error || (syncError && (!hasSnapshot || syncState === 'failed')
+  const visibleError = error || compactionStopError || (syncError && (!hasSnapshot || syncState === 'failed')
     ? '连接暂时不可用，系统会继续自动重连。' : '');
   const [modelPickerRequest, setModelPickerRequest] = useState(0);
   const [thinkingPickerRequest, setThinkingPickerRequest] = useState(0);
@@ -639,6 +651,7 @@ export function PawSessionWorkspace({
             || receipt.runtimeEngine !== 'durable' || typeof receipt.resumed !== 'boolean')) {
         throw new Error('Durable resume receipt is not confirmed');
       }
+      if (target) clearCompactionStopWarning(target);
       // The ACK proves admission, not execution. Read the same Session and let
       // current native metadata/events clear pause without a new prompt/turn.
       const loaded = await loadAgentSnapshotRef.current();
@@ -878,6 +891,11 @@ export function PawSessionWorkspace({
     })();
   }
 
+  function clearCompactionStopWarning(target: AgentCompactionTarget): void {
+    setCompactionStopWarning(current => current?.recordId === recordId && current.transport === transport
+      && sameAgentCompactionTarget(current.target, target) ? undefined : current);
+  }
+
   async function stopCompaction(target: AgentCompactionTarget): Promise<void> {
     if (compactionStopRequestRef.current || resumeRequestRef.current || stopping) return;
     const controller = new AbortController();
@@ -888,6 +906,7 @@ export function PawSessionWorkspace({
     const ownsTarget = () => ownsRequest()
       && sameAgentCompactionTarget(agentProjection(recordId).durableRecovery?.compactionTarget, target);
     setStopping(true);
+    clearCompactionStopWarning(target);
     setError('');
     if (queue.queue.length) setDraft(current => queue.restoreToDraft(current));
     try {
@@ -902,11 +921,11 @@ export function PawSessionWorkspace({
       // A terminal receipt confirms these tasks only. Current native metadata
       // clears the control target; no user turn is fabricated or settled here.
       const loaded = await loadAgentSnapshotRef.current();
-      if (ownsTarget() && !loaded) setError(STOP_UNCONFIRMED_TEXT);
+      if (ownsTarget() && !loaded) setCompactionStopWarning({ recordId, transport, target });
     } catch {
       if (!ownsTarget()) return;
       await loadAgentSnapshotRef.current();
-      if (ownsTarget()) setError(STOP_UNCONFIRMED_TEXT);
+      if (ownsTarget()) setCompactionStopWarning({ recordId, transport, target });
     } finally {
       if (ownsRequest()) { compactionStopRequestRef.current = undefined; setStopping(false); }
     }
@@ -1694,7 +1713,7 @@ export function PawSessionWorkspace({
               <div className="paw-session-workspace__error" role="alert">
                 <CircleAlert size={14} />
                 <span>{visibleError}</span>
-                {error === STOP_UNCONFIRMED_TEXT ? (
+                {visibleError === STOP_UNCONFIRMED_TEXT ? (
                   <button onClick={() => openToolPanel('status')} type="button">查看任务与状态</button>
                 ) : error === SESSION_WORKSPACE_MISSING_TEXT ? (
                   <button onClick={() => void manageWorkspaceRoots()} type="button">选择工作目录</button>
@@ -1707,7 +1726,7 @@ export function PawSessionWorkspace({
                     entityId: `session:${recordId}:error`,
                     title: 'Session 操作失败',
                     summary: visibleError,
-                    error: error || syncError,
+                    error: error || compactionStopError || syncError,
                     sessionId: recordId,
                     sourceRoute: `/agent?session=${encodeURIComponent(recordId)}`,
                     refs: { surface: 'session-workspace' },
@@ -1755,6 +1774,7 @@ export function PawSessionWorkspace({
                 session={workspaceRecord}
                 sessionMetadataKnown={recordMetadataKnown && record?.id === recordId}
                 stopping={stopping}
+                showStop={!compactionTarget}
                 toolCatalogStatus={toolCatalogStatus}
                 toolPickerRequest={toolPickerRequest}
                 toolPickerQuery={toolPickerQuery}

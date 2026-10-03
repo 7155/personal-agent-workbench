@@ -206,6 +206,84 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
   });
 
+  it.each(['terminal', 'successor'] as const)('clears only the original compaction Stop warning after authoritative %s metadata', async state => {
+    const sessionId = `session-compaction-stop-warning-${state}`;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': compactionSnapshot(sessionId),
+      'agent.session.abort': () => { throw new Error('lost Stop ACK'); },
+    });
+    render(durableWorkspace(transport, sessionId, '终态后保留的草稿'));
+    fireEvent.click(await screen.findByRole('button', { name: '停止压缩' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled());
+    // History without current owner authority cannot dismiss the uncertainty.
+    act(() => { useAgentLiveStore.getState().hydrate(sessionId, compactionSnapshot(sessionId, {
+      projectionCurrent: false, paused: false, recoverable: false, compactionTarget: null, status: 'idle',
+    })); });
+    expect(screen.getByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { transport.emit('agent.session.events', parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:2`, sessionId, turnId: '', sequence: 2,
+      createdAtMs: 2, eventType: 'status_changed', payload: { status: state === 'terminal' ? 'idle' : 'busy', runtimeEngine: 'durable',
+        projectionCurrent: true, paused: false, recoverable: false, activeTurn: null,
+        compactionTarget: state === 'terminal' ? null : { ...compactionTarget(), taskIds: ['durable:task:9'] } }, resumeToken: `${sessionId}:2`,
+    })); });
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('终态后保留的草稿');
+    if (state === 'terminal') expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
+    else expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled();
+    expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+  });
+
+  it.each(['resume', 'abort'] as const)('preserves another Session compaction Stop warning across a %s action', async action => {
+    const first = `session-compaction-warning-owner-${action}`;
+    const second = `session-compaction-warning-other-${action}`;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => compactionSnapshot(String(request.params?.sessionId)),
+      'agent.session.resume': (request: ControlRequest) => compactionResumeAck(String(request.params?.sessionId)),
+      'agent.session.abort': (request: ControlRequest) => {
+        if (request.params?.sessionId === first) throw new Error('original Stop ACK lost');
+        return compactionAbortAck(String(request.params?.sessionId));
+      },
+    });
+    const view = render(durableWorkspace(transport, first));
+    fireEvent.click(await screen.findByRole('button', { name: '停止压缩' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled());
+    view.rerender(durableWorkspace(transport, second));
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.paused).toBe(true));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    const name = action === 'resume' ? '继续压缩' : '停止压缩';
+    fireEvent.click(await screen.findByRole('button', { name }));
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === `agent.session.${action}`
+      && request.params?.sessionId === second)).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+    view.rerender(durableWorkspace(transport, first));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    expect(useAgentLiveStore.getState().projections[first]?.durableRecovery?.compactionTarget).toEqual(compactionTarget());
+  });
+
+  it('shows only the explicit compaction Stop control while resume is pending and preserves the editable queued draft', async () => {
+    const sessionId = 'session-compaction-single-stop';
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': compactionSnapshot(sessionId),
+      'agent.session.resume': () => reply.promise,
+    });
+    render(durableWorkspace(transport, sessionId, '恢复时可编辑的草稿'));
+    fireEvent.click(await screen.findByRole('button', { name: '继续压缩' }));
+    expect(screen.getByRole('button', { name: '停止压缩' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: '停止本轮' })).not.toBeInTheDocument();
+    const draft = screen.getByRole('textbox', { name: '消息' });
+    expect(draft).toBeEnabled();
+    fireEvent.change(draft, { target: { value: '继续编辑，等待压缩完成' } });
+    expect(draft).toHaveValue('继续编辑，等待压缩完成');
+    expect(screen.getByRole('button', { name: '排队，当前回合结束后发送' })).toBeEnabled();
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.resume')).toHaveLength(1);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.abort')).toBe(false);
+    await act(async () => { reply.resolve(compactionResumeAck(sessionId)); });
+  });
+
   it.each(['resume', 'abort'] as const)('retries an unconfirmed compaction %s only against the original target', async action => {
     const sessionId = `session-compaction-retry-${action}`;
     const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
@@ -292,6 +370,29 @@ describe('PAWOS Agent Session structural migration', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
       expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
     } finally { view.unmount(); queryClient.clear(); useAgentLiveStore.getState().clear(sessionId); }
+  });
+
+  it('does not clear an independent turn Stop warning when compaction owner metadata changes', async () => {
+    const sessionId = 'session-turn-stop-warning-compaction';
+    const fixture = busySessionTransport(sessionId);
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => fixture.request(request),
+      'agent.session.abort': { ok: false, backgroundJobs: { drained: false, pendingJobIds: ['original-job'] } },
+    });
+    render(durableWorkspace(transport, sessionId, '独立停止尚未确认的草稿'));
+    fireEvent.click(await screen.findByRole('button', { name: '停止本轮' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    for (const [index, target] of [compactionTarget(), null].entries()) {
+      const sequence = index + 1;
+      act(() => { transport.emit('agent.session.events', parseAgentEvent({
+        schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:${sequence}`, sessionId, turnId: '', sequence,
+        createdAtMs: sequence, eventType: 'status_changed', payload: { status: target ? 'busy' : 'idle', runtimeEngine: 'durable',
+          projectionCurrent: true, paused: false, recoverable: false, activeTurn: null, compactionTarget: target }, resumeToken: `${sessionId}:${sequence}`,
+      })); });
+      expect(screen.getByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    }
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('独立停止尚未确认的草稿');
   });
 
   it('accepts a confirmed background drain without inventing a native terminal', async () => {
