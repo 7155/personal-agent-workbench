@@ -283,7 +283,9 @@ class AgentMessageSnapshotService:
         # tool calls), not the human transcript.  Reconcile only after the
         # visible private and Room-public branches have been projected, so a
         # Session cannot open as an apparently empty conversation.
-        if int(session.get("messageCount") or 0) != len(messages):
+        if int(session.get("messageCount") or 0) != len(messages) and not (
+            isinstance(runtime_snapshot, Mapping) and runtime_snapshot.get("partial") is True
+        ):
             session = self.sessions.set_status(
                 session_id,
                 str(session.get("status") or "idle"),
@@ -315,6 +317,8 @@ class AgentMessageSnapshotService:
             ),
             "telemetry": telemetry,
             "messageQueue": message_queue,
+            **_durable_runtime_projection(runtime_snapshot),
+            **({"partial": True} if isinstance(runtime_snapshot, Mapping) and runtime_snapshot.get("partial") is True else {}),
             **(
                 {"codemodeMode": codemode_mode}
                 if codemode_mode is not None
@@ -531,6 +535,7 @@ class AgentMessageSnapshotService:
             "lifecycleCancellationAudits": lifecycle_cancellation_audits,
             "snapshotScope": "recent",
             "partial": True,
+            **_durable_runtime_projection(runtime_snapshot),
             "runtimeQuiescent": str(session.get("status") or "idle")
             not in {"active", "busy"},
             "recentFromSequence": recent_from_sequence,
@@ -637,6 +642,10 @@ class AgentMessageSnapshotService:
         session_id: str,
         session: Mapping[str, object],
     ) -> dict[str, object]:
+        if session.get("runtimeEngine") == "durable":
+            # An absent resident process is not a native persisted input
+            # outcome. Only its exact committed control/settlement can retire it.
+            return dict(session)
         persisted_status = str(session.get("status") or "idle")
         if persisted_status not in {"active", "busy"}:
             return dict(session)
@@ -665,6 +674,18 @@ class AgentMessageSnapshotService:
             session_id,
             effective_status,
         )
+
+
+def _durable_runtime_projection(snapshot: object) -> dict[str, object]:
+    if not isinstance(snapshot, Mapping) or snapshot.get("runtimeEngine") != "durable":
+        return {}
+    active = snapshot.get("activeTurn")
+    return {"runtimeEngine": "durable", "paused": snapshot.get("paused") is True,
+            "recoverable": snapshot.get("recoverable") is True,
+            "projectionCurrent": snapshot.get("projectionCurrent") is True,
+            "activeTurn": ({"turnId": str(active.get("turnId") or ""),
+                            "clientMessageId": str(active.get("clientMessageId") or "")}
+                           if isinstance(active, Mapping) else None)}
 
 
 def _project_room_public_messages(

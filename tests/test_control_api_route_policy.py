@@ -1344,6 +1344,15 @@ class ControlRoutePolicyTests(unittest.TestCase):
         )
         self.policy.authorize(assistant_request, context)
 
+        durable_request = ControlRequest(
+            request_id="request-durable",
+            path_id=ControlPathId.AGENT_SESSIONS_CREATE.value,
+            body={"title": "durable", "runtimeEngine": "durable"},
+        )
+        self.policy.authorize(durable_request, ControlAccessContext.native())
+        with self.assertRaises(ControlApiError):
+            self.policy.authorize(durable_request, context)
+
         trace_request = ControlRequest(
             request_id="request-trace",
             path_id=ControlPathId.AGENT_SESSIONS_CREATE.value,

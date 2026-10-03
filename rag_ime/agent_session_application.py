@@ -87,6 +87,9 @@ class AgentSessionApplicationService:
     def ensure_runtime(self, payload: Mapping[str, object]) -> dict[str, object]:
         session_id = _required_text(payload, "sessionId")
         result = self.runtime.ensure(session_id)
+        if self.sessions.get(session_id).get("runtimeEngine") == "durable":
+            return {"schemaVersion": "rag-ime.agent-runtime-ensure.v1", "ok": True,
+                "runtime": dict(self.runtime_status()), "memoryMaintenance": {"status": "not_applicable"}, **result}
         maintenance = self.probe_memory_maintenance(
             session_id,
             trigger="session_switch",
@@ -98,6 +101,19 @@ class AgentSessionApplicationService:
             "memoryMaintenance": maintenance,
             **result,
         }
+
+    def resume_session(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        if self.sessions.get(session_id).get("runtimeEngine") != "durable":
+            raise ValueError("Session resume requires a Durable Session")
+        turn_id = _required_text(payload, "turnId")
+        client_message_id = _required_text(payload, "clientMessageId")
+        resume = getattr(self.runtime, "resume_session", None)
+        if not callable(resume):
+            raise ValueError("Durable Session resume is unavailable")
+        receipt = resume(session_id, turn_id=turn_id, client_message_id=client_message_id)
+        return {"schemaVersion": "rag-ime.agent-session-resume.v1", "ok": True,
+                "sessionId": session_id, "turnId": turn_id, "clientMessageId": client_message_id,
+                "runtimeReceipt": dict(receipt)}
 
     def list_sessions(
         self,
@@ -300,6 +316,19 @@ class AgentSessionApplicationService:
         *,
         connection: sqlite3.Connection | None = None,
     ) -> dict[str, object]:
+        runtime_engine = payload.get("runtimeEngine", "classic")
+        if not isinstance(runtime_engine, str) or runtime_engine not in {"classic", "durable"}:
+            raise ValueError("runtime engine must be classic or durable")
+        if runtime_engine == "durable":
+            if (payload.get("surfaceKind", "agent") != "agent" or payload.get("ownerAppId")
+                or payload.get("surfaceKey") or payload.get("_modelRoute", "primary") != "primary"):
+                raise ValueError("Durable runtime requires a new standalone Session")
+            if payload.get("piSkillsEnabled") or payload.get("codexSkillsEnabled"):
+                raise ValueError("Durable Sessions do not support Skills")
+            require_engine = getattr(self.runtime, "require_session_engine", None)
+            if not callable(require_engine):
+                raise ValueError("Durable Runtime Host capability is unavailable")
+            require_engine("durable")
         title = str(payload.get("title") or "新对话")
         mode = str(payload.get("mode") or "assistant")
         configuration = self.configuration_store.snapshot()["configuration"]
@@ -462,16 +491,15 @@ class AgentSessionApplicationService:
                 )
             ),
             pi_skills_enabled=(
-                True
-                if unrestricted_profile
-                else bool(payload.get("piSkillsEnabled", False))
+                False if runtime_engine == "durable" else (
+                    True if unrestricted_profile else bool(payload.get("piSkillsEnabled", False)))
             ),
             codex_skills_enabled=(
-                True
-                if unrestricted_profile
-                else bool(payload.get("codexSkillsEnabled", False))
+                False if runtime_engine == "durable" else (
+                    True if unrestricted_profile else bool(payload.get("codexSkillsEnabled", False)))
             ),
             workspace_roots=workspace_roots,
+            runtime_engine=str(runtime_engine),
             surface_kind=str(payload.get("surfaceKind") or "agent"),
             owner_app_id=str(payload.get("ownerAppId") or ""),
             surface_key=str(payload.get("surfaceKey") or ""),

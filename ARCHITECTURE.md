@@ -151,7 +151,8 @@ activity-to-row boundary rather than maintaining another mapping.
 | Unconfirmed JEV command | One command journal implementation, scoped to connection and operation/Room/task | Freeze the original input; join a live request on remount; restore an unknown outcome after reload without automatic replay |
 | UI execution projection | Shared live store, fed by ACK/snapshot/SSE | Resnapshot after a gap; never treat a visible message or old cache as execution authority |
 | Session identity/configuration | `AgentSessionStore`, PAW SQLite | Reopen the stored binding; preserve existing transcripts and explicit settings |
-| Session transcript and branch | Pi `SessionManager`, JSONL | Host reopens the branch; PAW's recent-message cache is disposable acceleration |
+| Classic Session transcript and branch | Pi `SessionManager`, JSONL | Host reopens the branch; PAW's recent-message cache is disposable acceleration |
+| Opt-in Durable Session execution/history | Pi native `Harness`, `Conversation`, task journal and a private SQLite store | Passive open restores the same native input; explicit resume uses its original turn/client identity. Compaction changes model context, not public history |
 | Active execution | Pi Host turn identity and PAW runtime binding | Compare exact identities before cancel/settle; idle alone is not a historical completion receipt |
 | Room membership and public events | Room store, PAW SQLite | Rebuild projections from ordered events and exact Root/dispatch bindings |
 | Current in-process Room dispatch | `RoomTurnRegistry` | Locks fence begin/cancel/finish; durable application receipts support restart reconciliation |
@@ -334,12 +335,59 @@ explicit Pi checkout and check `hello`, manifest version and source commit.
 Building and activating are separate operations; follow the
 [paired-runtime guide](integrations/pi/pi-0.99-codemode.md).
 
-Pi durable is experimental and uses separate Session/task/storage owners.
-PAW's product Session path remains classic Pi `SessionManager`. Durable's
-unsafe tools are not replayed after an execution-intent checkpoint; safe replay
-requires both the stored and current tool policy to allow it. This is not an
-exactly-once guarantee for arbitrary external effects, and it does not migrate
-existing product databases.
+New standalone Sessions can explicitly select the experimental Pi Durable
+engine when the paired Host advertises it. Classic remains the default and the
+owner of existing Sessions, Room partners and Lab execution. Migration 0218
+adds an immutable `runtimeEngine` with a Classic default; Durable admission
+creates its runtime binding atomically. It neither converts transcripts nor
+changes existing data. See the [Durable guide](integrations/pi/pi-durable.md).
+
+`DurableProductSession` implements the existing Host pool interface over one
+native Pi `Harness` and `Conversation`. Its small product document binds the
+original client message, payload fingerprint, native submission/generation and
+terminal receipt. Pi owns scheduling, model/tool execution, context and recovery;
+PAW keeps its existing Session directory, Gateway policy/receipt owner, HTTP
+routes and live UI projection. No second scheduler, task store or model loop is
+introduced. An exclusive store lease prevents two Hosts opening the same store.
+
+```mermaid
+flowchart LR
+    UI[Session workspace and shared live store] --> A[PAW Session application]
+    A --> S[Session identity and immutable engine binding]
+    A --> R[Existing Pi Host adapter and pool]
+    R --> C[Classic SessionManager and JSONL]
+    R --> D[DurableProductSession]
+    D --> H[Native Harness and Conversation]
+    H --> J[Native task journal and SQLite]
+    H --> G[Existing Gateway execution and receipts]
+    H --> E[Native events and exact settlement]
+    E --> R
+    R --> UI
+```
+
+Opening a Durable Session or reading its history never resumes its scheduler.
+Unfinished work appears paused with an explicit continuation action. The action
+targets the original `(sessionId, turnId, clientMessageId)` rather than resending
+the prompt. Late ACKs, historical snapshots and foreign Session metadata cannot
+replace the current recovery authority. Host/process loss does not prove idle
+or completion. Stop targets the original native submission and waits for its
+owned physical work; new input is rejected while that Stop is draining. A stale
+Stop cannot abort a successor generation.
+
+Gateway tools retain their existing admission, exact request identity and saved
+reply. Durable tool ownership is captured from the native ToolTask and its
+generation before awaiting a capacity slot or HTTP. Unsafe tools are not replayed
+after an execution-intent checkpoint; safe replay requires both stored and
+current policy. This is not an exactly-once guarantee for arbitrary external
+effects. Full public history reads native entries independently of the compacted
+model-context head; recent history remains a bounded suffix and cannot overwrite
+the persisted total message count.
+
+Durable currently supports text, Gateway tools, compaction, exact Stop and
+explicit resume. Native MCP, Code Mode, managed plugins/Skills, images and
+conversation fork/rewrite remain unavailable for this engine. Capability gates
+apply at the UI and execution boundary, preserving rejected drafts and attached
+images; unsupported operations never silently switch the Session to Classic.
 
 Ordinary Room WorkItems remain valid outside JEV. The shared WorkStore reads
 JEV verification only when the persisted `(room_id, root_turn_id)` belongs to a

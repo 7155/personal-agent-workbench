@@ -150,6 +150,7 @@ class AgentRoleApplicationService:
             "selected": selected,
             "thinkingLevel": "off",
             "providers": providers,
+            "sessionEngines": dict(_session_engine_capabilities(self.runtime)),
         }
 
     def update_runtime_defaults(
@@ -340,6 +341,18 @@ class AgentRoleApplicationService:
             and str(model.get("provider") or "")
             and str(model.get("id") or "")
         }
+
+
+def _session_engine_capabilities(runtime: RuntimeModelCatalog) -> dict[str, object]:
+    status_provider = getattr(runtime, "runtime_status", None)
+    status = status_provider() if callable(status_provider) else {}
+    capabilities = status.get("capabilities") if isinstance(status, Mapping) else {}
+    engines = capabilities.get("sessionEngines") if isinstance(capabilities, Mapping) else {}
+    durable = engines.get("durable") if isinstance(engines, Mapping) else {}
+    return {"classic": {"available": True}, "durable": {
+        "available": isinstance(durable, Mapping) and durable.get("available") is True,
+        "experimental": True, "version": "1",
+    }}
 
 
 def _provider_display_name(provider: str) -> str:

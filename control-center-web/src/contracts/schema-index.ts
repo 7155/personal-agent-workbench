@@ -6658,6 +6658,65 @@ export const contractSchemas = {
         "type": "string",
         "minLength": 1
       },
+      "runtimeEngine": {
+        "type": "string",
+        "enum": [
+          "classic",
+          "durable"
+        ]
+      },
+      "engineCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gatewayTools",
+          "compaction",
+          "resume",
+          "exactAbort",
+          "nativeMcp",
+          "codemode",
+          "managedPlugins",
+          "conversationFork",
+          "conversationRewrite",
+          "commandCatalog",
+          "images"
+        ],
+        "properties": {
+          "gatewayTools": {
+            "type": "boolean"
+          },
+          "compaction": {
+            "type": "boolean"
+          },
+          "resume": {
+            "type": "boolean"
+          },
+          "exactAbort": {
+            "type": "boolean"
+          },
+          "nativeMcp": {
+            "type": "boolean"
+          },
+          "codemode": {
+            "type": "boolean"
+          },
+          "managedPlugins": {
+            "type": "boolean"
+          },
+          "conversationFork": {
+            "type": "boolean"
+          },
+          "conversationRewrite": {
+            "type": "boolean"
+          },
+          "commandCatalog": {
+            "type": "boolean"
+          },
+          "images": {
+            "type": "boolean"
+          }
+        }
+      },
       "selected": {
         "type": [
           "object",

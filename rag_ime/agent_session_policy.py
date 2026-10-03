@@ -95,6 +95,9 @@ class AgentSessionPolicyService:
             "schemaVersion": "rag-ime.agent-model-catalog.v1",
             "ok": True,
             "sessionId": session_id,
+            "runtimeEngine": str(self.sessions.get(session_id).get("runtimeEngine") or "classic"),
+            **({"engineCapabilities": dict(catalog["engineCapabilities"])}
+               if isinstance(catalog.get("engineCapabilities"), Mapping) else {}),
             "selected": selected,
             "thinkingLevel": str(
                 catalog.get("thinkingLevel") or "off"
@@ -350,6 +353,8 @@ class AgentSessionPolicyService:
         payload: Mapping[str, object],
     ) -> dict[str, object]:
         session = self.sessions.get(session_id)
+        if session.get("runtimeEngine") == "durable" and (payload.get("piSkillsEnabled") or payload.get("codexSkillsEnabled")):
+            raise ValueError("Durable Sessions do not support Skills")
         runtime_policy_update = _has_runtime_policy_update(payload)
         disclosure_update = "capabilityDisclosurePreferences" in payload
         if runtime_policy_update:

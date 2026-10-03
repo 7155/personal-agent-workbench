@@ -5,6 +5,18 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Add explicit experimental Pi Durable execution for new standalone Sessions:
+  passive history/reopen, continuation of the original admitted task, exact
+  cancellation with physical drain, and native history independent of model
+  compaction. Preserve Classic Sessions, Room/Lab owners and uncertain Tool
+  effects. Unsupported image/plugin/branch actions retain the user's draft.
+- Make the work desktop searchable with readable project context and bounded
+  folder expansion. Keep the existing spatial desktop as an explicit view;
+  remove the retired desktop lede and its leftover delayed App entrance.
+- Use one collaboration timeline and shared planet art for Room status and
+  communication. Default to continuous conversation reading while retaining
+  original execution identities and an explicit execution-record view.
+
 - Honor existing HTTP/HTTPS proxies when hydrating the pinned native Electron
   runtime, retaining explicit proxy policy and checksum verification.
 

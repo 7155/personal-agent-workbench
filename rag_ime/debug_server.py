@@ -10501,6 +10501,9 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                 )
             elif agent_session_id and agent_action == "abort":
                 self._write_json(HTTPStatus.OK, self.service.agent.abort(agent_session_id))
+            elif agent_session_id and agent_action == "resume":
+                self.service.require_agent_runtime_execution_owner()
+                self._write_json(HTTPStatus.ACCEPTED, self.service.agent.resume_session(agent_session_id, payload))
             elif agent_session_id and agent_action == "review":
                 self._write_json(
                     HTTPStatus.OK,

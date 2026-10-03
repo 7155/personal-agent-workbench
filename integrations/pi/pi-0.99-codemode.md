@@ -130,14 +130,16 @@ the migration receipt/checksum contract.
 ## Durable scope
 
 `@earendil-works/pi-durable@1.0.0` is still marked experimental upstream. Its
-Session, task state and JSONL/SQLite storage are separate from the classic
-coding-agent `SessionManager`. The compatibility candidate preserves the
-classic JSONL product path. Durable recovery is verified separately with a
-faux model and newly created isolated storage; no existing Session data is
-migrated and no Room execution owner is replaced. Upstream 1.0.0 does not include
-the candidate's legacy SQLite schema rejection guard. Never point a new durable
-runtime at an existing product or experimental database without a separately
-verified migration.
+Session, task state and SQLite storage are separate from the classic
+coding-agent `SessionManager`. The paired Host now exposes an explicit opt-in
+for new standalone product Sessions; Classic remains the default for existing
+Sessions, Rooms and Lab. Follow the [Durable product guide](pi-durable.md) for
+creation, passive reopen, exact continuation and feature limits. Native behavior,
+staged payload, configured Provider and installed foreground are separate
+validation boundaries. No existing Session data is converted and no Room
+execution owner is replaced. Upstream 1.0.0 does not include the candidate's
+legacy SQLite schema rejection guard. Never point a new Durable runtime at an
+existing product or experimental database without a separately verified migration.
 
 ## Native codemode product behavior
 

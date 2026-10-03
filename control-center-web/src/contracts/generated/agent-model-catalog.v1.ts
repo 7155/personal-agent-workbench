@@ -8,6 +8,20 @@ export interface AgentModelCatalogV1 {
   schemaVersion: 'rag-ime.agent-model-catalog.v1';
   ok: true;
   sessionId: string;
+  runtimeEngine?: 'classic' | 'durable';
+  engineCapabilities?: {
+    gatewayTools: boolean;
+    compaction: boolean;
+    resume: boolean;
+    exactAbort: boolean;
+    nativeMcp: boolean;
+    codemode: boolean;
+    managedPlugins: boolean;
+    conversationFork: boolean;
+    conversationRewrite: boolean;
+    commandCatalog: boolean;
+    images: boolean;
+  };
   selected: {
     [k: string]: unknown;
   } | null;

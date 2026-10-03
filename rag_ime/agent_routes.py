@@ -25,6 +25,7 @@ def agent_session_route(path: str) -> tuple[str, str]:
         "rewrite",
         "forks",
         "abort",
+        "resume",
         "review",
         "ui-response",
         "compact",

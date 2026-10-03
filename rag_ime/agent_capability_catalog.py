@@ -285,7 +285,9 @@ def _tool_item(
                 else "denied"
             ),
             "reason": (
-                "existing_session_policy_authorizes_tool"
+                "durable_engine_unsupported"
+                if session is not None and session.get("runtimeEngine") == "durable" and tool_id == "plugins"
+                else "existing_session_policy_authorizes_tool"
                 if authorized
                 else "session_context_required"
                 if session is None
@@ -393,6 +395,9 @@ def _skill_items(
             if scenario_allowed
             else "scenario_policy"
         )
+        if session is not None and session.get("runtimeEngine") == "durable":
+            authorization_state = "denied"
+            authorization_reason = "durable_engine_unsupported"
         risk = {"low": "R0", "medium": "R1", "high": "R2"}.get(
             str(value.get("risk") or ""), "R2"
         )
@@ -472,7 +477,8 @@ def _extension_items(
         permissions = [
             str(permission) for permission in value.get("permissions") or []
         ]
-        enabled = session is not None and value.get("enabled") is True
+        durable_unavailable = session is not None and session.get("runtimeEngine") == "durable"
+        enabled = session is not None and value.get("enabled") is True and not durable_unavailable
         source = value.get("source")
         source_label = (
             str(source.get("label") or "")
@@ -502,6 +508,9 @@ def _extension_items(
                         else "denied"
                     ),
                     "reason": (
+                        "durable_engine_unsupported"
+                        if durable_unavailable
+                        else
                         "installed_extension_enabled"
                         if enabled
                         else "session_context_required"
@@ -625,6 +634,11 @@ def _capability_disclosure(
         project_preferences=project_preferences,
         session_preferences=session_preferences,
     )
+    if session is not None and session.get("runtimeEngine") == "durable" and (
+        canonical_id.startswith(("skill:", "extension:")) or canonical_id == "tool:plugins"
+    ):
+        return {**disclosure, "effective": "disabled", "state": "hidden",
+                "reason": "durable_engine_unsupported", "scope": "session"}
     if (
         session is None
         or not unrestricted_workspace_policy_active(session)

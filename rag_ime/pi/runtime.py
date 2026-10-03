@@ -107,6 +107,10 @@ _PROMPT_TIMEOUT_SECONDS = 60.0 * 60.0
 _DURABLE_TRANSCRIPT_MAX_BYTES = 64 * 1024 * 1024
 _DURABLE_TRANSCRIPT_MAX_LINES = 200_000
 _SESSION_RESOURCE_SNAPSHOT_SCHEMA = "rag-ime.pi-session-resource-snapshot.v1"
+_DURABLE_ENGINE_CAPABILITIES = frozenset({"gatewayTools", "compaction", "resume", "exactAbort",
+    "nativeMcp", "codemode", "managedPlugins", "conversationFork", "conversationRewrite", "commandCatalog", "images"})
+_DURABLE_UNSUPPORTED_CAPABILITIES = frozenset({"nativeMcp", "codemode", "managedPlugins",
+    "conversationFork", "conversationRewrite", "commandCatalog", "images"})
 
 
 @dataclass
@@ -189,6 +193,8 @@ def _record_plugin_usage_notice(
 
 @dataclass
 class _HostedSessionState:
+    runtime_engine: str = "classic"
+    recoverable: bool = False
     turn_id: str = ""
     client_message_id: str = ""
     prompt_admission_in_flight: bool = False
@@ -317,6 +323,9 @@ class PiRuntimeHostManager:
         this public projection.
         """
 
+        if session.get("runtimeEngine") == "durable":
+            return None
+
         capability_available = (
             codemode_capability(self._host_capabilities.get("codemode")).get(
                 "available"
@@ -417,6 +426,12 @@ class PiRuntimeHostManager:
             "capabilities": {
                 "rpc": installed,
                 "sessions": True,
+                "sessionEngines": {
+                    "classic": {"available": True},
+                    "durable": {"available": host_negotiated and as_mapping(
+                        as_mapping(capabilities.get("sessionEngines")).get("durable")
+                    ).get("available") is True, "experimental": True, "version": "1"},
+                },
                 "conversationFork": (
                     bool(capabilities.get("conversationFork"))
                     if host_negotiated
@@ -483,6 +498,7 @@ class PiRuntimeHostManager:
                 and state.turn_id == turn_id
                 and state.client_message_id == client_message_id
                 and state.abort_requested_turn_id != turn_id
+                and not state.recoverable
             )
 
     def is_gateway_turn_active(self, session_id: str, turn_id: str, *, client_message_id: str) -> bool:
@@ -498,7 +514,7 @@ class PiRuntimeHostManager:
             state = self._states.get(session_id)
             client = self._client
             if (client is None or not client.running or session_id not in self._open_sessions
-                or state is None or state.abort_pending_admission
+                or state is None or state.recoverable or state.abort_pending_admission
                 or state.abort_requested_turn_id or turn_id in state.retired_turn_ids
                 or (session_id, turn_id) in self._retired_host_turns):
                 return False
@@ -667,14 +683,16 @@ class PiRuntimeHostManager:
         _sync_codemode: bool = True,
     ) -> dict[str, object]:
         with self._lifecycle_lock:
-            if not self.config.model_configured:
+            session = dict(self.sessions.get(session_id))
+            if not self.config.model_configured and session.get("runtimeEngine") != "durable":
                 raise PiRuntimeError(
                     self.config.model_configuration_error
                     or "Pi model is not configured"
                 )
             client = self._host()
-            session = dict(self.sessions.get(session_id))
             binding = self.sessions.runtime_binding(session_id)
+            if session.get("runtimeEngine") == "durable":
+                return self._ensure_durable(session_id, session, binding, client)
             resource_snapshot = _bound_session_resource_snapshot(binding)
             if binding is not None:
                 if (
@@ -1073,12 +1091,200 @@ class PiRuntimeHostManager:
                 ),
             }
 
+    def _is_durable(self, session_id: str) -> bool:
+        with self._lock:
+            state = self._states.get(session_id)
+            if state is not None:
+                return state.runtime_engine == "durable"
+        sessions = getattr(self, "sessions", None)
+        return sessions is not None and sessions.get(session_id).get("runtimeEngine") == "durable"
+
+    def require_session_engine(self, engine: str) -> None:
+        """Negotiate an opt-in before creating or opening execution storage."""
+        if engine == "classic":
+            return
+        if engine != "durable":
+            raise ValueError("runtime engine must be classic or durable")
+        with self._lifecycle_lock:
+            self._host()
+            capability = as_mapping(as_mapping(self._host_capabilities.get("sessionEngines")).get("durable"))
+            if capability.get("available") is not True or capability.get("version") != "1":
+                raise PiRuntimeError("Pi Runtime Host does not support Durable Sessions")
+
+    def _require_classic_control(self, session_id: str, control: str) -> None:
+        if self._is_durable(session_id):
+            raise PiRuntimeError(f"Durable Sessions do not support {control}")
+
+    def _ensure_durable(
+        self, session_id: str, session: Mapping[str, object],
+        binding: Mapping[str, object] | None, client: PiRuntimeHostClient,
+    ) -> dict[str, object]:
+        self.require_session_engine("durable")
+        if binding is None or binding.get("driverId") != self.driver_id or binding.get("runtimeKind") != "pi_durable":
+            raise PiRuntimeError("Durable Session has an incompatible runtime binding")
+        durable_root = self.config.session_dir.expanduser().resolve(strict=False) / "durable"
+        if durable_root.is_symlink():
+            raise PiRuntimeError("Durable Session storage root must not be a symlink")
+        root = durable_root.resolve(strict=False)
+        # Store-created opaque IDs are the directory identity, never a caller path.
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:_-]{0,239}", session_id):
+            raise PiRuntimeError("Durable Session identity is invalid")
+        store_ref = (root / session_id).resolve(strict=False)
+        if not path_is_within(store_ref, root) or (root / session_id).is_symlink():
+            raise PiRuntimeError("Durable Session storage is outside its managed root")
+        prior_ref = str(binding.get("transcriptRef") or "")
+        if prior_ref and Path(prior_ref).expanduser().resolve(strict=False) != store_ref:
+            raise PiRuntimeError("Durable Session storage does not match its immutable binding")
+        with self._lock:
+            opened = session_id in self._open_sessions
+        evicted = ""
+        if opened:
+            snapshot = dict(client.send("session.control_state", {"sessionId": session_id}))
+        else:
+            roots = list(session.get("workspaceRoots") or [])
+            enriched = dict(session)
+            if self._session_context_provider is not None:
+                enriched.update(dict(self._session_context_provider(enriched)))
+            provider, model_id = self.config.resolved_model_reference(session)
+            params: dict[str, object] = {
+                "sessionId": session_id, "runtimeEngine": "durable", "durableStoreRef": store_ref.as_posix(),
+                "cwd": str(roots[0]) if roots else str(self.config.agent_dir),
+                "systemPrompt": self.config.system_prompt_for_session(enriched),
+                "toolManifest": self.tool_catalog(session_id), "nativeMcpExecutionAllowed": False,
+                "piSkillsEnabled": False, "codexSkillsEnabled": False,
+            }
+            if enriched.get("sessionContext"):
+                params["sessionContext"] = enriched["sessionContext"]
+            if provider and model_id:
+                params.update(provider=provider, modelId=model_id)
+            if session.get("thinkingLevel"):
+                params["thinkingLevel"] = session["thinkingLevel"]
+            opened_result = client.send("session.open", params, timeout=max(60.0, self.config.command_timeout_seconds))
+            snapshot = dict(as_mapping(opened_result.get("snapshot")))
+            evicted = str(opened_result.get("evictedSessionId") or "")
+        self._validate_durable_state(session_id, snapshot, store_ref=store_ref, control=opened)
+        self._validate_durable_binding(snapshot, binding)
+        metadata = {**dict(as_mapping(binding.get("metadata"))), "runtimeEngine": "durable",
+                    "durableConversationId": snapshot["durableConversationId"],
+                    "engineCapabilities": dict(as_mapping(snapshot.get("engineCapabilities"))),
+                    "protocolVersion": PI_HOST_PROTOCOL_VERSION}
+        if not opened:
+            self.sessions.bind_runtime_session(session_id, driver_id=self.driver_id, runtime_kind="pi_durable",
+                external_session_id=str(snapshot["piSessionId"]), transcript_ref=store_ref.as_posix(),
+                branch_anchor=str(snapshot.get("leafId") or ""), metadata=metadata,
+                message_count=as_integer(session.get("messageCount")))
+        self._observe_durable_state(session_id, snapshot)
+        with self._lock:
+            self._open_sessions.add(session_id)
+            if evicted:
+                self._open_sessions.discard(evicted)
+                evicted_state = self._states.pop(evicted, None)
+                if evicted_state is not None:
+                    if evicted_state.abort_timer is not None:
+                        evicted_state.abort_timer.cancel()
+                    if evicted_state.settle_timer is not None:
+                        evicted_state.settle_timer.cancel()
+            self._schedule_idle_locked()
+        return {"state": snapshot, "session": self.sessions.get(session_id), "reused": opened,
+                "evictedSessionId": evicted or None,
+                "engineCapabilities": metadata["engineCapabilities"]}
+
+    @staticmethod
+    def _validate_durable_binding(snapshot: Mapping[str, object], binding: Mapping[str, object]) -> None:
+        if binding.get("state") != "prepared":
+            metadata = as_mapping(binding.get("metadata"))
+            if (snapshot.get("piSessionId") != binding.get("externalSessionId")
+                or snapshot.get("durableConversationId") != metadata.get("durableConversationId")
+                or snapshot.get("durableStoreRef") != binding.get("transcriptRef")):
+                raise PiRuntimeError("Pi Durable state belongs to another storage binding")
+
+    @staticmethod
+    def _validate_durable_state(
+        session_id: str, state: Mapping[str, object], *, store_ref: Path | None = None, control: bool = False,
+    ) -> None:
+        if (state.get("sessionId") != session_id or state.get("runtimeEngine") != "durable"
+            or not isinstance(state.get("isIdle"), bool)
+            or not isinstance(state.get("paused"), bool) or not isinstance(state.get("recoverable"), bool)
+            or not str(state.get("piSessionId") or "") or not str(state.get("durableConversationId") or "")
+            or not isinstance(state.get("engineCapabilities"), Mapping)
+            or not str(state.get("durableStoreRef") or "")
+            or (control and state.get("schemaVersion") != "rag-ime.pi-session-control-state.v1")
+            or (store_ref is not None and str(state["durableStoreRef"]) != store_ref.as_posix())):
+            raise PiRuntimeError("Pi returned invalid Durable Session state")
+        active = as_mapping(state.get("activeTurn"))
+        if active and (not str(active.get("turnId") or "") or not str(active.get("clientMessageId") or "")):
+            raise PiRuntimeError("Pi Durable active input has no exact identity")
+        if state["recoverable"] and (not state["paused"] or state["isIdle"] or not active):
+            raise PiRuntimeError("Pi Durable recovery state is inconsistent")
+        capabilities = as_mapping(state.get("engineCapabilities"))
+        if (set(capabilities) != _DURABLE_ENGINE_CAPABILITIES
+            or any(not isinstance(value, bool) for value in capabilities.values())
+            or any(capabilities[key] for key in _DURABLE_UNSUPPORTED_CAPABILITIES)):
+            raise PiRuntimeError("Pi returned incompatible Durable engine capabilities")
+
+    def _observe_durable_state(self, session_id: str, snapshot: Mapping[str, object]) -> None:
+        active = as_mapping(snapshot.get("activeTurn"))
+        with self._lock:
+            state = self._states.setdefault(session_id, _HostedSessionState())
+            state.runtime_engine = "durable"
+            state.recoverable = snapshot.get("recoverable") is True
+            if active:
+                if state.turn_id and (state.turn_id != active["turnId"] or state.client_message_id != active["clientMessageId"]):
+                    raise PiRuntimeTurnConflict("Durable observation belongs to a different input")
+                state.turn_id = str(active["turnId"])
+                state.client_message_id = str(active["clientMessageId"])
+                self._status = "busy"
+                self._cancel_idle_locked()
+                self.sessions.set_status(session_id, "busy")
+            elif not state.turn_id and not state.prompt_admission_in_flight and snapshot.get("isIdle") is True:
+                self.sessions.set_status(session_id, "idle")
+        settlement = as_mapping(snapshot.get("turnSettlement"))
+        if settlement and as_mapping(settlement.get("receipt")).get("disposition") != "suspended":
+            validated = self._validate_turn_settlement(settlement, session_id=session_id,
+                turn_id=str(settlement.get("turnId") or ""), client_message_id=str(settlement.get("clientMessageId") or ""))
+            self._reconcile_turn_settlement(validated)
+
+    def resume_session(self, session_id: str, *, turn_id: str, client_message_id: str) -> dict[str, object]:
+        """Resume one admitted native input; never submit it again."""
+        if not self._is_durable(session_id):
+            raise PiRuntimeError("Session resume requires a Durable Session")
+        if not turn_id or not client_message_id:
+            raise ValueError("resume requires the original turn and client identity")
+        prepared = self.ensure(session_id, retire_recovered_turn=False)
+        active = as_mapping(as_mapping(prepared.get("state")).get("activeTurn"))
+        if active and (active.get("turnId") != turn_id or active.get("clientMessageId") != client_message_id):
+            raise PiRuntimeTurnConflict("Durable resume belongs to a different input")
+        identity = {"sessionId": session_id, "turnId": turn_id, "clientMessageId": client_message_id}
+        client = self._require_client()
+        def require_original_input() -> None:
+            with self._lock:
+                state = self._states.get(session_id)
+                if (self._client is not client or state is None or state.abort_requested_turn_id
+                    or state.abort_pending_admission or (state.turn_id and (
+                        state.turn_id != turn_id or state.client_message_id != client_message_id))):
+                    raise PiRuntimeTurnConflict("Durable resume lost its original input ownership")
+        result = client.send("session.resume", identity, before_write=require_original_input)
+        if (result.get("schemaVersion") != "rag-ime.pi-session-resume.v1" or result.get("runtimeEngine") != "durable"
+            or result.get("accepted") is not True or not isinstance(result.get("resumed"), bool)
+            or result.get("turnId") != turn_id or result.get("clientMessageId") != client_message_id):
+            raise PiRuntimeError("Pi returned an invalid Durable resume receipt")
+        snapshot = as_mapping(result.get("state"))
+        self._validate_durable_state(session_id, snapshot, control=True)
+        if result["resumed"] is False:
+            settlement = as_mapping(result.get("settlement"))
+            validated = self._validate_turn_settlement(settlement, session_id=session_id, turn_id=turn_id, client_message_id=client_message_id)
+            self._reconcile_turn_settlement(validated)
+        self._observe_durable_state(session_id, snapshot)
+        return dict(result)
+
     def retire_recovered_turn(
         self,
         session_id: str,
         expected_turn_id: str,
     ) -> dict[str, object]:
         """Explicitly retire one interrupted durable turn after Host restart."""
+
+        self._require_classic_control(session_id, "Classic recovered-turn retirement")
 
         normalized_turn_id = str(expected_turn_id).strip()
         if not normalized_turn_id:
@@ -1185,6 +1391,11 @@ class PiRuntimeHostManager:
     ) -> dict[str, object] | None:
         """Project Pi's run lifecycle into product status, not Host residency."""
 
+        if self._is_durable(session_id):
+            self._validate_durable_state(session_id, snapshot)
+            self._observe_durable_state(session_id, snapshot)
+            return self.sessions.get(session_id)
+
         if not bool(snapshot.get("isIdle")):
             return None
         with self._lock:
@@ -1221,11 +1432,13 @@ class PiRuntimeHostManager:
         """
 
         normalized_client_message_id = str(client_message_id).strip()
+        runtime_engine = "durable" if self.sessions.get(session_id).get("runtimeEngine") == "durable" else "classic"
         with self._lock:
             state = self._states.setdefault(
                 session_id,
                 _HostedSessionState(),
             )
+            state.runtime_engine = runtime_engine
             same_reservation = (
                 state.prompt_admission_in_flight
                 and state.admission_client_message_id
@@ -1398,6 +1611,10 @@ class PiRuntimeHostManager:
         client_message_id: str = "",
         delivery: str = "prompt",
     ) -> dict[str, object]:
+        if self._is_durable(session_id) and not str(client_message_id).strip():
+            raise ValueError("Durable prompt requires a client message identity")
+        if images and self._is_durable(session_id):
+            raise PiRuntimeError("Durable Sessions do not support images")
         text = str(message).strip()
         if not text:
             raise ValueError("agent prompt must not be empty")
@@ -1460,6 +1677,16 @@ class PiRuntimeHostManager:
             client = self._require_client()
             method = "session.steer" if normalized_delivery == "steer" else "session.follow_up"
             response = client.send(method, params)
+            if self._is_durable(session_id):
+                if (response.get("accepted") is not True or not str(response.get("turnId") or "")
+                    or response.get("clientMessageId") != str(client_message_id).strip()):
+                    raise PiRuntimeError("Pi returned an invalid Durable queued input receipt")
+                # A follow-up is a distinct submission. It does not steal the
+                # predecessor's current run/Gateway ownership at queue ACK.
+                return {"accepted": True, "queued": True, "delivery": normalized_delivery,
+                    "turnId": response["turnId"], "clientMessageId": response["clientMessageId"],
+                    "piEntryId": str(response.get("piEntryId") or f"queue:{client_message_id}"),
+                    "response": response}
             response_turn_id = str(response.get("turnId") or turn_id)
             with self._lock:
                 state = self._states.setdefault(
@@ -2089,6 +2316,9 @@ class PiRuntimeHostManager:
     ) -> dict[str, object] | None:
         """Read an idle managed Pi transcript without opening Provider context."""
 
+        if self._is_durable(session_id):
+            return None
+
         try:
             session = self.sessions.get(session_id)
             binding = self.sessions.runtime_binding(session_id) or {}
@@ -2208,6 +2438,9 @@ class PiRuntimeHostManager:
         falls back to ``_durable_history_snapshot``.
         """
 
+        if self._is_durable(session_id):
+            return None
+
         try:
             session = self.sessions.get(session_id)
             binding = self.sessions.runtime_binding(session_id) or {}
@@ -2314,6 +2547,8 @@ class PiRuntimeHostManager:
         identity = self._recent_projection_identity(session_id)
         if identity is None:
             return
+        if self._is_durable(session_id):
+            return
         try:
             transcript = Path(str(identity["transcriptRef"]))
             tail = read_recent_transcript_tail(
@@ -2366,6 +2601,7 @@ class PiRuntimeHostManager:
         session_id: str,
         *,
         durable_fallback: bool = True,
+        view: str = "",
     ) -> dict[str, object]:
         """Read one Session without rebuilding context when it is resident.
 
@@ -2374,6 +2610,19 @@ class PiRuntimeHostManager:
         managed durable JSONL before taking the Host lifecycle lock, so a slow
         command/context open cannot hold the conversation rail behind it.
         """
+
+        if self._is_durable(session_id):
+            with self._lifecycle_lock:
+                with self._lock:
+                    opened = session_id in self._open_sessions
+                if not opened:
+                    self.ensure(session_id, retire_recovered_turn=False)
+                snapshot = dict(self._require_client().send("session.snapshot", {"sessionId": session_id,
+                    **({"view": view} if view else {})}))
+                self._validate_durable_state(session_id, snapshot)
+                self._validate_durable_binding(snapshot, self.sessions.runtime_binding(session_id) or {})
+                self._observe_durable_state(session_id, snapshot)
+                return snapshot
 
         with self._lock:
             active_turn = self._states.get(session_id)
@@ -2444,9 +2693,10 @@ class PiRuntimeHostManager:
         return {"sessionId": session_id, "turnId": turn_id, "toolHistoryEvents": [
             event for event in events if event.get("eventType") in {"tool_started", "tool_finished"}]}
 
-    def session_snapshot(self, session_id: str) -> dict[str, object]:
+    def session_snapshot(self, session_id: str, *, _view: str = "") -> dict[str, object]:
         session = self.sessions.get(session_id)
         binding = self.sessions.runtime_binding(session_id)
+        durable_engine = session.get("runtimeEngine") == "durable"
         if session.get("evaluationSnapshot") is True:
             # Imported evaluation transcripts are immutable evidence.  Reading
             # one must never start, resume, or rebind a Provider Runtime; the
@@ -2458,8 +2708,10 @@ class PiRuntimeHostManager:
                 )
         else:
             try:
-                snapshot = self._inspection_snapshot(session_id)
+                snapshot = self._inspection_snapshot(session_id, **({"view": _view} if durable_engine and _view else {}))
             except AgentRuntimeError:
+                if durable_engine:
+                    raise
                 # A transient Host failure is not evidence that the Session has no
                 # history. The append-only Pi transcript remains readable even when
                 # Provider context inspection is unavailable; use it as the
@@ -2469,7 +2721,7 @@ class PiRuntimeHostManager:
                 if snapshot is None:
                     raise
         raw_messages = snapshot.get("messages") if isinstance(snapshot.get("messages"), list) else []
-        raw_entries = snapshot.get("entries") if isinstance(snapshot.get("entries"), list) else []
+        raw_entries = (snapshot.get("entries") if isinstance(snapshot.get("entries"), list) else []) if not durable_engine else []
         durable_messages, durable_entries = durable_branch_messages(
             raw_entries,
             leaf_id=str(snapshot.get("leafId") or ""),
@@ -2523,6 +2775,8 @@ class PiRuntimeHostManager:
             timeline_sequence = ordinal_queue.popleft() if ordinal_queue else None
             role = str(raw.get("role") or "assistant").lower()
             message_id = pi_message_id(raw, "history")
+            if durable_engine and raw.get(DURABLE_TURN_ID_KEY):
+                current_turn_id = str(raw[DURABLE_TURN_ID_KEY])
             if (
                 role == "user"
                 and not pi_message_continues_public_turn(raw)
@@ -2572,7 +2826,7 @@ class PiRuntimeHostManager:
                 # twice after a native follow-up. Its JSONL transcript contains
                 # one message, so collapse only an adjacent exact duplicate in
                 # the same user turn. Identical replies in later turns remain.
-                if fingerprint == last_assistant_fingerprint:
+                if not durable_engine and fingerprint == last_assistant_fingerprint:
                     continue
                 last_assistant_fingerprint = fingerprint
                 emitted_assistant_counts[projection_fingerprint] = (
@@ -2601,6 +2855,13 @@ class PiRuntimeHostManager:
             "toolHistoryEvents": tool_history_events,
             "telemetry": dict(telemetry) if isinstance(telemetry, Mapping) else None,
             "messageQueue": message_queue,
+            **({"runtimeEngine": "durable", "recoverable": snapshot.get("recoverable") is True,
+                "paused": snapshot.get("paused") is True,
+                "activeTurn": dict(as_mapping(snapshot.get("activeTurn"))) or None,
+                "engineCapabilities": dict(as_mapping(snapshot.get("engineCapabilities"))),
+                "partial": snapshot.get("partial") is True,
+                "historyCursor": snapshot.get("historyCursor"),
+                "projectionCurrent": snapshot.get("projectionCurrent") is True} if durable_engine else {}),
             **self._codemode_payload(effective_codemode_mode),
         }
 
@@ -2612,6 +2873,11 @@ class PiRuntimeHostManager:
         an honestly empty window; this read never falls through to the live
         Host or the full historical Tool-event reconstruction.
         """
+
+        if self._is_durable(session_id):
+            # Native committed history is the authority. No local JSONL or
+            # main-file fingerprint is valid for SQLite/WAL state.
+            return self.session_snapshot(session_id, _view="recent")
 
         session = self.sessions.get(session_id)
         binding = self.sessions.runtime_binding(session_id)
@@ -2753,6 +3019,8 @@ class PiRuntimeHostManager:
         self,
         session_id: str,
     ) -> dict[str, object] | None:
+        if self._is_durable(session_id):
+            return None
         """Resolve the exact immutable file view that may reuse a projection."""
 
         try:
@@ -3052,6 +3320,7 @@ class PiRuntimeHostManager:
         return dict(result)
 
     def rewind_session(self, session_id: str, *, entry_id: str) -> dict[str, object]:
+        self._require_classic_control(session_id, "conversation rewrite")
         normalized_entry_id = str(entry_id or "").strip()
         if not normalized_entry_id:
             raise ValueError("conversation rewrite entryId must not be empty")
@@ -3095,6 +3364,7 @@ class PiRuntimeHostManager:
                     self.sessions.set_status(session_id, "idle")
 
     def fork_candidates(self, session_id: str) -> list[dict[str, object]]:
+        self._require_classic_control(session_id, "conversation fork")
         with self._lifecycle_lock:
             self._require_idle_fork_session(session_id)
             try:
@@ -3119,6 +3389,8 @@ class PiRuntimeHostManager:
         *,
         entry_id: str,
     ) -> dict[str, object]:
+        self._require_classic_control(source_session_id, "conversation fork")
+        self._require_classic_control(target_session_id, "conversation fork")
         normalized_entry_id = str(entry_id or "").strip()
         if not normalized_entry_id:
             raise ValueError("conversation fork entryId must not be empty")
@@ -3323,6 +3595,8 @@ class PiRuntimeHostManager:
         return candidates
 
     def command_catalog(self, session_id: str) -> list[dict[str, object]]:
+        if self._is_durable(session_id):
+            return []
         # Catalog inspection must not rebuild generic RAG/memory context for an
         # already resident Session. That projection is needed when opening or
         # rebinding a Provider turn, not when listing slash commands.
@@ -3358,6 +3632,10 @@ class PiRuntimeHostManager:
 
     def native_capabilities(self, session_id: str) -> dict[str, object]:
         """Inspect the resident Pi owner, without a Provider turn or MCP reconnect."""
+        if self._is_durable(session_id):
+            return {"schemaVersion": "rag-ime.pi-native-capabilities.v1", "sessionId": session_id,
+                "runtimeEngine": "durable", "codemodeMode": None,
+                "mcp": {"available": False, "active": False, "configErrorCount": 0, "servers": []}, "tools": []}
         self._inspection_snapshot(session_id, durable_fallback=False)
         response = self._require_client().send("tools.list", {"sessionId": session_id})
         raw = response.get("nativeCapabilities")
@@ -3418,6 +3696,8 @@ class PiRuntimeHostManager:
         never starts a turn or retires a recovered one. The Host's command list
         is built from that Session's actual resource loader after Skill routing.
         """
+        if self._is_durable(session_id):
+            return []
         self.ensure(session_id, retire_recovered_turn=False)
         response = self._require_client().send(
             "session.commands", {"sessionId": session_id}
@@ -3440,6 +3720,7 @@ class PiRuntimeHostManager:
         return skills
 
     def invoke_command(self, session_id: str, command: str) -> dict[str, object]:
+        self._require_classic_control(session_id, "slash commands")
         text = str(command).strip()
         if not text.startswith("/") or "\n" in text or "\r" in text:
             raise ValueError("Pi Package command must be one slash-command line")
@@ -3473,6 +3754,10 @@ class PiRuntimeHostManager:
         # the live capability catalog below.
         session = self.sessions.get(session_id)
         models = self.available_models()
+        engine_capabilities = None
+        if session.get("runtimeEngine") == "durable":
+            snapshot = as_mapping(self.ensure(session_id, retire_recovered_turn=False).get("state"))
+            engine_capabilities = dict(as_mapping(snapshot.get("engineCapabilities")))
         provider, model_id = self.config.resolved_model_reference(session)
         selected = next(
             (
@@ -3490,6 +3775,8 @@ class PiRuntimeHostManager:
                 session.get("thinkingLevel"),
                 selected or {},
             ),
+            "runtimeEngine": str(session.get("runtimeEngine") or "classic"),
+            **({"engineCapabilities": engine_capabilities} if engine_capabilities is not None else {}),
         }
 
     def available_models(self) -> list[dict[str, object]]:
@@ -3970,6 +4257,8 @@ class PiRuntimeHostManager:
         restarting or altering an active paid turn.
         """
 
+        self._require_classic_control(session_id, "Code Mode")
+
         requested = normalize_codemode_mode(mode)
         prepared = self.ensure(
             session_id,
@@ -4082,6 +4371,8 @@ class PiRuntimeHostManager:
         return [dict(item) for item in self._tool_manifest_provider(session)]
 
     def _native_mcp_execution_policy(self, session: Mapping[str, object]) -> bool:
+        if session.get("runtimeEngine") == "durable":
+            return False
         allowed = native_mcp_execution_allowed(session)
         if not allowed and self._host_capabilities.get("nativeMcpExecutionPolicy") is not True:
             raise PiRuntimeError(
@@ -4295,6 +4586,15 @@ class PiRuntimeHostManager:
         _before_abort: Callable[[Mapping[str, object]], None] | None = None,
         _expected_identity: Mapping[str, str] | None = None,
     ) -> dict[str, object]:
+        if self._is_durable(session_id):
+            with self._lock:
+                state = self._states.get(session_id)
+                local_unsent = state is not None and state.prompt_admission_in_flight and not state.prompt_dispatched
+                resident = session_id in self._open_sessions and self._client is not None and self._client.running
+            if not resident and not local_unsent:
+                # Cold Stop observes the original persisted input without
+                # resuming it; absence from Python memory does not prove idle.
+                self.ensure(session_id, retire_recovered_turn=False)
         abort_projection_failed = False
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
@@ -4486,6 +4786,8 @@ class PiRuntimeHostManager:
         response_turn_id = str(result.get("turnId") or "")
         pending_operations = lifecycle.get("pendingOperations")
         host_already_idle = (
+            not self._is_durable(session_id)
+            and
             not response_turn_id
             and lifecycle.get("schemaVersion") == "pi.agent-abort-receipt.v1"
             and lifecycle.get("idle") is True
@@ -4880,7 +5182,10 @@ class PiRuntimeHostManager:
                 classifications = tuple(self._classifications.values())
                 self._classifications.clear()
                 self._completion_sinks.clear()
-                self._states.clear()
+                self._states = {session_id: state for session_id, state in self._states.items()
+                    if state.runtime_engine == "durable" and (state.turn_id or state.prompt_admission_in_flight)}
+                for state in self._states.values():
+                    state.recoverable = True
                 self._status = "stopped" if self.config.enabled else "disabled"
                 projection_threads = tuple(self._recent_projection_threads)
             if client is not None:
@@ -4893,7 +5198,8 @@ class PiRuntimeHostManager:
                     thread.join(timeout=2)
             for session_id in session_ids:
                 try:
-                    self.sessions.set_status(session_id, "idle")
+                    if not self._is_durable(session_id):
+                        self.sessions.set_status(session_id, "idle")
                 except KeyError:
                     pass
 
@@ -5021,6 +5327,7 @@ class PiRuntimeHostManager:
         turn_id = str(envelope.get("turnId") or "")
         client_message_id = str(envelope.get("clientMessageId") or "")
         event_type = str(raw.get("type") or "")
+        durable_engine = self._is_durable(session_id)
         with self._lock:
             if (
                 turn_id
@@ -5041,6 +5348,9 @@ class PiRuntimeHostManager:
             # or reopen/replace a live turn; terminal fences still apply.
             if event_type != "queue_update":
                 state = self._states.setdefault(session_id, _HostedSessionState())
+                if durable_engine:
+                    state.runtime_engine = "durable"
+                    state.recoverable = False
                 if turn_id:
                     state.turn_id = turn_id
                     if state.abort_pending_admission:
@@ -5173,7 +5483,8 @@ class PiRuntimeHostManager:
                 session_id=session_id,
                 turn_id=turn_id,
                 media_resolver=self._media_resolver,
-                message_id=f"{turn_id}:assistant" if role == "assistant" else None,
+                message_id=(pi_message_id(raw_message, turn_id) if durable_engine else f"{turn_id}:assistant")
+                    if role == "assistant" else None,
                 trusted_blocks=trusted_blocks,
             )
             if not pi_message_completes_public_turn(raw_message):
@@ -5455,6 +5766,13 @@ class PiRuntimeHostManager:
             return
 
         if event_type == "agent_settled":
+            if durable_engine:
+                self._validate_turn_settlement({
+                    "schemaVersion": "rag-ime.pi-turn-settlement.v1", "sessionId": session_id,
+                    "turnId": turn_id, "clientMessageId": client_message_id,
+                    "runtimeSessionId": str(as_mapping(raw.get("receipt")).get("sessionId") or ""),
+                    "receipt": raw.get("receipt"),
+                }, session_id=session_id, turn_id=turn_id, client_message_id=client_message_id)
             failed_settlement = failed_settlement_receipt(
                 raw,
                 allow_aborted=False,
@@ -5527,7 +5845,7 @@ class PiRuntimeHostManager:
                         self.sessions.set_status(
                             session_id,
                             "idle",
-                            message_count=public_message_count,
+                            **({"message_count": public_message_count} if not durable_engine else {}),
                             last_message_preview=last_assistant_preview(messages),
                         )
                     state.turn_id = ""
@@ -5744,8 +6062,40 @@ class PiRuntimeHostManager:
         state.settle_timer = settle_timer
         settle_timer.start()
 
+    def _reconcile_durable_settlement(self, session_id: str, turn_id: str) -> None:
+        """One observational probe; idle/process loss never stands for drain."""
+        with self._lock:
+            state = self._states.get(session_id)
+            client = self._client
+            if state is None or state.turn_id != turn_id or client is None or not client.running:
+                return
+            client_message_id = state.client_message_id
+            state.settle_timer = None
+            state.abort_timer = None
+        try:
+            result = client.send("session.settlement.get", {"sessionId": session_id,
+                "turnId": turn_id, "clientMessageId": client_message_id}, timeout=2)
+            settlement = as_mapping(result.get("settlement"))
+            if settlement and as_mapping(settlement.get("receipt")).get("disposition") != "suspended":
+                validated = self._validate_turn_settlement(settlement, session_id=session_id,
+                    turn_id=turn_id, client_message_id=client_message_id)
+                self._reconcile_turn_settlement(validated)
+        except Exception:
+            # A missing terminal receipt remains recoverable/unknown; native
+            # settlement notification or an explicit lookup can close it later.
+            return
+
     def _settle_fallback_probe(self, session_id: str, turn_id: str) -> None:
         """Retire a turn only when the Host confirms it has no active work."""
+
+        with self._lock:
+            state = self._states.get(session_id)
+            if state is None or state.turn_id != turn_id:
+                return
+            durable_engine = state.runtime_engine == "durable"
+        if durable_engine:
+            self._reconcile_durable_settlement(session_id, turn_id)
+            return
 
         with self._lock:
             state = self._states.get(session_id)
@@ -5995,7 +6345,8 @@ class PiRuntimeHostManager:
             if self._intentional_stop:
                 return
             message = redact_runtime_text(error or f"Pi Runtime Host exited with code {exit_code}")
-            active = [(session_id, state.turn_id) for session_id, state in self._states.items() if state.turn_id]
+            active = [(session_id, state.turn_id) for session_id, state in self._states.items()
+                      if state.turn_id and state.runtime_engine != "durable"]
             for state in self._states.values():
                 if state.abort_timer is not None:
                     state.abort_timer.cancel()
@@ -6003,7 +6354,10 @@ class PiRuntimeHostManager:
                     state.settle_timer.cancel()
             self._client = None
             self._open_sessions.clear()
-            self._states.clear()
+            self._states = {session_id: state for session_id, state in self._states.items()
+                if state.runtime_engine == "durable" and (state.turn_id or state.prompt_admission_in_flight)}
+            for state in self._states.values():
+                state.recoverable = True
             self._status = "faulted"
             self._last_error = message
         for session_id, turn_id in active:
@@ -6026,6 +6380,14 @@ class PiRuntimeHostManager:
         # one slow Session cancellation from an actually unresponsive shared
         # Host. A responsive Host must never be killed because one child Agent
         # missed PAW's short UI feedback deadline.
+        with self._lock:
+            state = self._states.get(session_id)
+            if state is None or state.turn_id != turn_id:
+                return
+            durable_engine = state.runtime_engine == "durable"
+        if durable_engine:
+            self._reconcile_durable_settlement(session_id, turn_id)
+            return
         with self._lock:
             state = self._states.get(session_id)
             if state is None or state.turn_id != turn_id:

@@ -3544,6 +3544,8 @@ class ControlToolGateway:
                 operations = [op for op in operations if op not in purpose_ops or op == selected_op]
                 operation_risks = {op: operation_risks[op] for op in operations}
 
+            if session is not None and session.get("runtimeEngine") == "durable" and str(spec["id"]) == "plugins":
+                available = False
             manifest = {
                 "schemaVersion": "rag-ime.control-tool-manifest.v1",
                 "id": spec["id"],
@@ -3722,6 +3724,8 @@ class ControlToolGateway:
         tool = str(request["tool"])
         raw_args = request.get("args") if isinstance(request.get("args"), Mapping) else {}
         tool, args = _normalize_runtime_tool_call(tool, raw_args)
+        if tool == "plugins":
+            self._require_plugin_engine(session_id)
         if tool == "memory" and not self._memory_enabled(session):
             raise ValueError("memory tool is disabled for this session or by settings.memory.enabled")
         if tool == "structured_output":
@@ -4251,7 +4255,12 @@ class ControlToolGateway:
             "resourceRevision": hashlib.sha256(encoded).hexdigest(),
         }
 
+    def _require_plugin_engine(self, session_id: str) -> None:
+        if session_id and self.sessions.get(session_id).get("runtimeEngine") == "durable":
+            raise ValueError("Durable Sessions do not support managed plugins")
+
     def _plugins(self, operation: str, args: Mapping[str, object]) -> dict[str, object]:
+        self._require_plugin_engine(str(args.get("_sessionId") or ""))
         if self.extensions is None:
             raise ValueError("managed plugin lifecycle is unavailable")
         if operation == "catalog":
@@ -4898,6 +4907,7 @@ class ControlToolGateway:
         tool = str(approval.get("toolId") or "")
         operation = str(approval.get("operation") or "")
         if (tool, operation) == ("plugins", "apply"):
+            self._require_plugin_engine(str(approval.get("sessionId") or ""))
             preview = approval.get("preview") if isinstance(approval.get("preview"), Mapping) else {}
             payload = preview.get("actionPayload") if isinstance(preview.get("actionPayload"), Mapping) else {}
             digest = _approval_payload_digest(

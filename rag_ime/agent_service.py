@@ -4375,6 +4375,10 @@ class AgentService:
             accepted=accepted,
         )
 
+    def resume_session(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        self._require_mutable_session(session_id)
+        return self.session_application.resume_session(session_id, payload)
+
     def abort(self, session_id: str) -> dict[str, object]:
         self._require_mutable_session(session_id)
         wait_commands = (self._workspace_command_cancellation(session_id)

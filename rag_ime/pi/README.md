@@ -10,7 +10,7 @@ Import a module directly; the package initializer has no construction or exports
 | `factory` | Construct the single Host adapter with the caller's stores and callbacks |
 | `host_client` | One process connection, correlated JSONL replies, ordered events and stream cleanup |
 | `runtime` | Session bindings, admission, settlement, recovery and Runtime-owned in-memory state |
-| `transcript` | Pure durable/recent history projection, without subprocess or database ownership |
+| `transcript` | Pure Classic full/recent history projection, without subprocess or database ownership |
 | `transcript_io` | Bounded JSONL tail and append-boundary reads; never opens a Host or changes Session state |
 | `event_projection` | Pure Tool/text event payloads and settlement/capability wire projections |
 | `ui_requests` | Bounded UI request fields and response validation; pending requests, timers and replies remain in `runtime` |
@@ -33,3 +33,12 @@ order stay explicit in `runtime`; a projection helper cannot complete a turn.
 The import gate enforces declared `__all__` surfaces across the Runtime family.
 The owner gate prevents transport/history/config from importing application
 composition. Tests under `tests/test_pi_runtime*.py` cover these separately.
+
+An immutable Session engine binding selects Classic or explicitly opted-in
+Durable inside the same manager and Host pool. Durable uses native Host
+snapshots and settlement instead of Classic JSONL tail readers, recent caches
+or recovered-turn retirement. Its history and control reads are passive; only
+the exact explicit resume action may restart native scheduling. The existing
+Gateway owner still fences Tool execution. See the [Durable product
+guide](../../integrations/pi/pi-durable.md) and
+`tests/test_pi_durable_runtime.py` for the engine boundary and recovery cases.
