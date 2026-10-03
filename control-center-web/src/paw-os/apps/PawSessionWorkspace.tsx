@@ -1,3 +1,4 @@
+import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { PawSessionFocusHeader } from './PawSessionFocusHeader';
 import {
@@ -213,6 +214,7 @@ export function PawSessionWorkspace({
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const durableSession = workspaceRecord.runtimeEngine === 'durable' || catalog?.runtimeEngine === 'durable' || projectionSlice.runtimeEngine === 'durable';
   const durablePaused = projectionSlice.durableRecovery?.paused === true;
+  const compactionTarget = projectionSlice.durableRecovery?.compactionTarget;
   const classicHistoryAvailable = recordMetadataKnown && record?.id === recordId && !durableSession;
   const [commands, setCommands] = useState<AgentCommand[]>([]);
   const [tools, setTools] = useState<ToolManifest[]>([]);
@@ -235,20 +237,38 @@ export function PawSessionWorkspace({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [resuming, setResuming] = useState(false);
-  const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport } | undefined>(undefined);
+  const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target?: AgentCompactionTarget } | undefined>(undefined);
+  const compactionStopRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target: AgentCompactionTarget } | undefined>(undefined);
   const resumeOwnerRef = useRef({ recordId, transport });
   resumeOwnerRef.current = { recordId, transport };
   useEffect(() => {
     setResuming(false);
+    setStopping(false);
     return () => {
       const request = resumeRequestRef.current;
       if (request?.recordId === recordId && request.transport === transport) {
         request.controller.abort(); resumeRequestRef.current = undefined;
       }
+      const stopRequest = compactionStopRequestRef.current;
+      if (stopRequest?.recordId === recordId && stopRequest.transport === transport) {
+        stopRequest.controller.abort(); compactionStopRequestRef.current = undefined;
+      }
     };
   }, [recordId, transport]);
   const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(state.projections[recordId]));
   const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    // A newer native target may appear before an older control request returns.
+    // Release only that stale request's local lock; never retarget its payload.
+    const resume = resumeRequestRef.current;
+    if (resume?.target && !sameAgentCompactionTarget(resume.target, compactionTarget)) {
+      resume.controller.abort(); resumeRequestRef.current = undefined; setResuming(false);
+    }
+    const stopRequest = compactionStopRequestRef.current;
+    if (stopRequest && !sameAgentCompactionTarget(stopRequest.target, compactionTarget)) {
+      stopRequest.controller.abort(); compactionStopRequestRef.current = undefined; setStopping(false);
+    }
+  }, [compactionTarget]);
   const [modelChanging, setModelChanging] = useState(false);
   const [panel, setPanel] = useState<WorkbenchPanel>('none');
   const [statusPanelVisited, setStatusPanelVisited] = useState(false);
@@ -314,7 +334,7 @@ export function PawSessionWorkspace({
     setToolMenuOpen(false);
   }, [embedded, recordId, traceFocusNodeId]);
 
-  const busy = Boolean(projectionSlice.activeTurnId);
+  const busy = Boolean(projectionSlice.activeTurnId || compactionTarget);
   /* A held follow-up is the composer's own queue, not a Runtime delivery.
      干预/接续 hand the message to Pi immediately; a queued draft never leaves
      the client until this turn settles, which is what keeps it editable,
@@ -430,6 +450,11 @@ export function PawSessionWorkspace({
             preserveAfterSequence: event.sequence,
           });
         }, 350);
+      }
+      if (event.eventType === 'compaction_started' || event.eventType === 'compaction_completed') {
+        // Standalone compaction has no turn terminal to refresh its controls.
+        // Only the following current native metadata may replace the target.
+        void loadAgentSnapshotRef.current({ preserveAfterSequence: event.sequence });
       }
       const runtimeWindow = runtimeToolWindow(event);
       if (runtimeWindow && shouldAutoOpenRuntimeToolWindow(runtimeWindow)) {
@@ -582,37 +607,46 @@ export function PawSessionWorkspace({
     const recovery = projection.durableRecovery;
     if (resumeRequestRef.current?.recordId === recordId && resumeRequestRef.current.transport === transport
       || sending || stopping || modelChanging || projection.needsSnapshot
-      || !recovery?.paused || !recovery.recoverable || !recovery.activeTurn) return;
-    const { turnId, clientMessageId } = recovery.activeTurn;
+      || compactionStopRequestRef.current
+      || !recovery?.paused || !recovery.recoverable || !recovery.activeTurn && !recovery.compactionTarget) return;
+    const target = recovery.compactionTarget;
+    const turnId = recovery.activeTurn?.turnId;
+    const clientMessageId = recovery.activeTurn?.clientMessageId;
     resumeRequestRef.current?.controller.abort();
     const controller = new AbortController();
-    const request = { controller, recordId, transport };
+    const request = { controller, recordId, transport, target: target ?? undefined };
     resumeRequestRef.current = request;
     const ownsRequest = () => !controller.signal.aborted && resumeRequestRef.current === request
       && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
+    const ownsTarget = () => ownsRequest() && (target
+      ? sameAgentCompactionTarget(agentProjection(recordId).durableRecovery?.compactionTarget, target)
+      : agentProjection(recordId).durableRecovery?.activeTurn?.turnId === turnId
+        && agentProjection(recordId).durableRecovery?.activeTurn?.clientMessageId === clientMessageId);
     setResuming(true);
     setError('');
     try {
       const response = asRecord(await transport.request({
         pathId: 'agent.session.resume', params: { sessionId: recordId },
-        body: { turnId, clientMessageId }, signal: controller.signal,
+        body: target ? { compactionTarget: target } : { turnId: turnId!, clientMessageId: clientMessageId! }, signal: controller.signal,
       }));
-      if (!ownsRequest()) return;
+      if (!ownsTarget()) return;
       const receipt = asRecord(response.runtimeReceipt);
       if (response.schemaVersion !== 'rag-ime.agent-session-resume.v1' || response.ok !== true
-        || response.sessionId !== recordId || response.turnId !== turnId || response.clientMessageId !== clientMessageId
-        || receipt.schemaVersion !== 'rag-ime.pi-session-resume.v1' || receipt.accepted !== true
-        || receipt.runtimeEngine !== 'durable' || typeof receipt.resumed !== 'boolean') {
+        || response.sessionId !== recordId || (target
+          ? !sameAgentCompactionTarget(response.compactionTarget, target) || !validCompactionReceipt(receipt, target, 'resume')
+          : response.turnId !== turnId || response.clientMessageId !== clientMessageId
+            || receipt.schemaVersion !== 'rag-ime.pi-session-resume.v1' || receipt.accepted !== true
+            || receipt.runtimeEngine !== 'durable' || typeof receipt.resumed !== 'boolean')) {
         throw new Error('Durable resume receipt is not confirmed');
       }
       // The ACK proves admission, not execution. Read the same Session and let
       // current native metadata/events clear pause without a new prompt/turn.
       const loaded = await loadAgentSnapshotRef.current();
-      if (ownsRequest() && !loaded) setError('恢复尚未确认，原任务与进度已保留。请重新同步后再继续。');
+      if (ownsTarget() && !loaded) setError('恢复尚未确认，原任务与进度已保留。请重新同步后再继续。');
     } catch {
-      if (!ownsRequest()) return;
+      if (!ownsTarget()) return;
       await loadAgentSnapshotRef.current();
-      if (ownsRequest() && agentProjection(recordId).durableRecovery?.paused) {
+      if (ownsTarget() && agentProjection(recordId).durableRecovery?.paused) {
         setError('恢复尚未确认，原任务与进度已保留。可以重新同步，或再次继续当前任务。');
       }
     } finally {
@@ -635,8 +669,8 @@ export function PawSessionWorkspace({
 
   function acceptsImmediateInput(rawDraft: string): boolean {
     if (!acceptsEngineInput(rawDraft)) return false;
-    if (durablePaused) {
-      setError('当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。');
+    if (durablePaused || compactionTarget) {
+      setError(compactionTarget ? '请先继续或停止压缩；新消息可以排到下一轮。' : '当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。');
       return false;
     }
     return true;
@@ -844,7 +878,43 @@ export function PawSessionWorkspace({
     })();
   }
 
+  async function stopCompaction(target: AgentCompactionTarget): Promise<void> {
+    if (compactionStopRequestRef.current || resumeRequestRef.current || stopping) return;
+    const controller = new AbortController();
+    const request = { controller, recordId, transport, target };
+    compactionStopRequestRef.current = request;
+    const ownsRequest = () => !controller.signal.aborted && compactionStopRequestRef.current === request
+      && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
+    const ownsTarget = () => ownsRequest()
+      && sameAgentCompactionTarget(agentProjection(recordId).durableRecovery?.compactionTarget, target);
+    setStopping(true);
+    setError('');
+    if (queue.queue.length) setDraft(current => queue.restoreToDraft(current));
+    try {
+      const response = asRecord(await transport.request({ pathId: 'agent.session.abort',
+        params: { sessionId: recordId }, body: { compactionTarget: target }, signal: controller.signal }));
+      if (!ownsTarget()) return;
+      if (response.schemaVersion !== 'rag-ime.agent-abort.v1' || response.ok !== true || response.sessionId !== recordId
+        || !sameAgentCompactionTarget(response.compactionTarget, target)
+        || !validCompactionReceipt(asRecord(response.runtimeReceipt), target, 'abort')) {
+        throw new Error(STOP_UNCONFIRMED_TEXT);
+      }
+      // A terminal receipt confirms these tasks only. Current native metadata
+      // clears the control target; no user turn is fabricated or settled here.
+      const loaded = await loadAgentSnapshotRef.current();
+      if (ownsTarget() && !loaded) setError(STOP_UNCONFIRMED_TEXT);
+    } catch {
+      if (!ownsTarget()) return;
+      await loadAgentSnapshotRef.current();
+      if (ownsTarget()) setError(STOP_UNCONFIRMED_TEXT);
+    } finally {
+      if (ownsRequest()) { compactionStopRequestRef.current = undefined; setStopping(false); }
+    }
+  }
+
   async function stop(): Promise<void> {
+    const target = agentProjection(recordId).durableRecovery?.compactionTarget;
+    if (target) { await stopCompaction(target); return; }
     if (!busy || stopping) return;
     setStopping(true);
     /* Stopping the turn cancels the intent behind everything held for it, so
@@ -1446,7 +1516,7 @@ export function PawSessionWorkspace({
                 : <History size={15} />}
             </button>
           ) : null}
-          {!evaluationSnapshot && busy ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
+          {!evaluationSnapshot && busy && !compactionTarget ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
         </div>
         {!evaluationSnapshot ? <div className="paw-session-workspace__tools" data-open={toolMenuOpen || undefined} ref={toolMenuContainerRef}>
           <button
@@ -1606,11 +1676,13 @@ export function PawSessionWorkspace({
           </div>
 
           <div className="paw-session-workspace__composer" data-read-only={evaluationSnapshot || undefined}>
-            {durablePaused && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite">
-              <strong>任务已暂停，进度已保存</strong>
-              {projectionSlice.durableRecovery?.recoverable && projectionSlice.durableRecovery.activeTurn ? <button
-                aria-label="继续当前任务" disabled={resuming || sending || stopping || modelChanging}
-                onClick={() => void resumeCurrentTask()} type="button">{resuming ? '正在恢复…' : '继续当前任务'}</button> : null}
+            {(durablePaused || compactionTarget) && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite">
+              <strong>{compactionTarget ? durablePaused ? '压缩已暂停，进度已保存' : '正在压缩上下文' : '任务已暂停，进度已保存'}</strong>
+              {durablePaused && projectionSlice.durableRecovery?.recoverable && (projectionSlice.durableRecovery.activeTurn || compactionTarget) ? <button
+                aria-label={compactionTarget ? '继续压缩' : '继续当前任务'} disabled={resuming || sending || stopping || modelChanging}
+                onClick={() => void resumeCurrentTask()} type="button">{resuming ? '正在恢复…' : compactionTarget ? '继续压缩' : '继续当前任务'}</button> : null}
+              {compactionTarget ? <button aria-label="停止压缩" disabled={stopping || resuming}
+                onClick={() => void stop()} type="button">{stopping ? '正在停止…' : '停止压缩'}</button> : null}
             </div> : pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
             {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
               <CircleAlert size={14} aria-hidden="true" />
@@ -1893,6 +1965,8 @@ function latestActiveTurnId(projection?: AgentProjectionState): string {
     const turnId = projection.turnOrder[index] ?? '';
     const turn = projection.turnsById[turnId];
     if (!turn || (turn.messageIds.length === 0 && turn.activityIds.length === 0)) continue;
+    // A maintenance timeline row is never an original-input control target.
+    if (!turn.messageIds.length && turn.activityIds.every(id => projection.activitiesById[id]?.kind === 'context_compaction')) return '';
     return ['queued', 'running', 'waiting'].includes(turn.status) ? turnId : '';
   }
   return '';
@@ -1968,4 +2042,15 @@ function isCommand(value: string, command: string): boolean {
 
 function errorText(reason: unknown): string {
   return publicAgentErrorText(reason, 'Session 操作没有完成，请重新同步后重试。');
+}
+
+function validCompactionReceipt(receipt: Record<string, unknown>, target: AgentCompactionTarget, action: 'resume' | 'abort'): boolean {
+  if (receipt.schemaVersion !== `rag-ime.pi-compaction-${action}.v1` || receipt.accepted !== true
+    || receipt.runtimeEngine !== 'durable' || !sameAgentCompactionTarget(receipt.compactionTarget, target)
+    || !receipt.state || typeof receipt.state !== 'object' || Array.isArray(receipt.state)) return false;
+  if (action === 'resume') return typeof receipt.resumed === 'boolean';
+  if (receipt.drained !== true || !Array.isArray(receipt.outcomes) || receipt.outcomes.length !== target.taskIds.length) return false;
+  const outcomes = receipt.outcomes.map(asRecord);
+  return outcomes.every((outcome, index) => Object.keys(outcome).length === 2
+    && outcome.taskId === target.taskIds[index] && ['completed', 'aborted', 'failed'].includes(String(outcome.status)));
 }

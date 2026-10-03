@@ -9,6 +9,7 @@ from typing import Iterable, Mapping
 from urllib.parse import unquote
 
 from .errors import ControlApiError, ControlErrorCode
+from ..contracts.compaction_target import compaction_control_target
 from .models import ControlAccessContext, ControlMethod, ControlRequest, ControlScope
 
 
@@ -468,6 +469,17 @@ class ControlRouteSpec:
             required=required_body,
             field_name="body",
         )
+        if self.path_id in {ControlPathId.AGENT_SESSION_ABORT, ControlPathId.AGENT_SESSION_RESUME}:
+            if "compactionTarget" in request.body:
+                try:
+                    compaction_control_target(request.body)
+                except ValueError as exc:
+                    raise _invalid_field("body", "compactionTarget") from exc
+            elif self.path_id is ControlPathId.AGENT_SESSION_RESUME:
+                if set(request.body) != {"turnId", "clientMessageId"} or any(
+                    not isinstance(value, str) or not value.strip() for value in request.body.values()
+                ):
+                    raise _invalid_field("body", "turnId")
         if request.body and self.method is ControlMethod.GET:
             raise ControlApiError(
                 ControlErrorCode.INVALID_REQUEST,
@@ -893,8 +905,8 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_SESSION_REWRITE, ControlMethod.POST, "/api/agent/sessions/{sessionId}/rewrite", "/control/v1/agent/sessions/{sessionId}/rewrite", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION, body={"entryId", "message", "attachments", "clientMessageId"}, required_body={"entryId", "message"}, remote_body={"entryId", "message", "attachments", "clientMessageId"}, remote_required_body={"entryId", "message", "clientMessageId"}),
         _route(ControlPathId.AGENT_SESSION_FORKS_LIST, ControlMethod.GET, "/api/agent/sessions/{sessionId}/forks", "/control/v1/agent/sessions/{sessionId}/forks", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_SESSION),
         _route(ControlPathId.AGENT_SESSION_FORKS_CREATE, ControlMethod.POST, "/api/agent/sessions/{sessionId}/forks", "/control/v1/agent/sessions/{sessionId}/forks", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION, body={"entryId", "title"}, required_body={"entryId"}, remote_body={"entryId", "title"}),
-        _route(ControlPathId.AGENT_SESSION_ABORT, ControlMethod.POST, "/api/agent/sessions/{sessionId}/abort", "/control/v1/agent/sessions/{sessionId}/abort", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION),
-        _route(ControlPathId.AGENT_SESSION_RESUME, ControlMethod.POST, "/api/agent/sessions/{sessionId}/resume", None, params=_SESSION, body={"turnId", "clientMessageId"}, required_body={"turnId", "clientMessageId"}),
+        _route(ControlPathId.AGENT_SESSION_ABORT, ControlMethod.POST, "/api/agent/sessions/{sessionId}/abort", "/control/v1/agent/sessions/{sessionId}/abort", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, params=_SESSION, body={"compactionTarget"}),
+        _route(ControlPathId.AGENT_SESSION_RESUME, ControlMethod.POST, "/api/agent/sessions/{sessionId}/resume", None, params=_SESSION, body={"turnId", "clientMessageId", "compactionTarget"}),
         _route(ControlPathId.AGENT_SESSION_REVIEW_RESOLVE, ControlMethod.POST, "/api/agent/sessions/{sessionId}/review", "/control/v1/agent/sessions/{sessionId}/review", params=_SESSION, body={"runId", "decision"}, required_body={"runId", "decision"}),
         _route(ControlPathId.AGENT_SESSION_UI_RESOLVE, ControlMethod.POST, "/api/agent/sessions/{sessionId}/ui-response", "/control/v1/agent/sessions/{sessionId}/ui-response", params=_SESSION, body={"requestId", "value", "confirmed", "cancelled", "resolutionSource"}, required_body={"requestId"}),
         _route(ControlPathId.AGENT_SESSION_COMPACT, ControlMethod.POST, "/api/agent/sessions/{sessionId}/compact", "/control/v1/agent/sessions/{sessionId}/compact", params=_SESSION, body={"instructions"}),

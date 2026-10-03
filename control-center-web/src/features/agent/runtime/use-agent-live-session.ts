@@ -1,3 +1,4 @@
+import { agentSnapshotFromResponse, durableRecoveryFromSnapshot } from '@/contracts/agent-reducer';
 import { useCallback, useEffect, useRef } from 'react';
 
 import { createAgentDeltaBatcher } from '@/contracts/batching';
@@ -408,7 +409,11 @@ function createSharedAgentLiveSession(
       // while the Runtime remains busy.
       const equalCursorRepairsGap = projectionBeforeHydration.needsSnapshot
         && sequence === projectionBeforeHydration.lastSequence;
+      const nativeRecovery = durableRecoveryFromSnapshot(agentSnapshotFromResponse(value), sessionId);
+      const currentCompactionMetadata = Boolean(nativeRecovery && (nativeRecovery.compactionTarget
+        || projectionBeforeHydration.durableRecovery?.compactionTarget));
       const retainNewerTerminal = presentable
+        && !currentCompactionMetadata
         && equalCursorRepairsGap
         && isTerminalAgentProjection(projectionBeforeHydration)
         && isBusyAgentSnapshot(value);
@@ -420,9 +425,10 @@ function createSharedAgentLiveSession(
           || sequence > request.preserveAfterSequence
           || equalCursorIsQuiescent
           || equalCursorRepairsGap
+          || currentCompactionMetadata
         );
       const hydrated = shouldHydrate
-        && useAgentLiveStore.getState().hydrate(sessionId, value, { recoveryCursor });
+        && useAgentLiveStore.getState().hydrate(sessionId, value, { recoveryCursor, controlMetadataSequence: beforeRead.lastSequence });
       const repairedWithoutRegression = retainNewerTerminal
         && clearEqualCursorGap(sessionId, sequence, resumeToken);
       const snapshot = {

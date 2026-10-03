@@ -9,6 +9,7 @@ from .agent_blocks import MAX_BLOCKS_PER_TURN, normalize_trusted_agent_blocks
 from .agent_protocol import AgentEventEnvelope
 from .agent_tool_artifacts import managed_file_block
 from .contracts.json_schema import validate_contract
+from .contracts.compaction_target import validate_compaction_target
 
 RoomPublicMessageProvider: TypeAlias = Callable[
     [str],
@@ -683,6 +684,8 @@ def _durable_runtime_projection(snapshot: object) -> dict[str, object]:
     return {"runtimeEngine": "durable", "paused": snapshot.get("paused") is True,
             "recoverable": snapshot.get("recoverable") is True,
             "projectionCurrent": snapshot.get("projectionCurrent") is True,
+            "compactionTarget": (validate_compaction_target(snapshot["compactionTarget"])
+                                 if snapshot.get("compactionTarget") is not None else None),
             "activeTurn": ({"turnId": str(active.get("turnId") or ""),
                             "clientMessageId": str(active.get("clientMessageId") or "")}
                            if isinstance(active, Mapping) else None)}

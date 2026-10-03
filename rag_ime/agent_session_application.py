@@ -36,6 +36,7 @@ from .agent_workspace_roots import (
     system_wide_workspace_roots,
 )
 from .agent_memory_context_support import compaction_summary
+from .contracts.compaction_target import compaction_control_target
 
 
 class AgentSessionApplicationService:
@@ -105,6 +106,16 @@ class AgentSessionApplicationService:
     def resume_session(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         if self.sessions.get(session_id).get("runtimeEngine") != "durable":
             raise ValueError("Session resume requires a Durable Session")
+        if "compactionTarget" in payload:
+            target = compaction_control_target(payload)
+            resume_compaction = getattr(self.runtime, "resume_compaction", None)
+            if not callable(resume_compaction):
+                raise ValueError("Durable compaction recovery is unavailable")
+            receipt = resume_compaction(session_id, target)
+            return {"schemaVersion": "rag-ime.agent-session-resume.v1", "ok": True,
+                    "sessionId": session_id, "compactionTarget": target, "runtimeReceipt": dict(receipt)}
+        if set(payload) != {"turnId", "clientMessageId"}:
+            raise ValueError("resume requires only the original turn and client identity")
         turn_id = _required_text(payload, "turnId")
         client_message_id = _required_text(payload, "clientMessageId")
         resume = getattr(self.runtime, "resume_session", None)
@@ -181,6 +192,22 @@ class AgentSessionApplicationService:
             },
             "memoryBootstrap": self.pending_memory_bootstrap(session),
         }
+
+    def require_turn_abort_target(self, session_id: str) -> None:
+        require_target = getattr(self.runtime, "require_turn_abort_target", None)
+        if callable(require_target):
+            require_target(session_id)
+
+    def abort_compaction(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
+        target = compaction_control_target(payload)
+        if self.sessions.get(session_id).get("runtimeEngine") != "durable":
+            raise ValueError("Compaction recovery requires a Durable Session")
+        abort_compaction = getattr(self.runtime, "abort_compaction", None)
+        if not callable(abort_compaction):
+            raise ValueError("Durable compaction recovery is unavailable")
+        receipt = abort_compaction(session_id, target)
+        return {"schemaVersion": "rag-ime.agent-abort.v1", "ok": True, "sessionId": session_id,
+                "compactionTarget": target, "runtimeReceipt": dict(receipt)}
 
     def abort(
         self, session_id: str, *,

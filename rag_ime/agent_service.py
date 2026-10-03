@@ -4379,8 +4379,12 @@ class AgentService:
         self._require_mutable_session(session_id)
         return self.session_application.resume_session(session_id, payload)
 
-    def abort(self, session_id: str) -> dict[str, object]:
+    def abort(self, session_id: str, payload: Mapping[str, object] | None = None) -> dict[str, object]:
         self._require_mutable_session(session_id)
+        if payload:
+            # Compaction identity carries no authority over turns or jobs.
+            return self.session_application.abort_compaction(session_id, payload)
+        self.session_application.require_turn_abort_target(session_id)
         wait_commands = (self._workspace_command_cancellation(session_id)
                          if self._workspace_command_cancellation is not None else None)
         wait_jobs: Callable[[], dict[str, object]] | None = None

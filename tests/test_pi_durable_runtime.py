@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import tempfile
+import threading
 import unittest
 import io
 import json
@@ -623,6 +624,362 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.assertEqual(len(prompts), 1)
         self.assertEqual(prompts[0]["clientMessageId"], "new-distinct-client")
         self.assertFalse(any(method in {"session.resume", "session.abort"} for method, _ in self.host.calls))
+
+    def compaction_host(self):
+        target = {"kind": "compaction", "runtimeSessionId": "native-conversation",
+                  "taskIds": ["durable:task:10", "durable:task:2"]}
+        self.runtime._host_capabilities["sessionCompactionRecovery"] = True
+        send = self.host.send
+        def compaction_send(method, params=None, **kwargs):
+            if method in {"session.resume", "session.abort"} and "compactionTarget" in (params or {}):
+                if kwargs.get("before_write"):
+                    kwargs["before_write"]()
+                self.host.calls.append((method, copy.deepcopy(params)))
+                self.host.snapshot.update(paused=False, recoverable=False)
+                if method == "session.abort":
+                    self.host.snapshot.update(isIdle=True, compactionTarget=None)
+                return {"schemaVersion": f"rag-ime.pi-compaction-{'resume' if method == 'session.resume' else 'abort'}.v1",
+                    "accepted": True, "runtimeEngine": "durable", "compactionTarget": copy.deepcopy(params["compactionTarget"]),
+                    **({"resumed": True} if method == "session.resume" else {"drained": True,
+                        "outcomes": [{"taskId": task, "status": "aborted"} for task in target["taskIds"]]}),
+                    "state": {**copy.deepcopy(self.host.snapshot), "schemaVersion": "rag-ime.pi-session-control-state.v1"}}
+            result = send(method, params, **kwargs)
+            if method == "session.open":
+                self.host.snapshot.update(activeTurn=None, compactionTarget=copy.deepcopy(target))
+                self.host.snapshot["engineCapabilities"]["compactionRecovery"] = True
+                result["snapshot"] = copy.deepcopy(self.host.snapshot)
+            return result
+        self.host.send = compaction_send
+        return target
+
+    def test_compaction_only_reopen_is_passive_busy_and_survives_host_exit(self):
+        target = self.compaction_host()
+        opened = self.open()
+        self.assertEqual(opened["state"]["compactionTarget"], target)
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "")
+        self.assertIn(self.session_id, self.runtime.runtime_status()["activeSessionIds"])
+        self.assertFalse(any(method in {"session.resume", "session.abort", "session.prompt"} for method, _ in self.host.calls))
+        self.runtime._handle_host_exit(1, "interrupted", source_client=self.host)
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+
+    def test_compaction_resume_keeps_exact_target_without_input_or_new_compact(self):
+        target = self.compaction_host()
+        result = self.application().resume_session(self.session_id, {"compactionTarget": target})
+        self.assertEqual(result["compactionTarget"], target)
+        self.assertTrue(result["runtimeReceipt"]["resumed"])
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertFalse(self.runtime._states[self.session_id].recoverable)
+        self.assertIn(("session.resume", {"sessionId": self.session_id, "compactionTarget": target}), self.host.calls)
+        self.assertFalse(any(method in {"session.prompt", "session.compact"} for method, _ in self.host.calls))
+
+    def test_compaction_stop_bypasses_unrelated_job_command_and_approval_cancellation(self):
+        target = self.compaction_host()
+        service = object.__new__(AgentService)
+        service._require_mutable_session = Mock()
+        service.session_application = self.application()
+        service.session_application.cancel_pending_approvals = Mock(side_effect=AssertionError("unrelated approvals"))
+        service._workspace_command_cancellation = Mock(side_effect=AssertionError("unrelated commands"))
+        service.background_jobs = Mock()
+        result = service.abort(self.session_id, {"compactionTarget": target})
+        self.assertEqual(result["compactionTarget"], target)
+        self.assertTrue(result["runtimeReceipt"]["drained"])
+        self.assertEqual(self.store.get(self.session_id)["status"], "idle")
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "")
+        service.background_jobs.request_turn_cancellation.assert_not_called()
+        service._workspace_command_cancellation.assert_not_called()
+        service.session_application.cancel_pending_approvals.assert_not_called()
+
+    def test_compaction_projection_preserves_target_full_and_recent(self):
+        target = self.compaction_host()
+        blocks = Mock()
+        blocks.hydrate_messages.side_effect = lambda _id, messages: messages
+        projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
+            workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
+            media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
+            background_jobs=Mock(list=Mock(return_value={"items": []})),
+            room_public_messages=lambda _: None, room_recent_public_messages=lambda _: None)
+        for view in ("", "recent"):
+            result = projection.messages(self.session_id, view=view)
+            self.assertEqual(result["compactionTarget"], target)
+            self.assertIsNone(result["activeTurn"])
+            self.assertEqual(result["status"], "busy")
+            self.assertTrue(result["recoverable"])
+
+    def test_compaction_control_requires_new_host_capability(self):
+        target = self.compaction_host()
+        self.runtime._host_capabilities.pop("sessionCompactionRecovery")
+        for operation in (self.runtime.resume_compaction, self.runtime.abort_compaction):
+            with self.assertRaisesRegex(PiRuntimeError, "compaction recovery"):
+                operation(self.session_id, target)
+        self.assertFalse(any(method in {"session.resume", "session.abort"} for method, _ in self.host.calls))
+
+    def test_compaction_stop_without_target_cannot_cancel_unrelated_jobs(self):
+        self.compaction_host()
+        service = object.__new__(AgentService)
+        service._require_mutable_session = Mock()
+        service.session_application = self.application()
+        service._workspace_command_cancellation = Mock(side_effect=AssertionError("unrelated commands"))
+        service.background_jobs = Mock()
+        with self.assertRaisesRegex(PiRuntimeError, "compactionTarget"):
+            service.abort(self.session_id)
+        service._workspace_command_cancellation.assert_not_called()
+        service.background_jobs.request_turn_cancellation.assert_not_called()
+
+    def test_compaction_rejects_new_admission_and_preserves_busy_on_old_admission_release(self):
+        target = self.compaction_host()
+        self.open()
+        for operation in (lambda: self.runtime.reserve_prompt_admission(self.session_id, client_message_id="new"),
+                          lambda: self.runtime.prompt(self.session_id, "new", client_message_id="new")):
+            with self.assertRaises(PiRuntimeError):
+                operation()
+        state = self.runtime._states[self.session_id]
+        state.prompt_admission_in_flight = True
+        state.admission_client_message_id = "old-unsent"
+        with self.assertRaisesRegex(PiRuntimeError, "compactionTarget"):
+            self.runtime.require_turn_abort_target(self.session_id)
+        self.assertTrue(self.runtime.release_prompt_admission(self.session_id, client_message_id="old-unsent"))
+        self.assertEqual(state.compaction_target, target)
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+        self.assertFalse(any(method in {"session.prompt", "session.abort"} for method, _ in self.host.calls))
+
+    def test_compaction_control_rejects_foreign_identity_before_rpc(self):
+        target = self.compaction_host()
+        for operation in (self.runtime.resume_compaction, self.runtime.abort_compaction):
+            with self.assertRaisesRegex(PiRuntimeError, "binding"):
+                operation(self.session_id, {**target, "runtimeSessionId": "foreign-native"})
+        self.assertFalse(any(method in {"session.resume", "session.abort"} for method, _ in self.host.calls))
+
+    def test_compaction_mixed_identity_is_rejected_at_application_boundary(self):
+        target = self.compaction_host()
+        app = self.application()
+        for operation in (app.resume_session, app.abort_compaction):
+            for extra in ({"turnId": "old"}, {"clientMessageId": "old"}, {"expectedTurnId": "old"}, {"cancelId": "old"}):
+                with self.subTest(extra=extra), self.assertRaises(ValueError):
+                    operation(self.session_id, {"compactionTarget": target, **extra})
+        self.assertEqual(self.host.calls, [])
+
+    def test_compaction_stop_rejects_unproven_terminal_receipt(self):
+        target = self.compaction_host()
+        self.open()
+        send = self.host.send
+        def no_drain(method, params=None, **kwargs):
+            result = send(method, params, **kwargs)
+            if method == "session.abort":
+                result["drained"] = False
+            return result
+        self.host.send = no_drain
+        with self.assertRaisesRegex(PiRuntimeError, "unsettled"):
+            self.runtime.abort_compaction(self.session_id, target)
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+
+    def test_compaction_lost_resume_ack_retries_only_same_native_target(self):
+        target = self.compaction_host()
+        self.open()
+        send = self.host.send
+        lose_reply = True
+        def lost_ack(method, params=None, **kwargs):
+            nonlocal lose_reply
+            result = send(method, params, **kwargs)
+            if method == "session.resume" and lose_reply:
+                lose_reply = False
+                raise PiRuntimeCommandAcceptanceUnknown("lost original compaction resume ACK")
+            return result
+        self.host.send = lost_ack
+        with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+            self.runtime.resume_compaction(self.session_id, target)
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.runtime.resume_compaction(self.session_id, target)
+        controls = [params for method, params in self.host.calls if method == "session.resume"]
+        self.assertEqual(controls, [{"sessionId": self.session_id, "compactionTarget": target}] * 2)
+        self.assertFalse(any(method in {"session.prompt", "session.compact"} for method, _ in self.host.calls))
+
+    def test_compaction_partial_target_native_rejection_has_no_fallback(self):
+        target = self.compaction_host()
+        self.open()
+        send = self.host.send
+        def reject_partial(method, params=None, **kwargs):
+            if method in {"session.resume", "session.abort"}:
+                self.host.calls.append((method, copy.deepcopy(params)))
+                raise PiRuntimeError("COMPACTION_TARGET_MISMATCH: incomplete native task set")
+            return send(method, params, **kwargs)
+        self.host.send = reject_partial
+        partial = {**target, "taskIds": target["taskIds"][:1]}
+        for operation in (self.runtime.resume_compaction, self.runtime.abort_compaction):
+            with self.assertRaisesRegex(PiRuntimeError, "COMPACTION_TARGET_MISMATCH"):
+                operation(self.session_id, partial)
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertFalse(any(method in {"session.prompt", "session.compact"} for method, _ in self.host.calls))
+
+    def test_compaction_terminal_retry_cannot_stop_successor(self):
+        target = self.compaction_host()
+        self.open()
+        successor = {**target, "taskIds": ["durable:task:3"]}
+        self.host.snapshot.update(compactionTarget=successor, recoverable=False, paused=False)
+        send = self.host.send
+        def terminal_original(method, params=None, **kwargs):
+            if method in {"session.resume", "session.abort"}:
+                if kwargs.get("before_write"):
+                    kwargs["before_write"]()
+                self.host.calls.append((method, copy.deepcopy(params)))
+                return {"schemaVersion": f"rag-ime.pi-compaction-{'resume' if method == 'session.resume' else 'abort'}.v1",
+                    "accepted": True, "runtimeEngine": "durable", "compactionTarget": target,
+                    **({"resumed": False} if method == "session.resume" else {"drained": True,
+                        "outcomes": [{"taskId": target["taskIds"][0], "status": "completed"},
+                                     {"taskId": target["taskIds"][1], "status": "failed"}]}),
+                    "state": {**copy.deepcopy(self.host.snapshot), "schemaVersion": "rag-ime.pi-session-control-state.v1"}}
+            return send(method, params, **kwargs)
+        self.host.send = terminal_original
+        for operation in (self.runtime.resume_compaction, self.runtime.abort_compaction, self.runtime.abort_compaction):
+            result = operation(self.session_id, target)
+            self.assertEqual(result["compactionTarget"], target)
+            self.assertEqual(self.runtime._states[self.session_id].compaction_target, successor)
+            self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+        controls = [params for method, params in self.host.calls if method in {"session.resume", "session.abort"}]
+        self.assertTrue(all(params == {"sessionId": self.session_id, "compactionTarget": target} for params in controls))
+
+    def test_compaction_end_is_not_terminal_but_settled_event_projects_current_authority(self):
+        target = self.compaction_host()
+        self.open()
+        self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+            "payload": {"type": "compaction_end", "result": {}}})
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertTrue(self.runtime._states[self.session_id].recoverable)
+        self.host.snapshot.update(compactionTarget=None, recoverable=False, paused=False, isIdle=True)
+        settled = {**copy.deepcopy(self.host.snapshot), "schemaVersion": "rag-ime.pi-session-control-state.v1"}
+        self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+            "payload": {"type": "compaction_settled", "compactionTarget": target, "state": settled}})
+        self.assertIsNone(self.runtime._states[self.session_id].compaction_target)
+        self.assertEqual(self.store.get(self.session_id)["status"], "idle")
+        event = self.events.replay(self.session_id)[0][-1]
+        self.assertEqual(event.event_type, "status_changed")
+        self.assertEqual(event.payload["compactionTarget"], None)
+        self.assertTrue(event.payload["projectionCurrent"])
+        self.assertFalse(event.turn_id)
+        # An old event cannot erase a subsequently admitted native task.
+        successor = {**target, "taskIds": ["durable:task:3"]}
+        self.host.snapshot.update(compactionTarget=successor, isIdle=False)
+        self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+            "payload": {"type": "compaction_settled", "compactionTarget": target, "state": settled}})
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, successor)
+        self.assertEqual(self.events.replay(self.session_id)[0][-1].payload["compactionTarget"], successor)
+
+    def test_standalone_compaction_start_observes_native_target_and_cancels_idle_timer(self):
+        target = self.compaction_host()
+        self.open()
+        self.runtime._states[self.session_id].compaction_target = None
+        self.store.set_status(self.session_id, "idle")
+        idle_timer = Mock()
+        self.runtime._idle_timer = idle_timer
+        self.host.snapshot.update(paused=False, recoverable=False)
+        self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+            "payload": {"type": "compaction_start"}})
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+        idle_timer.cancel.assert_called_once()
+        self.assertIsNone(self.runtime._idle_timer)
+        events = self.events.replay(self.session_id)[0]
+        self.assertEqual(events[-2].payload["compactionTarget"], target)
+        self.assertEqual(events[-1].event_type, "compaction_started")
+
+    def test_api_only_compact_outlives_idle_timeout_without_frontend_snapshot(self):
+        self.host.initial_active = False
+        self.open()
+        target = {"kind": "compaction", "runtimeSessionId": "native-conversation", "taskIds": ["durable:task:10"]}
+        self.runtime._host_capabilities["sessionCompactionRecovery"] = True
+        self.host.snapshot["engineCapabilities"]["compactionRecovery"] = True
+        self.runtime.config = replace(self.runtime.config, idle_timeout_seconds=0.1)
+        send = self.host.send
+        def compact_send(method, params=None, **kwargs):
+            if method != "session.compact":
+                return send(method, params, **kwargs)
+            self.host.calls.append((method, copy.deepcopy(params)))
+            self.host.snapshot.update(paused=False, recoverable=False, isIdle=False, compactionTarget=target)
+            self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+                "payload": {"type": "compaction_start"}})
+            self.assertEqual(self.store.get(self.session_id)["status"], "busy")
+            self.assertIsNone(self.runtime._idle_timer)
+            threading.Event().wait(0.2)
+            self.assertTrue(self.host.running, "idle timer must not stop native compaction")
+            self.host.snapshot.update(isIdle=True, compactionTarget=None)
+            self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+                "payload": {"type": "compaction_settled", "compactionTarget": target,
+                    "state": {**copy.deepcopy(self.host.snapshot), "schemaVersion": "rag-ime.pi-session-control-state.v1"}}})
+            return {"tokensBefore": 100, "estimatedTokensAfter": 20}
+        self.host.send = compact_send
+        self.runtime.compact(self.session_id)
+        self.assertEqual(self.store.get(self.session_id)["status"], "idle")
+        self.assertEqual(self.runtime.runtime_status()["status"], "ready")
+        self.assertIsNotNone(self.runtime._idle_timer)
+        self.assertFalse(any(method == "session.snapshot" for method, _ in self.host.calls))
+
+    def test_compaction_terminal_rearms_idle_lifecycle_without_dropping_other_sessions(self):
+        target = self.compaction_host()
+        self.open()
+        self.runtime.config = replace(self.runtime.config, idle_timeout_seconds=30)
+        self.runtime._states[self.classic["id"]] = _HostedSessionState(turn_id="other-active")
+        with patch("rag_ime.pi.runtime.threading.Timer") as timer:
+            self.runtime.abort_compaction(self.session_id, target)
+            timer.assert_not_called()
+            self.assertEqual(self.runtime.runtime_status()["activeSessionIds"], [self.classic["id"]])
+            self.runtime._states[self.classic["id"]].turn_id = ""
+            self.open()
+            self.assertEqual(self.runtime.runtime_status()["status"], "ready")
+            self.assertEqual(self.runtime.runtime_status()["activeSessionIds"], [])
+            timer.return_value.start.assert_called()
+
+    def test_compaction_original_turn_event_cannot_replace_target(self):
+        target = self.compaction_host()
+        self.open()
+        self.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": self.session_id,
+            "turnId": "original-input", "clientMessageId": "original-client", "payload": {"type": "agent_start"}})
+        self.assertEqual(self.runtime._states[self.session_id].compaction_target, target)
+        self.assertEqual(self.runtime._states[self.session_id].turn_id, "")
+        self.assertTrue(self.runtime._states[self.session_id].recoverable)
+
+    def test_compaction_real_http_controls_preserve_target_and_avoid_cancel_fanout(self):
+        target = self.compaction_host()
+        agent = object.__new__(AgentService)
+        agent._require_mutable_session = Mock()
+        agent.session_application = self.application()
+        agent._workspace_command_cancellation = Mock(side_effect=AssertionError("unrelated commands"))
+        agent.background_jobs = Mock()
+        for action, code in (("resume", 202), ("abort", 200)):
+            handler = object.__new__(DebugRequestHandler)
+            handler.service = Mock(agent=agent)
+            handler.path = f"/api/agent/sessions/{self.session_id}/{action}"
+            body = json.dumps({"compactionTarget": target}).encode()
+            handler.headers = {"Content-Type": "application/json", "Content-Length": str(len(body))}
+            handler.rfile = io.BytesIO(body)
+            handler._authorize_gateway_request = Mock(return_value=True)
+            handler._management_post_security_error = Mock(return_value=None)
+            handler._write_json = Mock()
+            handler.do_POST()
+            actual_code, response = handler._write_json.call_args.args
+            self.assertEqual(int(actual_code), code)
+            self.assertEqual(response["compactionTarget"], target)
+            self.assertNotIn("turnId", response)
+        agent._workspace_command_cancellation.assert_not_called()
+        agent.background_jobs.request_turn_cancellation.assert_not_called()
+
+    def test_compaction_routes_reject_mixed_and_invalid_targets(self):
+        target = self.compaction_host()
+        policy = default_route_policy()
+        for path in ("agent.session.resume", "agent.session.abort"):
+            policy.authorize(ControlRequest(request_id="compaction", path_id=path,
+                params={"sessionId": self.session_id}, body={"compactionTarget": target}), ControlAccessContext.native())
+            bad_bodies = [{"compactionTarget": target, "turnId": "old", "clientMessageId": "old"},
+                {"compactionTarget": None}, {"compactionTarget": {**target, "taskIds": []}},
+                {"compactionTarget": {**target, "taskIds": ["durable:task:2", "durable:task:10"]}},
+                {"compactionTarget": {**target, "taskIds": ["durable:task:2", "durable:task:2"]}},
+                {"compactionTarget": {**target, "taskIds": ["durable:task:0"]}},
+                {"compactionTarget": {**target, "extra": True}}]
+            for body in bad_bodies:
+                with self.subTest(path=path, body=body), self.assertRaises(ControlApiError):
+                    policy.authorize(ControlRequest(request_id="invalid-compaction", path_id=path,
+                        params={"sessionId": self.session_id}, body=body), ControlAccessContext.native())
 
     def test_resume_route_requires_exact_body_and_is_not_remote_executable(self):
         policy = default_route_policy()

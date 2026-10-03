@@ -1,3 +1,4 @@
+import { parseAgentCompactionTarget, type AgentCompactionTarget } from './agent-compaction-target';
 import type { UiAgentEvent, UiAgentMessage } from './ui-events';
 import type { AgentSessionTelemetryV1 } from './generated/agent-session-telemetry.v1';
 import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
@@ -101,6 +102,7 @@ export interface AgentProjectionState {
 }
 
 export interface AgentDurableRecovery {
+  compactionTarget?: AgentCompactionTarget | null;
   paused: boolean;
   recoverable: boolean;
   activeTurn: { turnId: string; clientMessageId: string } | null;
@@ -132,6 +134,7 @@ export interface AgentSnapshot {
   paused?: boolean;
   recoverable?: boolean;
   activeTurn?: AgentDurableRecovery['activeTurn'];
+  compactionTarget?: AgentCompactionTarget | null;
   messages: unknown[];
   liveEvents: unknown[];
   lastSequence: number;
@@ -275,7 +278,12 @@ export function reduceAgentEvent(
     case 'compaction_completed':
       upsertCompactionActivity(next, event, payload, payload.error ? 'failed' : 'completed');
       break;
-    case 'status_changed':
+    case 'status_changed': {
+      const recovery = durableRecoveryFromSnapshot(agentSnapshotFromResponse({ ...payload, sessionId: event.sessionId }), state.sessionId);
+      if (recovery && (!next.durableRecovery?.compactionTarget || recovery.compactionTarget !== undefined)) {
+        next.durableRecovery = recovery;
+        next.runtimeEngine = 'durable';
+      }
       if (text(payload.phase) === 'provider_retry') {
         const activityState = text(payload.activityState);
         const retryStatus: AgentActivityProjection['status'] =
@@ -287,8 +295,11 @@ export function reduceAgentEvent(
         upsertActivity(next, event, payload, retryStatus);
       }
       next.status = text(payload.status) || next.status;
-      touchTurn(next, event.turnId, turnStatusFromRuntime(next.status), event.createdAtMs);
+      if (event.turnId || payload.projectionCurrent !== true || payload.runtimeEngine !== 'durable') {
+        touchTurn(next, event.turnId, turnStatusFromRuntime(next.status), event.createdAtMs);
+      }
       break;
+    }
     case 'message_queue_updated':
       {
         const previousQueue = next.messageQueue;
@@ -1115,7 +1126,8 @@ export function applyAgentSnapshot(
   // Current native control metadata owns recovery; transcript-only enrichment
   // cannot invent or replace that authority. Assign after historical replay.
   next.durableRecovery = snapshot.projectionCurrent === true
-    ? durableRecoveryFromSnapshot(snapshot, state.sessionId)
+    && (!state.durableRecovery?.compactionTarget || snapshot.compactionTarget !== undefined)
+    ? durableRecoveryFromSnapshot(snapshot, state.sessionId) ?? state.durableRecovery
     : state.durableRecovery;
   const recoveryTurn = next.durableRecovery?.activeTurn;
   if (recoveryTurn && ['completed', 'failed', 'aborted'].includes(next.turnsById[recoveryTurn.turnId]?.status)) {
@@ -1124,12 +1136,18 @@ export function applyAgentSnapshot(
   return next;
 }
 
-function durableRecoveryFromSnapshot(snapshot: AgentSnapshot, sessionId: string): AgentDurableRecovery | undefined {
-  if (snapshot.runtimeEngine !== 'durable' || snapshot.sessionId !== sessionId
-    || typeof snapshot.paused !== 'boolean' || typeof snapshot.recoverable !== 'boolean'
-    || snapshot.activeTurn === undefined
-    || snapshot.recoverable && (!snapshot.paused || !snapshot.activeTurn)) return undefined;
-  return { paused: snapshot.paused, recoverable: snapshot.recoverable, activeTurn: snapshot.activeTurn };
+export function durableRecoveryFromSnapshot(snapshot: AgentSnapshot, sessionId: string): AgentDurableRecovery | undefined {
+  if (snapshot.projectionCurrent !== true || snapshot.runtimeEngine !== 'durable' || snapshot.sessionId !== sessionId
+    || typeof snapshot.paused !== 'boolean' || typeof snapshot.recoverable !== 'boolean') return undefined;
+  const compactionTarget = parseAgentCompactionTarget(snapshot.compactionTarget);
+  // Compaction has no input turn. Reject ambiguous or incomplete authority;
+  // retain the target while resumed so Stop still addresses the same tasks.
+  if (compactionTarget && snapshot.activeTurn) return undefined;
+  if (snapshot.activeTurn === undefined && snapshot.compactionTarget === undefined) return undefined;
+  if (snapshot.compactionTarget != null && !compactionTarget) return undefined;
+  if (snapshot.recoverable && (!snapshot.paused || !snapshot.activeTurn && !compactionTarget)) return undefined;
+  return { paused: snapshot.paused, recoverable: snapshot.recoverable, activeTurn: snapshot.activeTurn ?? null,
+    ...(snapshot.compactionTarget !== undefined ? { compactionTarget: compactionTarget ?? null } : {}) };
 }
 
 /**
@@ -1498,6 +1516,7 @@ function removeProjectedMessage(
 export function agentSnapshotFromResponse(value: unknown): AgentSnapshot {
   const payload = record(value);
   const activeTurn = record(payload.activeTurn);
+  const compactionTarget = parseAgentCompactionTarget(payload.compactionTarget);
   const turnId = text(activeTurn.turnId);
   const clientMessageId = text(activeTurn.clientMessageId);
   const messages = Array.isArray(payload.messages)
@@ -1511,6 +1530,7 @@ export function agentSnapshotFromResponse(value: unknown): AgentSnapshot {
     ...(typeof payload.projectionCurrent === 'boolean' ? { projectionCurrent: payload.projectionCurrent } : {}),
     ...(typeof payload.paused === 'boolean' ? { paused: payload.paused } : {}),
     ...(typeof payload.recoverable === 'boolean' ? { recoverable: payload.recoverable } : {}),
+    ...(payload.compactionTarget === null ? { compactionTarget: null } : compactionTarget ? { compactionTarget } : {}),
     ...(payload.activeTurn === null ? { activeTurn: null } : turnId.trim() && clientMessageId.trim()
       ? { activeTurn: { turnId, clientMessageId } } : {}),
     messages,
@@ -1830,6 +1850,8 @@ function upsertCompactionActivity(
   state.activitiesById[id] = activity;
   const turn = ensureTurn(state, activity.turnId, activity.createdAtMs);
   if (!turn.activityIds.includes(id)) turn.activityIds.push(id);
+  // The maintenance row groups visible activity only; it is not a user turn.
+  if (!event.turnId && !turn.messageIds.length) turn.status = status === 'running' ? 'running' : status;
 }
 
 function compactionReasonLabel(reason: string): string {

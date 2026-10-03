@@ -44,6 +44,37 @@ groups outside the Runtime lock. Completed HTTP delivery is not process
 completion. Unknown or ambiguous identity remains pending, and Room-owned jobs
 remain with the Room cancellation owner.
 
+## Standalone compaction recovery
+
+Interrupted standalone compaction has no user input identity. Its current
+metadata instead exposes `compactionTarget` with exactly `kind: "compaction"`,
+`runtimeSessionId` (the native `piSessionId`) and a nonempty unique `taskIds`
+list. IDs are positive safe integers encoded as `durable:task:N`, ordered
+lexicographically (`durable:task:10` precedes `durable:task:2`). The complete
+native target must be preserved; mixed turn/cancellation identities, foreign
+sessions and partial task sets are rejected rather than guessed.
+
+The paused workspace offers **继续压缩** and **停止压缩**. Both use that exact
+target, preserve the draft, and never submit a prompt or a replacement compact
+request. This requires negotiated `sessionCompactionRecovery: true` plus
+`engineCapabilities.compactionRecovery: true`; older Hosts retain ordinary
+input recovery but cannot execute this new control path.
+
+Compaction Stop has no cancellation authority over user turns, approvals,
+workspace commands or background jobs. A successful
+`rag-ime.pi-compaction-abort.v1` receipt reports `drained: true` only after all
+named native tasks are terminal, retaining their original `completed`,
+`aborted` or `failed` outcomes on repeats. An older target cannot stop its
+successor. `rag-ime.pi-compaction-resume.v1` similarly reports whether original
+work resumed, without substituting current work.
+
+A running target stays visible until authoritative native metadata clears it.
+The existing compaction activity completion is not a drain receipt. Pi emits
+`compaction_settled` only after exact native termination; PAW rereads current
+control state and projects that metadata independently of old input events or
+historical transcript pages. Delayed responses and Session switches cannot
+rebind the controls.
+
 ## Supported boundary
 
 | Capability | Durable engine |

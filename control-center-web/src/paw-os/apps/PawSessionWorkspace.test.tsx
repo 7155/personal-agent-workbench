@@ -60,6 +60,191 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it('reopens standalone Durable compaction passively and resumes its exact task target once without changing the draft', async () => {
+    const sessionId = 'session-compaction-reopen';
+    let paused = true;
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': () => compactionSnapshot(sessionId, { paused, recoverable: paused }),
+      'agent.session.resume': () => reply.promise,
+    });
+    const first = render(durableWorkspace(transport, sessionId, '保留压缩草稿'));
+    await screen.findByRole('button', { name: '继续压缩' });
+    first.unmount(); useAgentLiveStore.getState().clear(sessionId);
+    render(durableWorkspace(transport, sessionId, '保留压缩草稿'));
+    const resume = await screen.findByRole('button', { name: '继续压缩' });
+    expect(transport.requests.some(request => ['agent.session.resume', 'agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+    fireEvent.click(resume); fireEvent.click(resume);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.resume')).toHaveLength(1);
+    expect(transport.requests.find(request => request.pathId === 'agent.session.resume')).toMatchObject({ params: { sessionId }, body: { compactionTarget: compactionTarget() } });
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('保留压缩草稿');
+    await act(async () => { paused = false; reply.resolve(compactionResumeAck(sessionId)); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: '继续压缩' })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled();
+    expect(useAgentLiveStore.getState().projections[sessionId].turnOrder).toEqual([]);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ compactionTarget: compactionTarget() });
+    expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+  });
+
+
+
+  it('keeps compaction Stop through an early completion and settles on exact native status without a user turn', async () => {
+    const sessionId = 'session-compaction-drain';
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': compactionSnapshot(sessionId, { paused: false, recoverable: false }),
+    });
+    render(durableWorkspace(transport, sessionId, '等待资源收尾的草稿'));
+    await screen.findByRole('button', { name: '停止压缩' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { transport.emit('agent.session.events', parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:2`, sessionId, turnId: '', sequence: 2,
+      createdAtMs: 2, eventType: 'compaction_completed', payload: {}, resumeToken: `${sessionId}:2`,
+    })); });
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length).toBeGreaterThan(1));
+    expect(screen.getByRole('button', { name: '停止压缩' })).toBeVisible();
+    act(() => { transport.emit('agent.session.events', parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:3`, sessionId, turnId: '', sequence: 3,
+      createdAtMs: 3, eventType: 'status_changed', payload: { status: 'idle', runtimeEngine: 'durable',
+        projectionCurrent: true, paused: false, recoverable: false, activeTurn: null, compactionTarget: null }, resumeToken: `${sessionId}:3`,
+    })); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: '停止压缩' })).not.toBeInTheDocument());
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('等待资源收尾的草稿');
+    expect(useAgentLiveStore.getState().projections[sessionId].turnOrder).not.toContain('unscoped');
+    expect(sessionWorkspaceProjectionSlice(useAgentLiveStore.getState(), sessionId).activeTurnId).toBe('');
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
+  });
+
+  it('clears resumed compaction controls only after a completion event refreshes current native metadata', async () => {
+    const sessionId = 'session-compaction-complete';
+    let terminal = false;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': () => compactionSnapshot(sessionId, { paused: false, recoverable: false,
+        compactionTarget: terminal ? null : compactionTarget(), lastSequence: terminal ? 2 : 1, status: terminal ? 'idle' : 'busy' }),
+    });
+    render(durableWorkspace(transport, sessionId, '完成后保留草稿'));
+    await screen.findByRole('button', { name: '停止压缩' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { terminal = true; transport.emit('agent.session.events', parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:2`, sessionId, turnId: '', sequence: 2,
+      createdAtMs: 2, eventType: 'compaction_completed', payload: {}, resumeToken: `${sessionId}:2`,
+    })); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: '停止压缩' })).not.toBeInTheDocument());
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('完成后保留草稿');
+    expect(useAgentLiveStore.getState().projections[sessionId].turnOrder).toEqual([]);
+    expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+  });
+
+  it.each(['resume', 'abort'] as const)('ignores an old compaction %s result after a newer target takes ownership', async action => {
+    const sessionId = `session-compaction-stale-${action}`;
+    const reply = deferred<unknown>();
+    const newer = { ...compactionTarget(), taskIds: ['durable:task:9'] };
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': compactionSnapshot(sessionId), [`agent.session.${action}`]: () => reply.promise,
+    });
+    render(durableWorkspace(transport, sessionId, '新目标的草稿'));
+    const name = action === 'resume' ? '继续压缩' : '停止压缩';
+    fireEvent.click(await screen.findByRole('button', { name }));
+    const pending = transport.requests.find(request => request.pathId === `agent.session.${action}`)!;
+    act(() => { useAgentLiveStore.getState().hydrate(sessionId, compactionSnapshot(sessionId, { compactionTarget: newer })); });
+    expect(pending.signal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name })).toBeEnabled();
+    const reads = transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length;
+    await act(async () => { reply.resolve(action === 'resume' ? compactionResumeAck(sessionId) : compactionAbortAck(sessionId)); });
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot')).toHaveLength(reads);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.compactionTarget).toEqual(newer);
+    expect(screen.getByRole('button', { name })).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name }));
+    expect(transport.requests.filter(request => request.pathId === `agent.session.${action}`).at(-1)?.body).toEqual({ compactionTarget: newer });
+  });
+
+  it.each([
+    { action: 'resume', override: { compactionTarget: { ...compactionTarget(), runtimeSessionId: 'other-runtime' } } },
+    { action: 'resume', override: { resumed: undefined } },
+    { action: 'resume', override: { resumed: 'true' } },
+    { action: 'abort', override: { drained: false } },
+    { action: 'abort', override: { outcomes: [{ taskId: 'durable:task:7', status: 'aborted' }] } },
+    { action: 'abort', override: { outcomes: [{ taskId: 'durable:task:7', status: 'running' }, { taskId: 'durable:task:8', status: 'aborted' }] } },
+  ])('does not settle compaction on a mismatched or incomplete $action receipt $override', async ({ action, override }) => {
+    const sessionId = `session-compaction-bad-receipt-${action}-${JSON.stringify(override)}`;
+    const ack = action === 'resume' ? compactionResumeAck(sessionId) : compactionAbortAck(sessionId);
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': compactionSnapshot(sessionId),
+      [`agent.session.${action}`]: { ...ack, runtimeReceipt: { ...ack.runtimeReceipt, ...override } },
+    });
+    render(durableWorkspace(transport, sessionId, '回执不完整时保留草稿'));
+    const name = action === 'resume' ? '继续压缩' : '停止压缩';
+    fireEvent.click(await screen.findByRole('button', { name }));
+    await screen.findByRole('alert');
+    await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.compactionTarget).toEqual(compactionTarget());
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('回执不完整时保留草稿');
+  });
+
+  it('stops the original Durable compaction once and keeps its draft until terminal metadata clears the target', async () => {
+    const sessionId = 'session-compaction-stop';
+    let terminal = false;
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': () => compactionSnapshot(sessionId, terminal ? { paused: false, recoverable: false, compactionTarget: null, status: 'idle' } : {}),
+      'agent.session.abort': () => reply.promise,
+    });
+    render(durableWorkspace(transport, sessionId, '停止后保留草稿'));
+    const stop = await screen.findByRole('button', { name: '停止压缩' });
+    fireEvent.click(stop); fireEvent.click(stop);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.abort')).toHaveLength(1);
+    expect(transport.requests.find(request => request.pathId === 'agent.session.abort')).toMatchObject({ params: { sessionId }, body: { compactionTarget: compactionTarget() } });
+    expect(stop).toBeDisabled();
+    await act(async () => { reply.resolve(compactionAbortAck(sessionId)); });
+    await waitFor(() => expect(stop).toBeEnabled());
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ compactionTarget: compactionTarget() });
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('停止后保留草稿');
+    act(() => { terminal = true; useAgentLiveStore.getState().hydrate(sessionId, compactionSnapshot(sessionId, { paused: false, recoverable: false, compactionTarget: null, status: 'idle' })); });
+    expect(screen.queryByRole('button', { name: '停止压缩' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '继续压缩' })).not.toBeInTheDocument();
+    expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+  });
+
+  it.each(['resume', 'abort'] as const)('retries an unconfirmed compaction %s only against the original target', async action => {
+    const sessionId = `session-compaction-retry-${action}`;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': compactionSnapshot(sessionId),
+      [`agent.session.${action}`]: () => { throw new Error('not confirmed'); },
+    });
+    render(durableWorkspace(transport, sessionId, '重试时保留草稿'));
+    const name = action === 'resume' ? '继续压缩' : '停止压缩';
+    fireEvent.click(await screen.findByRole('button', { name }));
+    await screen.findByRole('alert');
+    await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name }));
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === `agent.session.${action}`)).toHaveLength(2));
+    expect(transport.requests.filter(request => request.pathId === `agent.session.${action}`).map(request => request.body)).toEqual([{ compactionTarget: compactionTarget() }, { compactionTarget: compactionTarget() }]);
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('重试时保留草稿');
+    expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+  });
+
+  it.each(['resume', 'abort'] as const)('ignores a compaction %s reply after switching sessions', async action => {
+    const first = `session-compaction-old-${action}`; const second = `session-compaction-new-${action}`;
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => compactionSnapshot(String(request.params?.sessionId)),
+      [`agent.session.${action}`]: () => reply.promise,
+    });
+    const view = render(durableWorkspace(transport, first));
+    fireEvent.click(await screen.findByRole('button', { name: action === 'resume' ? '继续压缩' : '停止压缩' }));
+    const pending = transport.requests.find(request => request.pathId === `agent.session.${action}`)!;
+    view.rerender(durableWorkspace(transport, second));
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.paused).toBe(true));
+    const reads = transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length;
+    await act(async () => { reply.resolve(action === 'resume' ? compactionResumeAck(first) : compactionAbortAck(first)); });
+    expect(pending.signal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: '继续压缩' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled();
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot')).toHaveLength(reads);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it.each([
     { name: 'unknown background process', ok: false, drained: false, pendingJobIds: ['job-original'] },
     { name: 'pending background drain', ok: true, drained: false, pendingJobIds: ['job-original'] },
@@ -2913,4 +3098,24 @@ function deferred<T>() {
     resolve = resolvePromise;
   });
   return { promise, resolve };
+}
+
+function compactionTarget() {
+  return { kind: 'compaction', runtimeSessionId: 'runtime-original', taskIds: ['durable:task:7', 'durable:task:8'] };
+}
+function compactionSnapshot(sessionId: string, override: Record<string, unknown> = {}) {
+  return { schemaVersion: 'rag-ime.agent-message-list.v1', sessionId, runtimeEngine: 'durable', projectionCurrent: true,
+    paused: true, recoverable: true, compactionTarget: compactionTarget(), items: [], liveEvents: [],
+    lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'busy', ...override };
+}
+function compactionResumeAck(sessionId: string) {
+  return { schemaVersion: 'rag-ime.agent-session-resume.v1', ok: true, sessionId, compactionTarget: compactionTarget(),
+    runtimeReceipt: { schemaVersion: 'rag-ime.pi-compaction-resume.v1', accepted: true, runtimeEngine: 'durable',
+      compactionTarget: compactionTarget(), resumed: true, state: { paused: false } } };
+}
+function compactionAbortAck(sessionId: string) {
+  return { schemaVersion: 'rag-ime.agent-abort.v1', ok: true, sessionId, compactionTarget: compactionTarget(),
+    runtimeReceipt: { schemaVersion: 'rag-ime.pi-compaction-abort.v1', accepted: true, runtimeEngine: 'durable',
+      compactionTarget: compactionTarget(), drained: true, state: { paused: false },
+      outcomes: compactionTarget().taskIds.map(taskId => ({ taskId, status: 'aborted' })) } };
 }

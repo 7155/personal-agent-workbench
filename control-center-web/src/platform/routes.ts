@@ -1,3 +1,4 @@
+import { parseAgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import type { GeneratedContractName } from '@/contracts/generated';
 
 export type ControlHttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -650,13 +651,13 @@ export const CONTROL_ROUTES = {
     method: 'POST',
     path: '/api/agent/sessions/:sessionId/abort',
     params: { sessionId: null },
+    body: ['compactionTarget'],
   },
   'agent.session.resume': {
     method: 'POST',
     path: '/api/agent/sessions/:sessionId/resume',
     params: { sessionId: null },
-    body: ['turnId', 'clientMessageId'],
-    requiredBody: ['turnId', 'clientMessageId'],
+    body: ['turnId', 'clientMessageId', 'compactionTarget'],
   },
   'agent.session.review.resolve': {
     method: 'POST',
@@ -2000,7 +2001,7 @@ export function assertAllowedBody(
 ): void {
   const route = controlRoute(pathId);
   if (body === undefined) {
-    if ((route.requiredBody?.length ?? 0) > 0) {
+    if ((route.requiredBody?.length ?? 0) > 0 || pathId === 'agent.session.resume') {
       throw new ControlRoutePolicyError(pathId, 'required request body is missing');
     }
     return;
@@ -2012,6 +2013,19 @@ export function assertAllowedBody(
   for (const key of Object.keys(body)) {
     if (!allowed.has(key)) {
       throw new ControlRoutePolicyError(pathId, `body field is not allowlisted: ${key}`);
+    }
+  }
+  if (pathId === 'agent.session.resume' || pathId === 'agent.session.abort') {
+    const target = body as Record<string, unknown>;
+    if (Object.hasOwn(target, 'compactionTarget')) {
+      if (!parseAgentCompactionTarget(target.compactionTarget) || Object.hasOwn(target, 'turnId') || Object.hasOwn(target, 'clientMessageId')) {
+        throw new ControlRoutePolicyError(pathId, 'invalid or ambiguous compaction target');
+      }
+    } else if (pathId === 'agent.session.resume' && (
+      typeof target.turnId !== 'string' || !target.turnId.trim()
+      || typeof target.clientMessageId !== 'string' || !target.clientMessageId.trim()
+    )) {
+      throw new ControlRoutePolicyError(pathId, 'resume requires an exact original input or compaction target');
     }
   }
   for (const key of route.requiredBody ?? []) {

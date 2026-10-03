@@ -24,6 +24,25 @@ import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
 import type { AgentLifecycleCancellationAuditV1 } from './generated/agent-lifecycle-cancellation-audit.v1';
 
 describe('AgentEventReducer', () => {
+  it.each([
+    { kind: 'turn', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:0'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:9007199254740992'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:01'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'], turnId: 'injected' },
+    { kind: 'compaction', runtimeSessionId: '', taskIds: ['durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: [] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1', 'durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:2', 'durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['other:task:1'] },
+  ])('rejects malformed standalone compaction authority %j', compactionTarget => {
+    const state = applyAgentSnapshot(createAgentProjection('session-1'), agentSnapshotFromResponse({
+      sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
+      compactionTarget, items: [], liveEvents: [], lastSequence: 0,
+    }));
+    expect(state.durableRecovery).toBeUndefined();
+  });
+
   it('retains exact Durable paused input and tool receipts without settling the turn', () => {
     const snapshot = agentSnapshotFromResponse({
       sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true,

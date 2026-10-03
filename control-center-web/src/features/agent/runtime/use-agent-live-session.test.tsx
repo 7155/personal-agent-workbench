@@ -17,6 +17,22 @@ afterEach(() => {
 });
 
 describe('useAgentLiveSession shared ownership', () => {
+  it('hydrates current compaction metadata at an equal recent cursor without reviving an old completed turn', async () => {
+    const target = { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] };
+    let compacting = false;
+    const transport = new MockControlTransport({ routes: {
+      'agent.session.snapshot': () => ({ sessionId: SESSION_ID, runtimeEngine: 'durable', projectionCurrent: true,
+        paused: compacting, recoverable: compacting, activeTurn: null, compactionTarget: compacting ? target : null,
+        messages: [], liveEvents: [], lastSequence: 1, resumeToken: `${SESSION_ID}:1`,
+        snapshotScope: 'recent', partial: true, status: compacting ? 'busy' : 'idle' }),
+    } });
+    const view = renderHook(() => useAgentLiveSession({ sessionId: SESSION_ID, transport }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    await act(async () => { compacting = true; await view.result.current({ preserveAfterSequence: 1 }); });
+    expect(useAgentLiveStore.getState().projections[SESSION_ID].durableRecovery).toMatchObject({ paused: true, compactionTarget: target });
+    expect(useAgentLiveStore.getState().projections[SESSION_ID].turnOrder).toEqual([]);
+  });
+
   it('uses a recent projection warmed before a cold open without issuing a duplicate read or SSE warmup', async () => {
     const recent = {
       lastSequence: 4,

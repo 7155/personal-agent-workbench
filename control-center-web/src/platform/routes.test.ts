@@ -14,6 +14,28 @@ it('requires both original Durable input identities on the local explicit resume
   expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { turnId: 'original-turn', clientMessageId: 'original-client' } })).not.toThrow();
 });
 
+
+it('requires one exact compaction or original-input target on resume and validates optional compaction abort', () => {
+  const compactionTarget = { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] };
+  const request = { pathId: 'agent.session.resume' as const, params: { sessionId: 'session:paused' } };
+  expect(() => assertControlRequest({ ...request, body: { compactionTarget } })).not.toThrow();
+  expect(() => assertControlRequest({ ...request, body: {} })).toThrow();
+  expect(() => assertControlRequest(request)).toThrow();
+  expect(() => assertControlRequest({ ...request, body: { compactionTarget, turnId: 'turn', clientMessageId: 'client' } })).toThrow();
+  expect(() => assertControlRequest({ ...request, body: { compactionTarget: { ...compactionTarget, taskIds: [] } } })).toThrow();
+  for (const malformed of [
+    { ...compactionTarget, taskIds: ['durable:task:0'] },
+    { ...compactionTarget, taskIds: ['durable:task:9007199254740992'] },
+    { ...compactionTarget, taskIds: ['durable:task:01'] },
+    { ...compactionTarget, turnId: 'injected' },
+  ]) {
+    expect(() => assertControlRequest({ ...request, body: { compactionTarget: malformed } })).toThrow();
+    expect(() => assertControlRequest({ ...request, pathId: 'agent.session.abort', body: { compactionTarget: malformed } })).toThrow();
+  }
+  expect(() => assertControlRequest({ ...request, pathId: 'agent.session.abort', body: { compactionTarget } })).not.toThrow();
+  expect(() => assertControlRequest({ ...request, pathId: 'agent.session.abort', body: {} })).not.toThrow();
+});
+
 const canonicalPathIds = [
   'control.bootstrap',
   'control.capabilities',

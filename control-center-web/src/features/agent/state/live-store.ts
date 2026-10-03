@@ -6,6 +6,7 @@ import {
   agentSnapshotFromResponse,
   appendOptimisticAgentMessage,
   applyAgentSnapshot,
+  durableRecoveryFromSnapshot,
   mergeAgentSnapshotHistory,
   createAgentProjection,
   discardOptimisticAgentMessage,
@@ -22,6 +23,8 @@ type AgentLiveProjection = AgentProjectionState & { recoveryCursor?: number };
 interface AgentSnapshotHydrationOptions {
   /** Only a read started by the recovery owner after this control may rewind. */
   recoveryCursor?: number;
+  /** Live owner's cursor when the read began; newer events retain control authority. */
+  controlMetadataSequence?: number;
 }
 
 interface AgentLiveStore {
@@ -96,8 +99,19 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
     if (current.needsSnapshot && recoveryCursor !== undefined && snapshot.lastSequence < recoveryCursor) return false;
     const reset = current.needsSnapshot && recoveryCursor !== undefined && recoveryCursor < current.lastSequence;
     if (reset && options?.recoveryCursor !== recoveryCursor) return false;
+    if (options?.controlMetadataSequence !== undefined && options.controlMetadataSequence !== current.lastSequence) {
+      snapshot = { ...snapshot, projectionCurrent: false };
+    }
     if (snapshot.lastSequence < current.lastSequence && !reset) {
-      const projection = mergeAgentSnapshotHistory(current, normalizeLegacyHistoryTurns(snapshot));
+      let projection = mergeAgentSnapshotHistory(current, normalizeLegacyHistoryTurns(snapshot));
+      // History pagination owns transcript rows, not the native control cursor.
+      // A fresh owner read may carry current compaction metadata beside older
+      // rows; a delayed read cannot overwrite any event received since it began.
+      const recovery = durableRecoveryFromSnapshot(snapshot, sessionId);
+      if (options?.controlMetadataSequence === current.lastSequence && recovery
+        && recovery.compactionTarget !== undefined) {
+        projection = { ...projection, durableRecovery: recovery, runtimeEngine: 'durable' };
+      }
       if (projection === current) return false;
       set((state) => ({ projections: { ...state.projections, [sessionId]: projection } }));
       return true;
@@ -135,7 +149,17 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       && !current.needsSnapshot
       && isTerminalProjection(current)
       && !isTerminalProjection(projection)
-    ) return false;
+    ) {
+      // A completed user turn cannot invalidate unrelated native compaction.
+      // Preserve its terminal transcript while accepting current control state.
+      const recovery = durableRecoveryFromSnapshot(snapshot, sessionId);
+      if (!recovery?.compactionTarget && !current.durableRecovery?.compactionTarget) return false;
+      if (!recovery || current.durableRecovery?.compactionTarget && recovery.compactionTarget === undefined) return false;
+      set((state) => ({ projections: { ...state.projections, [sessionId]: {
+        ...current, durableRecovery: recovery, runtimeEngine: projection.runtimeEngine,
+      } } }));
+      return true;
+    }
     set((state) => ({
       projections: { ...state.projections, [sessionId]: projection },
     }));

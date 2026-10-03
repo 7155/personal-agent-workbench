@@ -10,6 +10,45 @@ afterEach(() => {
 });
 
 describe('Agent live store snapshot hydration', () => {
+
+  it('accepts fresh native compaction metadata alongside older history while fencing delayed reads after native status', () => {
+    const store = useAgentLiveStore.getState();
+    const target = { kind: 'compaction', runtimeSessionId: 'runtime-original', taskIds: ['durable:task:7'] };
+    const snapshot = { sessionId, runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
+      compactionTarget: target, messages: [], liveEvents: [], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'busy' };
+    store.hydrate(sessionId, { messages: [], liveEvents: [], lastSequence: 5, status: 'idle' });
+    expect(store.hydrate(sessionId, snapshot, { controlMetadataSequence: 5 })).toBe(true);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toMatchObject({ lastSequence: 5, durableRecovery: { compactionTarget: target } });
+    store.applyEvents(sessionId, [event(6, '', 'status_changed', { status: 'idle', runtimeEngine: 'durable', projectionCurrent: true,
+      paused: false, recoverable: false, activeTurn: null, compactionTarget: null })]);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.compactionTarget).toBeNull();
+    store.hydrate(sessionId, snapshot, { controlMetadataSequence: 5 });
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.compactionTarget).toBeNull();
+    expect(useAgentLiveStore.getState().projections[sessionId].turnOrder).toEqual([]);
+  });
+
+  it('keeps standalone compaction authority independent of completed turns and history pages', () => {
+    const store = useAgentLiveStore.getState();
+    const target = { kind: 'compaction', runtimeSessionId: 'runtime-original', taskIds: ['durable:task:7'] };
+    const snapshot = { sessionId, runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
+      compactionTarget: target, messages: [message('old-answer', 'assistant', 'old-turn', '原任务已完成')],
+      liveEvents: [event(1, 'old-turn', 'turn_completed', {})], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'idle' };
+    expect(store.hydrate(sessionId, snapshot)).toBe(true);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ paused: true, compactionTarget: target });
+    expect(store.hydrate(sessionId, { ...snapshot, status: 'busy', paused: false, recoverable: false })).toBe(true);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ paused: false, compactionTarget: target });
+    expect(store.hydrate(sessionId, { ...snapshot, lastSequence: 0, messages: [message('older-answer', 'assistant', 'older-turn', '更早记录')] })).toBe(true);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ paused: false, compactionTarget: target });
+    store.hydrate(sessionId, { ...snapshot, activeTurn: null, paused: false, recoverable: false, compactionTarget: undefined });
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ paused: false, compactionTarget: target });
+    store.hydrate(sessionId, { ...snapshot, compactionTarget: { ...target, extra: 'invalid' } });
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ paused: false, compactionTarget: target });
+    store.applyEvents(sessionId, [event(2, 'old-turn', 'turn_completed', {})]);
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery).toMatchObject({ paused: false, compactionTarget: target });
+    store.hydrate(sessionId, { ...snapshot, lastSequence: 2, paused: false, recoverable: false, compactionTarget: null });
+    expect(useAgentLiveStore.getState().projections[sessionId].durableRecovery?.compactionTarget).toBeNull();
+  });
+
   it('updates current Durable pause metadata at the same cursor and keeps older history from replacing it', () => {
     const store = useAgentLiveStore.getState();
     const paused = { sessionId, runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
