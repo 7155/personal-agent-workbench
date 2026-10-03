@@ -537,19 +537,25 @@ class ElectronDevelopmentInstallTests(unittest.TestCase):
         self.case_number = 0
         self.source = (ROOT / "scripts/build_paw_os_electron_host.sh").read_text(encoding="utf-8")
 
-    def fixture(self, branch="main", dirty=False):
+    def fixture(self, branch="main", dirty=False, *, hydrated=True):
         self.case_number += 1
         root = self.tmp / str(self.case_number)
         (root / "scripts/support").mkdir(parents=True)
         shutil.copyfile(ROOT / "scripts/build_paw_os_electron_host.sh", root / "scripts/build_paw_os_electron_host.sh")
         shutil.copyfile(ROOT / "scripts/support/prebuilt_product.sh", root / "scripts/support/prebuilt_product.sh")
         electron = root / "control-center-web/node_modules/electron/dist/Electron.app"
-        electron.mkdir(parents=True)
-        (electron / "fixture").write_text("pinned runtime fixture\n")
+        electron.parent.parent.mkdir(parents=True)
+        (electron.parent.parent / "install.js").write_text("// pinned installer fixture\n")
+        if hydrated:
+            electron.mkdir(parents=True)
+            (electron / "fixture").write_text("pinned runtime fixture\n")
         bins = root / "bin"
         bins.mkdir()
         for path, body in (
-            (bins / "node", "printf '1.0.0\\n'\n"),
+            (bins / "node", 'if [[ "${1:-}" == */electron/install.js ]]; then\n'
+             '  printf "%s" "${ELECTRON_GET_USE_PROXY-}" > "$PAW_TEST_PROXY_LOG"\n'
+             '  mkdir -p "$(dirname "$1")/dist/Electron.app"\n'
+             'else printf "1.0.0\\n"; fi\n'),
             (bins / "curl", "exit 0\n"),
             (root / "scripts/build_control_center_web.sh",
              'printf "%s\\n" "$RAG_IME_SOURCE_DIRTY" > "$PAW_TEST_GUARD_LOG"\nexit 73\n'),
@@ -572,12 +578,15 @@ class ElectronDevelopmentInstallTests(unittest.TestCase):
     def git(root, *args):
         return subprocess.run(["git", "-C", str(root), *args], check=True, text=True, capture_output=True)
 
-    def run_guard(self, root, action, *, development=None, legacy_dirty=None):
+    def run_guard(self, root, action, *, development=None, legacy_dirty=None, proxy_env=None):
         env = {key: value for key, value in os.environ.items() if key not in {
-            "RAG_IME_ALLOW_DEVELOPMENT_INSTALL", "RAG_IME_ALLOW_DIRTY_INSTALL", "PAW_BINARY_PAYLOAD"}}
+            "RAG_IME_ALLOW_DEVELOPMENT_INSTALL", "RAG_IME_ALLOW_DIRTY_INSTALL", "PAW_BINARY_PAYLOAD",
+            "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ELECTRON_GET_USE_PROXY"}}
         env["PATH"] = str(root / "bin") + os.pathsep + env["PATH"]
         log = self.tmp / f"guard-{self.case_number}.txt"
         env["PAW_TEST_GUARD_LOG"] = str(log)
+        env["PAW_TEST_PROXY_LOG"] = str(self.tmp / f"proxy-{self.case_number}.txt")
+        env.update(proxy_env or {})
         if development is not None:
             env["RAG_IME_ALLOW_DEVELOPMENT_INSTALL"] = development
         if legacy_dirty is not None:
@@ -585,6 +594,23 @@ class ElectronDevelopmentInstallTests(unittest.TestCase):
         result = subprocess.run(["bash", str(root / "scripts/build_paw_os_electron_host.sh"), action],
                                 cwd=root, env=env, text=True, capture_output=True, timeout=10)
         return result, log
+
+    def test_electron_hydration_uses_existing_proxy_and_preserves_explicit_policy(self):
+        cases = (
+            ({"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "1"),
+            ({"http_proxy": "http://proxy.example.invalid:8080"}, "1"),
+            ({}, ""),
+            ({"HTTPS_PROXY": "http://proxy.example.invalid:8080", "ELECTRON_GET_USE_PROXY": ""}, ""),
+            ({"ELECTRON_GET_USE_PROXY": "1"}, "1"),
+        )
+        for proxy_env, expected in cases:
+            with self.subTest(proxy_env=proxy_env):
+                root = self.fixture(hydrated=False)
+                result, log = self.run_guard(root, "build-release", proxy_env=proxy_env)
+                self.assertEqual(result.returncode, 73, result.stderr)
+                self.assertEqual(log.read_text().strip(), "false")
+                observed = self.tmp / f"proxy-{self.case_number}.txt"
+                self.assertEqual(observed.read_text(), expected)
 
     def test_default_release_actions_require_main_and_clean_source(self):
         for action in ("build-release", "install-release"):

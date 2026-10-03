@@ -28,6 +28,12 @@ pnpm --dir control-center-web install --frozen-lockfile
 Do not add local API keys, model weights, personal input history, databases,
 build products, or macOS permission state to fixtures.
 
+Native builds hydrate the lockfile-pinned Electron runtime through its official
+installer and checksums. Existing HTTP/HTTPS proxy settings apply to this
+download; an explicit `ELECTRON_GET_USE_PROXY` setting takes precedence (an
+empty value disables proxy initialization). No proxy or credential settings
+are persisted by the build.
+
 ## Change Discipline
 
 Development plans, requirement ledgers, handoffs, and review diaries stay local

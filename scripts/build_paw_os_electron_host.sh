@@ -55,7 +55,12 @@ hydrate_electron_runtime() {
     exit 1
   }
   echo "Hydrating the pinned Electron runtime..." >&2
-  node "$ELECTRON_INSTALLER"
+  local use_proxy="${ELECTRON_GET_USE_PROXY-}"
+  if [[ -z "${ELECTRON_GET_USE_PROXY+x}" &&
+    -n "${HTTPS_PROXY:-}${HTTP_PROXY:-}${https_proxy:-}${http_proxy:-}" ]]; then
+    use_proxy=1
+  fi
+  ELECTRON_GET_USE_PROXY="$use_proxy" node "$ELECTRON_INSTALLER"
   [[ -d "$ELECTRON_APP" ]] || {
     echo "Electron runtime hydration did not produce Electron.app" >&2
     exit 1

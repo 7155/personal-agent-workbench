@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Honor existing HTTP/HTTPS proxies when hydrating the pinned native Electron
+  runtime, retaining explicit proxy policy and checksum verification.
+
 - Group retained Room attempts once per projection instead of scanning all
   turns for every round; preserve retry identities, ordering and available history.
 
