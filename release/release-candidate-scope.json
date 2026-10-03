@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-03T05:43:44.990773+00:00",
+  "generatedAt": "2026-10-03T06:49:52.253329+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "codex/paw-main-integration-20261003",
@@ -171,14 +171,14 @@
     },
     "durable_desktop_iteration": {
       "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
-      "pathCount": 23
+      "pathCount": 26
     }
   },
   "summary": {
-    "pathCount": 1893,
+    "pathCount": 1896,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1577
+      "keep_release": 1580
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -187,7 +187,7 @@
       "composition_refactor": 32,
       "conversation_controls": 61,
       "conversation_v2_integration": 49,
-      "durable_desktop_iteration": 23,
+      "durable_desktop_iteration": 26,
       "earth_research": 113,
       "jev_integration": 10,
       "knowledge_runtime": 12,
@@ -11532,6 +11532,13 @@
       "reason": "Existing executable regressions updated for the owning package."
     },
     {
+      "path": "tests/fixtures/pi_durable_workspace_tool_load.mjs",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "tests/fixtures/pi_session_resource_policy_probe.mjs",
       "status": "added",
       "disposition": "keep_release",
@@ -13072,6 +13079,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_pi_durable_workspace_manifests.py",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "tests/test_pi_exact_turn_cancellation.py",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -13469,6 +13483,13 @@
       "disposition": "keep_release",
       "group": "room_history_codemode",
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
+    },
+    {
+      "path": "tests/test_workspace_job_turn_cancellation.py",
+      "group": "durable_desktop_iteration",
+      "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "uv.lock",
