@@ -13,7 +13,7 @@ import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import type { SessionSummary } from '@/features/agent/types';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import { StubControlTransport } from '@/test/stub-control-transport';
-import { ControlTransportHttpError } from '@/platform/http-transport';
+import { ControlTransportHttpError, HttpControlTransport } from '@/platform/http-transport';
 import type { ControlEventObserver, ControlRequest } from '@/platform/transport';
 import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
 import agentMigratedCss from '../styles/paw-os-agent.css?raw';
@@ -60,6 +60,77 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it.each([
+    { name: 'unknown background process', ok: false, drained: false, pendingJobIds: ['job-original'] },
+    { name: 'pending background drain', ok: true, drained: false, pendingJobIds: ['job-original'] },
+  ])('retains an unconfirmed Stop receipt for $name after native terminal and snapshot', async ({ ok, drained, pendingJobIds }) => {
+    const sessionId = `session-stop-${ok ? 'draining' : 'unknown'}`;
+    const receipt = { schemaVersion: 'rag-ime.agent-abort.v1', sessionId, ok,
+      backgroundJobs: { turnIds: ['turn-busy'], jobIds: ['job-original'], pendingJobIds, drained } };
+    const fetchReceipt = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200 }));
+    const http = new HttpControlTransport({ baseUrl: 'http://stop-receipt.test', fetch: fetchReceipt });
+    const fixture = busySessionTransport(sessionId);
+    const stopped = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`,
+      sessionId, turnId: 'turn-busy', sequence: 1, createdAtMs: 2,
+      eventType: 'turn_completed', payload: { status: 'aborted' }, resumeToken: `${sessionId}:1` });
+    let nativeSettled = false;
+    const transport = new StubControlTransport('mock', {
+      ...idleSessionRoutes(),
+      'agent.session.snapshot': async (request: ControlRequest) => ({
+        ...await fixture.request<Record<string, unknown>>(request),
+        ...(nativeSettled ? { status: 'idle', liveEvents: [stopped], lastSequence: 1, resumeToken: `${sessionId}:1` } : {}),
+      }),
+      // Keep the real HTTP admission boundary: HTTP 200 resolves raw ok=false.
+      'agent.session.abort': (request: ControlRequest) => http.request(request),
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(<QueryClientProvider client={queryClient}>
+      {durableWorkspace(transport, sessionId, '尚未发送的草稿', 'full')}
+    </QueryClientProvider>);
+    try {
+      await userEvent.setup().click(await screen.findByRole('button', { name: '停止当前回合' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('尚有后台资源未确认停止');
+      expect(fetchReceipt).toHaveBeenCalledOnce();
+      expect(fetchReceipt).toHaveBeenCalledWith(new URL(`/api/agent/sessions/${sessionId}/abort`, 'http://stop-receipt.test'),
+        expect.objectContaining({ method: 'POST', body: '{}' }));
+      expect(useAgentLiveStore.getState().projections[sessionId].turnsById['turn-busy'].status).toBe('running');
+      expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('尚未发送的草稿');
+      const previousReads = transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length;
+      nativeSettled = true;
+      act(() => { transport.emit('agent.session.events', stopped); });
+      await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length).toBeGreaterThan(previousReads));
+      await waitFor(() => expect(screen.getByRole('button', { name: '发送' })).toBeEnabled());
+      expect(screen.getByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+      await userEvent.setup().click(within(screen.getByRole('alert')).getByRole('button', { name: '查看任务与状态' }));
+      expect(view.container.querySelector('.paw-session-workspace')).toHaveAttribute('data-panel', 'status');
+      expect(screen.getByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+      expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+    } finally { view.unmount(); queryClient.clear(); useAgentLiveStore.getState().clear(sessionId); }
+  });
+
+  it('accepts a confirmed background drain without inventing a native terminal', async () => {
+    const sessionId = 'session-stop-confirmed';
+    const receipt = { schemaVersion: 'rag-ime.agent-abort.v1', sessionId, ok: true,
+      backgroundJobs: { turnIds: ['turn-busy'], jobIds: ['job-original'], pendingJobIds: [], drained: true } };
+    const fetchReceipt = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200 }));
+    const http = new HttpControlTransport({ baseUrl: 'http://stop-receipt.test', fetch: fetchReceipt });
+    const fixture = busySessionTransport(sessionId);
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => fixture.request(request),
+      'agent.session.abort': (request: ControlRequest) => http.request(request),
+    });
+    const view = render(durableWorkspace(transport, sessionId, '保留成功停止后的草稿', 'full'));
+    try {
+      await userEvent.setup().click(await screen.findByRole('button', { name: '停止当前回合' }));
+      await waitFor(() => expect(fetchReceipt).toHaveBeenCalledOnce());
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(useAgentLiveStore.getState().projections[sessionId].turnsById['turn-busy'].status).toBe('running');
+      expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('保留成功停止后的草稿');
+      expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+    } finally { view.unmount(); useAgentLiveStore.getState().clear(sessionId); }
+  });
+
   it('keeps a paused Durable task static in the full workspace without losing its Stop control', async () => {
     const sessionId = 'session-durable-paused-chrome';
     const transport = new StubControlTransport('mock', durablePausedRoutes(sessionId));

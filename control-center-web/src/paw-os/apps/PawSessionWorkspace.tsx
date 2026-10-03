@@ -119,6 +119,7 @@ import { ProjectQuickActions } from '@/features/eval-lab/projects/ProjectQuickAc
 
 type WorkbenchPanel = 'none' | 'files' | 'subagents' | 'status';
 type SessionWorkspaceView = 'conversation' | 'trace' | 'starfield';
+const STOP_UNCONFIRMED_TEXT = '尚有后台资源未确认停止。请查看任务与状态后重试。';
 
 export function sessionWorkspaceProjectionSlice(
   state: ReturnType<typeof useAgentLiveStore.getState>,
@@ -399,7 +400,8 @@ export function PawSessionWorkspace({
       setHasSnapshot(true);
       setSyncError('');
       setContextSnapshotState(snapshot.view === 'recent' ? 'partial' : undefined);
-      setError('');
+      // A transcript snapshot cannot confirm that a captured process drained.
+      setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
       refreshControlCatalog();
     },
     onSnapshotError: (failure) => {
@@ -439,7 +441,7 @@ export function PawSessionWorkspace({
           terminalSnapshotTimerRef.current = undefined;
         }
         setStopping(false);
-        setError('');
+        setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
         void loadAgentSnapshotRef.current({
           preserveAfterSequence: event.sequence,
         });
@@ -850,7 +852,14 @@ export function PawSessionWorkspace({
        the reader just interrupted. */
     if (queue.queue.length) setDraft((current) => queue.restoreToDraft(current));
     try {
-      await transport.request({ pathId: 'agent.session.abort', params: { sessionId: recordId }, body: {} });
+      const receipt = asRecord(await transport.request({ pathId: 'agent.session.abort', params: { sessionId: recordId }, body: {} }));
+      const jobs = asRecord(receipt.backgroundJobs);
+      if (receipt.ok === false || jobs.drained === false
+        || Array.isArray(jobs.pendingJobIds) && jobs.pendingJobIds.length > 0) {
+        setStopping(false);
+        setError(STOP_UNCONFIRMED_TEXT);
+        return;
+      }
       // Abort acknowledgement and history loading are different contracts.
       // The subscribed terminal event settles the turn and refreshes recent
       // state; full history remains user-requested.
@@ -1613,7 +1622,9 @@ export function PawSessionWorkspace({
               <div className="paw-session-workspace__error" role="alert">
                 <CircleAlert size={14} />
                 <span>{visibleError}</span>
-                {error === SESSION_WORKSPACE_MISSING_TEXT ? (
+                {error === STOP_UNCONFIRMED_TEXT ? (
+                  <button onClick={() => openToolPanel('status')} type="button">查看任务与状态</button>
+                ) : error === SESSION_WORKSPACE_MISSING_TEXT ? (
                   <button onClick={() => void manageWorkspaceRoots()} type="button">选择工作目录</button>
                 ) : (
                   <button onClick={() => { setError(''); setSyncError(''); void loadAgentSnapshot(); }} type="button">{error ? '重新同步' : '立即重连'}</button>
