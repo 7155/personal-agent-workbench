@@ -49,21 +49,49 @@ def parse_temporal_query(
     anchor = (now or datetime.now(tz)).astimezone(tz)
     working = str(query)
     ranges: list[TemporalRange] = []
+    protected_ranges: dict[str, str] = {}
 
-    def consume(pattern: str, handler) -> None:
+    def consume(
+        pattern: str,
+        handler,
+        *,
+        protect_rejected: bool = False,
+        preserve_accepted: bool = False,
+    ) -> None:
         nonlocal working
         regex = re.compile(pattern, re.IGNORECASE)
-        matches = list(regex.finditer(working))
-        for match in matches:
+        pieces: list[str] = []
+        cursor = 0
+        for match in regex.finditer(working):
             result = handler(match, anchor, tz)
-            if result is not None:
+            if (result is None and not protect_rejected) or (result is not None and preserve_accepted):
+                continue
+            pieces.append(working[cursor:match.start()])
+            if result is None:
+                token = f"\ue000rejected-date-range-{len(protected_ranges)}\ue001"
+                while token in working:
+                    token += "\ue000"
+                protected_ranges[token] = match.group(0)
+                pieces.append(token)
+            else:
                 ranges.append(result)
-        if matches:
-            working = regex.sub(" ", working)
+                pieces.append(" ")
+            cursor = match.end()
+        if cursor:
+            pieces.append(working[cursor:])
+            working = "".join(pieces)
 
+    range_endpoint = r"(\d+)[-/.年](\d+)[-/.月](\d+)日?"
     consume(
-        r"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?\s*(?:到|至|~|—|-)\s*(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?",
+        rf"(?<!\d){range_endpoint}\s*(?:到|至|~|—|-)\s*{range_endpoint}(?!\d)",
         _explicit_date_range,
+        protect_rejected=True,
+    )
+    consume(
+        r"(?<!\d)(\d+)[-/.年](\d+)[-/.月](\d+)日?(?!\d)",
+        _explicit_date,
+        protect_rejected=True,
+        preserve_accepted=True,
     )
     consume(r"上周([一二三四五六日天])", _last_weekday)
     consume(rf"({_CN_NUMBER})\s*(?:天|日)前", _days_ago)
@@ -82,13 +110,15 @@ def parse_temporal_query(
     consume(r"本月|这个月|this\s+month", lambda match, *_: _month_range(anchor.date(), match.group(0), tz))
     consume(r"最近|近期|recently|lately", _default_recent)
     consume(
-        r"(?<!\d)(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?",
+        r"(?<!\d)(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?!\d)",
         _explicit_date,
     )
 
     unique: dict[tuple[int, int], TemporalRange] = {}
     for item in ranges:
         unique.setdefault((item.start_ms, item.end_ms), item)
+    for token, expression in protected_ranges.items():
+        working = working.replace(token, expression)
     cleaned = re.sub(r"\s+", " ", working).strip(" ，,。？?！!")
     return TemporalQuery(
         original_query=str(query),
@@ -178,24 +208,32 @@ def _last_weekday(match: re.Match[str], anchor: datetime, tz: ZoneInfo) -> Tempo
 
 
 def _explicit_date(match: re.Match[str], _anchor: datetime, tz: ZoneInfo) -> TemporalRange | None:
-    try:
-        target = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-    except ValueError:
+    fields = match.groups()
+    if len(fields[0]) != 4 or any(not 1 <= len(field) <= 2 for field in fields[1:]):
         return None
-    return _day_range(target, match.group(0), tz)
+    try:
+        target = date(int(fields[0]), int(fields[1]), int(fields[2]))
+        return _day_range(target, match.group(0), tz)
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 def _explicit_date_range(match: re.Match[str], _anchor: datetime, tz: ZoneInfo) -> TemporalRange | None:
-    try:
-        start_date = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-        end_date = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
-    except ValueError:
+    fields = match.groups()
+    if any(len(fields[index]) != 4 for index in (0, 3)) or any(
+        not 1 <= len(fields[index]) <= 2 for index in (1, 2, 4, 5)
+    ):
         return None
-    if end_date < start_date:
-        start_date, end_date = end_date, start_date
-    start = datetime.combine(start_date, time.min, tzinfo=tz)
-    end = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz)
-    return _range(match.group(0), f"{start_date.isoformat()} 至 {end_date.isoformat()}", start, end)
+    try:
+        start_date = date(int(fields[0]), int(fields[1]), int(fields[2]))
+        end_date = date(int(fields[3]), int(fields[4]), int(fields[5]))
+        if end_date < start_date:
+            start_date, end_date = end_date, start_date
+        start = datetime.combine(start_date, time.min, tzinfo=tz)
+        end = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz)
+        return _range(match.group(0), f"{start_date.isoformat()} 至 {end_date.isoformat()}", start, end)
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 def _shift_month(target: date, months: int) -> date:
