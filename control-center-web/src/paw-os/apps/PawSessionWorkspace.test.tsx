@@ -1,4 +1,4 @@
-import { forwardRef, type Key, type ReactNode } from 'react';
+import { forwardRef, StrictMode, type Key, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,7 @@ import { createAgentProjection, type AgentProjectionState } from '@/contracts/ag
 import { parseAgentEvent } from '@/contracts/validators';
 import { SessionSubagentPanel } from '@/features/agent/delegation/SessionSubagentPanel';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
 import type { SessionSummary } from '@/features/agent/types';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import { StubControlTransport } from '@/test/stub-control-transport';
@@ -628,6 +629,94 @@ describe('PAWOS Agent Session structural migration', () => {
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('region', { name: '排队中的消息' })).toHaveTextContent('/branch');
     expect(transport.requests.some(request => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('retains the next queued message when send-now races a pending admission receipt', async () => {
+    const sessionId = 'session-queue-pending-admission';
+    const fixture = busySessionTransport(sessionId);
+    const admission = deferred<unknown>();
+    const transport = new StubControlTransport('mock', {
+      ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => fixture.request(request),
+      'agent.session.prompt': () => admission.promise,
+    });
+    render(durableWorkspace(transport, sessionId, '第一条排队输入'));
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { emitStreamDelta(transport, sessionId); });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    fireEvent.change(composer, { target: { value: '第二条排队输入' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: /2 条排队中/ }));
+    act(() => { emitTurnCompleted(transport, sessionId); });
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+    const panel = screen.getByRole('region', { name: '排队中的消息' });
+    expect(panel).toHaveTextContent('第二条排队输入');
+    fireEvent.click(within(panel).getByRole('button', { name: '改为干预' }));
+    try {
+      expect(screen.getByRole('region', { name: '排队中的消息' })).toHaveTextContent('第二条排队输入');
+      expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1);
+    } finally {
+      await act(async () => { admission.resolve({ ok: true }); });
+    }
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1);
+    useAgentLiveStore.getState().clear(sessionId);
+  });
+
+  it('retains a corrected queued message while model selection is pending, then sends it once', async () => {
+    const sessionId = 'session-queue-model-selection';
+    const fixture = busySessionTransport(sessionId);
+    const modelSelection = deferred<unknown>();
+    const catalog = {
+      schemaVersion: 'rag-ime.agent-model-catalog.v1', ok: true, thinkingLevel: 'max',
+      selected: { provider: 'test-provider', id: 'model-first', modelId: 'model-first', name: 'First test model' },
+      providers: [{ id: 'test-provider', displayName: 'Test provider', models: [
+        { provider: 'test-provider', id: 'model-first', name: 'First test model', api: 'responses', reasoning: true,
+          thinkingLevels: ['max'], supportsImages: false, contextWindow: 1000, maxTokens: 100 },
+        { provider: 'test-provider', id: 'model-next', name: 'Next test model', api: 'responses', reasoning: true,
+          thinkingLevels: ['max'], supportsImages: false, contextWindow: 1000, maxTokens: 100 },
+      ] }],
+    };
+    const transport = new StubControlTransport('mock', {
+      ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => fixture.request(request),
+      'agent.session.models': catalog,
+      'agent.session.model.select': () => modelSelection.promise,
+      'agent.session.thinking.select': { ok: true },
+      'agent.session.prompt': { ok: true },
+    });
+    render(durableWorkspace(transport, sessionId, '先保留这条消息'));
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { emitStreamDelta(transport, sessionId); });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: '先保留这条消息' }));
+    let panel = screen.getByRole('region', { name: '排队中的消息' });
+    fireEvent.click(within(panel).getByRole('button', { name: '编辑' }));
+    fireEvent.change(within(panel).getByRole('textbox', { name: '编辑排队消息' }), { target: { value: '/branch' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '保存' }));
+    act(() => { emitTurnCompleted(transport, sessionId); });
+    expect(screen.getByRole('region', { name: '排队中的消息' })).toHaveTextContent('/branch');
+    const picker = screen.getByRole('button', { name: /模型与推理：First test model/ });
+    await waitFor(() => expect(picker).toBeEnabled());
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole('button', { name: /更换模型/ }));
+    fireEvent.click(screen.getByRole('option', { name: '选择模型 Next test model' }));
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.model.select')).toHaveLength(1));
+    panel = screen.getByRole('region', { name: '排队中的消息' });
+    fireEvent.click(within(panel).getByRole('button', { name: '编辑' }));
+    fireEvent.change(within(panel).getByRole('textbox', { name: '编辑排队消息' }), { target: { value: '更换完成后检查依赖图' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '保存' }));
+    try {
+      expect(screen.getByRole('region', { name: '排队中的消息' })).toHaveTextContent('更换完成后检查依赖图');
+      expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(0);
+    } finally {
+      await act(async () => { modelSelection.resolve({ ok: true }); });
+    }
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+    expect(transport.requests.find(request => request.pathId === 'agent.session.prompt')?.body).toMatchObject({ message: '更换完成后检查依赖图' });
+    expect(screen.queryByRole('region', { name: '排队中的消息' })).not.toBeInTheDocument();
+    useAgentLiveStore.getState().clear(sessionId);
   });
 
   it.each(['branch', 'attachment'] as const)('keeps unsupported Durable %s input out of the busy queue', async kind => {
@@ -1816,6 +1905,104 @@ describe('PAWOS Agent Session structural migration', () => {
     useAgentLiveStore.getState().clear(sessionId);
   });
 
+  it('recovers an unconsumed follow-up as an editable draft after keyed Session navigation', async () => {
+    const sessionId = 'session-queue-navigation';
+    const transport = busySessionTransport(sessionId);
+    Object.defineProperty(transport, 'connectionIdentity', { value: sessionId });
+    localStorage.removeItem(recoveryScope(transport, `session:${sessionId}`));
+    useAgentLiveStore.getState().clear(sessionId);
+    const tree = (owner: string, connection = transport) => <StrictMode><ControlTransportProvider transport={connection}><TooltipProvider>
+      <PawSessionWorkspace key={owner} record={{ ...liveSession(), id: owner }} recordId={owner}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider></StrictMode>;
+    const view = render(tree(sessionId));
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { emitStreamDelta(transport, sessionId); });
+    fireEvent.change(composer, { target: { value: '等这轮结束再看依赖图' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(await screen.findByRole('status', { name: '等待当前执行完成后发送的消息' })).toHaveTextContent('等这轮结束再看依赖图');
+    expect(composer).toHaveValue('');
+    fireEvent.change(composer, { target: { value: '再核对测试边界' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    fireEvent.change(composer, { target: { value: '后来补充的草稿' } });
+
+    view.rerender(tree(`${sessionId}-other`));
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('');
+    const reopened = busySessionTransport(sessionId);
+    Object.defineProperty(reopened, 'connectionIdentity', { value: sessionId });
+    view.rerender(tree(sessionId, reopened));
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('后来补充的草稿\n\n等这轮结束再看依赖图\n\n再核对测试边界');
+    expect(screen.queryByRole('status', { name: '等待当前执行完成后发送的消息' })).not.toBeInTheDocument();
+    expect([...transport.requests, ...reopened.requests].filter(request => request.pathId === 'agent.session.prompt')).toEqual([]);
+    view.unmount();
+    useAgentLiveStore.getState().clear(sessionId);
+  });
+
+  it.each([false, true])('persists held follow-ups before pagehide without unmounting or replaying them (bfcache: %s)', async persisted => {
+    const sessionId = `session-queue-pagehide-${persisted}`;
+    const transport = busySessionTransport(sessionId);
+    Object.defineProperty(transport, 'connectionIdentity', { value: sessionId });
+    const storageKey = recoveryScope(transport, `session:${sessionId}`);
+    localStorage.removeItem(storageKey);
+    useAgentLiveStore.getState().clear(sessionId);
+    const tree = (owner: string, connection = transport) => <StrictMode><ControlTransportProvider transport={connection}><TooltipProvider>
+      <PawSessionWorkspace key={owner} record={{ ...liveSession(), id: owner }} recordId={owner}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider></StrictMode>;
+    const view = render(tree(sessionId));
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    act(() => { emitStreamDelta(transport, sessionId); });
+    for (const text of ['等这轮结束再看依赖图', '再核对测试边界']) {
+      fireEvent.change(composer, { target: { value: text } });
+      fireEvent.keyDown(composer, { key: 'Enter' });
+      expect(composer).toHaveValue('');
+    }
+    expect(screen.getByRole('button', { name: /2 条排队中/ })).toBeInTheDocument();
+    fireEvent.change(composer, { target: { value: '后来补充的草稿' } });
+    const recovered = '后来补充的草稿\n\n等这轮结束再看依赖图\n\n再核对测试边界';
+
+    // A renderer navigation can dispatch pagehide without running React cleanup.
+    act(() => { window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted })); });
+    expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ draft: recovered, attachments: [] });
+    expect(composer).toHaveValue(recovered);
+    expect(screen.queryByRole('status', { name: '等待当前执行完成后发送的消息' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /条排队中/ })).not.toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }));
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted }));
+      emitTurnCompleted(transport, sessionId);
+    });
+    expect(composer).toHaveValue(recovered);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toEqual([]);
+    view.unmount();
+    useAgentLiveStore.getState().clear(sessionId);
+    expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ draft: recovered });
+
+    const reopened = new StubControlTransport('mock', idleSessionRoutes());
+    Object.defineProperty(reopened, 'connectionIdentity', { value: sessionId });
+    const otherConnection = new StubControlTransport('mock', idleSessionRoutes());
+    Object.defineProperty(otherConnection, 'connectionIdentity', { value: `${sessionId}-other-connection` });
+    const next = render(tree(`${sessionId}-other-session`, reopened));
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('');
+    next.rerender(tree(sessionId, otherConnection));
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('');
+    next.rerender(tree(sessionId, reopened));
+    const editable = screen.getByRole('textbox', { name: '消息' });
+    expect(editable).toHaveValue(recovered);
+    expect(screen.queryByRole('status', { name: '等待当前执行完成后发送的消息' })).not.toBeInTheDocument();
+    expect([...reopened.requests, ...otherConnection.requests].filter(request => request.pathId === 'agent.session.prompt')).toEqual([]);
+    fireEvent.change(editable, { target: { value: `${recovered}\n继续编辑` } });
+    expect(editable).toHaveValue(`${recovered}\n继续编辑`);
+    next.unmount();
+    useAgentLiveStore.getState().clear(sessionId);
+    useAgentLiveStore.getState().clear(`${sessionId}-other-session`);
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(recoveryScope(reopened, `session:${sessionId}-other-session`));
+    localStorage.removeItem(recoveryScope(otherConnection, `session:${sessionId}`));
+  });
+
   it('does not turn an accepted Stop into a failure by awaiting the full archive', async () => {
     const sessionId = 'session-stop-does-not-await-history';
     const archive = deferred<unknown>();
@@ -2626,6 +2813,47 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(Object.keys(projection?.optimisticByClientMessageId ?? {})).toHaveLength(0);
     expect(projection?.turnOrder.some((turnId) => projection.turnsById[turnId]?.status === 'failed')).toBe(false);
     expect(screen.getByText('这次发送内容已经变化，输入已保留；请直接重新发送一次。')).toBeVisible();
+    useAgentLiveStore.getState().clear(sessionId);
+  });
+
+  it.each([false, true])('recovers a late rejected prompt after its Session unmounts (already reopened: %s)', async reopenedBeforeFailure => {
+    const sessionId = `session-late-conflict-${reopenedBeforeFailure}`;
+    const reply = deferred<unknown>();
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(), 'agent.session.prompt': () => reply.promise });
+    Object.defineProperty(transport, 'connectionIdentity', { value: sessionId });
+    localStorage.removeItem(recoveryScope(transport, `session:${sessionId}`));
+    useAgentLiveStore.getState().clear(sessionId);
+    const tree = (owner: string, connection = transport) => <StrictMode><ControlTransportProvider transport={connection}><TooltipProvider>
+      <PawSessionWorkspace key={owner} record={{ ...liveSession(), id: owner }} recordId={owner}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider></StrictMode>;
+    const view = render(tree(sessionId));
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    fireEvent.change(composer, { target: { value: '请求被拒绝后仍要保留' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    expect(composer).toHaveValue('');
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+    const request = transport.requests.find(request => request.pathId === 'agent.session.prompt')!;
+    view.rerender(tree(`${sessionId}-other`));
+    const reopened = new StubControlTransport('mock', idleSessionRoutes());
+    Object.defineProperty(reopened, 'connectionIdentity', { value: sessionId });
+    if (reopenedBeforeFailure) view.rerender(tree(sessionId, reopened));
+    await act(async () => {
+      reply.resolve(Promise.reject(new ControlTransportHttpError('agent.session.prompt', 409, 'command fingerprint mismatch', {
+        ok: false, code: 'AGENT_COMMAND_CONFLICT', commandReceipt: {
+          state: 'conflict', clientMessageId: (request.body as Record<string, unknown>).clientMessageId,
+          causeCode: 'COMMAND_FINGERPRINT_MISMATCH', recoveryState: 'new_command_required',
+        },
+      })));
+    });
+    if (!reopenedBeforeFailure) {
+      expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('');
+      view.rerender(tree(sessionId, reopened));
+    }
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('请求被拒绝后仍要保留');
+    expect(Object.keys(useAgentLiveStore.getState().projections[sessionId]?.optimisticByClientMessageId ?? {})).toHaveLength(0);
+    expect([...transport.requests, ...reopened.requests].filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1);
+    view.unmount();
     useAgentLiveStore.getState().clear(sessionId);
   });
 

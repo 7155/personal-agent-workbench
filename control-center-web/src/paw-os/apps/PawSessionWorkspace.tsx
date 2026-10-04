@@ -1,5 +1,6 @@
 import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
+import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
 import { PawSessionFocusHeader } from './PawSessionFocusHeader';
 import {
   ChevronDown,
@@ -347,14 +348,19 @@ export function PawSessionWorkspace({
   }, [embedded, recordId, traceFocusNodeId]);
 
   const busy = Boolean(projectionSlice.activeTurnId || compactionTarget);
+  const queueAdmissionBlocked = sending || modelChanging || recovery.checking || recovery.issues.length > 0;
   /* A held follow-up is the composer's own queue, not a Runtime delivery.
      干预/接续 hand the message to Pi immediately; a queued draft never leaves
      the client until this turn settles, which is what keeps it editable,
      reorderable, revocable, and restorable when the turn is stopped. */
   const queue = useConversationQueue({
-    busy: busy || sending || durablePaused,
-    conversationId: recordId,
+    busy: busy || durablePaused || queueAdmissionBlocked,
+    conversationId: recovery.ownerId,
+    onDispose: items => recovery.recoverInput(current => ({ ...current, draft: mergeQueueBackToDraft(items, current.draft) })),
     send: (text) => {
+      // Queue consumption is synchronous; an async send that returns before
+      // admission must not discard the input the queue still owns.
+      if (queueAdmissionBlocked || sessionActionLockRef.current) return false;
       if (!acceptsImmediateInput(text)) return false;
       void send('prompt', text);
     },
@@ -806,8 +812,10 @@ export function PawSessionWorkspace({
     /* The input only comes back if the reader has not already started the next
        thought; a fresh draft never gets clobbered by an old failure. */
     const restoreInput = (): void => {
-      setDraft((current) => (current.trim() ? current : displayDraft.trim()));
-      setAttachments((current) => (current.length ? current : selectedAttachments));
+      recovery.recoverInput(current => ({
+        draft: current.draft.trim() ? current.draft : displayDraft.trim(),
+        attachments: current.attachments.length ? current.attachments : selectedAttachments,
+      }));
     };
     // Admission and the optimistic turn are synchronous. Catalog reconciliation,
     // restoring a Pi Session, or starting a Provider can still make the receipt

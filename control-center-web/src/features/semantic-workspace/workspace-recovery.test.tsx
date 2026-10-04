@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode, type ReactNode } from 'react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { MockControlTransport } from '@/test/mock-transport';
@@ -65,4 +66,87 @@ it('keeps an unreadable saved draft instead of overwriting it with the mount fal
   fireEvent.change(screen.getByLabelText('草稿'), { target: { value: '新的工作要求' } });
   expect(localStorage.getItem(key + ':unreadable')).toBe('{incomplete saved draft');
   expect(JSON.parse(localStorage.getItem(key)!).draft).toBe('新的工作要求');
+});
+
+function recoveryWrapper(t: ReturnType<typeof transport>) {
+  return ({ children }: { children: ReactNode }) => <StrictMode><ControlTransportProvider transport={t}>{children}</ControlTransportProvider></StrictMode>;
+}
+
+it('ignores ordinary setters from a disposed view after the same owner reopens', () => {
+  const t = transport('disposed-setters');
+  const first = renderHook(() => useWorkspaceRecovery<{ id: string }>('session:one'), { wrapper: recoveryWrapper(t) });
+  const { setDraft, setAttachments } = first.result.current;
+  first.unmount();
+  const reopened = renderHook(() => useWorkspaceRecovery<{ id: string }>('session:one'), { wrapper: recoveryWrapper(t) });
+  act(() => { reopened.result.current.setDraft('新的要求'); reopened.result.current.setAttachments([{ id: 'new-media' }]); });
+  act(() => { setDraft(''); setAttachments([]); });
+  expect(reopened.result.current.draft).toBe('新的要求');
+  expect(reopened.result.current.attachments).toEqual([{ id: 'new-media' }]);
+});
+
+it('recovers closed input into a reopened owner and verifies restored attachment references', async () => {
+  const t = transport('late-attachment');
+  const first = renderHook(() => useWorkspaceRecovery<{ id: string; name: string }>('session:one'), { wrapper: recoveryWrapper(t) });
+  const recover = first.result.current.recoverInput;
+  first.unmount();
+  const reopenedTransport = transport('late-attachment', false);
+  const reopened = renderHook(() => useWorkspaceRecovery<{ id: string; name: string }>('session:one'), { wrapper: recoveryWrapper(reopenedTransport) });
+  act(() => recover(current => ({
+    draft: current.draft || '被拒绝的输入', attachments: current.attachments.length ? current.attachments : [{ id: 'media-one', name: '材料.pdf' }],
+  })));
+  expect(reopened.result.current.draft).toBe('被拒绝的输入');
+  expect(reopened.result.current.attachments).toEqual([{ id: 'media-one', name: '材料.pdf' }]);
+  await waitFor(() => expect(reopened.result.current.issues).toEqual(['media-one']));
+  expect(reopenedTransport.requests[0].request).toMatchObject({ pathId: 'agent.continuity.media', body: { spaceKey: 'session:one', attachments: [{ id: 'media-one', sha256: '' }] } });
+});
+
+it.each([false, true])('preserves newer draft and attachments when an older input recovers (newer owner closed: %s)', closed => {
+  const t = transport(`newer-input-${closed}`);
+  const first = renderHook(() => useWorkspaceRecovery<{ id: string }>('session:one'), { wrapper: recoveryWrapper(t) });
+  const recover = first.result.current.recoverInput;
+  first.unmount();
+  const next = renderHook(() => useWorkspaceRecovery<{ id: string }>('session:one'), { wrapper: recoveryWrapper(transport(`newer-input-${closed}`)) });
+  act(() => { next.result.current.setDraft('较新的要求'); next.result.current.setAttachments([{ id: 'new-media' }]); });
+  if (closed) next.unmount();
+  act(() => recover(current => ({
+    draft: current.draft.trim() ? current.draft : '旧的请求', attachments: current.attachments.length ? current.attachments : [{ id: 'old-media' }],
+  })));
+  expect(JSON.parse(localStorage.getItem(recoveryScope(t, 'session:one'))!)).toMatchObject({ draft: '较新的要求', attachments: [{ id: 'new-media' }] });
+  if (!closed) {
+    expect(next.result.current.draft).toBe('较新的要求');
+    expect(next.result.current.attachments).toEqual([{ id: 'new-media' }]);
+    expect(next.result.current.issues).toEqual([]);
+  }
+});
+
+it('keeps late recovery with its original connection and Session after the hook changes owners', () => {
+  const t = transport('original-connection');
+  const first = renderHook(({ owner }) => useWorkspaceRecovery<{ id: string }>(owner), {
+    wrapper: recoveryWrapper(t), initialProps: { owner: 'session:one' },
+  });
+  const recover = first.result.current.recoverInput;
+  first.rerender({ owner: 'session:two' });
+  act(() => first.result.current.setDraft('另一个 Session 的要求'));
+  const other = renderHook(() => useWorkspaceRecovery<{ id: string }>('session:one'), { wrapper: recoveryWrapper(transport('other-connection')) });
+  act(() => recover(() => ({ draft: '原 Session 的要求', attachments: [{ id: 'old-media' }] })));
+  expect(first.result.current.draft).toBe('另一个 Session 的要求');
+  expect(other.result.current.draft).toBe('');
+  expect(JSON.parse(localStorage.getItem(recoveryScope(t, 'session:one'))!)).toMatchObject({ draft: '原 Session 的要求', attachments: [{ id: 'old-media' }] });
+});
+
+it('keeps explicit initial input and anonymous owners isolated through StrictMode replay', () => {
+  const t = transport('initial-input');
+  localStorage.setItem(recoveryScope(t, 'session:one'), JSON.stringify({ draft: '旧草稿', attachments: [{ id: 'old-media' }], savedAtMs: 1 }));
+  const first = renderHook(() => useWorkspaceRecovery('session:one', '指定的草稿', [{ id: 'new-media' }]), { wrapper: recoveryWrapper(t) });
+  expect(first.result.current.draft).toBe('指定的草稿');
+  expect(first.result.current.attachments).toEqual([{ id: 'new-media' }]);
+  act(() => { first.result.current.setDraft(''); first.result.current.setAttachments([]); });
+  first.rerender();
+  expect(first.result.current.draft).toBe('');
+  expect(first.result.current.attachments).toEqual([]);
+  const anonymous = transport('');
+  const a = renderHook(() => useWorkspaceRecovery('session:one'), { wrapper: recoveryWrapper(anonymous) });
+  const b = renderHook(() => useWorkspaceRecovery('session:one'), { wrapper: recoveryWrapper(anonymous) });
+  act(() => a.result.current.setDraft('匿名草稿'));
+  expect(b.result.current.draft).toBe('');
 });

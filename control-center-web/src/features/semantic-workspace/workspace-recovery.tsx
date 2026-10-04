@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { observeRequest } from './organization-request';
 import type { ControlRequest, ControlTransport } from '@/platform/transport';
@@ -27,55 +27,108 @@ function serializable<T>(attachments: T[]): T[] {
     return value as T;
   });
 }
+type Input<T> = Pick<Saved<T>, 'draft' | 'attachments'>;
+type RecoverySnapshot<T> = Saved<T> & { warning: string; restored: boolean; restoredIds: ReadonlySet<string> };
+type RecoveryOwner<T> = {
+  key: string; id: string; snapshot: RecoverySnapshot<T>; listeners: Set<() => void>;
+};
+// Mounted composers share the existing draft owner. Pending callbacks retain
+// their original owner, but resolve a reopened owner before restoring input.
+const owners = new Map<string, RecoveryOwner<object>>();
+function attachmentIds<T>(attachments: T[]): Set<string> {
+  return new Set(attachments.map(raw => { const item = raw as Attachment; return item.id || item.mediaId || ''; }));
+}
+function createOwner<T extends object>(key: string, initialDraft: string, initialAttachments: T[]): RecoveryOwner<T> {
+  const existing = key && owners.get(key);
+  if (existing) return existing as RecoveryOwner<T>;
+  const saved = load<T>(key);
+  const owner: RecoveryOwner<T> = { key, id: key || `anonymous-draft:${crypto.randomUUID()}`, listeners: new Set(), snapshot: {
+    ...(saved ?? { draft: '', attachments: [], savedAtMs: 0 }),
+    ...(initialDraft ? { draft: initialDraft } : {}), ...(initialAttachments.length ? { attachments: initialAttachments } : {}),
+    warning: '', restored: Boolean(saved), restoredIds: attachmentIds(saved?.attachments ?? []),
+  } };
+  if (key) owners.set(key, owner as RecoveryOwner<object>);
+  return owner;
+}
+function persist<T>(owner: RecoveryOwner<T>): void {
+  if (!owner.key) return;
+  let warning = owner.snapshot.warning;
+  try {
+    const previous = localStorage.getItem(owner.key);
+    if (previous && !load<T>(owner.key)) {
+      if (!owner.snapshot.draft && !owner.snapshot.attachments.length) {
+        owner.snapshot = { ...owner.snapshot, warning: '本机草稿记录无法读取，原记录已保留；可以重新输入，旧记录会另存。' };
+        return;
+      }
+      localStorage.setItem(owner.key + ':unreadable', previous);
+      warning = '旧草稿记录无法读取，已另存原记录；当前草稿继续保存在本机。';
+    }
+    const { draft, attachments } = owner.snapshot;
+    localStorage.setItem(owner.key, JSON.stringify({ draft, attachments: serializable(attachments), savedAtMs: Date.now() }));
+  } catch { warning = '草稿暂时无法保存到本机，请在关闭窗口前复制保留。'; }
+  if (warning !== owner.snapshot.warning) owner.snapshot = { ...owner.snapshot, warning };
+}
+function updateOwner<T extends object>(owner: RecoveryOwner<T>, update: (input: Input<T>) => Input<T>, recovering = false): void {
+  const target = (owner.key && owners.get(owner.key) || owner) as RecoveryOwner<T>;
+  // A closed view's snapshot can predate edits made by a later, now closed
+  // view. Disk is the current owner when there is no mounted composer.
+  if (owner.key && !owners.has(owner.key)) {
+    const saved = load<T>(owner.key);
+    if (saved) target.snapshot = { ...target.snapshot, ...saved };
+  }
+  const previous = target.snapshot;
+  const next = update(previous);
+  target.snapshot = { ...previous, ...next,
+    ...(recovering ? { restored: true, restoredIds: new Set([
+      ...previous.restoredIds,
+      ...attachmentIds(next.attachments.filter(item => !previous.attachments.includes(item))),
+    ]) } : {}),
+  };
+  // Persist outside React state updaters: cleanup and late HTTP rejection must
+  // save even when their originating component can no longer render.
+  persist(target);
+  target.listeners.forEach(listener => listener());
+}
 export function useWorkspaceRecovery<T extends object>(spaceKey: string, initialDraft = '', initialAttachments: T[] = []) {
   const transport = useControlTransport();
   const key = recoveryScope(transport, spaceKey);
-  const [state, setState] = useState(() => ({ key, ...(load<T>(key) ?? { draft: initialDraft, attachments: initialAttachments, savedAtMs: 0 }),
-    ...(initialDraft ? { draft: initialDraft } : {}), ...(initialAttachments.length ? { attachments: initialAttachments } : {}) }));
-  const current = state.key === key ? state : { key, ...(load<T>(key) ?? { draft: initialDraft, attachments: initialAttachments, savedAtMs: 0 }) };
-  const [warning, setWarning] = useState('');
+  const owner = useMemo(() => createOwner<T>(key, initialDraft, initialAttachments), [key, spaceKey, key ? null : transport]);
+  const lifetime = useMemo(() => ({ active: false }), [owner]);
+  const subscribe = useCallback((listener: () => void) => {
+    lifetime.active = true;
+    if (key) owners.set(key, owner as RecoveryOwner<object>);
+    owner.listeners.add(listener);
+    persist(owner);
+    return () => {
+      lifetime.active = false;
+      owner.listeners.delete(listener);
+      if (key && !owner.listeners.size && owners.get(key) === owner) owners.delete(key);
+    };
+  }, [key, owner, lifetime]);
+  const current = useSyncExternalStore(subscribe, () => owner.snapshot, () => owner.snapshot);
+  // Ordinary completion callbacks belong to their mounted view. Only the
+  // explicit recovery path below may restore input after that view is gone.
+  const setDraft: Dispatch<SetStateAction<string>> = useCallback(value => {
+    if (lifetime.active) updateOwner(owner, current => ({
+      ...current, draft: typeof value === 'function' ? value(current.draft) : value,
+    }));
+  }, [owner, lifetime]);
+  const setAttachments: Dispatch<SetStateAction<T[]>> = useCallback(value => {
+    if (lifetime.active) updateOwner(owner, current => ({
+      ...current, attachments: typeof value === 'function' ? value(current.attachments) : value,
+    }));
+  }, [owner, lifetime]);
+  const recoverInput = useCallback((update: (input: Input<T>) => Input<T>) => {
+    updateOwner(owner, update, !lifetime.active);
+  }, [owner, lifetime]);
   const [issues, setIssues] = useState<string[]>([]);
   const [checking, setChecking] = useState(current.savedAtMs > 0 && current.attachments.length > 0);
-  const restored = useRef({ key, saved: current.savedAtMs > 0, ids: new Set(current.savedAtMs > 0 ? current.attachments.map(raw => {
-    const item = raw as Attachment;
-    return item.id || item.mediaId || '';
-  }) : []) });
-  if (restored.current.key !== key) restored.current = { key, saved: current.savedAtMs > 0, ids: new Set(current.savedAtMs > 0 ? current.attachments.map(raw => {
-    const item = raw as Attachment;
-    return item.id || item.mediaId || '';
-  }) : []) };
-  const setDraft: Dispatch<SetStateAction<string>> = useCallback(value => setState(previous => {
-    const base = previous.key === key ? previous : { key, ...(load<T>(key) ?? { draft: '', attachments: [], savedAtMs: 0 }) };
-    return { ...base, draft: typeof value === 'function' ? value(base.draft) : value };
-  }), [key]);
-  const setAttachments: Dispatch<SetStateAction<T[]>> = useCallback(value => setState(previous => {
-    const base = previous.key === key ? previous : { key, ...(load<T>(key) ?? { draft: '', attachments: [], savedAtMs: 0 }) };
-    return { ...base, attachments: typeof value === 'function' ? value(base.attachments) : value };
-  }), [key]);
-  useEffect(() => {
-    if (state.key !== key) { setState(current); return; }
-    if (!key) return;
-    try {
-      const previous = localStorage.getItem(key);
-      if (previous && !load<T>(key)) {
-        // Never replace an unreadable record with the empty mount fallback.
-        if (!state.draft && !state.attachments.length) {
-          setWarning('本机草稿记录无法读取，原记录已保留；可以重新输入，旧记录会另存。');
-          return;
-        }
-        localStorage.setItem(key + ':unreadable', previous);
-        setWarning('旧草稿记录无法读取，已另存原记录；当前草稿继续保存在本机。');
-      }
-      const value = { draft: state.draft, attachments: serializable(state.attachments), savedAtMs: Date.now() };
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch { setWarning('草稿暂时无法保存到本机，请在关闭窗口前复制保留。'); }
-  }, [key, state]);
   // A just-imported attachment already has an authoritative owner-bound
   // receipt. Only references restored from disk need continuity verification.
   const attachmentSignature = JSON.stringify(current.attachments.map(raw => {
     const item = raw as Attachment;
     return { id: item.id || item.mediaId || '', sha256: item.sha256 || '' };
-  }).filter(item => restored.current.ids.has(item.id)));
+  }).filter(item => current.restoredIds.has(item.id)));
   useEffect(() => {
     if (attachmentSignature === '[]' || !key) { setIssues([]); setChecking(false); return; }
     const controller = new AbortController();
@@ -97,7 +150,7 @@ export function useWorkspaceRecovery<T extends object>(spaceKey: string, initial
     return !issues.includes(String(item.id || item.mediaId || ''));
   }));
   return { draft: current.draft, setDraft, attachments: current.attachments, setAttachments,
-    warning, checking, issues, removeUnavailable, restored: restored.current.saved };
+    recoverInput, ownerId: owner.id, warning: current.warning, checking, issues, removeUnavailable, restored: current.restored };
 }
 
 export function WorkspaceRecoveryNotice({ recovery }: { recovery: {

@@ -36,6 +36,7 @@ export function useConversationQueue({
   busy,
   conversationId,
   send,
+  onDispose,
   cap = FRONTEND_QUEUE_CAP,
 }: {
   busy: boolean;
@@ -43,6 +44,8 @@ export function useConversationQueue({
   /** `false` is a synchronous refusal: keep the held draft for correction or
    *  an explicit retry. Existing void callers accept the handoff. */
   send(text: string): boolean | void;
+  /** Return only unconsumed input to its original draft owner on disposal or pagehide. */
+  onDispose?: (items: readonly QueuedDraft[]) => void;
   cap?: number;
 }): ConversationQueueController {
   const [queue, setQueue] = useState<readonly QueuedDraft[]>([]);
@@ -58,11 +61,36 @@ export function useConversationQueue({
   }, [conversationId]);
   const sendRef = useRef(send);
   sendRef.current = send;
+  const disposalRef = useRef({ conversationId, onDispose });
+
+  useEffect(() => {
+    disposalRef.current = { conversationId, onDispose };
+  }, [conversationId, onDispose]);
 
   useEffect(() => {
     queueRef.current = { conversationId, items: [] };
     replaceQueue([]);
     setCapReached(false);
+    const dispose = () => {
+      if (queueRef.current.conversationId !== conversationId) return;
+      const items = queueRef.current.items;
+      queueRef.current = { conversationId, items: [] };
+      if (items.length && disposalRef.current.conversationId === conversationId) disposalRef.current.onDispose?.(items);
+    };
+    const onPageHide = () => {
+      // Page navigation need not unmount React. Only consume held input when
+      // an owner can recover it; other consumers keep their queue for bfcache.
+      if (queueRef.current.conversationId !== conversationId || !queueRef.current.items.length
+        || disposalRef.current.conversationId !== conversationId || !disposalRef.current.onDispose) return;
+      dispose();
+      replaceQueue([]);
+      setCapReached(false);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      dispose();
+    };
   }, [conversationId, replaceQueue]);
 
   // Drain exactly one held draft once the current turn settles. Keeping this
