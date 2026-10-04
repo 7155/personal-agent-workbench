@@ -277,17 +277,23 @@ export function PawSessionWorkspace({
   const [controlsExpanded, setControlsExpanded] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<SessionWorkspaceView>(embedded ? 'conversation' : traceFocusNodeId ? 'trace' : 'conversation');
   const [error, setError] = useState('');
-  const [compactionStopWarning, setCompactionStopWarning] = useState<{
-    recordId: string; transport: typeof transport; target: AgentCompactionTarget;
-  }>();
+  // Switching Sessions must preserve each unresolved Stop's transport and target.
+  const [compactionStopWarnings, setCompactionStopWarnings] = useState(() => new Map<string, {
+    transport: typeof transport; target: AgentCompactionTarget;
+  }>());
   useEffect(() => {
     // Only validated owner metadata may retire this target's uncertainty.
     // A missing/history-only target cannot clear it or a separate turn Stop.
     if (compactionTarget === undefined) return;
-    setCompactionStopWarning(current => current?.recordId === recordId && current.transport === transport
-      && !sameAgentCompactionTarget(current.target, compactionTarget) ? undefined : current);
+    setCompactionStopWarnings(current => {
+      const warning = current.get(recordId);
+      if (warning?.transport !== transport || sameAgentCompactionTarget(warning.target, compactionTarget)) return current;
+      const next = new Map(current);
+      next.delete(recordId);
+      return next;
+    });
   }, [compactionTarget, recordId, transport]);
-  const compactionStopError = compactionStopWarning?.recordId === recordId && compactionStopWarning.transport === transport
+  const compactionStopError = compactionStopWarnings.get(recordId)?.transport === transport
     ? STOP_UNCONFIRMED_TEXT : '';
   const [attachmentError, setAttachmentError] = useState('');
   const attachmentOwner = useRef(recordId);
@@ -900,8 +906,17 @@ export function PawSessionWorkspace({
   }
 
   function clearCompactionStopWarning(target: AgentCompactionTarget): void {
-    setCompactionStopWarning(current => current?.recordId === recordId && current.transport === transport
-      && sameAgentCompactionTarget(current.target, target) ? undefined : current);
+    setCompactionStopWarnings(current => {
+      const warning = current.get(recordId);
+      if (warning?.transport !== transport || !sameAgentCompactionTarget(warning.target, target)) return current;
+      const next = new Map(current);
+      next.delete(recordId);
+      return next;
+    });
+  }
+
+  function retainCompactionStopWarning(target: AgentCompactionTarget): void {
+    setCompactionStopWarnings(current => new Map(current).set(recordId, { transport, target }));
   }
 
   async function stopCompaction(target: AgentCompactionTarget): Promise<void> {
@@ -929,11 +944,11 @@ export function PawSessionWorkspace({
       // A terminal receipt confirms these tasks only. Current native metadata
       // clears the control target; no user turn is fabricated or settled here.
       const loaded = await loadAgentSnapshotRef.current();
-      if (ownsTarget() && !loaded) setCompactionStopWarning({ recordId, transport, target });
+      if (ownsTarget() && !loaded) retainCompactionStopWarning(target);
     } catch {
       if (!ownsTarget()) return;
       await loadAgentSnapshotRef.current();
-      if (ownsTarget()) setCompactionStopWarning({ recordId, transport, target });
+      if (ownsTarget()) retainCompactionStopWarning(target);
     } finally {
       if (ownsRequest()) { compactionStopRequestRef.current = undefined; setStopping(false); }
     }

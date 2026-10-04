@@ -264,6 +264,74 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(useAgentLiveStore.getState().projections[first]?.durableRecovery?.compactionTarget).toEqual(compactionTarget());
   });
 
+  it.each(['resume', 'terminal', 'successor'] as const)('retains both Sessions lost compaction Stop warnings and clears only the owner on %s', async resolution => {
+    const first = `session-compaction-warning-first-${resolution}`;
+    const second = `session-compaction-warning-second-${resolution}`;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => compactionSnapshot(String(request.params?.sessionId)),
+      'agent.session.resume': (request: ControlRequest) => compactionResumeAck(String(request.params?.sessionId)),
+      'agent.session.abort': () => { throw new Error('Stop ACK lost'); },
+    });
+    const view = render(durableWorkspace(transport, first));
+    fireEvent.click(await screen.findByRole('button', { name: '停止压缩' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled());
+    view.rerender(durableWorkspace(transport, second));
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.paused).toBe(true));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '停止压缩' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled());
+    view.rerender(durableWorkspace(transport, first));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    expect(useAgentLiveStore.getState().projections[first]?.durableRecovery?.compactionTarget).toEqual(compactionTarget());
+
+    if (resolution === 'resume') {
+      fireEvent.click(await screen.findByRole('button', { name: '继续压缩' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '继续压缩' })).toBeEnabled());
+    } else {
+      act(() => { useAgentLiveStore.getState().hydrate(first, compactionSnapshot(first, {
+        compactionTarget: resolution === 'terminal' ? null : { ...compactionTarget(), taskIds: ['durable:task:9'] },
+        paused: false, recoverable: false, status: resolution === 'terminal' ? 'idle' : 'busy',
+      })); });
+    }
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    view.rerender(durableWorkspace(transport, second));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.compactionTarget).toEqual(compactionTarget());
+    expect(transport.requests.some(request => ['agent.session.prompt', 'agent.session.compact'].includes(request.pathId))).toBe(false);
+  });
+
+  it('does not show another transport compaction Stop warnings after reconnecting either Session', async () => {
+    const first = 'session-compaction-warning-reconnect-first';
+    const second = 'session-compaction-warning-reconnect-second';
+    const routes = { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => compactionSnapshot(String(request.params?.sessionId)),
+      'agent.session.abort': () => { throw new Error('Stop ACK lost'); },
+    };
+    const original = new StubControlTransport('mock', routes);
+    const replacement = new StubControlTransport('mock', routes);
+    const view = render(durableWorkspace(original, first));
+    fireEvent.click(await screen.findByRole('button', { name: '停止压缩' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled());
+    view.rerender(durableWorkspace(original, second));
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[second]?.durableRecovery?.paused).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: '停止压缩' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
+    await waitFor(() => expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled());
+
+    view.rerender(durableWorkspace(replacement, second));
+    await waitFor(() => expect(replacement.requests.some(request => request.pathId === 'agent.session.snapshot'
+      && request.params?.sessionId === second)).toBe(true));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    view.rerender(durableWorkspace(replacement, first));
+    await waitFor(() => expect(replacement.requests.some(request => request.pathId === 'agent.session.snapshot'
+      && request.params?.sessionId === first)).toBe(true));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '停止压缩' })).toBeEnabled();
+  });
+
   it('shows only the explicit compaction Stop control while resume is pending and preserves the editable queued draft', async () => {
     const sessionId = 'session-compaction-single-stop';
     const reply = deferred<unknown>();
