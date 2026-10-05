@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  python:
-    name: Python, schemas, and contracts
+  python-plan:
+    name: Python checks and full-suite plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -62,15 +62,169 @@ jobs:
         # package exists. Secret shapes, machine paths, generated artifacts,
         # missing notices, and dirty state must still fail CI.
         run: python scripts/check_public_release.py --repository-only
-      - name: Run unit suite
-        env:
-          PYTHONWARNINGS: "error::ResourceWarning"
-        # Same full discovery; keep current-test timings and non-terminating stack samples.
-        run: python scripts/run_unit_tests.py --pattern 'test*.py' --timing-jsonl "$RUNNER_TEMP/paw-unit-timing.jsonl"
       - name: Check shell syntax
         run: |
           find scripts -type f -name '*.sh' -print0 \
             | xargs -0 -n1 bash -n
+
+      - name: Plan the complete unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+        run: python scripts/run_unit_tests.py --pattern 'test*.py' --write-shard-plan "$RUNNER_TEMP/plan.json" --shard-count 12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unit-plan-python-${{ github.run_id }}
+          path: ${{ runner.temp }}/plan.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  python-unit:
+    name: python unit shard ${{ matrix.shard }}
+    needs: python-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install command harness prerequisite
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zsh
+          test -x /bin/zsh
+      - name: Sync locked Python dependencies
+        run: |
+          python -m pip install "uv==0.11.1"
+          uv sync --locked --python python
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-python-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - name: Run assigned unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/paw-unit-output"
+          python scripts/run_unit_tests.py --shard-plan "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-index "$SHARD_INDEX" --shard-receipt "$RUNNER_TEMP/paw-unit-output/shard-$SHARD_INDEX.json" --timing-jsonl "$RUNNER_TEMP/paw-unit-output/timing-$SHARD_INDEX.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-receipt-python-${{ github.run_id }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/paw-unit-output/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  python:
+    name: Python, schemas, and contracts
+    needs: [python-plan, python-unit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-python-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unit-receipt-python-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/paw-unit-receipts
+          merge-multiple: false
+      - name: Verify complete unit-suite receipts
+        env:
+          PLAN_RESULT: ${{ needs['python-plan'].result }}
+          UNIT_RESULT: ${{ needs['python-unit'].result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          python scripts/run_unit_tests.py --verify-shards "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-receipts "$RUNNER_TEMP/paw-unit-receipts" --workflow-result "$UNIT_RESULT"
+
+  macos-plan:
+    name: macOS full-suite plan
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Sync locked Python dependencies
+        run: |
+          python -m pip install "uv==0.11.1"
+          uv sync --locked --python python
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Plan the complete unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+        run: python scripts/run_unit_tests.py --pattern 'test*.py' --write-shard-plan "$RUNNER_TEMP/plan.json" --shard-count 12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unit-plan-macos-${{ github.run_id }}
+          path: ${{ runner.temp }}/plan.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  macos-unit:
+    name: macos unit shard ${{ matrix.shard }}
+    needs: macos-plan
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Sync locked Python dependencies
+        run: |
+          python -m pip install "uv==0.11.1"
+          uv sync --locked --python python
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-macos-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - name: Run assigned unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/paw-unit-output"
+          python scripts/run_unit_tests.py --shard-plan "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-index "$SHARD_INDEX" --shard-receipt "$RUNNER_TEMP/paw-unit-output/shard-$SHARD_INDEX.json" --timing-jsonl "$RUNNER_TEMP/paw-unit-output/timing-$SHARD_INDEX.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-receipt-macos-${{ github.run_id }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/paw-unit-output/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   web-architecture:
     name: Web contracts (${{ matrix.suite }})
@@ -160,6 +314,8 @@ jobs:
 
   macos:
     name: Native control and Squirrel release
+    needs: [macos-plan, macos-unit]
+    if: always()
     # The pinned Squirrel source uses typed throws, which requires the Swift 6
     # compiler shipped with Xcode 16 rather than macOS 14's Xcode 15.4.
     runs-on: macos-15
@@ -181,11 +337,22 @@ jobs:
           node-version: "22"
       - name: Enable pinned pnpm for the Web control build
         run: corepack enable && corepack prepare pnpm@11.9.0 --activate
-      - name: Run full macOS unit suite
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-macos-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unit-receipt-macos-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/paw-unit-receipts
+          merge-multiple: false
+      - name: Verify complete unit-suite receipts
         env:
-          PYTHONWARNINGS: "error::ResourceWarning"
-        # Same full discovery; keep current-test timings and non-terminating stack samples.
-        run: python scripts/run_unit_tests.py --pattern 'test*.py' --timing-jsonl "$RUNNER_TEMP/paw-unit-timing.jsonl"
+          PLAN_RESULT: ${{ needs['macos-plan'].result }}
+          UNIT_RESULT: ${{ needs['macos-unit'].result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          python scripts/run_unit_tests.py --verify-shards "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-receipts "$RUNNER_TEMP/paw-unit-receipts" --workflow-result "$UNIT_RESULT"
       - name: Build native control center
         run: scripts/build_control_center.sh
       - name: Build headless voice agent
