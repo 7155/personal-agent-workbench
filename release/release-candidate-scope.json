@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 113
+      "pathCount": 114
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -191,10 +191,10 @@
     }
   },
   "summary": {
-    "pathCount": 2030,
+    "pathCount": 2031,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1714
+      "keep_release": 1715
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -238,7 +238,7 @@
       "session_full_access": 8,
       "temporal_query_preservation": 3,
       "trace_optimization": 61,
-      "verification": 113,
+      "verification": 114,
       "voice_desktop": 19,
       "workspace_completion": 315
     },
@@ -13720,6 +13720,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_launch_agent_script.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
     },
     {
       "path": "tests/test_license_decision.py",
