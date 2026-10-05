@@ -1586,11 +1586,12 @@ export function PawSessionWorkspace({
             : contextSnapshotState === 'restoring'
               ? '正在加载完整记录'
               : contextSnapshotState === 'partial'
-                ? '最近上下文'
+                ? '最近消息'
                 : '已同步'}</span>
-          {!evaluationSnapshot && controlsExpanded ? (
+          {!evaluationSnapshot && (controlsExpanded || contextSnapshotState === 'partial' || contextSnapshotState === 'restoring') ? (
             <button
               aria-label="加载完整记录"
+              className="paw-session-history-load"
               disabled={contextSnapshotState === 'restoring'}
               onClick={() => void loadFullSnapshot()}
               title={contextSnapshotState === 'restoring' ? '正在加载完整记录' : '加载完整记录'}
@@ -1599,6 +1600,7 @@ export function PawSessionWorkspace({
               {contextSnapshotState === 'restoring'
                 ? <LoaderCircle className="ui-spin" size={15} />
                 : <History size={15} />}
+              <span>加载完整记录</span>
             </button>
           ) : null}
           {!evaluationSnapshot && busy && !compactionTarget ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}

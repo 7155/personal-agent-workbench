@@ -140,7 +140,7 @@ export function PawAgentApp({
       const next = initialAgentSelection(initialRoute, targetKind, targetId, targetRoomId);
       // The desktop acknowledges an in-window selection by normalizing its route.
       // Keep the submission until the selected workspace can admit it.
-      if (current.kind === 'session' && next.kind === 'session' && current.id === next.id && current.submission) {
+      if (current.kind === 'session' && next.kind === 'session' && current.id === next.id && (current.submission || current.draft !== undefined)) {
         return { ...next, draft: current.draft, submission: current.submission };
       }
       // Likewise, returning to Home must retain the explicit execution intent
@@ -488,11 +488,11 @@ export function PawAgentApp({
             initialExecute={selection.execute}
             initialSource={selection.source}
             projectRoots={projectRoots}
-            onAdvanced={() => setAdvancedHome(true)}
-            onOpen={(created, submission) => {
+            onAdvanced={(draft) => { setSelection(current => ({ ...current, draft })); setAdvancedHome(true); }}
+            onOpen={(created, submission, draft) => {
               optimisticSessionsRef.current[created.id] = created;
               setSessions(current => [created, ...current.filter(item => item.id !== created.id)]);
-              setSelection({ kind: 'session', id: created.id, ...(submission ? { draft: submission.message, submission } : {}) });
+              setSelection({ kind: 'session', id: created.id, ...(submission ? { draft: submission.message, submission } : draft !== undefined ? { draft } : {}) });
             }}
           />
         ) : selection.kind === 'new' ? (

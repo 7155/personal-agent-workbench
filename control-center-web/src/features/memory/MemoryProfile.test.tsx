@@ -17,6 +17,26 @@ function setup(save: MockRouteHandler, read: MockRouteHandler = profile) {
   return { transport, onOpenReference, ...view };
 }
 describe('editable personal profile', () => {
+  it('marks edits unsaved and serializes latest-version reads without discarding the draft', async () => {
+    const pending = deferred<unknown>();
+    let reads = 0;
+    const newer = { ...profile, revision: 'profile-new', text: '最新背景' };
+    const { transport } = setup(() => { throw new ControlTransportHttpError('memory.profile.save', 409, 'memory_profile_revision_conflict', { code: 'memory_profile_revision_conflict', current: profile }); }, () => ++reads === 1 ? profile : pending.promise);
+    const input = await screen.findByRole('textbox', { name: '个人背景 1' });
+    fireEvent.change(input, { target: { value: '我正在编辑' } });
+    expect(screen.getByText(/未保存的修改 · 版本/)).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('点击“保存修改”');
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    const read = await screen.findByRole('button', { name: '查看最新版本' });
+    await waitFor(() => expect(read).toBeEnabled());
+    fireEvent.click(read); fireEvent.click(read);
+    expect(screen.getByRole('button', { name: '正在读取最新版本…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '放弃下方草稿，编辑最新版本' })).toBeDisabled();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'memory.profile')).toHaveLength(2);
+    await act(async () => pending.resolve(newer));
+    expect(screen.getByRole('region', { name: '服务器最新版本' })).toHaveTextContent('最新背景');
+    expect(input).toHaveValue('我正在编辑');
+  });
   it('saves with whole-profile and paragraph revisions, serializes repeated clicks, and opens the original source', async () => {
     const result = deferred<unknown>(); const { transport, onOpenReference } = setup(() => result.promise);
     const input = await screen.findByRole('textbox', { name: '个人背景 1' });

@@ -25,6 +25,36 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 describe('primary assistant home', () => {
+  it('explains disabled execution and holds navigation until the task receipt arrives', async () => {
+    const response = deferred<unknown>();
+    const { onOpen } = setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks: [task] }, 'agent.primary.tasks.create': () => response.promise });
+    await screen.findByRole('button', { name: /打开对话/ });
+    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
+    fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
+    expect(screen.getByRole('status')).toHaveTextContent('先选择本次工作目录');
+    expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveFocus();
+    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
+    expect(screen.getByRole('status')).toHaveTextContent('确认目录权限后');
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
+    expect(screen.getByRole('status')).toHaveTextContent('正在确认任务');
+    const previous = screen.getByRole('button', { name: /检查项目.*查看进度/ });
+    expect(previous).toBeDisabled(); fireEvent.click(previous);
+    expect(onOpen).not.toHaveBeenCalled();
+    await act(async () => response.resolve({ ok: true, session: task }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+  it('keeps composing and Shift-Enter local instead of dispatching', async () => {
+    const { onOpen } = setup();
+    await screen.findByRole('button', { name: /打开对话/ });
+    const input = screen.getByRole('textbox', { name: '和我的助手聊聊' });
+    fireEvent.change(input, { target: { value: '还在输入' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
   it('keeps the source project and exact public message cutoff when handing a discussion to execution', async () => {
     const { transport } = setup({
       'agent.primary.ensure': { ok: true, session: { ...primary, id: 'project-primary', workspaceRoots: ['/work/project', '/work/shared'] }, tasks: [] },

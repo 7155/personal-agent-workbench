@@ -21,13 +21,14 @@ const workspaceLoading = vi.hoisted(() => ({ room: null as Promise<void> | null 
 vi.mock('./PawSessionWorkspace', () => {
   workspaceEvaluations.session += 1;
   return {
-    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialSubmission, onAssistantHome }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string; initialSubmission?: { clientMessageId: string; message: string }; onAssistantHome?: (draft: string, execute: boolean, messageId: string) => void }) => (
+    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialDraft, initialSubmission, onAssistantHome }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string; initialDraft?: string; initialSubmission?: { clientMessageId: string; message: string }; onAssistantHome?: (draft: string, execute: boolean, messageId: string) => void }) => (
       <div>
         Session 工作区
         <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
         <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
         <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
         <output data-testid="session-initial-submission">{JSON.stringify(initialSubmission)}</output>
+        <output data-testid="session-initial-draft">{initialDraft}</output>
         <button onClick={() => onAssistantHome?.('检查具体目标', true, 'source-cutoff')}>测试交办入口</button>
       </div>
     ),
@@ -60,6 +61,18 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('carries unsent home text into the discussion without submitting it', async () => {
+    const transport = createTransport();
+    const view = renderAgent(transport, { initialRoute: '/agent' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '先保留，不发送' } });
+    fireEvent.click(screen.getByRole('button', { name: /打开对话/ }));
+    expect(await screen.findByTestId('session-initial-draft')).toHaveTextContent('先保留，不发送');
+    view.rerender(agentTree(transport, { initialRoute: '/agent?session=primary' }));
+    expect(screen.getByTestId('session-initial-draft')).toHaveTextContent('先保留，不发送');
+    expect(screen.getByTestId('session-initial-submission')).toBeEmptyDOMElement();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
   it('preserves first submission and discussion handoff across desktop route acknowledgements', async () => {
     const transport = createTransport();
     const view = renderAgent(transport, { initialRoute: '/agent' });
@@ -90,7 +103,7 @@ describe('PAWOS Agent App', () => {
     expect(screen.queryByRole('group', { name: 'Agent 界面模式' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: /新建独立 Session 或多人 Room/ }));
+    fireEvent.click(screen.getByRole('button', { name: /新建独立对话或多人协作/ }));
     expect(await screen.findByRole('heading', { name: '今天想完成什么？' })).toBeVisible();
     expect(transport.requests.some(({ request }) => ['agent.sessions.create', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
   });

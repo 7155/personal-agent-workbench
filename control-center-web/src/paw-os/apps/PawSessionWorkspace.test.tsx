@@ -2591,7 +2591,7 @@ describe('PAWOS Agent Session structural migration', () => {
     await screen.findByRole('textbox', { name: '消息' });
     await waitFor(() => expect(container.querySelector('.paw-session-workspace__loading')).toBeNull());
     expect(fullRequests).toBe(0);
-    expect(screen.getByText('最近上下文')).toBeInTheDocument();
+    expect(screen.getByText('最近消息')).toBeInTheDocument();
     await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
 
     act(() => {
@@ -2922,7 +2922,7 @@ describe('PAWOS Agent Session structural migration', () => {
     );
 
     expect(await screen.findByText('今天已经完成的持久历史')).toBeVisible();
-    expect(screen.getByText('最近上下文')).toBeInTheDocument();
+    expect(screen.getByText('最近消息')).toBeInTheDocument();
     useAgentLiveStore.getState().clear(sessionId);
   });
 

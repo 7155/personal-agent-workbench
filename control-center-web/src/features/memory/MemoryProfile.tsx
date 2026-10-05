@@ -20,17 +20,19 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
   const [latest, setLatest] = useState<PersonalProfile>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [readingLatest, setReadingLatest] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [revision, setRevision] = useState(0);
   const owner = useRef(0);
   const lock = useRef(false);
+  const latestReadLock = useRef(false);
   const attempt = useRef<{ signature: string; id: string } | undefined>(undefined);
   useEffect(() => {
     const generation = ++owner.current;
     const controller = new AbortController();
-    setLoading(true); setError(''); setProfile(undefined); setLatest(undefined); setConflict(false); setSaving(false); lock.current = false;
+    setLoading(true); setError(''); setProfile(undefined); setLatest(undefined); setConflict(false); setSaving(false); setSaved(false); setReadingLatest(false); lock.current = false; latestReadLock.current = false;
     void transport.request({ pathId: 'memory.profile', signal: controller.signal }).then(value => {
       if (owner.current !== generation || controller.signal.aborted) return;
       const next = parsePersonalProfile(value);
@@ -82,22 +84,25 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
     }
   }
   async function readLatest() {
+    if (latestReadLock.current || lock.current) return;
+    latestReadLock.current = true; setReadingLatest(true);
     const generation = owner.current;
     try {
       const next = parsePersonalProfile(await transport.request({ pathId: 'memory.profile' }));
       if (generation === owner.current) setLatest(next);
     } catch (reason) { if (generation === owner.current) setError(`最新版本暂时读不到：${errorMessage(reason)}。你的草稿仍保留在下方。`); }
+    finally { if (generation === owner.current) { latestReadLock.current = false; setReadingLatest(false); } }
   }
   function adoptLatest() {
-    if (!latest) return;
+    if (!latest || latestReadLock.current || lock.current) return;
     setProfile(latest); setDraft(profileDraft(latest)); setLatest(undefined); setConflict(false); setError(''); setSaved(false); attempt.current = undefined;
   }
   return <section className="memory-profile" aria-label="关于我">
     <header><span className="memory-profile__eyebrow">PERSONAL CONTEXT</span><h2>关于我</h2><p>留下一点长期有用的背景。下次聊天，不用每次从头解释。</p></header>
     <div className="memory-profile__intro"><BookOpen aria-hidden="true" size={16} /><span>这些内容来自已有记忆卡片；修改后仍保留版本和来源。保存不会开启记忆召回；是否用于对话，仍由记忆偏好中的开关决定。</span></div>
     {loading ? <p role="status">正在读取个人背景…</p> : null}
-    {error ? <div className="memory-profile__notice" role="alert"><p>{error}</p>{!profile ? <Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取</Button> : conflict ? <Button size="small" onClick={() => void readLatest()}>查看最新版本</Button> : null}</div> : null}
-    {latest ? <section className="memory-profile__comparison" aria-label="服务器最新版本"><h3>最新保存的内容</h3><p>{latest.text || '暂无内容'}</p><small>版本 {latest.revision.slice(0, 12)}</small><Button onClick={adoptLatest} size="small" variant="quiet">放弃下方草稿，编辑最新版本</Button></section> : null}
+    {error ? <div className="memory-profile__notice" role="alert"><p>{error}</p>{!profile ? <Button size="small" disabled={loading} onClick={() => setRevision(value => value + 1)}>重新读取</Button> : conflict ? <Button size="small" disabled={saving || readingLatest} onClick={() => void readLatest()}>{readingLatest ? '正在读取最新版本…' : '查看最新版本'}</Button> : null}</div> : null}
+    {latest ? <section className="memory-profile__comparison" aria-label="服务器最新版本"><h3>最新保存的内容</h3><p>{latest.text || '暂无内容'}</p><small>版本 {latest.revision.slice(0, 12)}</small><Button disabled={saving || readingLatest} onClick={adoptLatest} size="small" variant="quiet">放弃下方草稿，编辑最新版本</Button></section> : null}
     {profile ? <>
       {profile.truncated ? <p className="memory-profile__notice">这里显示一部分长期背景。其余卡片仍保留在记忆库中，本次保存不会移除它们。</p> : null}
       <div className="memory-profile__paragraphs">{draft.map((item, index) => {
@@ -105,11 +110,12 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
         return <section className="memory-profile__paragraph" key={item.key}>
           <label htmlFor={`profile-paragraph-${item.key}`}><span>背景 {index + 1}</span><small>{[...item.text].length} / 600</small></label>
           <textarea id={`profile-paragraph-${item.key}`} aria-label={`个人背景 ${index + 1}`} value={item.text} rows={3} disabled={saving} onChange={event => { setDraft(current => current.map(row => row.key === item.key ? { ...row, text: event.target.value } : row)); setSaved(false); }} placeholder="例如：我正在做什么，希望助手怎样配合，哪些偏好值得长期记住。" />
-          {source ? <footer><span>已保存 · 版本 {source.revision.slice(0, 10)}</span><div>{source.sourceRefs.slice(0, 3).map((ref, sourceIndex) => <button key={`${ref.kind}:${ref.id}`} onClick={() => onOpenReference({ kind: ref.kind, referenceId: ref.id })} type="button">来源 {sourceIndex + 1}</button>)}{source.sourceCount > source.sourceRefs.length ? <small>共 {source.sourceCount} 条来源</small> : null}</div></footer> : <footer><span>你直接提供的新背景</span></footer>}
+          {source ? <footer><span>{item.text !== source.text ? '未保存的修改' : '已保存'} · 版本 {source.revision.slice(0, 10)}</span><div>{source.sourceRefs.slice(0, 3).map((ref, sourceIndex) => <button key={`${ref.kind}:${ref.id}`} onClick={() => onOpenReference({ kind: ref.kind, referenceId: ref.id })} type="button">来源 {sourceIndex + 1}</button>)}{source.sourceCount > source.sourceRefs.length ? <small>共 {source.sourceCount} 条来源</small> : null}</div></footer> : <footer><span>新背景 · 尚未保存</span></footer>}
           {item.id && !item.text.trim() ? <small className="memory-profile__retract">保存后，这条背景会退出当前简介；历史版本仍可核对。</small> : null}
         </section>;
       })}</div>
       <div className="memory-profile__actions"><Button leadingIcon={<Plus size={14} />} size="small" variant="quiet" disabled={saving || draft.length >= 12} onClick={() => setDraft(current => [...current, newParagraph()])}>补充一条背景</Button><span>{total} / 4000 字</span><Button leadingIcon={saved ? <Check size={14} /> : undefined} disabled={!dirty || invalid || conflict} loading={saving} onClick={() => void save()} size="small">{saving ? '正在保存' : saved ? '已保存' : '保存修改'}</Button></div>
+      <p className="memory-profile__footnote" role="status">{saving ? '正在保存，请稍候。' : conflict ? '草稿尚未覆盖最新版本。核对上方内容后再继续。' : dirty ? '有未保存的修改。点击“保存修改”后才会更新背景。' : saved ? '本次修改已保存。' : '当前显示已保存的背景。'}</p>
       {invalid ? <p className="memory-profile__notice" role="alert">每条背景最多 600 字，全部背景最多 4000 字。草稿不会被截断。</p> : null}
       <p className="memory-profile__footnote">只保留确认过、长期有用的事实。不确定的背景可以留到对话里再说。</p>
     </> : null}

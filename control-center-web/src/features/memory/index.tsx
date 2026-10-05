@@ -111,6 +111,8 @@ export function MemoryFeature() {
   const [view, setView] = useState<MemoryView>(
     routeSelection.view,
   );
+  const [profileVisited, setProfileVisited] = useState(view === 'profile');
+  useEffect(() => { if (view === 'profile') setProfileVisited(true); }, [view]);
   const [layer, setLayer] = useState<MemoryLayer>(routeSelection.layer);
   const kind: MemoryKind = layer;
   const [draftQuery, setDraftQuery] = useState('');
@@ -243,7 +245,7 @@ export function MemoryFeature() {
               <TabsTrigger value="preferences">记忆偏好</TabsTrigger>
             </TabsList>
           ) : null}
-          <TabsContent value="profile"><MemoryProfile onOpenReference={setReference} onSaved={refresh} /></TabsContent>
+          {(view === 'profile' || profileVisited) ? <TabsContent value="profile" forceMount hidden={view !== 'profile'}><MemoryProfile onOpenReference={setReference} onSaved={refresh} /></TabsContent> : null}
           <TabsContent value="catalog">
             <section className="mgmt-section memory-catalog-section">
               <div className="memory-layer-workspace" data-detail-open={selected && !catalogDetailCollapsed ? true : undefined}>

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,6 +17,25 @@ afterEach(() => {
 });
 
 describe('MemoryFeature composition', () => {
+  it('retains an unsaved profile draft when leaving and returning to its tab', async () => {
+    const transport = new MockControlTransport({ routes: {
+      'memory.summary': { ok: true }, 'memory.pages': { items: [], nextCursor: '' },
+      'memory.profile': { schemaVersion: 'paw.personal-profile.v1', revision: 'profile-1', text: '原背景', truncated: false,
+        paragraphs: [{ id: 'card', memoryIds: ['card'], text: '原背景', revision: 'card-1', sourceCount: 0, sourceRefs: [] }] },
+      'memory.profile.save': () => { throw new Error('offline'); },
+    } });
+    renderMemory(transport, '/memory?view=profile');
+    const input = await screen.findByRole('textbox', { name: '个人背景 1' });
+    fireEvent.change(input, { target: { value: '未保存的个人草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    await screen.findByText(/草稿已保留，重试会核对同一次保存/);
+    await userEvent.setup().click(screen.getByRole('tab', { name: '记忆' }));
+    expect(screen.queryByRole('textbox', { name: '个人背景 1' })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('tab', { name: '关于我' }));
+    expect(screen.getByRole('textbox', { name: '个人背景 1' })).toHaveValue('未保存的个人草稿');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'memory.profile')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  });
   it('uses a restrained full outline for book rows instead of a decorative side stripe', () => {
     expect(memoryStylesheet).not.toMatch(/border-left:\s*3px/);
     expect(memoryStylesheet).toMatch(
