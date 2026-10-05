@@ -92,8 +92,21 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
                             {"workspaceRoots": [str(self.root)]})["session"]["id"]}):
             with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "already bound"):
                 self.service.create_primary_task({**request, **changed})
-        self.assertEqual([item["id"] for item in self.service.sessions.primary_tasks(original["assistantId"])],
+        self.assertEqual([item["id"] for item in self.service.sessions.primary_tasks(
+            original["assistantId"], source_session_id=str(request["sourceSessionId"]))],
                          [original["session"]["id"]])
+
+    def test_project_task_list_is_bound_to_the_ensured_discussion(self) -> None:
+        # PR135 / discussion_r4180769529: one assistant does not imply one task scope.
+        plain = self.service.ensure_primary_assistant({})
+        project = self.service.ensure_primary_assistant({"workspaceRoots": [str(self.root)]})
+        first = self.service.create_primary_task(self.request(clientRequestId="plain-task"))["session"]
+        second = self.service.create_primary_task(self.request(
+            clientRequestId="project-task", sourceSessionId=project["session"]["id"]))["session"]
+        self.assertEqual(plain["assistantId"], project["assistantId"])
+        self.assertEqual([task["id"] for task in self.service.ensure_primary_assistant({})["tasks"]], [first["id"]])
+        self.assertEqual([task["id"] for task in self.service.ensure_primary_assistant(
+            {"workspaceRoots": [str(self.root)]})["tasks"]], [second["id"]])
 
     def test_task_inherits_source_model_and_thinking_instead_of_global_defaults(self) -> None:
         request = self.request()

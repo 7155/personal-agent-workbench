@@ -216,7 +216,7 @@ class AgentSessionApplicationService:
         )
         return {"schemaVersion": "rag-ime.agent-primary-ensure.v1", "ok": True,
             "assistantId": assistant_id, "created": created, "session": session,
-            "tasks": self.sessions.primary_tasks(assistant_id)}
+            "tasks": self.sessions.primary_tasks(assistant_id, source_session_id=str(session["id"]))}
 
     def create_primary_task(
         self, payload: Mapping[str, object], *,

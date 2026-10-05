@@ -560,12 +560,12 @@ class AgentSessionStore:
             persist_context(str(session["id"]), context, conn)
             return True, assistant_id, self._get(conn, str(session["id"])), dict(authorization)
 
-    def primary_tasks(self, assistant_id: str) -> list[dict[str, object]]:
+    def primary_tasks(self, assistant_id: str, *, source_session_id: str) -> list[dict[str, object]]:
         with self._read_connect() as conn:
             rows = conn.execute(
-                f"{_SESSION_SELECT} WHERE p.assistant_id = ? AND p.kind = 'task' "
+                f"{_SESSION_SELECT} WHERE p.assistant_id = ? AND p.kind = 'task' AND p.source_session_id = ? "
                 "ORDER BY s.updated_at_ms DESC, s.id DESC LIMIT 100",
-                (assistant_id,),
+                (assistant_id, source_session_id),
             ).fetchall()
             return [_session_payload(row, _joined_runtime_binding(row)) for row in rows]
 

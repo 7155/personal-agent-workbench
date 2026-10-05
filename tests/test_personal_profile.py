@@ -48,6 +48,21 @@ class PersonalProfileTests(unittest.TestCase):
             self.save([{**first, 'text': '过期写入。'}], 'stale', before['revision'])
         self.assertEqual(read_personal_profile(self.conn)['text'], '我喜欢有解释的回复。')
 
+    def test_rendered_profile_budget_includes_paragraph_separators(self):
+        # PR135 / discussion_r4180769539: an accepted profile must remain editable.
+        def paragraphs(last):
+            return [{'id': None, 'memoryIds': [], 'text': '偏好' * 300} for _ in range(6)] + [
+                {'id': None, 'memoryIds': [], 'text': '说明' * last}]
+        before = read_personal_profile(self.conn)
+        with self.assertRaisesRegex(ValueError, '4000'):
+            self.save(paragraphs(200), 'too-long')
+        self.assertEqual(read_personal_profile(self.conn), before)
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM memory_atoms').fetchone()[0], 0)
+        result = self.save(paragraphs(194), 'exact-budget')['profile']
+        self.assertEqual(len(result['text']), 4000)
+        self.assertEqual(len(result['paragraphs']), 7)
+        self.assertFalse(result['truncated'])
+
     def test_delete_and_source_revocation_remove_projection(self):
         first = self.add()
         result = self.save([{**first, 'text': ''}], 'delete')

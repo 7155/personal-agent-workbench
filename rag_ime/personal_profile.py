@@ -95,11 +95,14 @@ def save_personal_profile(conn: sqlite3.Connection, payload: Mapping[str, object
         seen: set[str] = set()
         validated: list[tuple[str, str, str]] = []
         total = 0
+        nonempty_paragraphs = 0
         for item in paragraphs:
             if not isinstance(item, Mapping) or not isinstance(item.get("text"), str):
                 raise ValueError("profile paragraph text must be a string")
             text = compact_whitespace(item["text"])
-            total += len(text)
+            if text:
+                total += len(text) + (2 if nonempty_paragraphs else 0)
+                nonempty_paragraphs += 1
             if len(text) > MAX_PARAGRAPH_CHARS or total > MAX_PROFILE_CHARS or contains_sensitive_content(text):
                 raise ValueError("profile paragraph is sensitive or exceeds the 600/4000 character limits")
             atom_id = item.get("id")

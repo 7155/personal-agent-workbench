@@ -85,6 +85,32 @@ class PrimaryRecallRevalidationTests(unittest.TestCase):
         self.conn.execute("UPDATE agent_memory_evidence SET admission_state='forgotten'")
         self.assertEqual(self.validate(), [])
 
+    def test_cached_book_rechecks_member_authority_without_timestamp_change(self) -> None:
+        # PR135 / discussion_r4180769523: stale book metadata cannot grant member access.
+        self.conn.execute("""INSERT INTO memory_books(book_id,book_type,book_key,title,summary,normalized_text,
+            memory_atom_ids_json,status,created_at_ms,updated_at_ms)
+            VALUES ('book:scope','topic','scope','偏好',?,?,?,'active',100,100)""",
+            (self.card["text"], self.card["text"], json.dumps([self.card["id"]])))
+        rebuild_retrieval_docs(self.conn, preverified_schema=True)
+        book = {"sourceType": "memory_book", "sourceId": "book:scope", "text": self.card["text"]}
+        self.payload.update(items=[book], generatedAtMs=now_ms() + 1)
+        self.assertEqual(self.validate(), [book])
+        original = dict(self.conn.execute("SELECT * FROM memory_atoms WHERE id=?", (self.card["id"],)).fetchone())
+        for changes in ({"owner_kind": "room", "owner_id": "private-room"},
+                        {"scope_kind": "room", "scope_id": "private-room", "visibility": "room"},
+                        {"visibility": "room"}, {"scope_mode": "quarantined"},
+                        {"status": "superseded"}, {"claim_state": "superseded"},
+                        {"privacy_level": "sensitive"}):
+            with self.subTest(changes=changes):
+                columns = list(changes)
+                update = "UPDATE memory_atoms SET " + ",".join(key + "=?" for key in columns) + " WHERE id=?"
+                self.conn.execute(update, (*changes.values(), self.card["id"]))
+                self.assertEqual(self.validate(), [])
+                self.assertEqual(self.conn.execute("SELECT updated_at_ms FROM memory_atoms WHERE id=?",
+                    (self.card["id"],)).fetchone()[0], original["updated_at_ms"])
+                self.conn.execute(update, (*(original[key] for key in columns), self.card["id"]))
+                self.assertEqual(self.validate(), [book])
+
     def test_validation_only_reads_bounded_source_ids_and_rejects_unknown_receipts(self) -> None:
         statements = []
         self.conn.set_trace_callback(statements.append)

@@ -13,11 +13,11 @@ from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations
 from .embeddings import EmbeddingProvider, NullEmbeddingProvider
 from .hybrid_rag_models import HybridRagQuery
-from .knowledge_scope import session_knowledge_caller
+from .knowledge_scope import scope_sql_predicate, session_knowledge_caller
 from .hybrid_rag_retriever import _active_docs, retrieve_hybrid_rag_candidates
 from .memory_card_mutations import card_source_refs
 from .input_event_assembly import recent_complete_input_context
-from .memory_ownership import agent_visible_memory_owners
+from .memory_ownership import agent_visible_memory_owners, resolve_visible_memory_owners, sql_memory_owner_predicate
 from .memory_maintenance_settings import MemoryMaintenanceSettings
 from .retrieval_docs import _source_events_retrievable
 from .text_utils import compact_whitespace, split_sentences, token_terms, truncate_text
@@ -451,12 +451,13 @@ class SessionMemoryRecallBuilder:
             return []
         query_text = str(_mapping(payload.get("query")).get("preview") or "")
         with self._connect() as conn:
+            query = HybridRagQuery(
+                query_text=query_text, project=self.project,
+                visible_owners=agent_visible_memory_owners(project=self.project, session_id=session_id),
+                knowledge_caller=session_knowledge_caller(conn, session_id),
+            )
             docs = _active_docs(
-                conn, query=HybridRagQuery(
-                    query_text=query_text, project=self.project,
-                    visible_owners=agent_visible_memory_owners(project=self.project, session_id=session_id),
-                    knowledge_caller=session_knowledge_caller(conn, session_id),
-                ),
+                conn, query=query,
                 source_ids=tuple(dict.fromkeys(str(item["sourceId"]) for item in items)),
             )
             current = {(str(doc["doc_type"]), str(doc["source_id"])): doc for doc in docs}
@@ -466,7 +467,7 @@ class SessionMemoryRecallBuilder:
                 doc = current.get((kind, str(item["sourceId"])))
                 if doc is None or int(doc.get("updated_at_ms") or 0) > generated:
                     continue
-                if not _recalled_source_unchanged(conn, item, doc, generated_at_ms=generated, query_text=query_text):
+                if not _recalled_source_unchanged(conn, item, doc, generated_at_ms=generated, query=query):
                     continue
                 kept.append(item)
         return kept
@@ -519,7 +520,7 @@ def _curation_coverage(conn: sqlite3.Connection, project: str) -> dict[str, obje
 
 def _recalled_source_unchanged(
     conn: sqlite3.Connection, item: Mapping[str, object], doc: Mapping[str, object], *, generated_at_ms: int,
-    query_text: str,
+    query: HybridRagQuery,
 ) -> bool:
     kind = str(doc["doc_type"])
     source_id = str(doc["source_id"])
@@ -531,7 +532,7 @@ def _recalled_source_unchanged(
         return bool(cached and isinstance(event_ids, list) and 0 < len(event_ids) <= 256
                     and _source_events_retrievable(conn, event_ids)
                     and cached == _focused_activity_excerpt(str(doc.get("raw_text") or ""),
-                        query_text=query_text, max_chars=len(cached)))
+                        query_text=query.query_text, max_chars=len(cached)))
     table, key = ("memory_atoms", "id") if kind == "atom" else ("memory_books", "book_id")
     row = conn.execute(f"SELECT * FROM {table} WHERE {key}=?", (source_id,)).fetchone()
     if row is None:
@@ -564,8 +565,19 @@ def _recalled_source_unchanged(
         if not isinstance(atom_ids, list) or len(atom_ids) > 64:
             return False
         atoms = []
+        # A book projection can remain active while a member's authority changes.
+        # Reuse the retrieval owner's predicates against each current source row.
+        owner_clause, owner_params = sql_memory_owner_predicate(
+            resolve_visible_memory_owners(query.visible_owners, project=query.project), table_alias="atom",
+        )
+        scope_clause, scope_params = scope_sql_predicate(query.knowledge_caller, table_alias="atom")
         for atom_id in atom_ids:
-            atom = conn.execute("SELECT * FROM memory_atoms WHERE id=?", (str(atom_id),)).fetchone()
+            atom = conn.execute(
+                f"SELECT * FROM memory_atoms atom WHERE atom.id=? AND {owner_clause} AND {scope_clause} "
+                "AND atom.status IN ('active','approved') AND atom.claim_state='current' "
+                "AND atom.privacy_level != 'sensitive'",
+                (str(atom_id), *owner_params, *scope_params),
+            ).fetchone()
             if atom is None:
                 return False
             atoms.append(dict(atom))
