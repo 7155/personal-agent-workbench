@@ -1,5 +1,5 @@
 import { publicReasoningSummaryText } from './public-reasoning-summary';
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import {
   Activity,
   Brain,
@@ -10,7 +10,6 @@ import {
   ShieldAlert,
   Table2,
   TriangleAlert,
-  Wrench,
 } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Button, Disclosure } from '@/components/primitives';
@@ -20,6 +19,7 @@ import {
   approvalNeedsHumanDecision,
 } from '@/contracts/approval-decision';
 import { publicAgentErrorText } from '../public-error';
+import { ToolStatusMark, toolReceiptStatus } from '@/features/conversation-ui/components/ToolStatusMark';
 import { MarkdownBody } from './MarkdownRenderer';
 import { RichTableFrame } from './rich/RichBlockTools';
 import { SmoothDisclosureReveal } from './SmoothDisclosureReveal';
@@ -373,20 +373,19 @@ function ToolActivityBlock({
   const toolId = text(data.toolName ?? data.toolId ?? data.name);
   const label = publicToolLabel(toolId);
   const status = text(data.status) || block.status;
-  const running = status === 'running' || status === 'pending';
-  const tone = ['failed', 'error', 'blocked'].includes(status)
-    ? 'danger'
-    : ['waiting', 'pending', 'paused'].includes(status)
-      ? 'warning'
-      : running ? 'info' : 'success';
-  const disclosure = useDisclosureControl(running);
+  const receipt = toolReceiptStatus(status === 'blocked' ? 'failed' : status, text(data.settledByTurnStatus));
+  const statusLabel = receipt === 'cancelled' ? '已停止' : receipt === 'error' ? '失败'
+    : receipt === 'success' ? '已完成' : receipt === 'running' ? '进行中'
+    : status === 'waiting' ? '等待确认' : status === 'paused' ? '已暂停'
+    : ['pending', 'queued'].includes(status) ? '等待开始' : '状态待确认';
+  const tone = receipt === 'error' ? 'danger' : receipt === 'success' ? 'success'
+    : receipt === 'running' ? 'info' : 'warning';
+  // Match ordinary tool receipts: show status in the row, but let the reader
+  // decide when to inspect details. Progress must not reopen a closed row.
+  const disclosure = useDisclosureControl();
   const [presence, setPresence] = useState(disclosure.open);
-  const contentId = `agent-structured-tool-${useId().replace(/:/gu, '')}`;
-  useEffect(() => {
-    if (running) disclosure.setOpen(true);
-  }, [disclosure.setOpen, running]);
   const summary = text(data.summary ?? data.title)
-    || (type === 'tool_call' ? `${label}正在处理` : `${label}已返回`);
+    || `${label}${type === 'tool_result' ? '结果' : ''}`;
   return (
     <details
       className="agent-tool-activity agent-structured-block"
@@ -396,14 +395,14 @@ function ToolActivityBlock({
     >
       <summary {...disclosure.summaryProps}>
         <span className="agent-insert-icon">
-          {running ? <CircleDashed className="agent-tool-activity__spinner" size={15} /> : <Wrench size={15} />}
+          <ToolStatusMark status={receipt} />
         </span>
         <span>{summary}</span>
-        <small>{running ? '进行中' : publicStructuredValue(status)}</small>
+        <small>{statusLabel}</small>
         <ChevronRight className="agent-rich-collapsible__chevron" size={14} />
       </summary>
-      <SmoothDisclosureReveal id={contentId} onPresenceChange={setPresence} open={disclosure.open}>
-        <SafeFieldList ariaLabel={`${summary}明细`} contentId={contentId} data={data} />
+      <SmoothDisclosureReveal id={disclosure.contentId} onPresenceChange={setPresence} open={disclosure.open}>
+        <SafeFieldList ariaLabel={`${summary}明细`} data={{ ...data, status: statusLabel }} />
       </SmoothDisclosureReveal>
     </details>
   );

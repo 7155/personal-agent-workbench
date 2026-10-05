@@ -1,5 +1,6 @@
 import type { InitialSessionSubmission } from './agent-workspace-loader';
 import './primary-assistant.css';
+import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '@/paw-os/extensions/installation';
 import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
@@ -464,6 +465,14 @@ export function PawSessionWorkspace({
     });
   }, [evaluationSnapshot, liveActive, loadControlCatalog]);
 
+  useEffect(() => {
+    if (evaluationSnapshot || !liveActive) return;
+    // An accepted installation receipt invalidates displayed capabilities;
+    // the session catalog remains the authority and no permissions are changed.
+    window.addEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refreshControlCatalog);
+    return () => window.removeEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refreshControlCatalog);
+  }, [evaluationSnapshot, liveActive, refreshControlCatalog]);
+
   const loadAgentSnapshot = useAgentLiveSession({
     sessionId: recordId,
     transport,
@@ -493,6 +502,7 @@ export function PawSessionWorkspace({
     },
     onEvent: (event) => {
       if (event.eventType === 'snapshot_required') return;
+      if (event.eventType === 'session_configuration_changed') refreshControlCatalog();
       const completedMessage = asRecord(asRecord(event.payload).message);
       if (
         event.eventType === 'message_completed'

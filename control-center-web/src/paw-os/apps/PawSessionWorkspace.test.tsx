@@ -13,6 +13,7 @@ import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
 import type { SessionSummary } from '@/features/agent/types';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
+import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '@/paw-os/extensions/installation';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { ControlTransportHttpError, HttpControlTransport } from '@/platform/http-transport';
 import type { ControlEventObserver, ControlRequest } from '@/platform/transport';
@@ -61,6 +62,40 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it.each(['installation', 'session'] as const)('refreshes the displayed tool catalog from the existing %s event without reloading history or changing authority', async event => {
+    const sessionId = `catalog-refresh-${event}`;
+    let enabled = true;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(), 'agent.tools.list': () => ({
+      schemaVersion: 'rag-ime.capability-catalog.v1', ok: true, revision: enabled ? '1' : '2', effectiveAtMs: 1,
+      projectScope: { supported: false, identityKind: 'none', reason: 'test' },
+      sessionPolicy: { sessionId, policyRevision: 1, effectiveAtMs: 1, disclosurePreferences: {} },
+      items: [{ schemaVersion: 'rag-ime.control-tool-manifest.v1', id: 'read', domain: 'files', displayName: '读取文件', description: '读取项目文件',
+        sessionModes: ['assistant', 'coordinator'], operations: ['read'], availability: 'online', enabled, riskLevel: 'R0',
+        canonicalId: 'tool:read', kind: 'tool', source: { kind: 'built_in', label: 'Runtime' }, status: 'available', risk: 'R0', requiredPermissions: [],
+        authorization: { state: 'authorized', reason: 'test' }, disclosure: { preference: 'inherit', effective: enabled ? 'enabled' : 'disabled', state: enabled ? 'disclosed' : 'hidden', reason: 'test' },
+        effectiveScope: 'session', reasons: [], revision: '1', effectiveAtMs: 1 }],
+    }) });
+    const view = render(<ControlTransportProvider transport={transport}><TooltipProvider><PawSessionWorkspace
+      record={{ ...liveSession(), id: sessionId }} recordId={sessionId} showComposerControls
+      onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>);
+    await screen.findByRole('button', { name: /1 个当前可用工具，1 个已登记工具/ });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    enabled = false;
+    act(() => {
+      if (event === 'installation') window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT));
+      else transport.emit('agent.session.events', parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
+        turnId: '', sequence: 1, createdAtMs: 1, eventType: 'session_configuration_changed', payload: { kind: 'capability' }, resumeToken: `${sessionId}:1` }));
+    });
+    await screen.findByRole('button', { name: /0 个当前可用工具，1 个已登记工具/ });
+    expect(transport.requests.filter(request => request.pathId === 'agent.tools.list')).toHaveLength(2);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot')).toHaveLength(1);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.capability-policy.update')).toBe(false);
+    view.unmount();
+    const count = transport.requests.length;
+    act(() => { window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT)); });
+    expect(transport.requests).toHaveLength(count);
+    useAgentLiveStore.getState().clear(sessionId);
+  });
   it('selects only the latest completed public text message for a primary task source cutoff', () => {
     const projection = createAgentProjection('primary');
     const message = { schemaVersion: 'rag-ime.agent-message.v1' as const, id: 'public-user', sessionId: 'primary', turnId: 'turn', role: 'user' as const,
