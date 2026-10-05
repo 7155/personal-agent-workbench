@@ -176,19 +176,24 @@ describe('PAWOS Agent Session structural migration', () => {
     projection.messageOrder = ['public-user', 'public-plan', 'tool-result', 'local:draft', 'streaming'];
     expect(latestPublicSessionMessageId(projection)).toBe('public-plan');
   });
-  it('admits a primary home submission once after loading and preserves its exact identity through a late stopped receipt', async () => {
-    const sessionId = 'primary-admission';
-    const initial = deferred<unknown>(); const prompt = deferred<unknown>();
+  it.each([
+    ['prompt-first', true], ['stop-first', true], ['prompt-first', false], ['stop-first', false],
+  ] as const)('settles a cancelled primary admission without a fabricated turn terminal (%s, drained: %s)', async (order, drained) => {
+    const sessionId = `primary-admission-${order}-${drained}`;
+    const initial = deferred<unknown>(); const prompt = deferred<unknown>(); const stop = deferred<unknown>();
     const submission = { clientMessageId: 'primary-admission-request', message: '检查工作台' };
     const record = { ...liveSession(), id: sessionId, metadata: { primaryTask: true }, executionMode: 'workspace_managed' as const };
     let stopped = false;
-    const terminal = { schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
-      turnId: `local-turn:${submission.clientMessageId}`, sequence: 1, createdAtMs: Date.now(),
-      eventType: 'turn_completed', payload: { status: 'aborted', aborted: true }, resumeToken: `${sessionId}:1` };
+    // Pi never creates a native turn when Stop wins before prompt dispatch.
+    // Its only event is the admission's status change, not a local-turn terminal.
+    const aborting = { schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
+      turnId: '', sequence: 1, createdAtMs: Date.now(),
+      eventType: 'status_changed', payload: { status: 'aborting', pendingAdmission: true }, resumeToken: `${sessionId}:1` };
+    let promptRequests = 0;
     const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
-      'agent.session.snapshot': () => stopped ? { messages: [], liveEvents: [terminal], status: 'idle', lastSequence: 1, resumeToken: `${sessionId}:1` } : initial.promise,
-      'agent.session.prompt': () => prompt.promise,
-      'agent.session.abort': () => { stopped = true; transport.emit('agent.session.events', parseAgentEvent(terminal)); return { ok: true }; },
+      'agent.session.snapshot': () => stopped ? { messages: [], liveEvents: [aborting], status: 'idle', lastSequence: 1, resumeToken: `${sessionId}:1` } : initial.promise,
+      'agent.session.prompt': () => ++promptRequests === 1 ? prompt.promise : new Promise(() => undefined),
+      'agent.session.abort': () => { stopped = true; transport.emit('agent.session.events', parseAgentEvent(aborting)); return stop.promise; },
     });
     const tree = () => <ControlTransportProvider transport={transport}><TooltipProvider><PawSessionWorkspace
       record={record} recordId={sessionId} initialSubmission={submission} onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>;
@@ -200,11 +205,71 @@ describe('PAWOS Agent Session structural migration', () => {
     view.rerender(tree());
     expect(transport.requests.find(request => request.pathId === 'agent.session.prompt')?.body).toMatchObject(submission);
     fireEvent.click(screen.getByRole('button', { name: '停止本轮' }));
-    await act(async () => prompt.resolve({ ok: true, accepted: false, cancelled: true, admissionCancelled: true }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: '停止本轮' })).not.toBeInTheDocument());
+    const cancelPrompt = () => prompt.resolve({ accepted: false, cancelled: true, admissionCancelled: true,
+      clientMessageId: submission.clientMessageId, turnId: '', piEntryId: '' });
+    const acknowledgeStop = () => stop.resolve({ ok: drained, sessionId,
+      runtimeReceipt: { turnId: '', pendingAdmission: true, admissionCancelled: true, lifecycle: { drained: true, idle: true } },
+      backgroundJobs: { drained, pendingJobIds: drained ? [] : ['still-draining'] },
+    });
+    await act(async () => { (order === 'prompt-first' ? cancelPrompt : acknowledgeStop)(); });
+    await act(async () => { (order === 'prompt-first' ? acknowledgeStop : cancelPrompt)(); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: /停止本轮/ })).not.toBeInTheDocument());
     expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1);
     expect(screen.getByText('本次工作区已授权')).toBeVisible();
     expect(screen.queryByRole('button', { name: /^对话权限/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '消息' }), { target: { value: '停止后重新发送' } });
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
+    if (!drained) expect(screen.getByText('尚有后台资源未确认停止。请查看任务与状态后重试。')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(2));
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')[1]?.body).toMatchObject({ message: '停止后重新发送' });
+  });
+
+  it.each([
+    ['session', 'success'], ['session', 'unconfirmed'], ['session', 'failure'],
+    ['transport', 'success'], ['transport', 'unconfirmed'], ['transport', 'failure'],
+  ] as const)('keeps the current Stop owned after a previous %s admission cancels and its Stop returns %s', async (scope, outcome) => {
+    const firstId = `stop-owner-${scope}-${outcome}`;
+    const nextId = scope === 'session' ? `${firstId}-next` : firstId;
+    const prompt = deferred<unknown>(); const firstStop = deferred<unknown>(); const nextStop = deferred<unknown>();
+    const currentSnapshot = { messages: [], status: 'busy', lastSequence: 1, resumeToken: `${nextId}:1`,
+      liveEvents: [parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${nextId}:1`, sessionId: nextId,
+        turnId: 'current-native-turn', sequence: 1, createdAtMs: 1, eventType: 'tool_started',
+        payload: { toolCallId: 'current-call', toolName: 'workspace_shell' }, resumeToken: `${nextId}:1` })],
+    };
+    const first = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => scope === 'session' && request.params?.sessionId === nextId
+        ? currentSnapshot : idleSessionRoutes()['agent.session.snapshot'],
+      'agent.session.prompt': () => prompt.promise,
+      'agent.session.abort': (request: ControlRequest) => scope === 'session' && request.params?.sessionId === nextId
+        ? nextStop.promise : firstStop.promise,
+    });
+    const next = scope === 'session' ? first : new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': currentSnapshot, 'agent.session.abort': () => nextStop.promise,
+    });
+    const submission = { clientMessageId: `client-${firstId}`, message: '停止旧输入' };
+    const tree = (transport: StubControlTransport, id: string, initialSubmission?: typeof submission) => (
+      <ControlTransportProvider transport={transport}><TooltipProvider><PawSessionWorkspace
+        record={{ ...liveSession(), id }} recordId={id} initialSubmission={initialSubmission}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>
+    );
+    const view = render(tree(first, firstId, submission));
+    await waitFor(() => expect(first.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: '停止本轮' }));
+    view.rerender(tree(next, nextId));
+    fireEvent.click(await screen.findByRole('button', { name: '停止本轮' }));
+    expect(screen.getByRole('button', { name: '正在停止本轮' })).toBeDisabled();
+    await act(async () => prompt.resolve({ accepted: false, cancelled: true, admissionCancelled: true, clientMessageId: submission.clientMessageId }));
+    await act(async () => {
+      if (outcome === 'failure') firstStop.resolve(Promise.reject(new Error('old stop failed')));
+      else firstStop.resolve({ ok: outcome === 'success', backgroundJobs: { drained: outcome === 'success' },
+        runtimeReceipt: { turnId: '', pendingAdmission: true, admissionCancelled: true } });
+    });
+    expect(screen.getByRole('button', { name: '正在停止本轮' })).toBeDisabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await act(async () => nextStop.resolve({ ok: false, backgroundJobs: { drained: false } }));
+    expect(screen.getByText('尚有后台资源未确认停止。请查看任务与状态后重试。')).toBeVisible();
+    expect(screen.getByRole('button', { name: '停止本轮' })).toBeEnabled();
   });
 
   it('admits the original primary submission only after a failed initial snapshot is successfully retried', async () => {
@@ -626,13 +691,16 @@ describe('PAWOS Agent Session structural migration', () => {
   });
 
   it.each([
-    { name: 'unknown background process', ok: false, drained: false, pendingJobIds: ['job-original'] },
-    { name: 'pending background drain', ok: true, drained: false, pendingJobIds: ['job-original'] },
-  ])('retains an unconfirmed Stop receipt for $name after native terminal and snapshot', async ({ ok, drained, pendingJobIds }) => {
-    const sessionId = `session-stop-${ok ? 'draining' : 'unknown'}`;
+    { name: 'unknown background process', ok: false, drained: false, pendingJobIds: ['job-original'], terminalFirst: false },
+    { name: 'pending background drain', ok: true, drained: false, pendingJobIds: ['job-original'], terminalFirst: false },
+    { name: 'unknown background process', ok: false, drained: false, pendingJobIds: ['job-original'], terminalFirst: true },
+    { name: 'pending background drain', ok: true, drained: false, pendingJobIds: ['job-original'], terminalFirst: true },
+  ])('retains an unconfirmed Stop receipt for $name after native terminal and snapshot (terminal first: $terminalFirst)', async ({ ok, drained, pendingJobIds, terminalFirst }) => {
+    const sessionId = `session-stop-${ok ? 'draining' : 'unknown'}-${terminalFirst}`;
     const receipt = { schemaVersion: 'rag-ime.agent-abort.v1', sessionId, ok,
       backgroundJobs: { turnIds: ['turn-busy'], jobIds: ['job-original'], pendingJobIds, drained } };
-    const fetchReceipt = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200 }));
+    const deferredReceipt = deferred<Response>();
+    const fetchReceipt = vi.fn(async () => terminalFirst ? deferredReceipt.promise : new Response(JSON.stringify(receipt), { status: 200 }));
     const http = new HttpControlTransport({ baseUrl: 'http://stop-receipt.test', fetch: fetchReceipt });
     const fixture = busySessionTransport(sessionId);
     const stopped = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`,
@@ -652,19 +720,26 @@ describe('PAWOS Agent Session structural migration', () => {
     const view = render(<QueryClientProvider client={queryClient}>
       {durableWorkspace(transport, sessionId, '尚未发送的草稿', 'full')}
     </QueryClientProvider>);
+    const settleNative = async () => {
+      const previousReads = transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length;
+      nativeSettled = true;
+      act(() => { transport.emit('agent.session.events', stopped); });
+      await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length).toBeGreaterThan(previousReads));
+    };
     try {
       await userEvent.setup().click(await screen.findByRole('button', { name: '停止当前回合' }));
+      if (terminalFirst) {
+        await settleNative();
+        await act(async () => deferredReceipt.resolve(new Response(JSON.stringify(receipt), { status: 200 })));
+      }
       const alert = await screen.findByRole('alert');
       expect(alert).toHaveTextContent('尚有后台资源未确认停止');
       expect(fetchReceipt).toHaveBeenCalledOnce();
       expect(fetchReceipt).toHaveBeenCalledWith(new URL(`/api/agent/sessions/${sessionId}/abort`, 'http://stop-receipt.test'),
         expect.objectContaining({ method: 'POST', body: '{}' }));
-      expect(useAgentLiveStore.getState().projections[agentProjectionKey(agentSessionAddress(transport, sessionId))].turnsById['turn-busy'].status).toBe('running');
+      expect(useAgentLiveStore.getState().projections[agentProjectionKey(agentSessionAddress(transport, sessionId))].turnsById['turn-busy'].status).toBe(terminalFirst ? 'aborted' : 'running');
       expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('尚未发送的草稿');
-      const previousReads = transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length;
-      nativeSettled = true;
-      act(() => { transport.emit('agent.session.events', stopped); });
-      await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.snapshot').length).toBeGreaterThan(previousReads));
+      if (!terminalFirst) await settleNative();
       await waitFor(() => expect(screen.getByRole('button', { name: '发送' })).toBeEnabled());
       expect(screen.getByRole('alert')).toHaveTextContent('尚有后台资源未确认停止');
       await userEvent.setup().click(within(screen.getByRole('alert')).getByRole('button', { name: '查看任务与状态' }));

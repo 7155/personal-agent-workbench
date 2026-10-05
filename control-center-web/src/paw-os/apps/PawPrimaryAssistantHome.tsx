@@ -4,7 +4,7 @@ import { useControlTransport } from '@/app/control-transport';
 import { useProductIdentity } from '@/features/identity/product-identity';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
 import { publicAgentErrorText } from '@/features/agent/public-error';
-import { useAgentLiveSession, type AgentLiveSnapshotLoader } from '@/features/agent/runtime/use-agent-live-session';
+import { useAgentLiveSession, type AgentLiveSnapshotLoader, type AgentRecoveryState } from '@/features/agent/runtime/use-agent-live-session';
 import { agentSessionAddress, latestActiveAgentTurnId, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
@@ -207,6 +207,7 @@ function PrimaryTaskRow({ task, hidden, initiallyVisible, pageVisible, disabled,
   if (scopeRef.current.transport !== transport || scopeRef.current.id !== task.id) scopeRef.current = { transport, id: task.id };
   const scope = scopeRef.current;
   const [acceptedScope, setAcceptedScope] = useState<typeof scope>();
+  const [recovery, setRecovery] = useState<{ scope: typeof scope; state: AgentRecoveryState }>();
   const address = agentSessionAddress(transport, task.id);
   const projection = useAgentLiveStore(state => selectAgentProjection(state, address));
   const current = acceptedScope === scope ? projection : undefined;
@@ -224,6 +225,7 @@ function PrimaryTaskRow({ task, hidden, initiallyVisible, pageVisible, disabled,
   const load = useAgentLiveSession({
     sessionId: task.id, transport, active: pageVisible && ((!hidden && visible) || busy), snapshotView: 'recent',
     onSnapshot: () => setAcceptedScope(scope),
+    onRecoveryState: state => setRecovery({ scope, state }),
     onEvent: event => {
       if (['turn_completed', 'turn_failed', 'compaction_completed'].includes(event.eventType)) {
         void loadRef.current({ preserveAfterSequence: event.sequence });
@@ -245,7 +247,10 @@ function PrimaryTaskRow({ task, hidden, initiallyVisible, pageVisible, disabled,
     ...(preview ? { lastMessagePreview: preview } : {}),
   } : task;
   const status = current?.durableRecovery?.paused && !current.durableRecovery.compactionTarget ? '已暂停' : taskStatus(displayed);
-  return <li ref={row} hidden={hidden}><button disabled={disabled} onClick={() => onOpen(displayed)} onFocus={() => setVisible(true)} onPointerEnter={() => { setVisible(true); warmAgentWorkspace('session'); }} type="button"><span><strong>{task.title}</strong><small>{status}{displayed.lastMessagePreview ? ` · ${displayed.lastMessagePreview}` : ''}</small></span><ChevronRight size={16} /></button></li>;
+  const recoveryState = recovery?.scope === scope ? recovery.state : undefined;
+  const progress = recoveryState === 'failed' ? `暂时无法同步 · 上次状态：${status}`
+    : recoveryState === 'recovering' ? `正在重新同步 · 上次状态：${status}` : status;
+  return <li ref={row} hidden={hidden}><button disabled={disabled} onClick={() => onOpen(displayed)} onFocus={() => setVisible(true)} onPointerEnter={() => { setVisible(true); warmAgentWorkspace('session'); }} type="button"><span><strong>{task.title}</strong><small>{progress}{displayed.lastMessagePreview ? ` · ${displayed.lastMessagePreview}` : ''}</small></span><ChevronRight size={16} /></button></li>;
 }
 
 function taskStatus(task: SessionSummary): string {

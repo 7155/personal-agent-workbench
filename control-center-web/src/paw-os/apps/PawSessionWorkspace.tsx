@@ -260,6 +260,9 @@ export function PawSessionWorkspace({
   const [resuming, setResuming] = useState(false);
   const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target?: AgentCompactionTarget } | undefined>(undefined);
   const compactionStopRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target: AgentCompactionTarget } | undefined>(undefined);
+  const turnStopRequestRef = useRef<{
+    scope: typeof workspaceScope; clientMessageId?: string; acknowledged: boolean; admissionCancelled: boolean;
+  } | undefined>(undefined);
   const resumeOwnerRef = useRef({ recordId, transport });
   resumeOwnerRef.current = { recordId, transport };
   useEffect(() => {
@@ -274,6 +277,7 @@ export function PawSessionWorkspace({
       if (stopRequest?.recordId === recordId && stopRequest.transport === transport) {
         stopRequest.controller.abort(); compactionStopRequestRef.current = undefined;
       }
+      if (turnStopRequestRef.current?.scope === workspaceScope) turnStopRequestRef.current = undefined;
     };
   }, [recordId, transport]);
   const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(selectAgentProjection(state, address)));
@@ -565,6 +569,7 @@ export function PawSessionWorkspace({
           terminalSnapshotTimerRef.current = undefined;
         }
         setStopping(false);
+        if (turnStopRequestRef.current?.acknowledged) turnStopRequestRef.current = undefined;
         setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
         void loadAgentSnapshotRef.current({
           preserveAfterSequence: event.sequence,
@@ -786,6 +791,22 @@ export function PawSessionWorkspace({
       && !(editState && (editState.resolving || !editState.entryId));
   }
 
+  function settleCancelledPromptAdmission(clientMessageId: string): void {
+    useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
+    if (workspaceScopeRef.current !== workspaceScope) return;
+    const stopRequest = turnStopRequestRef.current;
+    if (stopRequest?.scope === workspaceScope && stopRequest.clientMessageId === clientMessageId) {
+      stopRequest.admissionCancelled = true;
+      // Cancellation proves this input never became a native turn. The Stop
+      // receipt still owns background-resource drain and any warning about it.
+      if (stopRequest.acknowledged) {
+        turnStopRequestRef.current = undefined;
+        setStopping(false);
+      }
+    }
+    void loadAgentSnapshot();
+  }
+
   useEffect(() => {
     if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
       || !hasSnapshot || attachmentImportPending || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
@@ -956,8 +977,7 @@ export function PawSessionWorkspace({
           },
         });
         if (isCancelledPromptAdmission(response)) {
-          useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
-          void loadAgentSnapshot();
+          settleCancelledPromptAdmission(clientMessageId);
           return;
         }
         useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
@@ -989,8 +1009,7 @@ export function PawSessionWorkspace({
               },
             });
             if (isCancelledPromptAdmission(retryResponse)) {
-              useAgentLiveStore.getState().discardOptimistic(address, retryClientMessageId);
-              void loadAgentSnapshot();
+              settleCancelledPromptAdmission(retryClientMessageId);
               return;
             }
             useAgentLiveStore.getState().acknowledgeOptimistic(address, retryClientMessageId, Date.now());
@@ -1058,9 +1077,17 @@ export function PawSessionWorkspace({
   }
 
   async function stop(): Promise<void> {
-    const target = agentProjection(address).durableRecovery?.compactionTarget;
+    const projection = agentProjection(address);
+    const target = projection.durableRecovery?.compactionTarget;
     if (target) { await stopCompaction(target); return; }
     if (!busy || stopping) return;
+    const activeTurnId = latestActiveTurnId(projection);
+    const pendingAdmission = activeTurnId.startsWith('local-turn:')
+      ? resolveAgentTurnUserMessage(projection, activeTurnId) : undefined;
+    const request = { scope: workspaceScope, clientMessageId: pendingAdmission?.clientMessageId,
+      acknowledged: false, admissionCancelled: false };
+    turnStopRequestRef.current = request;
+    const ownsRequest = () => turnStopRequestRef.current === request && workspaceScopeRef.current === workspaceScope;
     setStopping(true);
     /* Stopping the turn cancels the intent behind everything held for it, so
        the drafts come back to the composer instead of firing into a Session
@@ -1068,18 +1095,29 @@ export function PawSessionWorkspace({
     if (queue.queue.length) setDraft((current) => queue.restoreToDraft(current));
     try {
       const receipt = asRecord(await transport.request({ pathId: 'agent.session.abort', params: { sessionId: recordId }, body: {} }));
+      if (!ownsRequest()) return;
       const jobs = asRecord(receipt.backgroundJobs);
       if (receipt.ok === false || jobs.drained === false
         || Array.isArray(jobs.pendingJobIds) && jobs.pendingJobIds.length > 0) {
+        turnStopRequestRef.current = undefined;
         setStopping(false);
         setError(STOP_UNCONFIRMED_TEXT);
         return;
       }
-      // Abort acknowledgement and history loading are different contracts.
-      // The subscribed terminal event settles the turn and refreshes recent
-      // state; full history remains user-requested.
+      request.acknowledged = true;
+      const runtimeReceipt = asRecord(receipt.runtimeReceipt);
+      // Stop can win before Pi creates a turn, so no terminal event exists.
+      // Either exact prompt cancellation or the captured admission's Stop
+      // receipt settles that local lock; an ordinary turn still waits for SSE.
+      if (request.admissionCancelled || (request.clientMessageId
+        && runtimeReceipt.pendingAdmission === true && runtimeReceipt.admissionCancelled === true)) {
+        turnStopRequestRef.current = undefined;
+        setStopping(false);
+      } else if (!request.clientMessageId) turnStopRequestRef.current = undefined;
       setError('');
     } catch (reason) {
+      if (!ownsRequest()) return;
+      turnStopRequestRef.current = undefined;
       setStopping(false);
       setError(errorText(reason));
     }
@@ -1224,8 +1262,7 @@ export function PawSessionWorkspace({
           },
         });
         if (isCancelledPromptAdmission(response)) {
-          useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
-          void loadAgentSnapshot();
+          settleCancelledPromptAdmission(clientMessageId);
           return;
         }
         useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());

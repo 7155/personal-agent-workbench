@@ -206,6 +206,62 @@ describe('primary assistant home', () => {
     expect(transport.activeSubscriptionCount()).toBe(1);
   });
 
+  it.each(['busy', 'completed'] as const)('marks a disconnected %s task as last-known progress until the shared owner recovers', async initialStatus => {
+    const recovered = deferred<unknown>();
+    const goalStatus = initialStatus === 'busy' ? 'active' : 'completed';
+    const statusLabel = initialStatus === 'busy' ? '进行中' : '已完成';
+    let snapshots = 0;
+    const { transport } = setup({
+      'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, status: initialStatus === 'busy' ? 'busy' : 'idle', goal: taskGoal(goalStatus) }] },
+      'agent.session.snapshot': () => ++snapshots === 1
+        ? { ...taskSnapshot('task', goalStatus), status: initialStatus === 'busy' ? 'busy' : 'idle',
+          runtimeQuiescent: initialStatus !== 'busy', lastSequence: 1, resumeToken: 'task:1' }
+        : recovered.promise,
+    });
+    await screen.findByRole('button', { name: new RegExp(`检查项目.*${statusLabel}`) });
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    act(() => { transport.fail('agent.session.events', new Error('connection lost')); });
+    expect(screen.getByRole('button', { name: /检查项目/ })).toHaveTextContent(`正在重新同步 · 上次状态：${statusLabel}`);
+    expect(screen.getByRole('button', { name: /检查项目/ })).toBeEnabled();
+    await waitFor(() => expect(snapshots).toBe(2), { timeout: 5_000 });
+    await act(async () => recovered.resolve({ ...taskSnapshot('task', 'completed'), lastSequence: 2,
+      resumeToken: 'task:2', goal: taskGoal('completed', 2) }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /检查项目/ })).toHaveTextContent('已完成');
+      expect(screen.getByRole('button', { name: /检查项目/ })).not.toHaveTextContent('上次状态');
+    });
+    expect(transport.activeSubscriptionCount()).toBe(1);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(1);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('ignores a retired task observer after unmounting and opening the same id on another transport', async () => {
+    const first = setup({
+      'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, status: 'busy', goal: taskGoal('active') }] },
+      'agent.session.snapshot': { ...taskSnapshot('task', 'active'), status: 'busy', runtimeQuiescent: false },
+    });
+    const subscribe = first.transport.subscribe.bind(first.transport);
+    let lateFailure: (() => void) | undefined;
+    vi.spyOn(first.transport, 'subscribe').mockImplementation((request, observer) => {
+      lateFailure = () => observer.error?.(new Error('retired observer'));
+      return subscribe(request, observer);
+    });
+    await waitFor(() => expect(first.transport.activeSubscriptionCount()).toBe(1));
+    first.unmount();
+    expect(first.transport.activeSubscriptionCount()).toBe(0);
+    const next = setup({
+      'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, goal: taskGoal('completed') }] },
+      'agent.session.snapshot': taskSnapshot('task', 'completed'),
+    });
+    await waitFor(() => expect(next.transport.activeSubscriptionCount()).toBe(1));
+    expect(lateFailure).toBeTypeOf('function');
+    act(() => { lateFailure?.(); });
+    expect(screen.getByRole('button', { name: /检查项目/ })).toHaveTextContent('已完成');
+    expect(screen.getByRole('button', { name: /检查项目/ })).not.toHaveTextContent('上次状态');
+    expect(next.transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(1);
+    expect(next.transport.activeSubscriptionCount()).toBe(1);
+  });
+
   it('keeps a stopped or finished turn distinct from a completed goal', async () => {
     let sequence = 0;
     const { transport } = setup({
