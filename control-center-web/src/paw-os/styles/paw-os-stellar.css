@@ -587,8 +587,8 @@
 
 .paw-desktop-root[data-paw-visual='stellar'] .an-home { background: #fff; }
 .paw-desktop-root[data-paw-visual='stellar'] .an-home-wrap {
-  width: min(800px, 100%);
-  padding: clamp(24px, 6cqh, 60px) 36px 16px;
+  width: min(1040px, 100%);
+  padding: clamp(24px, 6cqh, 48px) 32px 16px;
 }
 .an-home-intro { display: flex; flex: none; align-items: center; gap: 12px; margin-bottom: 22px; }
 .an-home-orbit { position: relative; display: grid; width: 32px; height: 32px; flex: none; place-items: center; border: 1px solid #d9d4e8; border-radius: 50%; transform: rotate(-28deg); }

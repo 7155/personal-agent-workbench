@@ -216,13 +216,16 @@ describe('PAWOS Agent App', () => {
     const user = userEvent.setup();
     const available = createTransport({ modelCatalog: { providers: [], selected: {}, sessionEngines: { durable: { available: true } } } });
     const view = renderAgent(available);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeEnabled());
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' })).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '继续已有目标');
     const unavailable = createTransport();
     view.rerender(agentTree(unavailable));
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeDisabled());
-    expect(screen.getByRole('combobox', { name: '会话执行方式' })).toHaveValue('durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' })).toHaveAttribute('aria-disabled', 'true'));
+    expect(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' })).toHaveAttribute('aria-checked', 'true');
+    await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
     expect(await screen.findByText(/当前 Pi Runtime 暂不支持 Durable/)).toBeVisible();
     expect(screen.getByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('继续已有目标');
@@ -313,6 +316,31 @@ describe('PAWOS Agent App', () => {
       await metadata.promise;
     });
     await waitFor(() => expect(rail.querySelector('.paw-agent-recents')).not.toHaveAttribute('aria-busy'));
+  });
+
+  it('makes the model usable while the work history is still pending', async () => {
+    const history = deferred<unknown>();
+    renderAgent(createTransport({ sessionCatalogHandler: () => history.promise, modelCatalog: modelCatalog() }));
+    const picker = await screen.findByRole('button', { name: /^模型与推理：GPT-5.6 Luna/ });
+    await waitFor(() => expect(picker).not.toHaveAttribute('aria-busy'));
+    expect(screen.getByText('正在读取工作记录…')).toBeInTheDocument();
+    await act(async () => {
+      history.resolve({ ok: true, items: [] });
+      await history.promise;
+    });
+  });
+
+  it('shows model failure and recovery without waiting for pending history', async () => {
+    const history = deferred<unknown>();
+    renderAgent(createTransport({ sessionCatalogHandler: () => history.promise,
+      modelCatalog: () => Promise.reject(new Error('model directory unavailable')) }));
+    expect(await screen.findByText('模型目录暂时无法读取。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新读取模型' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^模型与推理：/ })).not.toHaveAttribute('aria-busy');
+    await act(async () => {
+      history.resolve({ ok: true, items: [] });
+      await history.promise;
+    });
   });
 
   it('retains a published first page and reports a failed later page', async () => {
@@ -1039,17 +1067,16 @@ describe('PAWOS Agent App', () => {
     const user = userEvent.setup();
     renderAgent(transport);
 
-    expect(await screen.findByRole('status')).toHaveTextContent('部分 Agent 目录暂时不可用。');
+    expect(await screen.findByRole('alert')).toHaveTextContent('模型目录暂时无法读取。');
     expect(screen.queryByText(/Pi Runtime 已连接/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '交给 Trace Agent' })).toBeInTheDocument();
     expect(modelCalls).toBe(1);
 
-    await user.click(screen.getByRole('button', { name: '重新读取目录' }));
+    await user.click(screen.getByRole('button', { name: '重新读取模型' }));
 
     // Recovery is asynchronous; keep exact state and request-count assertions
     // with the same bounded deadline as Session model discovery under load.
     const model = await screen.findByRole('button', { name: '模型与推理：GPT-5.6 Luna · gpt · 高' }, { timeout: 5_000 });
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(modelCalls).toBe(2);
     expect(model).toBeEnabled();
     await user.click(model);

@@ -104,16 +104,15 @@ function PawDesktopSurface() {
    * focus and live drag/resize keep their own suspension rules. */
   const documentHidden = useDocumentHidden();
   const ambientPaused = documentHidden || Boolean(activeWindowId) || launchpadOpen || overviewOpen;
-  const [workLayout, setWorkLayout] = useState<'work' | 'icons'>('work');
   useLayoutEffect(() => {
     const root = desktopRef.current;
-    if (workLayout !== 'icons' || !root || Object.keys(persistedIconPositions).length === 0) return;
+    if (!root || Object.keys(persistedIconPositions).length === 0) return;
     api.getState().setWayfinderIconPositions(pawDesktopResolvePersistedPositions(
       pawDesktopGridEntries(root),
       persistedIconPositions,
       gridLayout.columns,
     ));
-  }, [api, gridLayout.columns, persistedIconPositions, workLayout]);
+  }, [api, gridLayout.columns, persistedIconPositions]);
   useEffect(() => {
     if (typeof window.requestIdleCallback !== 'function') return undefined;
     const handle = window.requestIdleCallback(() => warmPawAppProcess('agent'));
@@ -146,11 +145,6 @@ function PawDesktopSurface() {
   const [lasso, setLasso] = useState<PawSelectionRect | null>(null);
   const [archiveReceipt, setArchiveReceipt] = useState<PawArchiveReceipt | null>(null);
   const [archiveNoticeVisible, setArchiveNoticeVisible] = useState(false);
-  const changeWorkLayout = useCallback((layout: 'work' | 'icons') => {
-    setWorkLayout(layout);
-    setSelectedIcons(new Set());
-    setContextMenu(null);
-  }, []);
   const archiveWorkIcons = useCallback((
     iconIds: readonly string[],
     label: string,
@@ -383,7 +377,7 @@ function PawDesktopSurface() {
    * tray, context sheet, an open folder window) is marked
    * [data-paw-desktop-ui] and never starts a band. */
   const startLasso = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (workLayout !== 'icons' || event.button !== 0) return;
+    if (event.button !== 0) return;
     const target = event.target;
     // Body Portals still bubble through the desktop's React tree. Only the
     // viewport's own DOM can start a selection or capture its pointer.
@@ -481,7 +475,7 @@ function PawDesktopSurface() {
     window.addEventListener('pointercancel', finish);
     window.addEventListener('keydown', key, true);
     window.addEventListener('contextmenu', abortMenu, true);
-  }, [selectedIcons, workLayout]);
+  }, [selectedIcons]);
 
   const menuItems = useMemo<readonly PawContextMenuItem[]>(() => {
     if (!contextMenu || contextMenu.kind === 'desktop') {
@@ -494,7 +488,6 @@ function PawDesktopSurface() {
           id: 'arrange-icons',
           label: '整理图标',
           icon: <Grid3X3 size={15} />,
-          disabled: workLayout !== 'icons',
           action: () => {
             api.getState().arrangeWayfinderIcons();
             setSelectedIcons(new Set());
@@ -660,7 +653,7 @@ function PawDesktopSurface() {
         },
       },
     ];
-  }, [activeAppId, activeWindowId, api, archiveWorkIcons, contextMenu, installation.enabledExtensionIds, menuWindows, workLayout]);
+  }, [activeAppId, activeWindowId, api, archiveWorkIcons, contextMenu, installation.enabledExtensionIds, menuWindows]);
   const menuBarLabel = activeAppId ? pawApp(activeAppId).label : '桌面';
   /* macOS menu-bar discipline: a menu opens on click, and while any menu-bar
    * menu is open, hovering the neighbouring title (or pressing ←/→ inside the
@@ -774,7 +767,7 @@ function PawDesktopSurface() {
         ref={viewportRef}
         tabIndex={-1}
       >
-        <Wayfinder layout={workLayout} onChangeLayout={changeWorkLayout} onArchive={archiveWorkIcons} onOpen={openApp} onSelectIcon={selectIcon} selectedIcons={selectedIcons} />
+        <Wayfinder onArchive={archiveWorkIcons} onOpen={openApp} onSelectIcon={selectIcon} selectedIcons={selectedIcons} />
         <PawWindowLayer />
         {lasso ? <div className="paw-selection-lasso" data-testid="paw-selection-lasso" style={{ left: lasso.x, top: lasso.y, width: lasso.width, height: lasso.height }} /> : null}
       </main>
@@ -863,9 +856,7 @@ function PawArchiveUndo({ label, onDismiss, onUndo, operation }: {
  * stable callbacks plus the selection set, so clock ticks, menus, focus
  * changes and every lasso frame that crosses no new identity leave it
  * untouched. */
-const Wayfinder = memo(function Wayfinder({ layout, onChangeLayout, onArchive, onOpen, onSelectIcon, selectedIcons }: {
-  layout: 'work' | 'icons';
-  onChangeLayout: (layout: 'work' | 'icons') => void;
+const Wayfinder = memo(function Wayfinder({ onArchive, onOpen, onSelectIcon, selectedIcons }: {
   onArchive: (iconIds: readonly string[], label: string) => void;
   onOpen: (id: PawAppId) => void;
   onSelectIcon: (iconId: string, additive: boolean) => void;
@@ -894,12 +885,6 @@ const Wayfinder = memo(function Wayfinder({ layout, onChangeLayout, onArchive, o
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (current === -1) return;
     event.preventDefault();
-    if (layout === 'work') {
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
-        : Math.max(0, Math.min(buttons.length - 1, current + (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1)));
-      buttons[next]?.focus();
-      return;
-    }
     if (event.altKey && event.key.startsWith('Arrow')) {
       const button = buttons[current]!;
       const iconId = button.dataset.wayfinderGridPosition;
@@ -932,7 +917,6 @@ const Wayfinder = memo(function Wayfinder({ layout, onChangeLayout, onArchive, o
     writeAppDrag(event.dataTransfer, appId, false);
   }, []);
   const dropOnDesktop = useCallback((event: DragEvent<HTMLElement>) => {
-    if (layout !== 'icons') return;
     const iconId = event.dataTransfer.getData(WAYFINDER_DRAG_MIME) || event.dataTransfer.getData('text/plain');
     if (!iconId.startsWith('app:') && !iconId.startsWith('project:') && !iconId.startsWith('session:') && !iconId.startsWith('room:')) return;
     event.preventDefault();
@@ -959,24 +943,16 @@ const Wayfinder = memo(function Wayfinder({ layout, onChangeLayout, onArchive, o
       api.getState().setWayfinderProjectAssignment(iconId, null);
       api.getState().setWayfinderArchived(iconId, false);
     }
-  }, [api, gridLayout.columns, layout]);
+  }, [api, gridLayout.columns]);
   return (
-    <section className="paw-wayfinder" aria-label="项目场" data-work-layout={layout} onDragOver={(event) => { if (layout === 'icons' && [...event.dataTransfer.types].includes(WAYFINDER_DRAG_MIME)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }} onDrop={dropOnDesktop}>
+    <section className="paw-wayfinder" aria-label="项目场" data-work-layout="icons" onDragOver={(event) => { if ([...event.dataTransfer.types].includes(WAYFINDER_DRAG_MIME)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }} onDrop={dropOnDesktop}>
       <div aria-hidden="true" className="paw-field-media">
         <PawStellarWallpaper />
       </div>
-      <header className="paw-work-home-head" data-paw-desktop-ui>
-        {layout === 'work' ? <h1>继续工作</h1> : null}
-        <div aria-label="桌面显示方式" className="paw-work-home-layout" role="group">
-          <button aria-pressed={layout === 'work'} onClick={() => onChangeLayout('work')} type="button">工作列表</button>
-          <button aria-pressed={layout === 'icons'} onClick={() => onChangeLayout('icons')} type="button">桌面图标</button>
-        </div>
-      </header>
       {/* App shortcuts share the Wayfinder's desktop coordinate plane. They
           are still App launchers, but their icon positions now live beside
           project/session icon positions in the same PAWOS snapshot. */}
       <div className="paw-desktop-shortcuts" aria-label="桌面 App" onKeyDown={walkShortcuts} ref={shortcutsRef}>
-        {layout === 'work' ? <button aria-label="在启动台查看全部 App" className="paw-work-home-all-apps" onClick={() => api.getState().setLaunchpadOpen(true)} type="button"><LayoutGrid aria-hidden="true" size={18} /><strong>全部 App</strong></button> : null}
         {desktopAppIds.filter((id) => !wayfinder.archived.includes(`app:${id}`)).map((id, index) => {
           const open = running.open.has(id);
           const minimizedOnly = open && !running.visible.has(id);
@@ -987,34 +963,34 @@ const Wayfinder = memo(function Wayfinder({ layout, onChangeLayout, onArchive, o
             <button
               aria-description={minimizedOnly ? '已最小化，按回车打开' : open ? '运行中' : undefined}
               aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
-              aria-pressed={layout === 'icons' && selectedIcons.has(iconId) || undefined}
+              aria-pressed={selectedIcons.has(iconId) || undefined}
               data-app={id}
               data-desktop-app={id}
-              data-wayfinder-grid-position={layout === 'icons' ? iconId : undefined}
+              data-wayfinder-grid-position={iconId}
               data-minimized={minimizedOnly || undefined}
               data-open={open || undefined}
-              draggable={layout === 'icons'}
+              draggable
               key={id}
-              onClick={(event) => layout === 'work' ? onOpen(id) : onSelectIcon(iconId, event.shiftKey || event.metaKey || event.ctrlKey)}
-              onDoubleClick={layout === 'icons' ? () => onOpen(id) : undefined}
+              onClick={(event) => onSelectIcon(iconId, event.shiftKey || event.metaKey || event.ctrlKey)}
+              onDoubleClick={() => onOpen(id)}
               onDragStart={(event) => startAppDrag(event, id)}
               onFocus={() => warmPawAppProcess(id)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') onOpen(id);
               }}
               onPointerEnter={() => warmPawAppProcess(id)}
-              style={layout === 'icons' ? { '--wayfinder-x': `${position.x}px`, '--wayfinder-y': `${position.y}px` } as CSSProperties : undefined}
+              style={{ '--wayfinder-x': `${position.x}px`, '--wayfinder-y': `${position.y}px` } as CSSProperties}
               title={minimizedOnly ? `${pawApp(id).label} · 已最小化` : open ? `${pawApp(id).label} · 运行中` : pawApp(id).label}
               type="button"
             >
-              <span><PawAppIcon appId={id} size={layout === 'work' ? 24 : 48} /></span>
+              <span><PawAppIcon appId={id} size={48} /></span>
               <strong><span className="paw-desktop-shortcuts__label-ink">{pawApp(id).label}</span></strong>
               <i aria-hidden="true" />
             </button>
           );
         })}
       </div>
-      <PawWayfinderWork layout={layout} onArchive={onArchive} onSelectIcon={onSelectIcon} selectedIcons={selectedIcons} />
+      <PawWayfinderWork onArchive={onArchive} onSelectIcon={onSelectIcon} selectedIcons={selectedIcons} />
     </section>
   );
 });

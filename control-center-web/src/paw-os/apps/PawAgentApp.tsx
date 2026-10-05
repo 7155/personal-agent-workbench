@@ -77,6 +77,8 @@ export function PawAgentApp({
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [personas, setPersonas] = useState<AgentPersonaV1[]>([]);
   const [models, setModels] = useState<PiModelOption[]>([]);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [modelError, setModelError] = useState('');
   const [durableAvailable, setDurableAvailable] = useState(false);
   const [defaultModel, setDefaultModel] = useState('');
   const [selection, setSelection] = useState<Selection>(() => initialAgentSelection(
@@ -163,6 +165,10 @@ export function PawAgentApp({
     const includeSessions = selection.kind !== 'room' || directoryNeeded;
     const includeRooms = selection.kind !== 'session' || directoryNeeded;
     const includeRoleModels = selection.kind === 'new';
+    if (includeRoleModels) {
+      setModelLoading(true);
+      setModelError('');
+    }
     const publishSessions = (page: unknown) => {
       if (!isCurrent()) return;
       startTransition(() => {
@@ -185,16 +191,34 @@ export function PawAgentApp({
     const sessionRead = includeSessions
       ? readSessionCatalog(transport, showArchived, isCurrent, controller.signal, publishSessions)
       : Promise.resolve(undefined);
+    const roomRead = includeRooms
+      ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' }, signal: controller.signal })
+      : Promise.resolve(undefined);
+    const roleRead = transport.request({ pathId: 'agent.roles.list', signal: controller.signal });
+    const modelRead = includeRoleModels
+      ? transport.request({ pathId: 'agent.role.models', signal: controller.signal }).then((response) => {
+          if (!isCurrent()) return response;
+          const catalog = parsePiModelCatalogOptions(response);
+          setModels(catalog.models);
+          setDefaultModel(catalog.selectedReference);
+          setDurableAvailable(record(record(record(response).sessionEngines).durable).available === true);
+          setModelLoading(false);
+          return response;
+        }).catch((requestError) => {
+          if (isCurrent()) {
+            setModelError('模型目录暂时无法读取。');
+            setModelLoading(false);
+            setDurableAvailable(false);
+          }
+          throw requestError;
+        })
+      : Promise.resolve(undefined);
     /* Room and role metadata can render while a visible Session catalog pages
      * through older records. Every result still belongs to this request id. */
     const metadataRead = Promise.allSettled([
-      includeRooms
-        ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' }, signal: controller.signal })
-        : Promise.resolve(undefined),
-      transport.request({ pathId: 'agent.roles.list', signal: controller.signal }),
-      includeRoleModels
-        ? transport.request({ pathId: 'agent.role.models', signal: controller.signal })
-        : Promise.resolve(undefined),
+      roomRead,
+      roleRead,
+      modelRead,
     ]).then(([roomResult, roleResult, modelResult]) => {
       if (!isCurrent()) return [roomResult, roleResult, modelResult] as const;
       startTransition(() => {
@@ -213,30 +237,21 @@ export function PawAgentApp({
           ]);
         }
         if (roleResult.status === 'fulfilled') setPersonas(roleItems(roleResult.value));
-        if (modelResult.status === 'fulfilled' && modelResult.value !== undefined) {
-          const catalog = parsePiModelCatalogOptions(modelResult.value);
-          setModels(catalog.models);
-          setDefaultModel(catalog.selectedReference);
-          setDurableAvailable(record(record(record(modelResult.value).sessionEngines).durable).available === true);
-        } else if (modelResult.status === 'rejected') {
-          setDurableAvailable(false);
-        }
       });
       return [roomResult, roleResult, modelResult] as const;
     });
     const [sessionResult] = await Promise.allSettled([sessionRead]);
-    const [roomResult, roleResult, modelResult] = await metadataRead;
+    const [roomResult, roleResult] = await metadataRead;
     if (!isCurrent()) return;
     const failures = [roleResult,
       ...(includeSessions ? [sessionResult] : []),
       ...(includeRooms ? [roomResult] : []),
-      ...(includeRoleModels ? [modelResult] : []),
     ].filter((result) => result.status === 'rejected').length;
     /* Rows are already visible; only the loading/error summary waits for the
      * complete directory and independent metadata to settle. */
     startTransition(() => {
       if (!isCurrent()) return;
-      if (failures) setLoadError(failures === 4 ? 'Agent 工作记录暂时无法读取。' : '部分 Agent 目录暂时不可用。');
+      if (failures) setLoadError(failures === 3 ? 'Agent 工作记录暂时无法读取。' : '部分 Agent 目录暂时不可用。');
       setLoading(false);
     });
   }, [directoryNeeded, selectedRoomId, selectedSessionId, selection.kind, showArchived, transport]);
@@ -507,6 +522,8 @@ export function PawAgentApp({
             interfaceMode={interfaceMode}
             catalogError={loadError}
             catalogLoading={loading}
+            modelLoading={modelLoading}
+            modelError={modelError}
             defaultModel={defaultModel}
             durableAvailable={durableAvailable}
             initialDraft={selection.draft}

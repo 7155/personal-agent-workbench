@@ -152,9 +152,9 @@ export function ModelPicker({
           variant="quiet"
         >
           <span className="agent-composer__picker-text">
-            {selectedModel ? selectedModel.name : '选择模型'}
+            {selectedModel ? selectedModel.name : pending ? '加载模型…' : '选择模型'}
           </span>
-          <span className="agent-composer__picker-thinking">{compactThinkingLabel(thinking)}</span>
+          {selectedModel ? <span className="agent-composer__picker-thinking">{compactThinkingLabel(thinking)}</span> : null}
           <ChevronDown className="caret" size={12} aria-hidden="true" />
         </Button>
       </PopoverTrigger>

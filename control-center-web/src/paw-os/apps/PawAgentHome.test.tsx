@@ -30,10 +30,12 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Home 首屏合同', () => {
-  it('keeps Durable unavailable until the owned Host advertises it', () => {
+  it('keeps Durable unavailable in settings until the owned Host advertises it', async () => {
     renderHome();
-    expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: '会话执行方式' })).toHaveValue('classic');
+    expect(screen.queryByRole('combobox', { name: '会话执行方式' })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: /^权限 ·/ }));
+    expect(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitemradio', { name: '标准会话' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('creates an explicitly selected Durable Session and retains the server engine in admission', async () => {
@@ -44,7 +46,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
         id: 'session-durable', title: '持续工作', runtimeEngine: (request.body as Record<string, unknown>).runtimeEngine,
       } }),
     });
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '继续完善这个项目');
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(true));
@@ -59,7 +62,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
     const input = screen.getByRole('textbox', { name: '描述你想完成的工作' });
     await user.type(input, '查看这个图片');
     fireEvent.paste(input, { clipboardData: { files: [new File(['image'], 'diagram.png', { type: 'image/png' })], items: [] } });
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
     expect(await screen.findByText(/Pi Durable 暂不支持附件/)).toBeVisible();
     expect(input).toHaveValue('查看这个图片');
@@ -71,7 +75,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
   it('does not transfer a Durable selection into Room creation', async () => {
     const user = userEvent.setup();
     const { transport } = renderHome({ durableAvailable: true, personas: [persona('planner', '规划者'), persona('builder', '执行者')] });
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.click(screen.getByRole('radio', { name: 'Room' }));
     expect(screen.queryByRole('combobox', { name: '会话执行方式' })).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '协作检查项目');
@@ -188,10 +193,11 @@ describe('PAWOS Agent Home 首屏合同', () => {
     expect(transport.subscriptionCalls).toHaveLength(0);
   });
 
-  it('owns its viewport like a desktop app: the page never scrolls, only the recent list does', () => {
-    // 表面本身钉死在窗口高度上，禁止整页往下翻。
-    expect(agentNextCss).toMatch(/\.an-home\s*\{[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/s);
-    // 继续工作列表是唯一的内部滚动区。
+  it('fits the desktop viewport and keeps a scroll fallback for short windows', () => {
+    // Short windows must expose overflow rather than cover the continuation cards.
+    expect(agentNextCss).toMatch(/\.an-home-root\s*\{[^}]*overflow:\s*auto;/s);
+    expect(agentNextCss).toMatch(/\.an-home-wrap\s*\{[^}]*min-height:\s*min-content;/s);
+    // The continuation list still owns its normal-height scrolling.
     expect(agentNextCss).toMatch(/\.an-home-recents \.an-recent-list\s*\{[^}]*overflow:\s*hidden auto;/s);
     // 页脚是钉在底部的状态条，不是文章末尾。
     expect(agentNextCss).toMatch(/\.an-home-foot\s*\{[^}]*margin-top:\s*auto;/s);
@@ -226,7 +232,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
     const permissions = await screen.findByRole('menu');
     expect(permissions.closest('.an-home')).toBeNull();
     await user.keyboard('{End}');
-    expect(within(permissions).getByRole('menuitemradio', { name: /^全自动/ })).toHaveFocus();
+    expect(within(permissions).getByRole('menuitemradio', { name: '标准会话' })).toHaveFocus();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(permission).toHaveFocus());
 
@@ -289,7 +295,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
 
     await user.click(await screen.findByRole('button', { name: /权限 · 完全访问/ }));
     const menu = screen.getByRole('menu');
-    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(4);
+    expect(within(within(menu).getByRole('group', { name: '权限模式' })).getAllByRole('menuitemradio')).toHaveLength(4);
     expect(within(menu).getByRole('menuitemradio', { name: /^只读/ })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: /^完全访问/ })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: /^工作区托管/ })).toBeInTheDocument();
