@@ -2,7 +2,7 @@ import type { SessionSummary } from '@/features/agent/types';
 import { emptyPetCounts, type PetConversation, type PetConversationState, type PetStateValue } from '@/features/agent/desktop-pet-snapshot';
 import { projectStellarAgents } from './stellar-agent-projection';
 
-const priority: Record<PetConversationState, number> = { attention: 0, running: 1, paused: 2, idle: 3, unknown: 4, terminal: 5 };
+const priority: Record<PetConversationState, number> = { attention: 0, error: 1, running: 2, paused: 3, idle: 4, unknown: 5, terminal: 6 };
 
 /** One small read-only directory view; neither histories nor paths cross IPC. */
 export function projectPetDirectory(sessions: readonly SessionSummary[], fresh: boolean, loaded: boolean): PetStateValue {
@@ -12,7 +12,11 @@ export function projectPetDirectory(sessions: readonly SessionSummary[], fresh: 
   const counts = emptyPetCounts();
   const conversations = stellar.planets.map((planet): PetConversation => {
     const record = records.get(planet.sessionId);
+    // Only a real faulted directory record proves failure. Generic attention
+    // does not prove approval/input, and a busy Session stays running even if
+    // its goal was paused or a local stop request has not yet settled.
     const state: PetConversationState = !fresh ? 'unknown'
+      : planet.sourceStatus === 'faulted' ? 'error'
       : planet.status === 'idle' && (record?.goal?.status === 'paused' || planet.sourceStatus === 'paused') ? 'paused' : planet.status;
     counts[state] += 1;
     return { id: planet.sessionId, state, label: [...planet.title.replace(/[\x00-\x1f\x7f]/g, ' ').trim()].slice(0, 48).join('') || '未命名对话' };

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
+import { PetStatusSignal } from './desktop-pet-status';
 import { createPetGesture } from './desktop-pet-interaction';
 import './desktop-pet.css';
 import { acceptPetSnapshot, petConversationLabel, petPresentation, unavailablePetSnapshot, type PetConversationTarget, type PetSnapshot } from './desktop-pet-snapshot';
@@ -82,18 +83,19 @@ export function DesktopPetSurface() {
     </button>
     <button className="desktop-pet__hide" type="button" aria-label="隐藏桌面伙伴" disabled={!host} onClick={() => invoke(host?.hide())}>×</button>
     <button className="desktop-pet__planet" type="button" aria-label="查看后台对话" aria-expanded={expanded}
-      aria-controls="pet-conversations" disabled={!host} ref={planet} title="点击查看对话 · 拖动上方把手移动"
+      aria-controls="pet-conversations" aria-describedby="pet-status" disabled={!host} ref={planet} title="点击查看对话 · 拖动上方把手移动"
       onClick={() => { if (gesture.current.canActivate(Date.now())) expand(!expanded); }}>
-      <RoomPlanetAvatar ordinal={0} activity={presentation.activity} size={expanded ? 64 : 112} decorative />
+      <RoomPlanetAvatar ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
+      <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />
     </button>
-    <span className="desktop-pet__hint" role="status" aria-live="polite">{host ? presentation.label : '请从 PAW 桌面端开启'}</span>
+    <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{host ? presentation.label : '请从 PAW 桌面端开启'}</span>
     {expanded ? <section className="desktop-pet__panel" id="pet-conversations" aria-label="后台对话">
       <header><strong>对话近况</strong><button type="button" onClick={() => expand(false)} aria-label="收起对话列表">收起</button></header>
       <div className="desktop-pet__list" ref={list}>
         {snapshot.conversations.length ? snapshot.conversations.map(conversation => <button className="desktop-pet__conversation" key={`${snapshot.producerEpoch}:${conversation.id}`}
           data-pet-conversation={conversation.id} type="button" onClick={() => invoke(host?.openConversation({ id: conversation.id,
             producerEpoch: snapshot.producerEpoch, sourceId: snapshot.sourceId, scopeId: snapshot.scopeId }))} title={conversation.label}>
-          <i aria-hidden="true" data-state={conversation.state} /><span>{conversation.label}</span><small>{petConversationLabel[conversation.state]}</small>
+          <PetStatusSignal state={conversation.state} /><span>{conversation.label}</span><small>{petConversationLabel[conversation.state]}</small>
         </button>) : <p>{snapshot.freshness === 'synced' ? '当前目录还没有对话。' : '打开工作台后，同步对话状态。'}</p>}
       </div>
       <footer><span>{total > snapshot.conversations.length ? `当前目录另有 ${total - snapshot.conversations.length} 个` : '来自当前工作台目录'}</span>

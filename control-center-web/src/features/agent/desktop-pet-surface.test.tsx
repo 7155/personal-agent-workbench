@@ -29,10 +29,12 @@ function liveSnapshot(): PetSnapshot {
 }
 
 describe('single planet companion', () => {
-  it('reuses the bundled animated planet and opens a bounded list before any conversation action', async () => {
+  it('reuses the bundled planet with a separate running signal and opens a bounded list before any conversation action', async () => {
     const { host, button, push, view } = renderPet(); push(liveSnapshot());
     expect(view.container.querySelector('[data-room-planet="0"]')).toBeTruthy();
-    expect(view.container.querySelector('[data-activity="working"]')).toBeTruthy();
+    expect(view.container.querySelector('[data-activity="static"]')).toBeTruthy();
+    expect(button.querySelector('.desktop-pet-status')).toHaveAttribute('data-state', 'running');
+    expect(button).toHaveAccessibleDescription('2 个对话进行中');
     expect(host.ready).toHaveBeenCalledTimes(1);
     fireEvent.click(button);
     await screen.findByRole('region', { name: '后台对话' });
@@ -40,6 +42,37 @@ describe('single planet companion', () => {
     expect(screen.getByText('当前目录另有 1 个')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /检查项目/ }));
     expect(host.openConversation).toHaveBeenCalledWith({ id: 'session-one', producerEpoch: 3, sourceId: 'work-directory', scopeId: 's' });
+  });
+  it('keeps one stable face across status changes and gives every list state a shape plus text', async () => {
+    const { button, push, view } = renderPet(); push(liveSnapshot());
+    const avatar = button.querySelector('[data-room-planet="0"]');
+    const expression = avatar?.getAttribute('data-expression');
+    const states = ['running', 'attention', 'error', 'paused', 'idle', 'terminal', 'unknown'] as const;
+    const snapshot: PetSnapshot = { ...liveSnapshot(), revision: 3,
+      counts: { running: 1, attention: 1, error: 1, paused: 1, idle: 1, terminal: 1, unknown: 1 },
+      conversations: states.map(state => ({ id: state, label: `对话 ${state}`, state })) };
+    push(snapshot);
+    expect(button.querySelector('[data-room-planet="0"]')).toBe(avatar);
+    expect(avatar).toHaveAttribute('data-expression', expression);
+    expect(button.querySelector('.desktop-pet-status')).toHaveAttribute('data-state', 'attention');
+    expect(screen.getByRole('status')).toHaveTextContent('1 个对话待查看 · 1 个进行中');
+    push({ ...snapshot, revision: 4, counts: { ...snapshot.counts, attention: 0 },
+      conversations: snapshot.conversations.filter(item => item.state !== 'attention') });
+    const signal = button.querySelector('.desktop-pet-status');
+    expect(signal).toHaveAttribute('data-state', 'error');
+    expect(avatar).toHaveAttribute('data-expression', expression);
+    push({ ...snapshot, revision: 5, counts: { ...snapshot.counts, attention: 0 },
+      conversations: snapshot.conversations.filter(item => item.state !== 'attention') });
+    expect(button.querySelector('.desktop-pet-status')).toBe(signal);
+    push({ ...snapshot, revision: 6 });
+    fireEvent.click(button); await screen.findByRole('region', { name: '后台对话' });
+    expect(view.container.querySelectorAll('[data-room-planet]')).toHaveLength(1);
+    for (const [state, label] of [['running', '进行中'], ['attention', '待查看'], ['error', '出错'],
+      ['paused', '已暂停'], ['idle', '空闲'], ['terminal', '已结束'], ['unknown', '未同步']]) {
+      const row = screen.getByRole('button', { name: `对话 ${state}${label}` });
+      expect(row.querySelector('.desktop-pet-status')).toHaveAttribute('data-state', state);
+      expect(row.querySelector('.desktop-pet-status')).toHaveAttribute('data-motion-active', 'false');
+    }
   });
   it('separates dragging from opening and cleans cancelled gestures', () => {
     const { host, handle, button } = renderPet();

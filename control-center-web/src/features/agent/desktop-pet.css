@@ -26,7 +26,7 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 .desktop-pet__drag > span:first-child { font-size: 17px; line-height: 1; }
 .desktop-pet__hide { right: 7px; width: 24px; font-size: 18px !important; }
 .desktop-pet__planet {
-  flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0;
+  position: relative; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0;
   border-radius: 50%; background: transparent; cursor: pointer;
   filter: drop-shadow(0 7px 6px rgb(30 54 74 / .14));
 }
@@ -50,11 +50,49 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
   text-align: left; font-size: 12px !important;
 }
 .desktop-pet__conversation:hover { background: var(--color-accent-soft); }
-.desktop-pet__conversation > i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--color-text-muted); }
-.desktop-pet__conversation > i[data-state='running'] { background: var(--color-accent); }
-.desktop-pet__conversation > i[data-state='attention'] { background: var(--color-warning); }
 .desktop-pet__conversation > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-pet__conversation > small { flex: 0 0 auto; color: var(--color-text-muted); font-size: 10px; }
 .desktop-pet__panel > footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 30px; border-top: 1px solid var(--color-border); }
 .desktop-pet__panel > footer > span { font-size: 10px; color: var(--color-text-muted); }
 .desktop-pet__error { position: absolute; bottom: 3px; max-width: calc(100% - 12px); padding: 5px; border-radius: 6px; background: var(--color-surface); color: var(--color-danger); font-size: 11px; }
+
+/* The planet keeps its identity and expression. State lives in a separate,
+   static-readable silhouette; color only reinforces the adjacent words. */
+.desktop-pet-status { display: block; width: 18px; height: 18px; flex: 0 0 auto; color: var(--color-text-muted); }
+.desktop-pet-status__shape { fill: var(--color-surface); }
+.desktop-pet-status__ink { fill: currentColor; stroke: none; }
+.desktop-pet-status[data-state='running'] { color: var(--color-accent); }
+.desktop-pet-status[data-state='attention'] { color: var(--color-text); }
+.desktop-pet-status[data-state='error'] { color: var(--color-danger); }
+.desktop-pet__signal {
+  position: absolute; right: -2px; bottom: 3px; width: 30px; height: 30px;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / .16));
+}
+.desktop-pet[data-expanded='true'] .desktop-pet__signal { width: 24px; height: 24px; right: -4px; bottom: 0; }
+.desktop-pet-status[data-motion-active='true'][data-state='running'] .desktop-pet-status__orbit {
+  transform-origin: 12px 12px; animation: pet-status-orbit 1.8s linear infinite;
+}
+.desktop-pet-status[data-motion-active='true'][data-state='attention'] {
+  animation: pet-status-arrive 260ms ease-out 1;
+}
+.desktop-pet-status[data-motion-active='true'][data-state='error'] {
+  animation: pet-status-notice 420ms ease-out 1;
+}
+@keyframes pet-status-orbit { to { transform: rotate(360deg); } }
+@keyframes pet-status-arrive { from { transform: translateY(3px) scale(.88); } to { transform: none; } }
+@keyframes pet-status-notice {
+  0%, 100% { transform: none; }
+  20%, 60% { transform: translateX(1.5px); }
+  40%, 80% { transform: translateX(-1.5px); }
+}
+/* CSS also guards first paint before the motion preference hook subscribes.
+   The arc, punctuation, pause bars and idle dot remain visible when frozen. */
+.desktop-pet-status[data-motion-active='false'],
+.desktop-pet-status[data-motion-active='false'] .desktop-pet-status__orbit,
+:root[data-reduce-motion='true'] .desktop-pet-status,
+:root[data-reduce-motion='true'] .desktop-pet-status .desktop-pet-status__orbit {
+  animation: none; transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-pet-status, .desktop-pet-status .desktop-pet-status__orbit { animation: none; transform: none; }
+}

@@ -143,7 +143,7 @@ test('replays retained conversations on ready, opens only those ids and clears o
   const h = harness();
   const { producerEpoch } = h.publish('begin', { schemaVersion: 1, sourceId: 'work-directory', scopeId: 'scope' });
   h.publish('publish', { schemaVersion: 1, producerEpoch, revision: 1, freshness: 'synced',
-    counts: { running: 1, attention: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 },
+    counts: { running: 1, attention: 0, error: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 },
     conversations: [{ id: 'session-one', label: 'One', state: 'running' }] });
   await h.manager.show();
   assert.equal(h.invoke('ready').conversations[0].id, 'session-one');

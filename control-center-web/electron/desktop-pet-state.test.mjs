@@ -15,7 +15,7 @@ function harness() {
     invoke: (name, value, event = { sender, senderFrame: sender.mainFrame }) => handlers.get(`paw-pet-state:${name}`)(event, value) };
 }
 const identity = { schemaVersion: 1, sourceId: 'work-directory', scopeId: 'primary-1' };
-const counts = { running: 1, attention: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 };
+const counts = { running: 1, attention: 0, error: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 };
 const conversations = [{ id: 'session-one', label: 'Conversation one', state: 'running' }];
 const value = (producerEpoch, revision = 1) => ({ schemaVersion: 1, producerEpoch, revision, freshness: 'synced', counts, conversations });
 
@@ -109,4 +109,20 @@ test('opening a reused conversation id is bound to the current producer identity
   assert.equal(h.state.canOpenConversation({ ...current, extra: true }), false);
   h.replaceSource({ isDestroyed: () => false });
   assert.equal(h.state.canOpenConversation(current), false);
+});
+
+test('retains explicit error separately from attention and clears both when stale', () => {
+  const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+  const failure = { ...value(producerEpoch), counts: { ...counts, running: 0, error: 1 },
+    conversations: [{ id: 'failed', label: 'Failed conversation', state: 'error' }] };
+  assert.equal(h.invoke('publish', failure), true);
+  assert.equal(h.state.snapshot().counts.error, 1);
+  assert.equal(h.state.snapshot().counts.attention, 0);
+  assert.equal(h.state.snapshot().conversations[0].state, 'error');
+  assert.throws(() => h.invoke('publish', { ...failure, revision: 2, counts: { ...failure.counts, error: 0 } }), /Invalid/);
+  assert.throws(() => h.invoke('publish', { ...failure, revision: 2, counts: { ...failure.counts, error: -1 } }), /Invalid/);
+  assert.equal(h.invoke('publish', { ...failure, revision: 2, freshness: 'recovering' }), true);
+  assert.equal(h.state.snapshot().counts.error, 0);
+  assert.equal(h.state.snapshot().counts.unknown, 1);
+  assert.equal(h.state.snapshot().conversations[0].state, 'unknown');
 });

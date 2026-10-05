@@ -1,4 +1,4 @@
-const COUNT_KEYS = ['running', 'attention', 'paused', 'idle', 'terminal', 'unknown'];
+const COUNT_KEYS = ['running', 'attention', 'error', 'paused', 'idle', 'terminal', 'unknown'];
 const emptyCounts = () => Object.fromEntries(COUNT_KEYS.map((key) => [key, 0]));
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
