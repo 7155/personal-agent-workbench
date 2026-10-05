@@ -11,9 +11,13 @@ import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-conte
 import { warmAgentWorkspace, type InitialSessionSubmission, type PrimaryAssistantSource } from './agent-workspace-loader';
 import './primary-assistant.css';
 
+export type PrimaryAssistantHomeDraft = { draft: string; execute: boolean; workspace: string; contextWorkspace: string;
+  acceptance: string; scopeConfirmed: boolean; source?: PrimaryAssistantSource; attempt?: { signature: string; id: string } };
+
 /** A small entry into ordinary Sessions. Pi still owns every turn and Stop. */
-export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = false, initialSource, projectRoots = [], onOpen, onAdvanced }: {
+export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = false, initialSource, initialForm, projectRoots = [], onOpen, onAdvanced, onRememberDraft }: {
   initialDraft?: string; initialExecute?: boolean; initialSource?: PrimaryAssistantSource; projectRoots?: string[];
+  initialForm?: PrimaryAssistantHomeDraft; onRememberDraft?: (draft?: PrimaryAssistantHomeDraft) => void;
   onOpen: (session: SessionSummary, submission?: InitialSessionSubmission, draft?: string) => void;
   onAdvanced: (draft: string) => void;
 }) {
@@ -24,12 +28,12 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const [session, setSession] = useState<SessionSummary>();
   const [tasks, setTasks] = useState<SessionSummary[]>([]);
   const [allTasks, setAllTasks] = useState(false);
-  const [draft, setDraft] = useState(initialDraft);
-  const [intent, setIntent] = useState<'discuss' | 'execute'>(initialExecute ? 'execute' : 'discuss');
-  const [workspace, setWorkspace] = useState(initialSource?.workspaceRoots[0] ?? '');
-  const [contextWorkspace, setContextWorkspace] = useState(initialSource?.workspaceRoots[0] ?? '');
-  const [acceptance, setAcceptance] = useState('');
-  const [scopeConfirmed, setScopeConfirmed] = useState(false);
+  const [draft, setDraft] = useState(initialForm?.draft ?? initialDraft);
+  const [intent, setIntent] = useState<'discuss' | 'execute'>((initialForm?.execute ?? initialExecute) ? 'execute' : 'discuss');
+  const [workspace, setWorkspace] = useState(initialForm?.workspace ?? initialSource?.workspaceRoots[0] ?? '');
+  const [contextWorkspace, setContextWorkspace] = useState(initialForm?.contextWorkspace ?? initialSource?.workspaceRoots[0] ?? '');
+  const [acceptance, setAcceptance] = useState(initialForm?.acceptance ?? '');
+  const [scopeConfirmed, setScopeConfirmed] = useState(initialForm?.scopeConfirmed ?? false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -37,7 +41,9 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const lock = useRef(false);
   const owner = useRef(0);
   const readSequence = useRef(0);
-  const attempt = useRef<{ signature: string; id: string } | undefined>(undefined);
+  const attempt = useRef<{ signature: string; id: string } | undefined>(initialForm?.attempt);
+  const attemptTransport = useRef(transport);
+  const sourceTransport = useRef(transport);
   const input = useRef<HTMLTextAreaElement>(null);
   const composerHintId = useId();
   const submitHint = submitting ? (intent === 'execute' ? '正在确认任务，请稍候…' : '正在打开对话…')
@@ -49,7 +55,8 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const executionRoots = workspace.trim() === initialSource?.workspaceRoots[0]
     ? initialSource.workspaceRoots : workspace.trim() ? [workspace.trim()] : [];
   useEffect(() => {
-    setSubmitting(false); setTasks([]); lock.current = false; attempt.current = undefined;
+    setSubmitting(false); setTasks([]); lock.current = false;
+    if (attemptTransport.current !== transport) { attempt.current = undefined; attemptTransport.current = transport; setScopeConfirmed(false); }
     return () => { owner.current += 1; };
   }, [transport]);
   useEffect(() => {
@@ -76,6 +83,16 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, []);
 
+  function rememberDraft() {
+    onRememberDraft?.({ draft, execute: intent === 'execute', workspace, contextWorkspace, acceptance, scopeConfirmed, source: initialSource, attempt: attempt.current });
+  }
+  function openSession(target: SessionSummary, submission?: InitialSessionSubmission, text?: string) {
+    if (submission) onRememberDraft?.(); else rememberDraft();
+    if (text !== undefined) onOpen(target, submission, text);
+    else if (submission) onOpen(target, submission);
+    else onOpen(target);
+  }
+
   async function submit() {
     const message = draft.trim();
     if (lock.current || !session || !message || loading) return;
@@ -84,7 +101,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     }
     lock.current = true; setSubmitting(true); setError('');
     const generation = owner.current;
-    const sourceMessageId = initialSource?.sessionId === session.id ? initialSource.messageId : undefined;
+    const sourceMessageId = sourceTransport.current === transport && initialSource?.sessionId === session.id ? initialSource.messageId : undefined;
     const signature = JSON.stringify([session.id, sourceMessageId, intent, message, executionRoots, acceptance.trim()]);
     if (attempt.current?.signature !== signature) attempt.current = { signature, id: `primary-${crypto.randomUUID()}` };
     const clientMessageId = attempt.current.id;
@@ -105,7 +122,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       if (generation !== owner.current) return;
       // No prompt endpoint here: the existing workspace admits this identity
       // exactly once and owns optimistic rows, reconnection, results and Stop.
-      onOpen(target, { clientMessageId, message });
+      openSession(target, { clientMessageId, message });
     } catch (reason) {
       if (generation === owner.current) setError(`${publicAgentErrorText(reason)} 草稿已保留；重试会核对同一次请求。`);
     } finally {
@@ -134,7 +151,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       </header>
       <section className="paw-primary-home__composer" aria-label="我的长期助手">
         <div className="paw-primary-home__identity"><span className="paw-primary-avatar"><Sparkles aria-hidden="true" size={20} /></span><span><strong>我的助手</strong><small>{loading ? '正在读取长期对话…' : session ? '长期对话 · 先讨论，再决定行动' : '对话暂未连接'}</small></span>
-          {session ? <button disabled={submitting || loading} onClick={() => onOpen(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="打开已有记录，未发送的文字会带入输入框" type="button">打开对话 <ArrowUpRight size={14} /></button> : null}
+          {session ? <button disabled={submitting || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="打开已有记录，未发送的文字会带入输入框" type="button">打开对话 <ArrowUpRight size={14} /></button> : null}
         </div>
         <textarea aria-label="和我的助手聊聊" aria-describedby={composerHintId} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); }
@@ -152,8 +169,8 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       {intent === 'discuss' ? <div className="paw-primary-home__project"><Folder aria-hidden="true" size={13} /><select aria-label="讨论项目" disabled={submitting || loading} value={contextWorkspace} onChange={event => { setContextWorkspace(event.target.value); setWorkspace(event.target.value); setScopeConfirmed(false); }}><option value="">日常对话 · 不绑定项目</option>{Array.from(new Set([...projectRoots, ...(contextWorkspace ? [contextWorkspace] : [])])).map(root => <option key={root} value={root}>{root}</option>)}</select>{transport.pickFiles ? <button disabled={submitting || loading} onClick={() => void chooseWorkspace(true)} type="button">选择项目</button> : null}</div> : null}
       <div className="paw-primary-home__hint"><span>{intent === 'discuss' ? '当前只讨论和查阅，不授予写入或命令执行权限。' : '任务会保留在独立对话中；回来聊别的，也不会丢失进度。'}</span>{desktop ? <button onClick={() => openPawOsRoute(desktop, '/memory?view=profile')} type="button"><BookOpen size={13} />关于我</button> : null}</div>
       {error ? <div className="paw-primary-home__error" role="alert">{error}{!session && !loading ? <button onClick={() => setRevision(value => value + 1)} type="button">重新连接</button> : null}</div> : null}
-      <section className="paw-primary-home__tasks" aria-label="助手的任务"><header><h2>接着做</h2><span>{tasks.length ? `${tasks.length} 个任务` : '一件事，一段清楚的记录'}</span></header>{tasks.length ? <ul>{tasks.map((task, index) => <PrimaryTaskRow key={task.id} task={task} initiallyVisible={index < 4} hidden={!allTasks && index >= 4} pageVisible={pageVisible} disabled={submitting} onOpen={onOpen} />)}</ul> : <p>{loading ? '正在读取任务记录…' : !session ? '连接恢复后会显示任务记录。' : '交给助手的工作会出现在这里，过程、结果和停止入口都在任务里。'}</p>}{tasks.length > 4 ? <button className="paw-primary-home__advanced" onClick={() => setAllTasks(value => !value)} type="button">{allTasks ? '收起任务' : `查看全部 ${tasks.length} 个任务`}</button> : null}</section>
-      <button className="paw-primary-home__advanced" onClick={() => onAdvanced(draft)} disabled={submitting} type="button">新建独立对话或多人协作 <ChevronRight size={13} /></button>
+      <section className="paw-primary-home__tasks" aria-label="助手的任务"><header><h2>接着做</h2><span>{tasks.length ? `${tasks.length} 个任务` : '一件事，一段清楚的记录'}</span></header>{tasks.length ? <ul>{tasks.map((task, index) => <PrimaryTaskRow key={task.id} task={task} initiallyVisible={index < 4} hidden={!allTasks && index >= 4} pageVisible={pageVisible} disabled={submitting} onOpen={target => openSession(target)} />)}</ul> : <p>{loading ? '正在读取任务记录…' : !session ? '连接恢复后会显示任务记录。' : '交给助手的工作会出现在这里，过程、结果和停止入口都在任务里。'}</p>}{tasks.length > 4 ? <button className="paw-primary-home__advanced" onClick={() => setAllTasks(value => !value)} type="button">{allTasks ? '收起任务' : `查看全部 ${tasks.length} 个任务`}</button> : null}</section>
+      <button className="paw-primary-home__advanced" onClick={() => { rememberDraft(); onAdvanced(draft); }} disabled={submitting} type="button">新建独立对话或多人协作 <ChevronRight size={13} /></button>
     </div>
   </div>;
 }

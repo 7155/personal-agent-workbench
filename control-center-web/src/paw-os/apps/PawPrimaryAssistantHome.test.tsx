@@ -25,6 +25,27 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 describe('primary assistant home', () => {
+  it('requires fresh scope confirmation after transport replacement and drops the old message cutoff', async () => {
+    const original = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] } } });
+    const next = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] }, 'agent.primary.tasks.create': { ok: true, session: task } } });
+    const source = { sessionId: primary.id, workspaceRoots: ['/work/project'], messageId: 'old-server-cutoff' };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (transport: MockControlTransport) => <QueryClientProvider client={client}><ControlTransportProvider transport={transport}><PawPrimaryAssistantHome initialSource={source} onOpen={vi.fn()} onAdvanced={vi.fn()} /></ControlTransportProvider></QueryClientProvider>;
+    const view = render(tree(original));
+    await screen.findByRole('button', { name: /打开对话/ });
+    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查目标' } });
+    fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    view.rerender(tree(next));
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('检查目标');
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
+    await waitFor(() => expect(next.requests.some(({ request }) => request.pathId === 'agent.primary.tasks.create')).toBe(true));
+    expect(next.requests.find(({ request }) => request.pathId === 'agent.primary.tasks.create')?.request.body).not.toHaveProperty('sourceMessageId');
+  });
   it('explains disabled execution and holds navigation until the task receipt arrives', async () => {
     const response = deferred<unknown>();
     const { onOpen } = setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks: [task] }, 'agent.primary.tasks.create': () => response.promise });

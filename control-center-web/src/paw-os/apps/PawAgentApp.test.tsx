@@ -21,7 +21,7 @@ const workspaceLoading = vi.hoisted(() => ({ room: null as Promise<void> | null 
 vi.mock('./PawSessionWorkspace', () => {
   workspaceEvaluations.session += 1;
   return {
-    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialDraft, initialSubmission, onAssistantHome }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string; initialDraft?: string; initialSubmission?: { clientMessageId: string; message: string }; onAssistantHome?: (draft: string, execute: boolean, messageId: string) => void }) => (
+    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialDraft, initialSubmission, onAssistantHome }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string; initialDraft?: string; initialSubmission?: { clientMessageId: string; message: string }; onAssistantHome?: (draft?: string, execute?: boolean, messageId?: string) => void }) => (
       <div>
         Session 工作区
         <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
@@ -30,6 +30,7 @@ vi.mock('./PawSessionWorkspace', () => {
         <output data-testid="session-initial-submission">{JSON.stringify(initialSubmission)}</output>
         <output data-testid="session-initial-draft">{initialDraft}</output>
         <button onClick={() => onAssistantHome?.('检查具体目标', true, 'source-cutoff')}>测试交办入口</button>
+        <button onClick={() => onAssistantHome?.()}>测试返回助手</button>
       </div>
     ),
   };
@@ -61,6 +62,46 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it.each([false, true])('retains a task form while inspecting an old task only in its original transport (replacement: %s)', async replacement => {
+    const oldTask = { id: 'task-existing', title: '已有任务', mode: 'assistant', status: 'idle', updatedAtMs: 2, workspaceRoots: ['/work/demo'], metadata: { primaryTask: true } };
+    const transport = createTransport({ primaryTasks: [oldTask] });
+    const view = renderAgent(transport, { initialRoute: '/agent' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /打开对话/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '测试交办入口' }));
+    const message = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
+    fireEvent.change(message, { target: { value: '待确认的新目标' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/draft' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '完成三项检查' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    if (!replacement) {
+      await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
+      await screen.findByText(/草稿已保留；重试会核对同一次请求/);
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /已有任务/ }));
+    expect(await screen.findByTestId('session-record-id')).toHaveTextContent('task-existing');
+    expect(screen.getByTestId('session-initial-draft')).toBeEmptyDOMElement();
+    if (replacement) view.rerender(agentTree(createTransport({ primaryTasks: [oldTask] }), { initialRoute: '/agent?session=task-existing' }));
+    fireEvent.click(screen.getByRole('button', { name: '测试返回助手' }));
+    const restored = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
+    if (replacement) {
+      expect(restored).toHaveValue('');
+      expect(screen.getByRole('button', { name: '聊一聊' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.queryByRole('textbox', { name: '本次工作目录' })).not.toBeInTheDocument();
+    } else {
+      expect(restored).toHaveValue('待确认的新目标');
+      expect(screen.getByRole('textbox', { name: '本次工作目录' })).toHaveValue('/work/draft');
+      expect(screen.getByRole('textbox', { name: '完成标准' })).toHaveValue('完成三项检查');
+      expect(screen.getByRole('checkbox')).toBeChecked();
+      await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
+      await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create')).toHaveLength(2));
+      const attempts = transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create');
+      expect(attempts[0].request.body).toMatchObject({ sourceSessionId: 'primary', sourceMessageId: 'source-cutoff', objective: '待确认的新目标', acceptanceCriteria: ['完成三项检查'] });
+      expect(attempts[1].request.body).toEqual(attempts[0].request.body);
+    }
+  });
   it('carries unsent home text into the discussion without submitting it', async () => {
     const transport = createTransport();
     const view = renderAgent(transport, { initialRoute: '/agent' });
@@ -1091,6 +1132,7 @@ function createTransport(options: {
   preferencesHandler?: () => unknown | Promise<unknown>;
   rooms?: RoomSummary[];
   sessions?: MockSessionSummary[];
+  primaryTasks?: unknown[];
   sessionCatalogHandler?: (request: ControlRequest) => unknown | Promise<unknown>;
 } = {}) {
   let sessions: MockSessionSummary[] = options.sessions ?? [{
@@ -1107,7 +1149,7 @@ function createTransport(options: {
   }];
   return new MockControlTransport({
     routes: {
-      'agent.primary.ensure': { ok: true, session: { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', updatedAtMs: 1, workspaceRoots: [], metadata: { primaryAssistant: true } }, tasks: [] },
+      'agent.primary.ensure': { ok: true, session: { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', updatedAtMs: 1, workspaceRoots: [], metadata: { primaryAssistant: true } }, tasks: options.primaryTasks ?? [] },
       'agent.sessions.list': options.sessionCatalogHandler ?? ((request: ControlRequest) => ({
         ok: true,
         items: request.query?.includeArchived ? sessions : sessions.filter((session) => session.status !== 'archived'),

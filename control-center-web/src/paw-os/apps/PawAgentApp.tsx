@@ -45,7 +45,7 @@ import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
 import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { PawAgentHome } from './PawAgentHome';
-import { PawPrimaryAssistantHome } from './PawPrimaryAssistantHome';
+import { PawPrimaryAssistantHome, type PrimaryAssistantHomeDraft } from './PawPrimaryAssistantHome';
 import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-workspace/AgentModeSwitch';
 import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { OrganizationWorkspace } from '@/features/semantic-workspace/OrganizationWorkspace';
@@ -108,6 +108,9 @@ export function PawAgentApp({
   }, []);
   const optimisticSessionsRef = useRef<Record<string, SessionSummary>>({});
   const optimisticRoomsRef = useRef<Record<string, RoomSummary>>({});
+  const primaryHomeDraftRef = useRef<{ transport: typeof transport; draft: PrimaryAssistantHomeDraft } | undefined>(undefined);
+  const restoredHomeDraft = selection.kind === 'new' && selection.draft === undefined && !selection.execute && !selection.source
+    && primaryHomeDraftRef.current?.transport === transport ? primaryHomeDraftRef.current.draft : undefined;
   /* Catalog hydration is deliberately cancellable. Opening Agent first commits
      the lightweight new-work shell; a superseded route, filter change or an
      unmounted window must never let an older catalog write into the new view. */
@@ -486,7 +489,9 @@ export function PawAgentApp({
             key={`primary:${selection.draft ?? ''}:${selection.execute ?? false}:${selection.source?.sessionId ?? ''}:${selection.source?.messageId ?? ''}`}
             initialDraft={selection.draft}
             initialExecute={selection.execute}
-            initialSource={selection.source}
+            initialSource={selection.source ?? restoredHomeDraft?.source}
+            initialForm={restoredHomeDraft}
+            onRememberDraft={draft => { primaryHomeDraftRef.current = draft ? { transport, draft } : undefined; }}
             projectRoots={projectRoots}
             onAdvanced={(draft) => { setSelection(current => ({ ...current, draft })); setAdvancedHome(true); }}
             onOpen={(created, submission, draft) => {
@@ -542,7 +547,7 @@ export function PawAgentApp({
               recordId={selection.id}
               traceFocusNodeId={evidenceFocus}
               toolPickerIntent={toolPickerIntent}
-              onNewWork={() => { setAdvancedHome(false); setSelection({ kind: 'new' }); }}
+              onNewWork={() => { primaryHomeDraftRef.current = undefined; setAdvancedHome(false); setSelection({ kind: 'new' }); }}
               onSessionCreated={(created, draft) => {
                 optimisticSessionsRef.current[created.id] = created;
                 setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);
