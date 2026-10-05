@@ -81,6 +81,25 @@ async function loadPi(request: RequestPayload) {
 	return { agentDir, auth, runtime };
 }
 
+function publicModelNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function publicModelCost(value: unknown): Record<string, unknown> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const cost = value as Record<string, unknown>;
+	if (cost.tiers !== undefined && !Array.isArray(cost.tiers)) return undefined;
+	const rates = (entry: unknown): Record<string, unknown> => {
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) return { input: null };
+		const fields = entry as Record<string, unknown>;
+		return Object.fromEntries(["input", "output", "cacheRead", "cacheWrite"]
+			.filter((key) => fields[key] !== undefined)
+			// Invalid supplied prices stay explicitly unknown, never a free rate.
+			.map((key) => [key, publicModelNumber(fields[key]) ?? null]));
+	};
+	return { ...rates(cost), ...(Array.isArray(cost.tiers) ? { tiers: cost.tiers.map(rates) } : {}) };
+}
+
 async function providerCatalog(
 	auth: AuthStorage,
 	runtime: ModelRuntime,
@@ -121,6 +140,12 @@ async function providerCatalog(
 			availableModels: available.slice(0, MAX_MODELS_PER_PROVIDER).map((model) => ({
 				id: model.id,
 				name: model.name,
+				provider: model.provider,
+				api: model.api,
+				contextWindow: publicModelNumber(model.contextWindow),
+				maxTokens: publicModelNumber(model.maxTokens),
+				// Project only public pricing fields, never custom URLs or headers.
+				cost: publicModelCost(model.cost),
 				reasoning: Boolean(model.reasoning),
 				imageInput: Array.isArray(model.input) && model.input.includes("image"),
 			})),
