@@ -3,7 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+import { contractValidatorAsset } from './scripts/contract-validator-asset';
 
 const rootDirectory = path.dirname(fileURLToPath(import.meta.url));
 const controlTransport = process.env.VITE_CONTROL_TRANSPORT ?? 'auto';
@@ -196,7 +197,7 @@ export default defineConfig({
       process.env.VITE_PAW_SOURCE_DIRTY?.trim().toLowerCase() === 'true',
     ),
   },
-  plugins: [react(), browserDependencyBoundary(), controlTransportBoundary()],
+  plugins: [react(), contractValidatorAsset(), browserDependencyBoundary(), controlTransportBoundary()],
   resolve: {
     dedupe: ['react', 'react-dom', '@testing-library/react', '@testing-library/user-event'],
     alias: [
@@ -231,14 +232,28 @@ export default defineConfig({
       : {}),
   },
   test: {
-    environment: 'jsdom',
-    setupFiles: './src/test/setup.ts',
     css: true,
     testTimeout: 15_000,
-    include: [
-      'src/**/*.test.{ts,tsx,js}',
-      'extension-apps/**/*.test.{ts,tsx}',
-      '../integrations/pi/skills/pawos-app-builder/assets/frontend-template/**/*.test.{ts,tsx}',
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'browser', environment: 'jsdom', setupFiles: './src/test/setup.ts',
+          include: [
+            'src/**/*.test.{ts,tsx,js}',
+            'extension-apps/**/*.test.{ts,tsx}',
+            '../integrations/pi/skills/pawos-app-builder/assets/frontend-template/**/*.test.{ts,tsx}',
+          ],
+          exclude: [...configDefaults.exclude, 'src/contracts/validator-asset-build.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'build', environment: 'node',
+          include: ['src/contracts/validator-asset-build.test.ts'],
+        },
+      },
     ],
   },
 });
