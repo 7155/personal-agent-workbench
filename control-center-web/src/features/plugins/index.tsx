@@ -175,6 +175,7 @@ export function PluginsFeature() {
   const [packageSource, setPackageSource] = useState('');
   const [validation, setValidation] = useState<Record<string, unknown>>({});
   const [pendingChange, setPendingChange] = useState<Record<string, unknown>>({});
+  const [studioPending, setStudioPending] = useState(false);
   const [lifecycleReceipt, setLifecycleReceipt] = useState<LifecycleReceipt>();
   const [lifecycleError, setLifecycleError] = useState('');
   const [defaultMutation, setDefaultMutation] = useState<DefaultMutationOutcome>();
@@ -248,7 +249,7 @@ export function PluginsFeature() {
     && pendingDisplayName !== pendingPluginId
     ? `标识：${pendingPluginId} · `
     : '';
-  const lifecyclePending = validate.isPending || preview.isPending || apply.isPending;
+  const lifecyclePending = studioPending || validate.isPending || preview.isPending || apply.isPending;
   // The native App Center scopes each console to its own resources; the web
   // maintenance section keeps folding proposals into the same read state.
   const packagesPending = nativeAppCenter
@@ -376,6 +377,8 @@ export function PluginsFeature() {
   const previewInstalledAction = async (action: 'enable' | 'disable' | 'uninstall' | 'rollback', pluginId: string) => {
     setLifecycleError('');
     setLifecycleReceipt(undefined);
+    setPendingChange({});
+    setValidation({});
     try {
       setPendingChange(asRecord(await preview.mutateAsync({ action, pluginId })));
     } catch (error) {
@@ -386,6 +389,8 @@ export function PluginsFeature() {
   const previewCatalogAction = async (item: Record<string, unknown>) => {
     setLifecycleError('');
     setLifecycleReceipt(undefined);
+    setPendingChange({});
+    setValidation({});
     try {
       const validationResult = asRecord(await validate.mutateAsync({
         catalogId: stringValue(item.id),
@@ -408,6 +413,8 @@ export function PluginsFeature() {
   ) => {
     setLifecycleError('');
     setLifecycleReceipt(undefined);
+    setPendingChange({});
+    setValidation({});
     try {
       const validationResult = asRecord(await validate.mutateAsync({
         catalogId: stringValue(catalogItem.id),
@@ -462,12 +469,16 @@ export function PluginsFeature() {
       const receiptId = stringValue(asRecord(response.receipt).receiptId);
       setLifecycleReceipt({
         summary: confirmedSummary,
-        evidence: receiptId ? `回执 ${receiptId} · 安装状态已重新读取` : '安装状态已重新读取',
+        evidence: `回执 ${receiptId}`,
       });
       setPendingChange({});
       setValidation({});
     } catch (error) {
-      setLifecycleError(errorMessage(error));
+      // The backend consumes the token before dispatch. Never offer to replay
+      // an operation whose outcome may be unknown after a connection failure.
+      setPendingChange({});
+      setValidation({});
+      setLifecycleError(`${errorMessage(error)} 请先刷新安装状态；如仍需更改，重新预览后再确认。`);
     }
   };
 
@@ -766,7 +777,7 @@ export function PluginsFeature() {
         const proposalVersion = stringValue(summary.version);
         const proposalPermissions = stringArray(summary.permissions);
         return (
-          <button className="plugin-proposal" key={stringValue(proposal.proposalId)} onClick={() => setPendingChange(proposal)} type="button">
+          <button className="plugin-proposal" disabled={lifecyclePending} key={stringValue(proposal.proposalId)} onClick={() => { setPendingChange(proposal); setLifecycleError(''); setLifecycleReceipt(undefined); }} type="button">
             <span>
               <strong>{publicPluginDisplayName(stringValue(summary.displayName, stringValue(summary.pluginId)))}</strong>
               <small>
@@ -838,7 +849,7 @@ export function PluginsFeature() {
       </dl>
       <div className="plugin-lifecycle__approval-actions">
         <Button disabled={lifecyclePending} onClick={() => setPendingChange({})} size="small" variant="quiet">取消</Button>
-        <Button leadingIcon={<ShieldCheck size={16} />} loading={apply.isPending} onClick={() => void applyPendingChange()} size="small" variant="primary">确认更改</Button>
+        <Button disabled={lifecyclePending} leadingIcon={<ShieldCheck size={16} />} loading={apply.isPending} onClick={() => void applyPendingChange()} size="small" variant="primary">确认更改</Button>
       </div>
     </section>
   ) : null;
@@ -1168,7 +1179,7 @@ export function PluginsFeature() {
      and automatic curation remain below it, with their own recovery controls.
      目录 and 建议 stay on their own routes. ------------------------------- */
 
-  const studioBlock = <><PluginStudio onPreview={(value) => { setPendingChange(value); setLifecycleError(''); }} />{approvalBlock}{receiptBlock}{errorBlock}</>;
+  const studioBlock = <><PluginStudio disabled={lifecyclePending} onPendingChange={setStudioPending} onPrepare={() => { setPendingChange({}); setLifecycleReceipt(undefined); setLifecycleError(''); }} onPreview={(value) => { setPendingChange(value); setLifecycleError(''); }} />{approvalBlock}{receiptBlock}{errorBlock}</>;
   const nativeBody = nativePage === 'capabilities' ? (
       <NativeConsole
         icon={Wrench}

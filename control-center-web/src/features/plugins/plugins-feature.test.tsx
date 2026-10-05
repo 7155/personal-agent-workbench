@@ -1062,6 +1062,72 @@ describe('PluginsFeature', () => {
     expect(fact('需要的权限')).toHaveTextContent('读取对话内容');
     expect(fact('当前状态')).toHaveTextContent('已启用');
   });
+  it('discards the old approval when a different lifecycle preview fails', async () => {
+    const user = userEvent.setup();
+    let previews = 0;
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.preview': () => {
+        if (++previews > 1) throw new Error('卸载预览失败');
+        return { ok: true, previewToken: 'old-disable', payloadSha256: 'a'.repeat(64), summary: { action: 'disable', pluginId: 'session-review' } };
+      },
+    }, '/plugins', true);
+    const card = await screen.findByRole('article', { name: '对话复盘 Package' });
+    await user.click(within(card).getByRole('button', { name: '停用' }));
+    expect(await screen.findByRole('button', { name: '确认更改' })).toBeEnabled();
+    await user.click(within(card).getByRole('button', { name: '卸载' }));
+    expect(await screen.findByText('卸载预览失败')).toBeVisible();
+    expect(screen.queryByRole('region', { name: '待确认的插件更改' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
+  });
+
+  it('does not let a proposal replace an in-flight lifecycle intent', async () => {
+    const user = userEvent.setup();
+    let finishPreview!: (value: unknown) => void;
+    const pending = new Promise((resolve) => { finishPreview = resolve; });
+    renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.proposals': { ok: true, items: [{ proposalId: 'other-proposal', previewToken: 'other-token', summary: { action: 'uninstall', pluginId: 'other-plugin', displayName: '另一个插件' } }] },
+      'agent.extensions.preview': () => pending,
+    });
+    await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
+    await user.click(within(await screen.findByRole('article', { name: '对话复盘 Package' })).getByRole('button', { name: '停用' }));
+    expect(screen.getByRole('button', { name: /另一个插件/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    await act(async () => { finishPreview({ ok: true, previewToken: 'disable-token', payloadSha256: 'a'.repeat(64), summary: { action: 'disable', pluginId: 'session-review' } }); });
+    expect(await screen.findByRole('region', { name: '待确认的插件更改' })).toHaveTextContent('停用插件');
+    expect(screen.getByRole('button', { name: /另一个插件/ })).toBeEnabled();
+  });
+
+  it.each([{ ok: false }, { ok: true }, null])('does not report an unconfirmed apply as success: %j', async (response) => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.apply': () => response,
+    }, '/plugins', true);
+    const card = await screen.findByRole('article', { name: '对话复盘 Package' });
+    await user.click(within(card).getByRole('button', { name: '停用' }));
+    await user.click(await screen.findByRole('button', { name: '确认更改' }));
+    expect(await screen.findByText(/未收到有效的更改回执/)).toBeVisible();
+    expect(screen.queryByText('更改已应用')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.apply')).toHaveLength(1);
+  });
+
+  it('clears a consumed approval after a lost apply response without retrying', async () => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.apply': () => { throw new Error('连接已断开'); },
+    }, '/plugins', true);
+    await user.click(within(await screen.findByRole('article', { name: '对话复盘 Package' })).getByRole('button', { name: '停用' }));
+    await user.click(await screen.findByRole('button', { name: '确认更改' }));
+    expect(await screen.findByText(/请先刷新安装状态/)).toHaveTextContent('连接已断开');
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    expect(screen.queryByText('更改已应用')).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.apply')).toHaveLength(1);
+  });
+
   it('requires explicit confirmation before disabling or rolling back an installed Package', async () => {
     const user = userEvent.setup();
     const transport = createPreviewTransport();

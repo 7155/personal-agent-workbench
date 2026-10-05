@@ -7,6 +7,7 @@ import {
   type CapabilityPreference,
 } from './capability-policy';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '@/paw-os/extensions/installation';
+import { asRecord, stringValue } from '@/features/overview/management-ui';
 
 export type SkillSourceKind = 'package' | 'bundled' | 'project';
 
@@ -53,6 +54,7 @@ export type SkillDetailResponse = {
 
 export const pluginQueryKeys = {
   root: ['plugins'] as const,
+  catalogs: () => [...pluginQueryKeys.root, 'catalog'] as const,
   catalog: (sessionId = '') => [...pluginQueryKeys.root, 'catalog', sessionId] as const,
   skills: () => [...pluginQueryKeys.root, 'skills'] as const,
   skill: (skillId: string) => [...pluginQueryKeys.root, 'skills', skillId] as const,
@@ -144,16 +146,21 @@ export function usePluginCatalog(
     ),
   });
   const apply = useMutation({
-    mutationFn: (body: { previewToken: string; payloadSha256: string; confirmText: string }) => (
-      transport.request({ pathId: 'agent.extensions.apply', body })
-    ),
+    mutationFn: async (body: { previewToken: string; payloadSha256: string; confirmText: string }) => {
+      const response = asRecord(await transport.request({ pathId: 'agent.extensions.apply', body }));
+      if (response.ok !== true || !stringValue(asRecord(response.receipt).receiptId)) {
+        throw new Error('未收到有效的更改回执，结果尚未确认。');
+      }
+      return response;
+    },
+    retry: false,
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: pluginQueryKeys.installed() }),
         queryClient.invalidateQueries({ queryKey: pluginQueryKeys.skills() }),
         queryClient.invalidateQueries({ queryKey: pluginQueryKeys.proposals() }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalog() }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalog(sessionId) }),
+        // Invalidate all session snapshots; only mounted observers refetch.
+        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalogs() }),
       ]);
       window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT));
     },
