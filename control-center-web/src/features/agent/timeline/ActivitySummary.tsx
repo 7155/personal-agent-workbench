@@ -86,7 +86,7 @@ import {
   safeSourceLabels,
   type PublicToolResultView,
 } from './public-tool-result';
-import { publicAgentErrorText } from '../public-error';
+import { publicAgentErrorText, publicAgentGuardFailure } from '../public-error';
 import { routeDecisionPlanView } from './route-decision-plan';
 import { RouteDecisionPlan } from './RouteDecisionPlan';
 import { SmoothDisclosureReveal } from './SmoothDisclosureReveal';
@@ -440,7 +440,7 @@ const ActivityRow = memo(function ActivityRow({
     [displayActivity, isToolActivity],
   );
   const visibleSummary = activity.kind === 'turn_failed'
-    ? publicAgentErrorText(activity.summary, '模型服务请求失败，请重试或切换模型。')
+    ? publicAgentGuardFailure(activity.payload) ?? publicAgentErrorText(activity.summary, '模型服务请求失败，请重试或切换模型。')
     : publicActivitySummary(publicProgressSummary(activity.summary, activity), presentation.title);
   const canDecide = !roomExecutionBridge && activity.status === 'waiting' && approvalNeedsHumanDecision(payload) && approvalId && hash && onApprovalDecision;
   const routePlan = useMemo(() => routeDecisionPlanView(payload), [payload]);
@@ -1349,6 +1349,10 @@ function activityPresentation(activity: AgentActivityProjection): ActivityPresen
     };
   }
   if (activity.kind === 'turn_failed') {
+    const guardFailure = publicAgentGuardFailure(payload) ?? publicAgentGuardFailure(activity.summary);
+    if (guardFailure) {
+      return { title: '模型请求被运行约束拦截', kind: 'runtime', icon: TriangleAlert, detail: guardFailure };
+    }
     const retryAttempts = finiteCount(payload.providerRetryAttempts);
     const detail = payload.retryExhausted === true && retryAttempts > 0
       ? `已自动重试 ${retryAttempts} 次，模型服务仍未恢复；请稍后重试或切换模型。`
@@ -1948,7 +1952,7 @@ function fxActivityHint(
   const raw = toolView
     ? toolView.error || toolView.summary
     : activity.kind === 'turn_failed'
-      ? publicAgentErrorText(activity.summary, '模型服务请求失败，请重试或切换模型。')
+      ? publicAgentGuardFailure(activity.payload) ?? publicAgentErrorText(activity.summary, '模型服务请求失败，请重试或切换模型。')
       : publicActivitySummary(publicProgressSummary(activity.summary, activity), label);
   // The row is one lane wide and ellipsises in CSS, so the bound only has to
   // stop an unbounded receipt from riding in the DOM — not decide how much of

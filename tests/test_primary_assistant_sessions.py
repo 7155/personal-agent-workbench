@@ -95,6 +95,76 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in self.service.sessions.primary_tasks(original["assistantId"])],
                          [original["session"]["id"]])
 
+    def test_task_inherits_source_model_and_thinking_instead_of_global_defaults(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        self.service.sessions.set_model_profile(source_id, "source-provider/source-model")
+        self.service.sessions.set_thinking_level(source_id, "xhigh")
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            replies = list(pool.map(lambda _: self.service.create_primary_task(request), range(8)))
+        self.assertEqual(sum(reply["created"] for reply in replies), 1)
+        self.assertEqual(len({reply["session"]["id"] for reply in replies}), 1)
+        for reply in replies:
+            self.assertEqual(reply["session"]["modelProfile"], "source-provider/source-model")
+            self.assertEqual(reply["session"]["thinkingLevel"], "xhigh")
+        ordinary = self.service.create_session({"title": "Unrelated new session"})["session"]
+        self.assertNotEqual(ordinary["modelProfile"], "source-provider/source-model")
+        self.assertEqual(ordinary["thinkingLevel"], "max")
+
+    def test_task_replay_does_not_reconfigure_an_existing_task(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        self.service.sessions.set_thinking_level(source_id, "xhigh")
+        first = self.service.create_primary_task(request)
+        self.service.sessions.set_model_profile(source_id, "changed-provider/changed-model")
+        self.service.sessions.set_thinking_level(source_id, "low")
+        replay = self.service.create_primary_task(request)
+        self.assertFalse(replay["created"])
+        self.assertEqual(replay["session"]["id"], first["session"]["id"])
+        self.assertEqual(replay["session"]["modelProfile"], first["session"]["modelProfile"])
+        self.assertEqual(replay["session"]["thinkingLevel"], "xhigh")
+
+    def test_same_revision_source_config_change_is_rejected_before_task_creation(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        prepare = self.service._primary_task_brief
+        def change_after_snapshot(authorization):
+            result = prepare(authorization)
+            with sqlite_connection(self.db) as conn:
+                conn.execute("UPDATE agent_sessions SET thinking_level='low' WHERE id=?", (source_id,))
+            return result
+        with patch.object(self.service, "_primary_task_brief", side_effect=change_after_snapshot):
+            with self.assertRaisesRegex(ValueError, "source model configuration changed"):
+                self.service.create_primary_task(request)
+        self.assertEqual(self.service.ensure_primary_assistant({})["tasks"], [])
+
+    def test_snapshot_rereads_source_config_even_when_timestamp_did_not_change(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        reads = []
+        def snapshot(_session_id):
+            reads.append(_session_id)
+            if len(reads) == 1:
+                with sqlite_connection(self.db) as conn:
+                    conn.execute("UPDATE agent_sessions SET thinking_level='xhigh' WHERE id=?", (source_id,))
+            return {"items": [], "lastSequence": 0}
+        with patch.object(self.service, "messages", side_effect=snapshot):
+            result = self.service.create_primary_task(request)
+        self.assertEqual(len(reads), 2)
+        self.assertEqual(result["session"]["thinkingLevel"], "xhigh")
+
+    def test_explicit_model_route_and_role_keep_their_creation_policy(self) -> None:
+        application = self.service.session_application
+        inherited = {"modelProfile": "source-provider/source-model", "thinkingLevel": "xhigh"}
+        for explicit in ({"modelProfile": "override-provider/override-model"},
+                         {"_modelRoute": "traceDiagnostic"}, {"roleId": "companion-future-v1"}):
+            with self.subTest(explicit=explicit):
+                expected = application._create_session_record({"title": "Explicit baseline", **explicit})
+                actual = application._create_session_record(
+                    {"title": "Explicit with source", **explicit}, inherited_model_selection=inherited)
+                self.assertEqual(actual["modelProfile"], expected["modelProfile"])
+                self.assertEqual(actual["thinkingLevel"], expected["thinkingLevel"])
+
     def test_creation_requires_explicit_scope_and_primary_source(self) -> None:
         request = self.request()
         ordinary = self.service.create_session({"title": "ordinary"})["session"]

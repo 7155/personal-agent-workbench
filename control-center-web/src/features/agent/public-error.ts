@@ -13,6 +13,23 @@ export const ROOM_PARTICIPANT_BUSY_TEXT = '目标伙伴正在处理另一条请�
 export const MEMORY_BOOTSTRAP_SKIPPED_TEXT = '记忆召回本轮已跳过，消息仍可继续；下次会重新尝试。';
 export const MODEL_QUOTA_EXHAUSTED_TEXT = '模型服务额度暂时用尽，请稍后重试或切换已配置模型。';
 export const MODEL_AUTH_FAILURE_TEXT = '模型账号登录已失效或凭据无效。请在系统设置的“模型账号”中重新登录或更新密钥，再继续当前对话。';
+const guardedModelFailures: Record<string, string> = {
+  PAW_GUARD_MODEL_REJECTED: '模型或推理强度与本次运行约束不一致，请核对配置后再继续。（PAW_GUARD_MODEL_REJECTED）',
+  PAW_PROVIDER_CALL_LIMIT: '本次运行已达到模型请求次数上限，请先检查已有结果和剩余预算。（PAW_PROVIDER_CALL_LIMIT）',
+};
+
+/** Expose only recognized public codes, never arbitrary provider diagnostics. */
+export function publicAgentGuardFailure(value: unknown): string | undefined {
+  const payload = errorPayload(value);
+  const candidates = [value instanceof Error ? value.message : typeof value === 'string' ? value : '',
+    payload?.errorCode, payload?.code, payload?.error, payload?.errorMessage];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const code = candidate.match(/\b(PAW_GUARD_MODEL_REJECTED|PAW_PROVIDER_CALL_LIMIT)\b/u)?.[1];
+    if (code) return guardedModelFailures[code];
+  }
+  return undefined;
+}
 export const SESSION_WORKSPACE_MISSING_TEXT = (
   '这个 Session 的工作目录已不存在。请选择新的工作目录后继续，或返回桌面新建工作。'
 );
@@ -136,6 +153,8 @@ export function publicAgentErrorText(
   value: unknown,
   fallback = '本轮没有完成，请重试或切换模型。',
 ): string {
+  const guardFailure = publicAgentGuardFailure(value);
+  if (guardFailure) return guardFailure;
   const payload = errorPayload(value);
   const errorCode = stringValue(payload?.errorCode);
   const message = (value instanceof Error ? value.message : String(value ?? '')).trim();

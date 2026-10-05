@@ -247,13 +247,13 @@ class AgentSessionApplicationService:
             authorization=authorization,
             prepare_context=lambda: prepare_context(authorization),
             persist_context=persist_context,
-            create=lambda conn: self._create_session_record({
+            create=lambda conn, source_selection: self._create_session_record({
                 "title": objective[:120], "runtimeEngine": "classic", "mode": "coordinator",
                 "executionMode": WORKSPACE_MANAGED_EXECUTION_MODE,
                 "toolProfileVersion": CONTROL_CENTER_TOOL_PROFILE,
                 "workspaceRoots": roots, "workspaceScopeConfirmation": WORKSPACE_SCOPE_CONFIRMATION,
                 "projectContextEnabled": True, "piSkillsEnabled": True, "codexSkillsEnabled": True,
-            }, connection=conn),
+            }, connection=conn, inherited_model_selection=source_selection),
         )
         # Delivery stays with the existing Session prompt API and its exact client identity.
         return {"schemaVersion": "rag-ime.agent-primary-task-create.v1", "ok": True,
@@ -413,6 +413,7 @@ class AgentSessionApplicationService:
         payload: Mapping[str, object],
         *,
         connection: sqlite3.Connection | None = None,
+        inherited_model_selection: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
         runtime_engine = payload.get("runtimeEngine", "classic")
         if not isinstance(runtime_engine, str) or runtime_engine not in {"classic", "durable"}:
@@ -569,6 +570,13 @@ class AgentSessionApplicationService:
             session_defaults=session_defaults,
             model_route=model_route,
         )
+        # Only a primary task supplies this transaction-frozen source selection.
+        # Explicit model/route/role creation remains governed by its own policy.
+        if inherited_model_selection is not None and not any(
+            key in payload for key in ("modelProfile", "_modelRoute", "roleId", "roleVersion")
+        ):
+            model_profile = str(inherited_model_selection["modelProfile"])
+            thinking_level = str(inherited_model_selection["thinkingLevel"])
         session = self.sessions.create(
             title=title,
             mode=mode,

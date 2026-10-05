@@ -2513,7 +2513,10 @@ class AgentService:
                     or self.sessions.runtime_binding(source_id) is not None):
                     raise
                 snapshot = {"items": [], "lastSequence": 0}
-            if int(self.sessions.get(source_id)["updatedAtMs"]) == int(source["updatedAtMs"]):
+            current_source = self.sessions.get(source_id)
+            if (int(current_source["updatedAtMs"]) == int(source["updatedAtMs"])
+                and current_source.get("modelProfile") == source.get("modelProfile")
+                and current_source.get("thinkingLevel") == source.get("thinkingLevel")):
                 break
             # First snapshot inspection can restore the Runtime binding and
             # reconcile Session status. Re-read BOTH source and snapshot once;
@@ -2575,6 +2578,8 @@ class AgentService:
             "cutoffMessageId": cutoff or (visible[-1]["id"] if visible else ""),
             "sourceRevision": int(snapshot.get("lastSequence") or 0),
             "sourceSessionRevision": int(source["updatedAtMs"]),
+            "sourceModelSelection": {"modelProfile": str(source["modelProfile"]),
+                                     "thinkingLevel": str(source.get("thinkingLevel") or "")},
             "sourceWorkspaceRoots": source_roots, "workspaceRoots": authorization["workspaceRoots"],
             "messages": visible,
             "truncated": truncated or omitted > 0, "omittedMessageCount": omitted,

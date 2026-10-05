@@ -486,7 +486,7 @@ class AgentSessionStore:
         self,
         *,
         authorization: Mapping[str, object],
-        create: Callable[[sqlite3.Connection], Mapping[str, object]],
+        create: Callable[[sqlite3.Connection, Mapping[str, object]], Mapping[str, object]],
         prepare_context: Callable[[], Mapping[str, object]],
         persist_context: Callable[[str, Mapping[str, object], sqlite3.Connection], object],
     ) -> tuple[bool, str, dict[str, object], dict[str, object]]:
@@ -519,7 +519,7 @@ class AgentSessionStore:
             if existing_result is not None:
                 return existing_result
             source = conn.execute(
-                "SELECT p.assistant_id, s.updated_at_ms FROM agent_primary_session_links p "
+                "SELECT p.assistant_id, s.updated_at_ms, s.model_profile, s.thinking_level FROM agent_primary_session_links p "
                 "JOIN agent_sessions s ON s.id = p.session_id "
                 "WHERE p.session_id = ? AND p.kind = 'discussion'",
                 (authorization["sourceSessionId"],),
@@ -528,8 +528,12 @@ class AgentSessionStore:
                 raise ValueError("sourceSessionId must identify a primary assistant discussion")
             if int(source["updated_at_ms"]) != int(context["sourceSessionRevision"]):
                 raise ValueError("source discussion changed while preparing the task; refresh and retry")
+            source_selection = {"modelProfile": str(source["model_profile"]),
+                                "thinkingLevel": str(source["thinking_level"] or "")}
+            if source_selection != context.get("sourceModelSelection"):
+                raise ValueError("source model configuration changed while preparing the task; refresh and retry")
             assistant_id = str(source[0])
-            session = dict(create(conn))
+            session = dict(create(conn, source_selection))
             if (session.get("runtimeEngine") != "classic"
                 or session.get("surfaceKind") != "agent"
                 or session.get("sessionKind") != "conversation"
