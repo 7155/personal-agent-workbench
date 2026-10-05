@@ -14,6 +14,44 @@ import { PiProviderCredentials } from './PiProviderCredentials';
 afterEach(cleanup);
 
 describe('Pi provider credential UI', () => {
+  it('blocks Jev secret entry when the service has no secure backend', async () => {
+    const transport = new MockControlTransport({
+      capabilities: { features: { piProviderCredentials: true } },
+      routes: { 'agent.providers.get': { ...providerCatalog(), providers: [{
+        id: 'typesafe', name: 'TypeSafe / Jev', auth: { configured: false,
+          credentialChangesSupported: false, credentialStorage: 'unavailable',
+          credentialStorageMessage: '请通过服务秘密配置注入 TYPESAFE_API_KEY 后重启。' },
+      }] } },
+    });
+    renderProvider(transport);
+    expect(await screen.findByLabelText('API 密钥')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '保存密钥' })).toBeDisabled();
+    expect(screen.getByText(/当前保存目标：TypeSafe/)).toBeInTheDocument();
+    expect(screen.getByText(/TYPESAFE_API_KEY/)).toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.provider.auth.preview')).toBe(false);
+  });
+  it('does not submit a secret when a preview arrives after leaving the form', async () => {
+    const user = userEvent.setup();
+    const pending = deferred<Record<string, unknown>>();
+    const transport = new MockControlTransport({
+      capabilities: { features: { piProviderCredentials: true } },
+      routes: {
+        'agent.providers.get': providerCatalog(),
+        'agent.provider.auth.preview': () => pending.promise,
+      },
+    });
+    renderProvider(transport);
+    await user.type(await screen.findByLabelText('API 密钥'), 'synthetic-test-secret');
+    await user.click(screen.getByRole('button', { name: '保存密钥' }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.provider.auth.preview')).toBe(true));
+    cleanup();
+    await act(async () => pending.resolve({
+      ok: true, previewToken: 'late-preview', provider: 'gpt', providerName: 'GPT',
+      action: 'set_api_key', requiredConfirm: 'replace', expiresAtMs: Date.now() + 60_000,
+    }));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.provider.auth.apply')).toBe(false);
+  });
+
   it('explains that model account support is still being checked', async () => {
     const transport = new MockControlTransport({
       capabilities: { features: { piProviderCredentials: true } },

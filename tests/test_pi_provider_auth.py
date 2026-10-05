@@ -102,7 +102,8 @@ class PiProviderAuthTests(unittest.TestCase):
             )
         )
 
-    def test_jev_key_uses_keychain_without_pi_or_secret_receipts(self) -> None:
+    @patch("rag_ime.pi.provider_auth.keychain_storage_available", return_value=True)
+    def test_jev_key_uses_keychain_without_pi_or_secret_receipts(self, _storage: object) -> None:
         service = PiProviderAuthService(self.service.config)
         with patch.object(service, "_call", return_value={"providers": []}) as bridge, patch(
             "rag_ime.pi.provider_auth.read_keychain_secret", return_value=""
@@ -119,13 +120,31 @@ class PiProviderAuthTests(unittest.TestCase):
             self.assertNotIn("test-jev-secret", json.dumps([catalog, preview, receipt]))
             self.assertTrue(all(call.args[0]["action"] == "catalog" for call in bridge.call_args_list))
 
+    def test_jev_without_secure_storage_blocks_before_secret_entry(self) -> None:
+        service = PiProviderAuthService(self.service.config)
+        with patch.dict("os.environ", {"TYPESAFE_API_KEY": ""}), patch(
+            "rag_ime.pi.provider_auth.keychain_storage_available", return_value=False
+        ), patch("rag_ime.pi.provider_auth.read_keychain_secret", return_value=""), patch(
+            "rag_ime.pi.provider_auth.write_keychain_secret"
+        ) as write:
+            provider = service._jev_provider()
+            self.assertFalse(provider["auth"]["configured"])
+            self.assertFalse(provider["auth"]["credentialChangesSupported"])
+            self.assertEqual(provider["auth"]["credentialStorage"], "unavailable")
+            with self.assertRaisesRegex(PiProviderAuthError, "TYPESAFE_API_KEY"):
+                service.preview({"provider": "typesafe", "action": "set_api_key"})
+            with self.assertRaisesRegex(PiProviderAuthError, "TYPESAFE_API_KEY"):
+                service._write_jev_key("synthetic-test-key")
+            write.assert_not_called()
+
     def test_jev_environment_override_rejects_keychain_changes(self) -> None:
         service = PiProviderAuthService(self.service.config)
         with patch.dict("os.environ", {"TYPESAFE_API_KEY": "environment-secret"}):
             with self.assertRaisesRegex(PiProviderAuthError, "环境变量"):
                 service.preview({"provider": "typesafe", "action": "set_api_key"})
 
-    def test_jev_logout_and_storage_failure_are_secret_free(self) -> None:
+    @patch("rag_ime.pi.provider_auth.keychain_storage_available", return_value=True)
+    def test_jev_logout_and_storage_failure_are_secret_free(self, _storage: object) -> None:
         service = PiProviderAuthService(self.service.config)
         with patch.dict("os.environ", {"TYPESAFE_API_KEY": ""}), patch(
             "rag_ime.pi.provider_auth.read_keychain_secret", return_value="existing-key"
