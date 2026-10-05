@@ -566,6 +566,7 @@ class AgentSessionStore:
         with self._read_connect() as conn:
             rows = conn.execute(
                 f"{_SESSION_SELECT} WHERE p.assistant_id = ? AND p.kind = 'task' AND p.source_session_id = ? "
+                "AND s.status <> 'archived' "
                 "ORDER BY s.updated_at_ms DESC, s.id DESC LIMIT 100",
                 (assistant_id, source_session_id),
             ).fetchall()

@@ -3,6 +3,38 @@ import { applyAgentSnapshot, createAgentProjection } from '@/contracts/agent-red
 import { createPreviewTransport } from './preview-control-transport';
 import { previewAgentSnapshot } from '@/features/agent/preview-data';
 
+describe('preview primary task directory', () => {
+  type Reply = { session: { id: string }; tasks: { id: string }[] };
+  it('returns only tasks belonging to the ensured source discussion', async () => {
+    const transport = createPreviewTransport();
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    const second = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/second'] } });
+    const create = (sourceSessionId: string, clientRequestId: string, root: string) => transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId, clientRequestId, objective: 'Check this project', acceptanceCriteria: [],
+      workspaceRoots: [root], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    const a = await create(first.session.id, 'first-task', '/work/first');
+    const b = await create(second.session.id, 'second-task', '/work/second');
+    const one = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    const two = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/second'] } });
+    expect(one.tasks.map(task => task.id)).toEqual([a.session.id]);
+    expect(two.tasks.map(task => task.id)).toEqual([b.session.id]);
+  });
+  it('omits archived tasks while keeping the persisted session available', async () => {
+    const transport = createPreviewTransport();
+    const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    const task = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: source.session.id, clientRequestId: 'archive-task', objective: 'Check',
+      workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    const archived = await transport.request<{ session: { id: string; status: string } }>({ pathId: 'agent.session.archive', params: { sessionId: task.session.id }, body: { archived: true } });
+    expect(archived.session.status).toBe('archived');
+    const again = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(again.tasks).toEqual([]);
+    expect(again.session.id).toBe(source.session.id);
+  });
+});
+
 describe('preview workspace directory picker', () => {
   afterEach(() => { delete window.pawBrowserHost; });
   const options = { purpose: 'workspace-root' as const, selection: 'directory' as const, multiple: false, maxFiles: 1 };

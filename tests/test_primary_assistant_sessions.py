@@ -146,6 +146,18 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual([task["id"] for task in self.service.ensure_primary_assistant(
             {"workspaceRoots": [str(self.root)]})["tasks"]], [second["id"]])
 
+    def test_archived_tasks_do_not_displace_current_tasks_at_the_directory_limit(self) -> None:
+        request = self.request(clientRequestId="visible-task")
+        visible = self.service.create_primary_task(request)["session"]
+        newer = int(visible["updatedAtMs"]) + 1000
+        for index in range(100):
+            task = self.service.create_primary_task({**request, "clientRequestId": f"archived-task-{index}"})["session"]
+            self.service.sessions.archive(task["id"], updated_at_ms=newer + index)
+        tasks = self.service.ensure_primary_assistant({})["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0]["id"], visible["id"])
+        self.assertEqual(self.service.sessions.get(task["id"])["status"], "archived")
+
     def test_task_inherits_source_model_and_thinking_instead_of_global_defaults(self) -> None:
         request = self.request()
         source_id = str(request["sourceSessionId"])

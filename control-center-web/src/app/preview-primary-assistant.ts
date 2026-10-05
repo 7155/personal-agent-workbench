@@ -46,7 +46,13 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
     const roots = strings(record(request.body).workspaceRoots); const key = JSON.stringify([...roots].sort());
     let session = primaryByRoots.get(key); const created = !session;
     if (!session) { session = makeSession('我的助手', roots, { assistantId: 'primary:preview', primaryAssistant: true }, false); primaryByRoots.set(key, session); }
-    return { ok: true, assistantId: 'primary:preview', created, session, tasks: sessions.filter(item => record(item.metadata).primaryTask === true && record(item.metadata).assistantId === 'primary:preview') };
+    const sourceSessionId = session.id;
+    const tasks = sessions.filter(item => {
+      const metadata = record(item.metadata);
+      return item.status !== 'archived' && metadata.primaryTask === true
+        && metadata.assistantId === 'primary:preview' && metadata.sourceSessionId === sourceSessionId;
+    });
+    return { ok: true, assistantId: 'primary:preview', created, session, tasks };
   };
   routes['agent.primary.tasks.create'] = (request: ControlRequest) => {
     const body = record(request.body); const id = String(body.clientRequestId); const signature = JSON.stringify(body);
