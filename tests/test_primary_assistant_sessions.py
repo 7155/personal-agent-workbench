@@ -58,7 +58,7 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual(project["session"]["id"], again["session"]["id"])
         self.assertNotEqual(plain["session"]["id"], project["session"]["id"])
         self.assertEqual(plain["assistantId"], project["assistantId"])
-        self.assertEqual(project["session"]["workspaceRoots"], [str(self.root)])
+        self.assertEqual(project["session"]["workspaceRoots"], [str(self.root.resolve())])
         self.assertEqual(project["session"]["executionMode"], "read_only")
 
     def test_concurrent_task_retries_bind_original_session_and_goal_once(self) -> None:
@@ -397,7 +397,8 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual(brief["sourceRevision"], 14)
         self.assertEqual(len(brief["sha256"]), 64)
         self.assertEqual(brief["authority"], "context_only")
-        self.assertNotIn("private", json.dumps(brief))
+        self.assertNotIn("private reasoning must stay private", json.dumps(brief))
+        self.assertNotIn("private tool output", json.dumps(brief))
         with patch.object(self.service, "messages", side_effect=AssertionError("retry must not reread source")):
             replay = self.service.create_primary_task(request)
         self.assertEqual(result["sourceContext"], replay["sourceContext"])

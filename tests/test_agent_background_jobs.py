@@ -10,7 +10,6 @@ import unittest
 import threading
 from unittest.mock import patch
 from contextlib import nullcontext
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote
 from urllib.error import HTTPError
@@ -25,6 +24,7 @@ from rag_ime.agent_execution_policy import (
 )
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.db import sqlite_connection
+from rag_ime.http_server import LoopbackThreadingHTTPServer
 from rag_ime.agent_workspace import WorkspaceHarness
 from rag_ime.debug_server import DebugImeService, DebugRequestHandler, DebugServerConfig
 
@@ -1092,7 +1092,7 @@ class AgentBackgroundJobHttpTests(unittest.TestCase):
 
             Handler.service = service
             Handler.static_dir = Path("debug")
-            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             session_path = quote(str(session["id"]), safe="")

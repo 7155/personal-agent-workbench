@@ -91,12 +91,12 @@ class TraceOptimizationComparisonTests(unittest.TestCase):
     def propose(self):
         return self.store.propose(self.report["reportId"], client_request_id="proposal:one", proposal=self.proposal)
 
-    def trial(self, candidate, role, scores=(1, 1), cost=2, *, drift=None, loaded_evidence=True, ai_judge=False, state="completed", suffix="", fixed_context=None, marker_fixed_context=None):
+    def trial(self, candidate, role, scores=(1, 1), cost=2, *, drift=None, loaded_evidence=True, ai_judge=False, state="completed", suffix="", fixed_context=None, marker_fixed_context=None, loaded_versions=None):
         identity = {"candidateId": candidate["candidateId"], "role": role, "comparisonContractSha256": candidate["comparisonContractSha256"]}
         job = self.trials.admit(role + suffix, "trace-fixture", {}, lambda *_: {"publicSpec": {"traceOptimization": identity, "evaluationKind": "frozen_local_task_fixture"}, "privateInput": {}})["job"]
         self.trials.claim(job["jobId"])
         controls = dict(candidate["comparisonContract"]["controls"])
-        versions = {"tool": "tool:v1", "skill": "skill:v1" if role == "baseline" else "skill:v2", "prompt": "prompt:v1", "workflow": "workflow:v1", "model": "model:v1"}
+        versions = dict(loaded_versions) if loaded_versions is not None else {"tool": "tool:v1", "skill": "skill:v1" if role == "baseline" else "skill:v2", "prompt": "prompt:v1", "workflow": "workflow:v1", "model": "model:v1"}
         if drift:
             (controls if drift[0] in controls else versions)[drift[0]] = drift[1]
         execution = {**identity, "controls": controls, "loadedVersions": versions}

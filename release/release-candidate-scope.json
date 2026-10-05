@@ -1,9 +1,9 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-04T04:53:24+00:00",
+  "generatedAt": "2026-10-05T22:20:00+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "fix/paw-polish-integration-20261004",
+    "branch": "feat/primary-assistant-final-20261004",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
     "candidateCommitPolicy": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance."
   },
@@ -184,13 +184,17 @@
     "portable_guarded_acceptance": {
       "description": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately.",
       "pathCount": 14
+    },
+    "primary_assistant_followup": {
+      "description": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval.",
+      "pathCount": 28
     }
   },
   "summary": {
-    "pathCount": 2002,
+    "pathCount": 2030,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1686
+      "keep_release": 1714
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -216,6 +220,7 @@
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
       "portable_guarded_acceptance": 14,
+      "primary_assistant_followup": 28,
       "primary_assistant_iteration": 84,
       "product_integration": 57,
       "public_showcase": 30,
@@ -548,6 +553,13 @@
       "group": "public_showcase",
       "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/AGENTS.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "control-center-web/CLOUD_MODEL.md",
@@ -1670,6 +1682,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/plugin-settings-layout.e2e.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "control-center-web/e2e/primary-assistant.e2e.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -2741,6 +2760,13 @@
       "reason": "Shared Agent controls and their standalone bundle entry."
     },
     {
+      "path": "control-center-web/scripts/contract-validator-asset.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "control-center-web/scripts/export_minecraft_harness_fixture.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -3287,6 +3313,27 @@
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
     },
     {
+      "path": "control-center-web/src/contracts/text-budget.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/contracts/text-budget.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/contracts/validator-asset-build.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "control-center-web/src/contracts/validators.test.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -3488,6 +3535,20 @@
       "disposition": "keep_release",
       "group": "primary_assistant_iteration",
       "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-status.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-status.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "control-center-web/src/features/agent/desktop-pet-surface.test.tsx",
@@ -5763,6 +5824,13 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/plugins/plugins.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "control-center-web/src/features/project-field/index.tsx",
@@ -9146,6 +9214,13 @@
       "reason": "Earth GIS runtime, dependencies or released-change guidance committed for this task."
     },
     {
+      "path": "licenses/Vercel-Web-Interface-Guidelines-LICENSE",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "macos/PAWInstaller/main.swift",
       "status": "added",
       "disposition": "keep_release",
@@ -10602,6 +10677,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/http_server.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "rag_ime/hybrid_rag_explain.py",
       "status": "deleted",
       "group": "product_integration",
@@ -10992,6 +11074,13 @@
       "disposition": "keep_release",
       "group": "knowledge_runtime",
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
+    },
+    {
+      "path": "rag_ime/local_calendar.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "rag_ime/local_sqlite_core.py",
@@ -11792,6 +11881,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "scripts/build_patched_squirrel.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "scripts/build_paw_backend_model_bundle.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -12184,6 +12280,13 @@
       "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
     },
     {
+      "path": "scripts/unit_test_shards.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "squirrel-patches/GENERATION_EXPERIENCE.md",
       "status": "deleted",
       "disposition": "delete_old_implementation",
@@ -12231,6 +12334,20 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/squirrel_system_tools.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/subprocess_startup.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_active_rag_debug_server.py",
@@ -12296,6 +12413,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_background_job_exit_observation.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_agent_background_job_idempotency.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_agent_background_jobs.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_agent_background_launch_recovery.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -12350,6 +12488,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_agent_execution_network_faults.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_agent_execution_policy.py",
@@ -12674,6 +12819,13 @@
       "reason": "Existing executable regressions updated for the owning package."
     },
     {
+      "path": "tests/test_agent_lifecycle_cancellation.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_agent_list_pagination.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -12947,6 +13099,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_assistant_generation_behavior.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_binary_installer.py",
       "status": "added",
       "disposition": "keep_release",
@@ -12980,6 +13139,13 @@
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "tests/test_build_patched_squirrel.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_build_paw_backend_web_model_package.py",
@@ -13563,6 +13729,20 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_local_calendar.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_loopback_http_server.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_macos_uninstall.py",
       "status": "modified",
       "group": "voice_desktop",
@@ -14130,6 +14310,20 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_squirrel_system_tools.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_subprocess_startup.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_temporal_query.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -14184,6 +14378,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_unit_test_shards.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_vault_organizer.py",

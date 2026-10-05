@@ -80,14 +80,29 @@ class TraceOptimizationApplicationTests(unittest.TestCase):
         candidate = self.prepare()
         self.app.command(self.report["reportId"], {"operation": "run_candidate", "candidateId": candidate["candidateId"], "clientRequestId": "run-one"})
         pair = self.app.jobs(self.report["reportId"])[0]
-        for role in ("baseline", "candidate"):
-            self.runner.run_job(pair[role]["jobId"])
-            self.assertEqual(self.trials.read(pair[role]["jobId"])["job"]["state"], "completed")
+        # Preserve synthetic command receipts in a failed native assertion.
+        # This observes the real managed harness; it does not replace execution.
+        workspace = self.app.agent.background_jobs.workspace_harness
+        execute = workspace.execute_cancellable
+        receipts = []
+
+        def observe_execution(*args, **kwargs):
+            receipt = execute(*args, **kwargs)
+            receipts.append({**{key: receipt.get(key) for key in
+                                ("exitCode", "timedOut", "outputLimited")},
+                             "output": str(receipt.get("output", ""))[:4000]})
+            return receipt
+
+        with patch.object(workspace, "execute_cancellable", side_effect=observe_execution):
+            for role in ("baseline", "candidate"):
+                self.runner.run_job(pair[role]["jobId"])
+                job = self.trials.read(pair[role]["jobId"])["job"]
+                self.assertEqual(job["state"], "completed", {"job": job, "receipts": receipts})
         self.app.reconcile(self.report["reportId"])
         result = self.reports.get(self.report["reportId"])["optimization"]
         comparison = result["comparisons"][0]
         self.assertTrue(comparison["comparable"], comparison)
-        self.assertEqual(comparison["decision"], "kept", comparison)
+        self.assertEqual(comparison["decision"], "kept", {"comparison": comparison, "receipts": receipts})
         self.assertEqual(comparison["validationScope"], "frozen_local_task_fixture")
         self.assertIn("apply", result["candidates"][0]["availableActions"])
         self.assertEqual(len(self.app.library({"projectId": self.project_id})["attempts"]), 1)
