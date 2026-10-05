@@ -15,7 +15,9 @@
 .memory-profile .memory-profile__invalid-count, .memory-profile__field-error { color: var(--color-danger, #a03c35); }
 .memory-profile__field-error { margin: 6px 0; font-size: 12px; line-height: 1.6; }
 .memory-profile__paragraph footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px solid #edf0e7; font-size: 10px; color: #99a391; }
-.memory-profile__paragraph footer div { display: flex; gap: 10px; }
+.memory-profile__paragraph footer div { display: flex; flex-wrap: wrap; gap: 10px; }
+.memory-profile__more-sources { flex-basis: 100%; }
+.memory-profile__more-sources summary { min-height: 32px; align-content: center; cursor: pointer; color: #587446; }
 .memory-profile__paragraph footer button { border: 0; padding: 0; background: none; color: #587446; font: inherit; font-size: 10px; cursor: pointer; }
 .memory-profile__actions { display: flex; align-items: center; gap: 12px; padding-top: 18px; }
 .memory-profile__actions > span { flex: 1; text-align: right; font-size: 10px; color: #95a18e; }

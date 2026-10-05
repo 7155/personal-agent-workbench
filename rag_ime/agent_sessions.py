@@ -519,13 +519,15 @@ class AgentSessionStore:
             if existing_result is not None:
                 return existing_result
             source = conn.execute(
-                "SELECT p.assistant_id, s.updated_at_ms, s.model_profile, s.thinking_level FROM agent_primary_session_links p "
+                "SELECT p.assistant_id, s.updated_at_ms, s.model_profile, s.thinking_level, s.status FROM agent_primary_session_links p "
                 "JOIN agent_sessions s ON s.id = p.session_id "
                 "WHERE p.session_id = ? AND p.kind = 'discussion'",
                 (authorization["sourceSessionId"],),
             ).fetchone()
             if source is None:
                 raise ValueError("sourceSessionId must identify a primary assistant discussion")
+            if source["status"] == "archived":
+                raise ValueError("source discussion is archived; return to the primary assistant")
             if int(source["updated_at_ms"]) != int(context["sourceSessionRevision"]):
                 raise ValueError("source discussion changed while preparing the task; refresh and retry")
             source_selection = {"modelProfile": str(source["model_profile"]),

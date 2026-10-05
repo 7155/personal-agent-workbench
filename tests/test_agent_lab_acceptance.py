@@ -44,6 +44,36 @@ class AcceptancePureControlTests(unittest.TestCase):
         with patch("subprocess.run", side_effect=AssertionError("process")), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             run_paw_acceptance.main(["--live"])
 
+    def test_live_rejects_state_inside_runtime_payload_before_creating_any_state(self):
+        from scripts import run_paw_acceptance
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            agent = root / "synthetic-config"
+            payload = root / "payload"
+            agent.mkdir(); payload.mkdir()
+            (agent / "auth.json").write_text("{}", encoding="utf-8")
+            alias = root / "payload-alias"
+            alias.symlink_to(payload, target_is_directory=True)
+            for state in (payload / "new-run", alias / "new-run"):
+                with self.subTest(state=state), redirect_stderr(io.StringIO()) as errors, \
+                     patch("os.umask") as umask, \
+                     patch("rag_ime.agent_lab.acceptance_budget.AcceptanceBudgetLedger", side_effect=AssertionError("must reject before ledger")) as ledger, \
+                     patch("scripts.run_paw_acceptance.prepared_service", side_effect=AssertionError("must not start runtime")) as runtime:
+                    with self.assertRaises(SystemExit) as rejected:
+                        run_paw_acceptance.main([
+                            "--live", "--case", next(iter(run_paw_acceptance.fixtures.CASES)),
+                            "--repo", str(run_paw_acceptance.REPO), "--runtime-payload", str(payload),
+                            "--state-root", str(state), "--agent-dir", str(agent),
+                            "--model", "gpt-6.1-sol", "--budget-usd", "1",
+                            "--budget-ledger", str(root / "ledger.json"), "--max-provider-calls", "1",
+                            "--enable-provider-guard",
+                        ])
+                    self.assertEqual(rejected.exception.code, 2)
+                    self.assertIn("runtime payload", errors.getvalue())
+                    umask.assert_not_called(); ledger.assert_not_called(); runtime.assert_not_called()
+                    self.assertFalse(state.exists())
+                    self.assertEqual(list(payload.iterdir()), [])
+
     def test_catalog_reserves_full_limits_and_rejects_unknown_price(self):
         catalog = {"id":"gpt-6.1-sol","contextWindow":272000,"maxTokens":128000,
                    "cost":{"input":2,"output":10,"cacheWrite":2.5,"tiers":[{"input":4,"output":15,"cacheWrite":5}]}}

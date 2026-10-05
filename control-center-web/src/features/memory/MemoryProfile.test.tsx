@@ -17,6 +17,20 @@ function setup(save: MockRouteHandler, read: MockRouteHandler = profile) {
   return { transport, onOpenReference, ...view };
 }
 describe('editable personal profile', () => {
+  it('reveals returned sources beyond the first three without hiding their existence', async () => {
+    const refs = Array.from({ length: 4 }, (_, index) => ({ kind: 'evidence' as const, id: `source-${index + 1}` }));
+    const { onOpenReference } = setup({}, { ...profile, paragraphs: [{ ...profile.paragraphs[0], sourceCount: 4, sourceRefs: refs }] });
+    await screen.findByRole('textbox', { name: '个人背景 1' });
+    const summary = screen.getByText('其余 1 条来源');
+    const fourth = screen.getByRole('button', { name: '来源 4', hidden: true });
+    expect(summary.closest('details')).not.toHaveAttribute('open');
+    expect(fourth).not.toBeVisible();
+    fireEvent.click(summary);
+    expect(summary.closest('details')).toHaveAttribute('open');
+    expect(fourth).toBeVisible();
+    fireEvent.click(fourth);
+    expect(onOpenReference).toHaveBeenCalledWith({ kind: 'evidence', referenceId: 'source-4' });
+  });
   it('associates an overlong paragraph with its nearby explanation without truncating it', async () => {
     const { transport } = setup({});
     const input = await screen.findByRole('textbox', { name: '个人背景 1' });

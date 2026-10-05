@@ -2501,6 +2501,8 @@ class AgentService:
             metadata = source.get("metadata")
             if not isinstance(metadata, Mapping) or metadata.get("primaryAssistant") is not True:
                 raise ValueError("sourceSessionId must identify a primary assistant discussion")
+            if source.get("status") == "archived":
+                raise ValueError("source discussion is archived; return to the primary assistant")
             source_roots = list(source.get("workspaceRoots") or [])
             if source_roots and source_roots != authorization["workspaceRoots"]:
                 raise ValueError("task workspace must match the source discussion project")

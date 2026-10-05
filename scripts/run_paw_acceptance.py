@@ -299,8 +299,9 @@ def main(argv=None):
     if not args.agent_dir.is_dir() or not (args.agent_dir/"auth.json").is_file() or not args.runtime_payload.is_dir():
         parse.error("explicit existing agent config and runtime payload are required")
     root = args.state_root.resolve()
-    if root.exists() or root.is_relative_to(REPO) or root.is_relative_to(args.agent_dir.resolve()):
-        parse.error("state-root must be NEW and outside the repository and agent config")
+    if (root.exists() or root.is_relative_to(REPO) or root.is_relative_to(args.agent_dir.resolve())
+        or root.is_relative_to(args.runtime_payload.resolve())):
+        parse.error("state-root must be NEW and outside the repository, runtime payload and agent config")
     if (args.budget_ledger.resolve().is_relative_to(root) or args.budget_ledger.resolve().is_relative_to(REPO)
         or args.budget_ledger.resolve().is_relative_to(args.agent_dir.resolve()) or args.budget_ledger.resolve().is_relative_to(args.runtime_payload.resolve())):
         parse.error("budget-ledger must persist outside this run, repository, runtime payload and agent config")

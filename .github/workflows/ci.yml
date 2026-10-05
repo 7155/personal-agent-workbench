@@ -172,6 +172,11 @@ jobs:
           python -m pip install "uv==0.11.1"
           uv sync --locked --python python
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Enable pinned pnpm for unit-test subprocesses
+        run: corepack enable && corepack prepare pnpm@11.9.0 --activate
       - name: Plan the complete unit suite
         env:
           PYTHONWARNINGS: "error::ResourceWarning"
@@ -206,6 +211,11 @@ jobs:
           python -m pip install "uv==0.11.1"
           uv sync --locked --python python
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Enable pinned pnpm for unit-test subprocesses
+        run: corepack enable && corepack prepare pnpm@11.9.0 --activate
       - uses: actions/download-artifact@v4
         with:
           name: unit-plan-macos-${{ github.run_id }}

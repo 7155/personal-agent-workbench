@@ -84,6 +84,44 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual(ensured["session"]["executionMode"], "read_only")
         self.assertIsNone(self.service.sessions.runtime_binding(task["id"]))
 
+    def test_archived_discussion_cannot_create_a_task_after_primary_rotation(self) -> None:
+        request = self.request()
+        self.service.sessions.archive(str(request["sourceSessionId"]))
+        replacement = self.service.ensure_primary_assistant({})
+        self.assertNotEqual(replacement["session"]["id"], request["sourceSessionId"])
+        with patch.object(self.service, "messages", side_effect=AssertionError("retired context must not be read")):
+            with self.assertRaisesRegex(ValueError, "archived"):
+                self.service.create_primary_task(request)
+        self.assertEqual(self.service.sessions.primary_tasks(replacement["assistantId"],
+                         source_session_id=str(request["sourceSessionId"])), [])
+        self.assertEqual(self.service.ensure_primary_assistant({})["tasks"], [])
+
+    def test_task_transaction_rejects_same_revision_source_archived_after_snapshot(self) -> None:
+        request = self.request()
+        prepare = self.service._primary_task_brief
+
+        def archive_after_snapshot(authorization):
+            brief = prepare(authorization)
+            self.service.sessions.archive(str(request["sourceSessionId"]),
+                                          updated_at_ms=int(brief["sourceSessionRevision"]))
+            return brief
+
+        with patch.object(self.service, "_primary_task_brief", side_effect=archive_after_snapshot):
+            with self.assertRaisesRegex(ValueError, "archived"):
+                self.service.create_primary_task(request)
+        with sqlite_connection(self.db) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_primary_session_links WHERE kind='task'").fetchone()[0], 0)
+
+    def test_exact_task_replay_survives_source_archive_and_rotation(self) -> None:
+        request = self.request()
+        first = self.service.create_primary_task(request)
+        self.service.sessions.archive(str(request["sourceSessionId"]))
+        self.service.ensure_primary_assistant({})
+        with patch.object(self.service, "_primary_task_brief", side_effect=AssertionError("replay must not snapshot")):
+            replay = self.service.create_primary_task(request)
+        self.assertFalse(replay["created"])
+        self.assertEqual(replay["session"]["id"], first["session"]["id"])
+
     def test_retry_with_changed_request_never_creates_another_task(self) -> None:
         request = self.request()
         original = self.service.create_primary_task(request)

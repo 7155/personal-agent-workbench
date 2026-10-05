@@ -89,6 +89,19 @@ class CIWorkflowTests(unittest.TestCase):
             self.assertGreater(index, verify_index)
             self.assertNotIn("if", steps[index])
 
+    def test_macos_plan_and_workers_preserve_the_pinned_node_environment(self) -> None:
+        jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+        for name, action in (("macos-plan", "Plan the complete unit suite"), ("macos-unit", "Run assigned unit suite")):
+            with self.subTest(job=name):
+                steps = jobs[name]["steps"]
+                node = next(i for i, step in enumerate(steps) if step.get("uses") == "actions/setup-node@v6")
+                pnpm = next(i for i, step in enumerate(steps) if step.get("name") == "Enable pinned pnpm for unit-test subprocesses")
+                run = next(i for i, step in enumerate(steps) if step.get("name") == action)
+                self.assertEqual(steps[node]["with"]["node-version"], "22")
+                self.assertEqual(steps[pnpm]["run"], "corepack enable && corepack prepare pnpm@11.9.0 --activate")
+                self.assertLess(node, pnpm)
+                self.assertLess(pnpm, run)
+
     def test_linux_mac_only_tests_remain_explicitly_skipped(self) -> None:
         mac_only_modules = (
             "test_check_macos_input_source.py",
