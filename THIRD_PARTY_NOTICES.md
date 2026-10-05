@@ -37,6 +37,13 @@ is retained at `licenses/Leaflet-Geoman-LICENSE`.
 These projects informed design study or interaction expectations. They are not
 runtime dependencies and their names do not imply endorsement.
 
+- [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines):
+  MIT, copyright (c) 2025 Vercel Labs. `control-center-web/AGENTS.md` adapts
+  selected frontend guidance from commit
+  `e3d624baaf29dc1fc645aff3e38f03e564d2d6b1` to PAW's existing interaction and
+  ownership contracts. The complete upstream license is retained at
+  `licenses/Vercel-Web-Interface-Guidelines-LICENSE`.
+
 - [Wisdom-Weasel](https://github.com/Felix3322/Wisdom-Weasel): GPL-3.0
   prediction and candidate-lifecycle reference. No source file is intentionally
   copied into this repository.
