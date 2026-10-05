@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-05T23:41:27.054888+00:00",
+  "generatedAt": "2026-10-05T23:46:59.020711+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "feat/primary-assistant-final-20261004",
@@ -187,7 +187,7 @@
     },
     "primary_assistant_followup": {
       "description": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval.",
-      "pathCount": 29
+      "pathCount": 30
     },
     "startup_failure_diagnostics": {
       "description": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause.",
@@ -195,10 +195,10 @@
     }
   },
   "summary": {
-    "pathCount": 2034,
+    "pathCount": 2035,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1718
+      "keep_release": 1719
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -224,7 +224,7 @@
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
       "portable_guarded_acceptance": 14,
-      "primary_assistant_followup": 29,
+      "primary_assistant_followup": 30,
       "primary_assistant_iteration": 84,
       "product_integration": 57,
       "public_showcase": 30,
@@ -14488,6 +14488,13 @@
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Inventory the Python dependency lockfile already committed in 0e128f50; the Earth inventory repair adds no unrelated dependency changes."
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/harness-conversation-depth.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Verify bounded delegated progress and task-title display against synthetic fixtures; no live-model or production acceptance claim."
     }
   ]
 }
