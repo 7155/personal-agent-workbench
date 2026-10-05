@@ -23,6 +23,7 @@ from .input_quality import (
     source_context_enabled,
 )
 from .memory_ingest import normalize_text, upsert_memory_item
+from .memory_card_mutations import assert_background_card_unchanged, card_revision
 from .memory_curation import (
     MEMORY_CURATION_ARCHITECTURE,
     memory_atom_authority_hash,
@@ -864,6 +865,10 @@ def _catalog_atom_merge_payload(
     payload["atomId"] = target_id
     payload["operation"] = "merge"
     payload["globalCatalogMerge"] = True
+    payload["expectedCardRevisions"] = {
+        str(atom.get("atomId") or atom.get("id") or ""): str(atom["revision"])
+        for atom in members if atom.get("revision")
+    }
     for key in (
         "aliases",
         "surfaceHints",
@@ -1214,6 +1219,8 @@ def memory_book_plan_from_compile_output(
     diffs: list[dict[str, object]] = []
     warnings = list(compile_output.get("warnings") or [])
     source_data = source_bundle or {}
+    frozen_cards = {str(item.get("atomId") or ""): item
+                    for item in _list_of_dicts(source_data.get("existingMemoryAtoms"))}
     source_scope = compact_whitespace(
         str(source_data.get("curationScope") or compile_output.get("curationScope") or "incremental")
     ).lower()
@@ -1595,6 +1602,16 @@ def memory_book_plan_from_compile_output(
                 str(item.get("curationArchitecture") or "")
             ),
         }
+        # Only the server's frozen source catalog may provide edit fences.
+        payload["expectedCardRevisions"] = {
+            key: str(value["revision"]) for key, value in frozen_cards.items()
+            if value.get("revision") and (key == atom_id or (
+                value.get("claimKey") == claim_key
+                and str(value.get("ownerKind") or "user") == payload["ownerKind"]
+                and str(value.get("ownerId") or "default") == payload["ownerId"]
+                and str(value.get("project") or "") == atom_project
+                and str(value.get("app") or "") == atom_app))
+        }
         diffs.append({"op": "upsert_memory_atom", "targetId": atom_id, "payload": payload, "status": "pending"})
     for item in _list_of_dicts(compile_output.get("tagEdges")):
         src = _canonical_tag_name(
@@ -1716,6 +1733,8 @@ def memory_book_plan_from_compile_output(
                 "targetId": old_id,
                 "payload": {
                     "oldId": old_id,
+                    "expectedRevision": dict(frozen_cards.get(old_id) or {}).get("revision"),
+                    "globalCatalogMerge": global_scope,
                     "newId": new_id,
                     "sourceEventIds": source_ids,
                     "reason": compact_whitespace(str(item.get("reason") or "newer_explicit_information")),
@@ -1736,6 +1755,7 @@ def memory_book_plan_from_compile_output(
                 "targetId": target_id,
                 "payload": {
                     "targetAtomId": target_id,
+                    "expectedRevision": dict(frozen_cards.get(target_id) or {}).get("revision"),
                     "reason": compact_whitespace(
                         str(item.get("reason") or "explicit_user_forget")
                     ),
@@ -4684,6 +4704,13 @@ def _apply_global_atom_merge_relations(
 def _apply_memory_atom(conn: sqlite3.Connection, payload: dict[str, object]) -> dict[str, object]:
     atom_id = str(payload["atomId"])
     previous = _row_dict(conn.execute("SELECT * FROM memory_atoms WHERE id = ?", (atom_id,)).fetchone())
+    expected_cards = dict(payload.get("expectedCardRevisions") or {})
+    assert_background_card_unchanged(previous, expected_cards.get(atom_id),
+                                     allow_historical_merge=bool(payload.get("globalCatalogMerge")))
+    if previous and int(previous.get("user_edit_revision") or 0) and compact_whitespace(
+        str(payload.get("canonicalText") or payload.get("text") or "")
+    ) != compact_whitespace(str(previous.get("canonical_text") or previous.get("text") or "")):
+        raise ValueError("curation must create a successor to change a user-edited card")
     operation = compact_whitespace(str(payload.get("operation") or "")).lower()
     previous_aliases = [
         _row_dict(row)
@@ -4921,6 +4948,27 @@ def _apply_memory_atom(conn: sqlite3.Connection, payload: dict[str, object]) -> 
         """,
         (owner_kind, owner_id, claim_key, project, app, atom_id),
     ).fetchall()
+    if not current_rows and not previous:
+        forgotten = conn.execute("""
+            SELECT atom.* FROM memory_atoms atom
+            JOIN memory_tombstones tombstone ON tombstone.target_type='memory_id'
+              AND tombstone.target_value=atom.id AND tombstone.active=1
+            WHERE atom.owner_kind=? AND atom.owner_id=? AND atom.claim_key=?
+              AND COALESCE(atom.scope_project,'')=? AND COALESCE(atom.scope_app,'')=?
+              AND atom.knowledge_domain=? AND atom.scope_kind=? AND atom.scope_id=?
+              AND atom.status IN ('tombstoned','hidden') LIMIT 1
+            """, (owner_kind, owner_id, claim_key, project, app,
+                  knowledge_domain, scope_kind, scope_id)).fetchone()
+        if forgotten is not None:
+            assert_background_card_unchanged(dict(forgotten))
+    for current in current_rows:
+        assert_background_card_unchanged(dict(current), expected_cards.get(str(current["id"])))
+        if any(str(current[field] or "") != str(value or "") for field, value in (
+            ("knowledge_domain", knowledge_domain), ("scope_kind", scope_kind), ("scope_id", scope_id),
+            ("visibility", visibility), ("authorization_revision", authorization_revision),
+            ("binding_id", binding_id), ("scope_mode", scope_mode), ("privacy_level", privacy_level),
+        )):
+            raise ValueError("curation cannot change a current card authority tuple")
     if current_rows:
         existing_lineage_id = next(
             (
@@ -5053,6 +5101,10 @@ def _apply_memory_atom(conn: sqlite3.Connection, payload: dict[str, object]) -> 
             supersedes_id or None,
         ),
     )
+    protected_revision = max([int(previous.get("user_edit_revision") or 0),
+                              *(int(row["user_edit_revision"] or 0) for row in current_rows)])
+    if protected_revision:
+        conn.execute("UPDATE memory_atoms SET user_edit_revision=? WHERE id=?", (protected_revision, atom_id))
     created_alias_ids: list[str] = []
     for alias_type, values in (
         ("alias", _strings(payload.get("aliases"))),
@@ -6000,6 +6052,14 @@ def _record_memory_supersession(
 def _apply_supersede_memory(conn: sqlite3.Connection, payload: dict[str, object]) -> dict[str, object]:
     old_id = str(payload["oldId"])
     new_id = str(payload["newId"])
+    prior = conn.execute("SELECT * FROM memory_atoms WHERE id=?", (old_id,)).fetchone()
+    already_replaced = conn.execute(
+        "SELECT 1 FROM memory_supersessions WHERE old_memory_id=? AND new_memory_id=? AND status='active'",
+        (old_id, new_id),
+    ).fetchone()
+    if prior is not None and already_replaced is None:
+        assert_background_card_unchanged(dict(prior), payload.get("expectedRevision"),
+                                         allow_historical_merge=bool(payload.get("globalCatalogMerge")))
     relation_rollback = _record_memory_supersession(
         conn,
         old_id=old_id,
@@ -6069,6 +6129,7 @@ def _apply_retract_memory_atom(
     )
     if not previous:
         raise ValueError(f"memory atom does not exist: {target_id}")
+    assert_background_card_unchanged(previous, payload.get("expectedRevision"))
     _assert_memory_owner_unchanged(previous, payload, target_kind="atom")
     project = compact_whitespace(str(payload.get("project") or ""))
     atom_project = compact_whitespace(str(previous.get("scope_project") or ""))
@@ -7624,12 +7685,7 @@ def _existing_memory_atoms(
     """Return the compact global Atom catalog used for semantic deduplication."""
     rows = conn.execute(
         """
-        SELECT id, kind, text, canonical_text, source_event_ids_json,
-               source_memory_ids_json, scope_app, scope_project, language,
-               confidence, quality_score, privacy_level, status, updated_at_ms,
-               claim_key, lineage_id, claim_state, valid_from_ms, valid_to_ms,
-               supersedes_id, owner_kind, owner_id, knowledge_domain, scope_kind,
-               scope_id, visibility, authorization_revision, binding_id, scope_mode
+        SELECT *
         FROM memory_atoms
         WHERE status IN ('active', 'approved', 'superseded')
           AND (
@@ -7730,6 +7786,7 @@ def _existing_memory_atoms(
         result.append(
             {
                 "atomId": atom_id,
+                "revision": card_revision(dict(row)),
                 "identityHash": identity_hash,
                 "authorityHash": authority_hash,
                 "kind": str(row["kind"] or "project_fact"),

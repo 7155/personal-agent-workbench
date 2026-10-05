@@ -149,6 +149,7 @@ export function AgentComposer({
   modelPickerRequest = 0,
   thinkingPickerRequest = 0,
   permissionPickerRequest = 0,
+  permissionLocked = false,
   toolPickerRequest = 0,
   toolPickerQuery = '',
   helpRequest = 0,
@@ -204,6 +205,7 @@ export function AgentComposer({
   modelPickerRequest?: number;
   thinkingPickerRequest?: number;
   permissionPickerRequest?: number;
+  permissionLocked?: boolean;
   toolPickerRequest?: number;
   toolPickerQuery?: string;
   helpRequest?: number;
@@ -588,7 +590,7 @@ export function AgentComposer({
             <ComposerAddMenu canAttach={canAttach} disabled={!session} onPickAttachments={onPickAttachments} />
             {minimal ? null : (
               <>
-                <PermissionPicker session={session} metadataKnown={sessionMetadataKnown} persona={persona} tools={tools} disabled={busy || sending} requestOpen={permissionPickerRequest} onChange={onPermissionChange} onWorkspaceRootsChange={onWorkspaceRootsChange} />
+                {permissionLocked ? <span className="paw-primary-authority"><ShieldCheck size={13} />{session?.metadata?.primaryTask ? '本次工作区已授权' : '讨论 · 只读'}</span> : <PermissionPicker session={session} metadataKnown={sessionMetadataKnown} persona={persona} tools={tools} disabled={busy || sending} requestOpen={permissionPickerRequest} onChange={onPermissionChange} onWorkspaceRootsChange={onWorkspaceRootsChange} />}
                 <ToolPicker
                   adjustmentDisabled={busy || sending}
                   capabilityCatalog={capabilityCatalog}

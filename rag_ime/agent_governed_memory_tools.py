@@ -15,6 +15,7 @@ from typing import Iterator
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations, sqlite_connection
 from .memory_projection import RETRIEVAL_DOCS_PROJECTION, enqueue_memory_projection
+from .memory_card_mutations import card_revision, correct_memory_card
 from .memory_projection_consistency import (
     invalidate_superseded_atom_dependencies,
     restore_dependency_invalidation,
@@ -853,80 +854,17 @@ class MemoryGovernanceProposalStore:
         if _atom_state_sha256(old) != str(row["target_state_sha256"]):
             raise ValueError("memory target changed after preview")
         new_id = _proposal_atom_id(str(row["proposal_id"]))
-        claim_key = str(old.get("claim_key") or "") or _derived_claim_key(
-            str(old.get("kind") or "fact"),
-            str(old.get("canonical_text") or old.get("text") or ""),
-        )
-        memory_kind = str(row["memory_kind"] or old.get("kind") or "fact")
-        lineage_id = str(old.get("lineage_id") or "") or _derived_lineage_id(
-            self.project,
-            str(old.get("kind") or memory_kind),
-            claim_key,
-        )
-        conn.execute(
-            """
-            UPDATE memory_atoms
-            SET status = 'superseded', claim_state = 'superseded',
-                valid_to_ms = ?, updated_at_ms = ?
-            WHERE id = ? AND claim_state = 'current'
-              AND status IN ('active', 'approved')
-            """,
-            (timestamp, timestamp, old_id),
-        )
-        if conn.execute("SELECT changes()").fetchone()[0] != 1:
-            raise ValueError("memory target is no longer current")
-        conn.execute(
-            """
-            INSERT INTO memory_atoms(
-                id, kind, text, canonical_text, source_event_ids_json,
-                source_memory_ids_json, scope_app, scope_project, language,
-                confidence, quality_score, echo_risk, privacy_level, status,
-                created_at_ms, updated_at_ms, last_used_at_ms, claim_key,
-                lineage_id, claim_state, valid_from_ms, valid_to_ms, supersedes_id
-            ) VALUES (?, ?, ?, ?, '[]', ?, ?, ?, 'zh', 1.0, 1.0, 0.0, ?,
-                      'approved', ?, ?, NULL, ?, ?, 'current', ?, NULL, ?)
-            """,
-            (
-                new_id,
-                memory_kind,
-                str(row["proposed_text"]),
-                _canonical_memory_text(str(row["proposed_text"])),
-                _json([old_id]),
-                old.get("scope_app"),
-                self.project,
-                _evidence_privacy(evidence_snapshot),
-                timestamp,
-                timestamp,
-                claim_key,
-                lineage_id,
-                timestamp,
-                old_id,
-            ),
-        )
         supersession_id = _proposal_supersession_id(str(row["proposal_id"]))
-        conn.execute(
-            """
-            INSERT INTO memory_supersessions(
-                supersession_id, old_memory_id, new_memory_id, reason,
-                source_event_ids_json, status, created_at_ms, rolled_back_at_ms,
-                metadata_json
-            ) VALUES (?, ?, ?, ?, '[]', 'active', ?, NULL, ?)
-            """,
-            (
-                supersession_id,
-                old_id,
-                new_id,
-                str(row["reason"]),
-                timestamp,
-                _json(
-                    {
-                        "source": "agent_governed_memory",
-                        "proposalId": str(row["proposal_id"]),
-                        "approvalId": approval_id,
-                        "evidenceIds": _json_strings(row["evidence_ids_json"]),
-                    }
-                ),
-            ),
+        mutation = correct_memory_card(
+            conn, old_id, text=str(row["proposed_text"]),
+            expected_revision=card_revision(old), timestamp=timestamp,
+            mutation_id=str(row["proposal_id"]), new_id=new_id,
+            supersession_id=supersession_id,
+            memory_kind=str(row["memory_kind"] or old.get("kind") or "fact"),
+            reason=str(row["reason"]), user_edit=True, metadata={
+                "source": "agent_governed_memory", "proposalId": str(row["proposal_id"]),
+                "approvalId": approval_id, "evidenceIds": _json_strings(row["evidence_ids_json"]),
+            },
         )
         self._link_evidence(
             conn,
@@ -936,12 +874,7 @@ class MemoryGovernanceProposalStore:
             evidence_snapshot=evidence_snapshot,
             timestamp=timestamp,
         )
-        dependency_invalidation = invalidate_superseded_atom_dependencies(
-            conn,
-            [old_id],
-            new_atom_id=new_id,
-            timestamp=timestamp,
-        )
+        dependency_invalidation = mutation["dependencyInvalidation"]
         return {
             "memoryId": new_id,
             "previousMemoryId": old_id,
@@ -2271,6 +2204,9 @@ _ATOM_STATE_FIELDS = (
     "valid_from_ms",
     "valid_to_ms",
     "supersedes_id",
+    "owner_kind", "owner_id", "knowledge_domain", "scope_kind", "scope_id",
+    "visibility", "authorization_revision", "binding_id", "scope_mode",
+    "source_event_ids_json", "source_memory_ids_json", "language", "user_edit_revision",
 )
 
 

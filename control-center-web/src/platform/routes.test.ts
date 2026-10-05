@@ -37,6 +37,10 @@ it('requires one exact compaction or original-input target on resume and validat
 });
 
 const canonicalPathIds = [
+  'agent.primary.ensure',
+  'agent.primary.tasks.create',
+  'memory.profile',
+  'memory.profile.save',
   'control.bootstrap',
   'control.capabilities',
   'control.events',

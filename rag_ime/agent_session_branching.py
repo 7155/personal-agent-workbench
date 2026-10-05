@@ -274,6 +274,7 @@ class AgentSessionBranchingService:
                 reason="session_rewrite_failed",
             )
             raise
+        self.sessions.revoke_primary_task_briefs(session_id)
         # Invalidate only after Pi has appended the replacement user message.
         # Invalidating immediately after rewind lets an eager snapshot read the
         # previous durable leaf and resurrect the future branch in the UI.

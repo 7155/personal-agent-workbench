@@ -93,6 +93,8 @@ class ControlPathId(str, Enum):
     AGENT_ORGANIZATION_UNDO = "agent.organization.undo"
     AGENT_SESSIONS_LIST = "agent.sessions.list"
     AGENT_SESSIONS_CREATE = "agent.sessions.create"
+    AGENT_PRIMARY_ENSURE = "agent.primary.ensure"
+    AGENT_PRIMARY_TASK_CREATE = "agent.primary.tasks.create"
     AGENT_SESSIONS_SURFACE_ENSURE = "agent.sessions.surface.ensure"
     AGENT_SESSION_SNAPSHOT = "agent.session.snapshot"
     AGENT_SESSION_WORKSPACE_LIST = "agent.session.workspace.list"
@@ -256,6 +258,8 @@ class ControlPathId(str, Enum):
     MEMORY_REFERENCE_GET = "memory.reference.get"
     MEMORY_GRAPH_GET = "memory.graph.get"
     MEMORY_ENTITY_GET = "memory.entity.get"
+    MEMORY_PROFILE = "memory.profile"
+    MEMORY_PROFILE_SAVE = "memory.profile.save"
     MEMORY_EDIT = "memory.edit"
     MEMORY_SOURCE_DISPOSITION = "memory.source.disposition"
     MEMORY_LIFECYCLE_STATUS = "memory.lifecycle.status"
@@ -889,6 +893,8 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_ORGANIZATION_UNDO, ControlMethod.POST, "/api/agent/organization/undo", None, body={"receiptId"}, required_body={"receiptId"}),
         _route(ControlPathId.AGENT_SESSIONS_LIST, ControlMethod.GET, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "includeInternal", "limit", "beforeUpdatedAtMs", "beforeId", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId"}),
         _route(ControlPathId.AGENT_SESSIONS_CREATE, ControlMethod.POST, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, body={"title", "runtimeEngine", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "toolAllowlistMode", "allowedTools", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_body={"title", "mode", "roleId", "roleVersion", "modelProfile", "toolProfileVersion"}, remote_body_values={"mode": {"assistant"}}),
+        _route(ControlPathId.AGENT_PRIMARY_ENSURE, ControlMethod.POST, "/api/agent/primary/ensure", None, body={"workspaceRoots"}),
+        _route(ControlPathId.AGENT_PRIMARY_TASK_CREATE, ControlMethod.POST, "/api/agent/primary/tasks", None, body={"clientRequestId", "sourceSessionId", "sourceMessageId", "objective", "acceptanceCriteria", "workspaceRoots", "workspaceScopeConfirmation"}, required_body={"clientRequestId", "sourceSessionId", "objective", "workspaceRoots", "workspaceScopeConfirmation"}),
         _route(ControlPathId.AGENT_SESSIONS_SURFACE_ENSURE, ControlMethod.POST, "/api/agent/sessions/surface/ensure", None, body={"title", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, required_body={"title", "mode", "toolProfileVersion", "executionMode", "workspaceRoots", "surfaceKind", "ownerAppId", "surfaceKey"}),
         _route(ControlPathId.AGENT_SESSION_SNAPSHOT, ControlMethod.GET, "/api/agent/sessions/{sessionId}/messages", "/control/v1/agent/sessions/{sessionId}/snapshot", scopes=[ControlScope.AGENT_READ], remote_safe=True, params=_SESSION, query={"view"}),
         _route(ControlPathId.AGENT_SESSION_WORKSPACE_LIST, ControlMethod.GET, "/api/agent/sessions/{sessionId}/workspace", None, params=_SESSION, query={"path", "depth", "limit"}),
@@ -1053,7 +1059,9 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.MEMORY_REFERENCE_GET, ControlMethod.GET, "/api/memory/references/{kind}/{referenceId}", "/control/v1/memory/references/{kind}/{referenceId}", scopes=[ControlScope.MEMORY_READ], remote_safe=True, params=_MEMORY_REFERENCE, param_values={"kind": {"event", "evidence", "atom", "book", "timeline", "role_book_revision"}}),
         _route(ControlPathId.MEMORY_GRAPH_GET, ControlMethod.GET, "/api/memory/graph", "/control/v1/memory/graph", scopes=[ControlScope.MEMORY_READ], remote_safe=True, query={"plane", "project", "status", "query", "focusId", "depth", "nodeLimit", "edgeLimit", "minWeight"}, required_query={"plane"}),
         _route(ControlPathId.MEMORY_ENTITY_GET, ControlMethod.GET, "/api/memory/entities/{kind}/{entityId}", "/control/v1/memory/entities/{kind}/{entityId}", scopes=[ControlScope.MEMORY_READ], remote_safe=True, params={"kind", "entityId"}, param_values={"kind": {"tag", "group", "book"}}, query={"project", "connectionsLimit", "connectionsCursor", "membersLimit", "membersCursor"}),
-        _route(ControlPathId.MEMORY_EDIT, ControlMethod.POST, "/api/memory/edit", "/control/v1/memory/edit", body={"kind", "id", "title", "text", "summary", "note", "description", "tags", "aliases", "type", "color", "reason", "active"}, required_body={"kind", "id"}),
+        _route(ControlPathId.MEMORY_PROFILE, ControlMethod.GET, "/api/memory/profile", None),
+        _route(ControlPathId.MEMORY_PROFILE_SAVE, ControlMethod.POST, "/api/memory/profile/save", None, body={"expectedRevision", "clientRequestId", "paragraphs"}, required_body={"expectedRevision", "clientRequestId", "paragraphs"}),
+        _route(ControlPathId.MEMORY_EDIT, ControlMethod.POST, "/api/memory/edit", "/control/v1/memory/edit", body={"kind", "id", "title", "text", "summary", "note", "description", "tags", "aliases", "type", "color", "reason", "active", "expectedRevision", "expectedMergeRevision", "mergeIntoId", "clientRequestId"}, required_body={"kind", "id"}),
         _route(ControlPathId.MEMORY_SOURCE_DISPOSITION, ControlMethod.POST, "/api/memory/source/disposition", "/control/v1/memory/source/disposition", body={"sourceId", "evidenceId", "disposition"}, required_body={"disposition"}),
         _route(ControlPathId.MEMORY_LIFECYCLE_STATUS, ControlMethod.GET, "/api/memory/lifecycle/status", "/control/v1/memory/lifecycle/status", scopes=[ControlScope.MEMORY_READ], remote_safe=True, query={"project"}),
         _route(ControlPathId.MEMORY_LIFECYCLE_REFRESH, ControlMethod.POST, "/api/memory/lifecycle/refresh", "/control/v1/memory/lifecycle/refresh", scopes=[ControlScope.MEMORY_WRITE], remote_safe=True, body={"operation", "project", "date", "timezone", "scheduled"}, required_body={"operation", "project"}, remote_body={"operation", "project", "date", "timezone", "scheduled"}),

@@ -508,6 +508,14 @@ export const CONTROL_ROUTES = {
     body: ['sceneId', 'expectedRevision', 'clientRequestId'],
     requiredBody: ['sceneId', 'expectedRevision', 'clientRequestId'],
   },
+  'agent.primary.ensure': {
+    method: 'POST', path: '/api/agent/primary/ensure', body: ['workspaceRoots'],
+  },
+  'agent.primary.tasks.create': {
+    method: 'POST', path: '/api/agent/primary/tasks',
+    body: ['clientRequestId', 'sourceSessionId', 'sourceMessageId', 'objective', 'acceptanceCriteria', 'workspaceRoots', 'workspaceScopeConfirmation'],
+    requiredBody: ['clientRequestId', 'sourceSessionId', 'objective', 'workspaceRoots', 'workspaceScopeConfirmation'],
+  },
   'agent.sessions.create': {
     method: 'POST',
     path: '/api/agent/sessions',
@@ -1497,6 +1505,12 @@ export const CONTROL_ROUTES = {
     requiredBody: ['sessionId', 'approvalId', 'payloadSha256'],
     responseContract: 'work-document-command.v1',
   },
+  'memory.profile': { method: 'GET', path: '/api/memory/profile' },
+  'memory.profile.save': {
+    method: 'POST', path: '/api/memory/profile/save',
+    body: ['expectedRevision', 'clientRequestId', 'paragraphs'],
+    requiredBody: ['expectedRevision', 'clientRequestId', 'paragraphs'],
+  },
   'memory.summary': { method: 'GET', path: '/api/memory/summary' },
   'memory.pages': {
     method: 'GET',
@@ -1530,7 +1544,7 @@ export const CONTROL_ROUTES = {
   'memory.edit': {
     method: 'POST',
     path: '/api/memory/edit',
-    body: ['kind', 'id', 'title', 'text', 'summary', 'note', 'description', 'tags', 'aliases', 'type', 'color', 'reason', 'active'],
+    body: ['kind', 'id', 'title', 'text', 'summary', 'note', 'description', 'tags', 'aliases', 'type', 'color', 'reason', 'active', 'expectedRevision', 'expectedMergeRevision', 'clientRequestId', 'mergeIntoId'],
     requiredBody: ['kind', 'id'],
   },
   'memory.source.disposition': {

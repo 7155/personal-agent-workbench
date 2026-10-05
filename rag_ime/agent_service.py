@@ -18,6 +18,7 @@ from threading import RLock
 
 from .agent_model_defaults import DEFAULT_AGENT_MODEL_ID
 from .db import sqlite_connection
+from .personal_profile import read_personal_profile
 from .pi.values import PiRuntimeCommandRejected
 from .agent_capability_catalog import capability_disclosure_enabled, session_resource_disclosure_policy
 from .agent_composition import build_room_stores, build_session_applications
@@ -111,6 +112,7 @@ from .agent_governance_projection import GovernanceProjectionStore
 from .agent_knowledge_promotion import KNOWLEDGE_ROUTE_HASH, KnowledgePromotionStore
 from .knowledge_scope import bound_session_knowledge_caller
 from .agent_runtime_driver import (
+    AgentRuntimeError,
     AgentRuntimePolicy,
     AgentRuntimeDriver,
     RuntimeDriverContext,
@@ -533,6 +535,7 @@ class AgentService:
                 observation_callback=self.observations.enqueue_memory_recall_record,
                 memory_enabled_provider=self.memory_enabled,
                 session_memory_enabled_provider=self._session_memory_disclosed,
+                personal_profile_provider=self._personal_profile,
             )
         )
         self.memory_evidence_application = (
@@ -558,6 +561,8 @@ class AgentService:
                 execution_policy_context=(
                     self._execution_policy_prompt_for_session
                 ),
+                personal_profile_context=self.memory_context_application.personal_profile_context,
+                memory_items_filter=self.memory_context_application.current_memory_items,
                 memory_enabled_provider=self.memory_enabled,
                 session_memory_enabled_provider=self._session_memory_disclosed,
             )
@@ -1499,9 +1504,7 @@ class AgentService:
             value
             for value in (
                 self._execution_policy_prompt_for_session(session),
-                self.memory_context_application.provider_context(session_id)
-                if self.memory_enabled() and self._session_memory_disclosed(session_id)
-                else "",
+                self.memory_context_application.provider_context(session_id),
             )
             if value
         )
@@ -2471,6 +2474,108 @@ class AgentService:
 
     def create_session(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.session_application.create_session(payload)
+
+    def ensure_primary_assistant(self, payload: Mapping[str, object]) -> dict[str, object]:
+        return self.session_application.ensure_primary_assistant(payload)
+
+    def create_primary_task(self, payload: Mapping[str, object]) -> dict[str, object]:
+        result = self.session_application.create_primary_task(
+            payload, prepare_context=self._primary_task_brief,
+            persist_context=lambda session_id, brief, conn: self.context_runtime.enqueue(
+                session_id=session_id, source_kind="primary_task_brief",
+                source_id=str(brief["sourceSessionId"]), title="主助手讨论交接",
+                summary="已冻结的公开讨论背景；当前任务目标与工作区授权保持独立。",
+                payload=brief, lane="fact", lifecycle="persistent",
+                dedupe_key="primary-task-brief", _connection=conn),
+        )
+        context = self.context_runtime.item_by_dedupe_key(str(result["session"]["id"]), "primary-task-brief")
+        if context is not None:
+            result["sourceContext"] = {"itemId": context["itemId"], "sourceKind": context["sourceKind"]}
+        return result
+
+    def _primary_task_brief(self, authorization: Mapping[str, object]) -> dict[str, object]:
+        source_id = str(authorization["sourceSessionId"])
+        source = self.sessions.get(source_id)
+        metadata = source.get("metadata")
+        if not isinstance(metadata, Mapping) or metadata.get("primaryAssistant") is not True:
+            raise ValueError("sourceSessionId must identify a primary assistant discussion")
+        source_roots = list(source.get("workspaceRoots") or [])
+        if source_roots and source_roots != authorization["workspaceRoots"]:
+            raise ValueError("task workspace must match the source discussion project")
+        try:
+            snapshot = self.messages(source_id)
+        except AgentRuntimeError:
+            # A brand-new discussion has no transcript to recover. Do not
+            # require a running Host merely to authorize its first task.
+            if (authorization.get("sourceMessageId") or source.get("messageCount")
+                or self.sessions.runtime_binding(source_id) is not None):
+                raise
+            snapshot = {"items": [], "lastSequence": 0}
+        messages = snapshot.get("items", snapshot.get("messages", []))
+        messages = messages if isinstance(messages, list) else []
+        cutoff = str(authorization.get("sourceMessageId") or "")
+        if cutoff:
+            position = next((index for index, message in enumerate(messages)
+                if isinstance(message, Mapping) and message.get("id") == cutoff), None)
+            if position is None:
+                raise ValueError("sourceMessageId does not belong to the source discussion")
+            selected = messages[position]
+            if (selected.get("role") not in {"user", "assistant"}
+                or selected.get("status", "completed") != "completed"):
+                raise ValueError("sourceMessageId must identify a completed public discussion message")
+            messages = messages[:position + 1]
+        visible: list[dict[str, object]] = []
+        remaining = 12_000
+        truncated = False
+        omitted = 0
+        for message in reversed(messages):
+            if (not isinstance(message, Mapping) or message.get("role") not in {"user", "assistant"}
+                or message.get("status", "completed") != "completed"):
+                continue
+            message_id = str(message.get("id") or "")
+            if not message_id or message.get("hidden") is True:
+                continue
+            # Only publicly rendered text blocks cross this boundary. Tool,
+            # reasoning, media and internal context blocks are never copied.
+            blocks = message.get("blocks")
+            parts: list[str] = []
+            for block in blocks if isinstance(blocks, list) else []:
+                if not isinstance(block, Mapping) or block.get("type") != "text":
+                    continue
+                data = block.get("data")
+                if isinstance(data, Mapping):
+                    text = data.get("text") or data.get("markdown")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+            text = "\n".join(parts).strip()
+            if not text:
+                continue
+            if len(visible) == 6 or remaining == 0:
+                omitted += 1
+                continue
+            clipped = len(text) > min(4_000, remaining)
+            text = text[:min(4_000, remaining)]
+            visible.append({"id": message_id, "role": str(message["role"]), "text": text,
+                "truncated": clipped})
+            truncated = truncated or clipped
+            remaining -= len(text)
+        visible.reverse()
+        brief: dict[str, object] = {
+            "schemaVersion": "rag-ime.primary-task-brief.v1", "authority": "context_only",
+            "sourceSessionId": source_id,
+            "cutoffMessageId": cutoff or (visible[-1]["id"] if visible else ""),
+            "sourceRevision": int(snapshot.get("lastSequence") or 0),
+            "sourceSessionRevision": int(source["updatedAtMs"]),
+            "sourceWorkspaceRoots": source_roots, "workspaceRoots": authorization["workspaceRoots"],
+            "messages": visible,
+            "truncated": truncated or omitted > 0, "omittedMessageCount": omitted,
+        }
+        brief["sha256"] = hashlib.sha256(json.dumps(brief, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        return brief
+
+    def _personal_profile(self) -> dict[str, object]:
+        with sqlite_connection(self.db_path, row_factory=sqlite3.Row) as conn:
+            return read_personal_profile(conn)
 
     def list_roles(self) -> dict[str, object]:
         return self.role_application.list_roles()

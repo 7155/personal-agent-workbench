@@ -53,6 +53,8 @@ class ControlRoutePolicyTests(unittest.TestCase):
                 "memory.graph.get",
                 "memory.entity.get",
                 "memory.edit",
+                "memory.profile",
+                "memory.profile.save",
                 "memory.source.disposition",
                 "memory.lifecycle.status",
                 "memory.lifecycle.refresh",
@@ -841,6 +843,10 @@ class ControlRoutePolicyTests(unittest.TestCase):
                 "color",
                 "reason",
                 "active",
+                "expectedRevision",
+                "expectedMergeRevision",
+                "mergeIntoId",
+                "clientRequestId",
             },
         )
 

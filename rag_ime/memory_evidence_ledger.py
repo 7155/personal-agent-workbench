@@ -17,7 +17,7 @@ from .memory_ingest import looks_sensitive
 from .text_utils import compact_whitespace
 
 
-_EXPLICIT_MEMORY_SOURCES = frozenset({"squirrel_assistant_remember"})
+_EXPLICIT_MEMORY_SOURCES = frozenset({"squirrel_assistant_remember", "personal_profile_editor"})
 
 
 @dataclass(frozen=True)

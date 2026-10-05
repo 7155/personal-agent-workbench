@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
 import time
 import uuid
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import date
 from pathlib import Path
@@ -76,6 +77,15 @@ _MEMORY_JOURNAL_KEY = re.compile(r"^journal-(\d{4}-\d{2}-\d{2})$")
 _SESSION_SELECT = """
 SELECT
     s.*,
+    p.assistant_id AS primary_assistant_id,
+    p.kind AS primary_session_kind,
+    p.source_session_id AS primary_source_session_id,
+    p.source_message_id AS primary_source_message_id,
+    p.client_request_id AS primary_client_request_id,
+    (SELECT json_object('goalId', g.goal_id, 'revision', g.sequence,
+        'status', g.status, 'objective', g.objective, 'successCriteria', g.success_criteria)
+     FROM agent_thread_goal_events g WHERE p.kind = 'task' AND g.session_id = s.id
+     ORDER BY g.sequence DESC LIMIT 1) AS primary_goal_json,
     b.driver_id AS runtime_driver_id,
     b.runtime_kind AS runtime_kind,
     b.generation AS runtime_generation,
@@ -98,6 +108,7 @@ SELECT
 FROM agent_sessions AS s
 LEFT JOIN agent_runtime_bindings AS b ON b.session_id = s.id
 LEFT JOIN agent_session_tool_policies AS tp ON tp.session_id = s.id
+LEFT JOIN agent_primary_session_links AS p ON p.session_id = s.id
 """
 
 _SESSION_DIRECTORY_SELECT = """
@@ -127,9 +138,19 @@ SELECT
     s.message_count,
     s.last_message_preview,
     s.workspace_roots_json,
+    p.assistant_id AS primary_assistant_id,
+    p.kind AS primary_session_kind,
+    p.source_session_id AS primary_source_session_id,
+    p.source_message_id AS primary_source_message_id,
+    p.client_request_id AS primary_client_request_id,
+    (SELECT json_object('goalId', g.goal_id, 'revision', g.sequence,
+        'status', g.status, 'objective', g.objective, 'successCriteria', g.success_criteria)
+     FROM agent_thread_goal_events g WHERE p.kind = 'task' AND g.session_id = s.id
+     ORDER BY g.sequence DESC LIMIT 1) AS primary_goal_json,
     b.metadata_json AS runtime_binding_metadata_json
 FROM agent_sessions AS s
 LEFT JOIN agent_runtime_bindings AS b ON b.session_id = s.id
+LEFT JOIN agent_primary_session_links AS p ON p.session_id = s.id
 """
 
 
@@ -419,6 +440,130 @@ class AgentSessionStore:
             ):
                 raise RuntimeError("surface Session creator returned a mismatched Session")
             return True, created
+
+    def ensure_primary_assistant(
+        self,
+        *,
+        workspace_roots: Sequence[str],
+        create: Callable[[sqlite3.Connection], Mapping[str, object]],
+    ) -> tuple[bool, str, dict[str, object]]:
+        """Atomically bind a stable identity to one open discussion per project."""
+        project_key = workspace_scope_sha256(workspace_roots)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "INSERT OR IGNORE INTO agent_primary_assistants "
+                "(singleton, assistant_id, created_at_ms) VALUES (1, ?, ?)",
+                (f"assistant:{uuid.uuid4()}", _timestamp(None)),
+            )
+            identity = conn.execute(
+                "SELECT assistant_id FROM agent_primary_assistants WHERE singleton = 1"
+            ).fetchone()
+            assistant_id = str(identity[0])
+            row = conn.execute(
+                f"{_SESSION_SELECT} WHERE p.assistant_id = ? AND p.kind = 'discussion' "
+                "AND p.project_key = ? AND s.status <> 'archived' "
+                "ORDER BY s.updated_at_ms DESC, s.id DESC LIMIT 1",
+                (assistant_id, project_key),
+            ).fetchone()
+            if row is not None:
+                return False, assistant_id, _session_payload(row, _joined_runtime_binding(row))
+            session = dict(create(conn))
+            if (session.get("runtimeEngine") != "classic"
+                or session.get("surfaceKind") != "agent"
+                or session.get("sessionKind") != "conversation"
+                or session.get("executionMode") != READ_ONLY_EXECUTION_MODE
+                or session.get("workspaceRoots") != list(workspace_roots)):
+                raise ValueError("primary discussion requires an ordinary read-only Session")
+            conn.execute(
+                "INSERT INTO agent_primary_session_links "
+                "(session_id, assistant_id, kind, project_key) VALUES (?, ?, 'discussion', ?)",
+                (session["id"], assistant_id, project_key),
+            )
+            return True, assistant_id, self._get(conn, str(session["id"]))
+
+    def create_primary_task(
+        self,
+        *,
+        authorization: Mapping[str, object],
+        create: Callable[[sqlite3.Connection], Mapping[str, object]],
+        prepare_context: Callable[[], Mapping[str, object]],
+        persist_context: Callable[[str, Mapping[str, object], sqlite3.Connection], object],
+    ) -> tuple[bool, str, dict[str, object], dict[str, object]]:
+        """Create an ordinary scoped Session and Goal, once per exact user request."""
+        request_json = json.dumps(dict(authorization), ensure_ascii=False, sort_keys=True)
+        request_fingerprint = json.dumps({"requestSha256": hashlib.sha256(request_json.encode()).hexdigest()})
+
+        def replay(conn: sqlite3.Connection) -> tuple[bool, str, dict[str, object], dict[str, object]] | None:
+            existing = conn.execute(
+                "SELECT session_id, assistant_id, authorization_json FROM agent_primary_session_links "
+                "WHERE client_request_id = ?", (authorization["clientRequestId"],)
+            ).fetchone()
+            if existing is None:
+                return None
+            # Older local rows may contain the original request instead of its fingerprint.
+            if str(existing["authorization_json"]) not in {request_json, request_fingerprint}:
+                raise ValueError("clientRequestId is already bound to a different task request")
+            return False, str(existing["assistant_id"]), self._get(conn, str(existing["session_id"])), dict(authorization)
+
+        with self._read_connect() as conn:
+            existing_result = replay(conn)
+        if existing_result is not None:
+            return existing_result
+        # Runtime snapshot I/O must not hold a SQLite writer lock. The winning
+        # snapshot is frozen with the task; racing/replayed requests never replace it.
+        context = prepare_context()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing_result = replay(conn)
+            if existing_result is not None:
+                return existing_result
+            source = conn.execute(
+                "SELECT p.assistant_id, s.updated_at_ms FROM agent_primary_session_links p "
+                "JOIN agent_sessions s ON s.id = p.session_id "
+                "WHERE p.session_id = ? AND p.kind = 'discussion'",
+                (authorization["sourceSessionId"],),
+            ).fetchone()
+            if source is None:
+                raise ValueError("sourceSessionId must identify a primary assistant discussion")
+            if int(source["updated_at_ms"]) != int(context["sourceSessionRevision"]):
+                raise ValueError("source discussion changed while preparing the task; refresh and retry")
+            assistant_id = str(source[0])
+            session = dict(create(conn))
+            if (session.get("runtimeEngine") != "classic"
+                or session.get("surfaceKind") != "agent"
+                or session.get("sessionKind") != "conversation"
+                or session.get("executionMode") != WORKSPACE_MANAGED_EXECUTION_MODE
+                or session.get("workspaceRoots") != authorization["workspaceRoots"]
+                or not session.get("workspaceScopeGranted")):
+                raise ValueError("primary task requires an authorized ordinary workspace Session")
+            conn.execute(
+                "INSERT INTO agent_primary_session_links "
+                "(session_id, assistant_id, kind, project_key, client_request_id, "
+                "source_session_id, source_message_id, authorization_json) "
+                "VALUES (?, ?, 'task', ?, ?, ?, ?, ?)",
+                (session["id"], assistant_id, session["workspaceScopeSha256"],
+                 authorization["clientRequestId"], authorization["sourceSessionId"],
+                 authorization.get("sourceMessageId", ""), request_fingerprint),
+            )
+            self.mutate_agent_goal(
+                str(session["id"]),
+                {"action": "confirm_setup", "confirmed": True, "expectedRevision": 0,
+                 "objective": authorization["objective"],
+                 "successCriteria": "\n".join(cast(list[str], authorization["acceptanceCriteria"]))},
+                _connection=conn,
+            )
+            persist_context(str(session["id"]), context, conn)
+            return True, assistant_id, self._get(conn, str(session["id"])), dict(authorization)
+
+    def primary_tasks(self, assistant_id: str) -> list[dict[str, object]]:
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                f"{_SESSION_SELECT} WHERE p.assistant_id = ? AND p.kind = 'task' "
+                "ORDER BY s.updated_at_ms DESC, s.id DESC LIMIT 100",
+                (assistant_id,),
+            ).fetchall()
+            return [_session_payload(row, _joined_runtime_binding(row)) for row in rows]
 
     def set_role_book_revision(
         self,
@@ -1275,6 +1420,9 @@ class AgentSessionStore:
         if normalized_mode not in {"assistant", "coordinator"}:
             raise ValueError("agent session mode must be assistant or coordinator")
         current = self.get(session_id)
+        metadata = current.get("metadata")
+        if isinstance(metadata, Mapping) and metadata.get("assistantId"):
+            raise ValueError("primary assistant scope is fixed; create a new execution task instead")
         roots = _workspace_roots(
             current.get("workspaceRoots", []) if workspace_roots is None else workspace_roots
         )
@@ -1374,6 +1522,10 @@ class AgentSessionStore:
         normalized = _normalize_room_execution_mode(room_execution_mode)
         timestamp = _timestamp(updated_at_ms)
         with self._connect() as conn:
+            if normalized and conn.execute(
+                "SELECT 1 FROM agent_primary_session_links WHERE session_id = ?", (session_id,)
+            ).fetchone() is not None:
+                raise ValueError("primary assistant Sessions cannot acquire Room execution authority")
             cursor = conn.execute(
                 """
                 UPDATE agent_sessions
@@ -1525,6 +1677,24 @@ class AgentSessionStore:
             raise ValueError(
                 "managed and full-trust execution require a coordinator workspace"
             )
+        metadata = current.get("metadata")
+        if isinstance(metadata, Mapping) and metadata.get("primaryAssistant") is True and (
+            normalized_execution_mode != READ_ONLY_EXECUTION_MODE
+            or profile != "subagent-readonly-v1"
+            or normalized_mode != current.get("mode")
+            or normalized_room_execution_mode != current.get("roomExecutionMode")
+            or roots != current.get("workspaceRoots")
+        ):
+            raise ValueError("primary assistant discussion policy is fixed; create an execution task instead")
+        if isinstance(metadata, Mapping) and metadata.get("primaryTask") is True and (
+            normalized_execution_mode != current.get("executionMode")
+            or profile != current.get("toolProfileVersion")
+            or normalized_mode != current.get("mode")
+            or normalized_room_execution_mode != current.get("roomExecutionMode")
+            or roots != current.get("workspaceRoots")
+            or grant_workspace_scope
+        ):
+            raise ValueError("primary task authorization is fixed; create a new execution task instead")
         expected_scope_sha256 = workspace_scope_sha256(roots)
         preserve_scope = (
             str(current.get("executionMode") or "")
@@ -1640,11 +1810,24 @@ class AgentSessionStore:
                 (timestamp, timestamp),
             )
         else:
-            self._update(
-                session_id,
-                "status = 'idle', archived_at_ms = NULL, updated_at_ms = ?",
-                (timestamp,),
-            )
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                if conn.execute(
+                    "SELECT 1 FROM agent_primary_session_links target "
+                    "JOIN agent_primary_session_links other ON other.assistant_id = target.assistant_id "
+                    "AND other.project_key = target.project_key AND other.kind = 'discussion' "
+                    "JOIN agent_sessions s ON s.id = other.session_id "
+                    "WHERE target.session_id = ? AND target.kind = 'discussion' "
+                    "AND other.session_id <> target.session_id AND s.status <> 'archived'",
+                    (session_id,),
+                ).fetchone() is not None:
+                    raise ValueError("this project already has an active primary discussion")
+                cursor = conn.execute(
+                    "UPDATE agent_sessions SET status = 'idle', archived_at_ms = NULL, updated_at_ms = ? WHERE id = ?",
+                    (timestamp, session_id),
+                )
+                if cursor.rowcount != 1:
+                    raise AgentSessionNotFound(session_id)
         return self.get(session_id)
 
     def retire_internal(
@@ -1756,8 +1939,24 @@ class AgentSessionStore:
     def delete(self, session_id: str) -> dict[str, object]:
         session = self.get(session_id)
         with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM agent_context_items WHERE source_kind = 'primary_task_brief' AND source_id = ?",
+                (session_id,),
+            )
             conn.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
         return session
+
+    def revoke_primary_task_briefs(self, source_session_id: str) -> None:
+        """A successful source rewrite revokes copied context, never task authority."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE agent_sessions SET updated_at_ms = MAX(updated_at_ms + 1, ?) WHERE id = ?",
+                (_timestamp(None), source_session_id),
+            )
+            conn.execute(
+                "DELETE FROM agent_context_items WHERE source_kind = 'primary_task_brief' AND source_id = ?",
+                (source_session_id,),
+            )
 
     def bind_pi_session(
         self,
@@ -2367,6 +2566,7 @@ class AgentSessionStore:
         actor: str = "control-center-user",
         updated_at_ms: int | None = None,
         lifecycle_request: Mapping[str, object] | None = None,
+        _connection: sqlite3.Connection | None = None,
     ) -> dict[str, object]:
         action = str(payload.get("action") or "").strip()
         if action not in {
@@ -2383,8 +2583,9 @@ class AgentSessionStore:
             raise ValueError("agent goal setup must be explicitly confirmed")
         timestamp = _timestamp(updated_at_ms)
         normalized_actor = _bounded_goal_text(actor, field="actor", maximum=120)
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+        with nullcontext(_connection) if _connection is not None else self._connect() as conn:
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
             session = conn.execute(
                 "SELECT id FROM agent_sessions WHERE id = ? AND status <> 'archived'",
                 (session_id,),
@@ -4485,6 +4686,11 @@ def _session_payload(
         "workspaceRoots": [str(value) for value in roots if str(value).strip()],
         "shellPolicyVersion": str(row["shell_policy_version"]),
     }
+    metadata = _primary_session_metadata(row)
+    if metadata:
+        payload["metadata"] = metadata
+    if row["primary_goal_json"]:
+        payload["goal"] = json.loads(str(row["primary_goal_json"]))
     if runtime_binding is not None:
         payload["runtimeBinding"] = dict(runtime_binding)
         codemode_mode = _runtime_binding_codemode_mode(runtime_binding)
@@ -4516,12 +4722,32 @@ def _session_directory_payload(row: sqlite3.Row) -> dict[str, object]:
             str(value) for value in roots if str(value).strip()
         ],
     }
+    metadata = _primary_session_metadata(row)
+    if metadata:
+        payload["metadata"] = metadata
+    if row["primary_goal_json"]:
+        payload["goal"] = json.loads(str(row["primary_goal_json"]))
     codemode_mode = _runtime_binding_codemode_mode(
         row["runtime_binding_metadata_json"]
     )
     if codemode_mode is not None:
         payload["codemodeMode"] = codemode_mode
     return payload
+
+
+def _primary_session_metadata(row: sqlite3.Row) -> dict[str, object]:
+    if not row["primary_assistant_id"]:
+        return {}
+    metadata: dict[str, object] = {"assistantId": str(row["primary_assistant_id"])}
+    if row["primary_session_kind"] == "discussion":
+        metadata["primaryAssistant"] = True
+    else:
+        metadata.update({"primaryTask": True,
+            "sourceSessionId": str(row["primary_source_session_id"]),
+            "clientRequestId": str(row["primary_client_request_id"])})
+        if row["primary_source_message_id"]:
+            metadata["sourceMessageId"] = str(row["primary_source_message_id"])
+    return metadata
 
 
 def _joined_runtime_binding(row: sqlite3.Row) -> dict[str, object] | None:

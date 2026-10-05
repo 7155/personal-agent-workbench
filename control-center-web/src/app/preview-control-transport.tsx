@@ -30,6 +30,7 @@ import {
   parseRoomPermissionPolicy,
 } from '@/features/rooms/room-types';
 import { createPreviewHistoryRoutes } from './preview-history-routes';
+import { installPrimaryAssistantPreview } from './preview-primary-assistant';
 import { createPreviewWorkDocumentRoutes } from './preview-work-document-routes';
 import {
   previewActivityTimeline,
@@ -1591,6 +1592,7 @@ export function createPreviewTransport(): MockControlTransport {
         .map((job) => ({ ...job })),
     };
   };
+  installPrimaryAssistantPreview(routes, sessions, event => previewTransport?.emit('agent.session.events', event));
   const routeIds = Array.from(new Set<ControlPathId>(
     Object.keys(routes) as ControlPathId[],
   ));

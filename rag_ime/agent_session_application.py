@@ -16,6 +16,7 @@ from pathlib import Path
 from .agent_execution_policy import (
     FULL_TRUST_EXECUTION_MODE,
     PER_ACTION_EXECUTION_MODE,
+    READ_ONLY_EXECUTION_MODE,
     WORKSPACE_MANAGED_EXECUTION_MODE,
     WORKSPACE_SCOPE_CONFIRMATION,
     canonical_tool_profile,
@@ -197,6 +198,69 @@ class AgentSessionApplicationService:
         require_target = getattr(self.runtime, "require_turn_abort_target", None)
         if callable(require_target):
             require_target(session_id)
+
+    def ensure_primary_assistant(self, payload: Mapping[str, object]) -> dict[str, object]:
+        if set(payload) - {"workspaceRoots"}:
+            raise ValueError("primary assistant ensure accepts only workspaceRoots")
+        roots = _primary_workspace_roots(payload.get("workspaceRoots", []), required=False)
+        created, assistant_id, session = self.sessions.ensure_primary_assistant(
+            workspace_roots=roots,
+            create=lambda conn: self._create_session_record({
+                "title": "主助手", "runtimeEngine": "classic",
+                "mode": "coordinator" if roots else "assistant",
+                "executionMode": READ_ONLY_EXECUTION_MODE,
+                "toolProfileVersion": READONLY_TOOL_PROFILE,
+                "workspaceRoots": roots,
+                "projectContextEnabled": bool(roots),
+            }, connection=conn),
+        )
+        return {"schemaVersion": "rag-ime.agent-primary-ensure.v1", "ok": True,
+            "assistantId": assistant_id, "created": created, "session": session,
+            "tasks": self.sessions.primary_tasks(assistant_id)}
+
+    def create_primary_task(
+        self, payload: Mapping[str, object], *,
+        prepare_context: Callable[[Mapping[str, object]], Mapping[str, object]],
+        persist_context: Callable[[str, Mapping[str, object], sqlite3.Connection], object],
+    ) -> dict[str, object]:
+        if set(payload) - {"clientRequestId", "sourceSessionId", "sourceMessageId", "objective",
+                           "acceptanceCriteria", "workspaceRoots", "workspaceScopeConfirmation"}:
+            raise ValueError("primary task contains unsupported fields")
+        if payload.get("workspaceScopeConfirmation") != WORKSPACE_SCOPE_CONFIRMATION:
+            raise ValueError("primary task requires an explicit workspace scope confirmation")
+        roots = _primary_workspace_roots(payload.get("workspaceRoots"), required=True)
+        objective = _primary_text(payload.get("objective"), "objective", maximum=4_000)
+        criteria = payload.get("acceptanceCriteria", [])
+        if not isinstance(criteria, list) or len(criteria) > 20:
+            raise ValueError("acceptanceCriteria must be an array of at most 20 strings")
+        criteria = [_primary_text(item, "acceptanceCriteria", maximum=2_000) for item in criteria]
+        if len("\n".join(criteria)) > 2_000:
+            raise ValueError("acceptanceCriteria must fit within 2000 characters")
+        authorization: dict[str, object] = {
+            "clientRequestId": _primary_text(payload.get("clientRequestId"), "clientRequestId"),
+            "sourceSessionId": _primary_text(payload.get("sourceSessionId"), "sourceSessionId"),
+            "objective": objective, "acceptanceCriteria": criteria, "workspaceRoots": roots,
+        }
+        if payload.get("sourceMessageId") is not None:
+            authorization["sourceMessageId"] = _primary_text(payload["sourceMessageId"], "sourceMessageId")
+        created, assistant_id, session, bound = self.sessions.create_primary_task(
+            authorization=authorization,
+            prepare_context=lambda: prepare_context(authorization),
+            persist_context=persist_context,
+            create=lambda conn: self._create_session_record({
+                "title": objective[:120], "runtimeEngine": "classic", "mode": "coordinator",
+                "executionMode": WORKSPACE_MANAGED_EXECUTION_MODE,
+                "toolProfileVersion": CONTROL_CENTER_TOOL_PROFILE,
+                "workspaceRoots": roots, "workspaceScopeConfirmation": WORKSPACE_SCOPE_CONFIRMATION,
+                "projectContextEnabled": True, "piSkillsEnabled": True, "codexSkillsEnabled": True,
+            }, connection=conn),
+        )
+        # Delivery stays with the existing Session prompt API and its exact client identity.
+        return {"schemaVersion": "rag-ime.agent-primary-task-create.v1", "ok": True,
+            "assistantId": assistant_id, "created": created, "session": session,
+            "authorization": {**bound,
+                "workspaceScopeSha256": session["workspaceScopeSha256"],
+                "workspaceScopeGrantedAtMs": session["workspaceScopeGrantedAtMs"]}}
 
     def abort_compaction(self, session_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         target = compaction_control_target(payload)
@@ -631,6 +695,21 @@ class AgentSessionApplicationService:
             path.unlink()
             return True
         return False
+
+
+def _primary_text(value: object, field: str, *, maximum: int = 240) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
+        raise ValueError(f"{field} must be a nonempty string of at most {maximum} characters")
+    return value.strip()
+
+
+def _primary_workspace_roots(value: object, *, required: bool) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+        raise ValueError("workspaceRoots must be an array of directory paths")
+    roots = sorted(existing_workspace_roots(value))
+    if "/" in roots or (required and not roots):
+        raise ValueError("primary assistant requires specific project directories, not system-wide scope")
+    return roots
 
 
 def _required_text(

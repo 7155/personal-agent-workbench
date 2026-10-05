@@ -58,6 +58,17 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('makes the stable assistant the default entry while keeping the advanced creator explicit', async () => {
+    const transport = createTransport();
+    renderAgent(transport, { initialRoute: '/agent' });
+    expect(await screen.findByRole('heading', { name: '有事，接着聊。' })).toBeVisible();
+    expect(screen.queryByRole('group', { name: 'Agent 界面模式' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /新建独立 Session 或多人 Room/ }));
+    expect(await screen.findByRole('heading', { name: '今天想完成什么？' })).toBeVisible();
+    expect(transport.requests.some(({ request }) => ['agent.sessions.create', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
+  });
   it('uses the owned catalog capability and preserves a Durable draft when a replacement Host withdraws support', async () => {
     const user = userEvent.setup();
     const available = createTransport({ modelCatalog: { providers: [], selected: {}, sessionEngines: { durable: { available: true } } } });
@@ -579,7 +590,7 @@ describe('PAWOS Agent App', () => {
           <TooltipProvider>
             <PawOsDesktopProvider bindAgentMain={bindAgentMain} openWindow={() => undefined}>
               <PawOsAppSurfaceProvider appId="agent" height={720} width={1_080} windowId="agent">
-                <PawAgentApp />
+                <PawAgentApp initialRoute="/agent?new=advanced" />
               </PawOsAppSurfaceProvider>
             </PawOsDesktopProvider>
           </TooltipProvider>
@@ -785,10 +796,10 @@ describe('PAWOS Agent App', () => {
     const transport = createTransport();
     const view = renderAgent(transport, { initialRoute: '/agent?draft=先检查发布门禁' });
 
-    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('先检查发布门禁');
+    expect(await screen.findByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('先检查发布门禁');
 
     view.rerender(agentTree(transport, { initialRoute: '/agent?draft=再检查安装状态' }));
-    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('再检查安装状态');
+    expect(await screen.findByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('再检查安装状态');
   });
 
   it('keeps a Room deep-link draft so a satellite can return input to the shared composer', async () => {
@@ -1008,7 +1019,7 @@ function agentTree(transport = createTransport(), props: { initialRoute?: string
     <QueryClientProvider client={client}>
       <ControlTransportProvider transport={transport}>
         <TooltipProvider>
-          <PawAgentApp {...props} />
+          <PawAgentApp {...props} initialRoute={props.initialRoute ?? '/agent?new=advanced'} />
         </TooltipProvider>
       </ControlTransportProvider>
     </QueryClientProvider>
@@ -1058,6 +1069,7 @@ function createTransport(options: {
   }];
   return new MockControlTransport({
     routes: {
+      'agent.primary.ensure': { ok: true, session: { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', updatedAtMs: 1, workspaceRoots: [], metadata: { primaryAssistant: true } }, tasks: [] },
       'agent.sessions.list': options.sessionCatalogHandler ?? ((request: ControlRequest) => ({
         ok: true,
         items: request.query?.includeArchived ? sessions : sessions.filter((session) => session.status !== 'archived'),

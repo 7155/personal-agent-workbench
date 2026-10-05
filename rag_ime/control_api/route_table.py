@@ -46,6 +46,15 @@ def _value_error_response(exc: Exception) -> tuple[HTTPStatus, dict[str, object]
     return HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)}
 
 
+def _memory_revision_error_response(exc: Exception) -> tuple[HTTPStatus, dict[str, object]]:
+    from ..memory_card_mutations import MemoryRevisionConflict
+    if isinstance(exc, MemoryRevisionConflict):
+        return HTTPStatus.CONFLICT, {
+            "ok": False, "error": str(exc), "code": exc.code, "current": exc.current,
+        }
+    return _value_error_response(exc)
+
+
 @dataclass(frozen=True)
 class RouteDescriptor:
     """Everything one route needs, in one place."""
@@ -366,10 +375,11 @@ def _post(
     aliases: tuple[str, ...] = (),
     contract: str = "",
     takes_arguments: bool = True,
+    error_response: ErrorResponseAdapter | None = None,
 ) -> RouteDescriptor:
     return RouteDescriptor(
         method="POST", path=path, handler=handler, aliases=aliases,
-        contract=contract, takes_arguments=takes_arguments,
+        contract=contract, takes_arguments=takes_arguments, error_response=error_response,
     )
 
 
@@ -446,6 +456,10 @@ READ_ROUTES: tuple[RouteDescriptor, ...] = (
     _get("/api/active-rag/settings", "active_rag_settings"),
     _get("/api/knowledge/route-status", "knowledge_workbench_route_status"),
     _get("/api/memory/summary", "management.memory_summary"),
+    _get("/api/memory/profile", "management.personal_profile", error_response=_value_error_response),
+    _post("/api/memory/profile/save", "management.save_personal_profile", error_response=_memory_revision_error_response),
+    _post("/api/agent/primary/ensure", "agent.ensure_primary_assistant", error_response=_value_error_response),
+    _post("/api/agent/primary/tasks", "agent.create_primary_task", error_response=_value_error_response),
     _get("/api/runtime/status", "management.runtime_status"),
     _get("/api/runtime/config", "runtime_config"),
     _get("/api/runtime/components", "management.runtime_components"),
@@ -665,7 +679,7 @@ RUNTIME_ACTION_ROUTES: tuple[RouteDescriptor, ...] = (
 # consolidate ownership without moving the ratchet.
 MEMORY_WRITE_ROUTES: tuple[RouteDescriptor, ...] = (
     _post("/api/memory/action", "management.memory_action"),
-    _post("/api/memory/edit", "management.memory_edit"),
+    _post("/api/memory/edit", "management.memory_edit", error_response=_memory_revision_error_response),
     _post("/api/memory/source/disposition", "management.memory_source_disposition"),
 )
 

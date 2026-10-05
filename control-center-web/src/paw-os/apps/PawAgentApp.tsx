@@ -45,6 +45,7 @@ import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
 import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { PawAgentHome } from './PawAgentHome';
+import { PawPrimaryAssistantHome } from './PawPrimaryAssistantHome';
 import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-workspace/AgentModeSwitch';
 import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { OrganizationWorkspace } from '@/features/semantic-workspace/OrganizationWorkspace';
@@ -84,6 +85,7 @@ export function PawAgentApp({
     target?.kind === 'participant' ? target.roomId : undefined,
   ));
   if (selection.kind !== 'new') warmAgentWorkspace(selection.kind);
+  const [advancedHome, setAdvancedHome] = useState(() => new URLSearchParams(initialRoute.split('?', 2)[1] ?? '').get('new') === 'advanced');
   const [railOpen, setRailOpen] = useState(false);
   const [interfaceMode, setInterfaceMode] = useAgentInterfaceMode();
   const [organizationOpen, setOrganizationOpen] = useState(false);
@@ -395,7 +397,7 @@ export function PawAgentApp({
   }
 
   const workspaceOptions = <Menu><MenuTrigger asChild><button ref={organizationToggleRef} aria-label="工作台选项" type="button"><MoreHorizontal size={16} /></button></MenuTrigger><MenuContent align="start">
-    <MenuItem onSelect={() => setSelection({ kind: 'new' })}>返回复工首页</MenuItem>
+    <MenuItem onSelect={() => { setAdvancedHome(false); setSelection({ kind: 'new' }); }}>返回我的助手</MenuItem>
     <MenuItem onSelect={() => setOrganizationOpen(open => !open)}>工作空间</MenuItem>
     <MenuSeparator />
     <MenuItem onSelect={() => setInterfaceMode(interfaceMode === 'jev' ? 'traditional' : 'jev')}>切换到{interfaceMode === 'jev' ? '传统' : 'Jev'}界面</MenuItem>
@@ -403,7 +405,8 @@ export function PawAgentApp({
   const railToggle = <button aria-controls="paw-agent-work-records" aria-expanded={railOpen} aria-label={railOpen ? '收起工作记录' : '打开工作记录'} className="paw-agent-rail-toggle" onClick={() => setRailOpen((open) => !open)} ref={railToggleRef} type="button"><PanelLeft size={16} /></button>;
   return (
     <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} data-compact-work={selection.kind !== 'new' || undefined} role="region">
-      {selection.kind === 'new' ? <header className="paw-agent-modebar" inert={railOpen}>
+      {selection.kind === 'new' && advancedHome ? <header className="paw-agent-modebar" inert={railOpen}>
+        <button onClick={() => setAdvancedHome(false)} type="button">返回我的助手</button>
         <AgentModeSwitch mode={interfaceMode} onChange={setInterfaceMode} />
         {interfaceMode === 'jev' ? <button ref={organizationToggleRef} aria-expanded={organizationOpen} onClick={() => setOrganizationOpen(open => !open)} type="button">工作空间</button> : null}
       </header> : !windowChromeTarget ? <div className="paw-workspace-options">{workspaceOptions}</div> : null}
@@ -467,7 +470,21 @@ export function PawAgentApp({
       {railOpen ? <button aria-label="关闭工作记录" className="paw-agent-rail-backdrop" onClick={closeRail} type="button" /> : null}
       <section className="paw-agent-stage" inert={railOpen}>
         <div className="paw-agent-content">
-        {selection.kind === 'new' ? (
+        {selection.kind === 'new' && !advancedHome ? (
+          <PawPrimaryAssistantHome
+            key={`primary:${selection.draft ?? ''}:${selection.execute ?? false}:${selection.source?.sessionId ?? ''}:${selection.source?.messageId ?? ''}`}
+            initialDraft={selection.draft}
+            initialExecute={selection.execute}
+            initialSource={selection.source}
+            projectRoots={projectRoots}
+            onAdvanced={() => setAdvancedHome(true)}
+            onOpen={(created, submission) => {
+              optimisticSessionsRef.current[created.id] = created;
+              setSessions(current => [created, ...current.filter(item => item.id !== created.id)]);
+              setSelection({ kind: 'session', id: created.id, ...(submission ? { draft: submission.message, submission } : {}) });
+            }}
+          />
+        ) : selection.kind === 'new' ? (
           <PawAgentHome
             active={surfaceActive ?? true}
             interfaceMode={interfaceMode}
@@ -504,13 +521,17 @@ export function PawAgentApp({
               active={surfaceActive ?? true}
               key={`session:${selection.id}`}
               initialDraft={selection.draft}
+              initialSubmission={selection.submission}
+              onAssistantHome={(draft, execute, messageId) => { setAdvancedHome(false); setSelection({ kind: 'new', draft, execute,
+                ...(execute && selectedSessionRecord?.metadata?.primaryAssistant ? { source: { sessionId: selectedSessionRecord.id, workspaceRoots: selectedSessionRecord.workspaceRoots, messageId } } : {}),
+              }); }}
               persona={personas.find((item) => item.roleId === sessions.find((session) => session.id === selection.id)?.roleId)}
               record={selectedSessionRecord}
               recordMetadataKnown={Boolean(selectedSession)}
               recordId={selection.id}
               traceFocusNodeId={evidenceFocus}
               toolPickerIntent={toolPickerIntent}
-              onNewWork={() => setSelection({ kind: 'new' })}
+              onNewWork={() => { setAdvancedHome(false); setSelection({ kind: 'new' }); }}
               onSessionCreated={(created, draft) => {
                 optimisticSessionsRef.current[created.id] = created;
                 setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);

@@ -669,23 +669,32 @@ class ManagementPaginationTests(unittest.TestCase):
                 (json.dumps(["atom:source"]),),
             )
 
-        result = self.service.management.memory_edit(
-            {"kind": "atoms", "id": "atom:source", "mergeIntoId": "atom:target"}
-        )
+        from rag_ime.memory_card_mutations import card_revision
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            versions = {row["id"]: card_revision(dict(row)) for row in conn.execute(
+                "SELECT * FROM memory_atoms WHERE id IN ('atom:source','atom:target')")}
+        request = {"kind": "atoms", "id": "atom:source", "mergeIntoId": "atom:target",
+                   "expectedRevision": versions["atom:source"], "expectedMergeRevision": versions["atom:target"],
+                   "clientRequestId": "merge-cards"}
+        result = self.service.management.memory_edit(request)
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["changes"]["mergedIntoId"], "atom:target")
+        self.assertEqual(result, self.service.management.memory_edit(request))
+        target_id = result["id"]
+        self.assertNotEqual(target_id, "atom:target")
+        self.assertEqual(result["changes"]["mergedIntoId"], target_id)
         with sqlite3.connect(self.db_path) as conn:
             source_status = conn.execute("SELECT status FROM memory_atoms WHERE id = 'atom:source'").fetchone()[0]
             target_events = json.loads(
-                conn.execute("SELECT source_event_ids_json FROM memory_atoms WHERE id = 'atom:target'").fetchone()[0]
+                conn.execute("SELECT source_event_ids_json FROM memory_atoms WHERE id = ?", (target_id,)).fetchone()[0]
             )
             book_atoms = json.loads(
                 conn.execute("SELECT memory_atom_ids_json FROM memory_books WHERE book_id = 'book:one'").fetchone()[0]
             )
         self.assertEqual(source_status, "tombstoned")
         self.assertEqual(target_events, [2, 1])
-        self.assertEqual(book_atoms, ["atom:target"])
+        self.assertEqual(book_atoms, [target_id])
 
 
 if __name__ == "__main__":

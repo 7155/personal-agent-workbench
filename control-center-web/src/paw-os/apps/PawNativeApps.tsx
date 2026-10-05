@@ -1,5 +1,6 @@
 import {
   Bot,
+  BookOpen,
   Brain,
   BriefcaseBusiness,
   ChevronRight,
@@ -46,6 +47,7 @@ const pagesByApp: Record<PawFeatureAppId, readonly NativePage[]> = {
   ],
   memory: [
     { id: 'memory', label: '记忆库', icon: Brain, route: '/memory' },
+    { id: 'profile', label: '关于我', icon: BookOpen, route: '/memory?view=profile' },
     { id: 'roleBooks', label: '伙伴记忆', icon: Bot, route: '/memory?view=roleBooks' },
     { id: 'timeline', label: '时间线', icon: Clock3, route: '/memory?view=timeline' },
     { id: 'relations', label: '关系图', icon: Network, route: '/memory?view=relations' },

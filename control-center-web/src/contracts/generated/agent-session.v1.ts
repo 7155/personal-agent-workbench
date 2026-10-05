@@ -9,6 +9,21 @@ export type AgentSessionV1 = {
 } & {
   schemaVersion: 'rag-ime.agent-session.v1';
   id: string;
+  metadata?: {
+    assistantId: string;
+    primaryAssistant?: boolean;
+    primaryTask?: boolean;
+    sourceSessionId?: string;
+    sourceMessageId?: string;
+    clientRequestId?: string;
+  };
+  goal?: {
+    goalId: string;
+    revision: number;
+    status: 'active' | 'paused' | 'completed' | 'cancelled' | 'cleared';
+    objective: string;
+    successCriteria: string;
+  };
   piSessionId?: string;
   sessionFile?: string;
   runtimeBinding?: {

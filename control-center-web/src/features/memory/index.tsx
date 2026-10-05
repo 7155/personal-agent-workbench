@@ -55,6 +55,7 @@ import { MemoryCurationWorkbench } from './MemoryCurationWorkbench';
 import { ActivityTimeline } from './ActivityTimeline';
 import { MemoryLibraryNavigation, memoryLibraryCounts } from './MemoryLibraryNavigation';
 import { MemoryPreferences } from './MemoryPreferences';
+import { MemoryProfile } from './MemoryProfile';
 import { RoleBookLayer } from './RoleBookLayer';
 import {
   MemoryReferenceDialog,
@@ -90,7 +91,7 @@ const MemoryRelations = lazy(() => import('./MemoryRelations').then((module) => 
 
 type MemoryLayer = 'evidence' | 'atoms' | 'books';
 type MemoryRouteLayer = MemoryLayer | 'timelines' | 'role-books';
-type MemoryView = 'catalog' | 'roleBooks' | 'timeline' | 'relations' | 'organize' | 'preferences';
+type MemoryView = 'profile' | 'catalog' | 'roleBooks' | 'timeline' | 'relations' | 'organize' | 'preferences';
 
 function defaultMemoryStatus(kind: MemoryKind): string {
   if (kind === 'phrases') return 'approved';
@@ -233,6 +234,7 @@ export function MemoryFeature() {
         >
           {!appSurface ? (
             <TabsList aria-label="记忆视图">
+              <TabsTrigger value="profile">关于我</TabsTrigger>
               <TabsTrigger value="catalog">记忆</TabsTrigger>
               <TabsTrigger value="roleBooks">伙伴记忆</TabsTrigger>
               <TabsTrigger value="timeline">时间线</TabsTrigger>
@@ -241,6 +243,7 @@ export function MemoryFeature() {
               <TabsTrigger value="preferences">记忆偏好</TabsTrigger>
             </TabsList>
           ) : null}
+          <TabsContent value="profile"><MemoryProfile onOpenReference={setReference} onSaved={refresh} /></TabsContent>
           <TabsContent value="catalog">
             <section className="mgmt-section memory-catalog-section">
               <div className="memory-layer-workspace" data-detail-open={selected && !catalogDetailCollapsed ? true : undefined}>
@@ -631,13 +634,14 @@ function referenceKindForRoute(layer: MemoryRouteLayer, id: string): MemoryRefer
 }
 
 function normalizeMemoryView(value: string): MemoryView {
-  return value === 'roleBooks' || value === 'timeline' || value === 'relations' || value === 'organize' || value === 'preferences'
+  return value === 'profile' || value === 'roleBooks' || value === 'timeline' || value === 'relations' || value === 'organize' || value === 'preferences'
     ? value
     : 'catalog';
 }
 
 function memoryViewLabel(view: MemoryView): string {
   return ({
+    profile: '关于我',
     catalog: '记忆库',
     roleBooks: '伙伴记忆',
     timeline: '时间线',
@@ -655,6 +659,7 @@ function memoryViewStatus(
 ): string {
   // Preferences never claims a persistence state here; the panel itself
   // reports read-only, pending, and synced from the real write contract.
+  if (view === 'profile') return '长期背景 · 可以核对与修改';
   if (view === 'preferences') return '影响整理与联想';
   // The workbench owns live backlog and job receipts. A separately refreshed
   // catalog summary must not contradict those counts in the page heading.
@@ -714,6 +719,7 @@ function normalizeMemoryRow(item: Record<string, unknown>): Record<string, unkno
     createdAtMs: item.createdAtMs ?? item.created_at_ms,
     latestAtMs: item.latestAtMs,
     updatedAtMs: item.updatedAtMs ?? item.updated_at_ms,
+    revision: item.revision,
     evidenceRefs: item.evidenceRefs ?? item.sourceRefs ?? item.references ?? item.sourceEventIds,
     memories: item.memories,
   };
@@ -1229,6 +1235,9 @@ function MemoryEditDialog({
 }) {
   const transport = useControlTransport();
   const identity = stringValue(row?.id);
+  const editRevision = useRef(stringValue(row?.revision));
+  const editAttempt = useRef<{ signature: string; id: string } | undefined>(undefined);
+  const editLock = useRef(false);
   const [draft, setDraft] = useState<MemoryEditDraft>(() => memoryEditDraft(kind, row));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1236,11 +1245,14 @@ function MemoryEditDialog({
   useEffect(() => {
     if (!open) return;
     setDraft(memoryEditDraft(kind, row));
+    editRevision.current = stringValue(row?.revision);
+    editAttempt.current = undefined;
     setError('');
-  }, [identity, kind, open, row]);
+  }, [identity, kind, open]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editLock.current) return;
     const validation = memoryEditValidation(kind, draft);
     if (validation) {
       setError(validation);
@@ -1250,12 +1262,16 @@ function MemoryEditDialog({
       setError('这项记忆已经不可用，请关闭窗口后重新选择。');
       return;
     }
+    editLock.current = true;
     setSaving(true);
     setError('');
     try {
+      const body = memoryEditBody(kind, identity, draft);
+      const signature = JSON.stringify(body);
+      if (editAttempt.current?.signature !== signature) editAttempt.current = { signature, id: `memory-card-${crypto.randomUUID()}` };
       const result = asRecord(await transport.request({
         pathId: 'memory.edit',
-        body: memoryEditBody(kind, identity, draft),
+        body: { ...body, ...(kind === 'atoms' ? { expectedRevision: editRevision.current, clientRequestId: editAttempt.current.id } : {}) },
       }));
       if (result.ok !== true) throw new Error('memory edit rejected');
       try {
@@ -1267,6 +1283,7 @@ function MemoryEditDialog({
     } catch {
       setError('保存失败。草稿已保留，请确认这项记忆仍然存在后重试。');
     } finally {
+      editLock.current = false;
       setSaving(false);
     }
   }

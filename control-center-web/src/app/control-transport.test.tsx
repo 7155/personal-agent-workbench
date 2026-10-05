@@ -69,6 +69,23 @@ describe('ControlTransportProvider', () => {
 
     expect(createConfiguredControlTransport().kind).toBe('mock');
   });
+  it('keeps a built mock renderer synthetic even when a native bridge and Electron host query exist', async () => {
+    const previous = window.webkit;
+    const postMessage = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    window.history.replaceState({}, '', '/?pawHost=electron#/agent');
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('VITE_CONTROL_TRANSPORT', 'mock');
+    window.webkit = { messageHandlers: { ragImeNativeBridge: { postMessage } } };
+    try {
+      const transport = createConfiguredControlTransport();
+      expect(transport.kind).toBe('mock');
+      await transport.request({ pathId: 'agent.primary.ensure', body: {} });
+      await transport.request({ pathId: 'memory.profile' });
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally { window.webkit = previous; fetchSpy.mockRestore(); }
+  });
 
   it('keeps the preview memory surface representative and contract-valid', async () => {
     const transport = createConfiguredControlTransport();

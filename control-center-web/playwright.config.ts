@@ -30,11 +30,12 @@ export default defineConfig({
     // without downloading a second browser runtime. CI keeps Playwright's
     // pinned Chromium unless this explicit, opt-in flag is present.
     channel: process.env.PAW_E2E_SYSTEM_CHROME === '1' ? 'chrome' : undefined,
+    launchOptions: process.env.PAW_E2E_BROWSER_PATH ? { executablePath: process.env.PAW_E2E_BROWSER_PATH } : undefined,
     colorScheme: 'light',
     locale: 'zh-CN',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: process.env.PAW_E2E_SYSTEM_CHROME === '1' ? 'off' : 'retain-on-failure',
+    video: process.env.PAW_E2E_SYSTEM_CHROME === '1' || process.env.PAW_E2E_BROWSER_PATH ? 'off' : 'retain-on-failure',
   },
   projects: [
     { name: 'desktop-1440x900', use: { viewport: { width: 1_440, height: 900 } } },

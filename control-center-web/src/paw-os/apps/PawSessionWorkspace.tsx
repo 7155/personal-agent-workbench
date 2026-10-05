@@ -1,3 +1,5 @@
+import type { InitialSessionSubmission } from './agent-workspace-loader';
+import './primary-assistant.css';
 import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
@@ -157,6 +159,8 @@ export function PawSessionWorkspace({
   recordMetadataKnown = Boolean(record),
   recordId,
   initialDraft = '',
+  initialSubmission,
+  onAssistantHome,
   initialAttachments = [],
   draftRequest,
   composerContext,
@@ -179,6 +183,8 @@ export function PawSessionWorkspace({
   recordMetadataKnown?: boolean;
   recordId: string;
   initialDraft?: string;
+  initialSubmission?: InitialSessionSubmission;
+  onAssistantHome?: (draft?: string, execute?: boolean, sourceMessageId?: string) => void;
   initialAttachments?: ComposerAttachment[];
   draftRequest?: WorkspaceDraftRequest;
   composerContext?: WorkspaceComposerContext;
@@ -204,6 +210,9 @@ export function PawSessionWorkspace({
   const windowChromeTarget = usePawWindowChromeTarget();
   const embedded = appearance === 'embedded';
   const workspaceRecord = record ?? provisionalSessionRecord(recordId);
+  const primaryAssistant = workspaceRecord.metadata?.primaryAssistant === true;
+  const primaryTask = workspaceRecord.metadata?.primaryTask === true;
+  const initialSubmissionRef = useRef<string | undefined>(undefined);
   const evaluationSnapshot = record?.evaluationSnapshot === true;
   const pageVisible = usePageVisibility();
   // Keep every mounted chat window current even when another PAW window has
@@ -223,7 +232,7 @@ export function PawSessionWorkspace({
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalog>();
   const [capabilityCatalogError, setCapabilityCatalogError] = useState('');
   const [capabilityMutation, setCapabilityMutation] = useState<CapabilityMutationOutcome>();
-  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialDraft ?? '', initialAttachments);
+  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialSubmission?.message ?? initialDraft ?? '', initialAttachments);
   const { draft, setDraft, attachments, setAttachments } = recovery;
   useEffect(() => {
     if (draftRequest) setDraft(current => applyWorkspaceDraft(current, draftRequest));
@@ -701,7 +710,13 @@ export function PawSessionWorkspace({
     return true;
   }
 
-  async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft): Promise<void> {
+  useEffect(() => {
+    if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
+      || loading || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
+    void send('prompt', initialSubmission.message, initialSubmission.message, initialSubmission.clientMessageId);
+  }, [initialSubmission, loading, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
+
+  async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft, initialClientMessageId?: string): Promise<void> {
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
     if (!acceptsEngineInput(rawDraft)) return;
@@ -793,7 +808,8 @@ export function PawSessionWorkspace({
     sessionActionLockRef.current = true;
     const message = value || '请查看附件。';
     const selectedAttachments = attachments;
-    const clientMessageId = `paw-${crypto.randomUUID()}`;
+    const clientMessageId = initialClientMessageId ?? `paw-${crypto.randomUUID()}`;
+    if (initialClientMessageId) initialSubmissionRef.current = initialClientMessageId;
     const selectedScreenContext = screenContextForMessage(screenContext, selectedAttachments.map((item) => item.id), agentProjection(recordId));
     const effectiveDelivery: AgentMessageDelivery = busy
       ? (delivery === 'followUp' ? 'followUp' : 'steer')
@@ -1770,6 +1786,7 @@ export function PawSessionWorkspace({
             {workspaceRecord && !evaluationSnapshot ? (
               <>
               {composerContext?.kind === 'project' ? <WorkspaceProjectContext context={composerContext} /> : composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div><button aria-label="移除地图上下文" onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
+              {primaryAssistant || primaryTask ? <div className="paw-primary-session-context"><span><strong>{primaryAssistant ? '我的助手 · 长期对话' : '当前工作'}</strong><small>{primaryAssistant ? '聊一聊、查资料；需要执行时，明确交给助手。' : `执行范围：${workspaceRecord.workspaceRoots.join('、') || '读取中'} · 过程与结果保留在这里`}</small></span>{onAssistantHome ? <button disabled={sending || stopping} onClick={() => onAssistantHome(primaryAssistant ? draft : undefined, primaryAssistant, primaryAssistant ? primarySourceMessageId(agentProjection(recordId)) : undefined)} type="button">{primaryAssistant ? '交给助手做' : '返回我的助手'}</button> : null}</div> : null}
               <AgentComposer
                 attachments={attachments}
                 attachmentsAvailable={!durableSession}
@@ -1791,6 +1808,7 @@ export function PawSessionWorkspace({
                 modelPickerRequest={modelPickerRequest}
                 thinkingPickerRequest={thinkingPickerRequest}
                 permissionPickerRequest={permissionPickerRequest}
+                permissionLocked={primaryAssistant || primaryTask}
                 persona={persona}
                 sending={sending}
                 submissionBlocked={recovery.checking || recovery.issues.length > 0}
@@ -1968,6 +1986,15 @@ function conversationText(blocks: Array<{ type: string; data: Record<string, unk
 
 /** Same receipt shape the standalone Agent feature reads: Stop raced the
  *  admission and won, so the optimistic message must vanish, not acknowledge. */
+export function primarySourceMessageId(projection: AgentProjectionState): string | undefined {
+  return [...projection.messageOrder].reverse().find(id => {
+    const message = projection.messagesById[id];
+    return !id.startsWith('local:') && message?.status === 'completed'
+      && (message.role === 'user' || message.role === 'assistant')
+      && message.blocks.some(block => block.type === 'text' && typeof block.data.text === 'string' && block.data.text.trim());
+  });
+}
+
 function isCancelledPromptAdmission(value: unknown): boolean {
   return isRecord(value)
     && value.accepted === false

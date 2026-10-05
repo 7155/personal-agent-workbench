@@ -20,7 +20,7 @@ import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
 import agentMigratedCss from '../styles/paw-os-agent.css?raw';
 import appsCss from './paw-apps.css?raw';
 import { PawWindowFrame } from '../shell/PawWindowLayer';
-import { PawSessionWorkspace, sessionWorkspaceProjectionSlice } from './PawSessionWorkspace';
+import { PawSessionWorkspace, sessionWorkspaceProjectionSlice, primarySourceMessageId } from './PawSessionWorkspace';
 import { messageWithWorkspaceContext } from './workspace-draft';
 
 /* jsdom gives every row zero height, so the real virtualizer would keep the
@@ -61,6 +61,50 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Session structural migration', () => {
+  it('selects only the latest completed public text message for a primary task source cutoff', () => {
+    const projection = createAgentProjection('primary');
+    const message = { schemaVersion: 'rag-ime.agent-message.v1' as const, id: 'public-user', sessionId: 'primary', turnId: 'turn', role: 'user' as const,
+      status: 'completed' as const, blocks: [{ id: 'text', type: 'text' as const, status: 'completed' as const, presentationKind: 'plain_text', data: { text: '明确的讨论内容' } }],
+      attachments: [], citations: [], createdAtMs: 1, completedAtMs: 2 };
+    projection.messagesById = { 'public-user': message,
+      'public-plan': { ...message, id: 'public-plan', role: 'assistant' },
+      'tool-result': { ...message, id: 'tool-result', role: 'tool' },
+      'local:draft': { ...message, id: 'local:draft', status: 'queued' },
+      'streaming': { ...message, id: 'streaming', role: 'assistant', status: 'streaming' },
+    };
+    projection.messageOrder = ['public-user', 'public-plan', 'tool-result', 'local:draft', 'streaming'];
+    expect(primarySourceMessageId(projection)).toBe('public-plan');
+  });
+  it('admits a primary home submission once after loading and preserves its exact identity through a late stopped receipt', async () => {
+    const sessionId = 'primary-admission';
+    const initial = deferred<unknown>(); const prompt = deferred<unknown>();
+    const submission = { clientMessageId: 'primary-admission-request', message: '检查工作台' };
+    const record = { ...liveSession(), id: sessionId, metadata: { primaryTask: true }, executionMode: 'workspace_managed' as const };
+    let stopped = false;
+    const terminal = { schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
+      turnId: `local-turn:${submission.clientMessageId}`, sequence: 1, createdAtMs: Date.now(),
+      eventType: 'turn_completed', payload: { status: 'aborted', aborted: true }, resumeToken: `${sessionId}:1` };
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': () => stopped ? { messages: [], liveEvents: [terminal], status: 'idle', lastSequence: 1, resumeToken: `${sessionId}:1` } : initial.promise,
+      'agent.session.prompt': () => prompt.promise,
+      'agent.session.abort': () => { stopped = true; transport.emit('agent.session.events', parseAgentEvent(terminal)); return { ok: true }; },
+    });
+    const tree = () => <ControlTransportProvider transport={transport}><TooltipProvider><PawSessionWorkspace
+      record={record} recordId={sessionId} initialSubmission={submission} onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>;
+    const view = render(tree());
+    expect(await screen.findByRole('textbox', { name: '消息' })).toHaveValue(submission.message);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(0);
+    await act(async () => initial.resolve({ messages: [], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle' }));
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+    view.rerender(tree());
+    expect(transport.requests.find(request => request.pathId === 'agent.session.prompt')?.body).toMatchObject(submission);
+    fireEvent.click(screen.getByRole('button', { name: '停止本轮' }));
+    await act(async () => prompt.resolve({ ok: true, accepted: false, cancelled: true, admissionCancelled: true }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '停止本轮' })).not.toBeInTheDocument());
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(1);
+    expect(screen.getByText('本次工作区已授权')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /^对话权限/ })).not.toBeInTheDocument();
+  });
   it('reopens standalone Durable compaction passively and resumes its exact task target once without changing the draft', async () => {
     const sessionId = 'session-compaction-reopen';
     let paused = true;
