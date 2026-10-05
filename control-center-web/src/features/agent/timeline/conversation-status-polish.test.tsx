@@ -14,6 +14,76 @@ afterEach(() => {
 });
 
 describe('conversation status polish', () => {
+  it('recognizes visible reply text without treating message completion as turn completion', () => {
+    vi.useFakeTimers({ now: 12_000 });
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId)], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'busy', partial: true,
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('本轮尚未收到响应进展');
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(1, 'text_delta', { messageId: `${turnId}:assistant`, delta: 'UI_STOP\n1. 已显示正文' }), sessionId, turnId,
+    }]));
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('回复已开始');
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('本轮用时 12秒');
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toHaveTextContent('本轮尚未收到响应进展');
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toHaveTextContent('正在输出');
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(2, 'message_completed', { message: {
+        ...userMessage(sessionId, turnId), id: `${turnId}:assistant`, role: 'assistant',
+        blocks: [{ id: `${turnId}:assistant:text`, type: 'text', status: 'completed', presentationKind: 'markdown', data: { text: 'UI_STOP\n1. 已显示正文' } }],
+      } }), sessionId, turnId,
+    }]));
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('等待本轮结束');
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('已收到回复，尚未收到本轮结束回执');
+    expect(useAgentLiveStore.getState().projections[sessionId]?.turnsById[turnId]?.status).toBe('running');
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(3, 'turn_completed', { status: 'completed' }), sessionId, turnId,
+    }]));
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toBeInTheDocument();
+  });
+
+  it('does not count a user message or whitespace-only assistant delta as visible reply progress', () => {
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId)], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'busy', partial: true,
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(1, 'text_delta', { delta: ' \n ' }), sessionId, turnId,
+    }]));
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('本轮尚未收到响应进展');
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toHaveTextContent('回复已开始');
+  });
+
+  it.each([
+    ['status_changed', { status: 'retrying', phase: 'provider_retry', activityState: 'running', summary: '模型连接暂时不可用，正在自动重试。' }, '正在重试连接'],
+    ['compaction_started', { reason: 'automatic' }, '正在整理上下文'],
+    ['tool_started', { toolCallId: 'after-reply', toolName: 'read' }, '正在执行'],
+    ['status_changed', { status: 'aborting' }, '正在停止'],
+  ] as const)('keeps %s control feedback above previously visible reply text', (eventType, payload, phase) => {
+    const sessionId = 'session-status-polish';
+    const turnId = 'turn-status-polish';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId)], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'busy', partial: true,
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} onApprovalDecision={() => {}} />);
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [
+      { ...agentEventFixture(1, 'text_delta', { delta: '已显示的部分回复' }), sessionId, turnId },
+      { ...agentEventFixture(2, eventType, payload), sessionId, turnId },
+    ]));
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent(phase);
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toHaveTextContent('回复已开始');
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(3, 'turn_failed', { error: '模型连接未恢复' }), sessionId, turnId,
+    }]));
+    expect(view.container.querySelector('.agent-assistant-pending')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('本轮未完成');
+  });
+
   it('labels the whole turn clock honestly after tools finish without inventing reasoning or a terminal receipt', () => {
     const now = 1_800_000_000_000;
     vi.useFakeTimers();

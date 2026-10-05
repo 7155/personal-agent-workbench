@@ -1335,6 +1335,11 @@ export const AgentTurn = memo(function AgentTurn({
   );
   const turnWorkModel = buildAgentTurnWorkModel(paused ? 'waiting' : turn.status, timelineEntries);
   const streamingMessageId = paused ? '' : activeStreamingMessageId(turn.status, assistantMessages);
+  const replyMessages = assistantMessages.filter(message => message.blocks.some(block => (
+    block.type === 'text' && Boolean(text(block.data.text).trim())
+  )));
+  const replyState = !replyMessages.length ? 'none'
+    : replyMessages.some(message => message.status === 'streaming') ? 'started' : 'received';
   const renderTimelineEntry = (entry: AgentTurnSequenceEntry) => entry.kind === 'message' ? (
     <div
       data-timeline-kind={entry.message.role === 'user' ? 'user-message' : 'message'}
@@ -1409,7 +1414,7 @@ export const AgentTurn = memo(function AgentTurn({
             {/* The live marker is the current cursor, so it follows the newest
                 visible work instead of staying pinned above completed steps.
                 New entries inserted above naturally carry it to the tail. */}
-            {showWorking ? <AssistantWorkingState activities={activities} startedAtMs={turn.createdAtMs} stopping={stopping} /> : null}
+            {showWorking ? <AssistantWorkingState activities={activities} replyState={replyState} startedAtMs={turn.createdAtMs} stopping={stopping} /> : null}
             {paused ? <div className="agent-assistant-pending" role="status" aria-live="polite">
               <ConversationPlanetMark size="lg" state="waiting" motionActive={false} />
               <span><strong>任务已暂停，进度已保存</strong><small>已保留本轮消息与工具记录，继续后接着执行原任务。</small></span>
@@ -1588,10 +1593,12 @@ function compareTimelineItems(left: TurnTimelineItem, right: TurnTimelineItem): 
 
 function AssistantWorkingState({
   activities,
+  replyState,
   startedAtMs,
   stopping = false,
 }: {
   activities: AgentActivityProjection[];
+  replyState: 'none' | 'started' | 'received';
   startedAtMs: number;
   stopping?: boolean;
 }) {
@@ -1600,13 +1607,15 @@ function AssistantWorkingState({
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
-  const detail = useMemo(() => workingDetail(activities), [activities]);
+  const detail = useMemo(() => workingDetail(activities, replyState), [activities, replyState]);
   const latest = [...activities].reverse().find((activity) => activity.status === 'running');
   const phase = latest?.payload.phase === 'provider_retry' ? '正在重试连接'
     : latest?.kind === 'context_compaction' ? '正在整理上下文'
     : latest?.kind === 'reasoning_summary' ? '正在分析'
     : latest?.kind.startsWith('tool_') ? '正在执行'
-    : latest ? '正在处理' : '等待后续响应';
+    : latest ? '正在处理'
+    : replyState === 'started' ? '回复已开始'
+    : replyState === 'received' ? '等待本轮结束' : '等待后续响应';
   return (
     <div className="agent-assistant-pending" role="status" aria-live="polite">
       <ConversationPlanetMark size="lg" state={stopping ? 'waiting' : 'thinking'} />
@@ -2071,7 +2080,7 @@ function cssEscape(value: string): string {
     : value.replace(/["\\]/gu, '\\$&');
 }
 
-function workingDetail(activities: AgentActivityProjection[]): string {
+function workingDetail(activities: AgentActivityProjection[], replyState: 'none' | 'started' | 'received'): string {
   const latest = [...activities].reverse().find((activity) => activity.status === 'running');
   if (text(latest?.payload.phase) === 'provider_retry') {
     return latest?.summary || '模型连接暂时不可用，正在自动重试。';
@@ -2086,6 +2095,10 @@ function workingDetail(activities: AgentActivityProjection[]): string {
   if (tool.includes('planning')) return '正在整理计划与下一步。';
   if (latest?.kind.startsWith('tool_')) return '正在执行工具，进度和结果会实时显示在下方。';
   if (latest) return '正在处理本轮请求，后续进展会显示在对话中。';
+  // These are retained response facts, not a claim that a possibly frozen
+  // stream is still connected. Message completion is not the turn receipt.
+  if (replyState === 'started') return '已收到部分回复，尚未收到本轮结束回执。';
+  if (replyState === 'received') return '已收到回复，尚未收到本轮结束回执。';
   return activities.length ? '已有步骤已结束，尚未收到本轮结束回执。' : '本轮尚未收到响应进展。';
 }
 
