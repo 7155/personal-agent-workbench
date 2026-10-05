@@ -158,6 +158,49 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual(summary["id"], task["id"])
         self.assertEqual(self.service.sessions.get(request["sourceSessionId"])["status"], "idle")
 
+    def test_results_reach_only_exact_source_context_and_clear_after_deletion(self) -> None:
+        request = self.request()
+        task = self.service.create_primary_task(request)["session"]
+        source_id = request["sourceSessionId"]
+        other = self.service.ensure_primary_assistant({"workspaceRoots": [str(self.root)]})["session"]
+        self.assertEqual(self.service.sessions.primary_task_results(other["id"]), [])
+        active = self.service.sessions.primary_task_results(source_id)[0]
+        self.assertEqual(active["sessionStatus"], "idle")
+        self.assertEqual(active["goalStatus"], "active")
+        self.assertNotIn("completionAudit", active)
+        self.service.sessions.mutate_agent_goal(task["id"], {
+            "action": "complete", "expectedRevision": 1, "summary": "RESULT_TO_PRIMARY",
+            "evidence": [{"kind": "artifact", "reference": "output/report.html", "summary": "Verified"}]})
+        result = self.service.sessions.primary_task_results(source_id)[0]
+        goal = self.service.sessions.agent_goal(task["id"])
+        self.assertEqual(result["completionAudit"]["auditId"], goal["completionAudit"]["auditId"])
+        memory = self.service.memory_context_application
+        with patch.object(memory, "_memory_enabled", return_value=False), \
+             patch.object(self.service.prompt_delivery_application, "_memory_enabled", return_value=False), \
+             patch.object(self.service.runtime, "prompt", return_value={"accepted": True, "turnId": "turn:results"}) as prompt:
+            self.service.prompt(source_id, {"message": "结果如何", "clientMessageId": "results-request"})
+        from rag_ime.agent_context_runtime import RUNTIME_PROMPT_ENVELOPE_PREFIX
+        envelope = json.loads(prompt.call_args.args[1][len(RUNTIME_PROMPT_ENVELOPE_PREFIX):])
+        self.assertIn("RESULT_TO_PRIMARY", envelope["sessionContext"])
+        self.assertIn("output/report.html", envelope["sessionContext"])
+        self.assertNotIn("RESULT_TO_PRIMARY", envelope["message"] + envelope["transientContext"])
+        with patch.object(memory, "_memory_enabled", return_value=False):
+            self.assertIn("RESULT_TO_PRIMARY", self.service._runtime_session_context(self.service.sessions.get(source_id))["sessionContext"])
+            self.assertIn("RESULT_TO_PRIMARY", memory.refresh({"sessionId": source_id, "trigger": "compaction"})["result"]["sessionContext"])
+            self.service.sessions.delete(task["id"])
+            self.assertNotIn("RESULT_TO_PRIMARY", memory.provider_context(source_id))
+            self.assertNotIn("RESULT_TO_PRIMARY", memory.refresh({"sessionId": source_id, "trigger": "compaction"})["result"]["sessionContext"])
+
+    def test_result_ownership_does_not_follow_archived_discussion_rotation_or_deleted_source(self) -> None:
+        request = self.request()
+        self.service.create_primary_task(request)
+        self.service.sessions.archive(request["sourceSessionId"])
+        rotated = self.service.ensure_primary_assistant({})["session"]
+        self.assertNotEqual(rotated["id"], request["sourceSessionId"])
+        self.assertEqual(self.service.sessions.primary_task_results(rotated["id"]), [])
+        self.service.sessions.delete(request["sourceSessionId"])
+        self.assertEqual(self.service.sessions.primary_task_results(request["sourceSessionId"]), [])
+
     def test_initial_prompt_retry_uses_original_client_identity_without_reexecution(self) -> None:
         request = self.request()
         task = self.service.create_primary_task(request)["session"]
@@ -268,7 +311,8 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         gateway = ControlToolGateway(sessions=self.service.sessions,
             management=object(), core=object(), project="primary-assistant-tests")
         goal_tool = next(item for item in gateway.runtime_manifests(task) if item["name"] == "agent_goal")
-        self.assertEqual(set(goal_tool["parameters"]["properties"]["op"]["enum"]), {"list", "complete"})
+        self.assertEqual({branch["properties"]["op"]["const"]
+                          for branch in goal_tool["parameters"]["oneOf"]}, {"list", "complete"})
         def call(operation: str, **args: object) -> dict[str, object]:
             return gateway.execute({"schemaVersion": "rag-ime.agent-tool-call.v1", "sessionId": task["id"],
                 "tool": "agent_goal", "toolCallId": f"goal:{operation}:{len(args)}",
@@ -277,7 +321,7 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         settle = {"schemaVersion": "rag-ime.agent-goal-settle-request.v1", "sessionId": task["id"],
             "settleScopeId": "original-scope", "settleAttempt": 1,
             "freshToolEvidenceCount": 1, "freshToolEvidenceSha256": "a" * 64}
-        self.assertEqual(self.service.settle_goal_runtime(settle)["state"], "continue")
+        self.assertEqual(self.service.settle_goal_runtime(settle)["result"]["state"], "continue")
         with self.assertRaises(ValueError):
             call("update", objective="Changed without user approval")
         with self.assertRaises(ValueError):
@@ -286,7 +330,7 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
             "kind": "test", "reference": "tests/test_primary_assistant_sessions.py", "summary": "Passed"}])
         self.assertEqual(completed["result"]["goal"]["status"], "completed")
         self.assertEqual(self.service.ensure_primary_assistant({})["tasks"][0]["goal"]["status"], "completed")
-        self.assertEqual(self.service.settle_goal_runtime({**settle, "settleAttempt": 2})["state"], "completed")
+        self.assertEqual(self.service.settle_goal_runtime({**settle, "settleAttempt": 2})["result"]["state"], "completed")
 
     def test_only_successful_durable_source_rewrite_revokes_task_brief(self) -> None:
         request = self.request()
@@ -321,6 +365,9 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual(self.brief(task["id"])["cutoffMessageId"], "plan")
         restored = self.service._runtime_session_context(self.service.sessions.get(task["id"]))
         self.assertIn("只修改缓存模块，验证失效逻辑", str(restored.get("sessionContext")))
+        self.assertIn("sourceSessionRevision", str(restored.get("sessionContext")))
+        compacted = self.service.memory_context_application.refresh({"sessionId": task["id"], "trigger": "compaction"})
+        self.assertIn("只修改缓存模块，验证失效逻辑", compacted["result"]["sessionContext"])
         self.service.sessions.delete(request["sourceSessionId"])
         restored = self.service._runtime_session_context(self.service.sessions.get(task["id"]))
         self.assertNotIn("只修改缓存模块，验证失效逻辑", str(restored.get("sessionContext")))

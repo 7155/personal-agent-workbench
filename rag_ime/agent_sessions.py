@@ -565,6 +565,44 @@ class AgentSessionStore:
             ).fetchall()
             return [_session_payload(row, _joined_runtime_binding(row)) for row in rows]
 
+    def primary_task_results(self, source_session_id: str) -> list[dict[str, object]]:
+        """Read bounded, current results owned by this exact discussion only."""
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                "SELECT s.id, s.status, p.source_message_id, p.project_key "
+                "FROM agent_primary_session_links p JOIN agent_sessions s ON s.id = p.session_id "
+                "JOIN agent_primary_session_links source ON source.session_id = p.source_session_id "
+                "JOIN agent_sessions discussion ON discussion.id = source.session_id "
+                "WHERE p.kind = 'task' AND source.kind = 'discussion' "
+                "AND p.assistant_id = source.assistant_id AND p.source_session_id = ? "
+                "ORDER BY s.updated_at_ms DESC, s.id DESC LIMIT 8",
+                (source_session_id,),
+            ).fetchall()
+            results: list[dict[str, object]] = []
+            for row in rows:
+                goal = _agent_goal_projection(conn, str(row["id"]))
+                result: dict[str, object] = {
+                    "sessionId": str(row["id"]), "sessionStatus": str(row["status"]),
+                    "sourceSessionId": source_session_id,
+                    "sourceMessageId": str(row["source_message_id"]),
+                    "workspaceScopeSha256": str(row["project_key"]),
+                    "goalId": goal["goalId"], "goalRevision": goal["revision"],
+                    "goalStatus": goal["status"], "updatedAtMs": goal["updatedAtMs"],
+                    "objective": str(goal["objective"])[:500],
+                }
+                audit = goal.get("completionAudit")
+                if goal["status"] == "completed" and isinstance(audit, Mapping):
+                    result["completionAudit"] = {
+                        "auditId": audit["auditId"], "createdAtMs": audit["createdAtMs"],
+                        "summary": str(audit["summary"])[:800],
+                        "evidence": [{key: str(item.get(key) or "")[:1000 if key == "reference" else 400]
+                                      for key in ("kind", "reference", "summary")}
+                                     for item in audit["evidence"][:4] if isinstance(item, Mapping)],
+                        "evidenceOmitted": max(0, len(audit["evidence"]) - 4),
+                    }
+                results.append(result)
+            return results
+
     def set_role_book_revision(
         self,
         session_id: str,

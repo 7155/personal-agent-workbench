@@ -562,6 +562,7 @@ class AgentService:
                     self._execution_policy_prompt_for_session
                 ),
                 personal_profile_context=self.memory_context_application.personal_profile_context,
+                primary_task_results_context=self.memory_context_application.primary_task_results_context,
                 memory_items_filter=self.memory_context_application.current_memory_items,
                 memory_enabled_provider=self.memory_enabled,
                 session_memory_enabled_provider=self._session_memory_disclosed,

@@ -49,6 +49,7 @@ class AgentPromptDeliveryService:
         memory_enabled_provider: Callable[[], bool] | None = None,
         session_memory_enabled_provider: Callable[[str], bool] | None = None,
         personal_profile_context: Callable[[str], str] | None = None,
+        primary_task_results_context: Callable[[str], str] | None = None,
         memory_items_filter: Callable[[str, list[Mapping[str, object]]], list[Mapping[str, object]]] | None = None,
     ) -> None:
         self.sessions = sessions
@@ -58,6 +59,7 @@ class AgentPromptDeliveryService:
         self.room_admission_gate = room_admission_gate
         self._session_memory_enabled_provider = session_memory_enabled_provider
         self._personal_profile_context = personal_profile_context
+        self._primary_task_results_context = primary_task_results_context
         self._memory_items_filter = memory_items_filter
         self.room_public_recovery_context = (
             room_public_recovery_context
@@ -187,6 +189,7 @@ class AgentPromptDeliveryService:
                 for value in (
                     self.execution_policy_context(session),
                     self._profile_context(session_id, delivery=delivery),
+                    self._primary_results_context(session_id, delivery=delivery),
                     render_provider_context_items(task_brief_items),
                     memory_context,
                     (
@@ -326,6 +329,14 @@ class AgentPromptDeliveryService:
             "prompt": prompt,
             "charCount": len(prompt),
         }
+
+    def _primary_results_context(self, session_id: str, *, delivery: str) -> str:
+        if delivery != "prompt" or self._primary_task_results_context is None:
+            return ""
+        try:
+            return self._primary_task_results_context(session_id)
+        except Exception:
+            return ""
 
     def _profile_context(self, session_id: str, *, delivery: str) -> str:
         # Steer/follow-up belong to the already active turn. The Host queues

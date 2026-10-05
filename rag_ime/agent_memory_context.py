@@ -10,7 +10,7 @@ from numbers import Real
 from threading import RLock
 from typing import Any
 
-from .agent_context_runtime import render_provider_context_items
+from .agent_context_runtime import render_primary_task_results, render_provider_context_items
 from .agent_memory_context_support import (
     last_user_recall_text,
     recall_message_text,
@@ -197,7 +197,7 @@ class AgentMemoryContextService:
     ) -> dict[str, object]:
         session_id = str(payload.get("sessionId") or "")
         if not self._memory_enabled(session_id):
-            return _memory_disabled_refresh(session_id, session_context=self.task_brief_context(session_id))
+            return _memory_disabled_refresh(session_id, session_context=self.primary_work_context(session_id))
         try:
             return self._refresh(payload)
         except Exception as exc:
@@ -215,7 +215,7 @@ class AgentMemoryContextService:
                     session_id, error=exc,
                     trigger=str(payload.get("trigger") or "session_start"),
                     profile_context="\n\n".join(part for part in (
-                        self.task_brief_context(session_id), self.personal_profile_context(session_id),
+                        self.primary_work_context(session_id), self.personal_profile_context(session_id),
                     ) if part),
                 )
             raise
@@ -335,7 +335,7 @@ class AgentMemoryContextService:
         )
         rendered = "\n\n".join(
             part for part in (
-                self.task_brief_context(session_id),
+                self.primary_work_context(session_id),
                 self.personal_profile_context(session_id),
                 render_provider_context_items(self.current_memory_items(session_id, [{
                     "sourceKind": specification["source_kind"], "title": specification["title"],
@@ -475,15 +475,15 @@ class AgentMemoryContextService:
         Session recovery protocol.
         """
 
-        task_brief = self.task_brief_context(session_id)
+        primary_work = self.primary_work_context(session_id)
         if not self._memory_enabled(session_id):
-            return task_brief
+            return primary_work
 
         try:
             materialized = self.context_runtime.materialize(session_id)
         except Exception:
             if self._personal_profile_scope(session_id):
-                return "\n\n".join(part for part in (task_brief, self.personal_profile_context(session_id)) if part)
+                return "\n\n".join(part for part in (primary_work, self.personal_profile_context(session_id)) if part)
             raise
         allowed_source_kinds = {"memory_bootstrap"}
         items = [
@@ -494,11 +494,30 @@ class AgentMemoryContextService:
         ]
         return "\n\n".join(
             part for part in (
-                task_brief,
+                primary_work,
                 self.personal_profile_context(session_id),
                 render_provider_context_items(self.current_memory_items(session_id, items)),
             ) if part
         )
+
+    def primary_work_context(self, session_id: str) -> str:
+        return "\n\n".join(part for part in (
+            self.task_brief_context(session_id), self.primary_task_results_context(session_id),
+        ) if part)
+
+    def primary_task_results_context(self, session_id: str) -> str:
+        """Fresh owned-task receipts survive reopen/compaction and memory-off."""
+        try:
+            session = self.sessions.get(session_id)
+            metadata = session.get("metadata")
+            if (not isinstance(metadata, Mapping) or metadata.get("primaryAssistant") is not True
+                or not str(metadata.get("assistantId") or "").strip()
+                or isinstance(session.get("roomParticipant"), Mapping)):
+                return ""
+            return render_primary_task_results(self.sessions.primary_task_results(session_id))
+        except Exception:
+            # Return empty on failure so the managed provider layer clears old results.
+            return ""
 
     def task_brief_context(self, session_id: str) -> str:
         """Restore the current authorized TaskBrief independently of memory."""
@@ -510,7 +529,7 @@ class AgentMemoryContextService:
                 or not str(metadata.get("assistantId") or "").strip()
                 or isinstance(session.get("roomParticipant"), Mapping)):
                 return ""
-            item = self.context_runtime.active_item(session_id, source_kind="primary_task_brief")
+            item = self.context_runtime.active_item(session_id, source_kind="primary_task_brief", include_payload=True)
             return render_provider_context_items([item]) if isinstance(item, Mapping) else ""
         except Exception:
             # Deletion/history rewrite revokes the persisted item. Never hold
