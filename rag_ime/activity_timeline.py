@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
@@ -11,7 +10,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from .activity_timeline_curation import (
     ActivityOrganizationPacket,
@@ -21,6 +19,7 @@ from .activity_timeline_curation import (
 )
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations
+from .local_calendar import resolve_calendar_timezone as _resolve_timezone
 from .memory_ingest import normalize_text
 from .memory_projection import RETRIEVAL_DOCS_PROJECTION, enqueue_memory_projection
 from .sensitive_content import is_redacted_or_sensitive
@@ -2177,22 +2176,6 @@ def _validated_month(value: str) -> date:
         return date.fromisoformat(f"{text}-01")
     except ValueError as exc:
         raise ValueError("timeline_month must use YYYY-MM") from exc
-
-
-def _resolve_timezone(value: str) -> tzinfo:
-    name = compact_whitespace(value)
-    if name:
-        try:
-            return ZoneInfo(name)
-        except Exception as exc:
-            raise ValueError(f"unknown timezone: {name}") from exc
-    local = datetime.now().astimezone().tzinfo
-    local_key = compact_whitespace(str(getattr(local, "key", "") or ""))
-    if local_key:
-        return local or ZoneInfo("UTC")
-    # macOS commonly exposes only the ambiguous abbreviation ``CST`` here.
-    # Persist an IANA name so semantic packets remain replayable and valid.
-    return ZoneInfo(os.environ.get("RAG_IME_TIMEZONE", "Asia/Shanghai"))
 
 
 def _timezone_name(value: tzinfo) -> str:

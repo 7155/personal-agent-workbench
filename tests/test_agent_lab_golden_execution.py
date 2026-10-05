@@ -700,9 +700,15 @@ class GoldenExecutionTests(unittest.TestCase):
         app.command({"action": "resume", "input": {"jobId": "job-1"}})
         self.assertTrue(bound.wait(2))
         app.close()
+        # close persists interruption and requests cancellation without waiting
+        # for the adapter. Its terminal state is not a worker-exit barrier.
+        self.assertEqual(store.job["state"], "interrupted")
         release.set()
+        self.assertIsNotNone(app._pool)
+        app._pool.shutdown(wait=True)
         self.wait_state(store, {"interrupted"})
         calls = len(pi.calls)
+        self.assertEqual(calls, 1)  # The original late completion has drained.
         reopened = self.application(store, pi)
         self.assertEqual(reopened.read()["suite"]["jobs"][0]["state"], "interrupted")
         self.assertEqual(len(pi.calls), calls)
