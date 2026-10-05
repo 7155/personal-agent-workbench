@@ -1,9 +1,9 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-03T06:49:52.253329+00:00",
+  "generatedAt": "2026-10-03T21:52:13+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "codex/paw-main-integration-20261003",
+    "branch": "fix/paw-polish-integration-20261004",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
     "candidateCommitPolicy": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance."
   },
@@ -115,7 +115,7 @@
     },
     "room_frontend": {
       "description": "Room partner windows, readable replies, sidebars and responsive layout.",
-      "pathCount": 20
+      "pathCount": 21
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -171,14 +171,18 @@
     },
     "durable_desktop_iteration": {
       "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
-      "pathCount": 26
+      "pathCount": 28
+    },
+    "temporal_query_preservation": {
+      "description": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim.",
+      "pathCount": 3
     }
   },
   "summary": {
-    "pathCount": 1896,
+    "pathCount": 1902,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1580
+      "keep_release": 1586
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -187,7 +191,7 @@
       "composition_refactor": 32,
       "conversation_controls": 61,
       "conversation_v2_integration": 49,
-      "durable_desktop_iteration": 26,
+      "durable_desktop_iteration": 28,
       "earth_research": 113,
       "jev_integration": 10,
       "knowledge_runtime": 12,
@@ -211,12 +215,13 @@
       "refactor_verification": 66,
       "references_history": 8,
       "release_scope": 1,
-      "room_frontend": 20,
+      "room_frontend": 21,
       "room_history_codemode": 59,
       "room_service_refactor": 43,
       "scheduled_tasks": 25,
       "second_brain": 24,
       "session_full_access": 8,
+      "temporal_query_preservation": 3,
       "trace_optimization": 61,
       "verification": 111,
       "voice_desktop": 19,
@@ -2983,6 +2988,13 @@
       "group": "pi1_final_integration",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/contracts/agent-compaction-target.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Retain the public TypeScript contract for exact native Durable Session compaction identity. Source-only inventory repair; installed and native foreground acceptance remain separate.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/contracts/agent-reducer.test.ts",
@@ -6849,6 +6861,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomWorkspace.recovery.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_frontend",
+      "reason": "Verify held Room input recovery across pagehide, unmount and connection changes without replaying accepted or uncertain commands."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomWorkspace.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -9628,6 +9647,13 @@
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
     },
     {
+      "path": "rag_ime/contracts/compaction_target.py",
+      "group": "durable_desktop_iteration",
+      "reason": "Retain the public Python contract for exact native Durable Session compaction identity. Source-only inventory repair; installed and native foreground acceptance remain separate.",
+      "disposition": "keep_release",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
       "status": "modified",
       "disposition": "keep_release",
@@ -11012,6 +11038,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/temporal_query.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "temporal_query_preservation",
+      "reason": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim."
     },
     {
       "path": "rag_ime/trace_diagnostics.py",
@@ -12827,6 +12860,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_knowledge_workbench.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "temporal_query_preservation",
+      "reason": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim."
+    },
+    {
       "path": "tests/test_lab_extension_example.py",
       "status": "added",
       "group": "refactor_verification",
@@ -13378,6 +13418,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_temporal_query.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "temporal_query_preservation",
+      "reason": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim."
     },
     {
       "path": "tests/test_trace_diagnostic_http.py",
