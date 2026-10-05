@@ -155,6 +155,9 @@ export function usePluginCatalog(
     },
     retry: false,
     onSuccess: async () => {
+      // A confirmed change must reach other surfaces even while this page's
+      // inventory refresh is slow. This event never represents an attempt.
+      window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: pluginQueryKeys.installed() }),
         queryClient.invalidateQueries({ queryKey: pluginQueryKeys.skills() }),
@@ -162,7 +165,6 @@ export function usePluginCatalog(
         // Invalidate all session snapshots; only mounted observers refetch.
         queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalogs() }),
       ]);
-      window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT));
     },
   });
   const updateDefaults = useMutation({
