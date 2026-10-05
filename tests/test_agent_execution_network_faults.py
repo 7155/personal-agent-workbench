@@ -16,6 +16,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from tests.sqlite_fixtures import copy_current_database
+from tests.subprocess_startup import StartupDiagnostics
+
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "agent_execution_fault_host.py"
@@ -30,6 +33,7 @@ class _FaultHost:
         self.effects_path = root / "effects.sqlite"
         self.stdout_path = root / "host.stdout"
         self.stderr_path = root / "host.stderr"
+        self.startup = StartupDiagnostics(root / "startup-diagnostics")
         self.process: subprocess.Popen[bytes] | None = None
         try:
             self.port = self._start(hold_terminal=hold_terminal)
@@ -56,6 +60,7 @@ class _FaultHost:
             self.process = subprocess.Popen(
                 command,
                 cwd=ROOT,
+                env=self.startup.environment(),
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 stderr=stderr,
@@ -78,6 +83,7 @@ class _FaultHost:
                 if ready.get("ready") is True:
                     port = ready.get("port")
                     if type(port) is int and 1 <= port <= 65_535:
+                        self.startup.ready()
                         return port
             if self.process.poll() is not None:
                 raise AssertionError(self._host_logs())
@@ -85,7 +91,8 @@ class _FaultHost:
         raise AssertionError("fixture host did not become ready\n" + self._host_logs())
 
     def _host_logs(self) -> str:
-        output = []
+        returncode = self.process.poll() if self.process is not None else "not started"
+        output = [f"fixture process returncode: {returncode}"]
         for path in (self.stdout_path, self.stderr_path):
             try:
                 output.append(f"{path.name}: {path.read_text(encoding='utf-8')[-2000:]}")
@@ -189,6 +196,9 @@ def _temporary_host(*, prefix: str, hold_terminal: bool = False):
     # wait/reap complete before TemporaryDirectory removes the SQLite files.
     with tempfile.TemporaryDirectory(prefix=prefix) as directory:
         root = Path(directory)
+        # Schema construction is fixture setup; the child still initializes its Store.
+        # F2 restarts via _managed_host and reopens this same database unchanged.
+        copy_current_database(root / "trials.sqlite")
         with _managed_host(root, hold_terminal=hold_terminal) as host:
             yield root, host
 

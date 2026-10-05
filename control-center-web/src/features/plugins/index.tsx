@@ -22,7 +22,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { presentSkill } from './skill-presentation';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -619,7 +619,11 @@ export function PluginsFeature() {
               const id = itemKey(item);
               const selectedItem = id === selectedId;
               return (
-                <button aria-pressed={selectedItem} className="plugins-list__item" data-selected={selectedItem || undefined} key={id} onClick={(event) => { selectedTriggerRef.current = event.currentTarget; setSelectedId(id); }} type="button">
+                <button aria-pressed={selectedItem} className="plugins-list__item" data-selected={selectedItem || undefined} key={id} onClick={(event) => {
+                  selectedTriggerRef.current = event.currentTarget;
+                  if (selectedItem) revealStackedPluginDetail(event.currentTarget.closest('.plugins-browser')?.querySelector<HTMLElement>('.plugins-detail') ?? null);
+                  setSelectedId(id);
+                }} type="button">
                   <span className="plugins-list__copy">
                     <small>{publicCapabilitySourceLabel(item.source.label)} · {capabilityKindLabel(item.kind)}</small>
                     <strong>{publicCapabilityDisplayName(item)}</strong>
@@ -958,7 +962,11 @@ export function PluginsFeature() {
                   className="plugins-list__item skills-list__item"
                   data-selected={isSelected || undefined}
                   key={id}
-                  onClick={(event) => { selectedSkillTriggerRef.current = event.currentTarget; setSelectedSkillId(id); }}
+                  onClick={(event) => {
+                    selectedSkillTriggerRef.current = event.currentTarget;
+                    if (isSelected) revealStackedPluginDetail(event.currentTarget.closest('.plugins-browser')?.querySelector<HTMLElement>('.plugins-detail') ?? null);
+                    setSelectedSkillId(id);
+                  }}
                   type="button"
                 >
                   <span className="plugins-list__copy">
@@ -1419,6 +1427,17 @@ function NativeConsole({
     </section>
   );
 }
+// A stacked list/detail view needs an explicit arrival point. Read the actual
+// grid result so this follows the feature container, not an assumed viewport.
+function revealStackedPluginDetail(detail: HTMLElement | null) {
+  const browser = detail?.parentElement;
+  if (!detail || !browser) return;
+  const columns = window.getComputedStyle(browser).gridTemplateColumns.trim();
+  if (!/^\d+(?:\.\d+)?px$/.test(columns) || Number.parseFloat(columns) <= 0) return;
+  detail.focus({ preventScroll: true });
+  detail.scrollIntoView({ behavior: 'instant', block: 'start' });
+}
+
 function SkillDetail({
   detail,
   detailError,
@@ -1448,6 +1467,10 @@ function SkillDetail({
   onUpdate: () => void;
   update?: Record<string, unknown>;
 }) {
+  const detailRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    revealStackedPluginDetail(detailRef.current);
+  }, [item.skillId]);
   const sourceKind = stringValue(item.sourceKind);
   const packageId = stringValue(item.packageId);
   const actions = stringArray(item.actions);
@@ -1460,7 +1483,7 @@ function SkillDetail({
   const enabled = item.enabled === true;
 
   return (
-    <aside aria-label="Skill 详情" className="plugins-detail skills-detail">
+    <aside aria-label="Skill 详情" className="plugins-detail skills-detail" ref={detailRef} tabIndex={-1}>
       <div className="plugins-detail__toolbar">
         <span>Skill 详情</span>
         <IconButton
@@ -1574,6 +1597,10 @@ function ToolDetail({
   sessionOwnerId?: string;
   sessionPreference: CapabilityPreference;
 }) {
+  const detailRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    revealStackedPluginDetail(detailRef.current);
+  }, [item.canonicalId]);
   const operations = operationLabelsFor(item);
   const unknownOperationCount = Math.max(
     0,
@@ -1585,7 +1612,7 @@ function ToolDetail({
   const requiresRoom = capabilityNeedsRoomContext(item);
 
   return (
-    <aside aria-label="能力详情" className="plugins-detail">
+    <aside aria-label="能力详情" className="plugins-detail" ref={detailRef} tabIndex={-1}>
       <div className="plugins-detail__toolbar">
         <span>能力详情</span>
         <IconButton

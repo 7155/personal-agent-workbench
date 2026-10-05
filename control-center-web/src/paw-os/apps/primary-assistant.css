@@ -43,7 +43,7 @@
 .paw-primary-home__folder { display: flex; gap: 7px; align-items: center; padding: 7px 9px; }
 .paw-primary-home__folder input { min-width: 0; flex: 1; background: none; border: 0; color: #314d3a; }
 .paw-primary-home__folder button { background: none; border: 0; flex: none; font-size: 10px; color: #476d52; }
-.paw-primary-home__scope .paw-primary-home__consent { display: flex; align-items: flex-start; gap: 7px; line-height: 1.6; }
+.paw-primary-home__consent { display: flex; align-items: flex-start; gap: 7px; padding: 10px 20px; margin: 0; border-top: 1px solid #edf0eb; color: #526858; font-size: 11px; line-height: 1.6; }
 .paw-primary-home__consent input { margin: 2px 0 0; accent-color: #315541; flex: none; }
 .paw-primary-home__error { display: flex; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid #e1ccab; border-radius: 8px; color: #8c5c22; background: #fffaf0; font-size: 12px; }
 .paw-primary-home__error button { border: 0; color: inherit; text-decoration: underline; background: none; }
@@ -80,6 +80,10 @@
 .paw-primary-home__composer > :not(.paw-primary-home__fields) { flex: none; }
 .paw-primary-home__fields { min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .paw-primary-home__fields > textarea { box-sizing: border-box; }
+/* The rounded form owns the main editor focus ring, not a square inner box. */
+.paw-primary-home__composer:has(.paw-primary-home__fields > textarea:focus-visible) { outline: 2px solid var(--color-focus, #537c66); outline-offset: 2px; }
+.paw-desktop-root[data-paw-visual] .paw-primary-home .paw-primary-home__fields > textarea:focus-visible { outline: 0; }
+.paw-primary-home .paw-primary-home__scope textarea:focus-visible { outline-offset: 2px; }
 .paw-primary-home__field-counter { display: block; margin: 0 20px 4px; color: var(--color-text-muted); font-size: 11px; text-align: right; }
 .paw-primary-home__field-error { margin: 4px 20px; color: var(--color-danger, #a03c35); font-size: 11px; line-height: 1.6; }
 .paw-primary-home__scope > .paw-primary-home__field-error { margin-inline: 0; }

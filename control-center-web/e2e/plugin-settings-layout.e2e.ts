@@ -23,6 +23,14 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await trigger.click();
       const detail = shell.getByRole('complementary', { name: view === 'skills' ? 'Skill 详情' : '能力详情' });
       await expect(detail).toBeVisible();
+      await expect(detail).toBeFocused();
+      await expect(detail.locator('.plugins-detail__toolbar')).toBeInViewport({ ratio: 1 });
+      await trigger.click();
+      await expect(detail).toBeFocused();
+      await expect(detail.locator('.plugins-detail__toolbar')).toBeInViewport({ ratio: 1 });
+      await testInfo.attach('plugins-' + view + '-detail-arrival-' + reducedMotion + '.png', {
+        body: await shell.screenshot(), contentType: 'image/png',
+      });
       const browser = shell.locator('.plugins-browser');
       const geometry = await browser.evaluate((node) => {
         const rect = node.getBoundingClientRect();
@@ -44,7 +52,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       expect(geometry.detailRight).toBeLessThanOrEqual(geometry.right + 1);
 
       const close = detail.getByRole('button', { name: view === 'skills' ? '关闭 Skill 详情' : '关闭能力详情' });
-      await close.scrollIntoViewIfNeeded();
       await expect.poll(() => receivesPointer(close)).toBe(true);
       await close.focus();
       await page.keyboard.press('Escape');

@@ -10,6 +10,10 @@
 .memory-profile__paragraph label small { font-size: 10px; color: #94a08e; }
 .memory-profile__paragraph textarea { width: 100%; min-height: 77px; display: block; resize: vertical; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; line-height: 1.85; padding: 11px 0; }
 .memory-profile__paragraph textarea::placeholder { color: #a4afa0; }
+.memory-profile__paragraph:has(textarea:focus-visible) { outline: 2px solid var(--color-focus, #537c66); outline-offset: 2px; }
+.paw-desktop-root[data-paw-visual] .memory-profile .memory-profile__paragraph textarea:focus-visible { outline: 0; }
+.memory-profile .memory-profile__invalid-count, .memory-profile__field-error { color: var(--color-danger, #a03c35); }
+.memory-profile__field-error { margin: 6px 0; font-size: 12px; line-height: 1.6; }
 .memory-profile__paragraph footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px solid #edf0e7; font-size: 10px; color: #99a391; }
 .memory-profile__paragraph footer div { display: flex; gap: 10px; }
 .memory-profile__paragraph footer button { border: 0; padding: 0; background: none; color: #587446; font: inherit; font-size: 10px; cursor: pointer; }

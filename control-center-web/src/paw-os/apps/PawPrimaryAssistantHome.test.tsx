@@ -25,6 +25,20 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 describe('primary assistant home', () => {
+  it('keeps scope consent beside the fixed action instead of inside scrolling fields', async () => {
+    setup();
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox.closest('.paw-primary-home__fields')).toBeNull();
+    expect(checkbox.closest('label')?.nextElementSibling?.tagName).toBe('FOOTER');
+    expect(checkbox).toBeDisabled();
+    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/other' } });
+    expect(checkbox).not.toBeChecked();
+  });
   it.each([
     { name: 'objective', objective: 'x'.repeat(4001), criteria: '', field: '和我的助手聊聊' },
     { name: 'criteria count', objective: '检查项目', criteria: Array(21).fill('通过').join('\n'), field: '完成标准' },

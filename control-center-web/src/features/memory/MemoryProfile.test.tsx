@@ -17,6 +17,23 @@ function setup(save: MockRouteHandler, read: MockRouteHandler = profile) {
   return { transport, onOpenReference, ...view };
 }
 describe('editable personal profile', () => {
+  it('associates an overlong paragraph with its nearby explanation without truncating it', async () => {
+    const { transport } = setup({});
+    const input = await screen.findByRole('textbox', { name: '个人背景 1' });
+    const draft = 'x'.repeat(4001);
+    fireEvent.change(input, { target: { value: draft } });
+    expect(input).toHaveValue(draft);
+    expect(input).toHaveAccessibleDescription('这条背景最多 600 字，请精简后保存。草稿已完整保留。');
+    const hint = document.getElementById(input.getAttribute('aria-describedby')!);
+    expect(hint?.nextElementSibling).toBe(input);
+    expect(screen.getByRole('button', { name: '保存修改' })).toHaveAccessibleDescription('全部背景最多 4000 字（含段间空行），请精简后保存。草稿已完整保留。');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'memory.profile.save')).toHaveLength(0);
+    fireEvent.change(input, { target: { value: '修正后的背景' } });
+    expect(input).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  });
   it('includes paragraph separators in the rendered budget before saving', async () => {
     const many: PersonalProfile = { ...profile, text: Array(7).fill('a').join('\n\n'), paragraphs: Array.from({ length: 7 }, (_, index) => ({ ...profile.paragraphs[0], id: `card-${index}`, memoryIds: [`card-${index}`], text: 'a' })) };
     const pending = deferred<unknown>();

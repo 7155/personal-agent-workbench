@@ -1,7 +1,7 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { createPreviewTransport } from '@/app/preview-control-transport';
@@ -16,6 +16,7 @@ import { requireCapabilityCatalog } from './capability-policy';
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   onlineManager.setOnline(true);
 });
 
@@ -1334,6 +1335,56 @@ describe('PluginsFeature', () => {
     await user.click(screen.getByRole('button', { name: '重新读取技能' }));
     expect(await screen.findByText('没有找到 Skill')).toBeVisible();
     expect(screen.getByRole('textbox', { name: '搜索' })).toHaveValue('my draft search');
+  });
+
+  it.each([
+    { view: 'skills', columns: '516px', stacked: true },
+    { view: 'skills', columns: '320px 400px', stacked: false },
+    { view: 'capabilities', columns: '516px', stacked: true },
+    { view: 'capabilities', columns: '320px 400px', stacked: false },
+  ])('reveals $view detail only for the actual $columns layout, without scrolling again on refresh', async ({ view, columns, stacked }) => {
+    const user = userEvent.setup();
+    const originalStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = originalStyle(element, pseudo);
+      if (element.classList.contains('plugins-browser')) {
+        Object.defineProperty(style, 'gridTemplateColumns', { configurable: true, value: columns });
+      }
+      return style;
+    });
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    const transport = renderPlugins({
+      'agent.extensions.skills.list': { ok: true, runtimeAvailable: true, items: [
+        { skillId: 'project:guide', name: 'Project Guide', sourceKind: 'project', enabled: null, management: 'inspect_only' },
+      ] },
+      'agent.extensions.skills.get': { ok: true, item: { body: 'Readable skill instructions' } },
+    }, '/plugins?view=' + view, true);
+    const list = await screen.findByRole('group', { name: view === 'skills' ? 'Skill 列表' : '能力列表' });
+    const trigger = within(list).getAllByRole('button')[0];
+    await user.click(trigger);
+    const detail = screen.getByRole('complementary', { name: view === 'skills' ? 'Skill 详情' : '能力详情' });
+    const detailScrollCount = () => scroll.mock.contexts.filter((element) => element === detail).length;
+    if (stacked) {
+      expect(detail).toHaveFocus();
+      expect(scroll).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' });
+      expect(detailScrollCount()).toBe(1);
+    } else {
+      expect(trigger).toHaveFocus();
+      expect(detailScrollCount()).toBe(0);
+    }
+    const inventoryPath = view === 'skills' ? 'agent.extensions.skills.list' : 'agent.tools.list';
+    const reads = transport.requests.filter(({ request }) => request.pathId === inventoryPath).length;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === inventoryPath).length).toBeGreaterThan(reads));
+    expect(detailScrollCount()).toBe(stacked ? 1 : 0);
+    // Returning to the list and choosing the same row is still an explicit
+    // request to read it, even though the selected ID has not changed.
+    await user.click(trigger);
+    expect(detailScrollCount()).toBe(stacked ? 2 : 0);
+    if (stacked) expect(detail).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: view === 'skills' ? 'Skill 详情' : '能力详情' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('clears Skill filters and restores the exact detail trigger after Escape or Close', async () => {
