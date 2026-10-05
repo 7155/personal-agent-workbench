@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from rag_ime.agent_lab.trial_execution import AgentLabTrialApplication
 from rag_ime.agent_lab.trials import AgentLabTrialStore
 from rag_ime.agent_workspace import WorkspaceHarness
+from rag_ime.agent_execution_policy import DANGEROUS_AUTO_APPROVE_TOOL_PROFILE, FULL_TRUST_EXECUTION_MODE
 from rag_ime.eval_run_store import EvalRunStore
 from rag_ime.trace_diagnostics import TraceDiagnosticReportStore
 from rag_ime.trace_optimization import TraceOptimizationStore
@@ -70,6 +74,8 @@ class TraceOptimizationApplicationTests(unittest.TestCase):
                 "planRef": plan["planRef"], "evidenceIds": ["observation:observation:session:a"],
                 "summary": "读取实际输入后统一大写", "expectedEffect": "通过两个冻结用例"}})
 
+    @unittest.skipUnless(sys.platform == "darwin" and os.access("/usr/bin/sandbox-exec", os.X_OK),
+                         "actual network-blocked fixture execution requires the macOS command harness")
     def test_real_registered_versions_execute_compare_and_persist_knowledge(self):
         candidate = self.prepare()
         self.app.command(self.report["reportId"], {"operation": "run_candidate", "candidateId": candidate["candidateId"], "clientRequestId": "run-one"})
@@ -96,6 +102,42 @@ class TraceOptimizationApplicationTests(unittest.TestCase):
         replayed = self.app.command(self.report["reportId"], action)
         self.assertEqual(len(replayed["optimization"]["applications"]), 1)
 
+    def test_missing_managed_harness_cannot_produce_an_improvement(self):
+        self.app.agent.background_jobs.workspace_harness.sandbox_executable = self.root / "missing-sandbox-exec"
+        candidate = self.prepare()
+        self.app.command(self.report["reportId"], {"operation": "run_candidate",
+            "candidateId": candidate["candidateId"], "clientRequestId": "unavailable-harness"})
+        pair = self.app.jobs(self.report["reportId"])[0]
+        workspace = self.app.agent.background_jobs.workspace_harness
+        execute = workspace.execute_cancellable
+        execution_errors = []
+
+        def record_execution_error(*args, **kwargs):
+            try:
+                return execute(*args, **kwargs)
+            except Exception as error:
+                execution_errors.append(str(error))
+                raise
+
+        with patch("rag_ime.agent_workspace.subprocess.Popen",
+                   side_effect=AssertionError("managed fixture must not execute without its sandbox")) as popen, \
+                patch.object(workspace, "execute_cancellable", side_effect=record_execution_error):
+            for role in ("baseline", "candidate"):
+                self.runner.run_job(pair[role]["jobId"])
+                job = self.trials.read(pair[role]["jobId"])["job"]
+                self.assertEqual(job["state"], "failed")
+                self.assertEqual(job["error"], "Scene execution failed; inspect the original execution records.")
+            popen.assert_not_called()
+        self.assertEqual(len(execution_errors), 2)
+        for error in execution_errors:
+            self.assertIn("macOS command harness is unavailable", error)
+        self.app.reconcile(self.report["reportId"])
+        result = self.reports.get(self.report["reportId"])["optimization"]
+        self.assertFalse(result["comparisons"][0]["comparable"])
+        self.assertEqual(result["comparisons"][0]["executionStatus"], "failed")
+        self.assertEqual(result["comparisons"][0]["decision"], "rejected")
+        self.assertNotIn("apply", result["candidates"][0]["availableActions"])
+
     def test_cancel_before_execution_cannot_produce_an_improvement(self):
         candidate = self.prepare()
         self.app.command(self.report["reportId"], {"operation": "run_candidate", "candidateId": candidate["candidateId"], "clientRequestId": "cancel-run"})
@@ -120,11 +162,12 @@ class TraceOptimizationApplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "execute a registered file"):
                 self.versions.register_plan(self.report["reportId"], {"sourcePath": str(path)}, roots=[str(self.root)])
 
-    def test_local_fixture_stop_interrupts_the_running_process(self):
+    def test_full_trust_fixture_stop_interrupts_the_running_process(self):
         harness = WorkspaceHarness()
         prepared = harness.prepare_command({"mode": "coordinator", "workspaceRoots": [str(self.root)],
-            "executionMode": "workspace_managed", "toolProfileVersion": "control-center-v1"},
+            "executionMode": FULL_TRUST_EXECUTION_MODE, "toolProfileVersion": DANGEROUS_AUTO_APPROVE_TOOL_PROFILE},
             {"command": "/usr/bin/python3 -c 'import time; time.sleep(20)'", "cwd": str(self.root), "timeoutSeconds": 25, "allowNetwork": False})
+        self.assertTrue(prepared.unrestricted)  # Process cancellation, not sandbox isolation.
         stop = threading.Event()
         timer = threading.Timer(0.3, stop.set)
         timer.start()

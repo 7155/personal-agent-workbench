@@ -13,6 +13,10 @@ ACTION="${1:-${RAG_IME_SQUIRREL_BUILD_ACTION:-build}}"
 DRY_RUN="${RAG_IME_SQUIRREL_BUILD_DRY_RUN:-0}"
 XCODEBUILD="${RAG_IME_XCODEBUILD:-$(command -v xcodebuild || true)}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+CLT_SDK_ROOT="${RAG_IME_CLT_SDK_ROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk}"
+INSTALL_NAME_TOOL="${RAG_IME_INSTALL_NAME_TOOL:-/usr/bin/install_name_tool}"
+DITTO="${RAG_IME_DITTO:-/usr/bin/ditto}"
+PLISTBUDDY="${RAG_IME_PLISTBUDDY:-/usr/libexec/PlistBuddy}"
 PREINSTALL="${RAG_IME_SQUIRREL_PREINSTALL:-auto}"
 NO_DOWNLOAD="${RAG_IME_SQUIRREL_NO_DOWNLOAD:-0}"
 SKIP_POSTINSTALL="${RAG_IME_SQUIRREL_SKIP_POSTINSTALL:-0}"
@@ -69,7 +73,7 @@ if [[ -n "${DEVELOPER_DIR:-}" && "${DEVELOPER_DIR}" != *" "* ]]; then
   )
 fi
 x11_header_candidates+=(
-  "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Tk.framework/Headers"
+  "$CLT_SDK_ROOT/System/Library/Frameworks/Tk.framework/Headers"
   "/opt/homebrew/include"
   "/usr/local/include"
 )
@@ -126,6 +130,10 @@ Environment:
   RAG_IME_SQUIRREL_SYSTEM_INPUT_METHOD_DIR system Input Methods directory scanned for same-bundle conflicts
   RAG_IME_SQUIRREL_INPUT_SOURCE_ID input source checked after install
   RAG_IME_XCODEBUILD             xcodebuild executable override
+  RAG_IME_CLT_SDK_ROOT           Command Line Tools SDK root override
+  RAG_IME_INSTALL_NAME_TOOL      no-space install_name_tool executable override
+  RAG_IME_DITTO                 archive tool executable override
+  RAG_IME_PLISTBUDDY            plist tool executable override
   RAG_IME_SQUIRREL_BUILD_DRY_RUN print resolved commands without requiring Xcode/workdir
 EOF
 }
@@ -557,17 +565,17 @@ run_squirrel_action_install() {
   local action_status=0
 
   if [[ "${DEVELOPER_DIR:-}" == *" "* ]]; then
-    if [[ ! -x /usr/bin/install_name_tool ]]; then
-      echo "spaceful DEVELOPER_DIR requires /usr/bin/install_name_tool" >&2
+    if [[ "$INSTALL_NAME_TOOL" == *[[:space:]]* || ! -x "$INSTALL_NAME_TOOL" ]]; then
+      echo "spaceful DEVELOPER_DIR requires an executable install_name_tool path without whitespace: $INSTALL_NAME_TOOL" >&2
       return 1
     fi
     # GNU make 3.81 treats a bare MAKEFLAGS value as single-letter flags. Keep
     # command-line variable overrides after the standalone `--` separator so
     # INSTALL_NAME_TOOL does not accidentally enable `-n` (dry-run).
     if [[ " $action_makeflags " == *" -- "* ]]; then
-      action_makeflags="${action_makeflags} INSTALL_NAME_TOOL=/usr/bin/install_name_tool"
+      action_makeflags="${action_makeflags} INSTALL_NAME_TOOL=$INSTALL_NAME_TOOL"
     else
-      action_makeflags="${action_makeflags:+$action_makeflags }-- INSTALL_NAME_TOOL=/usr/bin/install_name_tool"
+      action_makeflags="${action_makeflags:+$action_makeflags }-- INSTALL_NAME_TOOL=$INSTALL_NAME_TOOL"
     fi
     printf '[INFO] overriding Squirrel dependency install_name_tool for a spaceful Xcode path\n'
   fi
@@ -634,8 +642,8 @@ ensure_squirrel_input_source_enabled() {
 prevent_build_product_registration() {
   local info="$PRODUCT_APP/Contents/Info.plist"
   [[ -f "$info" ]] || return 0
-  /usr/libexec/PlistBuddy -c "Set :LSRegisterProhibited true" "$info" >/dev/null 2>&1 ||
-    /usr/libexec/PlistBuddy -c "Add :LSRegisterProhibited bool true" "$info"
+  "$PLISTBUDDY" -c "Set :LSRegisterProhibited true" "$info" >/dev/null 2>&1 ||
+    "$PLISTBUDDY" -c "Add :LSRegisterProhibited bool true" "$info"
   if [[ -x "$LSREGISTER" ]]; then
     "$LSREGISTER" -u "$PRODUCT_APP" >/dev/null 2>&1 || true
   fi
@@ -681,7 +689,7 @@ canonicalize_input_method_bundles() {
     if [[ -x "$LSREGISTER" ]]; then
       "$LSREGISTER" -u "$candidate" >/dev/null 2>&1 || true
     fi
-    /usr/bin/ditto -c -k --keepParent "$candidate" "$destination"
+    "$DITTO" -c -k --keepParent "$candidate" "$destination"
     rm -rf "$candidate"
     moved_count=$((moved_count + 1))
     printf '[OK] archived noncanonical input method app: %s -> %s\n' "$candidate" "$destination"
@@ -910,10 +918,10 @@ install_squirrel_app() {
   cp "$ROOT/macos/Shared/Assets/CompanionStates/"*.png "$INSTALL_STAGING_APP/Contents/Resources/"
   "$ROOT/scripts/support/build_input_menu_icon.sh" \
     "$INSTALL_STAGING_APP/Contents/Resources/RagImeInputMenuIcon.png"
-  /usr/libexec/PlistBuddy -c "Delete :LSRegisterProhibited" "$INSTALL_STAGING_APP/Contents/Info.plist" >/dev/null 2>&1 || true
+  "$PLISTBUDDY" -c "Delete :LSRegisterProhibited" "$INSTALL_STAGING_APP/Contents/Info.plist" >/dev/null 2>&1 || true
   "$ROOT/scripts/support/build_app_icon.sh" "$INSTALL_STAGING_APP/Contents/Resources/RagImeIcon.icns"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile RagImeIcon" "$INSTALL_STAGING_APP/Contents/Info.plist" >/dev/null 2>&1 || \
-    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string RagImeIcon" "$INSTALL_STAGING_APP/Contents/Info.plist"
+  "$PLISTBUDDY" -c "Set :CFBundleIconFile RagImeIcon" "$INSTALL_STAGING_APP/Contents/Info.plist" >/dev/null 2>&1 || \
+    "$PLISTBUDDY" -c "Add :CFBundleIconFile string RagImeIcon" "$INSTALL_STAGING_APP/Contents/Info.plist"
 
   if should_brand_app; then
     RAG_IME_SQUIRREL_APP="$INSTALL_STAGING_APP" \
