@@ -67,6 +67,28 @@ class TimedResult(unittest.TextTestResult):
         self._event("stop", test=test.id(), seconds=elapsed, threads=threading.active_count())
         super().stopTest(test)
 
+    def _print_latest_problem(self, flavour: str, problems: list) -> None:
+        # CI can reach its job deadline before unittest's final error summary.
+        # Keep that summary and result semantics, but flush each traceback now.
+        self.printErrorList(flavour, problems[-1:])
+        self.stream.flush()
+
+    def addError(self, test: unittest.TestCase, err: tuple) -> None:
+        super().addError(test, err)
+        self._print_latest_problem("ERROR", self.errors)
+
+    def addFailure(self, test: unittest.TestCase, err: tuple) -> None:
+        super().addFailure(test, err)
+        self._print_latest_problem("FAIL", self.failures)
+
+    def addSubTest(self, test: unittest.TestCase, subtest: unittest.TestCase, err: tuple | None) -> None:
+        errors, failures = len(self.errors), len(self.failures)
+        super().addSubTest(test, subtest, err)
+        if len(self.errors) > errors:
+            self._print_latest_problem("ERROR", self.errors)
+        if len(self.failures) > failures:
+            self._print_latest_problem("FAIL", self.failures)
+
     def _event(self, event: str, **fields: object) -> None:
         if self.timing is not None:
             self.timing.write(json.dumps({"event": event, **fields}) + "\n")

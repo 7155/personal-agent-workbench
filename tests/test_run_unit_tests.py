@@ -48,6 +48,26 @@ class DiagnosticUnitRunnerTests(unittest.TestCase):
         self.assertEqual(events[-1]["tests"], 2)
         self.assertEqual(events[-1]["skipped"], 0)
 
+    def test_tracebacks_are_printed_before_next_test_without_changing_results(self) -> None:
+        result, events = self.run_fixture(
+            "    def test_a_failure(self): self.fail('early failure sentinel')\n"
+            "    def test_b_error(self): raise RuntimeError('early error sentinel')\n"
+            "    def test_c_subtests(self):\n"
+            "        with self.subTest(kind='failure'): self.fail('early subtest failure sentinel')\n"
+            "        with self.subTest(kind='error'): raise ValueError('early subtest error sentinel')\n"
+            "        with self.subTest(kind='success'): pass\n"
+            "    def test_z_next(self): pass\n"
+        )
+        self.assertEqual(result.returncode, 1)
+        next_test = result.stderr.index('test_z_next (')
+        for message in ('early failure sentinel', 'early error sentinel',
+                        'early subtest failure sentinel', 'early subtest error sentinel'):
+            self.assertLess(result.stderr.index(message), next_test, result.stderr)
+        self.assertEqual(events[-1]['tests'], 4)
+        self.assertEqual(events[-1]['failures'], 2)
+        self.assertEqual(events[-1]['errors'], 2)
+        self.assertFalse(events[-1]['interrupted'])
+
     def test_success_exits_normally_and_releases_its_diagnostic_thread(self) -> None:
         result, events = self.run_fixture("    def test_success(self): pass\n")
         self.assertEqual(result.returncode, 0, result.stderr)
