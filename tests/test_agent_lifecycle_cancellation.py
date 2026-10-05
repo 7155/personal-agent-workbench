@@ -18,6 +18,10 @@ from rag_ime.agent_delegation import (
     AgentDelegationStore,
     _ActiveDelegatedRun,
 )
+from rag_ime.agent_execution_policy import (
+    DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
+    FULL_TRUST_EXECUTION_MODE,
+)
 from rag_ime.agent_service import AgentService
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.agent_workspace import PreparedWorkspaceCommand, WorkspaceHarness
@@ -847,6 +851,15 @@ class AgentLifecycleCancellationTests(unittest.TestCase):
         jobs.close()
 
     def test_goal_cancellation_fences_start_blocked_after_process_spawn(self) -> None:
+        # This race exercises real process ownership, independent of sandbox policy.
+        self.session = self.store.create(
+            title="full-trust lifecycle race",
+            mode="coordinator",
+            tool_profile_version=DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
+            execution_mode=FULL_TRUST_EXECUTION_MODE,
+            workspace_roots=[str(Path(self.tmp.name))],
+        )
+        self.session_id = str(self.session["id"])
         _todo, goal = self._execution_context()
         approval = self.store.create_approval(
             session_id=self.session_id,
@@ -882,13 +895,15 @@ class AgentLifecycleCancellationTests(unittest.TestCase):
             events=lambda *_args, **_kwargs: None,
             workspace_harness=harness,
         )
-        prepared = PreparedWorkspaceCommand(
-            command="python3 -c \"import time; time.sleep(30)\"",
-            cwd=Path(self.tmp.name),
-            roots=(Path(self.tmp.name),),
-            timeout_seconds=60,
-            allow_network=False,
+        prepared = harness.prepare_background_command(
+            self.session,
+            {
+                "command": "python3 -c \"import time; time.sleep(30)\"",
+                "cwd": str(Path(self.tmp.name)),
+                "timeoutSeconds": 60,
+            },
         )
+        self.assertTrue(prepared.unrestricted)
         failures: list[BaseException] = []
 
         def start() -> None:

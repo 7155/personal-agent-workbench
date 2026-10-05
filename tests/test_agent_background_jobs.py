@@ -19,6 +19,10 @@ from urllib.request import Request, urlopen
 import rag_ime.agent_background_jobs as background_job_module
 from rag_ime.agent_background_jobs import _LiveJob
 from rag_ime.agent_background_jobs import AgentBackgroundJobError, AgentBackgroundJobService
+from rag_ime.agent_execution_policy import (
+    DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
+    FULL_TRUST_EXECUTION_MODE,
+)
 from rag_ime.agent_sessions import AgentSessionStore
 from rag_ime.db import sqlite_connection
 from rag_ime.agent_workspace import WorkspaceHarness
@@ -82,6 +86,54 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         self.service.close()
         self.temporary.cleanup()
 
+    def _use_full_trust_process_session(self) -> None:
+        """Exercise process ownership with an explicitly unrestricted Session."""
+        self.session = self.sessions.create(
+            title="full-trust process lifecycle test",
+            mode="coordinator",
+            tool_profile_version=DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
+            execution_mode=FULL_TRUST_EXECUTION_MODE,
+            workspace_roots=[str(self.root)],
+        )
+
+    def test_managed_launch_without_sandbox_fails_before_process_spawn(self) -> None:
+        harness = WorkspaceHarness(
+            sandbox_executable=self.root / "missing-sandbox-exec",
+        )
+        self.service.workspace_harness = harness
+        prepared = harness.prepare_background_command(
+            self.session,
+            {
+                "command": "printf should-not-run",
+                "cwd": str(self.root),
+                "timeoutSeconds": 10,
+            },
+        )
+        self.assertFalse(prepared.unrestricted)
+
+        with patch(
+            "rag_ime.agent_workspace.subprocess.Popen",
+            side_effect=AssertionError("managed command must not spawn without a sandbox"),
+        ) as popen:
+            with self.assertRaisesRegex(
+                AgentBackgroundJobError,
+                "macOS command harness is unavailable; refusing unsandboxed execution",
+            ):
+                self.service.start(str(self.session["id"]), prepared)
+        popen.assert_not_called()
+
+        jobs = self.service.list(str(self.session["id"]))["items"]
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["status"], "failed")
+        self.assertIsNone(jobs[0]["exitCode"])
+        self.assertGreater(jobs[0]["endedAtMs"], 0)
+        self.assertEqual(self.service._live, {})
+        self.assertEqual(
+            [event_type for event_type, _ in self.events],
+            ["background_job_failed"],
+        )
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires the macOS sandbox harness")
     def test_command_completes_with_durable_redacted_logs_and_events(self) -> None:
         raw_secret = "abcdefghijklmnop"
         prepared = self.harness.prepare_background_command(
@@ -96,6 +148,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
             },
         )
 
+        self.assertFalse(prepared.unrestricted)
         receipt = self.service.start(str(self.session["id"]), prepared, label="日志任务")
         job_id = str(receipt["job"]["jobId"])
         job = self._wait_for_terminal(job_id)
@@ -127,7 +180,10 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         finally:
             observer.close()
 
+    @unittest.skipUnless(sys.platform == "darwin", "requires the macOS sandbox harness")
     def test_explicit_shell_exit_preserves_authoritative_exit_receipt(self) -> None:
+        inherited_home = Path(self.temporary.name) / "inherited-home"
+        inherited_home.mkdir()
         prepared = self.harness.prepare_background_command(
             self.session,
             {
@@ -140,7 +196,10 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
             },
         )
 
-        receipt = self.service.start(str(self.session["id"]), prepared)
+        self.assertFalse(prepared.unrestricted)
+        # Keep even a regressed environment boundary away from the real HOME.
+        with patch.dict(os.environ, {"HOME": str(inherited_home)}):
+            receipt = self.service.start(str(self.session["id"]), prepared)
         job_id = str(receipt["job"]["jobId"])
         job = self._wait_for_terminal(job_id)
         logs = self.service.logs(str(self.session["id"]), job_id)
@@ -148,6 +207,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         self.assertEqual(job["status"], "failed")
         self.assertEqual(job["exitCode"], 7)
         self.assertIn("before-explicit-exit", logs["text"])
+        self.assertFalse((inherited_home / "exit.status").exists())
 
     def test_raw_output_preserves_redaction_across_chunks(self) -> None:
         chunk_size = 1_048_576
@@ -313,6 +373,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         self.assertEqual(b"".join(page_bytes), encoded)
 
     def test_terminal_event_publish_exception_does_not_reverse_completion(self) -> None:
+        self._use_full_trust_process_session()
         attempted_events: list[str] = []
 
         def fail_completed_event(
@@ -334,6 +395,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 "timeoutSeconds": 10,
             },
         )
+        self.assertTrue(prepared.unrestricted)
 
         receipt = self.service.start(str(self.session["id"]), prepared)
         job_id = str(receipt["job"]["jobId"])
@@ -353,6 +415,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         self.assertNotIn("background_job_failed", attempted_events)
 
     def test_cancel_stops_process_group_and_persists_receipt(self) -> None:
+        self._use_full_trust_process_session()
         prepared = self.harness.prepare_background_command(
             self.session,
             {
@@ -361,6 +424,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 "timeoutSeconds": 60,
             },
         )
+        self.assertTrue(prepared.unrestricted)
         started = self.service.start(str(self.session["id"]), prepared, label="可取消任务")
         job_id = str(started["job"]["jobId"])
         self._wait_for_log(job_id, "ready")
@@ -458,6 +522,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 )
 
     def test_room_bound_cancel_requires_matching_room_owner(self) -> None:
+        self._use_full_trust_process_session()
         prepared = self.harness.prepare_background_command(
             self.session,
             {
@@ -469,6 +534,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 "timeoutSeconds": 60,
             },
         )
+        self.assertTrue(prepared.unrestricted)
         started = self.service.start(
             str(self.session["id"]),
             prepared,
@@ -504,6 +570,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         self.assertEqual(job["error"], "room_owner_requested")
 
     def test_execution_owner_reattaches_running_job_after_restart(self) -> None:
+        self._use_full_trust_process_session()
         prepared = self.harness.prepare_background_command(
             self.session,
             {
@@ -516,6 +583,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 "timeoutSeconds": 10,
             },
         )
+        self.assertTrue(prepared.unrestricted)
         started = self.service.start(str(self.session["id"]), prepared, label="重启语义")
         job_id = str(started["job"]["jobId"])
         original_pid = started["job"]["pid"]
@@ -719,6 +787,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
             process.wait(timeout=3)
 
     def test_post_spawn_setup_failure_reaps_process_and_cleans_live_resources(self) -> None:
+        self._use_full_trust_process_session()
         class CapturingHarness(WorkspaceHarness):
             launched = None
 
@@ -741,6 +810,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 "timeoutSeconds": 60,
             },
         )
+        self.assertTrue(prepared.unrestricted)
 
         with self.assertRaisesRegex(AgentBackgroundJobError, "event publisher unavailable"):
             self.service.start(str(self.session["id"]), prepared)
@@ -755,6 +825,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
         self.assertIn("event publisher unavailable", failed["error"])
 
     def test_monitor_failure_reaps_process_before_terminalizing(self) -> None:
+        self._use_full_trust_process_session()
         class CapturingHarness(WorkspaceHarness):
             launched = None
 
@@ -784,6 +855,7 @@ class AgentBackgroundJobServiceTests(unittest.TestCase):
                 "timeoutSeconds": 60,
             },
         )
+        self.assertTrue(prepared.unrestricted)
         try:
             receipt = service.start(str(self.session["id"]), prepared)
             job_id = str(receipt["job"]["jobId"])
@@ -994,6 +1066,8 @@ class AgentBackgroundJobHttpTests(unittest.TestCase):
                 {
                     "title": "后台任务 HTTP",
                     "mode": "coordinator",
+                    "toolProfileVersion": DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
+                    "executionMode": FULL_TRUST_EXECUTION_MODE,
                     "workspaceRoots": [str(root)],
                 }
             )["session"]
@@ -1005,6 +1079,7 @@ class AgentBackgroundJobHttpTests(unittest.TestCase):
                     "timeoutSeconds": 60,
                 },
             )
+            self.assertTrue(prepared.unrestricted)
             started = service.agent.background_jobs.start(
                 str(session["id"]),
                 prepared,
