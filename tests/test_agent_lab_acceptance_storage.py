@@ -35,7 +35,7 @@ class AcceptanceGatewayStorageTests(unittest.TestCase):
         from tests.sqlite_fixtures import copy_current_database
         temporary = tempfile.TemporaryDirectory(prefix="paw-acceptance-offline-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.db = self.root / "state.sqlite"
         copy_current_database(self.db)
         self.service = AgentService(db_path=self.db, runtime_config=PiRuntimeConfig(
@@ -54,6 +54,22 @@ class AcceptanceGatewayStorageTests(unittest.TestCase):
         a, b = f.scope_materialize(self.root / "fixture")
         task = f.scope_create_task(self.service, a, "scope-offline")
         proof = f.scope_gateway_proof(self.app.agent_tools, task["session"]["id"], a, b)
+        self.assertTrue(proof["passed"], proof["checks"])
+        self.assertEqual(len(proof["checks"]), 9)
+        self.assertEqual(proof["providerCalls"], 0)
+
+    def test_scope_fixture_through_directory_alias_keeps_canonical_authorization(self):
+        actual = self.root / "actual"
+        actual.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(actual, target_is_directory=True)
+        a, b = f.scope_materialize(alias / "fixture")
+        self.assertEqual(a, actual / "fixture" / "A")
+        self.assertEqual(b, actual / "fixture" / "B")
+        task = f.scope_create_task(self.service, a, "scope-alias-offline")
+        sid = task["session"]["id"]
+        self.assertEqual(self.service.sessions.get(sid)["workspaceRoots"], [str(a)])
+        proof = f.scope_gateway_proof(self.app.agent_tools, sid, a, b)
         self.assertTrue(proof["passed"], proof["checks"])
         self.assertEqual(len(proof["checks"]), 9)
         self.assertEqual(proof["providerCalls"], 0)

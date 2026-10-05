@@ -246,6 +246,9 @@ def memory_projection_checks(service, session_id, case_id):
     return ({'freshProviderProfile': bool(context), 'unrelatedInContext': MEMORY_FIXTURE['unrelated'] in context, 'oldAbsentFromContext': MEMORY_FIXTURE['old'] not in context, 'updatedContextCorrect': (MEMORY_FIXTURE['new'] in context) == wanted}, context)
 
 def scope_materialize(root):
+    # Session authorization stores canonical paths, including macOS temporary
+    # directories reached through /var and explicitly supplied directory aliases.
+    root = Path(root).resolve()
     a = root / 'A'
     b = root / 'B'
     a.mkdir(parents=True, exist_ok=False)
