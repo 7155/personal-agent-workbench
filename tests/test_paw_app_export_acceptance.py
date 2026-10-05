@@ -7,6 +7,10 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from contextlib import ExitStack
+from unittest.mock import patch
+
+from tests.subprocess_startup import StartupCapture
 
 from scripts.eval_paw_app_export_acceptance import (
     ExportAcceptanceError,
@@ -63,15 +67,20 @@ class PawAppExportAcceptanceTests(unittest.TestCase):
         self.assertIn("--output", completed.stdout)
 
     def test_exports_real_app_source_package_and_frontend_with_clean_start_and_eval_parity(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="paw-app-export-test-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="paw-app-export-test-") as temporary, ExitStack() as resources:
             root = Path(temporary)
-            report = run_paw_app_export_acceptance(
-                SOURCE_APP,
-                root / "zhanggui-wenshu.pawos.zip",
-                frontend_dist=self._write_frontend_fixture(root),
-                run_build=False,
-                run_ui_tests=False,
-            )
+            capture = StartupCapture(root / "startup-diagnostics", label="clean-static-export", isolated=True,
+                match=lambda command: isinstance(command, (list, tuple))
+                    and list(command[1:5]) == ["-I", "-u", "-m", "http.server"])
+            resources.callback(capture.close)
+            with capture, patch("scripts.eval_paw_app_export_acceptance.subprocess.Popen", side_effect=capture.popen):
+                report = run_paw_app_export_acceptance(
+                    SOURCE_APP,
+                    root / "zhanggui-wenshu.pawos.zip",
+                    frontend_dist=self._write_frontend_fixture(root),
+                    run_build=False,
+                    run_ui_tests=False,
+                )
 
             self.assertEqual("passed", report["status"])
             self.assertEqual("extension:zhanggui-wenshu", report["source"]["appId"])

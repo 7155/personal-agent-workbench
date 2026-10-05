@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-05T22:20:00+00:00",
+  "generatedAt": "2026-10-05T23:21:17.793126+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "feat/primary-assistant-final-20261004",
@@ -188,13 +188,17 @@
     "primary_assistant_followup": {
       "description": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval.",
       "pathCount": 28
+    },
+    "startup_failure_diagnostics": {
+      "description": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause.",
+      "pathCount": 2
     }
   },
   "summary": {
-    "pathCount": 2031,
+    "pathCount": 2033,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1715
+      "keep_release": 1717
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -236,6 +240,7 @@
       "scheduled_tasks": 25,
       "second_brain": 24,
       "session_full_access": 8,
+      "startup_failure_diagnostics": 2,
       "temporal_query_preservation": 3,
       "trace_optimization": 61,
       "verification": 114,
@@ -13925,11 +13930,25 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_paw_app_export_acceptance.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "startup_failure_diagnostics",
+      "reason": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause."
+    },
+    {
       "path": "tests/test_paw_browser_runtime.py",
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_paw_policy_app_export.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "startup_failure_diagnostics",
+      "reason": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause."
     },
     {
       "path": "tests/test_pawos_frontend_source_map.py",
