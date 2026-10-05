@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import unittest
 from pathlib import Path
 
@@ -39,7 +40,20 @@ class CIWorkflowTests(unittest.TestCase):
             "test_doctor_squirrel_integration.py",
         )
 
-        self.assertEqual(workflow.count("python -m unittest discover -s tests"), 2)
+        jobs = yaml.safe_load(workflow)["jobs"]
+        for job_name, step_name, minutes in (
+            ("python", "Run unit suite", 30),
+            ("macos", "Run full macOS unit suite", 60),
+        ):
+            with self.subTest(job=job_name):
+                job = jobs[job_name]
+                step = next(step for step in job["steps"] if step.get("name") == step_name)
+                self.assertEqual(shlex.split(step["run"]), [
+                    "python", "scripts/run_unit_tests.py", "--pattern", "test*.py",
+                    "--timing-jsonl", "$RUNNER_TEMP/paw-unit-timing.jsonl",
+                ])
+                self.assertEqual(step["env"]["PYTHONWARNINGS"], "error::ResourceWarning")
+                self.assertEqual(job["timeout-minutes"], minutes)
         self.assertIn("Run full macOS unit suite", workflow)
         for name in mac_only_modules:
             source = (ROOT / "tests" / name).read_text(encoding="utf-8")
