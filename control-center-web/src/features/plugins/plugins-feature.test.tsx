@@ -1081,6 +1081,31 @@ describe('PluginsFeature', () => {
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
   });
 
+  it.each(['source', 'catalog', 'update'] as const)('retires old approval when %s preparation fails before preview', async (entry) => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      ...(entry === 'update' ? { 'agent.extensions.catalog': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', latestVersion: '1.1.0', installed: true, updateAvailable: true, actionable: true }] } } : {}),
+      'agent.extensions.validate': () => { throw new Error('来源准备失败'); },
+    });
+    await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
+    const card = await screen.findByRole('article', { name: '对话复盘 Package' });
+    await user.click(within(card).getByRole('button', { name: '停用' }));
+    expect(await screen.findByRole('button', { name: '确认更改' })).toBeEnabled();
+    if (entry === 'source') {
+      await user.type(screen.getByRole('textbox', { name: 'Pi Package 来源' }), 'npm:example-package');
+      await user.click(screen.getByRole('button', { name: '检查并预览' }));
+    } else if (entry === 'update') {
+      await user.click(within(card).getByRole('button', { name: '更新到 v1.1.0' }));
+    } else {
+      await user.click(screen.getByRole('button', { name: '查看安装内容' }));
+    }
+    expect(await screen.findByText('来源准备失败')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.preview')).toHaveLength(1);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
+  });
+
   it('does not let a proposal replace an in-flight lifecycle intent', async () => {
     const user = userEvent.setup();
     let finishPreview!: (value: unknown) => void;

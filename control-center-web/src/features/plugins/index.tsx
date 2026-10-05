@@ -374,88 +374,75 @@ export function PluginsFeature() {
     }
     await updateProjectPreference(item, defaultMutation.preference, refreshed.data);
   };
-  const previewInstalledAction = async (action: 'enable' | 'disable' | 'uninstall' | 'rollback', pluginId: string) => {
-    setLifecycleError('');
-    setLifecycleReceipt(undefined);
-    setPendingChange({});
-    setValidation({});
-    try {
-      setPendingChange(asRecord(await preview.mutateAsync({ action, pluginId })));
-    } catch (error) {
-      setLifecycleError(errorMessage(error));
-    }
-  };
-
-  const previewCatalogAction = async (item: Record<string, unknown>) => {
-    setLifecycleError('');
-    setLifecycleReceipt(undefined);
-    setPendingChange({});
-    setValidation({});
-    try {
-      const validationResult = asRecord(await validate.mutateAsync({
-        catalogId: stringValue(item.id),
-        catalogVersion: stringValue(item.latestVersion),
-      }));
-      setValidation(validationResult);
-      setPendingChange(asRecord(await preview.mutateAsync({
-        action: item.updateAvailable === true ? 'update' : 'install',
-        validationToken: stringValue(validationResult.validationToken),
-        enable: item.installed === true ? item.enabled === true : enableAfterInstall,
-      })));
-    } catch (error) {
-      setLifecycleError(errorMessage(error));
-    }
-  };
-
-  const previewInstalledUpdate = async (
-    plugin: Record<string, unknown>,
-    catalogItem: Record<string, unknown>,
+  // All entry points share the same approval lifecycle. Source preparation
+  // supplies only the reviewed request; this owner publishes its preview.
+  const prepareLifecyclePreview = async (
+    prepare: () => Promise<Parameters<typeof preview.mutateAsync>[0]>,
   ) => {
     setLifecycleError('');
     setLifecycleReceipt(undefined);
     setPendingChange({});
     setValidation({});
     try {
-      const validationResult = asRecord(await validate.mutateAsync({
-        catalogId: stringValue(catalogItem.id),
-        catalogVersion: stringValue(catalogItem.latestVersion),
-      }));
-      setValidation(validationResult);
-      setPendingChange(asRecord(await preview.mutateAsync({
-        action: 'update',
-        validationToken: stringValue(validationResult.validationToken),
-        enable: plugin.enabled === true,
-      })));
+      const request = await prepare();
+      setPendingChange(asRecord(await preview.mutateAsync(request)));
     } catch (error) {
       setLifecycleError(errorMessage(error));
     }
   };
 
-  const previewPackageSource = async () => {
-    const source = packageSource.trim();
-    setLifecycleError('');
-    setLifecycleReceipt(undefined);
-    setValidation({});
-    setPendingChange({});
-    if (!source) {
-      setLifecycleError('请输入 npm 包、Git 地址或本地 Pi Package 目录。');
-      return;
-    }
-    try {
-      const validationResult = asRecord(await validate.mutateAsync({ packageSource: source }));
-      const extension = asRecord(validationResult.extension);
-      const pluginId = stringValue(extension.id);
-      const installedPackage = installedItems.find((item) => stringValue(item.id) === pluginId);
-      setValidation(validationResult);
-      setPendingChange(asRecord(await preview.mutateAsync({
-        action: installedPackage ? 'update' : 'install',
-        validationToken: stringValue(validationResult.validationToken),
-        enable: installedPackage ? installedPackage.enabled === true : enableAfterInstall,
-      })));
-    } catch (error) {
-      setLifecycleError(errorMessage(error));
-    }
+  const validatePreviewSource = async (source: Parameters<typeof validate.mutateAsync>[0]) => {
+    const result = asRecord(await validate.mutateAsync(source));
+    setValidation(result);
+    return result;
   };
+
+  const previewInstalledAction = (action: 'enable' | 'disable' | 'uninstall' | 'rollback', pluginId: string) => (
+    prepareLifecyclePreview(async () => ({ action, pluginId }))
+  );
+
+  const previewCatalogAction = (item: Record<string, unknown>) => (
+    prepareLifecyclePreview(async () => {
+      const validationResult = await validatePreviewSource({
+        catalogId: stringValue(item.id), catalogVersion: stringValue(item.latestVersion),
+      });
+      return {
+        action: item.updateAvailable === true ? 'update' : 'install',
+        validationToken: stringValue(validationResult.validationToken),
+        enable: item.installed === true ? item.enabled === true : enableAfterInstall,
+      };
+    })
+  );
+
+  const previewInstalledUpdate = (
+    plugin: Record<string, unknown>,
+    catalogItem: Record<string, unknown>,
+  ) => prepareLifecyclePreview(async () => {
+    const validationResult = await validatePreviewSource({
+      catalogId: stringValue(catalogItem.id), catalogVersion: stringValue(catalogItem.latestVersion),
+    });
+    return {
+      action: 'update',
+      validationToken: stringValue(validationResult.validationToken),
+      enable: plugin.enabled === true,
+    };
+  });
+
+  const previewPackageSource = () => prepareLifecyclePreview(async () => {
+    const source = packageSource.trim();
+    if (!source) {
+      throw new Error('请输入 npm 包、Git 地址或本地 Pi Package 目录。');
+    }
+    const validationResult = await validatePreviewSource({ packageSource: source });
+    const extension = asRecord(validationResult.extension);
+    const pluginId = stringValue(extension.id);
+    const installedPackage = installedItems.find((item) => stringValue(item.id) === pluginId);
+    return {
+      action: installedPackage ? 'update' : 'install',
+      validationToken: stringValue(validationResult.validationToken),
+      enable: installedPackage ? installedPackage.enabled === true : enableAfterInstall,
+    };
+  });
 
   const applyPendingChange = async () => {
     setLifecycleError('');
