@@ -136,7 +136,18 @@ export function PawAgentApp({
   }, [initialRoute, selectedSessionId]);
 
   useEffect(() => {
-    setSelection(initialAgentSelection(initialRoute, targetKind, targetId, targetRoomId));
+    setSelection((current) => {
+      const next = initialAgentSelection(initialRoute, targetKind, targetId, targetRoomId);
+      // The desktop acknowledges an in-window selection by normalizing its route.
+      // Keep the submission until the selected workspace can admit it.
+      if (current.kind === 'session' && next.kind === 'session' && current.id === next.id && current.submission) {
+        return { ...next, draft: current.draft, submission: current.submission };
+      }
+      // Likewise, returning to Home must retain the explicit execution intent
+      // and its discussion source. An explicit draft deep link still wins.
+      if (current.kind === 'new' && next.kind === 'new' && !next.draft) return current;
+      return next;
+    });
     setRailOpen(false);
   }, [initialRoute, targetId, targetKind, targetRoomId]);
 

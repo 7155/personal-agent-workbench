@@ -21,12 +21,14 @@ const workspaceLoading = vi.hoisted(() => ({ room: null as Promise<void> | null 
 vi.mock('./PawSessionWorkspace', () => {
   workspaceEvaluations.session += 1;
   return {
-    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string }) => (
+    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialSubmission, onAssistantHome }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string; initialSubmission?: { clientMessageId: string; message: string }; onAssistantHome?: (draft: string, execute: boolean, messageId: string) => void }) => (
       <div>
         Session 工作区
         <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
         <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
         <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
+        <output data-testid="session-initial-submission">{JSON.stringify(initialSubmission)}</output>
+        <button onClick={() => onAssistantHome?.('检查具体目标', true, 'source-cutoff')}>测试交办入口</button>
       </div>
     ),
   };
@@ -58,6 +60,29 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('preserves first submission and discussion handoff across desktop route acknowledgements', async () => {
+    const transport = createTransport();
+    const view = renderAgent(transport, { initialRoute: '/agent' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '第一条消息' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送给我的助手' }));
+    const pending = await screen.findByTestId('session-initial-submission');
+    expect(pending).toHaveTextContent('第一条消息');
+    const submission = pending.textContent;
+    view.rerender(agentTree(transport, { initialRoute: '/agent?session=primary' }));
+    expect(await screen.findByTestId('session-initial-submission')).toHaveTextContent(submission!);
+    fireEvent.click(screen.getByRole('button', { name: '测试交办入口' }));
+    expect(await screen.findByRole('textbox', { name: '本次工作目录' })).toBeVisible();
+    view.rerender(agentTree(transport, { initialRoute: '/agent' }));
+    expect(await screen.findByRole('textbox', { name: '本次工作目录' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('检查具体目标');
+    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/demo' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.primary.tasks.create')).toBe(true));
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.primary.tasks.create')?.request.body).toMatchObject({ sourceSessionId: 'primary', sourceMessageId: 'source-cutoff' });
+  });
   it('makes the stable assistant the default entry while keeping the advanced creator explicit', async () => {
     const transport = createTransport();
     renderAgent(transport, { initialRoute: '/agent' });

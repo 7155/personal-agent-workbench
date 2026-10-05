@@ -47,8 +47,11 @@ it('completes the integrated primary conversation, explicit task, Stop, return a
   const taskList = await screen.findByRole('region', { name: '助手的任务' });
   fireEvent.click(await within(taskList).findByRole('button', { name: /检查主助手入口.*任务未完成/ }, { timeout: 5000 }));
   fireEvent.change(await screen.findByRole('textbox', { name: '消息' }), { target: { value: '继续检查，给我结果' } });
-  fireEvent.click(screen.getByRole('button', { name: '发送' }));
-  await screen.findByText(/这是演示任务的结果/, {}, { timeout: 10000 });
+  const send = screen.getByRole('button', { name: '发送' });
+  await waitFor(() => expect(send).toBeEnabled(), { timeout: 5000 });
+  fireEvent.click(send);
+  await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(3), { timeout: 5000 });
+  await screen.findByText(/这是演示任务的结果/, { selector: 'p' }, { timeout: 10000 });
   fireEvent.click(screen.getByRole('button', { name: '返回我的助手' }));
   await screen.findByRole('button', { name: /检查主助手入口.*已完成/ });
   const tasks = transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create');

@@ -96,9 +96,6 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     if (intent === 'execute' && (!workspace.trim() || !scopeConfirmed)) {
       setError('请指定本次工作的目录，并确认这个目录内的执行权限。'); return;
     }
-    if (intent === 'execute' && /^(?:就)?(?:按(?:照)?|照)(?:刚才|之前|上面|前面)(?:说的|讨论的|的计划|的方案)?(?:做|执行)?[。！!\s]*$|^(?:开始吧|就这样做|按计划做|照着做)[。！!\s]*$/u.test(message)) {
-      setError('请把要做的事和必要背景写进目标。本次任务还不会自动带入先前的讨论。'); return;
-    }
     lock.current = true; setSubmitting(true); setError('');
     const generation = owner.current;
     const sourceMessageId = initialSource?.sessionId === session.id ? initialSource.messageId : undefined;
@@ -157,7 +154,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); }
         }} placeholder={intent === 'discuss' ? '想法、问题，或一件还没想清楚的事…' : '这次要完成什么？'} rows={3} />
         {intent === 'execute' ? <div className="paw-primary-home__scope">
-          <p className="paw-primary-home__scope-note">本次任务使用这里填写的目标、标准和目录，还不会自动带入之前的讨论。请在上方写清要做的事和必要背景。</p>
+          <p className="paw-primary-home__scope-note">会带入这次讨论的近期公开消息作为背景，不包含全部历史。本次目标、完成标准和目录决定执行范围。</p>
           <label>完成标准 <span>可选，每行一项</span><textarea aria-label="完成标准" value={acceptance} disabled={submitting} onChange={event => setAcceptance(event.target.value)} placeholder="例如：测试通过，并说明修改了什么" rows={2} /></label>
           <label>本次工作目录<div className="paw-primary-home__folder"><Folder aria-hidden="true" size={15} /><input aria-label="本次工作目录" value={workspace} disabled={submitting} onChange={event => { setWorkspace(event.target.value); setScopeConfirmed(false); }} placeholder="/path/to/project" />{transport.pickFiles ? <button disabled={submitting} onClick={() => void chooseWorkspace()} type="button">选择目录</button> : null}</div></label>
           {executionRoots.length > 1 ? <ul className="paw-primary-home__root-list" aria-label="本次授权目录">{executionRoots.map(root => <li key={root}>{root}</li>)}</ul> : null}

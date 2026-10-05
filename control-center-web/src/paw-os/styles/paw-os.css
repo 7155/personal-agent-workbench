@@ -157,6 +157,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    plane only — never a filter, which would hold a full-viewport re-raster of
    the wallpaper for as long as the mode stays open. */
 .paw-wayfinder {
+  z-index: 0;
   /* One width token for the recent-work instrument: the lede column reserves
      its gutter from the same number, so the two can never overlap after a
      breakpoint changes one of them. */

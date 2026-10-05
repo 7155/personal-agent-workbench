@@ -5,6 +5,7 @@ import {
   createConfiguredControlTransport,
   useControlTransport,
 } from '@/app/control-transport';
+import { createPreviewTransport } from '@/app/preview-control-transport';
 
 function Probe() {
   const transport = useControlTransport();
@@ -12,6 +13,17 @@ function Probe() {
 }
 
 describe('ControlTransportProvider', () => {
+  it('does not reuse primary demo identities or expose sample history after a renderer reload', async () => {
+    const first = createPreviewTransport();
+    const second = createPreviewTransport();
+    const before = await first.request<{ session: { id: string } }>({ pathId: 'agent.primary.ensure', body: {} });
+    const after = await second.request<{ session: { id: string } }>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(after.session.id).not.toBe(before.session.id);
+    const stale = await second.request<{ messages: unknown[]; liveEvents: unknown[] }>({ pathId: 'agent.session.snapshot', params: { sessionId: before.session.id } });
+    expect(stale.messages).toEqual([]);
+    expect(stale.liveEvents).toEqual([]);
+    await expect(second.request({ pathId: 'agent.session.prompt', params: { sessionId: before.session.id }, body: { message: 'stale', clientMessageId: 'stale' } })).rejects.toThrow('演示会话已重置');
+  });
   const originalUrl = window.location.href;
 
   beforeEach(() => {

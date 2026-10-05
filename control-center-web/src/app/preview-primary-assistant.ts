@@ -12,9 +12,12 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
   const originalSnapshot = routes['agent.session.snapshot'];
   const originalPrompt = routes['agent.session.prompt'];
   const originalAbort = routes['agent.session.abort'];
+  // Desktop windows can survive a renderer reload; in-memory demo histories
+  // cannot. Never recycle their identities into another preview instance.
+  const instanceId = crypto.randomUUID();
   let nextId = 1;
   function makeSession(title: string, roots: string[], metadata: Record<string, unknown>, execute: boolean) {
-    const id = `session-primary-preview-${nextId++}`;
+    const id = `session-primary-preview-${instanceId}-${nextId++}`;
     const session: Record<string, unknown> = { schemaVersion: 'rag-ime.agent-session.v1', id, title,
       mode: execute || roots.length ? 'coordinator' : 'assistant', status: 'idle', runtimeEngine: 'classic',
       roleId: 'companion-present-v1', roleVersion: '1', roleBookRevisionId: '', surfaceKind: 'agent',
@@ -60,6 +63,7 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
   };
   routes['agent.session.snapshot'] = (request: ControlRequest) => {
     const id = String(request.params?.sessionId); const history = histories.get(id);
+    if (!history && id.startsWith('session-primary-preview-')) return { sessionId: id, runtimeEngine: 'classic', messages: [], liveEvents: [], lastSequence: 0, status: 'idle', runtimeQuiescent: true };
     if (!history) return call(originalSnapshot, request);
     return { sessionId: id, runtimeEngine: 'classic', messages: [...history.messages], liveEvents: [...history.events],
       lastSequence: history.events.length, resumeToken: `${id}:${history.events.length}`, status: history.active ? 'busy' : 'idle',
@@ -67,6 +71,7 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
   };
   routes['agent.session.prompt'] = (request: ControlRequest) => {
     const id = String(request.params?.sessionId); const history = histories.get(id);
+    if (!history && id.startsWith('session-primary-preview-')) throw new Error('演示会话已重置，请从我的助手重新开始。');
     if (!history) return call(originalPrompt, request);
     const body = record(request.body); const clientId = String(body.clientMessageId);
     if (history.requests.has(clientId)) return { ok: true, accepted: true, deduplicated: true };
