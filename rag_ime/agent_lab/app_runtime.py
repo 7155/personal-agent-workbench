@@ -8,14 +8,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html as html_escape
+import ipaddress
 import json
 import os
+import socket
 import sqlite3
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlencode
 from urllib.request import Request, urlopen
@@ -27,6 +30,18 @@ class AppInputError(ValueError):
 
 class AppProviderUnconfirmed(AppInputError):
     pass
+
+
+class _AppHTTPServer(ThreadingHTTPServer):
+    """Self-contained counterpart of PAW's loopback HTTP listener for exports."""
+
+    def server_bind(self) -> None:
+        # This file is frozen verbatim as app.py with only stdlib dependencies.
+        # Bind normally, but never wait for reverse DNS on a loopback address.
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = "localhost" if ipaddress.ip_address(host).is_loopback else socket.getfqdn(host)
+        self.server_port = port
 
 
 def validate_model(value: object) -> dict:
@@ -711,7 +726,7 @@ def create_server(root: Path, host: str, port: int) -> ThreadingHTTPServer:
                 self.respond(202 if record['state']=='running' else 200, {'ok':True,'record':record})
             except (AppInputError, ValueError, TypeError, KeyError) as exc:
                 self.respond(422, {'ok': False, 'message': str(exc) if isinstance(exc, AppInputError) else '输入格式无效。'})
-    return ThreadingHTTPServer((host, port), Handler)
+    return _AppHTTPServer((host, port), Handler)
 
 
 def serve(root: Path, host: str, port: int) -> None:

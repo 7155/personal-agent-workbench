@@ -16,7 +16,7 @@ import sqlite3
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -44,6 +44,7 @@ from rag_ime.agent_lab.trials import (
     AgentLabTrialConflict,
     AgentLabTrialStore,
 )
+from rag_ime.http_server import LoopbackThreadingHTTPServer
 
 
 _startup_phase("runtime modules ready")
@@ -280,7 +281,7 @@ def main() -> None:
     state = FaultHostState(app, adapter.effects_path)
     FaultHostHandler.state = state
     _startup_phase("binding HTTP server")
-    server = ThreadingHTTPServer(("127.0.0.1", 0), FaultHostHandler)
+    server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), FaultHostHandler)
     _startup_phase("HTTP server ready")
 
     def stop(_signum: int, _frame: object) -> None:

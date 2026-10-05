@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from threading import (
     BoundedSemaphore,
@@ -82,6 +82,7 @@ from .browser_control import BrowserControlError, BrowserControlService
 from .system_terminal import SystemTerminalService
 from .demo_seed import seed_demo_memories
 from .core_client import CoreClient, default_fixture_memories
+from .http_server import LoopbackThreadingHTTPServer
 from .contracts.context_observability import build_context_injection_trace
 from .contracts.json_schema import validate_contract
 from .trace_adapters import envelope_from_browser_trace, envelope_from_prediction_frame
@@ -11269,7 +11270,7 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
-class QuietThreadingHTTPServer(ThreadingHTTPServer):
+class QuietThreadingHTTPServer(LoopbackThreadingHTTPServer):
     """Ignore normal client disconnects without dumping multi-line tracebacks."""
 
     # socketserver defaults to a backlog of 5. A single Provider response can
