@@ -38,6 +38,37 @@ afterEach(() => {
 });
 
 describe('Agent chat rendering', () => {
+  it.each(['recent', 'full'] as const)('keeps the canonical full answer visible after returning to a %s snapshot with a cached streaming prefix', snapshotView => {
+    const sessionId = 'session-1';
+    const turnId = 'turn-1';
+    const answer = Array.from({ length: 400 }, (_, index) => `UI_A_ONLY ${String(index + 1).padStart(3, '0')} The complete response remains documented.`).join('\n');
+    const prefix = answer.slice(0, answer.indexOf('UI_A_ONLY 006') - 10);
+    useAgentLiveStore.getState().hydrate(sessionId, {
+      messages: [userMessage(sessionId, turnId)], liveEvents: [], lastSequence: 99,
+      resumeToken: `${sessionId}:99`, status: 'busy', partial: true, snapshotScope: 'recent',
+    });
+    useAgentLiveStore.getState().applyEvents(sessionId, [{
+      ...agentEventFixture(100, 'text_delta', { messageId: `${turnId}:assistant`, delta: prefix }),
+      sessionId, turnId, createdAtMs: 2_000,
+    }]);
+    const canonical: UiAgentMessage = {
+      ...userMessage(sessionId, turnId), id: 'pi-canonical-answer', role: 'assistant', status: 'completed',
+      blocks: [{ id: 'canonical:text', type: 'text', status: 'completed', presentationKind: 'markdown', data: { text: answer } }],
+      createdAtMs: 190_000, completedAtMs: 190_000,
+    };
+    useAgentLiveStore.getState().hydrate(sessionId, {
+      messages: [userMessage(sessionId, turnId), { ...canonical, timelineSequence: 3.9 }], liveEvents: [],
+      lastSequence: 5_759, resumeToken: `${sessionId}:5759`, status: 'idle', runtimeQuiescent: true,
+      ...(snapshotView === 'recent' ? { snapshotScope: 'recent', partial: true } : {}),
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} presentation="fx" onApprovalDecision={() => {}} />);
+    // A complete answer hidden under collapsed process work is still lost to
+    // the reader. Assert the visible result layer, not container textContent.
+    const result = view.container.querySelector('.agent-turn-work__result');
+    expect(result).toHaveTextContent('UI_A_ONLY 400');
+    expect(view.container.querySelector(`[data-agent-message-id="${turnId}:assistant"]`)).not.toBeInTheDocument();
+  });
+
   it.each(['default', 'fx'] as const)('shows saved Durable pause without a running clock or decoration in %s presentation', presentation => {
     useAgentLiveStore.getState().hydrate('session-1', {
       sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true,

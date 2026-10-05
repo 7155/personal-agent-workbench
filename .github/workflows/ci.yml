@@ -96,6 +96,7 @@ jobs:
         if: matrix.suite == 'ownership'
         run: >-
           pnpm --dir control-center-web exec vitest run
+          src/contracts/agent-reducer.test.ts
           src/features/agent/state/live-store.test.ts
           src/features/agent/state/live-store.transport.test.ts
           src/features/agent/state/live-store.acknowledgement.test.ts
@@ -109,6 +110,8 @@ jobs:
         # acceptance remain separate from these tests.
         run: >-
           pnpm --dir control-center-web exec vitest run
+          src/features/agent/timeline/conversation-status-polish.test.tsx
+          src/features/agent/timeline/chat-rendering.test.tsx
           src/features/agent/composer/AgentComposer.test.tsx
           src/features/agent/workspace/AgentFilesPanel.test.tsx
           src/features/composer/ComposerInteraction.test.tsx

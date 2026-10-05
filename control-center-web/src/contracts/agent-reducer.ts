@@ -842,15 +842,19 @@ function preserveConfirmedSnapshotActivities(
   return next;
 }
 
+function isAuthoritativelyQuiescentSnapshot(snapshot: AgentSnapshot): boolean {
+  return (snapshot.runtimeQuiescent === true || !snapshot.partial)
+    && Boolean(snapshot.status)
+    && ['idle', 'ready', 'stopped', 'active', 'failed', 'faulted'].includes(snapshot.status ?? '');
+}
+
 /** Settle confirmed replay before restoring local prompt admissions. */
 function settleAgentSnapshotQuiescence(
   next: AgentProjectionState,
   snapshot: AgentSnapshot,
   replayStatus = next.status,
 ): void {
-  const authoritativeQuiescent = (snapshot.runtimeQuiescent === true || !snapshot.partial)
-    && Boolean(snapshot.status)
-    && ['idle', 'ready', 'stopped', 'active', 'failed', 'faulted'].includes(snapshot.status ?? '');
+  const authoritativeQuiescent = isAuthoritativelyQuiescentSnapshot(snapshot);
   if (authoritativeQuiescent && snapshot.status) {
     next.status = snapshot.status;
     // `status` is the Runtime's authoritative process boundary. A bounded
@@ -967,6 +971,7 @@ export function applyAgentSnapshot(
 
   const serverClientIds = new Set<string>();
   const transcriptMessageIds = new Set<string>();
+  const completedSnapshotMessages = new Map<string, AgentMessageProjection>();
   /* A bounded snapshot carries forward both prior transcript anchors and
      message_completed rows seen only through SSE. Only ids present in this
      response (plus already-normalized history turns) are transcript anchors;
@@ -980,6 +985,14 @@ export function applyAgentSnapshot(
   const snapshotMessages = snapshot.snapshotScope === 'recent' && snapshot.partial === true
     ? mergeBoundedRecentMessages(state, snapshot.messages)
     : snapshot.messages;
+  // Keep the pre-replay streaming boundary: turn_completed can settle a
+  // cached prefix even when its missing message_completed was never received.
+  const cachedStreamingIds = new Set(
+    snapshot.snapshotScope === 'recent' && snapshot.partial === true
+      && isAuthoritativelyQuiescentSnapshot(snapshot)
+      ? state.messageOrder.filter((id) => state.messagesById[id]?.status === 'streaming')
+      : [],
+  );
   for (const rawMessage of snapshotMessages) {
     const parsed = tryParseAgentMessage(rawMessage);
     if (!parsed.ok || parsed.value.sessionId !== state.sessionId) {
@@ -994,6 +1007,12 @@ export function applyAgentSnapshot(
       continue;
     }
     upsertMessage(next, parsed.value);
+    if (currentTranscriptMessageIds.has(parsed.value.id)
+      && parsed.value.role === 'assistant' && parsed.value.status === 'completed') {
+      // Keep the original completion receipt; terminal replay must not turn
+      // incomplete transcript metadata into proof of a complete replacement.
+      completedSnapshotMessages.set(parsed.value.id, parsed.value);
+    }
     if (
       currentTranscriptMessageIds.has(parsed.value.id)
       || parsed.value.turnId.startsWith('history:')
@@ -1012,6 +1031,12 @@ export function applyAgentSnapshot(
     try {
       const parsed = parseAgentEvent(rawEvent);
       if (parsed.sessionId !== state.sessionId) throw new TypeError('foreign snapshot event');
+      if (parsed.eventType === 'message_completed') {
+        // A real completed process message is not an interrupted prefix.
+        cachedStreamingIds.delete(text(record(parsed.payload.message).id));
+      } else if (parsed.eventType === 'text_delta' && parsed.payload.replaceBlock === true) {
+        cachedStreamingIds.delete(text(parsed.payload.messageId) || `${parsed.turnId}:assistant`);
+      }
       const hydrated = {
         ...parsed,
         sequence: next.lastSequence + 1,
@@ -1037,7 +1062,10 @@ export function applyAgentSnapshot(
   // the Pi message as the public anchor, absorb event-only metadata such as the
   // clientMessageId, and remove only a narrowly matched replay copy. In-flight
   // deltas remain untouched because they have no completed transcript match.
-  reconcileTranscriptReplayMessages(next, transcriptMessageIds, serverClientIds);
+  reconcileTranscriptReplayMessages(next, transcriptMessageIds, serverClientIds, {
+    cachedStreamingIds,
+    completedSnapshotMessages,
+  });
   if (snapshot.lastSequence === state.lastSequence) {
     reconcileEqualCursorAcceptedMessages(
       state,
@@ -1243,6 +1271,10 @@ function reconcileTranscriptReplayMessages(
   state: AgentProjectionState,
   transcriptMessageIds: ReadonlySet<string>,
   serverClientIds: Set<string>,
+  quiescentPrefixes?: {
+    cachedStreamingIds: ReadonlySet<string>;
+    completedSnapshotMessages: ReadonlyMap<string, AgentMessageProjection>;
+  },
 ): void {
   const transcriptByFingerprint = new Map<string, AgentMessageProjection[]>();
   const transcriptByMediaShapeFingerprint = new Map<string, AgentMessageProjection[]>();
@@ -1313,11 +1345,17 @@ function reconcileTranscriptReplayMessages(
     const mediaShapeCandidate = mediaShapeCandidates.length === 1
       ? mediaShapeCandidates[0]?.message
       : undefined;
+    const prefixCandidate = quiescentPrefixes?.cachedStreamingIds.has(replay.id)
+      ? completedStreamingPrefixCandidate(
+          state, replay, quiescentPrefixes.completedSnapshotMessages, claimedTranscriptIds,
+        )
+      : undefined;
     // A missing message_end leaves a live alias streaming after Pi has persisted it.
-    // Only a unique exact same-turn durable row can settle that alias.
+    // Exact same-turn text can settle it while active; a shorter cached prefix
+    // additionally needs the original quiescent completion proof above.
     const candidate = replay.status === 'streaming'
-      ? sameTurnFinal
-      : exactCandidate ?? sameTurnFinal ?? mediaShapeCandidate;
+      ? sameTurnFinal ?? prefixCandidate
+      : exactCandidate ?? sameTurnFinal ?? mediaShapeCandidate ?? prefixCandidate;
     if (!candidate) continue;
 
     claimedTranscriptIds.add(candidate.id);
@@ -1339,6 +1377,54 @@ function reconcileTranscriptReplayMessages(
     removeProjectedMessage(state, replay);
   }
   reconcileReplayTurnAnchors(state, replayTurnAnchors);
+}
+
+/** Recover only the Runtime's unfinished, plain-text base alias. The recent
+ * response must prove one completed replacement in the exact native turn;
+ * text length, similar openings, and transcript/SSE order alone prove nothing. */
+function completedStreamingPrefixCandidate(
+  state: AgentProjectionState,
+  replay: AgentMessageProjection,
+  completedSnapshotMessages: ReadonlyMap<string, AgentMessageProjection>,
+  claimedTranscriptIds: ReadonlySet<string>,
+): AgentMessageProjection | undefined {
+  const block = replay.blocks[0];
+  if (
+    replay.role !== 'assistant'
+    || replay.id !== `${replay.turnId}:assistant`
+    || replay.turnId.startsWith('history:')
+    || !Number.isInteger(replay.timelineSequence)
+    || replay.attachments.length > 0
+    || replay.citations.length > 0
+    || replay.blocks.length !== 1
+    || block.id !== `${replay.id}:text`
+    || block.type !== 'text'
+    || block.presentationKind !== 'markdown'
+    || Object.keys(block).some((key) => !['id', 'type', 'status', 'presentationKind', 'data'].includes(key))
+    || Object.keys(block.data).some((key) => key !== 'text')
+  ) return undefined;
+  const prefix = text(block.data.text);
+  if (!prefix.trim()) return undefined;
+  const candidates = [...completedSnapshotMessages.values()]
+    .filter((message) => message.turnId === replay.turnId);
+  // Multiple completed assistant rows can be real process messages. Do not
+  // choose among them even if only one happens to start with this prefix.
+  if (candidates.length !== 1) return undefined;
+  const message = candidates[0];
+  if (
+    claimedTranscriptIds.has(message.id)
+    || message.id === replay.id || message.id.startsWith(`${replay.id}:segment:`)
+    || message.createdAtMs < replay.createdAtMs
+    || message.completedAtMs == null || message.completedAtMs < message.createdAtMs
+    || message.blocks.some((candidateBlock) => candidateBlock.data.truncated === true)
+  ) return undefined;
+  const textBlocks = message.blocks.filter((candidateBlock) => candidateBlock.type === 'text');
+  const completeText = textBlocks.length === 1 ? text(textBlocks[0].data.text) : '';
+  const current = state.messagesById[message.id];
+  const currentTextBlocks = current?.blocks.filter((candidateBlock) => candidateBlock.type === 'text') ?? [];
+  return current?.status === 'completed' && current.turnId === replay.turnId
+    && currentTextBlocks.length === 1 && text(currentTextBlocks[0].data.text) === completeText
+    && completeText.length > prefix.length && completeText.startsWith(prefix) ? current : undefined;
 }
 
 /**
