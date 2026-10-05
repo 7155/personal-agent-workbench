@@ -12,7 +12,7 @@ function renderPet(ready = Promise.resolve(unavailablePetSnapshot())) {
     onSnapshot: vi.fn((next: typeof listener) => { listener = next; return unsubscribe; }),
     hide: vi.fn().mockResolvedValue(undefined), openAssistant: vi.fn().mockResolvedValue(undefined),
     openConversation: vi.fn().mockResolvedValue(undefined), setExpanded: vi.fn().mockResolvedValue(undefined),
-    drag: vi.fn().mockResolvedValue(undefined) };
+    drag: vi.fn().mockResolvedValue(undefined), move: vi.fn().mockResolvedValue(undefined) };
   window.pawDesktopPet = host;
   const view = render(<DesktopPetSurface />);
   return { host, view, unsubscribe, push: (snapshot: PetSnapshot) => act(() => listener(snapshot)),
@@ -29,6 +29,22 @@ function liveSnapshot(): PetSnapshot {
 }
 
 describe('single planet companion', () => {
+  it('moves from the keyboard and ends move mode without hiding the companion', async () => {
+    const { host, handle } = renderPet(); const user = userEvent.setup();
+    handle.focus(); await user.keyboard('{Enter}');
+    expect(handle).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('方向键移动，Esc 结束');
+    await user.keyboard('{ArrowLeft}{ArrowDown}');
+    expect(host.move.mock.calls).toEqual([['left'], ['down']]);
+    await user.keyboard('{Escape}');
+    expect(handle).toHaveAttribute('aria-pressed', 'false');
+    expect(host.hide).not.toHaveBeenCalled();
+    expect(handle).toHaveFocus();
+    await user.keyboard(' ');
+    expect(handle).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard('{Enter}');
+    expect(handle).toHaveAttribute('aria-pressed', 'false');
+  });
   it('reuses the bundled planet with a separate running signal and opens a bounded list before any conversation action', async () => {
     const { host, button, push, view } = renderPet(); push(liveSnapshot());
     expect(view.container.querySelector('[data-room-planet="0"]')).toBeTruthy();

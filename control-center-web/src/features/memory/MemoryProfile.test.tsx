@@ -17,6 +17,29 @@ function setup(save: MockRouteHandler, read: MockRouteHandler = profile) {
   return { transport, onOpenReference, ...view };
 }
 describe('editable personal profile', () => {
+  it('includes paragraph separators in the rendered budget before saving', async () => {
+    const many: PersonalProfile = { ...profile, text: Array(7).fill('a').join('\n\n'), paragraphs: Array.from({ length: 7 }, (_, index) => ({ ...profile.paragraphs[0], id: `card-${index}`, memoryIds: [`card-${index}`], text: 'a' })) };
+    const pending = deferred<unknown>();
+    const { transport } = setup(() => pending.promise, many);
+    await screen.findByRole('textbox', { name: '个人背景 7' });
+    for (let index = 1; index <= 7; index++) fireEvent.change(screen.getByRole('textbox', { name: `个人背景 ${index}` }), { target: { value: 'x'.repeat(index === 7 ? 400 : 600) } });
+    expect(screen.getByText('4012 / 4000 字')).toBeVisible();
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'memory.profile.save')).toHaveLength(0);
+    fireEvent.change(screen.getByRole('textbox', { name: '个人背景 7' }), { target: { value: 'x'.repeat(388) } });
+    expect(screen.getByText('4000 / 4000 字')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'memory.profile.save')).toHaveLength(1);
+  });
+  it('counts normalized Unicode text while retaining the complete editable draft', async () => {
+    setup({});
+    const input = await screen.findByRole('textbox', { name: '个人背景 1' });
+    const draft = `\u0085\t${'🙂'.repeat(600)}\n `;
+    fireEvent.change(input, { target: { value: draft } });
+    expect(input).toHaveValue(draft);
+    expect(screen.getByText('600 / 4000 字')).toBeVisible();
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  });
   it('marks edits unsaved and serializes latest-version reads without discarding the draft', async () => {
     const pending = deferred<unknown>();
     let reads = 0;

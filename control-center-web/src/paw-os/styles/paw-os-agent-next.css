@@ -59,6 +59,10 @@
 .an-home-title { margin: 8px 0 18px; flex: none; font-size: clamp(24px, 3.4cqw, 30px); font-weight: 720; letter-spacing: -.03em; line-height: 1.16; animation: an-rise 440ms var(--an-ease-out) 45ms both; }
 .an-composer { position: relative; z-index: 4; flex: none; background: var(--an-paper-bright); border: 1px solid var(--an-rule); border-radius: 14px; box-shadow: 0 1px 2px rgba(24, 32, 43, .04), 0 12px 30px rgba(24, 32, 43, .07); transition: border-color 160ms ease, box-shadow 180ms ease, transform 220ms var(--an-ease-out); animation: an-rise 480ms var(--an-ease-out) 90ms both; }
 .an-composer:focus-within { border-color: color-mix(in srgb, var(--an-cobalt) 64%, var(--an-rule)); box-shadow: 0 1px 2px rgba(24, 32, 43, .04), 0 14px 34px rgba(24, 32, 43, .09); }
+/* The text field shares the rounded composer focus ring. Toolbar controls
+   retain their own focus-visible outline so keyboard location stays clear. */
+.an-composer:has(textarea:focus-visible) { outline: 2px solid var(--an-cobalt); outline-offset: 2px; }
+.an-composer textarea:focus-visible { outline: none; }
 .an-composer textarea { display: block; width: 100%; min-height: 64px; max-height: 148px; padding: 13px 17px 9px; overflow-y: auto; field-sizing: content; resize: none; border: 0; outline: 0; background: transparent; color: var(--an-ink); font-size: 15px; line-height: 1.6; }
 .an-composer textarea::placeholder { color: var(--an-ink-3); opacity: 1; }
 /* Home composer toolbar is its own container so a dragged-narrow Agent window

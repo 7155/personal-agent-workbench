@@ -1,15 +1,15 @@
-import { StrictMode, type ReactNode } from 'react';
+import { Activity, StrictMode, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { MockControlTransport } from '@/test/mock-transport';
 import { recoveryScope, useWorkspaceRecovery, WorkspaceRecoveryNotice } from './workspace-recovery';
 
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
-function Harness({ owner = 'session:one' }: { owner?: string }) {
-  const recovery = useWorkspaceRecovery<{ id: string; sha256: string; name: string }>(owner);
-  return <><input aria-label="草稿" value={recovery.draft} onChange={e => recovery.setDraft(e.target.value)} />
+function Harness({ owner = 'session:one', label = '草稿', initialDraft = '' }: { owner?: string; label?: string; initialDraft?: string }) {
+  const recovery = useWorkspaceRecovery<{ id: string; sha256: string; name: string }>(owner, initialDraft);
+  return <><input aria-label={label} value={recovery.draft} onChange={e => recovery.setDraft(e.target.value)} />
     <button onClick={() => recovery.setAttachments([{ id: 'media-one', sha256: 'hash', name: '材料.pdf' }])}>加入附件引用</button>
     <span>附件数 {recovery.attachments.length}</span><WorkspaceRecoveryNotice recovery={recovery} /></>;
 }
@@ -18,6 +18,124 @@ function transport(identity: string, available = true) {
   Object.defineProperty(t, 'connectionIdentity', { value: identity });
   return t;
 }
+
+it.each([false, true])('rejoins the latest draft owner after resubscription (newer view closed: %s)', async closed => {
+  const t = transport(`resubscribe-${closed}`);
+  const tree = (hidden: boolean, second: boolean) => <ControlTransportProvider transport={t}>
+    <Activity mode={hidden ? 'hidden' : 'visible'}><Harness label="A 草稿" initialDraft="入口种子" /></Activity>
+    {second ? <Harness label="B 草稿" /> : null}
+  </ControlTransportProvider>;
+  const view = render(tree(false, false));
+  expect(screen.getByRole('textbox', { name: 'A 草稿' })).toHaveValue('入口种子');
+  fireEvent.change(screen.getByRole('textbox', { name: 'A 草稿' }), { target: { value: 'A 旧草稿' } });
+  view.rerender(tree(true, false));
+  view.rerender(tree(true, true));
+  fireEvent.change(screen.getByRole('textbox', { name: 'B 草稿' }), { target: { value: 'B 新草稿' } });
+  fireEvent.click(screen.getByRole('button', { name: '加入附件引用' }));
+  if (closed) view.rerender(tree(true, false));
+  view.rerender(tree(false, !closed));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'A 草稿' })).toHaveValue('B 新草稿'));
+  expect(JSON.parse(localStorage.getItem(recoveryScope(t, 'session:one'))!)).toMatchObject({
+    draft: 'B 新草稿', attachments: [{ id: 'media-one', sha256: 'hash', name: '材料.pdf' }],
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'A 草稿' }), { target: { value: 'A 接着编辑' } });
+  if (!closed) {
+    expect(screen.getByRole('textbox', { name: 'B 草稿' })).toHaveValue('A 接着编辑');
+    view.rerender(tree(true, true));
+    fireEvent.change(screen.getByRole('textbox', { name: 'B 草稿' }), { target: { value: 'B 再次编辑' } });
+    view.rerender(tree(false, true));
+    expect(screen.getByRole('textbox', { name: 'A 草稿' })).toHaveValue('B 再次编辑');
+    fireEvent.change(screen.getByRole('textbox', { name: 'A 草稿' }), { target: { value: '共同的最终草稿' } });
+    expect(screen.getByRole('textbox', { name: 'B 草稿' })).toHaveValue('共同的最终草稿');
+    fireEvent.change(screen.getByRole('textbox', { name: 'B 草稿' }), { target: { value: 'B 共同编辑' } });
+    expect(screen.getByRole('textbox', { name: 'A 草稿' })).toHaveValue('B 共同编辑');
+    view.unmount();
+    render(<ControlTransportProvider transport={t}><Harness label="重开草稿" initialDraft="新的显式入口" /></ControlTransportProvider>);
+    expect(screen.getByRole('textbox', { name: '重开草稿' })).toHaveValue('新的显式入口');
+  } else {
+    await waitFor(() => expect(t.requests.some(({ request }) => request.pathId === 'agent.continuity.media')).toBe(true));
+  }
+});
+
+it('resubscribes anonymous views without sharing their independent drafts', () => {
+  const t = transport('');
+  const tree = (hidden: boolean, second: boolean) => <ControlTransportProvider transport={t}>
+    <Activity mode={hidden ? 'hidden' : 'visible'}><Harness label="A 匿名草稿" /></Activity>
+    {second ? <Harness label="B 匿名草稿" /> : null}
+  </ControlTransportProvider>;
+  const view = render(tree(false, false));
+  fireEvent.change(screen.getByRole('textbox', { name: 'A 匿名草稿' }), { target: { value: 'A 私有草稿' } });
+  view.rerender(tree(true, true));
+  fireEvent.change(screen.getByRole('textbox', { name: 'B 匿名草稿' }), { target: { value: 'B 私有草稿' } });
+  view.rerender(tree(false, true));
+  expect(screen.getByRole('textbox', { name: 'A 匿名草稿' })).toHaveValue('A 私有草稿');
+  expect(screen.getByRole('textbox', { name: 'B 匿名草稿' })).toHaveValue('B 私有草稿');
+  expect(localStorage.length).toBe(0);
+});
+
+it('retains unsaved input across resubscription when storage writes fail', () => {
+  const t = transport('failed-storage-resubscribe');
+  const key = recoveryScope(t, 'session:one');
+  localStorage.setItem(key, JSON.stringify({ draft: '已保存的旧草稿', attachments: [], savedAtMs: 1 }));
+  const writes = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage unavailable'); });
+  const tree = (hidden: boolean) => <StrictMode><ControlTransportProvider transport={t}>
+    <Activity mode={hidden ? 'hidden' : 'visible'}><Harness initialDraft="指定的首次草稿" /></Activity>
+  </ControlTransportProvider></StrictMode>;
+  try {
+    const view = render(tree(false));
+    expect(screen.getByRole('textbox', { name: '草稿' })).toHaveValue('指定的首次草稿');
+    fireEvent.change(screen.getByRole('textbox', { name: '草稿' }), { target: { value: '尚未保存的新输入' } });
+    view.rerender(tree(true));
+    view.rerender(tree(false));
+    expect(screen.getByRole('textbox', { name: '草稿' })).toHaveValue('尚未保存的新输入');
+    expect(screen.getByRole('status')).toHaveTextContent('草稿暂时无法保存');
+    expect(JSON.parse(localStorage.getItem(key)!).draft).toBe('已保存的旧草稿');
+  } finally { writes.mockRestore(); }
+});
+
+it('keeps a fresh attachment preview through resubscription without re-verifying its receipt', () => {
+  const t = transport('live-preview-resubscribe', false);
+  const file = new File(['image bytes'], 'photo.png', { type: 'image/png' });
+  function PreviewProbe() {
+    const recovery = useWorkspaceRecovery<{ id: string; previewFile?: File }>('session:one');
+    return <><button onClick={() => recovery.setAttachments([{ id: 'media-one', previewFile: file }])}>添加新图片</button>
+      <output aria-label="图片来源">{recovery.attachments[0]?.previewFile === file ? '本次导入' : '无原始图片'}</output></>;
+  }
+  const tree = (hidden: boolean) => <StrictMode><ControlTransportProvider transport={t}>
+    <Activity mode={hidden ? 'hidden' : 'visible'}><PreviewProbe /></Activity>
+  </ControlTransportProvider></StrictMode>;
+  const view = render(tree(false));
+  fireEvent.click(screen.getByRole('button', { name: '添加新图片' }));
+  view.rerender(tree(true));
+  view.rerender(tree(false));
+  expect(screen.getByLabelText('图片来源')).toHaveTextContent('本次导入');
+  expect(t.requests).toHaveLength(0);
+  expect(JSON.parse(localStorage.getItem(recoveryScope(t, 'session:one'))!).attachments).toEqual([{ id: 'media-one' }]);
+});
+
+it('retains edits after adopting newer disk input even when subsequent saves fail', () => {
+  const t = transport('adopt-then-storage-fails');
+  const tree = (hidden: boolean, second: boolean) => <ControlTransportProvider transport={t}>
+    <Activity mode={hidden ? 'hidden' : 'visible'}><Harness label="A 草稿" /></Activity>
+    {second ? <Harness label="B 草稿" /> : null}
+  </ControlTransportProvider>;
+  const view = render(tree(false, false));
+  fireEvent.change(screen.getByRole('textbox', { name: 'A 草稿' }), { target: { value: 'A 原来的输入' } });
+  view.rerender(tree(true, false));
+  view.rerender(tree(true, true));
+  fireEvent.change(screen.getByRole('textbox', { name: 'B 草稿' }), { target: { value: 'B 保存的输入' } });
+  view.rerender(tree(true, false));
+  const writes = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage unavailable'); });
+  try {
+    view.rerender(tree(false, false));
+    expect(screen.getByRole('textbox', { name: 'A 草稿' })).toHaveValue('B 保存的输入');
+    fireEvent.change(screen.getByRole('textbox', { name: 'A 草稿' }), { target: { value: '恢复后尚未保存的编辑' } });
+    view.rerender(tree(true, false));
+    view.rerender(tree(false, false));
+    expect(screen.getByRole('textbox', { name: 'A 草稿' })).toHaveValue('恢复后尚未保存的编辑');
+    expect(JSON.parse(localStorage.getItem(recoveryScope(t, 'session:one'))!).draft).toBe('B 保存的输入');
+  } finally { writes.mockRestore(); }
+});
 it('restores drafts and durable references after remount and verifies references', async () => {
   const t = transport('local-project');
   const tree = () => <ControlTransportProvider transport={t}><Harness /></ControlTransportProvider>;

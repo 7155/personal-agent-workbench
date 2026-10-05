@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('pawDesktopPet', Object.freeze({
   openConversation: (target) => ipcRenderer.invoke('paw-pet:open-conversation', target),
   setExpanded: (expanded) => ipcRenderer.invoke('paw-pet:expand', expanded),
   drag: (phase) => ipcRenderer.invoke('paw-pet:drag', phase),
+  move: (direction) => ipcRenderer.invoke('paw-pet:move', direction),
 }));

@@ -896,21 +896,76 @@ describe('PluginsFeature', () => {
     expect(screen.queryByText('还没有受管插件')).not.toBeInTheDocument();
   });
 
-  it('shows a recoverable Pi disconnect instead of an empty installed state', async () => {
+  it.each([false, true])('preserves the source draft and blocks writes until Pi reconnects (native: %s)', async (native) => {
     const user = userEvent.setup();
-    renderPlugins({
-      'agent.extensions.list': {
+    let connected = false;
+    const transport = renderPlugins({
+      'agent.extensions.list': () => ({
         schemaVersion: 'rag-ime.plugin-inventory.v1',
         ok: true,
-        runtimeAvailable: false,
+        runtimeAvailable: connected,
         items: [],
-      },
-    });
+      }),
+    }, '/plugins', native);
 
-    await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
-    expect(await screen.findByText('Pi Runtime 暂时未连接')).toBeVisible();
-    expect(screen.getByText('Pi 未连接')).toBeVisible();
-    expect(screen.getByText(/不会再把断连伪装成“0 个已安装”/)).toBeVisible();
+    if (!native) await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
+    expect(await screen.findByText('插件服务暂未连接')).toBeVisible();
+    expect(screen.getByText('安装状态未知')).toBeVisible();
+    expect(screen.queryByText('还没有额外扩展')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 个已安装')).not.toBeInTheDocument();
+    const source = screen.getByRole('textbox', { name: 'Pi Package 来源' });
+    await user.type(source, 'npm:my-package@1.0.0');
+    const preview = screen.getByRole('button', { name: '检查并预览' });
+    expect(preview).toBeDisabled();
+    await user.click(preview);
+    expect(transport.requests.some(({ request }) => ['agent.extensions.validate', 'agent.extensions.preview', 'agent.extensions.apply'].includes(request.pathId))).toBe(false);
+
+    connected = true;
+    await user.click(screen.getByRole('button', { name: '刷新状态' }));
+    expect(await screen.findByText('还没有额外扩展')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Pi Package 来源' })).toHaveValue('npm:my-package@1.0.0');
+    await user.click(screen.getByRole('button', { name: '检查并预览' }));
+    expect(await screen.findByRole('region', { name: '待确认的插件更改' })).toBeVisible();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.validate')).toHaveLength(1);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
+  });
+
+  it('does not dispatch a preview when Pi disconnects during source validation', async () => {
+    const user = userEvent.setup();
+    let connected = true;
+    let finishValidation!: (value: unknown) => void;
+    const validation = new Promise((resolve) => { finishValidation = resolve; });
+    const transport = renderPlugins({
+      'agent.extensions.list': () => ({ ok: true, runtimeAvailable: connected, items: [] }),
+      'agent.extensions.validate': () => validation,
+    }, '/plugins', true);
+    await user.type(await screen.findByRole('textbox', { name: 'Pi Package 来源' }), 'npm:my-package@1.0.0');
+    await user.click(screen.getByRole('button', { name: '检查并预览' }));
+    connected = false;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await screen.findByText('插件服务暂未连接');
+    await act(async () => { finishValidation({ ok: true, validationToken: 'checked-source', extension: { id: 'my-package' } }); });
+    expect(await screen.findByText('插件操作未完成')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Pi Package 来源' })).toHaveValue('npm:my-package@1.0.0');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.preview')).toBe(false);
+  });
+
+  it('retains a reviewed change without allowing apply while installation state is unknown', async () => {
+    const user = userEvent.setup();
+    let connected = true;
+    const transport = renderPlugins({
+      'agent.extensions.list': () => ({ ok: true, runtimeAvailable: connected, items: [{ id: 'session-review', displayName: 'Session Review', enabled: true }] }),
+    }, '/plugins', true);
+    await user.click(within(await screen.findByRole('article', { name: '对话复盘 Package' })).getByRole('button', { name: '停用' }));
+    await screen.findByRole('region', { name: '待确认的插件更改' });
+    connected = false;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await screen.findByText('插件服务暂未连接');
+    expect(screen.getByRole('region', { name: '待确认的插件更改' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '确认更改' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '取消' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '确认更改' }));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
   });
 
   it('opens the exact installed Package when entered from a PAWOS Package App window', async () => {
@@ -1242,6 +1297,78 @@ describe('PluginsFeature', () => {
     await user.click(within(detail).getByRole('button', { name: '设置场景加载' }));
     expect(screen.getByTestId('test-location')).toHaveTextContent('/plugins?view=scenes');
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.configuration.update')).toBe(false);
+  });
+
+  it('clears every capability filter from a zero-result search and returns focus to search', async () => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({}, '/plugins?view=capabilities', true);
+    const search = await screen.findByRole('textbox', { name: '搜索' });
+    await user.type(search, 'no-such-capability');
+    await user.click(screen.getByRole('combobox', { name: '状态' }));
+    await user.click(screen.getByRole('option', { name: '已关闭' }));
+    await user.click(screen.getByRole('radio', { name: '技能' }));
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(search).toHaveValue('');
+    expect(search).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('全部状态');
+    expect(screen.getByRole('radio', { name: '全部' })).toBeChecked();
+    expect(screen.getByRole('group', { name: '能力列表' })).toBeVisible();
+    expect(transport.requests.every(({ request }) => controlRoute(request.pathId).method === 'GET')).toBe(true);
+  });
+
+  it.each([false, true])('distinguishes unavailable Skills from a confirmed empty list (native: %s)', async (native) => {
+    const user = userEvent.setup();
+    let connected = false;
+    renderPlugins({
+      'agent.extensions.skills.list': () => ({ ok: true, runtimeAvailable: connected, items: [] }),
+    }, '/plugins?view=skills', native);
+    await screen.findByText('技能清单暂时无法更新');
+    expect(screen.queryByText('没有找到 Skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 项')).not.toBeInTheDocument();
+    const values = document.querySelectorAll('.skills-surface .mgmt-metric dd:not(.mgmt-metric__detail)');
+    expect(values).toHaveLength(3);
+    for (const value of values) expect(value).toHaveTextContent('—');
+    const search = screen.getByRole('textbox', { name: '搜索' });
+    await user.type(search, 'my draft search');
+    connected = true;
+    await user.click(screen.getByRole('button', { name: '重新读取技能' }));
+    expect(await screen.findByText('没有找到 Skill')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: '搜索' })).toHaveValue('my draft search');
+  });
+
+  it('clears Skill filters and restores the exact detail trigger after Escape or Close', async () => {
+    const user = userEvent.setup();
+    renderPlugins({
+      'agent.extensions.skills.list': { ok: true, runtimeAvailable: true, items: [
+        { skillId: 'project:guide', name: 'Project Guide', sourceKind: 'project', enabled: null, management: 'inspect_only' },
+        { skillId: 'package:guide', name: 'Package Guide', sourceKind: 'package', enabled: true, management: 'package' },
+      ] },
+      'agent.extensions.skills.get': { ok: true, item: { body: 'Readable skill instructions' } },
+    }, '/plugins?view=skills', true);
+    const search = await screen.findByRole('textbox', { name: '搜索' });
+    await user.type(search, 'no-such-skill');
+    await user.click(screen.getByRole('combobox', { name: '来源' }));
+    await user.click(screen.getByRole('option', { name: '当前项目' }));
+    await user.click(screen.getByRole('combobox', { name: '状态' }));
+    await user.click(screen.getByRole('option', { name: '已停用' }));
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(search).toHaveValue('');
+    expect(search).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: '来源' })).toHaveTextContent('全部来源');
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('全部状态');
+    const list = screen.getByRole('group', { name: 'Skill 列表' });
+    expect(within(list).getAllByRole('button')).toHaveLength(2);
+    const trigger = within(list).getByRole('button', { name: /Project Guide/ });
+    await user.click(trigger);
+    await screen.findByText('Readable skill instructions');
+    screen.getByRole('button', { name: '关闭 Skill 详情' }).focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: 'Skill 详情' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(screen.getByRole('button', { name: '关闭 Skill 详情' }));
+    expect(screen.queryByRole('complementary', { name: 'Skill 详情' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('browses Skills by source, reads bounded detail, and scopes Package actions', async () => {

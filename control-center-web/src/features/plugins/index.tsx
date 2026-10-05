@@ -171,6 +171,9 @@ export function PluginsFeature() {
     if (requested) { setSelectedId(requested); setQuery(''); setAvailability('all'); setKind('all'); }
   }, [searchParams]);
   const selectedTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const selectedSkillTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const skillSearchRef = useRef<HTMLInputElement | null>(null);
   const [enableAfterInstall, setEnableAfterInstall] = useState(true);
   const [packageSource, setPackageSource] = useState('');
   const [validation, setValidation] = useState<Record<string, unknown>>({});
@@ -212,18 +215,38 @@ export function PluginsFeature() {
   }, [availability, items, kind, query]);
   const selected = filtered.find((item) => itemKey(item) === selectedId);
   useEffect(() => {
-    if (!selectedId) return;
+    if (surfaceActive === false || !(skillsView ? selectedSkillId : selectedId)) return;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
-      setSelectedId('');
-      selectedTriggerRef.current?.focus();
+      event.preventDefault();
+      if (skillsView) {
+        setSelectedSkillId('');
+        selectedSkillTriggerRef.current?.focus();
+      } else {
+        setSelectedId('');
+        selectedTriggerRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [selectedId]);
+  }, [selectedId, selectedSkillId, skillsView, surfaceActive]);
   const installedSnapshot = asRecord(installed.data);
   const installedItems = arrayRecords(installedSnapshot.items);
   const pluginRuntimeAvailable = installedSnapshot.runtimeAvailable !== false;
+  const skillSnapshot = asRecord(skills.data);
+  const skillRuntimeAvailable = skillSnapshot.runtimeAvailable !== false;
+  const pluginActionBlockedReason = installed.error
+    ? '暂时无法确认插件状态，请刷新后再试。已填写的内容会保留。'
+    : installed.data === undefined
+      ? '正在读取插件状态，请稍后再试。'
+      : !pluginRuntimeAvailable || (skillsView && !skillRuntimeAvailable)
+        ? '插件服务暂未连接。恢复连接后刷新即可继续，已填写的内容会保留。'
+        : '';
+  const pluginOperationsAvailable = !pluginActionBlockedReason;
+  // Validation can span a refresh. Read current availability before dispatch,
+  // rather than letting an older render submit a preview after disconnection.
+  const pluginActionBlockedReasonRef = useRef(pluginActionBlockedReason);
+  pluginActionBlockedReasonRef.current = pluginActionBlockedReason;
   const proposalItems = arrayRecords(asRecord(proposals.data).items);
   const versionItems = arrayRecords(asRecord(versions.data).items);
   const lifecyclePolicies = arrayRecords(asRecord(lifecycle.data).policies);
@@ -379,12 +402,17 @@ export function PluginsFeature() {
   const prepareLifecyclePreview = async (
     prepare: () => Promise<Parameters<typeof preview.mutateAsync>[0]>,
   ) => {
+    if (pluginActionBlockedReasonRef.current) {
+      setLifecycleError(pluginActionBlockedReasonRef.current);
+      return;
+    }
     setLifecycleError('');
     setLifecycleReceipt(undefined);
     setPendingChange({});
     setValidation({});
     try {
       const request = await prepare();
+      if (pluginActionBlockedReasonRef.current) throw new Error(pluginActionBlockedReasonRef.current);
       setPendingChange(asRecord(await preview.mutateAsync(request)));
     } catch (error) {
       setLifecycleError(errorMessage(error));
@@ -445,6 +473,10 @@ export function PluginsFeature() {
   });
 
   const applyPendingChange = async () => {
+    if (pluginActionBlockedReasonRef.current) {
+      setLifecycleError(pluginActionBlockedReasonRef.current);
+      return;
+    }
     setLifecycleError('');
     const confirmedSummary = `${pluginActionLabel(stringValue(pendingSummary.action))}：${publicPluginDisplayName(pendingDisplayName)}`;
     try {
@@ -481,7 +513,6 @@ export function PluginsFeature() {
   const availableUpdateFor = (pluginId: string) => versionItems.find(
     (item) => stringValue(item.id) === pluginId && item.updateAvailable === true,
   );
-  const skillSnapshot = asRecord(skills.data);
   const skillItems = arrayRecords(skillSnapshot.items);
   const filteredSkills = useMemo(() => {
     const needle = skillQuery.trim().toLocaleLowerCase('zh-CN');
@@ -520,7 +551,7 @@ export function PluginsFeature() {
   const selectedSkillUpdate = selectedSkillPackage
     ? availableUpdateFor(stringValue(selectedSkillPackage.id))
     : undefined;
-  const skillRuntimeAvailable = skillSnapshot.runtimeAvailable !== false;
+  const skillCountLabel = skills.error ? '暂时无法读取' : skills.data === undefined ? '读取中' : !skillRuntimeAvailable ? '状态未知' : `${filteredSkills.length} 项`;
 
   /* -- Shared building blocks. Web keeps the management-sheet sections; the
      native App Center composes the same blocks into purpose cards without
@@ -562,7 +593,7 @@ export function PluginsFeature() {
     <>
       <div className="plugins-filters">
         <Field className="plugins-search" htmlFor="plugin-search" label="搜索">
-          <Input id="plugin-search" onChange={(event) => setQuery(event.target.value)} placeholder="名称、用途、来源或权限" value={query} />
+          <Input id="plugin-search" ref={searchRef} onChange={(event) => setQuery(event.target.value)} placeholder="名称、用途、来源或权限" value={query} />
         </Field>
         <Field htmlFor="plugin-availability" label="状态">
           <Select
@@ -635,19 +666,25 @@ export function PluginsFeature() {
             </aside>
           )}
         </div>
-      ) : <EmptyState description={items.length ? '换一个关键词或筛选条件试试。' : '当前没有可用的技能或工具。'} icon={Search} title="没有找到能力" />}
+      ) : <EmptyState
+        action={query || kind !== 'all' || availability !== 'all' ? <Button onClick={() => { setQuery(''); setKind('all'); setAvailability('all'); searchRef.current?.focus(); }} size="small" variant="quiet">清除筛选</Button> : undefined}
+        description={items.length ? '换一个关键词或清除筛选，查看全部能力。' : '当前没有可用的技能或工具。'}
+        icon={Search}
+        title="没有找到能力"
+      />}
     </>
   );
 
   const runtimeNotice = !pluginRuntimeAvailable ? (
-    <InlineNotice title="Pi Runtime 暂时未连接" tone="warning">
-      插件清单仍可浏览，但已安装状态和安装操作要等 Pi Runtime 恢复后才能继续；页面不会再把断连伪装成“0 个已安装”。
+    <InlineNotice title="插件服务暂未连接" tone="warning">
+      暂时无法确认已安装状态。恢复连接后刷新即可继续，填写的来源会保留。
+      <Button loading={installed.isFetching} onClick={retryPackages} size="small" variant="quiet">刷新状态</Button>
     </InlineNotice>
   ) : null;
 
   const packageStatusBadge = (
     <StatusBadge
-      label={packagesError ? '暂时无法读取' : installed.data === undefined ? (installed.isFetching ? '正在读取' : '等待读取') : !pluginRuntimeAvailable ? 'Pi 未连接' : `${installedItems.length} 个已安装`}
+      label={packagesError ? '暂时无法读取' : installed.data === undefined ? (installed.isFetching ? '正在读取' : '等待读取') : !pluginRuntimeAvailable ? '安装状态未知' : `${installedItems.length} 个已安装`}
       tone={packagesError || !pluginRuntimeAvailable ? 'warning' : 'neutral'}
     />
   );
@@ -664,7 +701,7 @@ export function PluginsFeature() {
       </Field>
       <Switch checked={enableAfterInstall} label="安装后立即启用" onCheckedChange={setEnableAfterInstall} />
       <Button
-        disabled={!packageSource.trim() || lifecyclePending}
+        disabled={!packageSource.trim() || lifecyclePending || !pluginOperationsAvailable}
         leadingIcon={<PackageCheck size={15} />}
         loading={validate.isPending || preview.isPending}
         onClick={() => void previewPackageSource()}
@@ -720,7 +757,7 @@ export function PluginsFeature() {
                   >打开 {extensionApp!.label}</Button>
                   {item.updateAvailable === true ? (
                     <Button
-                      disabled={lifecyclePending}
+                      disabled={lifecyclePending || !pluginOperationsAvailable}
                       leadingIcon={<PackageCheck size={15} />}
                       loading={validate.isPending || preview.isPending}
                       onClick={() => void previewCatalogAction(item)}
@@ -731,7 +768,7 @@ export function PluginsFeature() {
                 </>
               ) : (
                 <Button
-                  disabled={item.actionable !== true || (item.installed === true && item.updateAvailable !== true) || lifecyclePending}
+                  disabled={item.actionable !== true || (item.installed === true && item.updateAvailable !== true) || lifecyclePending || !pluginOperationsAvailable}
                   leadingIcon={<PackageCheck size={15} />}
                   loading={validate.isPending || preview.isPending}
                   onClick={() => void previewCatalogAction(item)}
@@ -834,9 +871,10 @@ export function PluginsFeature() {
           ? <div><dt>保留的数据</dt><dd>只移除这个 Pi Package 的受管资源；不会删除项目文件、对话、WorkDocument 或个人数据。</dd></div>
           : null}
       </dl>
+      {!pluginOperationsAvailable ? <p>{pluginActionBlockedReason}</p> : null}
       <div className="plugin-lifecycle__approval-actions">
         <Button disabled={lifecyclePending} onClick={() => setPendingChange({})} size="small" variant="quiet">取消</Button>
-        <Button disabled={lifecyclePending} leadingIcon={<ShieldCheck size={16} />} loading={apply.isPending} onClick={() => void applyPendingChange()} size="small" variant="primary">确认更改</Button>
+        <Button disabled={lifecyclePending || !pluginOperationsAvailable} leadingIcon={<ShieldCheck size={16} />} loading={apply.isPending} onClick={() => void applyPendingChange()} size="small" variant="primary">确认更改</Button>
       </div>
     </section>
   ) : null;
@@ -859,19 +897,21 @@ export function PluginsFeature() {
   const skillsBrowseBlock = (
     <div className="skills-surface">
       {!skillRuntimeAvailable ? (
-        <InlineNotice title="Pi Runtime 暂时未连接" tone="warning">
-          Skill 清单暂时无法从 Pi Runtime 更新；页面不会把断连伪装成空清单。
+        <InlineNotice title="技能清单暂时无法更新" tone="warning">
+          技能服务暂未连接，数量和当前状态尚未确认。重新读取后可继续，搜索条件会保留。
+          <Button loading={skills.isFetching} onClick={() => void skills.refetch()} size="small" variant="quiet">重新读取技能</Button>
         </InlineNotice>
       ) : null}
       <MetricStrip items={[
-        { label: '可查看', value: skillItems.length, detail: '当前可发现的 Skill', icon: Sparkles },
-        { label: '随插件管理', value: skillItems.filter((item) => stringValue(item.management) === 'package').length, detail: '按 Package 统一变更', icon: PackageCheck },
-        { label: '仅查看', value: skillItems.filter((item) => stringValue(item.management) === 'inspect_only').length, detail: '随产品提供或来自当前项目', icon: ShieldQuestion },
+        { label: '可查看', value: skillRuntimeAvailable ? skillItems.length : '—', detail: '当前可发现的 Skill', icon: Sparkles },
+        { label: '随插件管理', value: skillRuntimeAvailable ? skillItems.filter((item) => stringValue(item.management) === 'package').length : '—', detail: '按 Package 统一变更', icon: PackageCheck },
+        { label: '仅查看', value: skillRuntimeAvailable ? skillItems.filter((item) => stringValue(item.management) === 'inspect_only').length : '—', detail: '随产品提供或来自当前项目', icon: ShieldQuestion },
       ]} />
       <div className="skills-filters">
         <Field className="plugins-search" htmlFor="skill-search" label="搜索">
           <Input
             id="skill-search"
+            ref={skillSearchRef}
             onChange={(event) => setSkillQuery(event.target.value)}
             placeholder="名称、用途、Package 或路径"
             value={skillQuery}
@@ -918,7 +958,7 @@ export function PluginsFeature() {
                   className="plugins-list__item skills-list__item"
                   data-selected={isSelected || undefined}
                   key={id}
-                  onClick={() => setSelectedSkillId(id)}
+                  onClick={(event) => { selectedSkillTriggerRef.current = event.currentTarget; setSelectedSkillId(id); }}
                   type="button"
                 >
                   <span className="plugins-list__copy">
@@ -942,8 +982,9 @@ export function PluginsFeature() {
               installedPackage={selectedSkillPackage}
               item={selectedSkill}
               lifecyclePending={lifecyclePending}
+              lifecycleUnavailable={!pluginOperationsAvailable}
               onAction={(action) => void previewInstalledAction(action, stringValue(selectedSkill.packageId))}
-              onClose={() => setSelectedSkillId('')}
+              onClose={() => { setSelectedSkillId(''); selectedSkillTriggerRef.current?.focus(); }}
               onOpenScenes={() => desktop ? openPawOsRoute(desktop, '/plugins?view=scenes') : navigate('/plugins?view=scenes')}
               onRetry={() => void skill.refetch()}
               onUpdate={() => {
@@ -961,13 +1002,14 @@ export function PluginsFeature() {
             </aside>
           )}
         </div>
-      ) : (
+      ) : skillRuntimeAvailable ? (
         <EmptyState
-          description={skillItems.length ? '换一个关键词或筛选条件试试。' : '当前没有发现 Bundled、项目或已安装 Package Skill。'}
+          action={skillQuery || skillSource !== 'all' || skillStatus !== 'all' ? <Button onClick={() => { setSkillQuery(''); setSkillSource('all'); setSkillStatus('all'); skillSearchRef.current?.focus(); }} size="small" variant="quiet">清除筛选</Button> : undefined}
+          description={skillItems.length ? '换一个关键词或清除筛选，查看全部技能。' : '当前没有发现随产品提供、来自项目或已安装插件的技能。'}
           icon={Sparkles}
           title="没有找到 Skill"
         />
-      )}
+      ) : null}
     </div>
   );
 
@@ -1062,7 +1104,7 @@ export function PluginsFeature() {
               ) : null}
               {update ? (
                 <Button
-                  disabled={lifecyclePending}
+                  disabled={lifecyclePending || !pluginOperationsAvailable}
                   leadingIcon={<CircleArrowUp size={15} />}
                   loading={(validate.isPending || preview.isPending) && stringValue(validate.variables?.catalogId) === pluginId}
                   onClick={() => void previewInstalledUpdate(plugin, update)}
@@ -1070,21 +1112,21 @@ export function PluginsFeature() {
                 >更新到 v{stringValue(update.latestVersion)}</Button>
               ) : null}
               <Button
-                disabled={lifecyclePending}
+                disabled={lifecyclePending || !pluginOperationsAvailable}
                 leadingIcon={<Power size={15} />}
                 onClick={() => void previewInstalledAction(enabled ? 'disable' : 'enable', pluginId)}
                 size="small"
                 variant="quiet"
               >{enabled ? '停用' : '启用'}</Button>
               <Button
-                disabled={!rollbackReady || lifecyclePending}
+                disabled={!rollbackReady || lifecyclePending || !pluginOperationsAvailable}
                 leadingIcon={<RotateCcw size={15} />}
                 onClick={() => void previewInstalledAction('rollback', pluginId)}
                 size="small"
                 variant="quiet"
               >恢复上一版本</Button>
               <Button
-                disabled={lifecyclePending}
+                disabled={lifecyclePending || !pluginOperationsAvailable}
                 leadingIcon={<PackageX size={15} />}
                 onClick={() => void previewInstalledAction('uninstall', pluginId)}
                 size="small"
@@ -1093,7 +1135,7 @@ export function PluginsFeature() {
             </div>
           </article>
         );
-      }) : <EmptyState description="需要新能力时，可以先查看来源和权限，再决定是否安装。" icon={PackageCheck} title="还没有额外扩展" />}
+      }) : pluginRuntimeAvailable ? <EmptyState description="需要新能力时，可以先查看来源和权限，再决定是否安装。" icon={PackageCheck} title="还没有额外扩展" /> : null}
     </div>
   );
 
@@ -1182,7 +1224,7 @@ export function PluginsFeature() {
     <NativeConsole
       icon={Sparkles}
       title="Skills"
-      trailing={skills.data ? <span className="plugins-count">{filteredSkills.length} 项</span> : null}
+      trailing={skills.data ? <span className="plugins-count">{skillCountLabel}</span> : null}
     >
       <QueryState error={asError(skills.error)} isPending={skills.isPending} onRetry={() => void skills.refetch()}>
         <div className="plugin-lifecycle">
@@ -1239,7 +1281,7 @@ export function PluginsFeature() {
       <ManagementSection
         description="查看 Pi Runtime 当前发现的 Skill，按来源、状态和内容修订筛选。Package Skill 的变更始终作用于整个 Package；Bundled 与项目 Skill 仅提供正文查看。"
         title="Skills"
-        trailing={<span className="plugins-count">{skills.data ? `${filteredSkills.length} 项` : '读取中'}</span>}
+        trailing={<span className="plugins-count">{skillCountLabel}</span>}
       >
         <QueryState error={asError(skills.error)} isPending={skills.isPending} onRetry={() => void skills.refetch()}>
           {skillsBrowseBlock}
@@ -1384,6 +1426,7 @@ function SkillDetail({
   installedPackage,
   item,
   lifecyclePending,
+  lifecycleUnavailable,
   onAction,
   onClose,
   onOpenScenes,
@@ -1397,6 +1440,7 @@ function SkillDetail({
   installedPackage?: Record<string, unknown>;
   item: Record<string, unknown>;
   lifecyclePending: boolean;
+  lifecycleUnavailable: boolean;
   onAction: (action: 'enable' | 'disable' | 'uninstall') => void;
   onClose: () => void;
   onOpenScenes: () => void;
@@ -1423,7 +1467,6 @@ function SkillDetail({
           icon={<PanelRightClose size={16} />}
           label="关闭 Skill 详情"
           onClick={onClose}
-          tooltip
         />
       </div>
       <div className="plugins-detail__heading">
@@ -1459,7 +1502,7 @@ function SkillDetail({
       <div className="skills-detail__actions">
         {canManagePackage && actions.includes(enabled ? 'disable' : 'enable') ? (
           <Button
-            disabled={lifecyclePending || !installedPackage}
+            disabled={lifecyclePending || lifecycleUnavailable || !installedPackage}
             leadingIcon={<Power size={15} />}
             onClick={() => onAction(enabled ? 'disable' : 'enable')}
             size="small"
@@ -1467,7 +1510,7 @@ function SkillDetail({
         ) : null}
         {canManagePackage && update && actions.includes('update') ? (
           <Button
-            disabled={lifecyclePending || !installedPackage}
+            disabled={lifecyclePending || lifecycleUnavailable || !installedPackage}
             leadingIcon={<CircleArrowUp size={15} />}
             loading={lifecyclePending}
             onClick={onUpdate}
@@ -1477,7 +1520,7 @@ function SkillDetail({
         ) : null}
         {canManagePackage && actions.includes('uninstall') ? (
           <Button
-            disabled={lifecyclePending || !installedPackage}
+            disabled={lifecyclePending || lifecycleUnavailable || !installedPackage}
             leadingIcon={<PackageX size={15} />}
             onClick={() => onAction('uninstall')}
             size="small"
@@ -1549,7 +1592,6 @@ function ToolDetail({
           icon={<PanelRightClose size={16} />}
           label="关闭能力详情"
           onClick={onClose}
-          tooltip
         />
       </div>
 

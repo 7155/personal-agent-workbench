@@ -157,4 +157,12 @@ describe('PAWOS system Apps window shape', () => {
       '.paw-system-app__frame',
     ]) expect(reduced, owner).toContain(owner);
   });
+
+  it('animates page content without trapping toolbar actions below the chrome', () => {
+    const page = sysAppsCss.match(/\.paw-system-app__page\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(page).not.toMatch(/animation:|opacity:|transform:|isolation:/);
+    expect(sysAppsCss).toMatch(/\.paw-system-app__page \.mgmt-page__body\s*\{[^}]*animation:\s*paw-system-page-in/s);
+    const reduced = sysAppsCss.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*)\n\}/)?.[1] ?? '';
+    expect(reduced).toContain('.paw-system-app__page .mgmt-page__body');
+  });
 });

@@ -1,5 +1,6 @@
 const PET_PATH = '/desktop-pet';
 const SIZE = { width: 160, height: 190 };
+const READY_TIMEOUT_MS = 10_000;
 
 export function clampPetPosition(position, area, size = SIZE) {
   return {
@@ -18,13 +19,26 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
   let disposed = false;
   let nativeReady = false;
   let surfaceReady = false;
+  let finishLoading = null;
+  let readinessTimer = null;
   const positions = new Map();
   const url = `${origin}${PET_PATH}`;
   const state = installDesktopPetState({ ipcMain, getSource, origin, onSnapshot: (snapshot) => {
     if (surfaceReady && window && !window.isDestroyed()) window.webContents.send('paw-pet:state', snapshot);
   } });
+  const settlePresentation = (visible) => {
+    clearTimeout(readinessTimer); readinessTimer = null;
+    const finish = finishLoading; finishLoading = null; loading = null;
+    finish?.(visible);
+  };
   const present = (target, epoch) => {
-    if (nativeReady && surfaceReady && enabled && epoch === presentationEpoch && window === target && !target.isDestroyed()) target.showInactive();
+    if (!nativeReady || !surfaceReady || !enabled || epoch !== presentationEpoch || window !== target || target.isDestroyed()) return;
+    if (target.isVisible()) { settlePresentation(true); return; }
+    try {
+      target.showInactive();
+      onVisibilityChanged(true);
+      settlePresentation(true);
+    } catch { hide(); }
   };
   const validUrl = (value) => {
     try { const target = new URL(value); return target.origin === origin && target.pathname === PET_PATH && !target.search && !target.hash; }
@@ -46,7 +60,7 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
     enabled = false;
     presentationEpoch += 1;
     drag = null;
-    loading = null;
+    settlePresentation(false);
     const previous = window;
     window = null;
     if (previous && !previous.isDestroyed()) previous.destroy();
@@ -54,10 +68,13 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
   };
   const show = () => {
     if (disposed) return Promise.resolve(false);
-    if (window && !window.isDestroyed()) return loading || Promise.resolve(true);
+    if (window && !window.isDestroyed()) return loading || Promise.resolve(window.isVisible());
     enabled = true;
     nativeReady = false;
     surfaceReady = false;
+    // A native checkbox toggles before its click handler. Opening is pending,
+    // not visible; only the two-ready presentation below can check it again.
+    onVisibilityChanged(false);
     const epoch = ++presentationEpoch;
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const position = clampPetPosition(positions.get(display.id) || {
@@ -76,21 +93,26 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
     current.webContents.on('will-navigate', (event, target) => { if (!validUrl(target)) event.preventDefault(); });
     current.webContents.on('will-redirect', (event, target) => { if (!validUrl(target)) event.preventDefault(); });
     current.once('closed', () => {
-      if (window === current) { window = null; enabled = false; drag = null; onVisibilityChanged(false); }
+      if (window === current) { window = null; enabled = false; drag = null; settlePresentation(false); onVisibilityChanged(false); }
     });
     current.once('ready-to-show', () => {
       if (window !== current || epoch !== presentationEpoch) return;
       nativeReady = true;
       present(current, epoch);
     });
-    onVisibilityChanged(true);
-    loading = Promise.resolve().then(() => current.loadURL(url)).then(() => {
-      return enabled && epoch === presentationEpoch && window === current && !current.isDestroyed();
-    }).catch(() => {
+    loading = new Promise((resolve) => { finishLoading = resolve; });
+    const pending = loading;
+    readinessTimer = setTimeout(() => {
+      if (window === current && epoch === presentationEpoch) {
+        console.warn('Desktop pet did not become ready; close the hidden window and allow retry');
+        hide();
+      }
+    }, READY_TIMEOUT_MS);
+    readinessTimer.unref?.();
+    void Promise.resolve().then(() => current.loadURL(url)).catch(() => {
       if (window === current) hide();
-      return false;
-    }).finally(() => { if (epoch === presentationEpoch) loading = null; });
-    return loading;
+    });
+    return pending;
   };
   ipcMain.handle('paw-pet:ready', (event) => {
     const target = owned(event);
@@ -128,6 +150,14 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
     }
     if (phase === 'end' || phase === 'cancel') drag = null;
   });
+  ipcMain.handle('paw-pet:move', (event, direction) => {
+    const target = owned(event);
+    if (!['left', 'right', 'up', 'down'].includes(direction)) throw new Error('Invalid desktop pet direction');
+    drag = null;
+    const [x, y] = target.getPosition();
+    const [dx, dy] = { left: [-16, 0], right: [16, 0], up: [0, -16], down: [0, 16] }[direction];
+    place(target, { x: x + dx, y: y + dy });
+  });
   const keepVisible = () => {
     if (window && !window.isDestroyed()) {
       drag = null;
@@ -144,6 +174,6 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
     screen.removeListener('display-removed', keepVisible);
     screen.removeListener('display-metrics-changed', keepVisible);
   });
-  return { show, hide, isVisible: () => enabled };
+  return { show, hide, isVisible: () => Boolean(window && !window.isDestroyed() && window.isVisible()) };
 }
 import { installDesktopPetState } from './desktop-pet-state.mjs';

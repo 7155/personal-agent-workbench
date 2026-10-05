@@ -356,15 +356,18 @@
   overflow: hidden;
 }
 
-/* Opacity only. A transform here would make the workspace a containing block
-   and tear the page toolbar out of the chrome band for the length of the
-   animation. */
+/* Keep the toolbar's ancestors free of animation-created stacking contexts:
+   an opacity animation with forwards fill would trap its z-index below the
+   chrome even after the page had finished entering. */
 .paw-desktop-root .paw-system-app__page {
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.paw-desktop-root .paw-system-app__page .mgmt-page__body {
   animation: paw-system-page-in 200ms ease-out both;
 }
 
@@ -1333,7 +1336,7 @@
 @media (prefers-reduced-motion: reduce) {
   .paw-desktop-root .paw-system-app .mgmt-section { animation: none; }
   .paw-desktop-root .paw-system-app__chrome,
-  .paw-desktop-root .paw-system-app__page,
+  .paw-desktop-root .paw-system-app__page .mgmt-page__body,
   .paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge { animation: none; }
   .paw-desktop-root .paw-system-app .mgmt-status i,
   .paw-desktop-root .paw-system-resource-state[data-state='loading'] svg { animation: none; }

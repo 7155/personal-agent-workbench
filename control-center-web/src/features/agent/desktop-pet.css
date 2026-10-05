@@ -3,18 +3,18 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 }
 .desktop-pet {
   position: relative; display: flex; flex-direction: column; align-items: center;
-  width: 100vw; height: 100vh; padding: 27px 8px 8px; gap: 5px; user-select: none;
+  width: 100vw; height: 100vh; padding: 35px 8px 8px; gap: 5px; user-select: none;
   color: var(--color-text); box-sizing: border-box;
 }
 .desktop-pet[data-expanded='true'] {
   border: 1px solid var(--color-border); border-radius: 18px;
   background: var(--color-surface); box-shadow: inset 0 1px 0 rgb(255 255 255 / .45);
-  padding: 28px 12px 10px;
+  padding: 36px 12px 10px;
 }
 .desktop-pet button { font: inherit; }
 .desktop-pet button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .desktop-pet__drag, .desktop-pet__hide {
-  position: absolute; top: 3px; height: 24px; border: 0; border-radius: 8px;
+  position: absolute; top: 3px; height: 32px; min-width: 32px; border: 0; border-radius: 8px;
   background: var(--color-surface); color: var(--color-text-muted); cursor: pointer;
 }
 .desktop-pet__drag {
@@ -24,7 +24,7 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 }
 .desktop-pet__drag:active { cursor: grabbing; }
 .desktop-pet__drag > span:first-child { font-size: 17px; line-height: 1; }
-.desktop-pet__hide { right: 7px; width: 24px; font-size: 18px !important; }
+.desktop-pet__hide { right: 7px; width: 32px; font-size: 18px !important; }
 .desktop-pet__planet {
   position: relative; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0;
   border-radius: 50%; background: transparent; cursor: pointer;

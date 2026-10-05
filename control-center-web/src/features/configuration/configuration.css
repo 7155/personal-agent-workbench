@@ -31,6 +31,7 @@
 :is(main, section)[data-route-id='configuration'] .configuration-editor {
   display: grid;
   min-width: 0;
+  align-items: start;
   gap: var(--space-4);
   grid-template-columns: minmax(184px, .42fr) minmax(360px, 1.58fr);
 }
@@ -279,6 +280,10 @@
 
 :is(main, section)[data-route-id='configuration'] .configuration-editor > * {
   min-width: 0;
+}
+
+:is(main, section)[data-route-id='configuration'] .configuration-editor__fields {
+  align-content: start;
 }
 
 :is(main, section)[data-route-id='configuration'] .configuration-editor__title {

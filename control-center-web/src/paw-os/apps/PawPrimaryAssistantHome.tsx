@@ -1,6 +1,7 @@
 import { ArrowUp, ArrowUpRight, BookOpen, Check, ChevronRight, Folder, LoaderCircle, MessageCircle, Sparkles } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import { textCodePointCount, trimContractText } from '@/contracts/text-budget';
 import { useProductIdentity } from '@/features/identity/product-identity';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
 import { publicAgentErrorText } from '@/features/agent/public-error';
@@ -49,14 +50,25 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const sourceTransport = useRef(transport);
   const refreshSource = useRef(initialSource);
   const input = useRef<HTMLTextAreaElement>(null);
+  const acceptanceInput = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const draftConsumed = useRef(false);
   const rememberLatestDraft = useRef<() => void>(() => undefined);
   const composerHintId = useId();
+  const objectiveErrorId = useId();
+  const acceptanceErrorId = useId();
+  const message = trimContractText(draft);
+  const criteria = acceptance.split('\n').map(trimContractText).filter(Boolean);
+  const objectiveLength = textCodePointCount(message);
+  const criteriaLength = textCodePointCount(criteria.join('\n'));
+  const objectiveInvalid = intent === 'execute' && objectiveLength > 4000;
+  const criteriaInvalid = intent === 'execute' && (criteria.length > 20 || criteriaLength > 2000);
+  const taskInvalid = objectiveInvalid || criteriaInvalid;
   const baseSubmitHint = submitting ? (intent === 'execute' ? '正在确认任务，请稍候…' : '正在打开对话…')
     : pickingWorkspace ? (intent === 'execute' ? '正在选择目录，选好后再确认授权。' : '正在选择项目，选好后继续讨论。')
     : loading ? '正在连接对话，可以先写下想法。'
     : !session ? '暂时无法发送。草稿保留在这里，请重新连接。'
+    : taskInvalid ? '请先修改超出限制的任务内容。草稿会完整保留。'
     : intent === 'execute' && !workspace.trim() ? '先选择本次工作目录。'
     : intent === 'execute' && !scopeConfirmed ? '确认目录权限后，才会开始执行。'
     : 'Enter 发送 · Shift + Enter 换行';
@@ -107,8 +119,8 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   }
 
   async function submit() {
-    const message = draft.trim();
     if (lock.current || picker.current || !session || !message || loading) return;
+    if (taskInvalid) { (objectiveInvalid ? input : acceptanceInput).current?.focus(); return; }
     if (intent === 'execute' && (!workspace.trim() || !scopeConfirmed)) {
       setError('请指定本次工作的目录，并确认这个目录内的执行权限。'); return;
     }
@@ -124,7 +136,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
         const result = await transport.request<Record<string, unknown>>({ pathId: 'agent.primary.tasks.create', body: {
           clientRequestId: clientMessageId, sourceSessionId: session.id, objective: message,
           ...(sourceMessageId ? { sourceMessageId } : {}),
-          acceptanceCriteria: acceptance.split('\n').map(line => line.trim()).filter(Boolean),
+          acceptanceCriteria: criteria,
           workspaceRoots: executionRoots, workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
         } });
         if (generation !== owner.current) return;
@@ -189,19 +201,22 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
           {session ? <button disabled={submitting || pickingWorkspace || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="打开已有记录，未发送的文字会带入输入框" type="button">打开对话 <ArrowUpRight size={14} /></button> : null}
         </div>
         <div className="paw-primary-home__fields">
-        <textarea aria-label="和我的助手聊聊" aria-describedby={composerHintId} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }} onKeyDown={event => {
+        <textarea aria-label="和我的助手聊聊" aria-invalid={objectiveInvalid || undefined} aria-describedby={`${composerHintId}${objectiveInvalid ? ` ${objectiveErrorId}` : ''}`} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }} onKeyDown={event => {
           if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
           if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); }
         }} placeholder={intent === 'discuss' ? '想法、问题，或一件还没想清楚的事…' : '这次要完成什么？'} rows={3} />
+        {intent === 'execute' ? <small className="paw-primary-home__field-counter">{objectiveLength} / 4000 字</small> : null}
+        {objectiveInvalid ? <p className="paw-primary-home__field-error" id={objectiveErrorId} role="alert">任务目标最多 4000 字，请精简后再授权。</p> : null}
         {intent === 'execute' ? <div className="paw-primary-home__scope">
           <p className="paw-primary-home__scope-note">会参考这段讨论中近期的消息，不包含全部历史。请确认要做什么、怎样算完成，以及允许操作的目录。</p>
-          <label>完成标准 <span>可选，每行一项</span><textarea aria-label="完成标准" value={acceptance} disabled={submitting} onChange={event => setAcceptance(event.target.value)} placeholder="例如：测试通过，并说明修改了什么" rows={2} /></label>
+          <label>完成标准 <span>可选，每行一项 · {criteria.length} / 20 项 · {criteriaLength} / 2000 字（含换行）</span><textarea aria-label="完成标准" aria-invalid={criteriaInvalid || undefined} aria-describedby={criteriaInvalid ? acceptanceErrorId : undefined} ref={acceptanceInput} value={acceptance} disabled={submitting} onChange={event => setAcceptance(event.target.value)} placeholder="例如：测试通过，并说明修改了什么" rows={2} /></label>
+          {criteriaInvalid ? <p className="paw-primary-home__field-error" id={acceptanceErrorId} role="alert">完成标准最多 20 项，总计最多 2000 字（含换行）。请精简后再授权。</p> : null}
           <label>本次工作目录<div className="paw-primary-home__folder"><Folder aria-hidden="true" size={15} /><input aria-label="本次工作目录" value={workspace} disabled={submitting || pickingWorkspace} onChange={event => { setWorkspace(event.target.value); setScopeConfirmed(false); setPickerNotice(''); }} placeholder="/path/to/project" />{transport.pickFiles ? <button disabled={submitting || pickingWorkspace} aria-busy={pickingWorkspace} onClick={() => void chooseWorkspace()} type="button">{pickingWorkspace ? '正在选择…' : '选择目录'}</button> : null}</div></label>
           {executionRoots.length > 1 ? <ul className="paw-primary-home__root-list" aria-label="本次授权目录">{executionRoots.map(root => <li key={root}>{root}</li>)}</ul> : null}
           <label className="paw-primary-home__consent"><input type="checkbox" checked={scopeConfirmed} disabled={submitting || pickingWorkspace || !workspace.trim()} onChange={event => setScopeConfirmed(event.target.checked)} /><span>允许助手在{executionRoots.length > 1 ? `以上 ${executionRoots.length} 个目录` : '这个目录'}内执行本次任务、修改文件和运行命令。可以随时停止。</span></label>
         </div> : null}
         </div>
-        <footer><div className="paw-primary-home__intent" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className="paw-primary-home__send" disabled={loading || submitting || pickingWorkspace || !session || !draft.trim() || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : <ArrowUp size={17} />}<span>{submitting ? '请稍候' : intent === 'discuss' ? '发送' : '授权并开始'}</span></button></footer>
+        <footer><div className="paw-primary-home__intent" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className="paw-primary-home__send" disabled={loading || submitting || pickingWorkspace || !session || !message || taskInvalid || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : <ArrowUp size={17} />}<span>{submitting ? '请稍候' : intent === 'discuss' ? '发送' : '授权并开始'}</span></button></footer>
         <p className="paw-primary-home__composer-hint" id={composerHintId} role="status">{submitHint}</p>
       </section>
       </div>

@@ -2,6 +2,7 @@ import { BookOpen, Check, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button } from '@/components/primitives';
+import { compactContractText, textCodePointCount } from '@/contracts/text-budget';
 import type { MemoryReferenceSelection } from './MemoryReferenceDialog';
 import './memory-profile.css';
 
@@ -42,14 +43,15 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
     return () => { controller.abort(); owner.current += 1; };
   }, [transport, revision]);
   const dirty = profile && JSON.stringify(draft.map(item => ({ id: item.id, text: item.text }))) !== JSON.stringify(profileDraft(profile).map(item => ({ id: item.id, text: item.text })));
-  const total = draft.reduce((sum, item) => sum + [...item.text].length, 0);
-  const invalid = total > 4000 || draft.some(item => [...item.text].length > 600);
+  const normalizedParagraphs = draft.map(item => compactContractText(item.text));
+  const total = textCodePointCount(normalizedParagraphs.filter(Boolean).join('\n\n'));
+  const invalid = total > 4000 || normalizedParagraphs.some(text => textCodePointCount(text) > 600);
 
   async function save() {
     if (!profile || !dirty || lock.current || invalid || conflict) return;
     lock.current = true; setSaving(true); setSaved(false); setError('');
     const generation = owner.current;
-    const paragraphs = draft.filter(item => item.id || item.text.trim()).map(({ key: _key, ...item }) => item);
+    const paragraphs = draft.filter(item => item.id || compactContractText(item.text)).map(({ key: _key, ...item }) => item);
     const signature = JSON.stringify({ expectedRevision: profile.revision, paragraphs });
     if (attempt.current?.signature !== signature) attempt.current = { signature, id: `profile-${crypto.randomUUID()}` };
     try {
@@ -108,15 +110,15 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
       <div className="memory-profile__paragraphs">{draft.map((item, index) => {
         const source = profile.paragraphs.find(paragraph => paragraph.id === item.id);
         return <section className="memory-profile__paragraph" key={item.key}>
-          <label htmlFor={`profile-paragraph-${item.key}`}><span>背景 {index + 1}</span><small>{[...item.text].length} / 600</small></label>
-          <textarea id={`profile-paragraph-${item.key}`} aria-label={`个人背景 ${index + 1}`} value={item.text} rows={3} disabled={saving} onChange={event => { setDraft(current => current.map(row => row.key === item.key ? { ...row, text: event.target.value } : row)); setSaved(false); }} placeholder="例如：我正在做什么，希望助手怎样配合，哪些偏好值得长期记住。" />
+          <label htmlFor={`profile-paragraph-${item.key}`}><span>背景 {index + 1}</span><small>{textCodePointCount(normalizedParagraphs[index])} / 600</small></label>
+          <textarea id={`profile-paragraph-${item.key}`} aria-label={`个人背景 ${index + 1}`} aria-invalid={textCodePointCount(normalizedParagraphs[index]) > 600 || undefined} value={item.text} rows={3} disabled={saving} onChange={event => { setDraft(current => current.map(row => row.key === item.key ? { ...row, text: event.target.value } : row)); setSaved(false); }} placeholder="例如：我正在做什么，希望助手怎样配合，哪些偏好值得长期记住。" />
           {source ? <footer><span>{item.text !== source.text ? '未保存的修改' : '已保存'} · 版本 {source.revision.slice(0, 10)}</span><div>{source.sourceRefs.slice(0, 3).map((ref, sourceIndex) => <button key={`${ref.kind}:${ref.id}`} onClick={() => onOpenReference({ kind: ref.kind, referenceId: ref.id })} type="button">来源 {sourceIndex + 1}</button>)}{source.sourceCount > source.sourceRefs.length ? <small>共 {source.sourceCount} 条来源</small> : null}</div></footer> : <footer><span>新背景 · 尚未保存</span></footer>}
-          {item.id && !item.text.trim() ? <small className="memory-profile__retract">保存后，这条背景会退出当前简介；历史版本仍可核对。</small> : null}
+          {item.id && !normalizedParagraphs[index] ? <small className="memory-profile__retract">保存后，这条背景会退出当前简介；历史版本仍可核对。</small> : null}
         </section>;
       })}</div>
       <div className="memory-profile__actions"><Button leadingIcon={<Plus size={14} />} size="small" variant="quiet" disabled={saving || draft.length >= 12} onClick={() => setDraft(current => [...current, newParagraph()])}>补充一条背景</Button><span>{total} / 4000 字</span><Button leadingIcon={saved ? <Check size={14} /> : undefined} disabled={!dirty || invalid || conflict} loading={saving} onClick={() => void save()} size="small">{saving ? '正在保存' : saved ? '已保存' : '保存修改'}</Button></div>
       <p className="memory-profile__footnote" role="status">{saving ? '正在保存，请稍候。' : conflict ? '草稿尚未覆盖最新版本。核对上方内容后再继续。' : dirty ? '有未保存的修改。点击“保存修改”后才会更新背景。' : saved ? '本次修改已保存。' : '当前显示已保存的背景。'}</p>
-      {invalid ? <p className="memory-profile__notice" role="alert">每条背景最多 600 字，全部背景最多 4000 字。草稿不会被截断。</p> : null}
+      {invalid ? <p className="memory-profile__notice" role="alert">每条背景最多 600 字，全部背景最多 4000 字（含段间空行）。草稿不会被截断。</p> : null}
       <p className="memory-profile__footnote">只保留确认过、长期有用的事实。不确定的背景可以留到对话里再说。</p>
     </> : null}
   </section>;

@@ -80,6 +80,9 @@
 .paw-primary-home__composer > :not(.paw-primary-home__fields) { flex: none; }
 .paw-primary-home__fields { min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .paw-primary-home__fields > textarea { box-sizing: border-box; }
+.paw-primary-home__field-counter { display: block; margin: 0 20px 4px; color: var(--color-text-muted); font-size: 11px; text-align: right; }
+.paw-primary-home__field-error { margin: 4px 20px; color: var(--color-danger, #a03c35); font-size: 11px; line-height: 1.6; }
+.paw-primary-home__scope > .paw-primary-home__field-error { margin-inline: 0; }
 .paw-primary-home__composer footer { border-top: 1px solid #edf0eb; background: #fff; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__heading p { display: none; }
 /* Measure the actual heading row, including the preview notice. A guessed

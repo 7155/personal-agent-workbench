@@ -19,6 +19,7 @@ function harness({ deferred = false, autoReady = true } = {}) {
       created.push(this);
     }
     isDestroyed() { return this.destroyed; }
+    isVisible() { return this.visible; }
     destroy() { this.destroyed = true; this.visible = false; this.emit('closed'); }
     getPosition() { return this.position; }
     getSize() { return this.size; }
@@ -76,11 +77,36 @@ test('hide invalidates pending loading and stale ready events without hiding a n
 });
 
 test('the shared boot screen stays hidden until the pet renderer acknowledges readiness', async () => {
-  const h = harness({ autoReady: false }); await h.manager.show();
+  const h = harness({ autoReady: false }); const pending = h.manager.show(); await Promise.resolve();
   const window = h.created[0]; assert.equal(window.visible, false);
-  h.invoke('ready'); assert.equal(window.visible, true);
+  assert.equal(h.manager.isVisible(), false); assert.deepEqual(h.visibility, [false]);
+  h.invoke('ready'); assert.equal(await pending, true); assert.equal(window.visible, true);
+  assert.deepEqual(h.visibility, [false, true]);
   h.manager.hide();
   assert.throws(() => h.invoke('ready', undefined, window.webContents), /rejected/);
+});
+
+test('missing renderer readiness fails closed and permits a fresh presentation', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = harness({ autoReady: false }); const pending = h.manager.show(); await Promise.resolve();
+  assert.equal(h.manager.isVisible(), false);
+  t.mock.timers.tick(10_000);
+  assert.equal(await pending, false); assert.equal(h.created[0].destroyed, true);
+  assert.ok(h.visibility.every(value => value === false));
+  const retry = h.manager.show(); await Promise.resolve();
+  h.invoke('ready'); assert.equal(await retry, true);
+  h.manager.hide();
+});
+
+test('keyboard movement is bounded by the same host-owned work area', async () => {
+  const h = harness(); await h.manager.show(); const window = h.created[0];
+  window.setPosition(4, 4); h.invoke('move', 'left'); h.invoke('move', 'up');
+  assert.deepEqual(window.position, [0, 0]);
+  h.invoke('move', 'right'); h.invoke('move', 'down');
+  assert.deepEqual(window.position, [16, 16]);
+  assert.throws(() => h.invoke('move', { x: 5000 }), /Invalid/);
+  assert.throws(() => h.invoke('move', 'left', {}), /rejected/);
+  h.manager.hide();
 });
 
 test('quit cancels pending presentation and removes display observers', async () => {
@@ -99,7 +125,7 @@ test('failed loads clear the toggle and permit a new show', async () => {
   h.created[0].reject(new Error('load failed'));
   assert.equal(await first, false); assert.equal(h.manager.isVisible(), false);
   const next = h.manager.show(); await Promise.resolve();
-  h.created[1].resolve(); assert.equal(await next, true);
+  h.created[1].emit('ready-to-show'); h.created[1].resolve(); assert.equal(await next, true);
 });
 
 test('IPC rejects foreign windows, subframes, navigated senders and invalid phases', async () => {
@@ -183,8 +209,8 @@ test('pet preload exposes only readiness and its three bounded host actions', as
       ipcRenderer: { invoke: (...args) => { calls.push(args); return Promise.resolve(); } } }),
   });
   assert.deepEqual(Object.keys(exposed), ['pawDesktopPet']);
-  assert.deepEqual(Object.keys(exposed.pawDesktopPet), ['ready', 'onSnapshot', 'hide', 'openAssistant', 'openConversation', 'setExpanded', 'drag']);
+  assert.deepEqual(Object.keys(exposed.pawDesktopPet), ['ready', 'onSnapshot', 'hide', 'openAssistant', 'openConversation', 'setExpanded', 'drag', 'move']);
   assert.equal(Object.isFrozen(exposed.pawDesktopPet), true);
-  await exposed.pawDesktopPet.ready(); await exposed.pawDesktopPet.hide(); await exposed.pawDesktopPet.openAssistant(); await exposed.pawDesktopPet.drag('cancel');
-  assert.deepEqual(calls, [['paw-pet:ready'], ['paw-pet:hide'], ['paw-pet:open-assistant'], ['paw-pet:drag', 'cancel']]);
+  await exposed.pawDesktopPet.ready(); await exposed.pawDesktopPet.hide(); await exposed.pawDesktopPet.openAssistant(); await exposed.pawDesktopPet.drag('cancel'); await exposed.pawDesktopPet.move('right');
+  assert.deepEqual(calls, [['paw-pet:ready'], ['paw-pet:hide'], ['paw-pet:open-assistant'], ['paw-pet:drag', 'cancel'], ['paw-pet:move', 'right']]);
 });

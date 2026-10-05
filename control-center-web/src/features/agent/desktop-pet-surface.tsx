@@ -5,6 +5,8 @@ import { createPetGesture } from './desktop-pet-interaction';
 import './desktop-pet.css';
 import { acceptPetSnapshot, petConversationLabel, petPresentation, unavailablePetSnapshot, type PetConversationTarget, type PetSnapshot } from './desktop-pet-snapshot';
 
+type PetDirection = 'left' | 'right' | 'up' | 'down';
+const moveKeys: Record<string, PetDirection | undefined> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 type PetHost = {
   ready(): Promise<PetSnapshot>;
   onSnapshot(listener: (snapshot: PetSnapshot) => void): () => void;
@@ -13,6 +15,7 @@ type PetHost = {
   openConversation(target: PetConversationTarget): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
   drag(phase: 'start' | 'move' | 'end' | 'cancel'): Promise<void>;
+  move(direction: PetDirection): Promise<void>;
 };
 declare global { interface Window { pawDesktopPet?: PetHost } }
 
@@ -22,6 +25,7 @@ export function DesktopPetSurface() {
   const [error, setError] = useState('');
   const [snapshot, setSnapshot] = useState(unavailablePetSnapshot);
   const [expanded, setExpanded] = useState(false);
+  const [keyboardMoving, setKeyboardMoving] = useState(false);
   const expansionRequest = useRef(0);
   const planet = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -34,7 +38,7 @@ export function DesktopPetSurface() {
     // Subscribe first: a newer pushed revision wins over a delayed ready replay.
     const unsubscribe = host.onSnapshot(receive);
     void host.ready().then(receive).catch(() => { if (active) setError('桌面伙伴未就绪，请重新开启'); });
-    const leaveWindow = () => { focusedConversation.current = null; };
+    const leaveWindow = () => { focusedConversation.current = null; setKeyboardMoving(false); };
     window.addEventListener('blur', leaveWindow);
     return () => { active = false; expansionRequest.current += 1; unsubscribe(); window.removeEventListener('blur', leaveWindow); };
   }, [host]);
@@ -71,8 +75,21 @@ export function DesktopPetSurface() {
     if (event.key === 'Escape') { event.stopPropagation(); if (expanded) expand(false); else invoke(host?.hide()); }
   }}>
     <button className="desktop-pet__drag" type="button" aria-label="移动桌面伙伴" disabled={!host}
-      title="拖动这里移动窗口" onPointerDown={(event) => {
+      aria-pressed={keyboardMoving} aria-description="按 Enter 或空格开始，再用方向键移动；Enter 或 Escape 结束"
+      title="拖动，或按 Enter 后用方向键移动" onClick={(event) => {
+        if (event.detail === 0 && gesture.current.canActivate(Date.now())) setKeyboardMoving(value => !value);
+      }} onBlur={() => setKeyboardMoving(false)} onKeyDown={(event) => {
+        if (!keyboardMoving) return;
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setKeyboardMoving(false); return; }
+        const direction = moveKeys[event.key];
+        if (!direction) return;
+        event.preventDefault(); event.stopPropagation();
+        if (!host || movePending.current) return;
+        movePending.current = true;
+        void host.move(direction).catch(() => setError('操作未完成，请重试')).finally(() => { movePending.current = false; });
+      }} onPointerDown={(event) => {
         if (event.button !== 0 || !event.isPrimary || !gesture.current.start({ pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY })) return;
+        setKeyboardMoving(false);
         event.currentTarget.setPointerCapture(event.pointerId); invoke(host?.drag('start'));
       }} onPointerMove={(event) => {
         if (!gesture.current.move(event) || !host || movePending.current) return;
@@ -88,7 +105,7 @@ export function DesktopPetSurface() {
       <RoomPlanetAvatar ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
       <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />
     </button>
-    <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{host ? presentation.label : '请从 PAW 桌面端开启'}</span>
+    <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? presentation.label : '请从 PAW 桌面端开启'}</span>
     {expanded ? <section className="desktop-pet__panel" id="pet-conversations" aria-label="后台对话">
       <header><strong>对话近况</strong><button type="button" onClick={() => expand(false)} aria-label="收起对话列表">收起</button></header>
       <div className="desktop-pet__list" ref={list}>
