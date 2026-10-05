@@ -378,7 +378,7 @@ export function PawAgentApp({
       });
       if (!archived && !showArchived) {
         setSessions((current) => current.filter((item) => item.id !== session.id));
-        if (selection.kind === 'session' && selection.id === session.id) setSelection({ kind: 'new' });
+        setSelection((current) => current.kind === 'session' && current.id === session.id ? { kind: 'new' } : current);
       } else {
         setSessions((current) => current.map((item) => item.id === session.id
           ? { ...item, status: archived ? 'idle' : 'archived', updatedAtMs: Date.now() }
@@ -419,7 +419,7 @@ export function PawAgentApp({
   </MenuContent></Menu>;
   const railToggle = <button aria-controls="paw-agent-work-records" aria-expanded={railOpen} aria-label={railOpen ? '收起工作记录' : '打开工作记录'} className="paw-agent-rail-toggle" onClick={() => setRailOpen((open) => !open)} ref={railToggleRef} type="button"><PanelLeft size={16} /></button>;
   return (
-    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} data-compact-work={selection.kind !== 'new' || undefined} role="region">
+    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} data-compact-work={!(selection.kind === 'new' && advancedHome) || undefined} role="region">
       {selection.kind === 'new' && advancedHome ? <header className="paw-agent-modebar" inert={railOpen}>
         <button onClick={() => setAdvancedHome(false)} type="button">返回我的助手</button>
         <AgentModeSwitch mode={interfaceMode} onChange={setInterfaceMode} />

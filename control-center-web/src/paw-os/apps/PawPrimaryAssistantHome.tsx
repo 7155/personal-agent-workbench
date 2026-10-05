@@ -49,6 +49,9 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const sourceTransport = useRef(transport);
   const refreshSource = useRef(initialSource);
   const input = useRef<HTMLTextAreaElement>(null);
+  const composingRef = useRef(false);
+  const draftConsumed = useRef(false);
+  const rememberLatestDraft = useRef<() => void>(() => undefined);
   const composerHintId = useId();
   const baseSubmitHint = submitting ? (intent === 'execute' ? '正在确认任务，请稍候…' : '正在打开对话…')
     : pickingWorkspace ? (intent === 'execute' ? '正在选择目录，选好后再确认授权。' : '正在选择项目，选好后继续讨论。')
@@ -97,7 +100,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     onRememberDraft?.({ draft, execute: intent === 'execute', workspace, contextWorkspace, acceptance, scopeConfirmed, source: initialSource, attempt: attempt.current });
   }
   function openSession(target: SessionSummary, submission?: InitialSessionSubmission, text?: string) {
-    if (submission) onRememberDraft?.(); else rememberDraft();
+    if (submission) { draftConsumed.current = true; onRememberDraft?.(); } else rememberDraft();
     if (text !== undefined) onOpen(target, submission, text);
     else if (submission) onOpen(target, submission);
     else onOpen(target);
@@ -165,8 +168,16 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     setWorkspace(path); setScopeConfirmed(false); setPickerNotice('');
   }
 
+  // Parent-owned navigation (history, deep links, window close) can leave Home
+  // without calling one of its own buttons. Keep the latest unsubmitted form.
+  rememberLatestDraft.current = rememberDraft;
+  useEffect(() => () => {
+    if (!draftConsumed.current) rememberLatestDraft.current();
+  }, []);
+
   return <div className="paw-primary-home" data-intent={intent}>
     <div className="paw-primary-home__body">
+      <div className="paw-primary-home__entry">
       <header className="paw-primary-home__heading">
         <span className="paw-primary-home__eyebrow"><span aria-hidden="true" /> YOUR PERSONAL WORKBENCH</span>
         {transport.kind === 'mock' ? <span className="paw-primary-home__demo">演示模式 · 合成数据，不调用真实模型</span> : null}
@@ -178,8 +189,9 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
           {session ? <button disabled={submitting || pickingWorkspace || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="打开已有记录，未发送的文字会带入输入框" type="button">打开对话 <ArrowUpRight size={14} /></button> : null}
         </div>
         <div className="paw-primary-home__fields">
-        <textarea aria-label="和我的助手聊聊" aria-describedby={composerHintId} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); }
+        <textarea aria-label="和我的助手聊聊" aria-describedby={composerHintId} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }} onKeyDown={event => {
+          if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+          if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); }
         }} placeholder={intent === 'discuss' ? '想法、问题，或一件还没想清楚的事…' : '这次要完成什么？'} rows={3} />
         {intent === 'execute' ? <div className="paw-primary-home__scope">
           <p className="paw-primary-home__scope-note">会参考这段讨论中近期的消息，不包含全部历史。请确认要做什么、怎样算完成，以及允许操作的目录。</p>
@@ -192,6 +204,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
         <footer><div className="paw-primary-home__intent" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className="paw-primary-home__send" disabled={loading || submitting || pickingWorkspace || !session || !draft.trim() || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : <ArrowUp size={17} />}<span>{submitting ? '请稍候' : intent === 'discuss' ? '发送' : '授权并开始'}</span></button></footer>
         <p className="paw-primary-home__composer-hint" id={composerHintId} role="status">{submitHint}</p>
       </section>
+      </div>
       {intent === 'discuss' ? <div className="paw-primary-home__project"><Folder aria-hidden="true" size={13} /><select aria-label="讨论项目" disabled={submitting || pickingWorkspace || loading} value={contextWorkspace} onChange={event => selectDiscussionProject(event.target.value)}><option value="">日常对话 · 不绑定项目</option>{Array.from(new Set([...projectRoots, ...(contextWorkspace ? [contextWorkspace] : [])])).map(root => <option key={root} value={root}>{root}</option>)}</select>{transport.pickFiles ? <button disabled={submitting || pickingWorkspace || loading} aria-busy={pickingWorkspace} onClick={() => void chooseWorkspace(true)} type="button">{pickingWorkspace ? '正在选择…' : '选择项目'}</button> : null}</div> : null}
       <div className="paw-primary-home__hint"><span>{intent === 'discuss' ? '当前只讨论和查阅，不授予写入或命令执行权限。' : '任务会保留在独立对话中；回来聊别的，也不会丢失进度。'}</span>{desktop ? <button onClick={() => openPawOsRoute(desktop, '/memory?view=profile')} type="button"><BookOpen size={13} />关于我</button> : null}</div>
       {error ? <div className="paw-primary-home__error" role="alert">{error}{!session && !loading ? <button onClick={() => setRevision(value => value + 1)} type="button">重新连接</button> : null}</div> : null}

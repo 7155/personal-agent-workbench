@@ -25,6 +25,20 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 describe('primary assistant home', () => {
+  it('keeps IME confirmation Enter and legacy keyCode 229 out of submission', async () => {
+    const { onOpen } = setup();
+    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    const input = screen.getByRole('textbox', { name: '和我的助手聊聊' });
+    fireEvent.change(input, { target: { value: '输入中文' } });
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: false });
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229, isComposing: false });
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(input).toHaveValue('输入中文');
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 13 });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
   it('removes the previous project task rows immediately while the next project loads', async () => {
     const nextProject = deferred<unknown>();
     const { onOpen } = setup({ 'agent.primary.ensure': (request: ControlRequest) =>
