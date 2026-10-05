@@ -348,7 +348,10 @@ export function reduceAgentEvent(
         event.eventType === 'tool_progress'
         && !event.turnId
         && text(payload.toolCallId).startsWith('subagent:')
-      ) break;
+      ) {
+        mergeDelegatedProgress(next, event, payload);
+        break;
+      }
       upsertActivity(next, event, payload, payload.isError === true ? 'failed' : 'running');
       if (payload.isError !== true) {
         reopenProvisionalTurn(next, event.turnId, event.createdAtMs);
@@ -2440,6 +2443,105 @@ function approvalIdFromActivityPayload(
 }
 
 
+
+export interface AgentChildProgress {
+  runId: string;
+  taskLabel: string;
+  childSessionId: string;
+  ordinal: number;
+  templateId: string;
+  state: string;
+  phase: 'running' | 'tool_started' | 'tool_finished' | 'waiting' | 'terminal';
+  sourceEventId: string;
+  sourceEventType: string;
+  updatedAtMs: number;
+  toolName: string;
+  toolCallId: string;
+  fileName: string;
+  isError: boolean;
+  contractStatus: string;
+  deliveryStatus: string;
+  verificationStatus: string;
+  failureReason: string;
+}
+
+const delegatedTerminalStates = new Set(['completed', 'failed', 'aborted', 'timed_out']);
+
+export function agentChildProgress(value: unknown): AgentChildProgress[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 2).flatMap((raw): AgentChildProgress[] => {
+    const item = record(raw);
+    const state = text(item.state);
+    const phase = text(item.phase);
+    const sourceEventType = text(item.sourceEventType);
+    if (!text(item.runId) || !text(item.childSessionId)
+      || !Number.isInteger(item.ordinal) || ![0, 1].includes(Number(item.ordinal))
+      || !['researcher', 'planner', 'worker', 'reviewer', 'delegate'].includes(text(item.templateId))
+      || !['queued', 'running', ...delegatedTerminalStates].includes(state)
+      || !['running', 'tool_started', 'tool_finished', 'waiting', 'terminal'].includes(phase)
+      || delegatedTerminalStates.has(state) !== (phase === 'terminal')
+      || (phase === 'tool_started' || phase === 'tool_finished') && phase !== sourceEventType
+      || phase === 'waiting' && sourceEventType !== 'user_input_required'
+      || !Number.isFinite(item.updatedAtMs) || Number(item.updatedAtMs) <= 0) return [];
+    const fileName = text(item.fileName).slice(0, 240);
+    return [{
+      runId: text(item.runId), childSessionId: text(item.childSessionId),
+      ordinal: Number(item.ordinal), templateId: text(item.templateId), state,
+      taskLabel: text(item.taskLabel).split(/\r?\n/u)[0]?.trim().slice(0, 80) ?? '',
+      phase: phase as AgentChildProgress['phase'],
+      sourceEventId: text(item.sourceEventId), sourceEventType,
+      updatedAtMs: Number(item.updatedAtMs),
+      toolName: text(item.toolName).slice(0, 120), toolCallId: text(item.toolCallId).slice(0, 512),
+      fileName: /[\/\\\u0000-\u001f]|token|secret|password|api.?key|authorization|cookie/iu.test(fileName) ? '' : fileName,
+      isError: item.isError === true,
+      contractStatus: text(item.contractStatus), deliveryStatus: text(item.deliveryStatus),
+      verificationStatus: text(item.verificationStatus),
+      failureReason: item.failureReason === 'output_budget' ? 'output_budget' : '',
+    }];
+  });
+}
+
+function mergeDelegatedProgress(
+  state: AgentProjectionState,
+  event: UiAgentEvent,
+  payload: Record<string, unknown>,
+): void {
+  const ownerId = text(payload.parentToolCallId);
+  const owner = state.activitiesById[ownerId];
+  const batchId = text(payload.batchId);
+  const incoming = agentChildProgress([payload.childProgress])[0];
+  if (!owner || !owner.kind.startsWith('tool_')
+    || text(owner.payload.toolName ?? owner.payload.toolId) !== 'agents'
+    || !owner.turnId || owner.turnId !== text(payload.parentTurnId)
+    || !batchId || payload.toolCallId !== `subagent:${batchId}`
+    || !incoming || incoming.runId !== text(payload.runId)
+    || incoming.childSessionId === event.sessionId) return;
+  const projection = record(owner.payload.delegationProgress);
+  if (text(projection.batchId) && projection.batchId !== batchId) return;
+  const runs = agentChildProgress(projection.runs);
+  const previous = runs.find((run) => run.runId === incoming.runId);
+  if (previous && (previous.childSessionId !== incoming.childSessionId
+    || previous.ordinal !== incoming.ordinal || previous.templateId !== incoming.templateId
+    || delegatedTerminalStates.has(previous.state)
+    || incoming.updatedAtMs < previous.updatedAtMs
+    || Boolean(incoming.sourceEventId) && incoming.sourceEventId === previous.sourceEventId)) return;
+  if (!previous && (runs.length >= 2 || runs.some((run) => run.ordinal === incoming.ordinal))) return;
+  if ((owner.settledByTurnStatus === 'aborted' || state.turnsById[owner.turnId]?.status === 'aborted')
+    && !delegatedTerminalStates.has(incoming.state)) return;
+  // This is display evidence on an existing Tool, not a parent lifecycle event.
+  // Preserve its status, timestamps, turn ownership and Session-wide status.
+  state.activitiesById[ownerId] = {
+    ...owner,
+    payload: {
+      ...owner.payload,
+      delegationProgress: {
+        batchId,
+        runs: [...runs.filter((run) => run.runId !== incoming.runId), incoming]
+          .sort((left, right) => left.ordinal - right.ordinal),
+      },
+    },
+  };
+}
 
 function mergeActivityPayload(
   previous: AgentActivityProjection | undefined,

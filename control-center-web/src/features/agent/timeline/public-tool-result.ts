@@ -1,6 +1,7 @@
-import type { AgentActivityProjection } from '@/contracts/agent-reducer';
+import { agentChildProgress, type AgentActivityProjection, type AgentChildProgress } from '@/contracts/agent-reducer';
 import { approvalDecisionReasonLabel, approvalDecisionView, approvalNeedsHumanDecision } from '@/contracts/approval-decision';
 import { publicToolName } from '../tool-presentation';
+import { subagentTemplateLabel } from '../status/subagent-presentation';
 import {
   codeModeDetailsFromPayload,
   codeModeOutputFromPayload,
@@ -88,6 +89,8 @@ export type PublicToolResultKind =
 export interface PublicToolResultItem {
   id: string;
   label: string;
+  /** Bounded task title for hover when the visible label is shortened. */
+  title?: string;
   text: string;
   kind?: string;
   /** A non-redacted workspace-relative path, when the receipt carries one. */
@@ -579,6 +582,42 @@ function collaborationStateLabel(value: string): string {
   return collaborationSettledStates[value.toLowerCase()] ?? '';
 }
 
+function delegatedTaskLabel(value: string): string {
+  const firstLine = value.split(/\r?\n/u).find(line => line.trim()) ?? '';
+  return boundedCollaborationText(firstLine.replace(/\s+/gu, ' ').trim(), 80);
+}
+
+function delegatedRunStateLabel(run: Record<string, unknown>): string {
+  const result = record(run.result);
+  const state = text(run.state ?? run.status);
+  if (state === 'completed') {
+    if (text(record(run.contract).status) === 'invalid' || run.contractStatus === 'invalid'
+      || result.contractStatus === 'invalid') return '结果已返回，合同无效';
+    if (run.deliveryStatus === 'returned' || result.deliveryStatus === 'returned'
+      || run.verificationStatus === 'unverified' || result.verificationStatus === 'unverified') {
+      return '结果已返回，待核验';
+    }
+  }
+  if (state === 'failed' && (run.failureReason === 'output_budget' || run.error === 'output budget exceeded')) {
+    return '失败：输出预算已用尽';
+  }
+  return collaborationStateLabel(state);
+}
+
+function childProgressLabel(run: AgentChildProgress): string {
+  if (run.phase === 'terminal') return delegatedRunStateLabel({ ...run });
+  if (run.phase === 'waiting') return '等待补充信息';
+  if (run.phase === 'tool_started' || run.phase === 'tool_finished') {
+    const read = ['read', 'read_file', 'workspace_read'].includes(run.toolName);
+    const action = run.phase === 'tool_started'
+      ? read ? '正在读取' : '正在使用'
+      : run.isError ? read ? '读取失败' : '工具执行失败'
+        : read ? '已读取' : '工具已返回';
+    return [action, run.fileName || publicToolName(run.toolName)].filter(Boolean).join(' ');
+  }
+  return run.state === 'queued' ? '排队中' : '进行中';
+}
+
 /**
  * Concrete payload projection for collaboration, delegation, goal, work
  * document, and background-job receipts (PF-CM-007/010). The rows used to
@@ -717,17 +756,27 @@ function collaborationToolResult(
     if (accepted !== undefined) addField('accepted', '受理状态', accepted ? '已受理' : '未受理');
     const waited = firstBoolean(layers, ['waited']);
     if (waited !== undefined) addField('waited', '等待方式', waited ? '同步等待结果' : '后台继续运行');
-    const runs = Array.isArray(batch.runs) ? batch.runs : [];
+    const progress = firstRecord(layers, ['delegationProgress']);
+    const childRuns = agentChildProgress(progress.runs);
+    const batchRuns = Array.isArray(batch.runs) ? batch.runs : [];
+    const runs = batchRuns.length ? batchRuns : childRuns.map((run) => ({ ...run, id: run.runId }));
     if (runs.length > 0) addField('runCountCollab', '子任务', `${runs.length} 项`);
     const resultItems = runs.slice(0, 8).flatMap((value, index): PublicToolResultItem[] => {
       const run = record(value);
+      const runId = text(run.id);
+      const live = childRuns.find((child) => child.runId === runId);
       const runTemplate = text(run.templateId) || template || 'Agent';
-      const runState = collaborationStateLabel(text(run.state ?? run.status));
-      const runTask = boundedCollaborationText(text(run.task), 220);
+      const state = text(run.state ?? run.status);
+      const terminal = ['completed', 'failed', 'aborted', 'timed_out'].includes(state);
+      const runState = delegatedRunStateLabel(run);
+      const taskLabel = delegatedTaskLabel(text(run.task) || text(run.taskLabel) || live?.taskLabel || '');
+      const roleLabel = subagentTemplateLabel(runTemplate as Parameters<typeof subagentTemplateLabel>[0]) || runTemplate;
+      const progressLabel = live && !terminal ? childProgressLabel(live) : runState;
       return [{
-        id: text(run.id) || `run:${index}`,
-        label: `子任务 ${index + 1} · ${runTemplate}`,
-        text: [runState, runTask].filter(Boolean).join(' · '),
+        id: runId || `run:${index}`,
+        label: boundedCollaborationText(taskLabel, 32) || `子任务 ${Number.isInteger(run.ordinal) ? Number(run.ordinal) + 1 : index + 1}`,
+        ...(taskLabel ? { title: taskLabel } : {}),
+        text: [progressLabel, roleLabel].filter(Boolean).join(' · '),
       }];
     });
     return {
@@ -738,7 +787,7 @@ function collaborationToolResult(
       request,
       fields,
       resultItems,
-      ...(resultItems.length ? { resultItemsLabel: '子任务结果' } : {}),
+      ...(resultItems.length ? { resultItemsLabel: batchRuns.length ? '子任务结果' : '子任务进度' } : {}),
     };
   }
 

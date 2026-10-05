@@ -546,6 +546,114 @@ class AgentDelegationTests(unittest.TestCase):
         self._coordinators.append(coordinator)
         return coordinator
 
+    def test_child_progress_mirrors_bounded_reads_and_mixed_terminal_results(self) -> None:
+        # Synthetic regression based on observed policy/ledger read receipts.
+        # It makes no model calls and is not a new live acceptance run.
+        class _ReadProgressRuntime(_CompletingRuntime):
+            def prompt(inner, session_id, message):
+                ledger = "ledger-evidence.json" in message
+                name = "ledger-evidence.json" if ledger else "policy-evidence.json"
+                turn_id = f"turn:{name}"
+                for event_type in ("tool_started", "tool_finished"):
+                    inner.events.publish(session_id, event_type, {
+                        "toolName": "read", "toolCallId": f"read:{name}",
+                        "publicResult": {"fileName": name, "outputPreview": "PRIVATE_OUTPUT"},
+                        "args": {"path": "/PRIVATE_PATH", "token": "PRIVATE_TOKEN"},
+                        "isError": False,
+                    }, turn_id=turn_id)
+                if ledger:
+                    inner.events.publish(session_id, "tool_started", {
+                        "toolName": "read", "toolCallId": "read:late",
+                        "publicResult": {"fileName": "late-receipts.json"},
+                    }, turn_id=turn_id)
+                    inner.events.publish(session_id, "tool_finished", {
+                        "toolName": "read", "toolCallId": "read:late", "isError": True,
+                        "publicResult": {"fileName": "late-receipts.json"},
+                    }, turn_id=turn_id)
+                    inner.events.publish(session_id, "turn_failed", {
+                        "error": "output budget exceeded",
+                    }, turn_id=turn_id)
+                else:
+                    inner.events.publish(session_id, "message_completed", {
+                        "message": _assistant_message(session_id, turn_id, "政策材料已整理"),
+                        "usage": {"totalTokens": 10},
+                    }, turn_id=turn_id)
+                    inner.events.publish(session_id, "turn_completed", {
+                        "status": "completed",
+                    }, turn_id=turn_id)
+                inner.events.publish(session_id, "tool_started", {
+                    "toolName": "read", "toolCallId": "read:after-terminal",
+                    "publicResult": {"fileName": "after-terminal.json"},
+                }, turn_id=turn_id)
+                return {"accepted": True, "turnId": turn_id}
+
+        parent_id = str(self.parent["id"])
+        self.events.publish(parent_id, "tool_started", {
+            "toolName": "agents", "toolCallId": "parent:delegate",
+        }, turn_id="parent:turn")
+        coordinator = self.coordinator(_ReadProgressRuntime)
+        response = coordinator.delegate(parent_id, {
+            "_toolCallId": "parent:delegate", "wait": True,
+            "tasks": [{"agent": "researcher", "task": f"读取 {name}\nPRIVATE_TASK_PROMPT", **_TASK_CONTRACT}
+                      for name in ("ledger-evidence.json", "policy-evidence.json")],
+        })
+
+        def receipts():
+            events, _ = self.events.replay(parent_id)
+            return [event for event in events if "childProgress" in event.payload]
+
+        _wait_until(lambda: sum(event.payload["childProgress"]["phase"] == "terminal"
+                               for event in receipts()) == 2)
+        progress = receipts()
+        self.assertTrue(all(not event.turn_id for event in progress))
+        self.assertTrue(all(event.payload["parentToolCallId"] == "parent:delegate"
+                            and event.payload["parentTurnId"] == "parent:turn" for event in progress))
+        frames = [event.payload["childProgress"] for event in progress]
+        reads = [frame for frame in frames if frame["phase"] == "tool_finished"]
+        self.assertEqual({(frame["fileName"], frame["isError"]) for frame in reads}, {
+            ("ledger-evidence.json", False), ("policy-evidence.json", False),
+            ("late-receipts.json", True),
+        })
+        terminal = {frame["ordinal"]: frame for frame in frames if frame["phase"] == "terminal"}
+        self.assertEqual(terminal[0]["state"], "failed")
+        self.assertEqual(terminal[0]["failureReason"], "output_budget")
+        self.assertEqual(terminal[1]["state"], "completed")
+        self.assertEqual(terminal[1]["verificationStatus"], "unverified")
+        self.assertEqual(terminal[1]["deliveryStatus"], "returned")
+        self.assertEqual(terminal[0]["taskLabel"], "读取 ledger-evidence.json")
+        self.assertEqual(terminal[1]["taskLabel"], "读取 policy-evidence.json")
+        self.assertTrue(all(len(frame["taskLabel"]) <= 80 for frame in frames))
+        self.assertEqual({frame["runId"] for frame in frames},
+                         {run["id"] for run in response["batch"]["runs"]})
+        serialized = json.dumps(frames)
+        self.assertNotIn("PRIVATE_", serialized)
+        self.assertNotIn("after-terminal", serialized)
+        for run in response["batch"]["runs"]:
+            records = coordinator.artifacts.lifecycle_records(owner_kind="subagent_run", owner_id=run["id"])
+            self.assertTrue(any(record["eventType"] == "tool_finished" for record in records))
+            self.assertNotIn("PRIVATE_", json.dumps(records))
+
+    def test_child_progress_requires_existing_same_session_tool_scope(self) -> None:
+        coordinator = self.coordinator()
+        parent_id = str(self.parent["id"])
+        self.events.publish("foreign:session", "tool_started", {
+            "toolName": "agents", "toolCallId": "foreign:call",
+        }, turn_id="foreign:turn")
+        self.assertIsNone(coordinator._parent_progress_scope(parent_id, {"_toolCallId": "foreign:call"}))
+        self.events.publish(parent_id, "tool_started", {
+            "toolName": "read", "toolCallId": "wrong:tool",
+        }, turn_id="parent:turn")
+        self.assertIsNone(coordinator._parent_progress_scope(parent_id, {"_toolCallId": "wrong:tool"}))
+        self.assertIsNone(coordinator._parent_progress_scope(parent_id, {"_toolCallId": "lost:call"}))
+        self.events.publish(parent_id, "tool_started", {
+            "toolName": "agents", "toolCallId": "parent:call",
+        }, turn_id="original:turn")
+        self.events.publish(parent_id, "status_changed", {"status": "busy"}, turn_id="newer:turn")
+        self.assertEqual(coordinator._parent_progress_scope(parent_id, {"_toolCallId": "parent:call"}),
+                         ("parent:call", "original:turn"))
+        self.events.invalidate_projection(parent_id)
+        self.assertIsNone(coordinator._parent_progress_scope(parent_id, {"_toolCallId": "parent:call"}))
+
     def test_wait_false_ack_and_status_do_not_hydrate_artifact_under_contention(self) -> None:
         class _ArtifactBarrier:
             def __init__(self) -> None:
@@ -1947,6 +2055,9 @@ class AgentDelegationTests(unittest.TestCase):
             coordinator.close()
 
     def test_cancelled_run_rejects_late_success_and_projects_one_failed_result(self) -> None:
+        self.events.publish(str(self.parent["id"]), "tool_started", {
+            "toolName": "agents", "toolCallId": "parent:cancelled-child",
+        }, turn_id="parent:cancel-turn")
         with patch(
             "rag_ime.agent_delegation.agent_template",
             side_effect=_small_budget_template,
@@ -1958,6 +2069,7 @@ class AgentDelegationTests(unittest.TestCase):
                     {
                         "agent": "worker",
                         "task": "触发取消后迟到成功",
+                        "_toolCallId": "parent:cancelled-child",
                         **_TASK_CONTRACT,
                         "wait": False,
                     },
@@ -1980,6 +2092,11 @@ class AgentDelegationTests(unittest.TestCase):
                     is not None
                 )
                 _wait_until(lambda: len(failed_parent_progress()) == 1)
+                progress = failed_parent_progress()[0]
+                self.assertEqual(progress["parentToolCallId"], "parent:cancelled-child")
+                self.assertEqual(progress["parentTurnId"], "parent:cancel-turn")
+                self.assertEqual(progress["childProgress"]["phase"], "terminal")
+                self.assertEqual(progress["childProgress"]["state"], "failed")
                 run = coordinator.store.get_run(run_id)
                 self.assertEqual(run["state"], "failed")
                 self.assertEqual(run["error"], "output budget exceeded")

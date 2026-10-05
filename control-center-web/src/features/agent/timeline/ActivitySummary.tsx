@@ -950,7 +950,10 @@ function PublicResultList({
       <ol>
         {view.resultItems.map((item) => (
           <li key={item.id}>
-            <strong>
+            <strong
+              title={item.title}
+              style={item.title ? { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' } : undefined}
+            >
               {(() => {
                 const target = workspaceFileEntity(sessionId, item.path, item.label);
                 return target ? <WorkspaceFileLink target={target}>{item.label}</WorkspaceFileLink> : item.label;

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-05T23:21:17.793126+00:00",
+  "generatedAt": "2026-10-05T23:41:27.054888+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "feat/primary-assistant-final-20261004",
@@ -187,7 +187,7 @@
     },
     "primary_assistant_followup": {
       "description": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval.",
-      "pathCount": 28
+      "pathCount": 29
     },
     "startup_failure_diagnostics": {
       "description": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause.",
@@ -195,10 +195,10 @@
     }
   },
   "summary": {
-    "pathCount": 2033,
+    "pathCount": 2034,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1717
+      "keep_release": 1718
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -224,7 +224,7 @@
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
       "portable_guarded_acceptance": 14,
-      "primary_assistant_followup": 28,
+      "primary_assistant_followup": 29,
       "primary_assistant_iteration": 84,
       "product_integration": 57,
       "public_showcase": 30,
@@ -4009,6 +4009,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/delegation-progress.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Bounded per-child delegation progress and task-title regressions; synthetic UI and native preview evidence, not production or live-model acceptance."
     },
     {
       "path": "control-center-web/src/features/agent/timeline/progressive-markdown/ATTRIBUTION.md",
