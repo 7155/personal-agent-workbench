@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-03T21:52:13+00:00",
+  "generatedAt": "2026-10-04T04:53:24+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "fix/paw-polish-integration-20261004",
@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 111
+      "pathCount": 113
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -179,10 +179,10 @@
     }
   },
   "summary": {
-    "pathCount": 1902,
+    "pathCount": 1904,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1586
+      "keep_release": 1588
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -223,7 +223,7 @@
       "session_full_access": 8,
       "temporal_query_preservation": 3,
       "trace_optimization": 61,
-      "verification": 111,
+      "verification": 113,
       "voice_desktop": 19,
       "workspace_completion": 315
     },
@@ -11453,6 +11453,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "scripts/run_control_center_web_qa.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Run the source Web unit gate once per aggregate while preserving standalone QA, prebuilt payload checks, and first-failure propagation."
+    },
+    {
       "path": "scripts/run_earth_gis_acceptance.mjs",
       "status": "added",
       "disposition": "keep_release",
@@ -11542,6 +11549,13 @@
       "disposition": "keep_release",
       "group": "offline_installer",
       "reason": "Offline preview installer, bundled runtime validation and the existing stack installation path."
+    },
+    {
+      "path": "scripts/test_control_center_web.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Run the source Web unit gate once per aggregate while preserving standalone QA, prebuilt payload checks, and first-failure propagation."
     },
     {
       "path": "squirrel-patches/GENERATION_EXPERIENCE.md",
@@ -12360,7 +12374,7 @@
       "status": "modified",
       "group": "voice_desktop",
       "disposition": "keep_release",
-      "reason": "Installed app naming and Electron voice control integration."
+      "reason": "Installed app naming, Electron voice integration, and bounded Web gate orchestration coverage."
     },
     {
       "path": "tests/test_database_migrations.py",
