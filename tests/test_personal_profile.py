@@ -8,6 +8,7 @@ from unittest.mock import Mock
 from rag_ime.db import apply_database_migrations
 from rag_ime.memory_card_mutations import MemoryRevisionConflict, card_revision, correct_memory_card
 from rag_ime.personal_profile import read_personal_profile, save_personal_profile
+from rag_ime.query_expansion import _matched_aliases_and_atoms, build_query_expansion
 
 
 class PersonalProfileTests(unittest.TestCase):
@@ -47,6 +48,60 @@ class PersonalProfileTests(unittest.TestCase):
         with self.assertRaises(MemoryRevisionConflict):
             self.save([{**first, 'text': '过期写入。'}], 'stale', before['revision'])
         self.assertEqual(read_personal_profile(self.conn)['text'], '我喜欢有解释的回复。')
+
+    def test_profile_correction_preserves_alias_lookup_history_and_replay(self):
+        first = self.add()
+        aliases = [
+            ('alias:profile', first['id'], '回复习惯', 'semantic', 'huifu xiguan', 0.8, 50),
+            ('alias:profile:short', first['id'], 'hf xg', 'abbreviation', None, 0.3, 60),
+        ]
+        self.conn.executemany('INSERT INTO memory_aliases VALUES (?,?,?,?,?,?,?)', aliases)
+        request = {'expectedRevision': read_personal_profile(self.conn)['revision'],
+                   'clientRequestId': 'edit-alias',
+                   'paragraphs': [{**first, 'text': '我喜欢有解释的回复。'}]}
+        result = save_personal_profile(self.conn, request, timestamp=200)
+        current = result['profile']['paragraphs'][0]
+        matched, atom_ids = _matched_aliases_and_atoms(self.conn, query_terms=('回复习惯',),
+                                                     visible_owners=(('user', 'default'),))
+        self.assertEqual(atom_ids, [current['id']])
+        self.assertNotEqual(current['id'], first['id'])
+        self.assertEqual(matched, ['回复习惯', 'hf xg'])
+        expansion = build_query_expansion(self.conn, query_text='回复习惯')
+        self.assertEqual(expansion.matched_aliases, ('回复习惯', 'hf xg'))
+        historical = self.conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=? ORDER BY weight DESC',
+                                       (first['id'],)).fetchall()
+        self.assertEqual([tuple(row) for row in historical], aliases)
+        inherited = self.conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=? ORDER BY weight DESC',
+                                      (current['id'],)).fetchall()
+        self.assertEqual([tuple(row)[2:] for row in inherited], [row[2:] for row in aliases])
+        self.assertTrue({row['id'] for row in inherited}.isdisjoint(row[0] for row in aliases))
+        before_replay = [tuple(row) for row in self.conn.execute('SELECT * FROM memory_aliases ORDER BY id')]
+        self.assertEqual(result, save_personal_profile(self.conn, request, timestamp=201))
+        self.assertEqual([tuple(row) for row in self.conn.execute('SELECT * FROM memory_aliases ORDER BY id')], before_replay)
+
+    def test_merge_preserves_source_and_target_aliases_once(self):
+        from rag_ime.memory_card_mutations import merge_memory_cards
+        from rag_ime.personal_profile import _new_personal_card
+        target = self.add()
+        source = _new_personal_card(self.conn, text='我使用中文沟通。', mutation_id='merge-source', timestamp=110)
+        aliases = [
+            ('alias:target', target['id'], '回复习惯', 'semantic', 'huifu xiguan', 0.8, 50),
+            ('alias:source', source['memoryId'], '交流语言', 'semantic', None, 0.6, 60),
+        ]
+        self.conn.executemany('INSERT INTO memory_aliases VALUES (?,?,?,?,?,?,?)', aliases)
+        result = merge_memory_cards(self.conn, source['memoryId'], target['id'],
+            expected_revision=source['revision'], expected_target_revision=target['revision'],
+            timestamp=200, mutation_id='merge-aliases')
+        inherited = self.conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=? ORDER BY weight DESC',
+                                      (result['memoryId'],)).fetchall()
+        self.assertEqual([tuple(row)[2:] for row in inherited], [row[2:] for row in aliases])
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM memory_aliases').fetchone()[0], 4)
+        for alias in aliases:
+            self.assertEqual(tuple(self.conn.execute('SELECT * FROM memory_aliases WHERE id=?', (alias[0],)).fetchone()), alias)
+            matched, atom_ids = _matched_aliases_and_atoms(self.conn, query_terms=(alias[2],),
+                                                         visible_owners=(('user', 'default'),))
+            self.assertEqual(atom_ids, [result['memoryId']])
+            self.assertEqual(matched, ['回复习惯', '交流语言'])
 
     def test_rendered_profile_budget_includes_paragraph_separators(self):
         # PR135 / discussion_r4180769539: an accepted profile must remain editable.
@@ -168,6 +223,8 @@ class PersonalProfileTests(unittest.TestCase):
             knowledge_domain='participant_private',scope_kind='participant',scope_id='member-a',
             binding_id='binding-a',authorization_revision='authorization-a' WHERE id=?""", (first['id'],))
         old = dict(self.conn.execute('SELECT * FROM memory_atoms WHERE id=?', (first['id'],)).fetchone())
+        alias = ('alias:agent', first['id'], '项目记忆称呼', 'semantic', 'xiangmu jiyi chenghu', 0.75, 90)
+        self.conn.execute('INSERT INTO memory_aliases VALUES (?,?,?,?,?,?,?)', alias)
         store = MemoryGovernanceProposalStore(':memory:', project='')
         result = store._apply_correct(self.conn, {
             'target_memory_id': first['id'], 'target_state_sha256': _atom_state_sha256(old),
@@ -178,6 +235,20 @@ class PersonalProfileTests(unittest.TestCase):
         for key in ('owner_kind','owner_id','privacy_level','knowledge_domain','scope_kind','scope_id','visibility','authorization_revision','binding_id','scope_mode'):
             self.assertEqual(old[key], new[key], key)
         self.assertEqual(read_personal_profile(self.conn)['text'], '')
+        matched, atom_ids = _matched_aliases_and_atoms(self.conn, query_terms=(alias[2],),
+                                                     visible_owners=(('agent', 'agent-a'),))
+        self.assertEqual(atom_ids, [result['memoryId']])
+        self.assertEqual(matched, [alias[2]])
+        inherited = self.conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=?',
+                                      (result['memoryId'],)).fetchall()
+        self.assertEqual([tuple(row)[2:] for row in inherited], [alias[2:]])
+        self.assertEqual(tuple(self.conn.execute('SELECT * FROM memory_aliases WHERE id=?', (alias[0],)).fetchone()), alias)
+        for owners in ((('user', 'default'),), (('agent', 'agent-b'),)):
+            self.assertEqual(_matched_aliases_and_atoms(self.conn, query_terms=(alias[2],),
+                                                       visible_owners=owners), ([], []))
+        self.conn.execute("UPDATE memory_atoms SET privacy_level='sensitive' WHERE id=?", (result['memoryId'],))
+        self.assertEqual(_matched_aliases_and_atoms(self.conn, query_terms=(alias[2],),
+                                                   visible_owners=(('agent', 'agent-a'),)), ([], []))
 
     def test_background_fence_allows_only_hash_bound_historical_organization(self):
         from rag_ime.memory_card_mutations import assert_background_card_unchanged

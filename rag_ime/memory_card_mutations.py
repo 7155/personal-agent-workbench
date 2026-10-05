@@ -174,6 +174,10 @@ def correct_memory_card(conn: sqlite3.Connection, atom_id: str, *, text: str,
     if source:
         conn.execute("INSERT OR IGNORE INTO memory_lifecycle_atom_evidence_links VALUES (?,?,'source',?)", (new_id, source[1], timestamp))
     conn.execute("INSERT INTO memory_atom_tags SELECT ?,tag_id,weight,source FROM memory_atom_tags WHERE memory_atom_id=?", (new_id, atom_id))
+    for alias in conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=?', (atom_id,)).fetchall():
+        conn.execute('INSERT INTO memory_aliases VALUES (?,?,?,?,?,?,?)',
+                     ('alias:edit:' + digest([new_id, alias['id']])[:32], new_id,
+                      alias['alias'], alias['alias_type'], alias['pinyin'], alias['weight'], alias['created_at_ms']))
     conn.execute("""INSERT INTO memory_supersessions(supersession_id,old_memory_id,new_memory_id,reason,source_event_ids_json,status,created_at_ms,metadata_json)
         VALUES (?,?,?,?,?,'active',?,?)""", (supersession_id, atom_id, new_id, reason,
         new["source_event_ids_json"], timestamp, canonical_json(dict(metadata or {"source": "memory_card_editor", "clientRequestId": mutation_id}))))
@@ -256,7 +260,7 @@ def merge_memory_cards(conn: sqlite3.Connection, source_id: str, target_id: str,
             SELECT evidence_id FROM memory_atom_evidence_links WHERE memory_atom_id=? AND relation IN ('supports','corrects')
             UNION SELECT evidence_id FROM memory_lifecycle_atom_evidence_links WHERE atom_id=? AND relation='source')""", (new_id,timestamp,source_id,source_id))
     conn.execute('INSERT OR IGNORE INTO memory_atom_tags SELECT ?,tag_id,weight,source FROM memory_atom_tags WHERE memory_atom_id=?', (new_id,source_id))
-    for alias in conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id IN (?,?)', (source_id,target_id)).fetchall():
+    for alias in conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=?', (source_id,)).fetchall():
         conn.execute('INSERT INTO memory_aliases VALUES (?,?,?,?,?,?,?)',
                      ('alias:merge:' + digest([new_id, alias['id']])[:32], new_id,
                       alias['alias'], alias['alias_type'], alias['pinyin'], alias['weight'], alias['created_at_ms']))
