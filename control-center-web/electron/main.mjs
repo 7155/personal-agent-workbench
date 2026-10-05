@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, MenuItem, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, MenuItem, screen, session, shell, systemPreferences } from 'electron';
 import { browserPartition, defaultPawHostPort, isBrowserGuestUrl, resolveHostPaths } from './host-config.mjs';
 import { startPawHostServer } from './local-server.mjs';
 import {
@@ -27,6 +27,7 @@ import {
 import { browserWindowChrome } from './window-chrome.mjs';
 import { assistantLaunchIntent, assistantSessionRoute } from './assistant-launch.mjs';
 import { installScreenAssistant } from './screen-assistant.mjs';
+import { installDesktopPet } from './desktop-pet.mjs';
 
 import { createVoiceControl, trustedVoiceSender } from './voice-control.mjs';
 
@@ -456,17 +457,27 @@ async function startPrimaryInstance() {
   pendingAssistantIntent = null;
   mainWindow = createWindow(initialIntent?.kind === 'session' ? assistantSessionRoute(initialIntent.sessionId) : undefined, initialIntent?.kind !== 'capture');
   if (initialIntent?.kind === 'capture') void screenAssistant.startCapture(initialIntent.sourceAppBundleId);
-  const menu = Menu.getApplicationMenu();
+  const menu = Menu.getApplicationMenu() || new Menu();
+  const petMenuItem = new MenuItem({ label: '显示桌面伙伴', type: 'checkbox', checked: false,
+    click: (item) => { if (item.checked) void desktopPet.show(); else desktopPet.hide(); },
+  });
+  const desktopPet = installDesktopPet({
+    app, BrowserWindow, ipcMain, screen, origin: hostServer.origin,
+    preload: path.join(path.dirname(paths.preloadEntry), 'desktop-pet-preload.cjs'),
+    openAssistant: () => openAssistantSession(''),
+    onVisibilityChanged: (visible) => { petMenuItem.checked = visible; },
+  });
   if (menu) {
     const item = new MenuItem({ label: '框选屏幕与 PAW 对话…', click: () => { void screenAssistant.startCapture(); } });
     // Electron's macOS default menu may expose the File item by label rather
     // than role. Resolve that submenu explicitly so the managed App remains
     // reachable even when the host did not install a custom menu template.
     const fileMenu = menu.items.find((entry) => entry.role === 'fileMenu' || entry.label === 'File')?.submenu;
-    if (fileMenu && !fileMenu.items.some((entry) => entry.label === item.label)) {
-      fileMenu.append(item);
-      Menu.setApplicationMenu(menu);
-    }
+    if (fileMenu) {
+      if (!fileMenu.items.some((entry) => entry.label === item.label)) fileMenu.append(item);
+      if (!fileMenu.items.some((entry) => entry.label === petMenuItem.label)) fileMenu.append(petMenuItem);
+    } else menu.append(new MenuItem({ label: 'PAW', submenu: [item, petMenuItem] }));
+    Menu.setApplicationMenu(menu);
   }
 }
 
@@ -491,7 +502,8 @@ function handleAssistantIntent(intent) {
 app.on('activate', () => {
   // Startup owns the first window, including cold-launch activation.
   if (!primaryInstance || !app.isReady() || !hostServer) return;
-  if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+  // A pet or capture popup must not stand in for the main workbench.
+  if (!mainWindow) mainWindow = createWindow();
 });
 app.on('before-quit', () => {
   void hostServer?.close();

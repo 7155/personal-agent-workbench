@@ -28,6 +28,10 @@ const ScreenAssistant = lazy(async () => ({
   default: (await import('@/features/screen-assistant/ScreenAssistant')).ScreenAssistant,
 }));
 
+const DesktopPetSurface = lazy(async () => ({
+  default: (await import('@/features/agent/desktop-pet-surface')).DesktopPetSurface,
+}));
+
 const StandaloneEvolutionReportPage = lazy(async () => ({
   default: (await import('@/features/evolution-report/standalone')).StandaloneEvolutionReportPage,
 }));
@@ -38,6 +42,9 @@ export function App() {
     location.pathname,
     location.search,
   );
+  if (standaloneSurface === 'desktop-pet') {
+    return <ThemeProvider><MotionProvider><Suspense fallback={null}><DesktopPetSurface /></Suspense></MotionProvider></ThemeProvider>;
+  }
   if (standaloneSurface === 'evolution-report') {
     return (
       <ThemeProvider forcedTheme="light">
