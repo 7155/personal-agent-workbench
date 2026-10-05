@@ -9,6 +9,7 @@ import type {
   ControlRequest,
   ControlSubscription,
   ControlTransport,
+  FilePickOptions,
   PickedFile,
 } from '@/platform/transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
@@ -31,6 +32,7 @@ import {
 } from '@/features/rooms/room-types';
 import { createPreviewHistoryRoutes } from './preview-history-routes';
 import { installPrimaryAssistantPreview } from './preview-primary-assistant';
+import { pawBrowserHost } from '@/paw-os/apps/paw-browser-host';
 import { createPreviewWorkDocumentRoutes } from './preview-work-document-routes';
 import {
   previewActivityTimeline,
@@ -67,6 +69,22 @@ import { PREVIEW_PDF_BASE, previewKnowledgeAsset, previewKnowledgeDetail, previe
  * the native transport.
  */
 class PreviewControlTransport extends MockControlTransport {
+  override async pickFiles(options: FilePickOptions): Promise<PickedFile[]> {
+    if (options.purpose !== 'workspace-root') return super.pickFiles(options);
+    this.filePickCalls.push({ ...options });
+    options.signal?.throwIfAborted();
+    const host = typeof window === 'undefined' ? null : pawBrowserHost();
+    if (!host?.pickWorkspaceDirectory) {
+      throw new Error('当前网页演示不能选择本机目录。请手动填写工作目录，或使用桌面版选择。');
+    }
+    // A chosen folder is only input to the synthetic workflow. It does not
+    // upload files, start a backend or authorize a real model/tool action.
+    const directory = await host.pickWorkspaceDirectory();
+    options.signal?.throwIfAborted();
+    return directory ? [{ id: `workspace:${directory.path}`, name: directory.name, path: directory.path,
+      mimeType: 'inode/directory', byteSize: 0 }] : [];
+  }
+
   override subscribe<Event = unknown>(
     request: ControlSubscription,
     observer: ControlEventObserver<Event>,

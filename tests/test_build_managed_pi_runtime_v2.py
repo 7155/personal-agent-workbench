@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -355,6 +356,76 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                     pi_root=pi_root,
                 )
 
+    def test_session_capability_overlay_queries_live_owners_with_exclusions(self) -> None:
+        from scripts.build_managed_pi_runtime_v2 import _RUNTIME_HOST_SOURCE_OVERLAYS
+
+        replacement = next(
+            after for before, after in _RUNTIME_HOST_SOURCE_OVERLAYS["src/runtime-host.ts"]
+            if "isPackageCapabilityEnabled:" in before
+        )
+        callback = re.search(
+            r"isPackageCapabilityEnabled:\s*(.*?)\s*,\n\s*noContextFiles:",
+            replacement,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(callback)
+        assert callback is not None
+        program = """
+import assert from 'node:assert/strict';
+const packages = [
+  { id: 'allowed', enabled: true, capabilities: ['shared'] },
+  { id: 'excluded', enabled: true, capabilities: ['shared'] },
+];
+const sessionPackages = structuredClone(packages);
+const disabledPlugins = new Set(['excluded']);
+const calls = [];
+const host = { nativePackages: { hasEnabledCapability(capability, excluded) {
+  calls.push(excluded);
+  return packages.some(item => item.enabled && !excluded?.has(item.id) && item.capabilities.includes(capability));
+} } };
+const available = function () { return CALLBACK; }.call(host);
+assert.equal(available('shared'), true);
+packages[0].enabled = false;
+assert.equal(available('shared'), false, 'a globally disabled owner cannot retain Session access');
+packages[0].enabled = true;
+assert.equal(available('shared'), true);
+packages.shift();
+assert.equal(available('shared'), false, 'an excluded owner cannot substitute for an uninstalled owner');
+assert.equal(calls.length, 4);
+for (const excluded of calls) assert.equal(excluded, disabledPlugins);
+console.log('live owner query passed');
+""".replace("CALLBACK", callback.group(1))
+        completed = subprocess.run(
+            ["node", "--input-type=module"], input=program,
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("live owner query passed", completed.stdout)
+
+    def test_session_contract_rejects_old_package_capability_signature(self) -> None:
+        signature = "hasEnabledCapability(capability: string, excludedPackageIds?: ReadonlySet<string>): boolean"
+        exclusion = "if (!excludedPackageIds.has(packageId)) return true;"
+        public_contract = json.loads(SESSION_RUNTIME_CONTRACT.read_text(encoding="utf-8"))
+        for marker in (signature, exclusion):
+            self.assertIn(marker, public_contract["requiredSourceMarkers"]["packageManager"])
+        root = Path("/virtual-reviewed-pi")
+        sources = {
+            (root / relative).resolve(): "\n".join(public_contract["requiredSourceMarkers"][key])
+            for key, relative in public_contract["handlerSources"].items()
+        }
+        protocol = root / public_contract["handlerSources"]["protocol"]
+        sources[protocol] += "\nexport type RuntimeMethod = " + " ".join(
+            f'| "{method}"' for method in REQUIRED_RUNTIME_METHODS
+        ) + ";\n"
+        host = root / public_contract["handlerSources"]["runtimeHost"]
+        sources[host] += "\n" + "\n".join(f'case "{method}"' for method in REQUIRED_RUNTIME_METHODS)
+        manager = root / public_contract["handlerSources"]["packageManager"]
+        with patch.object(Path, "read_text", autospec=True, side_effect=lambda path, **_kwargs: sources[path]):
+            _verified_session_runtime_contract(root)
+            sources[manager] = sources[manager].replace(signature, "hasEnabledCapability(capability: string): boolean")
+            with self.assertRaisesRegex(ManagedPiRuntimeError, "source marker is missing: packageManager"):
+                _verified_session_runtime_contract(root)
+
     def test_bundled_overlay_paths_are_normalized_deterministically(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="rag-ime-runtime-host-bundle-path-"
@@ -652,7 +723,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
         )
         self.assertEqual(
             REQUIRED_PI_RUNTIME_BASE_COMMIT,
-            "9c3f93c8b1c409e82e14d458510c146088c44561",
+            "93f517925a64ae215ba3ae3fd6b925b9a8505ef6",
         )
 
     def test_builder_requires_an_explicit_pi_worktree(self) -> None:
@@ -749,7 +820,7 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
 
     def test_builder_requires_the_provider_safe_pi_commit_without_an_evaluation_escape_hatch(self) -> None:
         self.assertEqual(
-            "9c3f93c8b1c409e82e14d458510c146088c44561",
+            "93f517925a64ae215ba3ae3fd6b925b9a8505ef6",
             REQUIRED_PI_RUNTIME_BASE_COMMIT,
         )
         builder_source = (

@@ -71,6 +71,28 @@ describe('PAWOS Extension App installation projection', () => {
     expect(result.current.isAvailable('agent')).toBe(true);
   });
 
+  it('hides the previous connection’s installation evidence while a replacement connection is still loading', async () => {
+    let finish!: (value: unknown) => void;
+    const pending = new Promise(resolve => { finish = resolve; });
+    const first = new MockControlTransport({ routes: {
+      'agent.extensions.list': { runtimeAvailable: true, items: [{ id: extension.packageId, version: extension.version, installed: true, enabled: true, capabilities: [bindingCapability], extensionApp: evidence }] },
+    } });
+    const second = new MockControlTransport({ routes: { 'agent.extensions.list': () => pending } });
+    let transport = first;
+    const wrapper = ({ children }: { children: ReactNode }) => <ControlTransportProvider transport={transport}><PawExtensionInstallationProvider pollIntervalMs={0}>{children}</PawExtensionInstallationProvider></ControlTransportProvider>;
+    const view = renderHook(() => usePawExtensionInstallation(), { wrapper });
+    await waitFor(() => expect(view.result.current.isAvailable(extension.id)).toBe(true));
+    try {
+      transport = second;
+      view.rerender();
+      expect(view.result.current.loading).toBe(true);
+      expect(view.result.current.isInstalled(extension.id)).toBe(false);
+      expect(view.result.current.isAvailable(extension.id)).toBe(false);
+    } finally {
+      await act(async () => { finish({ runtimeAvailable: true, items: [] }); await pending; });
+    }
+  });
+
   it('does not claim a stale installed projection when Runtime is unavailable', () => {
     const projection = projectPawExtensionInstallation({
       ok: true,

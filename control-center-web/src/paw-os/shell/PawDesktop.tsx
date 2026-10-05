@@ -15,6 +15,7 @@ import { pawBrowserHost } from '../apps/paw-browser-host';
 import { PawBackgroundActivity } from './PawBackgroundActivity';
 import { PawNotificationCenter } from './PawNotificationCenter';
 import { PawWorkDirectoryProvider } from './PawWorkDirectory';
+import { PawDesktopPetPublisher } from './PawDesktopPetPublisher';
 import { isPawExtensionAppId, pawExtensionApp, pawExtensionApps } from '../extensions/registry';
 import { PawExtensionInstallationProvider, usePawExtensionInstallation } from '../extensions/installation';
 import { warmPawAppProcess } from '../apps/PawApps';
@@ -69,6 +70,7 @@ const selectNoMenuSignature = () => '';
 export function PawDesktop() {
   return (
     <PawWorkDirectoryProvider>
+      <PawDesktopPetPublisher />
       <PawExtensionInstallationProvider>
         <PawDesktopSurface />
       </PawExtensionInstallationProvider>

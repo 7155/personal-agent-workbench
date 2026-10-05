@@ -318,6 +318,16 @@ describe('AgentComposer macOS input methods', () => {
     expect(view.getByRole('textbox', {name:'消息'})).toHaveValue('待核实附件的要求');
     expect(onSend).not.toHaveBeenCalled();
     expect(onDraftChange).not.toHaveBeenCalled();
+    rerender(harness({ draft: '待导入附件的要求', submissionBlockedReason: '正在导入附件', onSend, onDraftChange }));
+    expect(view.getByRole('button', { name: '发送（正在导入附件）' })).toBeDisabled();
+    fireEvent.keyDown(view.getByRole('textbox', { name: '消息' }), { key: 'Enter' });
+    expect(view.getByRole('textbox', { name: '消息' })).toHaveValue('待导入附件的要求');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onDraftChange).not.toHaveBeenCalled();
+    rerender(harness({ draft: '同步拒绝必须保留', onSend: () => false, onDraftChange }));
+    fireEvent.keyDown(view.getByRole('textbox', { name: '消息' }), { key: 'Enter' });
+    expect(view.getByRole('textbox', { name: '消息' })).toHaveValue('同步拒绝必须保留');
+    expect(onDraftChange).not.toHaveBeenCalled();
   });
 
   it('uses double Escape to request an in-place edit without disturbing IME input', () => {

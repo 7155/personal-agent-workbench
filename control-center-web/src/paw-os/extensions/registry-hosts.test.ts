@@ -78,6 +78,25 @@ describe('extension registry host integration', () => {
     await expect(registry.loadPawExtensionApp('extension:missing')).rejects.toThrow('Unknown PAWOS');
   });
 
+  it.each([
+    { major: 2 },
+    { major: 1, features: ['grant-tools'] },
+  ])('rejects unsupported chat requirements before returning a mountable App: %j', async (chatSurface) => {
+    const registry = await import('./registry');
+    const component = vi.fn(() => null);
+    registry.registerPawExtensionHost('lab-html', async () => ({ default: component, chatSurface }));
+    await expect(registry.loadPawExtensionApp(appId)).rejects.toThrow(/聊天/);
+    expect(component).not.toHaveBeenCalled();
+  });
+
+  it('accepts an implemented chat requirement without eagerly mounting the App', async () => {
+    const registry = await import('./registry');
+    const module = { default: vi.fn(() => null), chatSurface: { major: 1, features: ['embedded'] } };
+    registry.registerPawExtensionHost('lab-html', async () => module);
+    expect(await registry.loadPawExtensionApp(appId)).toBe(module);
+    expect(module.default).not.toHaveBeenCalled();
+  });
+
   it('registers the product host without eagerly loading the Lab feature', async () => {
     const { registerProductExtensionHosts } = await import('@/app/register-extension-hosts');
     expect(() => registerProductExtensionHosts()).not.toThrow();

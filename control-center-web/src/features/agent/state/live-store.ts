@@ -18,8 +18,51 @@ import {
   type AgentSnapshot,
 } from '@/contracts/agent-reducer';
 import type { UiAgentEvent } from '@/contracts/ui-events';
+import type { ControlTransport } from '@/platform/transport';
+import { controlTransportScopeKey } from '@/platform/transport-scope';
 
-type AgentLiveProjection = AgentProjectionState & { recoveryCursor?: number };
+type AgentLiveProjection = AgentProjectionState & {
+  recoveryCursor?: number;
+  /** Default idle and partial history alone are not terminal confirmation. */
+  retentionConfirmed?: boolean;
+};
+
+const INACTIVE_SETTLED_PROJECTION_LIMIT = 24;
+// One pin per existing shared live owner, whose listener map owns lease counts.
+// Only keys are held here; releasing the last listener removes the pin.
+const liveOwnerProjectionKeys = new Set<string>();
+
+/** In-memory identity follows the existing live owner, not its endpoint URL. */
+export type AgentSessionAddress = Readonly<{ sessionId: string; projectionKey: string }>;
+export type AgentSessionTarget = AgentSessionAddress | string;
+const transportAddresses = new WeakMap<ControlTransport, { prefix: string; sessions: Map<string, AgentSessionAddress> }>();
+
+export function agentSessionAddress(transport: ControlTransport | null | undefined, sessionId: string): AgentSessionTarget {
+  // Explicit provider-less renderer/store fixtures retain their old namespace.
+  // A scoped read never consults it, even when it contains the same Session ID.
+  if (!transport) return sessionId;
+  let scope = transportAddresses.get(transport);
+  if (!scope) {
+    scope = { prefix: controlTransportScopeKey(transport), sessions: new Map() };
+    transportAddresses.set(transport, scope);
+  }
+  let address = scope.sessions.get(sessionId);
+  if (!address) {
+    address = Object.freeze({ sessionId, projectionKey: JSON.stringify([scope.prefix, sessionId]) });
+    scope.sessions.set(sessionId, address);
+  }
+  return address;
+}
+
+export function agentProjectionKey(target: AgentSessionTarget): string {
+  return typeof target === 'string' ? target : target.projectionKey;
+}
+function protocolSessionId(target: AgentSessionTarget): string {
+  return typeof target === 'string' ? target : target.sessionId;
+}
+export function selectAgentProjection(state: Pick<AgentLiveStore, 'projections'>, target: AgentSessionTarget): AgentLiveProjection | undefined {
+  return state.projections[agentProjectionKey(target)];
+}
 
 /** Shared by task summaries and the Session composer; old turns cannot revive work. */
 export function latestActiveAgentTurnId(projection?: AgentProjectionState): string {
@@ -49,13 +92,14 @@ interface AgentSnapshotHydrationOptions {
 
 interface AgentLiveStore {
   projections: Record<string, AgentLiveProjection>;
-  ensure(sessionId: string): void;
-  hydrate(sessionId: string, value: unknown, options?: AgentSnapshotHydrationOptions): boolean;
-  hydrateSnapshot(sessionId: string, snapshot: AgentSnapshot, options?: AgentSnapshotHydrationOptions): boolean;
-  applyEvents(sessionId: string, events: readonly UiAgentEvent[]): boolean;
-  applyBackgroundJobReceipt(sessionId: string, receipt: unknown): boolean;
+  setLiveOwnerActive(target: AgentSessionTarget, active: boolean): void;
+  ensure(target: AgentSessionTarget): void;
+  hydrate(target: AgentSessionTarget, value: unknown, options?: AgentSnapshotHydrationOptions): boolean;
+  hydrateSnapshot(target: AgentSessionTarget, snapshot: AgentSnapshot, options?: AgentSnapshotHydrationOptions): boolean;
+  applyEvents(target: AgentSessionTarget, events: readonly UiAgentEvent[]): boolean;
+  applyBackgroundJobReceipt(target: AgentSessionTarget, receipt: unknown): boolean;
   appendOptimistic(
-    sessionId: string,
+    target: AgentSessionTarget,
     input: {
       clientMessageId: string;
       retryOfClientMessageId?: string;
@@ -67,7 +111,7 @@ interface AgentLiveStore {
     },
   ): void;
   rewriteOptimistic(
-    sessionId: string,
+    target: AgentSessionTarget,
     targetMessageId: string,
     input: {
       clientMessageId: string;
@@ -76,45 +120,61 @@ interface AgentLiveStore {
       nowMs: number;
     },
   ): void;
-  discardOptimistic(sessionId: string, clientMessageId: string): void;
+  discardOptimistic(target: AgentSessionTarget, clientMessageId: string): void;
   failOptimistic(
-    sessionId: string,
+    target: AgentSessionTarget,
     clientMessageId: string,
     error: string,
     nowMs: number,
     admissionState?: 'ambiguous' | 'pending' | 'unresolved',
   ): void;
   requeueOptimistic(
-    sessionId: string,
+    target: AgentSessionTarget,
     clientMessageId: string,
     nowMs: number,
   ): void;
-  acknowledgeOptimistic(sessionId: string, clientMessageId: string, nowMs: number): void;
-  abortTurn(sessionId: string, turnId: string, nowMs: number): void;
-  clear(sessionId: string): void;
+  acknowledgeOptimistic(target: AgentSessionTarget, clientMessageId: string, nowMs: number): void;
+  abortTurn(target: AgentSessionTarget, turnId: string, nowMs: number): void;
+  clear(target: AgentSessionTarget): void;
 }
 
 export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
   projections: {},
-  ensure(sessionId) {
-    if (!sessionId || get().projections[sessionId]) return;
+  setLiveOwnerActive(target, active) {
+    const key = agentProjectionKey(target);
+    if (active) {
+      liveOwnerProjectionKeys.add(key);
+      return;
+    }
+    liveOwnerProjectionKeys.delete(key);
+    set((state) => {
+      const projection = state.projections[key];
+      // Last release counts as recent use, including a temporarily hidden page.
+      const projections = { ...state.projections };
+      delete projections[key];
+      if (projection) projections[key] = projection;
+      return { projections: projection && canEvictProjection(projection) ? pruneInactiveProjections(projections) : projections };
+    });
+  },
+  ensure(target) {
+    const sessionId = protocolSessionId(target); const key = agentProjectionKey(target);
+    if (!sessionId || get().projections[key]) return;
     set((state) => ({
-      projections: {
-        ...state.projections,
-        [sessionId]: createAgentProjection(sessionId),
-      },
+      projections: updateProjection(state.projections, key, createAgentProjection(sessionId)),
     }));
   },
-  hydrate(sessionId, value, options) {
+  hydrate(target, value, options) {
+    const sessionId = protocolSessionId(target);
     if (isRecord(value) && (
       value.ok === false
       || (typeof value.sessionId === 'string' && value.sessionId !== sessionId)
     )) return false;
-    return get().hydrateSnapshot(sessionId, agentSnapshotFromResponse(value), options);
+    return get().hydrateSnapshot(target, agentSnapshotFromResponse(value), options);
   },
-  hydrateSnapshot(sessionId, snapshot, options) {
+  hydrateSnapshot(target, snapshot, options) {
+    const sessionId = protocolSessionId(target); const key = agentProjectionKey(target);
     if (snapshot.sessionId !== undefined && snapshot.sessionId !== sessionId) return false;
-    const current: AgentLiveProjection = get().projections[sessionId] ?? createAgentProjection(sessionId);
+    const current: AgentLiveProjection = get().projections[key] ?? createAgentProjection(sessionId);
     const recoveryCursor = current.recoveryCursor;
     if (current.needsSnapshot && recoveryCursor !== undefined && snapshot.lastSequence < recoveryCursor) return false;
     const reset = current.needsSnapshot && recoveryCursor !== undefined && recoveryCursor < current.lastSequence;
@@ -133,7 +193,7 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
         projection = { ...projection, durableRecovery: recovery, runtimeEngine: 'durable' };
       }
       if (projection === current) return false;
-      set((state) => ({ projections: { ...state.projections, [sessionId]: projection } }));
+      set((state) => ({ projections: updateProjection(state.projections, key, projection) }));
       return true;
     }
     // A snapshot with no messages can only be a transient/partial projection
@@ -175,18 +235,19 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       const recovery = durableRecoveryFromSnapshot(snapshot, sessionId);
       if (!recovery?.compactionTarget && !current.durableRecovery?.compactionTarget) return false;
       if (!recovery || current.durableRecovery?.compactionTarget && recovery.compactionTarget === undefined) return false;
-      set((state) => ({ projections: { ...state.projections, [sessionId]: {
+      set((state) => ({ projections: updateProjection(state.projections, key, {
         ...current, durableRecovery: recovery, runtimeEngine: projection.runtimeEngine,
-      } } }));
+      }) }));
       return true;
     }
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection, snapshotConfirmsQuiescence(snapshot)),
     }));
     return true;
   },
-  applyEvents(sessionId, events) {
-    const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
+  applyEvents(target, events) {
+    const sessionId = protocolSessionId(target); const key = agentProjectionKey(target);
+    const current = get().projections[key] ?? createAgentProjection(sessionId);
     let projection: AgentLiveProjection = reduceAgentEvents(current, events);
     for (const event of events) {
       if (event.sessionId !== sessionId || event.eventType !== 'snapshot_required') continue;
@@ -198,50 +259,62 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       }
     }
     if (projection === current) return current.needsSnapshot;
+    const terminalConfirmed = events.some((event) => event.sessionId === sessionId
+      && event.sequence > current.lastSequence && event.sequence <= projection.lastSequence
+      && ((event.eventType === 'turn_completed' || event.eventType === 'turn_failed') && Boolean(event.turnId)
+        || event.eventType === 'status_changed' && isTerminalStatus(event.payload.status)
+        || event.eventType === 'snapshot' && snapshotConfirmsQuiescence(agentSnapshotFromResponse(
+          event.payload.snapshot ?? event.payload,
+        ))));
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection, terminalConfirmed || undefined),
     }));
     return projection.needsSnapshot;
   },
-  applyBackgroundJobReceipt(sessionId, receipt) {
-    const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
+  applyBackgroundJobReceipt(target, receipt) {
+    const sessionId = protocolSessionId(target); const key = agentProjectionKey(target);
+    const current = get().projections[key] ?? createAgentProjection(sessionId);
     const projection = applyAgentBackgroundJobReceipt(current, receipt);
     if (projection === current) return false;
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
     return true;
   },
-  appendOptimistic(sessionId, input) {
-    const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
+  appendOptimistic(target, input) {
+    const sessionId = protocolSessionId(target); const key = agentProjectionKey(target);
+    const current = get().projections[key] ?? createAgentProjection(sessionId);
     const projection = appendOptimisticAgentMessage(current, input);
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
-  rewriteOptimistic(sessionId, targetMessageId, input) {
-    const current = get().projections[sessionId] ?? createAgentProjection(sessionId);
+  rewriteOptimistic(target, targetMessageId, input) {
+    const sessionId = protocolSessionId(target); const key = agentProjectionKey(target);
+    const current = get().projections[key] ?? createAgentProjection(sessionId);
     const projection = rewriteOptimisticAgentMessage(current, targetMessageId, input);
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
-  discardOptimistic(sessionId, clientMessageId) {
-    const current = get().projections[sessionId];
+  discardOptimistic(target, clientMessageId) {
+    const key = agentProjectionKey(target);
+    const current = get().projections[key];
     if (!current) return;
     const projection = discardOptimisticAgentMessage(current, clientMessageId);
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
   failOptimistic(
-    sessionId,
+    target,
     clientMessageId,
     error,
     nowMs,
     admissionState,
   ) {
-    const current = get().projections[sessionId];
+    const key = agentProjectionKey(target);
+    const current = get().projections[key];
     if (!current) return;
     const projection = failOptimisticAgentMessage(
       current,
@@ -251,11 +324,12 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       admissionState,
     );
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
-  requeueOptimistic(sessionId, clientMessageId, nowMs) {
-    const current = get().projections[sessionId];
+  requeueOptimistic(target, clientMessageId, nowMs) {
+    const key = agentProjectionKey(target);
+    const current = get().projections[key];
     if (!current) return;
     const projection = requeueOptimisticAgentMessage(
       current,
@@ -263,11 +337,12 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
       nowMs,
     );
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
-  acknowledgeOptimistic(sessionId, clientMessageId, nowMs) {
-    const current = get().projections[sessionId];
+  acknowledgeOptimistic(target, clientMessageId, nowMs) {
+    const key = agentProjectionKey(target);
+    const current = get().projections[key];
     if (!current) return;
     const projection = acknowledgeOptimisticAgentMessage(
       current,
@@ -276,30 +351,89 @@ export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
     );
     if (projection === current) return;
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
-  abortTurn(sessionId, turnId, nowMs) {
-    const current = get().projections[sessionId];
+  abortTurn(target, turnId, nowMs) {
+    const key = agentProjectionKey(target);
+    const current = get().projections[key];
     if (!current) return;
     const projection = abortAgentTurn(current, turnId, nowMs);
     set((state) => ({
-      projections: { ...state.projections, [sessionId]: projection },
+      projections: updateProjection(state.projections, key, projection),
     }));
   },
-  clear(sessionId) {
+  clear(target) {
     set((state) => {
       const projections = { ...state.projections };
-      delete projections[sessionId];
+      delete projections[agentProjectionKey(target)];
       return { projections };
     });
   },
 }));
 
-export function agentProjection(sessionId: string): AgentLiveProjection {
+export function agentProjection(target: AgentSessionTarget): AgentLiveProjection {
   return (
-    useAgentLiveStore.getState().projections[sessionId] ?? createAgentProjection(sessionId)
+    selectAgentProjection(useAgentLiveStore.getState(), target) ?? createAgentProjection(protocolSessionId(target))
   );
+}
+
+function updateProjection(
+  current: Record<string, AgentLiveProjection>,
+  key: string,
+  projection: AgentLiveProjection,
+  terminalConfirmed?: boolean,
+): Record<string, AgentLiveProjection> {
+  const previous = current[key];
+  const projections = { ...current };
+  // Scoped keys are non-integer strings: insertion order is the LRU order.
+  delete projections[key];
+  projections[key] = {
+    ...projection,
+    retentionConfirmed: isTerminalProjection(projection)
+      && (terminalConfirmed ?? (previous?.retentionConfirmed === true && isTerminalProjection(previous))),
+  };
+  // Streaming an observed Session cannot add an inactive cache entry. Avoid
+  // rescanning retained transcripts on the hot delta path.
+  return !liveOwnerProjectionKeys.has(key) && canEvictProjection(projections[key])
+    ? pruneInactiveProjections(projections)
+    : projections;
+}
+
+/** Mutation-triggered cache only: no timers and no unconditional release clear.
+ * Active/unknown/pending projections deliberately remain outside this bound;
+ * dropping their admission or recovery identity would be a correctness bug. */
+function pruneInactiveProjections(projections: Record<string, AgentLiveProjection>): Record<string, AgentLiveProjection> {
+  const eligible = Object.keys(projections).filter((key) => (
+    !liveOwnerProjectionKeys.has(key) && canEvictProjection(projections[key])
+  ));
+  for (const key of eligible.slice(0, Math.max(0, eligible.length - INACTIVE_SETTLED_PROJECTION_LIMIT))) {
+    delete projections[key];
+  }
+  return projections;
+}
+
+function canEvictProjection(projection: AgentLiveProjection): boolean {
+  const recovery = projection.durableRecovery;
+  return projection.retentionConfirmed === true
+    && isTerminalProjection(projection) && !projection.needsSnapshot
+    && Object.keys(projection.optimisticByClientMessageId).length === 0
+    && !recovery?.paused && !recovery?.recoverable && !recovery?.activeTurn && !recovery?.compactionTarget
+    && projection.messageQueue.steering.length === 0 && projection.messageQueue.followUp.length === 0
+    && !Object.values(projection.messagesById).some((message) => message.admissionState
+      || ['queued', 'streaming'].includes(message.status)
+      || message.deliveryState === 'sending' || message.deliveryState === 'accepted')
+    && !Object.values(projection.activitiesById).some((activity) => ['running', 'waiting'].includes(activity.status))
+    && Object.values(projection.backgroundJobsById).every((job) => ['completed', 'failed', 'cancelled'].includes(job.status));
+}
+
+function snapshotConfirmsQuiescence(snapshot: AgentSnapshot): boolean {
+  return snapshot.projectionCurrent !== false
+    && (snapshot.runtimeQuiescent === true || !snapshot.partial) && isTerminalStatus(snapshot.status);
+}
+
+function isTerminalStatus(status: unknown): boolean {
+  return typeof status === 'string' && ['idle', 'ready', 'stopped', 'active', 'failed', 'faulted'].includes(status);
 }
 
 /** A reset replaces old confirmed history, while an unresolved local admission
@@ -344,7 +478,7 @@ function normalizeLegacyHistoryTurns(snapshot: AgentSnapshot): AgentSnapshot {
 
 
 function isTerminalProjection(projection: AgentProjectionState): boolean {
-  if (!['idle', 'ready', 'stopped', 'active', 'failed', 'faulted'].includes(projection.status)) {
+  if (!isTerminalStatus(projection.status)) {
     return false;
   }
   return !projection.turnOrder.some((turnId) => (

@@ -1062,5 +1062,49 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.session_id)["messageCount"], 64)
 
 
+class PiModelSelectionProtocolTests(unittest.TestCase):
+    def runtime(self, engine, response):
+        runtime = object.__new__(PiRuntimeHostManager)
+        runtime._lock = threading.RLock()
+        runtime._states = {}
+        runtime.ensure = Mock()
+        runtime.sessions = Mock()
+        runtime.sessions.get.return_value = {"runtimeEngine": engine}
+        runtime.sessions.set_model_profile.return_value = {"id": "session"}
+        runtime._require_client = Mock(return_value=Mock(send=Mock(return_value=response)))
+        return runtime
+
+    def test_durable_model_selection_reads_snapshot_model(self):
+        runtime = self.runtime("durable", {"runtimeEngine": "durable", "model": PUBLIC_MODEL})
+        result = runtime.set_model("session", provider="test", model_id="model")
+        self.assertEqual(result["selected"]["id"], "model")
+        runtime.sessions.set_model_profile.assert_called_once_with("session", "test/model")
+
+    def test_classic_model_selection_retains_top_level_contract(self):
+        runtime = self.runtime("classic", PUBLIC_MODEL)
+        self.assertEqual(runtime.set_model("session", provider="test", model_id="model")["selected"]["provider"], "test")
+
+    def test_malformed_durable_model_does_not_persist_selection(self):
+        for model in (None, {}, [], {"id": "model"}):
+            with self.subTest(model=model):
+                runtime = self.runtime("durable", {"runtimeEngine": "durable", "model": model})
+                with self.assertRaisesRegex(PiRuntimeError, "selected model"):
+                    runtime.set_model("session", provider="test", model_id="model")
+                runtime.sessions.set_model_profile.assert_not_called()
+
+    def test_classic_does_not_accept_durable_snapshot_shape(self):
+        runtime = self.runtime("classic", {"runtimeEngine": "durable", "model": PUBLIC_MODEL})
+        with self.assertRaisesRegex(PiRuntimeError, "selected model"):
+            runtime.set_model("session", provider="test", model_id="model")
+        runtime.sessions.set_model_profile.assert_not_called()
+
+    def test_host_model_error_is_not_masked(self):
+        runtime = self.runtime("durable", {})
+        runtime._require_client.return_value.send.side_effect = PiRuntimeError("MODEL_NOT_FOUND")
+        with self.assertRaisesRegex(PiRuntimeError, "MODEL_NOT_FOUND"):
+            runtime.set_model("session", provider="test", model_id="missing")
+        runtime.sessions.set_model_profile.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

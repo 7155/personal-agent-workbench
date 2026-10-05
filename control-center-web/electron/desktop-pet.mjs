@@ -1,15 +1,15 @@
 const PET_PATH = '/desktop-pet';
 const SIZE = { width: 160, height: 190 };
 
-export function clampPetPosition(position, area) {
+export function clampPetPosition(position, area, size = SIZE) {
   return {
-    x: Math.round(Math.max(area.x, Math.min(position.x, area.x + Math.max(0, area.width - SIZE.width)))),
-    y: Math.round(Math.max(area.y, Math.min(position.y, area.y + Math.max(0, area.height - SIZE.height)))),
+    x: Math.round(Math.max(area.x, Math.min(position.x, area.x + Math.max(0, area.width - size.width)))),
+    y: Math.round(Math.max(area.y, Math.min(position.y, area.y + Math.max(0, area.height - size.height)))),
   };
 }
 
 // An optional launcher, not a second assistant runtime. No capture or model calls.
-export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin, preload, openAssistant, onVisibilityChanged = () => {} }) {
+export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin, preload, openAssistant, getSource = () => null, onVisibilityChanged = () => {} }) {
   let window = null;
   let presentationEpoch = 0;
   let loading = null;
@@ -20,6 +20,9 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
   let surfaceReady = false;
   const positions = new Map();
   const url = `${origin}${PET_PATH}`;
+  const state = installDesktopPetState({ ipcMain, getSource, origin, onSnapshot: (snapshot) => {
+    if (surfaceReady && window && !window.isDestroyed()) window.webContents.send('paw-pet:state', snapshot);
+  } });
   const present = (target, epoch) => {
     if (nativeReady && surfaceReady && enabled && epoch === presentationEpoch && window === target && !target.isDestroyed()) target.showInactive();
   };
@@ -34,7 +37,8 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
   };
   const place = (target, position) => {
     const display = screen.getDisplayNearestPoint(position);
-    const next = clampPetPosition(position, display.workArea);
+    const [width, height] = target.getSize();
+    const next = clampPetPosition(position, display.workArea, { width, height });
     target.setPosition(next.x, next.y);
     positions.set(display.id, next);
   };
@@ -92,9 +96,25 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
     const target = owned(event);
     surfaceReady = true;
     present(target, presentationEpoch);
+    return state.snapshot();
   });
   ipcMain.handle('paw-pet:hide', (event) => { owned(event); hide(); });
   ipcMain.handle('paw-pet:open-assistant', (event) => { owned(event); openAssistant(); });
+  ipcMain.handle('paw-pet:open-conversation', (event, target) => {
+    owned(event);
+    if (!state.canOpenConversation(target)) throw new Error('Desktop pet conversation rejected');
+    openAssistant(target.id);
+  });
+  ipcMain.handle('paw-pet:expand', (event, expanded) => {
+    const target = owned(event);
+    if (typeof expanded !== 'boolean') throw new Error('Invalid desktop pet expansion');
+    drag = null;
+    const [x, y] = target.getPosition();
+    const display = screen.getDisplayNearestPoint({ x, y });
+    const size = expanded ? { width: 320, height: 400 } : SIZE;
+    target.setSize(Math.min(size.width, display.workArea.width), Math.min(size.height, display.workArea.height));
+    place(target, { x, y });
+  });
   ipcMain.handle('paw-pet:drag', (event, phase) => {
     const target = owned(event);
     if (!['start', 'move', 'end', 'cancel'].includes(phase)) throw new Error('Invalid desktop pet drag');
@@ -120,8 +140,10 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
   app.once('before-quit', () => {
     disposed = true;
     hide();
+    state.dispose();
     screen.removeListener('display-removed', keepVisible);
     screen.removeListener('display-metrics-changed', keepVisible);
   });
   return { show, hide, isVisible: () => enabled };
 }
+import { installDesktopPetState } from './desktop-pet-state.mjs';

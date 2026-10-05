@@ -33,7 +33,7 @@ import {
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import { parsePiModelCatalogOptions, type PiModelOption } from '@/features/agent/model-catalog-options';
 import { roleItems, sessionItems, type SessionSummary } from '@/features/agent/types';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import { buildRoomCollabTimeline } from '@/features/collab-timeline/room-timeline';
@@ -46,6 +46,7 @@ import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
 import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { PawAgentHome } from './PawAgentHome';
 import { PawPrimaryAssistantHome, type PrimaryAssistantHomeDraft } from './PawPrimaryAssistantHome';
+import { PrimaryAssistantComposerHeader } from './PrimaryAssistantComposerHeader';
 import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-workspace/AgentModeSwitch';
 import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { OrganizationWorkspace } from '@/features/semantic-workspace/OrganizationWorkspace';
@@ -397,7 +398,7 @@ export function PawAgentApp({
     setActionTrace(undefined);
     try {
       await transport.request({ pathId: 'agent.session.delete', params: { sessionId: deleteTarget.id } });
-      useAgentLiveStore.getState().clear(deleteTarget.id);
+      useAgentLiveStore.getState().clear(agentSessionAddress(transport, deleteTarget.id));
       delete optimisticSessionsRef.current[deleteTarget.id];
       setSessions((current) => current.filter((item) => item.id !== deleteTarget.id));
       if (selection.kind === 'session' && selection.id === deleteTarget.id) setSelection({ kind: 'new' });
@@ -538,9 +539,9 @@ export function PawAgentApp({
               key={`session:${selection.id}`}
               initialDraft={selection.draft}
               initialSubmission={selection.submission}
-              onAssistantHome={(draft, execute, messageId) => { setAdvancedHome(false); setSelection({ kind: 'new', draft, execute,
-                ...(execute && selectedSessionRecord?.metadata?.primaryAssistant ? { source: { sessionId: selectedSessionRecord.id, workspaceRoots: selectedSessionRecord.workspaceRoots, messageId } } : {}),
-              }); }}
+              renderComposerHeader={view => <PrimaryAssistantComposerHeader view={view} onHome={(draft, execute, messageId) => { setAdvancedHome(false); setSelection({ kind: 'new', draft, execute,
+                ...(execute && view.session.metadata?.primaryAssistant ? { source: { sessionId: view.session.id, workspaceRoots: view.session.workspaceRoots, messageId } } : {}),
+              }); }} />}
               persona={personas.find((item) => item.roleId === sessions.find((session) => session.id === selection.id)?.roleId)}
               record={selectedSessionRecord}
               recordMetadataKnown={Boolean(selectedSession)}

@@ -1272,6 +1272,7 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-files-panel__empty button { min-height: 28px; border: 1px solid var(--color-border); border-radius: var(--radius-1); padding: 3px 8px; background: var(--color-surface); color: var(--color-text-secondary); font: inherit; cursor: pointer; }
 .agent-files-panel__empty { display: flex; align-items: center; gap: 7px; margin: 0; padding: 12px; color: var(--color-text-tertiary); font-size: 12px; line-height: 1.45; }
 .agent-files-panel__empty > span { min-width: 0; flex: 1; }
+.agent-files-panel__empty button:disabled { cursor: not-allowed; opacity: .55; }
 .agent-files-panel__empty > svg { color: var(--color-accent); }
 .agent-files-panel__empty strong { color: var(--color-text); font-size: 13px; }
 .agent-files-panel__empty small { font-size: 12px; line-height: 1.45; }

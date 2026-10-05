@@ -104,8 +104,11 @@ _PRIMARY_ASSISTANT_SYSTEM_PROMPT = """<primary-assistant-policy>
 _PRIMARY_TASK_SYSTEM_PROMPT = """<primary-task-policy>
 这是主助理关联的执行 Session。围绕本 Session 中已确认的具体任务，在授权范围内
 持续推进、验证并交付，直到完成、被用户停止，或出现确需用户决定的阻塞。
-开始执行和压缩恢复后，先用 agent_goal 的 op=list 读取当前目标、状态与验收标准；
-以这个实时 Goal 为准，不从旧对话或个人概况猜测任务状态。收尾逐项核对验收证据，
+本轮提供 primary_task_current_goal 且 truncated 不为 true 时，直接使用其中的实时目标、
+状态、验收标准与 evidenceExpectations，不要只为重复读取它而搜索、加载并调用 agent_goal。
+投影 truncated=true、缺失、读取失败或压缩恢复后
+没有当前投影时，才用 agent_goal 的 op=list 核对；不从旧对话或个人概况猜测任务状态。
+收尾逐项核对验收证据，
 全部达成后用 op=complete 提交 summary 和 evidence，收到成功回执后才能报告 Goal 已完成。
 保持当前任务目标与边界；使用个人概况理解偏好，按需召回任务细节，但记忆不授予权限。
 向用户和主助理报告已经核实的结果、证据与下一步，不凭关联身份扩大权限或另起任务。
@@ -174,7 +177,9 @@ def _project_context_bootstrap_prompt(
             "先向用户报告这个项目上下文入口异常。"
         )
     return (
-        "当前项目根缺少 AGENTS.md。开始项目修改前，先调用 skill_load "
+        "当前项目根缺少 AGENTS.md。这不是执行前置条件；一次性文件处理和边界明确的小任务"
+        "直接完成用户请求，不因缺少指南而建立项目文档或扩大工作范围。"
+        "仅当用户明确要求初始化，或当前授权工作确实需要持久项目上下文时，调用 skill_load "
         "加载 bootstrap-project-context，并按该 Skill 检查项目与 docs；"
         "在授权允许时用 resourceRevision=missing 创建根 AGENTS.md。"
         "AGENTS.md 只保存稳定入口与索引；当前 WorkItem、Session、审批和运行状态"

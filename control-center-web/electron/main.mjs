@@ -464,7 +464,8 @@ async function startPrimaryInstance() {
   const desktopPet = installDesktopPet({
     app, BrowserWindow, ipcMain, screen, origin: hostServer.origin,
     preload: path.join(path.dirname(paths.preloadEntry), 'desktop-pet-preload.cjs'),
-    openAssistant: () => openAssistantSession(''),
+    openAssistant: (sessionId = '') => openAssistantSession(sessionId),
+    getSource: () => mainWindow?.webContents ?? null,
     onVisibilityChanged: (visible) => { petMenuItem.checked = visible; },
   });
   if (menu) {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, Languages, Lightbulb, MousePointer2, Notebook, Scan, Save } from 'lucide-react';
 import { useControlTransport } from '@/app/control-transport';
 import { publicAgentErrorText } from '@/features/agent/public-error';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { PawSessionWorkspace } from '@/paw-os/apps/PawSessionWorkspace';
 import '@/paw-os/styles/paw-os.css';
 import '@/paw-os/apps/paw-apps.css';
@@ -23,7 +23,9 @@ export function ScreenAssistant() {
   const [draftRequest, setDraftRequest] = useState<{ id: number; text: string }>();
   const [saved, setSaved] = useState('');
   const [saving, setSaving] = useState(false);
-  const answer = useAgentLiveStore((store) => latestCompletedScreenAnswer(ready ? store.projections[ready.session.id] : undefined));
+  const answer = useAgentLiveStore((store) => latestCompletedScreenAnswer(
+    ready ? selectAgentProjection(store, agentSessionAddress(transport, ready.session.id)) : undefined,
+  ));
   const actionIcons = { translate: Languages, explain: Lightbulb, note: Notebook, act: MousePointer2 } as const;
   useEffect(() => {
     let current = true;

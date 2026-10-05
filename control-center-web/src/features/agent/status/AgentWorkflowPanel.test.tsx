@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-state.v1';
 import { StubControlTransport } from '@/test/stub-control-transport';
+import { agentProjectionKey, agentSessionAddress } from '../state/live-store';
 import { AgentWorkflowPanel } from './AgentWorkflowPanel';
 
 afterEach(() => {
@@ -15,6 +16,59 @@ afterEach(() => {
 });
 
 describe('AgentWorkflowPanel', () => {
+  it('keeps same-ID workflows separate when transports share a query client', async () => {
+    const stateA = workflowState();
+    const stateB = workflowState();
+    stateA.goal.objective = '甲的长期目标';
+    stateB.goal.objective = '乙的长期目标';
+    const a = transportFor(stateA);
+    const b = transportFor(stateB);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<TooltipProvider><QueryClientProvider client={client}>
+      <ControlTransportProvider transport={a}><section aria-label="工作流甲"><AgentWorkflowPanel sessionId={stateA.sessionId} /></section></ControlTransportProvider>
+      <ControlTransportProvider transport={b}><section aria-label="工作流乙"><AgentWorkflowPanel sessionId={stateB.sessionId} /></section></ControlTransportProvider>
+    </QueryClientProvider></TooltipProvider>);
+    const regionA = within(screen.getByRole('region', { name: '工作流甲' }));
+    const regionB = within(screen.getByRole('region', { name: '工作流乙' }));
+    expect(await regionA.findByText('甲的长期目标')).toBeVisible();
+    expect(await regionB.findByText('乙的长期目标')).toBeVisible();
+    expect(regionA.queryByText('乙的长期目标')).not.toBeInTheDocument();
+    expect(regionB.queryByText('甲的长期目标')).not.toBeInTheDocument();
+  });
+
+  it('writes a delayed goal mutation to its original transport cache after a provider switch', async () => {
+    const stateA = workflowState();
+    const stateB = workflowState();
+    stateA.goal.objective = '甲的长期目标';
+    stateB.goal.objective = '乙的长期目标';
+    let finishMutation!: (next: AgentWorkflowStateV1) => void;
+    const pending = new Promise<AgentWorkflowStateV1>((resolve) => { finishMutation = resolve; });
+    const a = new StubControlTransport('mock', {
+      'agent.session.workflow.get': stateA,
+      'agent.session.goal.mutate': () => pending,
+    });
+    const b = transportFor(stateB);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const element = (transport: StubControlTransport) => (
+      <TooltipProvider><QueryClientProvider client={client}><ControlTransportProvider transport={transport}>
+        <AgentWorkflowPanel sessionId={stateA.sessionId} />
+      </ControlTransportProvider></QueryClientProvider></TooltipProvider>
+    );
+    const view = render(element(a));
+    await userEvent.click(await screen.findByRole('button', { name: '暂停' }));
+    view.rerender(element(b));
+    expect(await screen.findByText('乙的长期目标')).toBeVisible();
+    const paused = { ...stateA, goal: { ...stateA.goal, status: 'paused' as const, revision: 2 } };
+    await act(async () => finishMutation(paused));
+    const keyA = ['agent', 'workflow', agentProjectionKey(agentSessionAddress(a, stateA.sessionId))];
+    const keyB = ['agent', 'workflow', agentProjectionKey(agentSessionAddress(b, stateB.sessionId))];
+    await waitFor(() => expect(client.getQueryData(keyA)).toMatchObject({ goal: { status: 'paused' } }));
+    expect(client.getQueryData(keyB)).toMatchObject({ goal: { objective: '乙的长期目标', status: 'active' } });
+    expect(screen.queryByText('甲的长期目标')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '暂停' })).toBeEnabled();
+    expect(b.requests.some((request) => request.pathId === 'agent.session.goal.mutate')).toBe(false);
+  });
+
   it('renders the authoritative phased Todo and Goal without a second lifecycle', async () => {
     const state = workflowState();
     const transport = transportFor(state);

@@ -270,6 +270,53 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual(result["sourceContext"], replay["sourceContext"])
         self.assertEqual(brief, self.brief(result["session"]["id"]))
 
+    def test_task_brief_rereads_snapshot_after_initial_runtime_reconciliation(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        reads = []
+        def snapshot(_session_id):
+            reads.append(_session_id)
+            if len(reads) == 1:
+                with sqlite_connection(self.db) as conn:
+                    conn.execute("UPDATE agent_sessions SET updated_at_ms=updated_at_ms+1 WHERE id=?", (source_id,))
+                return {"items": [self.message("stale", "assistant", "Before reconciliation")], "lastSequence": 1}
+            return {"items": [self.message("current", "assistant", "After reconciliation")], "lastSequence": 2}
+        with patch.object(self.service, "messages", side_effect=snapshot):
+            result = self.service.create_primary_task(request)
+        brief = self.brief(result["session"]["id"])
+        self.assertEqual(reads, [source_id, source_id])
+        self.assertEqual(brief["sourceRevision"], 2)
+        self.assertEqual([item["id"] for item in brief["messages"]], ["current"])
+        self.assertEqual(brief["sourceSessionRevision"], self.service.sessions.get(source_id)["updatedAtMs"])
+
+    def test_task_brief_continuously_changing_source_still_rejects_without_task(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        def snapshot(_session_id):
+            with sqlite_connection(self.db) as conn:
+                conn.execute("UPDATE agent_sessions SET updated_at_ms=updated_at_ms+1 WHERE id=?", (source_id,))
+            return {"items": [], "lastSequence": 1}
+        with patch.object(self.service, "messages", side_effect=snapshot) as inspect:
+            with self.assertRaisesRegex(ValueError, "source discussion changed"):
+                self.service.create_primary_task(request)
+        self.assertEqual(inspect.call_count, 2)
+        self.assertEqual(self.service.ensure_primary_assistant({})["tasks"], [])
+
+    def test_task_brief_change_after_stable_snapshot_still_rejects_at_store_fence(self) -> None:
+        request = self.request()
+        source_id = str(request["sourceSessionId"])
+        prepare = self.service._primary_task_brief
+        def change_after_snapshot(authorization):
+            result = prepare(authorization)
+            with sqlite_connection(self.db) as conn:
+                conn.execute("UPDATE agent_sessions SET updated_at_ms=updated_at_ms+1 WHERE id=?", (source_id,))
+            return result
+        with patch.object(self.service, "messages", return_value={"items": [], "lastSequence": 0}), \
+             patch.object(self.service, "_primary_task_brief", side_effect=change_after_snapshot):
+            with self.assertRaisesRegex(ValueError, "source discussion changed"):
+                self.service.create_primary_task(request)
+        self.assertEqual(self.service.ensure_primary_assistant({})["tasks"], [])
+
     def test_task_brief_is_bounded_and_does_not_cross_project(self) -> None:
         request = self.request()
         messages = [self.message(str(index), "assistant", "公开方案" * 2_000) for index in range(20)]

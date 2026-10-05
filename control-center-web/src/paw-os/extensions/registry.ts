@@ -1,4 +1,5 @@
 import { createExtensionHostRegistry } from './host-registry';
+import { chatSurfaceCompatibility } from './chat-surface-contract';
 import type {
   PawExtensionAppId,
   PawExtensionAppManifest,
@@ -102,11 +103,14 @@ export function extensionAppForPackage(packageId: string): PawExtensionAppManife
 
 export async function loadPawExtensionApp(id: PawExtensionAppId): Promise<PawExtensionAppModule> {
   const app = byId.get(id);
-  if (!app && isLabExtensionAppId(id)) return extensionHosts.load('lab-html');
-  if (!app) throw new Error(`Unknown PAWOS Extension App: ${id}`);
-  const module = await app.load();
+  if (!app && !isLabExtensionAppId(id)) throw new Error(`Unknown PAWOS Extension App: ${id}`);
+  const module = await (app ? app.load() : extensionHosts.load('lab-html'));
   if (typeof module.default !== 'function') {
     throw new Error(`Extension App ${id} does not export a React component`);
+  }
+  if ('chatSurface' in module && module.chatSurface !== undefined) {
+    const compatibility = chatSurfaceCompatibility(module.chatSurface);
+    if (!compatibility.supported) throw new Error(`${compatibility.reason} 现有对话记录保持不变，请更新 App 或工作台后重试。`);
   }
   return module;
 }

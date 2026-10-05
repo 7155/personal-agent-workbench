@@ -1,6 +1,6 @@
 import type { InitialSessionSubmission } from './agent-workspace-loader';
-import './primary-assistant.css';
-import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '@/paw-os/extensions/installation';
+import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, installationChangeMatchesTransport } from '@/paw-os/extensions/installation';
+import { capabilityCatalogQueryOptions, observeCatalogQuery, pluginQueryKeys, prepareCatalogRefresh, readCatalogQuery, useCatalogQueryClient } from '@/features/plugins/catalog-queries';
 import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
@@ -28,6 +28,7 @@ import {
   useRef,
   useState,
   type FocusEvent,
+  type ReactNode,
   type KeyboardEvent,
 } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -85,7 +86,7 @@ import {
   resolveConversationEntryId,
   type ConversationNode,
 } from '@/features/agent/sessions/ConversationForkDialog';
-import { agentProjection, latestActiveAgentTurnId as latestActiveTurnId, useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjection, agentProjectionKey, agentSessionAddress, selectAgentProjection, latestActiveAgentTurnId as latestActiveTurnId, useAgentLiveStore, type AgentSessionTarget } from '@/features/agent/state/live-store';
 import { AgentStatusPanel } from '@/features/agent/status/AgentStatusPanel';
 import { AgentTimeline, initialAgentResponseTurnId, labProjectUserDraft, type AgentUserMessagePresentation } from '@/features/agent/timeline/AgentTimeline';
 import { QueueTray, useConversationQueue } from '@/features/conversation-ui';
@@ -113,7 +114,6 @@ import {
 } from '@/features/agent/types';
 import {
   capabilityScopeLabel,
-  requireSessionCapabilityCatalog,
   type CapabilityCatalog,
   type CapabilityMutationOutcome,
   type CapabilityPreference,
@@ -128,9 +128,9 @@ const STOP_UNCONFIRMED_TEXT = '尚有后台资源未确认停止。请查看任�
 
 export function sessionWorkspaceProjectionSlice(
   state: ReturnType<typeof useAgentLiveStore.getState>,
-  sessionId: string,
+  target: AgentSessionTarget,
 ) {
-  const projection = state.projections[sessionId];
+  const projection = selectAgentProjection(state, target);
   return {
     activeTurnId: projection?.durableRecovery?.activeTurn?.turnId ?? latestActiveTurnId(projection),
     hasTurns: Boolean(projection?.turnOrder.length),
@@ -153,6 +153,10 @@ export function sessionWorkspaceProjectionSlice(
 }
 
 
+export type WorkspaceComposerHeaderView = {
+  session: SessionSummary; draft: string; disabled: boolean; sourceMessageId(): string | undefined;
+};
+
 export function PawSessionWorkspace({
   active = true,
   persona,
@@ -161,7 +165,7 @@ export function PawSessionWorkspace({
   recordId,
   initialDraft = '',
   initialSubmission,
-  onAssistantHome,
+  renderComposerHeader,
   initialAttachments = [],
   draftRequest,
   composerContext,
@@ -185,7 +189,7 @@ export function PawSessionWorkspace({
   recordId: string;
   initialDraft?: string;
   initialSubmission?: InitialSessionSubmission;
-  onAssistantHome?: (draft?: string, execute?: boolean, sourceMessageId?: string) => void;
+  renderComposerHeader?: (view: WorkspaceComposerHeaderView) => ReactNode;
   initialAttachments?: ComposerAttachment[];
   draftRequest?: WorkspaceDraftRequest;
   composerContext?: WorkspaceComposerContext;
@@ -206,6 +210,8 @@ export function PawSessionWorkspace({
   fullHistoryOnOpen?: boolean;
 }) {
   const transport = useControlTransport();
+  const catalogQueryClient = useCatalogQueryClient();
+  const address = agentSessionAddress(transport, recordId);
   const workspaceScopeRef = useRef({ recordId, transport });
   if (workspaceScopeRef.current.recordId !== recordId || workspaceScopeRef.current.transport !== transport) {
     workspaceScopeRef.current = { recordId, transport };
@@ -216,8 +222,7 @@ export function PawSessionWorkspace({
   const windowChromeTarget = usePawWindowChromeTarget();
   const embedded = appearance === 'embedded';
   const workspaceRecord = record ?? provisionalSessionRecord(recordId);
-  const primaryAssistant = workspaceRecord.metadata?.primaryAssistant === true;
-  const primaryTask = workspaceRecord.metadata?.primaryTask === true;
+  const permissionsLocked = workspaceRecord.metadata?.primaryAssistant === true || workspaceRecord.metadata?.primaryTask === true;
   const initialSubmissionRef = useRef<string | undefined>(undefined);
   const evaluationSnapshot = record?.evaluationSnapshot === true;
   const pageVisible = usePageVisibility();
@@ -225,7 +230,7 @@ export function PawSessionWorkspace({
   // focus. Only a hidden document suspends the authoritative event stream.
   const liveActive = pageVisible;
   const projectionSlice = useAgentLiveStore(useShallow(
-    (state) => sessionWorkspaceProjectionSlice(state, recordId),
+    (state) => sessionWorkspaceProjectionSlice(state, address),
   ));
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const durableSession = workspaceRecord.runtimeEngine === 'durable' || catalog?.runtimeEngine === 'durable' || projectionSlice.runtimeEngine === 'durable';
@@ -271,7 +276,7 @@ export function PawSessionWorkspace({
       }
     };
   }, [recordId, transport]);
-  const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(state.projections[recordId]));
+  const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(selectAgentProjection(state, address)));
   const [stopping, setStopping] = useState(false);
   useEffect(() => {
     // A newer native target may appear before an older control request returns.
@@ -285,7 +290,8 @@ export function PawSessionWorkspace({
       stopRequest.controller.abort(); compactionStopRequestRef.current = undefined; setStopping(false);
     }
   }, [compactionTarget]);
-  const [modelChanging, setModelChanging] = useState(false);
+  const [modelChangeRequest, setModelChangeRequest] = useState<{ scope: typeof workspaceScope }>();
+  const modelChanging = modelChangeRequest?.scope === workspaceScope;
   const [panel, setPanel] = useState<WorkbenchPanel>('none');
   const [statusPanelVisited, setStatusPanelVisited] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
@@ -311,9 +317,16 @@ export function PawSessionWorkspace({
   const compactionStopError = compactionStopWarnings.get(recordId)?.transport === transport
     ? STOP_UNCONFIRMED_TEXT : '';
   const [attachmentError, setAttachmentError] = useState('');
-  const attachmentOwner = useRef(recordId);
-  attachmentOwner.current = recordId;
-  useEffect(() => { setAttachmentError(''); }, [recordId]);
+  // Import receipts belong to the current input owner. Count every in-flight
+  // picker/paste/drop so one completion cannot unlock another partial input.
+  const attachmentImports = useMemo(() => ({ active: false, pending: new Set<symbol>() }), [workspaceScope]);
+  const [, refreshAttachmentImports] = useState(0);
+  const attachmentImportPending = attachmentImports.pending.size > 0;
+  useEffect(() => {
+    attachmentImports.active = true;
+    setAttachmentError('');
+    return () => { attachmentImports.active = false; attachmentImports.pending.clear(); };
+  }, [attachmentImports]);
   const [syncError, setSyncError] = useState('');
   const [syncState, setSyncState] = useState<AgentRecoveryState>('recovering');
   // Visible history is independent of command admission. A background expansion
@@ -351,6 +364,11 @@ export function PawSessionWorkspace({
   const [forkDialogNodes, setForkDialogNodes] = useState<ConversationNode[]>([]);
   const [forkDialogInitialEntryId, setForkDialogInitialEntryId] = useState('');
   const [editState, setEditState] = useState<{ entryId: string; messageId: string; resolving?: boolean }>();
+  const editRequestRef = useRef(0);
+  useEffect(() => {
+    setEditState(undefined);
+    return () => { editRequestRef.current += 1; };
+  }, [workspaceScope]);
   const [jumpRequest, setJumpRequest] = useState<{ messageId: string; requestId: number }>();
   const [timelineFollow, setTimelineFollow] = useState({ following: true, unseenUpdates: 0 });
   const [scrollToLatestRequest, setScrollToLatestRequest] = useState(0);
@@ -380,7 +398,11 @@ export function PawSessionWorkspace({
   }, [embedded, recordId, traceFocusNodeId]);
 
   const busy = Boolean(projectionSlice.activeTurnId || compactionTarget);
-  const queueAdmissionBlocked = sending || modelChanging || recovery.checking || recovery.issues.length > 0;
+  const submissionBlockedReason = attachmentImportPending ? '正在导入附件'
+    : editState && (editState.resolving || !editState.entryId) ? '正在定位历史消息'
+      : recovery.checking ? '正在核实恢复的附件'
+        : recovery.issues.length ? '请先处理失效附件' : '';
+  const queueAdmissionBlocked = sending || modelChanging || Boolean(submissionBlockedReason);
   /* A held follow-up is the composer's own queue, not a Runtime delivery.
      干预/接续 hand the message to Pi immediately; a queued draft never leaves
      the client until this turn settles, which is what keeps it editable,
@@ -392,7 +414,7 @@ export function PawSessionWorkspace({
     send: (text) => {
       // Queue consumption is synchronous; an async send that returns before
       // admission must not discard the input the queue still owns.
-      if (queueAdmissionBlocked || sessionActionLockRef.current) return false;
+      if (queueAdmissionBlocked || !acceptsComposerInput()) return false;
       if (!acceptsImmediateInput(text)) return false;
       void send('prompt', text);
     },
@@ -413,34 +435,43 @@ export function PawSessionWorkspace({
     if (!loaded) setHistoryRead(current => current?.scope === scope ? { ...current, expanding: false } : current);
   }, [liveActive, workspaceScope]);
 
-  const loadControlCatalog = useCallback(async (signal?: AbortSignal) => {
+  const loadControlCatalog = useCallback(async (afterChange = false) => {
     const scope = workspaceScope;
-    if ((!liveActive && !signal) || signal?.aborted || workspaceScopeRef.current !== scope) return;
+    if (!liveActive || document.visibilityState === 'hidden' || workspaceScopeRef.current !== scope) return;
+    const postChangeRefresh = afterChange ? prepareCatalogRefresh(catalogQueryClient, [pluginQueryKeys.catalog(transport, recordId)]) : undefined;
+    catalogAbortRef.current?.abort();
+    const controller = new AbortController();
+    catalogAbortRef.current = controller;
+    const signal = controller.signal;
     const requestId = ++catalogRequestRef.current;
     const isCurrent = () => workspaceScopeRef.current === scope && requestId === catalogRequestRef.current && !signal?.aborted;
     setToolCatalogStatus('loading');
     // Publish each independent catalog as it arrives. A slow model/command
     // lookup must not keep the already-confirmed memory and tool switches hidden.
     const requestOptions = signal ? { signal } : {};
-    await Promise.allSettled([
+    const catalogReads = Promise.allSettled([
       transport.request({ pathId: 'agent.session.models', params: { sessionId: recordId }, ...requestOptions }).then((value) => {
         if (isCurrent() && isModelCatalog(value)) setCatalog(value);
       }),
       transport.request({ pathId: 'agent.session.commands', params: { sessionId: recordId }, ...requestOptions }).then((value) => {
         if (isCurrent()) setCommands(commandItems(value));
       }),
-      transport.request({ pathId: 'agent.tools.list', query: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (!isCurrent()) return;
-        setTools(toolItems(value));
-        setCapabilityCatalog(requireSessionCapabilityCatalog(value, recordId));
-        setCapabilityCatalogError('');
-        setToolCatalogStatus('ready');
-      }).catch((reason: unknown) => {
-        if (!isCurrent()) return;
-        setTools([]);
-        setCapabilityCatalog(undefined);
-        setCapabilityCatalogError(errorText(reason));
-        setToolCatalogStatus('failed');
+      observeCatalogQuery(catalogQueryClient, { ...capabilityCatalogQueryOptions(transport, recordId), staleTime: 0 }, signal, {
+        onData: value => {
+          if (!isCurrent()) return;
+          setTools(toolItems(value));
+          setCapabilityCatalog(value);
+          setCapabilityCatalogError('');
+          setToolCatalogStatus('ready');
+        },
+        onError: reason => {
+          if (!isCurrent()) return;
+          setTools([]);
+          setCapabilityCatalog(undefined);
+          setCapabilityCatalogError(errorText(reason));
+          setToolCatalogStatus('failed');
+        },
+        onFetching: () => { if (isCurrent()) setToolCatalogStatus('loading'); },
       }),
       transport.request<Record<string, unknown>>({ pathId: 'agent.runtime.get', ...requestOptions }).then((value) => {
         if (!isCurrent()) return;
@@ -453,25 +484,24 @@ export function PawSessionWorkspace({
         setConversationRewriteAvailable(false);
       }),
     ]);
-  }, [liveActive, recordId, transport, workspaceScope]);
+    await Promise.all([catalogReads, postChangeRefresh?.()]);
+  }, [catalogQueryClient, liveActive, recordId, transport, workspaceScope]);
 
-  const refreshControlCatalog = useCallback(() => {
+  const refreshControlCatalog = useCallback((afterChange = false) => {
     if (evaluationSnapshot || !liveActive) return;
-    catalogAbortRef.current?.abort();
-    const controller = new AbortController();
-    catalogAbortRef.current = controller;
-    void loadControlCatalog(controller.signal).finally(() => {
-      if (catalogAbortRef.current === controller) catalogAbortRef.current = undefined;
-    });
+    void loadControlCatalog(afterChange);
   }, [evaluationSnapshot, liveActive, loadControlCatalog]);
 
   useEffect(() => {
     if (evaluationSnapshot || !liveActive) return;
     // An accepted installation receipt invalidates displayed capabilities;
     // the session catalog remains the authority and no permissions are changed.
-    window.addEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refreshControlCatalog);
-    return () => window.removeEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refreshControlCatalog);
-  }, [evaluationSnapshot, liveActive, refreshControlCatalog]);
+    const refresh = (event: Event) => {
+      if (installationChangeMatchesTransport(event, transport)) refreshControlCatalog(true);
+    };
+    window.addEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refresh);
+  }, [evaluationSnapshot, liveActive, refreshControlCatalog, transport]);
 
   const loadAgentSnapshot = useAgentLiveSession({
     sessionId: recordId,
@@ -502,7 +532,7 @@ export function PawSessionWorkspace({
     },
     onEvent: (event) => {
       if (event.eventType === 'snapshot_required') return;
-      if (event.eventType === 'session_configuration_changed') refreshControlCatalog();
+      if (event.eventType === 'session_configuration_changed') refreshControlCatalog(true);
       const completedMessage = asRecord(asRecord(event.payload).message);
       if (
         event.eventType === 'message_completed'
@@ -582,7 +612,7 @@ export function PawSessionWorkspace({
         params: { sessionId: recordId },
         query: { view: 'recent' },
       });
-      useAgentLiveStore.getState().hydrate(recordId, snapshot);
+      useAgentLiveStore.getState().hydrate(address, snapshot);
       return workspaceRecord;
     } catch {
       return undefined;
@@ -598,7 +628,7 @@ export function PawSessionWorkspace({
      a failure the reader cannot see because another view is on screen. */
   function turnFailureIsVisible(clientMessageId: string): boolean {
     return workspaceView === 'conversation'
-      && timelineOwnsTurnFailure(agentProjection(recordId), clientMessageId);
+      && timelineOwnsTurnFailure(agentProjection(address), clientMessageId);
   }
 
   /* One settle path for every prompt admission failure, shared by send and
@@ -619,9 +649,9 @@ export function PawSessionWorkspace({
   ): void {
     const store = useAgentLiveStore.getState();
     if (isAgentCommandPending(reason)) {
-      if (agentProjection(recordId).optimisticByClientMessageId[clientMessageId]) {
+      if (agentProjection(address).optimisticByClientMessageId[clientMessageId]) {
         store.failOptimistic(
-          recordId,
+          address,
           clientMessageId,
           errorText(reason),
           Date.now(),
@@ -632,7 +662,7 @@ export function PawSessionWorkspace({
     }
     if (isAmbiguousAgentPromptFailure(reason)) {
       store.failOptimistic(
-        recordId,
+        address,
         clientMessageId,
         '暂时无法确认是否已接收。系统不会自动重试；手动重试会核对同一条消息。',
         Date.now(),
@@ -643,7 +673,7 @@ export function PawSessionWorkspace({
     }
     const commandConflict = agentCommandReceiptFailure(reason);
     if (commandConflict?.code === 'AGENT_COMMAND_CONFLICT') {
-      store.discardOptimistic(recordId, clientMessageId);
+      store.discardOptimistic(address, clientMessageId);
       options.restoreInput?.();
       options.onAdmissionRolledBack?.();
       if (isAgentTurnConflict(reason)) {
@@ -659,7 +689,7 @@ export function PawSessionWorkspace({
       return;
     }
     store.failOptimistic(
-      recordId,
+      address,
       clientMessageId,
       errorText(reason),
       Date.now(),
@@ -673,7 +703,7 @@ export function PawSessionWorkspace({
   }
 
   async function resumeCurrentTask(): Promise<void> {
-    const projection = agentProjection(recordId);
+    const projection = agentProjection(address);
     const recovery = projection.durableRecovery;
     if (resumeRequestRef.current?.recordId === recordId && resumeRequestRef.current.transport === transport
       || sending || stopping || modelChanging || projection.needsSnapshot
@@ -689,9 +719,9 @@ export function PawSessionWorkspace({
     const ownsRequest = () => !controller.signal.aborted && resumeRequestRef.current === request
       && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
     const ownsTarget = () => ownsRequest() && (target
-      ? sameAgentCompactionTarget(agentProjection(recordId).durableRecovery?.compactionTarget, target)
-      : agentProjection(recordId).durableRecovery?.activeTurn?.turnId === turnId
-        && agentProjection(recordId).durableRecovery?.activeTurn?.clientMessageId === clientMessageId);
+      ? sameAgentCompactionTarget(agentProjection(address).durableRecovery?.compactionTarget, target)
+      : agentProjection(address).durableRecovery?.activeTurn?.turnId === turnId
+        && agentProjection(address).durableRecovery?.activeTurn?.clientMessageId === clientMessageId);
     setResuming(true);
     setError('');
     try {
@@ -717,7 +747,7 @@ export function PawSessionWorkspace({
     } catch {
       if (!ownsTarget()) return;
       await loadAgentSnapshotRef.current();
-      if (ownsTarget() && agentProjection(recordId).durableRecovery?.paused) {
+      if (ownsTarget() && agentProjection(address).durableRecovery?.paused) {
         setError('恢复尚未确认，原任务与进度已保留。可以重新同步，或再次继续当前任务。');
       }
     } finally {
@@ -747,13 +777,23 @@ export function PawSessionWorkspace({
     return true;
   }
 
+  function acceptsComposerInput(): boolean {
+    // This guard is synchronous too: a file import may have started before
+    // React commits the disabled button, and false keeps Composer's draft.
+    return workspaceScopeRef.current === workspaceScope && !sending && !modelChanging
+      && !sessionActionLockRef.current && !attachmentImports.pending.size
+      && !recovery.checking && !recovery.issues.length
+      && !(editState && (editState.resolving || !editState.entryId));
+  }
+
   useEffect(() => {
     if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
-      || !hasSnapshot || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
+      || !hasSnapshot || attachmentImportPending || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
     void send('prompt', initialSubmission.message, initialSubmission.message, initialSubmission.clientMessageId);
-  }, [initialSubmission, hasSnapshot, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
+  }, [initialSubmission, hasSnapshot, attachmentImportPending, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
 
   async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft, initialClientMessageId?: string): Promise<void> {
+    if (attachmentImports.pending.size) return;
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
     if (!acceptsEngineInput(rawDraft)) return;
@@ -767,13 +807,15 @@ export function PawSessionWorkspace({
       const message = value || '请查看附件。';
       const selectedAttachments = attachments;
       const target = editState;
+      const scope = workspaceScope;
+      const editRequest = ++editRequestRef.current;
       const clientMessageId = `paw-rewrite-${crypto.randomUUID()}`;
       setSending(true);
       setDraft('');
       setAttachments([]);
       setEditState(undefined);
       setError('');
-      useAgentLiveStore.getState().rewriteOptimistic(recordId, target.messageId, {
+      useAgentLiveStore.getState().rewriteOptimistic(address, target.messageId, {
         clientMessageId,
         text: message,
         attachments: selectedAttachments.map((item) => item.id),
@@ -794,12 +836,20 @@ export function PawSessionWorkspace({
            snapshot's job and never holds the composer. */
         void loadAgentSnapshot();
       } catch (reason) {
-        useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+        useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
         await loadAgentSnapshot().catch(() => undefined);
-        setDraft(value);
-        setAttachments(selectedAttachments);
-        setEditState(target);
-        setError(errorText(reason));
+        let restored = false;
+        recovery.recoverInput(current => {
+          // A rejected rewrite still owns its original input, never a newer
+          // thought. Restore text and attachments together through that owner.
+          if (current.draft || current.attachments.length) return current;
+          restored = true;
+          return { draft: displayDraft, attachments: selectedAttachments };
+        });
+        if (workspaceScopeRef.current === scope && editRequestRef.current === editRequest) {
+          if (restored) setEditState(target);
+          setError(errorText(reason));
+        }
       } finally {
         setSending(false);
       }
@@ -847,7 +897,7 @@ export function PawSessionWorkspace({
     const selectedAttachments = attachments;
     const clientMessageId = initialClientMessageId ?? `paw-${crypto.randomUUID()}`;
     if (initialClientMessageId) initialSubmissionRef.current = initialClientMessageId;
-    const selectedScreenContext = screenContextForMessage(screenContext, selectedAttachments.map((item) => item.id), agentProjection(recordId));
+    const selectedScreenContext = screenContextForMessage(screenContext, selectedAttachments.map((item) => item.id), agentProjection(address));
     const effectiveDelivery: AgentMessageDelivery = busy
       ? (delivery === 'followUp' ? 'followUp' : 'steer')
       : 'prompt';
@@ -859,14 +909,14 @@ export function PawSessionWorkspace({
        who had scrolled up to check an earlier turn watched their own message
        land off-screen with no sign it was accepted. */
     setScrollToLatestRequest((value) => value + 1);
-    useAgentLiveStore.getState().appendOptimistic(recordId, {
+    useAgentLiveStore.getState().appendOptimistic(address, {
       clientMessageId,
       text: message,
       attachments: selectedAttachments.map((item) => item.id),
       nowMs: Date.now(),
       ...(effectiveDelivery === 'prompt'
         ? {}
-        : { turnId: latestActiveTurnId(agentProjection(recordId)), delivery: effectiveDelivery }),
+        : { turnId: latestActiveTurnId(agentProjection(address)), delivery: effectiveDelivery }),
     });
     /* The input only comes back if the reader has not already started the next
        thought; a fresh draft never gets clobbered by an old failure. */
@@ -888,7 +938,7 @@ export function PawSessionWorkspace({
         if (!record) {
           const actionRecord = await reconcileSessionForAction();
           if (!actionRecord) {
-            useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+            useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
             restoreInput();
             setError('当前 Session 暂时无法确认，请重新打开后再发送。');
             return;
@@ -906,11 +956,11 @@ export function PawSessionWorkspace({
           },
         });
         if (isCancelledPromptAdmission(response)) {
-          useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+          useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
           void loadAgentSnapshot();
           return;
         }
-        useAgentLiveStore.getState().acknowledgeOptimistic(recordId, clientMessageId, Date.now());
+        useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
         void loadAgentSnapshot();
       } catch (reason) {
         if (effectiveDelivery !== 'prompt' && isAgentSessionIdleFailure(reason)) {
@@ -919,9 +969,9 @@ export function PawSessionWorkspace({
           // is already idle, the rejected receipt is safe to supersede once
           // as a new prompt. Keep explicit lineage; never replay an unknown or
           // pending admission.
-          useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+          useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
           const retryClientMessageId = `paw-retry-${crypto.randomUUID()}`;
-          useAgentLiveStore.getState().appendOptimistic(recordId, {
+          useAgentLiveStore.getState().appendOptimistic(address, {
             clientMessageId: retryClientMessageId,
             text: message,
             attachments: selectedAttachments.map((item) => item.id),
@@ -939,11 +989,11 @@ export function PawSessionWorkspace({
               },
             });
             if (isCancelledPromptAdmission(retryResponse)) {
-              useAgentLiveStore.getState().discardOptimistic(recordId, retryClientMessageId);
+              useAgentLiveStore.getState().discardOptimistic(address, retryClientMessageId);
               void loadAgentSnapshot();
               return;
             }
-            useAgentLiveStore.getState().acknowledgeOptimistic(recordId, retryClientMessageId, Date.now());
+            useAgentLiveStore.getState().acknowledgeOptimistic(address, retryClientMessageId, Date.now());
             void loadAgentSnapshot();
           } catch (retryReason) {
             settlePromptAdmissionFailure(retryClientMessageId, retryReason, { restoreInput });
@@ -980,7 +1030,7 @@ export function PawSessionWorkspace({
     const ownsRequest = () => !controller.signal.aborted && compactionStopRequestRef.current === request
       && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
     const ownsTarget = () => ownsRequest()
-      && sameAgentCompactionTarget(agentProjection(recordId).durableRecovery?.compactionTarget, target);
+      && sameAgentCompactionTarget(agentProjection(address).durableRecovery?.compactionTarget, target);
     setStopping(true);
     clearCompactionStopWarning(target);
     setError('');
@@ -1008,7 +1058,7 @@ export function PawSessionWorkspace({
   }
 
   async function stop(): Promise<void> {
-    const target = agentProjection(recordId).durableRecovery?.compactionTarget;
+    const target = agentProjection(address).durableRecovery?.compactionTarget;
     if (target) { await stopCompaction(target); return; }
     if (!busy || stopping) return;
     setStopping(true);
@@ -1046,7 +1096,7 @@ export function PawSessionWorkspace({
           onAdmissionRolledBack?.();
           return;
         }
-        let current = agentProjection(recordId);
+        let current = agentProjection(address);
         let userMessage = resolveAgentTurnUserMessage(current, turnId);
         if (!userMessage) {
           try {
@@ -1054,8 +1104,8 @@ export function PawSessionWorkspace({
               pathId: 'agent.session.snapshot',
               params: { sessionId: recordId },
             });
-            useAgentLiveStore.getState().hydrate(recordId, snapshot);
-            current = agentProjection(recordId);
+            useAgentLiveStore.getState().hydrate(address, snapshot);
+            current = agentProjection(address);
             userMessage = resolveAgentTurnUserMessage(current, turnId);
           } catch {
             // Keep the rendered failure available when a quiet resync is
@@ -1111,7 +1161,7 @@ export function PawSessionWorkspace({
     message: string,
     onAdmissionRolledBack?: () => void,
   ): boolean {
-    const current = agentProjection(recordId);
+    const current = agentProjection(address);
     const selectedScreenContext = screenContextForMessage(screenContext, userMessage.attachments, current);
     // A durable Runtime message proves the original command was accepted; a
     // later Provider/Tool turn failure is a new execution attempt, not a
@@ -1145,9 +1195,9 @@ export function PawSessionWorkspace({
     setSending(true);
     setError('');
     if (replayAmbiguousAdmission) {
-      useAgentLiveStore.getState().requeueOptimistic(recordId, clientMessageId, Date.now());
+      useAgentLiveStore.getState().requeueOptimistic(address, clientMessageId, Date.now());
     } else {
-      useAgentLiveStore.getState().appendOptimistic(recordId, {
+      useAgentLiveStore.getState().appendOptimistic(address, {
         clientMessageId,
         ...(retryOfClientMessageId ? { retryOfClientMessageId } : {}),
         text: message,
@@ -1174,11 +1224,11 @@ export function PawSessionWorkspace({
           },
         });
         if (isCancelledPromptAdmission(response)) {
-          useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+          useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
           void loadAgentSnapshot();
           return;
         }
-        useAgentLiveStore.getState().acknowledgeOptimistic(recordId, clientMessageId, Date.now());
+        useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
         void loadAgentSnapshot();
       } catch (reason) {
         settlePromptAdmissionFailure(clientMessageId, reason, {
@@ -1193,7 +1243,7 @@ export function PawSessionWorkspace({
   }
 
   function continueTurn(turnId: string): boolean {
-    const current = agentProjection(recordId);
+    const current = agentProjection(address);
     if (current.turnOrder.at(-1) !== turnId || current.turnsById[turnId]?.status !== 'failed') return false;
     void send('prompt', '继续。请基于当前 Session 已保留的工具结果和文件生成最终回复，不要重试或重复已经完成的操作；如果仍缺少信息，明确说明下一步。');
     return true;
@@ -1201,7 +1251,7 @@ export function PawSessionWorkspace({
 
   function openForkDialog(initialEntryId = ''): void {
     if (durableSession) { setError('Pi Durable 暂不支持历史分支。'); return; }
-    setForkDialogNodes(conversationNodes(agentProjection(recordId)));
+    setForkDialogNodes(conversationNodes(agentProjection(address)));
     setForkDialogInitialEntryId(initialEntryId);
     setForkDialogOpen(true);
   }
@@ -1215,7 +1265,7 @@ export function PawSessionWorkspace({
           : '当前 Pi Runtime 尚未提供原位修改能力。');
       return;
     }
-    const current = agentProjection(recordId);
+    const current = agentProjection(address);
     const message = messageId
       ? current.messagesById[messageId]
       : [...current.messageOrder].reverse().map((id) => current.messagesById[id])
@@ -1236,6 +1286,10 @@ export function PawSessionWorkspace({
       byteSize: 0,
       source: 'path',
     }));
+    const scope = workspaceScope;
+    const request = ++editRequestRef.current;
+    const ownsEdit = () => workspaceScopeRef.current === scope && editRequestRef.current === request;
+    cancelAttachmentImports();
     setDraft(text);
     setAttachments(originalAttachments);
     setEditState({ entryId: '', messageId: message.id, resolving: true });
@@ -1246,10 +1300,12 @@ export function PawSessionWorkspace({
         pathId: 'agent.session.forks.list',
         params: { sessionId: recordId },
       });
+      if (!ownsEdit()) return;
       const entryId = resolveConversationEntryId(response, conversationNodes(current), message.id);
       if (!entryId) throw new Error('Pi 没有返回这条公开消息对应的可回溯锚点。');
       setEditState({ entryId, messageId: message.id });
     } catch (reason) {
+      if (!ownsEdit()) return;
       setEditState(undefined);
       setDraft('');
       setAttachments([]);
@@ -1258,6 +1314,8 @@ export function PawSessionWorkspace({
   }
 
   function cancelEdit(): void {
+    editRequestRef.current += 1;
+    cancelAttachmentImports();
     setEditState(undefined);
     setDraft('');
     setAttachments([]);
@@ -1278,11 +1336,32 @@ export function PawSessionWorkspace({
     }
   }
 
+  function cancelAttachmentImports(): void {
+    if (!attachmentImports.pending.size) return;
+    attachmentImports.pending.clear();
+    refreshAttachmentImports(value => value + 1);
+  }
+
+  function beginAttachmentImport() {
+    const scope = workspaceScope;
+    const token = Symbol('attachment-import');
+    attachmentImports.pending.add(token);
+    refreshAttachmentImports(value => value + 1);
+    setAttachmentError('');
+    return {
+      isCurrent: () => workspaceScopeRef.current === scope && attachmentImports.active && attachmentImports.pending.has(token),
+      finish: () => {
+        if (!attachmentImports.pending.delete(token)) return;
+        if (workspaceScopeRef.current === scope && attachmentImports.active) refreshAttachmentImports(value => value + 1);
+      },
+    };
+  }
+
   async function pickAttachments(): Promise<void> {
     if (durableSession) { setAttachmentError('Pi Durable 暂不支持附件。'); return; }
     if (!transport.pickFiles) { setAttachmentError('当前环境不能选择附件，请将文件放入项目后告诉 Agent 文件名。'); return; }
     if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return; }
-    const owner = recordId;
+    const request = beginAttachmentImport();
     try {
       const imported = await transport.pickFiles({
         multiple: true,
@@ -1290,20 +1369,20 @@ export function PawSessionWorkspace({
         sessionId: recordId,
         maxFiles: Math.max(1, 8 - attachments.length),
       });
-      if (attachmentOwner.current !== owner) return;
+      if (!request.isCurrent()) return;
       setAttachments((current) => mergeAttachments(current, imported.map((item) => ({ ...item, source: 'picker' as const }))));
-      if (imported.length) setAttachmentError('');
-    } catch (reason) { if (attachmentOwner.current === owner) setAttachmentError(attachmentImportErrorText(reason)); }
+    } catch (reason) { if (request.isCurrent()) setAttachmentError(attachmentImportErrorText(reason)); }
+    finally { request.finish(); }
   }
 
   async function pasteFiles(files?: File[]): Promise<boolean> {
     if (durableSession) { setAttachmentError('Pi Durable 暂不支持附件。'); return false; }
     if (!transport.pasteImages) { setAttachmentError('未能读取剪贴板文件，请改用选择附件。'); return false; }
     if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return false; }
-    const owner = recordId;
+    const request = beginAttachmentImport();
     try {
       const imported = await transport.pasteImages({ sessionId: recordId, ...(files?.length ? { files } : {}), maxFiles: Math.max(1, 8 - attachments.length) });
-      if (attachmentOwner.current !== owner) return false;
+      if (!request.isCurrent()) return false;
       // Browser transports echo the pasted bytes back as receipts; reusing the
       // local File gives image chips an instant thumbnail before upload settles.
       setAttachments((current) => mergeAttachments(current, imported.map((item, index) => {
@@ -1316,13 +1395,15 @@ export function PawSessionWorkspace({
           : {};
         return { ...item, source: 'clipboard' as const, ...previewFile };
       })));
-      if (imported.length) setAttachmentError('');
       return imported.length > 0;
-    } catch (reason) { if (attachmentOwner.current === owner) setAttachmentError(attachmentImportErrorText(reason)); return false; }
+    } catch (reason) { if (request.isCurrent()) setAttachmentError(attachmentImportErrorText(reason)); return false; }
+    finally { request.finish(); }
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
     if (!record || busy) { setError('请先停止当前回合，再调整运行权限。'); return; }
+    const scope = workspaceScope;
+    const isCurrent = () => workspaceScopeRef.current === scope;
     try {
       const scopedWorkspaceRoots = (selection.workspaceRoots ?? record.workspaceRoots ?? [])
         .filter((root) => root !== '/');
@@ -1347,11 +1428,12 @@ export function PawSessionWorkspace({
             : {}),
         },
       });
+      if (!isCurrent()) return;
       const updated = asSession(response.session);
       if (updated) onSessionUpdated(updated);
-      await loadControlCatalog();
-      setError('');
-    } catch (reason) { setError(errorText(reason)); }
+      await loadControlCatalog(true);
+      if (isCurrent()) setError('');
+    } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
   }
 
   async function manageWorkspaceRoots(): Promise<void> {
@@ -1359,6 +1441,8 @@ export function PawSessionWorkspace({
       setError('当前环境不能选择起始项目。');
       return;
     }
+    const scope = workspaceScope;
+    const isCurrent = () => workspaceScopeRef.current === scope;
     try {
       const selectedRoots = transport.pickFiles
         ? (await transport.pickFiles({ purpose: 'workspace-root', selection: 'directory', multiple: true, maxFiles: 4 }))
@@ -1366,7 +1450,9 @@ export function PawSessionWorkspace({
           .filter((path): path is string => Boolean(path))
         : [(await electronHost?.pickWorkspaceDirectory?.())?.path?.trim()]
           .filter((path): path is string => Boolean(path));
-      if (!selectedRoots.length) return;
+      // A picker result is still an unsubmitted UI choice. Navigation retires
+      // it; an already-sent mutation below remains owned by its original A.
+      if (!isCurrent() || !selectedRoots.length) return;
       const executionMode = record.executionMode ?? 'per_action';
       const unrestricted = executionMode === 'per_action' || executionMode === 'full_trust';
       const workspaceRoots = unrestricted
@@ -1394,28 +1480,38 @@ export function PawSessionWorkspace({
             : {}),
         },
       });
+      if (!isCurrent()) return;
       const updated = asSession(response.session);
       if (updated) onSessionUpdated(updated);
-      await loadControlCatalog();
+      await loadControlCatalog(true);
+      if (!isCurrent()) return;
       await loadAgentSnapshot();
-      setError('');
-    } catch (reason) { setError(errorText(reason)); }
+      if (isCurrent()) setError('');
+    } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
   }
 
   async function changeModel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
-    setModelChanging(true);
+    const request = { scope: workspaceScope };
+    const isCurrent = () => workspaceScopeRef.current === request.scope;
+    setModelChangeRequest(request);
     try {
       await transport.request({ pathId: 'agent.session.model.select', params: { sessionId: recordId }, body: { provider, modelId } });
+      // Finish the already-authorized selection against the captured target,
+      // even if another workspace now owns the visible composer.
       await transport.request({ pathId: 'agent.session.thinking.select', params: { sessionId: recordId }, body: { level } });
+      if (!isCurrent()) return;
       const refreshed = await transport.request({ pathId: 'agent.session.models', params: { sessionId: recordId } });
+      if (!isCurrent()) return;
       if (isModelCatalog(refreshed)) setCatalog(refreshed);
       setError('');
-    } catch (reason) { setError(errorText(reason)); }
-    finally { setModelChanging(false); }
+    } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
+    finally { setModelChangeRequest(current => current === request ? undefined : current); }
   }
 
   async function changeCapabilityPreference(canonicalId: string, preference: CapabilityPreference): Promise<void> {
     if (!capabilityCatalog?.sessionPolicy) return;
+    const scope = workspaceScope;
+    const isCurrent = () => workspaceScopeRef.current === scope;
     setCapabilityMutation({ canonicalId, preference, status: 'pending', message: '正在更新当前 Session 的能力披露。' });
     try {
       await transport.request({
@@ -1428,10 +1524,12 @@ export function PawSessionWorkspace({
           },
         },
       });
-      const response = await transport.request({ pathId: 'agent.tools.list', query: { sessionId: recordId } });
-      const next = requireSessionCapabilityCatalog(response, recordId);
+      if (!isCurrent()) return;
+      await prepareCatalogRefresh(catalogQueryClient, [pluginQueryKeys.catalog(transport, recordId)])();
+      const next = await readCatalogQuery(catalogQueryClient, capabilityCatalogQueryOptions(transport, recordId));
+      if (!isCurrent()) return;
       setCapabilityCatalog(next);
-      setTools(toolItems(response));
+      setTools(toolItems(next));
       const updated = next.items.find((item) => item.canonicalId === canonicalId);
       setCapabilityMutation({
         canonicalId,
@@ -1440,7 +1538,7 @@ export function PawSessionWorkspace({
         message: `已按${capabilityScopeLabel(updated?.effectiveScope ?? 'session')}范围更新。`,
       });
     } catch (reason) {
-      setCapabilityMutation({ canonicalId, preference, status: 'failed', message: errorText(reason) });
+      if (isCurrent()) setCapabilityMutation({ canonicalId, preference, status: 'failed', message: errorText(reason) });
     }
   }
 
@@ -1781,6 +1879,9 @@ export function PawSessionWorkspace({
               {compactionTarget ? <button aria-label="停止压缩" disabled={stopping || resuming}
                 onClick={() => void stop()} type="button">{stopping ? '正在停止…' : '停止压缩'}</button> : null}
             </div> : pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
+            {attachmentImportPending ? <div className="agent-first-response" role="status" aria-live="polite">
+              <LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>正在导入附件，完成后即可发送。</strong>
+            </div> : null}
             {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
               <CircleAlert size={14} aria-hidden="true" />
               <span>{attachmentError}</span>
@@ -1825,8 +1926,10 @@ export function PawSessionWorkspace({
             {workspaceRecord && !evaluationSnapshot ? (
               <>
               {composerContext?.kind === 'project' ? <WorkspaceProjectContext context={composerContext} /> : composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div><button aria-label="移除地图上下文" onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
-              {primaryAssistant || primaryTask ? <div className="paw-primary-session-context"><span><strong>{primaryAssistant ? '我的助手 · 长期对话' : '当前工作'}</strong><small>{primaryAssistant ? '聊一聊、查资料；需要执行时，明确交给助手。' : `执行范围：${workspaceRecord.workspaceRoots.join('、') || '读取中'} · 过程与结果保留在这里`}</small></span>{onAssistantHome ? <button disabled={sending || stopping} onClick={() => onAssistantHome(primaryAssistant ? draft : undefined, primaryAssistant, primaryAssistant ? primarySourceMessageId(agentProjection(recordId)) : undefined)} type="button">{primaryAssistant ? '交给助手做' : '返回我的助手'}</button> : null}</div> : null}
+              {renderComposerHeader?.({ session: workspaceRecord, draft, disabled: sending || stopping,
+                sourceMessageId: () => latestPublicSessionMessageId(agentProjection(address)) })}
               <AgentComposer
+                inputOwnerId={agentProjectionKey(address)}
                 attachments={attachments}
                 attachmentsAvailable={!durableSession}
                 busy={busy}
@@ -1847,10 +1950,11 @@ export function PawSessionWorkspace({
                 modelPickerRequest={modelPickerRequest}
                 thinkingPickerRequest={thinkingPickerRequest}
                 permissionPickerRequest={permissionPickerRequest}
-                permissionLocked={primaryAssistant || primaryTask}
+                permissionLocked={permissionsLocked}
                 persona={persona}
                 sending={sending}
-                submissionBlocked={recovery.checking || recovery.issues.length > 0}
+                submissionBlocked={Boolean(submissionBlockedReason)}
+                submissionBlockedReason={submissionBlockedReason}
                 session={workspaceRecord}
                 sessionMetadataKnown={recordMetadataKnown && record?.id === recordId}
                 stopping={stopping}
@@ -1872,9 +1976,10 @@ export function PawSessionWorkspace({
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
                 onSend={(delivery, value) => {
-                  if (!acceptsImmediateInput(value)) return false;
+                  if (!acceptsComposerInput() || !acceptsImmediateInput(value)) return false;
                   const input = userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value;
                   void send(delivery, editState ? value : messageWithWorkspaceContext(input, composerContext), input);
+                  return true;
                 }}
                 onStop={() => void stop()}
                 showJumpLatest={!timelineFollow.following}
@@ -1884,7 +1989,7 @@ export function PawSessionWorkspace({
                 onPermissionChange={(selection) => void changePermission(selection)}
                 onWorkspaceRootsChange={() => void manageWorkspaceRoots()}
                 queueDepth={queue.queue.length}
-                onQueue={(value) => acceptsEngineInput(value) && queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
+                onQueue={(value) => acceptsComposerInput() && acceptsEngineInput(value) && queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
               />
               </>
             ) : null}
@@ -1908,8 +2013,10 @@ export function PawSessionWorkspace({
         >
           {panel === 'files' ? (
             <AgentFilesPanel
+              key={agentProjectionKey(address)}
               sessionId={recordId}
               workspaceRoots={workspaceRecord.workspaceRoots ?? []}
+              rootsLockedReason={permissionsLocked ? '工作区已在开始时确定。要使用其他目录，请返回入口新建工作。' : undefined}
               open
               onClose={closeToolPanel}
               onManageRoots={() => void manageWorkspaceRoots()}
@@ -1989,8 +2096,10 @@ function SessionContextTrace({
   focusNodeId: string;
   sessionId: string;
 }) {
+  const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const projection = useAgentLiveStore((state) => (
-    active ? state.projections[sessionId] : undefined
+    active ? selectAgentProjection(state, address) : undefined
   ));
   return (
     <PawContextTrace
@@ -2025,7 +2134,7 @@ function conversationText(blocks: Array<{ type: string; data: Record<string, unk
 
 /** Same receipt shape the standalone Agent feature reads: Stop raced the
  *  admission and won, so the optimistic message must vanish, not acknowledge. */
-export function primarySourceMessageId(projection: AgentProjectionState): string | undefined {
+export function latestPublicSessionMessageId(projection: AgentProjectionState): string | undefined {
   return [...projection.messageOrder].reverse().find(id => {
     const message = projection.messagesById[id];
     return !id.startsWith('local:') && message?.status === 'completed'

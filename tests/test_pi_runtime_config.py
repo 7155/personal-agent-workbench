@@ -312,6 +312,10 @@ class PiRuntimeConfigTests(unittest.TestCase):
         self.assertIn("skill_load", prompt)
         self.assertIn("bootstrap-project-context", prompt)
         self.assertIn("resourceRevision=missing", prompt)
+        self.assertIn("这不是执行前置条件", prompt)
+        self.assertIn("一次性文件处理", prompt)
+        self.assertIn("用户明确要求初始化", prompt)
+        self.assertNotIn("开始项目修改前，先调用", prompt)
 
     def test_system_root_is_authority_not_project_bootstrap_context(self) -> None:
         project = self.root / "project-after-system-root"

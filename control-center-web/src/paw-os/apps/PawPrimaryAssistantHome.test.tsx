@@ -8,7 +8,7 @@ import type { ControlRequest } from '@/platform/transport';
 import { PawPrimaryAssistantHome } from './PawPrimaryAssistantHome';
 import type { PrimaryAssistantSource } from './agent-workspace-loader';
 import { useAgentLiveSession } from '@/features/agent/runtime/use-agent-live-session';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 
 afterEach(() => {
   cleanup();
@@ -253,6 +253,6 @@ function taskEvent(eventType: string, payload: Record<string, unknown>) {
 /** The same production owner/projection used by an open detail surface. */
 function TaskDetailProjection({ transport }: { transport: MockControlTransport }) {
   useAgentLiveSession({ sessionId: 'task', transport, snapshotView: 'recent' });
-  const goal = useAgentLiveStore(state => state.projections.task?.goal);
+  const goal = useAgentLiveStore(state => selectAgentProjection(state, agentSessionAddress(transport, 'task'))?.goal);
   return <output data-testid="detail-goal">{goal?.status}:{goal?.revision}</output>;
 }

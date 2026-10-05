@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
 import { agentCommandReceiptFailure, isAgentCommandPending, isAmbiguousAgentPromptFailure, isUnresolvedAgentCommandPending, publicAgentErrorText } from '@/features/agent/public-error';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore, type AgentSessionTarget } from '@/features/agent/state/live-store';
 import { PawSessionWorkspace } from '@/paw-os/apps/PawSessionWorkspace';
 import './memory-steward.css';
 
@@ -102,12 +102,13 @@ function MemoryStewardDay({ date, timelineId }: MemoryStewardProps) {
         },
       });
       const sessionId = next.id;
+      const address = agentSessionAddress(transport, sessionId);
       const message = stewardPrompt({ date, message: question, timelineId });
       const clientMessageId = `memory-steward:${surfaceKey}:${crypto.randomUUID()}`;
       const store = useAgentLiveStore.getState();
       // The shared Session must retain the complete command so its normal
       // recovery keeps this date and timeline boundary with the question.
-      store.appendOptimistic(sessionId, { clientMessageId, text: message, nowMs: Date.now() });
+      store.appendOptimistic(address, { clientMessageId, text: message, nowMs: Date.now() });
       try {
         const response = record(await transport.request({
           pathId: 'agent.session.prompt',
@@ -115,19 +116,19 @@ function MemoryStewardDay({ date, timelineId }: MemoryStewardProps) {
           body: { message, clientMessageId, delivery: 'prompt' },
         }));
         if (response.accepted === false && response.cancelled === true && response.admissionCancelled === true) {
-          store.discardOptimistic(sessionId, clientMessageId);
+          store.discardOptimistic(address, clientMessageId);
           setError('这条消息已取消，原问题已保留；可在同一对话中重新发送。');
           return;
         }
-        store.acknowledgeOptimistic(sessionId, clientMessageId, Date.now());
+        store.acknowledgeOptimistic(address, clientMessageId, Date.now());
         setDraft('');
       } catch (reason) {
         if (agentCommandReceiptFailure(reason)?.code === 'AGENT_COMMAND_CONFLICT') {
-          store.discardOptimistic(sessionId, clientMessageId);
+          store.discardOptimistic(address, clientMessageId);
           setError(publicAgentErrorText(reason));
           return;
         }
-        settleFirstPromptFailure(sessionId, clientMessageId, reason);
+        settleFirstPromptFailure(address, clientMessageId, reason);
       }
       // Once the request returns, the same Session owns the visible turn and
       // its existing confirmation/retry actions. Only confirmed admission
@@ -191,12 +192,12 @@ function MemoryStewardDay({ date, timelineId }: MemoryStewardProps) {
   );
 }
 
-function settleFirstPromptFailure(sessionId: string, clientMessageId: string, reason: unknown): void {
+function settleFirstPromptFailure(address: AgentSessionTarget, clientMessageId: string, reason: unknown): void {
   const admissionState = isAgentCommandPending(reason)
     ? isUnresolvedAgentCommandPending(reason) ? 'unresolved' : 'pending'
     : isAmbiguousAgentPromptFailure(reason) ? 'ambiguous' : undefined;
   useAgentLiveStore.getState().failOptimistic(
-    sessionId,
+    address,
     clientMessageId,
     admissionState === 'ambiguous'
       ? '暂时无法确认是否已接收。系统不会自动重试；手动重试会核对同一条消息。'

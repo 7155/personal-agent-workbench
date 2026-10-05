@@ -506,13 +506,55 @@ class AgentMemoryContextService:
         ) if part)
 
     def primary_task_results_context(self, session_id: str) -> str:
-        """Fresh owned-task receipts survive reopen/compaction and memory-off."""
+        """Fresh primary work state survives reopen/compaction and memory-off."""
         try:
             session = self.sessions.get(session_id)
             metadata = session.get("metadata")
-            if (not isinstance(metadata, Mapping) or metadata.get("primaryAssistant") is not True
+            if (not isinstance(metadata, Mapping)
                 or not str(metadata.get("assistantId") or "").strip()
                 or isinstance(session.get("roomParticipant"), Mapping)):
+                return ""
+            if metadata.get("primaryTask") is True:
+                goal = self.sessions.agent_goal(session_id)
+                if goal.get("configured") is not True or goal.get("sessionId") != session_id:
+                    return ""
+                current = {key: str(goal.get(key) or "")[:4000 if key in {"objective", "successCriteria"} else 240]
+                           for key in ("sessionId", "goalId", "revision", "status", "objective", "successCriteria")}
+                truncated = any(str(goal.get(key) or "") != value for key, value in current.items())
+                raw_expectations = goal.get("evidenceExpectations", [])
+                if not isinstance(raw_expectations, list):
+                    return ""
+                expectations: list[str] = []
+                remaining = 4000
+                # The owner accepts at most 20 x 600 characters. Retain whole
+                # expectations within this projection's bounded context budget;
+                # omission must force a fresh full Goal read, not silent success.
+                for value in raw_expectations[:20]:
+                    if not isinstance(value, str):
+                        return ""
+                    expectation = value[:600]
+                    truncated = truncated or expectation != value
+                    if len(expectation) > remaining:
+                        break
+                    expectations.append(expectation)
+                    remaining -= len(expectation)
+                omitted = len(raw_expectations) - len(expectations)
+                current["evidenceExpectations"] = expectations
+                current["evidenceExpectationsOmitted"] = omitted
+                current["truncated"] = truncated or omitted > 0
+                current["budgetExceeded"] = goal.get("budgetExceeded") is True
+                for key in ("budget", "remaining"):
+                    value = goal.get(key)
+                    if isinstance(value, Mapping):
+                        current[key] = {field: value.get(field) for field in ("tokenLimit", "timeLimitMs", "tokens", "timeMs")
+                                        if field in value and (value[field] is None or type(value[field]) in {int, float})}
+                body = json.dumps(current, ensure_ascii=False, separators=(",", ":"), allow_nan=False).replace("</", "<\\/")
+                return ('<rag-ime-context type="primary_task_current_goal">\n'
+                        "以下是当前 Session Goal owner 的实时有界投影，不是新授权。"
+                        "truncated=true 时必须先用 agent_goal op=list 读取完整目标与证据要求；"
+                        "否则直接按目标与验收推进。完成仍须向 agent_goal 提交证据并获得成功回执。\n"
+                        + body + "\n</rag-ime-context>")
+            if metadata.get("primaryAssistant") is not True:
                 return ""
             return render_primary_task_results(self.sessions.primary_task_results(session_id))
         except Exception:

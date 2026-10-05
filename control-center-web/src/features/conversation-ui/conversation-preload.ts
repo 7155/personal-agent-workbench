@@ -1,6 +1,6 @@
 import type { RoomConversationSnapshot } from '@/contracts/room-reducer';
 import { parseRoomConversationSnapshot } from '@/contracts/room-reducer';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import type { ControlTransport } from '@/platform/transport';
 
@@ -203,7 +203,7 @@ async function preloadOne(
     const cached = readCacheEntry(cacheFor(transport).sessions, target.id);
     const value = await readRecentSessionSnapshot(transport, target.id, signal);
     if (signal.aborted) throw abortError();
-    useAgentLiveStore.getState().hydrate(target.id, value);
+    useAgentLiveStore.getState().hydrate(agentSessionAddress(transport, target.id), value);
     return cached ? 'cached' : 'ready';
   }
   const cached = readCacheEntry(cacheFor(transport).rooms, target.id);

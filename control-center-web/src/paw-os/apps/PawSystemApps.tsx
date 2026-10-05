@@ -798,7 +798,7 @@ type SystemRailContract = {
   pageId: string;
   /** decision: a queue waiting for the human; attention: self-reported health. */
   tone: 'decision' | 'attention';
-  queryKey: readonly unknown[];
+  queryKey: readonly unknown[] | ((transport: SystemRailTransport) => readonly unknown[]);
   read: (transport: SystemRailTransport, signal: AbortSignal | undefined) => Promise<unknown>;
   count: (value: unknown) => number;
   describe: (count: number) => string;
@@ -828,7 +828,7 @@ const systemRailContracts: Partial<Record<PawSystemAppId, SystemRailContract>> =
   'app-center': {
     pageId: 'proposals',
     tone: 'decision',
-    queryKey: pluginQueryKeys.proposals(),
+    queryKey: pluginQueryKeys.proposals,
     read: (transport, signal) => transport.request({ pathId: 'agent.extensions.proposals', signal }),
     count: (value) => arrayRecords(asRecord(value).items).length,
     describe: (count) => `${count} 项待确认`,
@@ -852,7 +852,7 @@ function useSystemRailSignal(appId: PawSystemAppId): {
   const transport = useControlTransport();
   const contract = systemRailContracts[appId];
   const signalQuery = useQuery({
-    queryKey: contract?.queryKey ?? ['paw-system-rail', appId],
+    queryKey: typeof contract?.queryKey === 'function' ? contract.queryKey(transport) : contract?.queryKey ?? ['paw-system-rail', appId],
     queryFn: ({ signal }) => contract
       ? contract.read(transport, signal)
       : Promise.resolve(null),

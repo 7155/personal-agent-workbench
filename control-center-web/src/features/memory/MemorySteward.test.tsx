@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import { MemorySteward } from './MemorySteward';
@@ -57,6 +57,32 @@ afterEach(() => {
 });
 
 describe('MemorySteward', () => {
+  it('settles a late ambiguous first prompt only in its original transport projection', async () => {
+    const user = userEvent.setup();
+    const receipt = deferred<unknown>();
+    const transportA = firstPromptTransport(() => receipt.promise);
+    const transportB = new MockControlTransport();
+    renderSteward(transportA);
+    await user.type(await screen.findByRole('textbox', { name: '问记忆管家' }), '原连接的问题');
+    await user.click(screen.getByRole('button', { name: '发送给记忆管家' }));
+    await waitFor(() => expect(promptRequests(transportA)).toHaveLength(1));
+    const request = promptRequests(transportA)[0];
+    const sessionId = String(request.params?.sessionId);
+    const clientMessageId = String((request.body as Record<string, unknown>).clientMessageId);
+    const addressA = agentSessionAddress(transportA, sessionId);
+    const addressB = agentSessionAddress(transportB, sessionId);
+    useAgentLiveStore.getState().appendOptimistic(addressB, { clientMessageId, text: '另一个连接的问题', nowMs: 1 });
+    const beforeB = selectAgentProjection(useAgentLiveStore.getState(), addressB);
+
+    await act(async () => receipt.reject(new TypeError('fetch failed')));
+    await waitFor(() => expect(Object.values(selectAgentProjection(useAgentLiveStore.getState(), addressA)!.messagesById)[0])
+      .toMatchObject({ clientMessageId, status: 'failed', admissionState: 'ambiguous' }));
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressB)).toBe(beforeB);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toBeUndefined();
+    expect(promptRequests(transportA)).toHaveLength(1);
+    expect(transportB.requests).toHaveLength(0);
+  });
+
   it('keeps one read-only original input until the first prompt receipt confirms admission', async () => {
     const user = userEvent.setup();
     const receipt = deferred<unknown>();
@@ -191,8 +217,9 @@ describe('MemorySteward', () => {
     expect(promptRequests(transport)[1]).toMatchObject({ params: original.params, body: { message: body.message, clientMessageId: body.clientMessageId } });
     expect(promptRequests(transport)[1].body).not.toHaveProperty('retryOfClientMessageId');
     const sessionId = 'session-memory-20260831';
-    const local = Object.values(useAgentLiveStore.getState().projections[sessionId].messagesById)[0];
-    act(() => useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+    const address = agentSessionAddress(transport, sessionId);
+    const local = Object.values(selectAgentProjection(useAgentLiveStore.getState(), address)!.messagesById)[0];
+    act(() => useAgentLiveStore.getState().hydrateSnapshot(address, {
       messages: [{ ...local, id: 'durable-steward-question', status: 'completed', admissionState: undefined, clientMessageId: String(body.clientMessageId) }],
       liveEvents: [], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'idle',
     }));

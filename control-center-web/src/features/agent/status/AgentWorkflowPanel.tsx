@@ -20,10 +20,13 @@ import type {
   Todo,
   TodoTask,
 } from '@/contracts/generated/agent-workflow-state.v1';
-import type { JsonValue } from '@/platform/transport';
+import type { ControlTransport, JsonValue } from '@/platform/transport';
+import { agentProjectionKey, agentSessionAddress, type AgentSessionTarget } from '../state/live-store';
 
 type MutationInput = {
   sessionId: string;
+  address: AgentSessionTarget;
+  transport: ControlTransport;
   body: { [key: string]: JsonValue };
 };
 
@@ -45,9 +48,10 @@ export function AgentWorkflowPanel({
   onWorkflowResolved?: (workflow: AgentWorkflowStateV1) => void;
 }) {
   const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const queryClient = useQueryClient();
   const workflowQuery = useQuery({
-    queryKey: ['agent', 'workflow', sessionId],
+    queryKey: ['agent', 'workflow', agentProjectionKey(address)],
     queryFn: async ({ signal }) => {
       const next = await transport.request<AgentWorkflowStateV1>({
         pathId: 'agent.session.workflow.get',
@@ -92,10 +96,11 @@ export function AgentWorkflowPanel({
   ]);
   useEffect(() => {
     onWorkflowResolved?.(workflow);
-  }, [onWorkflowResolved, workflow]);
+  }, [address, onWorkflowResolved, workflow]);
   const mutation = useMutation({
-    mutationFn: async ({ sessionId: ownerSessionId, body }: MutationInput) => {
-      const next = await transport.request<AgentWorkflowStateV1>({
+    mutationKey: ['agent', 'workflow', agentProjectionKey(address)],
+    mutationFn: async ({ sessionId: ownerSessionId, transport: ownerTransport, body }: MutationInput) => {
+      const next = await ownerTransport.request<AgentWorkflowStateV1>({
         pathId: 'agent.session.goal.mutate',
         params: { sessionId: ownerSessionId },
         body,
@@ -103,7 +108,7 @@ export function AgentWorkflowPanel({
       return assertWorkflowOwner(next, ownerSessionId);
     },
     onSuccess: (next, variables) => {
-      queryClient.setQueryData(['agent', 'workflow', variables.sessionId], next);
+      queryClient.setQueryData(['agent', 'workflow', agentProjectionKey(variables.address)], next);
     },
   });
 
@@ -187,11 +192,11 @@ export function AgentWorkflowPanel({
       <TodoProgress todo={workflow.todo} />
       <ExecutionGate gate={workflow.actGate} />
       <GoalMode
-        key={`goal:${sessionId}`}
+        key={`goal:${agentProjectionKey(address)}`}
         goal={workflow.goal}
-        pending={mutation.isPending && mutation.variables?.sessionId === sessionId}
-        error={mutation.variables?.sessionId === sessionId ? mutation.error : null}
-        mutate={(body) => mutation.mutateAsync({ sessionId, body })}
+        pending={mutation.isPending && mutation.variables?.address === address}
+        error={mutation.variables?.address === address ? mutation.error : null}
+        mutate={(body) => mutation.mutateAsync({ sessionId, address, transport, body })}
       />
     </div>
   );

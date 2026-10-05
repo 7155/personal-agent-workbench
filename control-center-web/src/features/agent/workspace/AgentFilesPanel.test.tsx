@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { ControlRequest } from '@/platform/transport';
@@ -10,6 +10,21 @@ import { AgentFilesPanel } from './AgentFilesPanel';
 afterEach(cleanup);
 
 describe('AgentFilesPanel', () => {
+  it.each([{ roots: [] }, { roots: ['/workspace/paw'] }])('explains a fixed workspace without offering a rejected directory change ($roots)', async ({ roots }) => {
+    const onManageRoots = vi.fn();
+    const reason = '工作区已在开始时确定。要使用其他目录，请返回入口新建工作。';
+    const transport = new MockControlTransport({ routes: { 'agent.session.workspace.list': workspaceListing('/workspace/paw', []) } });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><AgentFilesPanel sessionId="session-files"
+      workspaceRoots={roots} open onClose={vi.fn()} onManageRoots={onManageRoots} rootsLockedReason={reason} /></TooltipProvider></ControlTransportProvider>);
+    const manage = screen.getByRole('button', { name: '管理工作区目录' });
+    expect(manage).toBeDisabled();
+    expect(manage).toHaveAccessibleDescription(reason);
+    expect(screen.getByText(reason)).toBeVisible();
+    await userEvent.setup().click(manage);
+    expect(onManageRoots).not.toHaveBeenCalled();
+    if (!roots.length) expect(screen.getByRole('button', { name: '选择目录' })).toBeDisabled();
+  });
+
   it('uses a roving treeitem focus model with levels and left/right navigation', async () => {
     const root = '/workspace/paw';
     const transport = new MockControlTransport({

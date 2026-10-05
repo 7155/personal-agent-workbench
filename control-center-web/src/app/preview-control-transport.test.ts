@@ -1,7 +1,46 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyAgentSnapshot, createAgentProjection } from '@/contracts/agent-reducer';
 import { createPreviewTransport } from './preview-control-transport';
 import { previewAgentSnapshot } from '@/features/agent/preview-data';
+
+describe('preview workspace directory picker', () => {
+  afterEach(() => { delete window.pawBrowserHost; });
+  const options = { purpose: 'workspace-root' as const, selection: 'directory' as const, multiple: false, maxFiles: 1 };
+  function host(pickWorkspaceDirectory: () => Promise<{ name: string; path: string } | null>) {
+    window.pawBrowserHost = { kind: 'electron-webview', partition: 'persist:paw-browser', pickWorkspaceDirectory } as NonNullable<typeof window.pawBrowserHost>;
+  }
+  it('uses the installed native directory bridge instead of returning a synthetic image', async () => {
+    const pick = vi.fn(async () => ({ name: 'sample', path: '/work/sample' })); host(pick);
+    const transport = createPreviewTransport();
+    expect(await transport.pickFiles(options)).toEqual([{ id: 'workspace:/work/sample', name: 'sample', path: '/work/sample', mimeType: 'inode/directory', byteSize: 0 }]);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(transport.filePickCalls).toEqual([options]);
+    expect(transport.requests).toHaveLength(0);
+  });
+  it('reports web preview limitations rather than pretending the user cancelled a native picker', async () => {
+    const transport = createPreviewTransport();
+    await expect(transport.pickFiles(options)).rejects.toThrow('手动填写工作目录');
+    const pick = vi.fn(async () => null);
+    window.pawBrowserHost = { kind: 'electron-webview', partition: 'wrong', pickWorkspaceDirectory: pick } as unknown as NonNullable<typeof window.pawBrowserHost>;
+    await expect(transport.pickFiles(options)).rejects.toThrow('手动填写工作目录');
+    expect(pick).not.toHaveBeenCalled();
+  });
+  it('preserves native cancellation and errors without manufacturing a directory', async () => {
+    host(async () => null);
+    await expect(createPreviewTransport().pickFiles(options)).resolves.toEqual([]);
+    host(async () => { throw new Error('directory picker unavailable'); });
+    await expect(createPreviewTransport().pickFiles(options)).rejects.toThrow('directory picker unavailable');
+  });
+  it('honors cancellation before and after the native dialog while retaining attachment fixtures', async () => {
+    const controller = new AbortController();
+    const pick = vi.fn(async () => { controller.abort(); return { name: 'stale', path: '/work/stale' }; }); host(pick);
+    const transport = createPreviewTransport();
+    await expect(transport.pickFiles({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(transport.pickFiles({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(await transport.pickFiles({ purpose: 'attachment', sessionId: 'session-preview' })).toEqual([expect.objectContaining({ id: 'media_preview_attachment_01', mimeType: 'image/png' })]);
+  });
+});
 
 describe('preview control transport', () => {
   it('exposes Jev preview cards without fabricating provider decisions or writes', async () => {

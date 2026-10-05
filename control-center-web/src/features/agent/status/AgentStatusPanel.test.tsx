@@ -1,10 +1,46 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AgentProjectionState } from '@/contracts/agent-reducer';
-import { CurrentTurnTaskPlan, projectStatusPanel } from './AgentStatusPanel';
+import { createAgentProjection, type AgentProjectionState } from '@/contracts/agent-reducer';
+import { ControlTransportProvider } from '@/app/control-transport';
+import { TooltipProvider } from '@/components/primitives';
+import { MockControlTransport } from '@/test/mock-transport';
+import { agentProjectionKey, agentSessionAddress, useAgentLiveStore } from '../state/live-store';
+import { AgentStatusPanel, CurrentTurnTaskPlan, projectStatusPanel } from './AgentStatusPanel';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); useAgentLiveStore.setState({ projections: {} }); });
+
+it('keeps same-ID status projections inside their own transport', async () => {
+  const sessionId = 'same-status-session';
+  const a = new MockControlTransport();
+  const b = new MockControlTransport();
+  const projected = (title: string): AgentProjectionState => ({
+    ...createAgentProjection(sessionId),
+    messageQueue: { steering: [title], followUp: [] },
+  });
+  useAgentLiveStore.setState({ projections: {
+    [agentProjectionKey(agentSessionAddress(a, sessionId))]: projected('甲的待处理消息'),
+    [agentProjectionKey(agentSessionAddress(b, sessionId))]: projected('乙的待处理消息'),
+    [sessionId]: projected('未绑定的待处理消息'),
+  } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TooltipProvider><QueryClientProvider client={client}>
+    {([[a, '甲'], [b, '乙']] as const).map(([transport, label]) => (
+      <ControlTransportProvider key={label} transport={transport}>
+        <section aria-label={`状态${label}`}><AgentStatusPanel sessionId={sessionId} open keepContentMounted
+          surfaceActive={false} onClose={() => {}} commands={[]} tools={[]} toolCatalogStatus="ready" busy={false}
+          onCapabilityPreferenceChange={() => {}} onCapabilityPolicyRetry={() => {}} onCapabilityCatalogRetry={() => {}} />
+        </section>
+      </ControlTransportProvider>
+    ))}
+  </QueryClientProvider></TooltipProvider>);
+  // Opening defers the body through animation frames and idle work.
+  expect(await within(screen.getByRole('region', { name: '状态甲' })).findByText('甲的待处理消息')).toBeVisible();
+  expect(await within(screen.getByRole('region', { name: '状态乙' })).findByText('乙的待处理消息')).toBeVisible();
+  expect(within(screen.getByRole('region', { name: '状态甲' })).queryByText('乙的待处理消息')).not.toBeInTheDocument();
+  expect(screen.queryByText('未绑定的待处理消息')).not.toBeInTheDocument();
+});
 
 describe('CurrentTurnTaskPlan', () => {
   it('keeps a compact current window but makes every task-plan step reachable', async () => {

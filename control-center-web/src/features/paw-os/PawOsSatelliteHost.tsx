@@ -20,7 +20,7 @@ import { roomPlanetObserverWindowRequest } from '@/paw-os/apps/room-satellite-au
 import { PawRoomCollaboration } from '@/paw-os/apps/PawRoomCollaboration';
 import { PawRoomGovernance } from '@/paw-os/apps/PawRoomWorkspace';
 import { PawRoomConversation } from '@/paw-os/apps/PawRoomConversation';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { SmoothDisclosureReveal } from '@/features/agent/timeline/SmoothDisclosureReveal';
 import { toggleDisclosurePreservingAnchor } from '@/features/agent/timeline/disclosure-anchor';
 import { presentRoomParticipant } from '@/paw-os/apps/room-participant-presentation';
@@ -78,7 +78,10 @@ function BackgroundBrowserSatellite({ target }: { target: Extract<PawOsWindowTar
 
 function ProcessTerminalSatellite({ target }: { target: Extract<PawOsWindowTarget, { kind: 'process-terminal' }> }) {
   const transport = useControlTransport();
-  const agentProjection = useAgentLiveStore((state) => state.projections[target.sessionId]);
+  const address = agentSessionAddress(transport, target.sessionId);
+  const currentAddressRef = useRef(address);
+  currentAddressRef.current = address;
+  const agentProjection = useAgentLiveStore((state) => selectAgentProjection(state, address));
   const roomProjection = useRoomLiveStore((state) => target.roomId ? state.projections[target.roomId] : undefined);
   const activity = useMemo(() => {
     const agentActivity = agentProjection?.activitiesById[target.toolCallId];
@@ -102,7 +105,7 @@ function ProcessTerminalSatellite({ target }: { target: Extract<PawOsWindowTarge
   const [stopError, setStopError] = useState('');
   const [stopNotice, setStopNotice] = useState('');
   const logs = useQuery({
-    queryKey: ['paw-os', 'process-terminal', target.sessionId, target.runId],
+    queryKey: ['paw-os', 'process-terminal', agentProjectionKey(address), target.runId],
     queryFn: ({ signal }) => transport.request<Record<string, unknown>>({
       pathId: 'agent.session.backgroundJob.logs',
       params: { sessionId: target.sessionId, jobId: target.runId! },
@@ -119,6 +122,12 @@ function ProcessTerminalSatellite({ target }: { target: Extract<PawOsWindowTarge
   useEffect(() => {
     if (!cancellable) setConfirmingStop(false);
   }, [cancellable]);
+  useEffect(() => {
+    setConfirmingStop(false);
+    setStopping(false);
+    setStopError('');
+    setStopNotice('');
+  }, [address]);
 
   async function stopJob(): Promise<void> {
     if (!cancellable || !target.runId || stopping) return;
@@ -129,6 +138,7 @@ function ProcessTerminalSatellite({ target }: { target: Extract<PawOsWindowTarge
     setStopping(true);
     setStopError('');
     setStopNotice('');
+    const requestAddress = address;
     try {
       const receipt = await transport.request<unknown>({
         pathId: 'agent.session.backgroundJob.cancel',
@@ -138,18 +148,20 @@ function ProcessTerminalSatellite({ target }: { target: Extract<PawOsWindowTarge
           ...(target.roomTurnId ? { roomTurnId: target.roomTurnId } : {}),
         },
       });
-      useAgentLiveStore.getState().applyBackgroundJobReceipt(target.sessionId, receipt);
-      const authoritative = useAgentLiveStore.getState()
-        .projections[target.sessionId]?.backgroundJobsById[target.runId];
+      useAgentLiveStore.getState().applyBackgroundJobReceipt(requestAddress, receipt);
+      const authoritative = selectAgentProjection(useAgentLiveStore.getState(), requestAddress)
+        ?.backgroundJobsById[target.runId];
       if (!authoritative || (authoritative.status !== 'cancelling' && authoritative.status !== 'cancelled')) {
         throw new Error('后台任务停止回执未更新当前运行');
       }
-      setStopNotice(stringValue(asRecord(receipt).summary, '已发送停止请求'));
-      setConfirmingStop(false);
+      if (currentAddressRef.current === requestAddress) {
+        setStopNotice(stringValue(asRecord(receipt).summary, '已发送停止请求'));
+        setConfirmingStop(false);
+      }
     } catch (error) {
-      setStopError(publicErrorText(error, '暂时无法停止这个后台任务。'));
+      if (currentAddressRef.current === requestAddress) setStopError(publicErrorText(error, '暂时无法停止这个后台任务。'));
     } finally {
-      setStopping(false);
+      if (currentAddressRef.current === requestAddress) setStopping(false);
     }
   }
   return (

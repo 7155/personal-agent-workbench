@@ -79,6 +79,7 @@ export function PawWorkDirectoryProvider({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [sessionStatusFresh, setSessionStatusFresh] = useState(false);
+  const [sessionOwner, setSessionOwner] = useState<typeof transport | null>(null);
   const [roomStatusFresh, setRoomStatusFresh] = useState(false);
   const directoryAbortRef = useRef<AbortController | null>(null);
   const directoryScheduleResetRef = useRef<() => void>(() => undefined);
@@ -102,6 +103,7 @@ export function PawWorkDirectoryProvider({
     ]);
     if (controller.signal.aborted || generation !== directoryGenerationRef.current) return;
     if (sessionResult.status === 'fulfilled') {
+      setSessionOwner(transport);
       setSessionStatusFresh(true);
       setSessions((current) => sameDirectoryValue(current, sessionItems(sessionResult.value)));
     } else {
@@ -255,9 +257,9 @@ export function PawWorkDirectoryProvider({
     refresh,
     roomStatusFresh,
     rooms,
-    sessionStatusFresh,
-    sessions,
-  }), [failed, loaded, loading, maintenance, maintenanceJob, maintenanceStatusFresh, refresh, roomStatusFresh, rooms, sessionStatusFresh, sessions]);
+    sessionStatusFresh: sessionOwner === transport && sessionStatusFresh,
+    sessions: sessionOwner === transport ? sessions : [],
+  }), [failed, loaded, loading, maintenance, maintenanceJob, maintenanceStatusFresh, refresh, roomStatusFresh, rooms, sessionStatusFresh, sessions, sessionOwner, transport]);
 
   return <PawWorkDirectoryContext.Provider value={value}>{children}</PawWorkDirectoryContext.Provider>;
 }

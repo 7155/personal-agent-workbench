@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { forwardRef, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useOptionalControlTransport } from '@/app/control-transport';
 import { Disclosure, IconButton } from '@/components/primitives';
 import { selectRoomParticipantPublicProgress } from '@/contracts/room-reducer';
 import type {
@@ -27,7 +28,7 @@ import type {
 import type { RoomParticipantPublicProgressProjection } from '@/contracts/room-reducer';
 import type { RoomSummary, RoomWorkItem } from './room-types';
 import { roomParticipantPlanetName } from './room-participant-identity';
-import { useAgentLiveStore } from '../agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '../agent/state/live-store';
 import { ROOM_PUBLIC_PROGRESS_KIND_LABELS, roomCollaborationRoleDescription, roomCollaborationRoleLabel, roomParticipantPublicProgressSummary } from './room-copy';
 import { roomActivityNeedsSessionAction } from './runtime/room-execution-lanes';
 import { roomProjection, useRoomLiveStore } from './state/live-store';
@@ -355,7 +356,9 @@ function RoomParticipantPublicLanes({
 
 function RoomParticipantTelemetry({ participant, roomId }: { participant: NonNullable<RoomSummary['participants']>[number]; roomId: string }) {
   const pawOsDesktop = usePawOsDesktop();
-  const telemetry = useAgentLiveStore((state) => state.projections[participant.sessionId]?.telemetry);
+  const transport = useOptionalControlTransport();
+  const address = agentSessionAddress(transport, participant.sessionId);
+  const telemetry = useAgentLiveStore((state) => selectAgentProjection(state, address)?.telemetry);
   if (!telemetry) {
     return <article className="room-participant-telemetry room-participant-telemetry--quiet"><header><span><strong>{roomParticipantPlanetName(participant)}</strong><small>{roomCollaborationRoleLabel(participant.collaborationRole)} · {participant.status === 'active' ? '已加入' : '暂未参与'}</small></span>{pawOsDesktop ? <IconButton label={`打开 ${roomParticipantPlanetName(participant)} 伙伴窗口`} icon={<PanelsTopLeft size={14} />} onClick={() => pawOsDesktop.openWindow(roomPlanetObserverWindowRequest(participant, roomId))} tooltip /> : null}</header></article>;
   }

@@ -1,5 +1,8 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOptionalControlTransport } from '@/app/control-transport';
+import type { ControlTransport } from '@/platform/transport';
+import { controlTransportScopeKey } from '@/platform/transport-scope';
+import { extensionInventoryQueryOptions, observeCatalogQuery, useCatalogQueryClient } from '@/features/plugins/catalog-queries';
 import type { PawAppId } from '../runtime/app-registry';
 import { extensionAppForPackage, isPawExtensionAppId, registerLabExtensionApps } from './registry';
 import type {
@@ -9,6 +12,19 @@ import type {
 } from './types';
 
 export const PAW_EXTENSION_INSTALLATION_CHANGED_EVENT = 'pawos:extension-installation-changed';
+
+export function notifyPawExtensionInstallationChanged(transport: ControlTransport): void {
+  window.dispatchEvent(new CustomEvent(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, {
+    detail: { transportScope: controlTransportScopeKey(transport) },
+  }));
+}
+
+export function installationChangeMatchesTransport(event: Event, transport: ControlTransport): boolean {
+  const scope = asRecord(event instanceof CustomEvent ? event.detail : undefined).transportScope;
+  // Native/external notifications without an in-memory owner refresh all
+  // current connections. App-owned receipts carry their exact owner.
+  return scope === undefined || scope === controlTransportScopeKey(transport);
+}
 
 export type PawExtensionInstallationStatus = 'loading' | 'ready' | 'unavailable';
 
@@ -80,7 +96,9 @@ export function PawExtensionInstallationProvider({
   pollIntervalMs?: number;
 }) {
   const transport = useOptionalControlTransport();
+  const queryClient = useCatalogQueryClient();
   const [projection, setProjection] = useState<PawExtensionInstallationProjection>(() => emptyProjection());
+  const [projectionOwner, setProjectionOwner] = useState(transport);
   const [status, setStatus] = useState<PawExtensionInstallationStatus>('loading');
   const activeRequest = useRef<AbortController | null>(null);
   const scheduledRefresh = useRef<() => void>(() => undefined);
@@ -90,37 +108,48 @@ export function PawExtensionInstallationProvider({
     if (!transport) {
       activeRequest.current = null;
       setProjection(emptyProjection());
+      setProjectionOwner(null);
       setStatus('unavailable');
       return;
     }
     const controller = new AbortController();
     activeRequest.current = controller;
     setStatus('loading');
-    try {
-      const [native, lab] = await Promise.allSettled([
-        transport.request({ pathId: 'agent.extensions.list', signal: controller.signal }),
-        transport.request({ pathId: 'agent.eval-lab.apps.get', signal: controller.signal }),
-      ]);
-      if (controller.signal.aborted || activeRequest.current !== controller) return;
-      const payload = native.status === 'fulfilled' ? native.value : { runtimeAvailable: false };
-      const labIds = registerLabExtensionApps(lab.status === 'fulfilled' ? lab.value : undefined);
-      const legacy = projectPawExtensionInstallation(payload);
-      const next = { installedExtensionIds: new Set([...legacy.installedExtensionIds, ...labIds]),
-        enabledExtensionIds: new Set([...legacy.enabledExtensionIds, ...labIds]),
-        availableExtensionIds: new Set([...legacy.availableExtensionIds, ...labIds]),
-        updateRequiredExtensionIds: new Set(legacy.updateRequiredExtensionIds) };
-      const runtimeUnavailable = asRecord(payload).runtimeAvailable === false
-        && !(lab.status === 'fulfilled' && asRecord(lab.value).ok === true);
-      setProjection((current) => sameProjection(current, next) ? current : next);
-      setStatus(runtimeUnavailable ? 'unavailable' : 'ready');
-    } catch {
-      if (controller.signal.aborted || activeRequest.current !== controller) return;
-      setProjection(emptyProjection());
-      setStatus('unavailable');
-    } finally {
-      if (activeRequest.current === controller) activeRequest.current = null;
-    }
-  }, [transport]);
+    const current = () => !controller.signal.aborted && activeRequest.current === controller;
+    let nativeReady = false;
+    let labReady = false;
+    let nativeValue: unknown;
+    let labValue: unknown;
+    const publish = () => {
+      if (!current() || !nativeReady || !labReady) return;
+      try {
+        const labIds = registerLabExtensionApps(labValue);
+        const legacy = projectPawExtensionInstallation(nativeValue);
+        const next = { installedExtensionIds: new Set([...legacy.installedExtensionIds, ...labIds]),
+          enabledExtensionIds: new Set([...legacy.enabledExtensionIds, ...labIds]),
+          availableExtensionIds: new Set([...legacy.availableExtensionIds, ...labIds]),
+          updateRequiredExtensionIds: new Set(legacy.updateRequiredExtensionIds) };
+        setProjection(previous => sameProjection(previous, next) ? previous : next);
+        setProjectionOwner(transport);
+        setStatus(asRecord(nativeValue).runtimeAvailable === false && asRecord(labValue).ok !== true ? 'unavailable' : 'ready');
+      } catch {
+        setProjection(emptyProjection()); setProjectionOwner(transport); setStatus('unavailable');
+      }
+    };
+    await Promise.allSettled([
+      observeCatalogQuery(queryClient, { ...extensionInventoryQueryOptions(transport), staleTime: 0 }, controller.signal, {
+        onData: value => { nativeReady = true; nativeValue = value; publish(); },
+        onError: () => { nativeReady = true; nativeValue = { runtimeAvailable: false }; publish(); },
+        onFetching: () => { nativeReady = false; if (current()) setStatus('loading'); },
+      }),
+      transport.request({ pathId: 'agent.eval-lab.apps.get', signal: controller.signal }).then(
+        value => { labReady = true; labValue = value; publish(); },
+        () => { labReady = true; labValue = undefined; publish(); },
+      ),
+    ]);
+    // The existing visibility/refresh/unmount owner releases this observer.
+    // Keep receiving post-receipt cache updates between passive reconciliations.
+  }, [queryClient, transport]);
 
   const refresh = useCallback(() => scheduledRefresh.current(), []);
 
@@ -147,7 +176,8 @@ export function PawExtensionInstallationProvider({
         }, pollIntervalMs);
       });
     };
-    const requestRefresh = () => {
+    const requestRefresh = (event?: Event) => {
+      if (event && transport && !installationChangeMatchesTransport(event, transport)) return;
       if (visible) run();
     };
     const handleVisibilityChange = () => {
@@ -178,23 +208,24 @@ export function PawExtensionInstallationProvider({
       activeRequest.current?.abort();
       activeRequest.current = null;
     };
-  }, [load, pollIntervalMs]);
+  }, [load, pollIntervalMs, transport]);
 
-  const value = useMemo<PawExtensionInstallation>(() => ({
-    installedExtensionIds: projection.installedExtensionIds,
-    enabledExtensionIds: projection.enabledExtensionIds,
-    availableExtensionIds: projection.availableExtensionIds,
-    updateRequiredExtensionIds: projection.updateRequiredExtensionIds,
-    status,
-    loading: status === 'loading',
-    unavailable: status === 'unavailable',
-    ready: status === 'ready',
-    isInstalled: (appId) => !isPawExtensionAppId(appId) || projection.installedExtensionIds.has(appId),
-    isEnabled: (appId) => !isPawExtensionAppId(appId) || projection.enabledExtensionIds.has(appId),
-    isAvailable: (appId) => !isPawExtensionAppId(appId) || projection.availableExtensionIds.has(appId),
-    isUpdateRequired: (appId) => isPawExtensionAppId(appId) && projection.updateRequiredExtensionIds.has(appId),
-    refresh,
-  }), [projection, refresh, status]);
+  const value = useMemo<PawExtensionInstallation>(() => {
+    const current = projectionOwner === transport ? projection : emptyProjection();
+    const currentStatus = projectionOwner === transport ? status : transport ? 'loading' : 'unavailable';
+    return {
+      ...current,
+      status: currentStatus,
+      loading: currentStatus === 'loading',
+      unavailable: currentStatus === 'unavailable',
+      ready: currentStatus === 'ready',
+      isInstalled: (appId) => !isPawExtensionAppId(appId) || current.installedExtensionIds.has(appId),
+      isEnabled: (appId) => !isPawExtensionAppId(appId) || current.enabledExtensionIds.has(appId),
+      isAvailable: (appId) => !isPawExtensionAppId(appId) || current.availableExtensionIds.has(appId),
+      isUpdateRequired: (appId) => isPawExtensionAppId(appId) && current.updateRequiredExtensionIds.has(appId),
+      refresh,
+    };
+  }, [projection, projectionOwner, refresh, status, transport]);
 
   return createElement(INSTALLATION_CONTEXT.Provider, { value }, children);
 }

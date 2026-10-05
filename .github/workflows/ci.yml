@@ -65,9 +65,13 @@ jobs:
             | xargs -0 -n1 bash -n
 
   web-architecture:
-    name: Web architecture and Lab host contracts
+    name: Web contracts (${{ matrix.suite }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ownership, conversation]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -78,14 +82,70 @@ jobs:
           corepack enable && corepack prepare pnpm@11.9.0 --activate
           pnpm --dir control-center-web install --frozen-lockfile
       - name: Type-check Web contracts
+        if: matrix.suite == 'ownership'
         run: pnpm --dir control-center-web typecheck
       - name: Check host registration and existing Lab delivery
+        if: matrix.suite == 'ownership'
         run: >-
           pnpm --dir control-center-web exec vitest run
           src/paw-os/extensions/host-registry.test.ts
           src/paw-os/extensions/registry-hosts.test.ts
           src/features/eval-lab/projects/LabAppDelivery.test.tsx
           --maxWorkers=1 --testTimeout=60000
+      - name: Check shared chat ownership
+        if: matrix.suite == 'ownership'
+        run: >-
+          pnpm --dir control-center-web exec vitest run
+          src/features/agent/state/live-store.test.ts
+          src/features/agent/state/live-store.transport.test.ts
+          src/features/agent/state/live-store.acknowledgement.test.ts
+          src/features/agent/runtime
+          src/features/conversation-ui/conversation-preload.test.ts
+          src/app/preview-control-transport.test.ts
+          --pool=threads --maxWorkers=1 --testTimeout=60000
+      - name: Check conversation interaction and vertical App compatibility
+        if: matrix.suite == 'conversation'
+        # Synthetic protocol/UI regressions. Native foreground and live Provider
+        # acceptance remain separate from these tests.
+        run: >-
+          pnpm --dir control-center-web exec vitest run
+          src/features/agent/composer/AgentComposer.test.tsx
+          src/features/agent/workspace/AgentFilesPanel.test.tsx
+          src/features/composer/ComposerInteraction.test.tsx
+          src/paw-os/apps/PawSessionWorkspace.test.tsx
+          src/paw-os/apps/PawSessionWorkspace.performance.test.tsx
+          src/paw-os/apps/PawSessionWorkspace.input-ownership.test.tsx
+          src/paw-os/apps/PawAgentApp.test.tsx
+          src/paw-os/apps/PawPrimaryAssistantHome.test.tsx
+          src/paw-os/apps/PawPrimaryDirectoryPicker.test.tsx
+          src/paw-os/apps/PawPrimaryAssistantFlow.test.tsx
+          src/paw-os/extensions/ChatSurface.test.tsx
+          extension-apps/earth-research/App.test.tsx
+          extension-apps/earth-research/App.layout.test.tsx
+          extension-apps/zhanggui-wenshu/App.test.tsx
+          --pool=threads --maxWorkers=1 --testTimeout=60000
+      - name: Check scoped catalog refresh and plugin lifecycle
+        if: matrix.suite == 'ownership'
+        run: >-
+          pnpm --dir control-center-web exec vitest run
+          src/features/plugins
+          src/paw-os/extensions/installation.test.tsx
+          src/paw-os/apps/PawSystemApps.test.tsx
+          --pool=threads --maxWorkers=1 --testTimeout=60000
+      - name: Check desktop companion state and cleanup
+        if: matrix.suite == 'ownership'
+        run: |
+          pnpm --dir control-center-web test:electron
+          pnpm --dir control-center-web exec vitest run \
+            src/features/agent/desktop-pet-interaction.test.ts \
+            src/features/agent/desktop-pet-snapshot.test.ts \
+            src/features/agent/desktop-pet-publisher.test.ts \
+            src/features/agent/desktop-pet-surface.test.tsx \
+            src/paw-os/shell/desktop-pet-directory-projection.test.ts \
+            src/paw-os/shell/PawDesktopPetPublisher.test.tsx \
+            src/paw-os/shell/PawWorkDirectory.test.tsx \
+            src/app/standalone-surface.test.ts \
+            --pool=threads --maxWorkers=1 --testTimeout=60000
 
   macos:
     name: Native control and Squirrel release

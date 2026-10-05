@@ -18,6 +18,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -36,6 +37,7 @@ interface AgentFilesPanelProps {
   modal?: boolean;
   onClose: () => void;
   onManageRoots: () => void;
+  rootsLockedReason?: string;
 }
 
 interface WorkspaceEntry {
@@ -58,8 +60,10 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
   modal = false,
   onClose,
   onManageRoots,
+  rootsLockedReason,
 }, ref) {
   const transport = useControlTransport();
+  const rootsLockedReasonId = useId();
   const cacheRef = useRef(new Map<string, WorkspaceEntry[]>());
   const loadingRef = useRef(new Set<string>());
   const requestControllersRef = useRef(new Map<string, AbortController>());
@@ -306,11 +310,13 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
           <span><strong>文件目录</strong><small>{roots.length ? `${roots.length} 个工作区` : '未选择工作区'}</small></span>
           <div className="agent-files-panel__actions">
             <IconButton label="刷新文件目录" icon={<RefreshCw size={16} />} onClick={refresh} disabled={!roots.length} tooltip />
-            <IconButton label="管理工作区目录" icon={<Settings2 size={16} />} onClick={onManageRoots} tooltip />
+            <IconButton label="管理工作区目录" icon={<Settings2 size={16} />} onClick={onManageRoots}
+              disabled={Boolean(rootsLockedReason)} aria-describedby={rootsLockedReason ? rootsLockedReasonId : undefined} tooltip />
             <IconButton data-drawer-autofocus label="收起文件目录" icon={<PanelRightClose size={17} />} onClick={onClose} tooltip />
           </div>
         </header>
         <div className="agent-files-panel__body" data-revision={revision}>
+          {rootsLockedReason ? <p className="agent-files-panel__empty" id={rootsLockedReasonId}>{rootsLockedReason}</p> : null}
           {roots.length ? (
             <nav aria-label="工作区文件">
               <ul aria-label="工作区文件" role="tree">
@@ -349,8 +355,9 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
             </nav>
           ) : (
             <p className="agent-files-panel__empty" role="status">
-              <span>当前没有文件；选择工作区目录后即可浏览。</span>
-              <button type="button" onClick={onManageRoots}>选择目录</button>
+              <span>{rootsLockedReason ? '此会话没有可浏览的工作区。' : '当前没有文件；选择工作区目录后即可浏览。'}</span>
+              <button type="button" onClick={onManageRoots} disabled={Boolean(rootsLockedReason)}
+                aria-describedby={rootsLockedReason ? rootsLockedReasonId : undefined}>选择目录</button>
             </p>
           )}
         </div>

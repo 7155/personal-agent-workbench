@@ -85,7 +85,7 @@ PROJECT_ROUTING_SKILLS = frozenset(
 ROUTING_CARD_FIELDS = ("name", "when", "notFor", "does", "input", "output")
 MAX_ROUTING_CARD_CHARS = 200
 SKILL_SOURCE_KINDS = ("bundled", "configured", "pi-installed")
-REQUIRED_PI_RUNTIME_BASE_COMMIT = "9c3f93c8b1c409e82e14d458510c146088c44561"
+REQUIRED_PI_RUNTIME_BASE_COMMIT = "93f517925a64ae215ba3ae3fd6b925b9a8505ef6"
 REQUIRED_RUNTIME_METHODS = (
     "hello",
     "health",
@@ -267,9 +267,7 @@ _RUNTIME_HOST_SOURCE_OVERLAYS: dict[
         (
             '\t\t\t\t\t\tisPackageCapabilityEnabled: (capability) => this.nativePackages.hasEnabledCapability(capability),\n'
             '\t\t\t\t\t\tnoContextFiles: optionalBoolean(params, "noContextFiles"),',
-            '\t\t\t\t\t\tisPackageCapabilityEnabled: (capability) => disabledPlugins.size\n'
-            '\t\t\t\t\t\t\t? sessionPackages.some((item) => item.enabled && !disabledPlugins.has(item.id) && item.capabilities.includes(capability))\n'
-            '\t\t\t\t\t\t\t: this.nativePackages.hasEnabledCapability(capability),\n'
+            '\t\t\t\t\t\tisPackageCapabilityEnabled: (capability) => this.nativePackages.hasEnabledCapability(capability, disabledPlugins),\n'
             '\t\t\t\t\t\tnoContextFiles: optionalBoolean(params, "noContextFiles"),',
         ),
         (

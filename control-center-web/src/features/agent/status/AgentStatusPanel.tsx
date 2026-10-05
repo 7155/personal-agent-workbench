@@ -24,7 +24,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { forwardRef, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import {
   Button,
@@ -41,7 +41,7 @@ import type {
   CapabilityPreference,
 } from '@/features/plugins/capability-policy';
 import { usePageVisibility } from '@/platform/use-page-visibility';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore, type AgentSessionTarget } from '../state/live-store';
 import type { AgentCommand, ToolManifest } from '../types';
 import { publicToolResultView } from '../timeline/public-tool-result';
 import { SubagentLaunchPanel } from '../delegation/SubagentLaunchPanel';
@@ -118,14 +118,18 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
   onOpenBackgroundJob,
 }, ref) {
   const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const contentReady = useDeferredStatusContent(open, keepContentMounted);
   const pageVisible = usePageVisibility();
-  const projection = useAgentLiveStore((state) => state.projections[sessionId]);
+  const projection = useAgentLiveStore((state) => selectAgentProjection(state, address));
   const view = useMemo(() => projectStatusPanel(projection), [projection]);
   const logicalTools = useMemo(() => groupToolActivities(view.tools), [view.tools]);
-  const [resolvedWorkflow, setResolvedWorkflow] = useState<AgentWorkflowStateV1>();
-  const resolvedTodo = resolvedWorkflow?.sessionId === sessionId
-    ? resolvedWorkflow.todo
+  const [resolvedWorkflow, setResolvedWorkflow] = useState<{ address: AgentSessionTarget; workflow: AgentWorkflowStateV1 }>();
+  const handleWorkflowResolved = useCallback((workflow: AgentWorkflowStateV1) => {
+    setResolvedWorkflow({ address, workflow });
+  }, [address]);
+  const resolvedTodo = resolvedWorkflow?.address === address && resolvedWorkflow.workflow.sessionId === sessionId
+    ? resolvedWorkflow.workflow.todo
     : undefined;
   const panelStatus = contextSnapshotState === 'restoring'
     ? '正在恢复上下文'
@@ -145,7 +149,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
     [projection],
   );
   const subagents = useQuery({
-    queryKey: ['agent', 'status-panel', 'subagents', sessionId],
+    queryKey: ['agent', 'status-panel', 'subagents', agentProjectionKey(address)],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.subagents.list',
       query: { sessionId, limit: 50 },
@@ -186,7 +190,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           fallbackGoal={projection?.goal}
           fallbackActGate={projection?.actGate}
           compactEmpty={minimal}
-          onWorkflowResolved={setResolvedWorkflow}
+          onWorkflowResolved={handleWorkflowResolved}
         />
         {lifecycleCancellationAudits.length ? (
           <StatusSection icon={CircleDashed} title="取消与暂停回执" count={lifecycleCancellationAudits.length} defaultOpen={!minimal}>

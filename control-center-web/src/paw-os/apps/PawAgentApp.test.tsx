@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
+import type { SessionSummary } from '@/features/agent/types';
+import type { WorkspaceComposerHeaderView } from './PawSessionWorkspace';
 import { MockControlTransport } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { PawOsAppSurfaceProvider, PawOsDesktopProvider } from '@/features/paw-os/surface-context';
@@ -21,7 +24,7 @@ const workspaceLoading = vi.hoisted(() => ({ room: null as Promise<void> | null 
 vi.mock('./PawSessionWorkspace', () => {
   workspaceEvaluations.session += 1;
   return {
-    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialDraft, initialSubmission, onAssistantHome }: { recordMetadataKnown?: boolean; record?: { id?: string; evaluationSnapshot?: boolean }; recordId: string; initialDraft?: string; initialSubmission?: { clientMessageId: string; message: string }; onAssistantHome?: (draft?: string, execute?: boolean, messageId?: string) => void }) => (
+    PawSessionWorkspace: ({ record, recordId, recordMetadataKnown, initialDraft, initialSubmission, renderComposerHeader }: { recordMetadataKnown?: boolean; record?: SessionSummary; recordId: string; initialDraft?: string; initialSubmission?: { clientMessageId: string; message: string }; renderComposerHeader?: (view: WorkspaceComposerHeaderView) => ReactNode }) => (
       <div>
         Session 工作区
         <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
@@ -29,8 +32,7 @@ vi.mock('./PawSessionWorkspace', () => {
         <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
         <output data-testid="session-initial-submission">{JSON.stringify(initialSubmission)}</output>
         <output data-testid="session-initial-draft">{initialDraft}</output>
-        <button onClick={() => onAssistantHome?.('检查具体目标', true, 'source-cutoff')}>测试交办入口</button>
-        <button onClick={() => onAssistantHome?.()}>测试返回助手</button>
+        {record && renderComposerHeader?.({ session: record, draft: '检查具体目标', disabled: false, sourceMessageId: () => 'source-cutoff' })}
       </div>
     ),
   };
@@ -62,13 +64,43 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  // Keep the cold-load contract before tests that intentionally open a Session.
+  it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
+    const transport = createTransport();
+    const mode = deferred<unknown>();
+    const originalRequest = transport.request.bind(transport);
+    transport.request = <T,>(request: ControlRequest): Promise<T> => request.pathId === 'agent.jev.get'
+      ? mode.promise as Promise<T> : originalRequest<T>(request);
+    const roomRoute = '/agent?room=room-old&draft=room%20draft';
+    const view = renderAgent(transport, { initialRoute: roomRoute });
+    try {
+      await waitFor(() => expect({ ...workspaceEvaluations }).toEqual({ session: 0, room: 1 }));
+      // Prewarming does not choose a JEV mode or mount the Room early.
+      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
+    } finally { await act(async () => mode.resolve({ ok: true, mode: 'jev', items: [] })); }
+
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
+    expect(workspaceEvaluations).toEqual({ session: 0, room: 1 });
+
+    view.rerender(agentTree(transport, { initialRoute: '/agent?session=session-old' }));
+    expect(await screen.findByText('Session 工作区')).toBeInTheDocument();
+    expect(screen.getByTestId('session-record-id')).toHaveTextContent('session-old');
+    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+
+    view.rerender(agentTree(transport, { initialRoute: roomRoute }));
+    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
+    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
+    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
+  });
+
   it.each([false, true])('retains a task form while inspecting an old task only in its original transport (replacement: %s)', async replacement => {
     const oldTask = { id: 'task-existing', title: '已有任务', mode: 'assistant', status: 'idle', updatedAtMs: 2, workspaceRoots: ['/work/demo'], metadata: { primaryTask: true } };
     const transport = createTransport({ primaryTasks: [oldTask] });
     const view = renderAgent(transport, { initialRoute: '/agent' });
     await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /打开对话/ }));
-    fireEvent.click(await screen.findByRole('button', { name: '测试交办入口' }));
+    fireEvent.click(await screen.findByRole('button', { name: '交给助手做' }));
     const message = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(message, { target: { value: '待确认的新目标' } });
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/draft' } });
@@ -83,7 +115,7 @@ describe('PAWOS Agent App', () => {
     expect(await screen.findByTestId('session-record-id')).toHaveTextContent('task-existing');
     expect(screen.getByTestId('session-initial-draft')).toBeEmptyDOMElement();
     if (replacement) view.rerender(agentTree(createTransport({ primaryTasks: [oldTask] }), { initialRoute: '/agent?session=task-existing' }));
-    fireEvent.click(screen.getByRole('button', { name: '测试返回助手' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回我的助手' }));
     const restored = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
     if (replacement) {
       expect(restored).toHaveValue('');
@@ -125,7 +157,7 @@ describe('PAWOS Agent App', () => {
     const submission = pending.textContent;
     view.rerender(agentTree(transport, { initialRoute: '/agent?session=primary' }));
     expect(await screen.findByTestId('session-initial-submission')).toHaveTextContent(submission!);
-    fireEvent.click(screen.getByRole('button', { name: '测试交办入口' }));
+    fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     expect(await screen.findByRole('textbox', { name: '本次工作目录' })).toBeVisible();
     view.rerender(agentTree(transport, { initialRoute: '/agent' }));
     expect(await screen.findByRole('textbox', { name: '本次工作目录' })).toBeVisible();
@@ -163,35 +195,6 @@ describe('PAWOS Agent App', () => {
     expect(await screen.findByText(/当前 Pi Runtime 暂不支持 Durable/)).toBeVisible();
     expect(screen.getByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('继续已有目标');
     expect(unavailable.requests.some(({ request }) => request.pathId === 'agent.sessions.create' || request.pathId === 'agent.session.prompt')).toBe(false);
-  });
-
-  it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
-    const transport = createTransport();
-    const mode = deferred<unknown>();
-    const originalRequest = transport.request.bind(transport);
-    transport.request = <T,>(request: ControlRequest): Promise<T> => request.pathId === 'agent.jev.get'
-      ? mode.promise as Promise<T> : originalRequest<T>(request);
-    const roomRoute = '/agent?room=room-old&draft=room%20draft';
-    const view = renderAgent(transport, { initialRoute: roomRoute });
-    try {
-      await waitFor(() => expect({ ...workspaceEvaluations }).toEqual({ session: 0, room: 1 }));
-      // Prewarming does not choose a JEV mode or mount the Room early.
-      expect(screen.queryByText('Room 工作区 · room-old')).not.toBeInTheDocument();
-    } finally { await act(async () => mode.resolve({ ok: true, mode: 'jev', items: [] })); }
-
-    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
-    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
-    expect(workspaceEvaluations).toEqual({ session: 0, room: 1 });
-
-    view.rerender(agentTree(transport, { initialRoute: '/agent?session=session-old' }));
-    expect(await screen.findByText('Session 工作区')).toBeInTheDocument();
-    expect(screen.getByTestId('session-record-id')).toHaveTextContent('session-old');
-    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
-
-    view.rerender(agentTree(transport, { initialRoute: roomRoute }));
-    expect(await screen.findByText('Room 工作区 · room-old')).toBeInTheDocument();
-    expect(screen.getByTestId('room-initial-draft')).toHaveTextContent('room draft');
-    expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
   });
 
   it('warms an exact rail record on intent without selecting it or sending work', async () => {

@@ -8,8 +8,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 - Add an opt-in Electron desktop companion using bundled PAW artwork and the
   existing assistant entry. Keep its preload narrow and sandboxed; bound drag
   IPC, cancel stale presentation after hide/quit, and clamp placement to the
-  display work area. This is a fixed idle launcher, not live task monitoring;
-  native foreground behavior still requires target-platform verification.
+  display work area. The in-progress single-planet view retains only bounded
+  conversation status from the existing shell directory and opens exact
+  Sessions; source loss clears activity. Final build, interaction checks, and
+  native foreground verification remain pending for this extension.
 
 - Expose authorized workspace tools to Pi Durable with their canonical operation
   schema. Stop standalone background jobs using the original turn's persisted

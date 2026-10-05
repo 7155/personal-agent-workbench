@@ -17,7 +17,7 @@ import type { RoomSummary } from '@/features/rooms/room-types';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { clearConversationScrollMemory } from '@/features/conversation-ui';
 import { MockControlTransport } from '@/test/mock-transport';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { PawOsSatelliteHost } from './PawOsSatelliteHost';
 import { PawOsApp } from '@/paw-os/PawOsApp';
 import { createPawDesktopStore } from '@/paw-os/runtime/desktop-store';
@@ -342,6 +342,74 @@ describe('PawOsSatelliteHost', () => {
     expect(transport.requests.map(({ request }) => request.pathId)).toEqual(['agent.session.backgroundJob.logs']);
   });
 
+  it('isolates same-ID process projections and log caches between transports', async () => {
+    const jobId = 'bg_55555555555555555555555555555555';
+    const a = new MockControlTransport({ routes: { 'agent.session.backgroundJob.logs': { text: '甲的进程输出' } } });
+    const b = new MockControlTransport({ routes: { 'agent.session.backgroundJob.logs': { text: '乙的进程输出' } } });
+    for (const [transport, status] of [[a, 'running'], [b, 'completed']] as const) {
+      useAgentLiveStore.getState().hydrateSnapshot(agentSessionAddress(transport, 'session-1'), {
+        messages: [], liveEvents: [], lastSequence: 0, resumeToken: '',
+        backgroundJobs: [backgroundJob(status, jobId)],
+      });
+    }
+    const target = {
+      kind: 'process-terminal' as const, id: 'same-call', title: 'pnpm dev',
+      sessionId: 'session-1', toolCallId: 'same-call', runId: jobId, command: 'pnpm dev', runStatus: 'running' as const,
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    render(<QueryClientProvider client={client}>
+      <ControlTransportProvider transport={a}><section aria-label="进程甲"><PawOsSatelliteHost target={target} /></section></ControlTransportProvider>
+      <ControlTransportProvider transport={b}><section aria-label="进程乙"><PawOsSatelliteHost target={target} /></section></ControlTransportProvider>
+    </QueryClientProvider>);
+    const regionA = within(screen.getByRole('region', { name: '进程甲' }));
+    const regionB = within(screen.getByRole('region', { name: '进程乙' }));
+    expect(await regionA.findByText('甲的进程输出')).toBeVisible();
+    expect(await regionB.findByText('乙的进程输出')).toBeVisible();
+    expect(regionA.getByRole('button', { name: '停止后台任务' })).toBeVisible();
+    expect(regionB.queryByRole('button', { name: '停止后台任务' })).not.toBeInTheDocument();
+    expect(regionA.queryByText('乙的进程输出')).not.toBeInTheDocument();
+  });
+
+  it('keeps a delayed process cancellation with the original transport after switching providers', async () => {
+    const jobId = 'bg_66666666666666666666666666666666';
+    let finishCancel!: (receipt: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => { finishCancel = resolve; });
+    const a = new MockControlTransport({ routes: {
+      'agent.session.backgroundJob.logs': { text: '甲的进程输出' },
+      'agent.session.backgroundJob.cancel': () => pending,
+    } });
+    const b = new MockControlTransport({ routes: { 'agent.session.backgroundJob.logs': { text: '乙的进程输出' } } });
+    const addressA = agentSessionAddress(a, 'session-1');
+    const addressB = agentSessionAddress(b, 'session-1');
+    for (const address of [addressA, addressB]) {
+      useAgentLiveStore.getState().hydrateSnapshot(address, {
+        messages: [], liveEvents: [], lastSequence: 0, resumeToken: '', backgroundJobs: [backgroundJob('running', jobId)],
+      });
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const element = (transport: MockControlTransport) => (
+      <QueryClientProvider client={client}><ControlTransportProvider transport={transport}>
+        <PawOsSatelliteHost target={{ kind: 'process-terminal', id: 'same-call', title: 'pnpm dev',
+          sessionId: 'session-1', toolCallId: 'same-call', runId: jobId, command: 'pnpm dev' }} />
+      </ControlTransportProvider></QueryClientProvider>
+    );
+    const view = render(element(a));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '停止后台任务' }));
+    await user.click(screen.getByRole('button', { name: '确认停止后台任务' }));
+    view.rerender(element(b));
+    expect(await screen.findByText('乙的进程输出')).toBeVisible();
+    await act(async () => finishCancel({
+      schemaVersion: 'rag-ime.agent-background-job-cancel-receipt.v1', ok: true,
+      summary: '甲的停止回执', alreadyTerminal: false, job: backgroundJob('cancelling', jobId),
+      cancelReceipt: { jobId, requestedAtMs: 200, status: 'cancelling' },
+    }));
+    await waitFor(() => expect(selectAgentProjection(useAgentLiveStore.getState(), addressA)?.backgroundJobsById[jobId]?.status).toBe('cancelling'));
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressB)?.backgroundJobsById[jobId]?.status).toBe('running');
+    expect(screen.getByRole('button', { name: '停止后台任务' })).toBeEnabled();
+    expect(screen.queryByText('甲的停止回执')).not.toBeInTheDocument();
+  });
+
   it('stops the exact cancellable job and applies its authoritative receipt', async () => {
     const user = userEvent.setup();
     const jobId = 'bg_44444444444444444444444444444444';
@@ -370,7 +438,7 @@ describe('PawOsSatelliteHost', () => {
     await user.click(await screen.findByRole('button', { name: '停止后台任务' }));
     await user.click(screen.getByRole('button', { name: '确认停止后台任务' }));
 
-    await waitFor(() => expect(useAgentLiveStore.getState().projections['session-1']?.backgroundJobsById[jobId])
+    await waitFor(() => expect(selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, 'session-1'))?.backgroundJobsById[jobId])
       .toMatchObject({ status: 'cancelling' }));
     expect(transport.requests.find(({ request }) => request.pathId === 'agent.session.backgroundJob.cancel')?.request).toMatchObject({
       params: { sessionId: 'session-1', jobId },

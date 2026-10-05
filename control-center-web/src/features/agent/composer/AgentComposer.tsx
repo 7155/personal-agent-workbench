@@ -113,6 +113,7 @@ export function AgentComposer({
   draft,
   attachments,
   session,
+  inputOwnerId = session?.id ?? '',
   sessionMetadataKnown = Boolean(session),
   persona,
   catalog,
@@ -128,6 +129,7 @@ export function AgentComposer({
   showStop = true,
   sending,
   submissionBlocked = false,
+  submissionBlockedReason = '',
   modelChanging = false,
   onDraftChange,
   onAttachmentsChange,
@@ -167,6 +169,8 @@ export function AgentComposer({
   draft: string;
   attachments: ComposerAttachment[];
   session?: SessionSummary;
+  /** Mounted transport+Session identity; session.id remains the legacy default. */
+  inputOwnerId?: string;
   sessionMetadataKnown?: boolean;
   persona?: AgentPersonaV1;
   catalog?: ModelCatalog;
@@ -184,6 +188,8 @@ export function AgentComposer({
   showStop?: boolean;
   sending: boolean;
   submissionBlocked?: boolean;
+  /** Owner-specific admission reason, shared by the button and Enter gate. */
+  submissionBlockedReason?: string;
   modelChanging?: boolean;
   onDraftChange: (value: string) => void;
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
@@ -237,7 +243,7 @@ export function AgentComposer({
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   const canAttach = Boolean(attachmentsAvailable && session && !sending && !busy && attachments.length < 8);
-  const pastedText = usePastedTextAttachments({ ownerId: session?.id ?? '', canImport: canAttach, onImport: onPasteImages });
+  const pastedText = usePastedTextAttachments({ ownerId: inputOwnerId, canImport: canAttach, onImport: onPasteImages });
   useComposerEditor(textareaRef, composerDraft, expanded);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
@@ -326,7 +332,8 @@ export function AgentComposer({
     capabilities: { queue: Boolean(onQueue) },
   });
   const sendActionLabel = composerActionLabel(actionModel.primary);
-  const sendBlockedReason = composerBlockedReasonLabel(actionModel.blockedReason);
+  const ownerSubmissionBlocked = submissionBlocked || Boolean(submissionBlockedReason);
+  const sendBlockedReason = submissionBlockedReason || composerBlockedReasonLabel(actionModel.blockedReason);
   function publishDraft(value: string): void {
     // The textarea owns keystroke latency; the parent only needs a deferred
     // projection for navigation and recovery. Send receives the local snapshot.
@@ -391,7 +398,7 @@ export function AgentComposer({
     publishDraft(nextDraft);
   }
   function submit(delivery: ComposerSubmitMode | null): void {
-    if (!delivery || pastedText.blocked || submissionBlocked) return;
+    if (!delivery || pastedText.blocked || ownerSubmissionBlocked) return;
     const value = composerDraft;
     /* A refused queue never reaches Runtime, so the draft has to stay exactly
        where the writer left it rather than vanish into a full queue. */
@@ -647,7 +654,7 @@ export function AgentComposer({
               label={sendBlockedReason ? `${sendActionLabel}（${sendBlockedReason}）` : sendActionLabel}
               icon={<Send size={16} />}
               onClick={() => submit(composerSubmitMode(actionModel))}
-              disabled={actionModel.primaryDisabled || submissionBlocked}
+              disabled={actionModel.primaryDisabled || ownerSubmissionBlocked}
               tooltip
             />
           </>

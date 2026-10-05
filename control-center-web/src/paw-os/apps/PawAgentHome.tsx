@@ -86,7 +86,7 @@ import {
   roomPermissionLayerPresentation,
 } from '@/features/rooms/room-presentation';
 import { roomPlanetName } from '@/features/rooms/room-participant-identity';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore, type AgentSessionTarget } from '@/features/agent/state/live-store';
 import {
   isAgentCommandPending,
   isAmbiguousAgentPromptFailure,
@@ -416,6 +416,7 @@ export function PawAgentHome({
         const rawSession = record(record(response).session);
         const sessionId = text(rawSession.id);
         if (!sessionId) throw new Error('服务端没有返回可验证的 Session。');
+        const address = agentSessionAddress(transport, sessionId);
         const clientMessageId = clientId('session');
         const createdSession = createdSessionSummary(
           rawSession,
@@ -433,7 +434,7 @@ export function PawAgentHome({
         // import continues under that owner; local attachment identities keep
         // the optimistic row truthful until the durable message replaces it
         // with managed media receipts.
-        useAgentLiveStore.getState().appendOptimistic(sessionId, {
+        useAgentLiveStore.getState().appendOptimistic(address, {
           clientMessageId,
           text: message,
           attachments: pendingAttachmentIds,
@@ -465,14 +466,14 @@ export function PawAgentHome({
             importedAttachments = await attachmentImport;
           } catch (attachmentError) {
             failHomeAttachmentImportBeforeAdmission(
-              sessionId,
+              address,
               clientMessageId,
               attachmentError,
             );
             return;
           }
           const attachmentIds = importedAttachments.map((attachment) => attachment.id);
-          replaceHomeOptimisticAttachmentIds(sessionId, clientMessageId, attachmentIds);
+          replaceHomeOptimisticAttachmentIds(address, clientMessageId, attachmentIds);
           try {
             const response = await transport.request<Record<string, unknown>>({
               pathId: 'agent.session.prompt',
@@ -480,12 +481,12 @@ export function PawAgentHome({
               body: { message, attachments: attachmentIds, clientMessageId },
             });
             if (isCancelledPromptAdmission(response)) {
-              useAgentLiveStore.getState().discardOptimistic(sessionId, clientMessageId);
+              useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
               return;
             }
-            useAgentLiveStore.getState().acknowledgeOptimistic(sessionId, clientMessageId, Date.now());
+            useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
           } catch (requestError) {
-            settleHomePromptAdmissionFailure(sessionId, clientMessageId, requestError);
+            settleHomePromptAdmissionFailure(address, clientMessageId, requestError);
           }
         })();
       } else {
@@ -1027,14 +1028,14 @@ function suggestedRoomParticipantCount(prompt: string, available: number): numbe
 }
 
 function settleHomePromptAdmissionFailure(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   reason: unknown,
 ): void {
   const store = useAgentLiveStore.getState();
   if (isAgentCommandPending(reason)) {
     store.failOptimistic(
-      sessionId,
+      address,
       clientMessageId,
       publicAgentErrorText(reason),
       Date.now(),
@@ -1044,7 +1045,7 @@ function settleHomePromptAdmissionFailure(
   }
   if (isAmbiguousAgentPromptFailure(reason)) {
     store.failOptimistic(
-      sessionId,
+      address,
       clientMessageId,
       '暂时无法确认是否已接收。系统不会自动重试；手动重试会核对同一条消息。',
       Date.now(),
@@ -1055,16 +1056,16 @@ function settleHomePromptAdmissionFailure(
   // Validation and provider rejections are definitive.
   // Keep the original optimistic row as one failed turn so the Session's
   // existing retry control can replay its exact text and client lineage.
-  failHomePromptBeforeAdmission(sessionId, clientMessageId, reason);
+  failHomePromptBeforeAdmission(address, clientMessageId, reason);
 }
 
 function failHomePromptBeforeAdmission(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   reason: unknown,
 ): void {
   useAgentLiveStore.getState().failOptimistic(
-    sessionId,
+    address,
     clientMessageId,
     publicAgentErrorText(reason, errorText(reason)),
     Date.now(),
@@ -1072,13 +1073,13 @@ function failHomePromptBeforeAdmission(
 }
 
 function failHomeAttachmentImportBeforeAdmission(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   reason: unknown,
 ): void {
   const detail = publicAgentErrorText(reason, errorText(reason));
   useAgentLiveStore.getState().failOptimistic(
-    sessionId,
+    address,
     clientMessageId,
     `附件未能导入，这条消息没有发送。请重新上传附件后发送。${detail ? ` 详情：${detail}` : ''}`,
     Date.now(),
@@ -1086,19 +1087,19 @@ function failHomeAttachmentImportBeforeAdmission(
 }
 
 function replaceHomeOptimisticAttachmentIds(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   attachmentIds: string[],
 ): void {
   useAgentLiveStore.setState((state) => {
-    const current = state.projections[sessionId];
+    const current = selectAgentProjection(state, address);
     const messageId = current?.optimisticByClientMessageId[clientMessageId];
     const message = messageId ? current?.messagesById[messageId] : undefined;
     if (!current || !messageId || !message) return state;
     return {
       projections: {
         ...state.projections,
-        [sessionId]: {
+        [agentProjectionKey(address)]: {
           ...current,
           messagesById: {
             ...current.messagesById,

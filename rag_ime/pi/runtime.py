@@ -4295,12 +4295,12 @@ class PiRuntimeHostManager:
         }
         if max_tokens is not None:
             params["maxTokens"] = int(max_tokens)
-        selected = public_pi_model(
-            self._require_client().send(
-                "session.model.set",
-                params,
-            )
-        )
+        result = self._require_client().send("session.model.set", params)
+        # Durable returns its updated Session snapshot, while Classic returns
+        # the selected model directly. Keep the engine-specific wire shapes
+        # explicit rather than treating malformed responses as a fallback.
+        model = as_mapping(result.get("model")) if self._is_durable(session_id) else result
+        selected = public_pi_model(model)
         if not selected:
             raise PiRuntimeError("Pi did not return the selected model")
         session = self.sessions.set_model_profile(session_id, f"{selected['provider']}/{selected['id']}")

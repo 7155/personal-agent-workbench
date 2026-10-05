@@ -6,19 +6,23 @@ import vm from 'node:vm';
 import { clampPetPosition, installDesktopPet } from './desktop-pet.mjs';
 
 function harness({ deferred = false, autoReady = true } = {}) {
-  const handlers = new Map(); const created = []; const visibility = [];
+  const handlers = new Map(); const created = []; const visibility = []; const openedIds = [];
+  const source = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false, getURL: () => 'http://127.0.0.1:7777/' });
   let opened = 0; let cursor = { x: 500, y: 500 };
   let area = { x: 0, y: 0, width: 1200, height: 800 };
   class Window extends EventEmitter {
     constructor(options) {
-      super(); this.options = options; this.position = [options.x, options.y]; this.destroyed = false; this.visible = false;
-      this.webContents = Object.assign(new EventEmitter(), { mainFrame: {}, getURL: () => this.url,
+      super(); this.options = options; this.position = [options.x, options.y]; this.size = [options.width, options.height]; this.destroyed = false; this.visible = false;
+      this.sent = [];
+      this.webContents = Object.assign(new EventEmitter(), { mainFrame: {}, getURL: () => this.url, send: (...args) => this.sent.push(args),
         setWindowOpenHandler: (handler) => { this.openHandler = handler; } });
       created.push(this);
     }
     isDestroyed() { return this.destroyed; }
     destroy() { this.destroyed = true; this.visible = false; this.emit('closed'); }
     getPosition() { return this.position; }
+    getSize() { return this.size; }
+    setSize(width, height) { this.size = [width, height]; }
     setPosition(x, y) { this.position = [x, y]; }
     showInactive() { this.visible = true; }
     loadURL(url) {
@@ -31,12 +35,13 @@ function harness({ deferred = false, autoReady = true } = {}) {
   const app = new EventEmitter();
   const screen = Object.assign(new EventEmitter(), { getCursorScreenPoint: () => cursor,
     getDisplayNearestPoint: () => ({ id: 1, workArea: area }) });
-  const manager = installDesktopPet({ app, BrowserWindow: Window, ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+  const manager = installDesktopPet({ app, BrowserWindow: Window, ipcMain: { handle: (name, handler) => handlers.set(name, handler), removeHandler: (name) => handlers.delete(name) },
     screen, origin: 'http://127.0.0.1:7777', preload: '/test/desktop-pet-preload.cjs',
-    openAssistant: () => { opened += 1; }, onVisibilityChanged: (value) => visibility.push(value) });
-  return { manager, created, app, screen, visibility, opened: () => opened,
+    getSource: () => source, openAssistant: (id) => { opened += 1; openedIds.push(id); }, onVisibilityChanged: (value) => visibility.push(value) });
+  return { manager, created, app, screen, visibility, source, openedIds, opened: () => opened,
     cursor: (point) => { cursor = point; }, area: (value) => { area = value; },
     invoke: (name, value, sender = created.at(-1)?.webContents, senderFrame = sender?.mainFrame) => handlers.get(`paw-pet:${name}`)({ sender, senderFrame }, value),
+    publish: (name, value) => handlers.get(`paw-pet-state:${name}`)({ sender: source, senderFrame: source.mainFrame }, value),
   };
 }
 
@@ -134,6 +139,32 @@ test('negative coordinates and undersized work areas have bounded origins', () =
   assert.deepEqual(clampPetPosition({ x: 99, y: 99 }, { x: 5, y: 10, width: 100, height: 100 }), { x: 5, y: 10 });
 });
 
+test('replays retained conversations on ready, opens only those ids and clears on source loss', async () => {
+  const h = harness();
+  const { producerEpoch } = h.publish('begin', { schemaVersion: 1, sourceId: 'work-directory', scopeId: 'scope' });
+  h.publish('publish', { schemaVersion: 1, producerEpoch, revision: 1, freshness: 'synced',
+    counts: { running: 1, attention: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 },
+    conversations: [{ id: 'session-one', label: 'One', state: 'running' }] });
+  await h.manager.show();
+  assert.equal(h.invoke('ready').conversations[0].id, 'session-one');
+  const target = { id: 'session-one', producerEpoch, sourceId: 'work-directory', scopeId: 'scope' };
+  h.invoke('open-conversation', target); assert.deepEqual(h.openedIds, ['session-one']);
+  assert.throws(() => h.invoke('open-conversation', { ...target, id: 'other' }), /rejected/);
+  h.source.emit('destroyed');
+  assert.equal(h.created[0].sent.at(-1)[1].freshness, 'unavailable');
+  assert.throws(() => h.invoke('open-conversation', target), /rejected/);
+});
+
+test('expansion uses fixed host bounds and expanded dragging stays inside the work area', async () => {
+  const h = harness(); await h.manager.show(); const window = h.created[0];
+  h.invoke('expand', true); assert.deepEqual(window.size, [320, 400]);
+  assert.ok(window.position[0] <= 880); assert.ok(window.position[1] <= 400);
+  h.invoke('drag', 'start'); h.cursor({ x: 10000, y: 10000 }); h.invoke('drag', 'end');
+  assert.ok(window.position[0] <= 880); assert.ok(window.position[1] <= 400);
+  h.invoke('expand', false); assert.deepEqual(window.size, [160, 190]);
+  assert.throws(() => h.invoke('expand', { width: 10000 }), /Invalid/);
+});
+
 test('drag end samples the final cursor after coalesced moves and blur cancels dragging', async () => {
   const h = harness(); await h.manager.show(); const window = h.created[0];
   window.setPosition(300, 300); h.cursor({ x: 300, y: 300 }); h.invoke('drag', 'start');
@@ -152,7 +183,7 @@ test('pet preload exposes only readiness and its three bounded host actions', as
       ipcRenderer: { invoke: (...args) => { calls.push(args); return Promise.resolve(); } } }),
   });
   assert.deepEqual(Object.keys(exposed), ['pawDesktopPet']);
-  assert.deepEqual(Object.keys(exposed.pawDesktopPet), ['ready', 'hide', 'openAssistant', 'drag']);
+  assert.deepEqual(Object.keys(exposed.pawDesktopPet), ['ready', 'onSnapshot', 'hide', 'openAssistant', 'openConversation', 'setExpanded', 'drag']);
   assert.equal(Object.isFrozen(exposed.pawDesktopPet), true);
   await exposed.pawDesktopPet.ready(); await exposed.pawDesktopPet.hide(); await exposed.pawDesktopPet.openAssistant(); await exposed.pawDesktopPet.drag('cancel');
   assert.deepEqual(calls, [['paw-pet:ready'], ['paw-pet:hide'], ['paw-pet:open-assistant'], ['paw-pet:drag', 'cancel']]);

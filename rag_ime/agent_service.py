@@ -2496,22 +2496,30 @@ class AgentService:
 
     def _primary_task_brief(self, authorization: Mapping[str, object]) -> dict[str, object]:
         source_id = str(authorization["sourceSessionId"])
-        source = self.sessions.get(source_id)
-        metadata = source.get("metadata")
-        if not isinstance(metadata, Mapping) or metadata.get("primaryAssistant") is not True:
-            raise ValueError("sourceSessionId must identify a primary assistant discussion")
-        source_roots = list(source.get("workspaceRoots") or [])
-        if source_roots and source_roots != authorization["workspaceRoots"]:
-            raise ValueError("task workspace must match the source discussion project")
-        try:
-            snapshot = self.messages(source_id)
-        except AgentRuntimeError:
-            # A brand-new discussion has no transcript to recover. Do not
-            # require a running Host merely to authorize its first task.
-            if (authorization.get("sourceMessageId") or source.get("messageCount")
-                or self.sessions.runtime_binding(source_id) is not None):
-                raise
-            snapshot = {"items": [], "lastSequence": 0}
+        for snapshot_attempt in range(2):
+            source = self.sessions.get(source_id)
+            metadata = source.get("metadata")
+            if not isinstance(metadata, Mapping) or metadata.get("primaryAssistant") is not True:
+                raise ValueError("sourceSessionId must identify a primary assistant discussion")
+            source_roots = list(source.get("workspaceRoots") or [])
+            if source_roots and source_roots != authorization["workspaceRoots"]:
+                raise ValueError("task workspace must match the source discussion project")
+            try:
+                snapshot = self.messages(source_id)
+            except AgentRuntimeError:
+                # A brand-new discussion has no transcript to recover. Do not
+                # require a running Host merely to authorize its first task.
+                if (authorization.get("sourceMessageId") or source.get("messageCount")
+                    or self.sessions.runtime_binding(source_id) is not None):
+                    raise
+                snapshot = {"items": [], "lastSequence": 0}
+            if int(self.sessions.get(source_id)["updatedAtMs"]) == int(source["updatedAtMs"]):
+                break
+            # First snapshot inspection can restore the Runtime binding and
+            # reconcile Session status. Re-read BOTH source and snapshot once;
+            # never attach a newer revision to an older discussion snapshot.
+        else:
+            raise ValueError("source discussion changed while preparing the task; refresh and retry")
         messages = snapshot.get("items", snapshot.get("messages", []))
         messages = messages if isinstance(messages, list) else []
         cutoff = str(authorization.get("sourceMessageId") or "")
