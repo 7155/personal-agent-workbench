@@ -27,7 +27,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, EmptyState, Input, SegmentedControl, Switch } from '@/components/primitives';
@@ -166,6 +166,9 @@ export function PawSystemApps({
   const desktop = usePawOsDesktop();
   const route = initialRoute || app.route || pages[0].route;
   const page = systemPageForRoute(pages, route);
+  const visibleRoute = useDeferredValue(route);
+  const visiblePage = systemPageForRoute(pages, visibleRoute);
+  const switchingPage = visibleRoute !== route;
   // Each system rail reports one honest number from its own Runtime evidence:
   // Settings queues human approvals, App Center queues install proposals, and
   // Monitor relays components that report a problem.
@@ -232,16 +235,17 @@ export function PawSystemApps({
               {page.group ? `${page.group} · ${page.label}` : page.label}
             </span>
             <span aria-hidden="true" className="paw-system-app__page-purpose">{page.purpose}</span>
+            {switchingPage ? <span className="paw-system-app__switching" role="status"><LoaderCircle className="ui-spin" size={13} />正在切换…</span> : null}
           </header>
-          <div className="paw-system-app__workspace">
-            <MemoryRouter initialEntries={[route]} key={route}>
-              <PawSystemRouteReporter expectedRoute={route} />
-              <div className="paw-system-app__page" key={`${appId}:${page.id}`}>
-                <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
-                  <PawSystemSurface appId={appId} pageId={page.id} />
-                </Suspense>
-              </div>
-            </MemoryRouter>
+          <div className="paw-system-app__workspace" aria-busy={switchingPage}>
+            <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
+              <MemoryRouter initialEntries={[visibleRoute]} key={visibleRoute}>
+                <PawSystemRouteReporter expectedRoute={visibleRoute} />
+                <div className="paw-system-app__page" key={`${appId}:${visiblePage.id}`} inert={switchingPage}>
+                  <PawSystemSurface appId={appId} pageId={visiblePage.id} />
+                </div>
+              </MemoryRouter>
+            </Suspense>
           </div>
         </section>
       </div>

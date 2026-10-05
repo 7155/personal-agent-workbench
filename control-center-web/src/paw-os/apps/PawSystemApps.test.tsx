@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +12,11 @@ import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
 
 vi.mock('@/features/approvals', () => ({ ApprovalsFeature: () => <h1>审批真实界面</h1> }));
-vi.mock('@/features/configuration', () => ({ ConfigurationFeature: () => <h1>配置真实界面</h1> }));
+const configurationLoad = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
+vi.mock('@/features/configuration', () => ({ ConfigurationFeature: () => {
+  if (configurationLoad.pending) throw configurationLoad.pending;
+  return <h1>配置真实界面</h1>;
+} }));
 vi.mock('@/features/context-debug', () => ({ ContextDebugFeature: () => <h1>上下文真实界面</h1> }));
 vi.mock('@/features/diagnostics', () => ({ DiagnosticsFeature: () => <h1>诊断真实界面</h1> }));
 vi.mock('@/features/governance', () => ({ GovernanceFeature: () => <h1>治理真实界面</h1> }));
@@ -31,6 +35,7 @@ import {
 } from './PawSystemApps';
 
 afterEach(() => {
+  configurationLoad.pending = null;
   cleanup();
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
@@ -38,6 +43,23 @@ afterEach(() => {
 });
 
 describe('PawSystemApps', () => {
+  it('keeps the current settings content while a newer page loads and lets newer navigation win', async () => {
+    const user = userEvent.setup();
+    renderSystemApp('system-settings', '/approvals');
+    await screen.findByRole('heading', { name: '审批真实界面' });
+    let release!: () => void;
+    configurationLoad.pending = new Promise<void>(resolve => { release = resolve; });
+    await user.click(screen.getByRole('button', { name: '配置' }));
+    expect(screen.getByRole('heading', { name: '审批真实界面' })).toBeVisible();
+    expect(screen.getByText('正在切换…')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '审批真实界面' }).closest('.paw-system-app__page')).toHaveAttribute('inert');
+    await user.click(screen.getByRole('button', { name: '治理' }));
+    await screen.findByRole('heading', { name: '治理真实界面' });
+    await act(async () => { configurationLoad.pending = null; release(); });
+    expect(screen.getByRole('heading', { name: '治理真实界面' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: '配置真实界面' })).not.toBeInTheDocument();
+    expect(screen.queryByText('正在切换…')).not.toBeInTheDocument();
+  });
   it.each([
     ['input-studio', '/history', '输入记录'],
     ['app-center', '/plugins?view=proposals', '建议'],

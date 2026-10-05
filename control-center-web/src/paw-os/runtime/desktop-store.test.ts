@@ -4,6 +4,19 @@ import { pawExtensionApps } from '../extensions/registry';
 import { createPawDesktopStore, pawFocusWindowLayerSize, pawWindowArea, pawWindowLayerSize } from './desktop-store';
 
 describe('PAWOS desktop store', () => {
+  it('starts the main Agent expanded, restores its desktop bounds, and preserves that choice on reopen', () => {
+    const store = createPawDesktopStore('agent', '/agent');
+    const node = store.getState().windows.agent;
+    expect(node.placement).toBe('maximized');
+    expect(node.restoreBounds).toBeDefined();
+    store.getState().toggleMaximize('agent');
+    expect(store.getState().windows.agent.bounds).toEqual(node.restoreBounds);
+    expect(store.getState().windows.agent.placement).toBeUndefined();
+    store.getState().openApp('agent');
+    expect(store.getState().windows.agent.placement).toBeUndefined();
+    expect(store.getState().windows.agent.bounds).toEqual(node.restoreBounds);
+  });
+
   it('focuses the next visible window on minimize and restores the same window without duplicating it', () => {
     const store = createPawDesktopStore();
     const agent = store.getState().openApp('agent');

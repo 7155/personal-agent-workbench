@@ -1344,3 +1344,5 @@
   .paw-desktop-root .paw-agent-mode,
   .paw-desktop-root .paw-system-app :is(.ui-button, button) { transition: none; }
 }
+
+.paw-system-app__switching { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--paw-muted); font-size: 11px; }

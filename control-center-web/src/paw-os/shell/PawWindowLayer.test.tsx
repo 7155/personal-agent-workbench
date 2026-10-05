@@ -11,7 +11,7 @@ import { createPawDesktopStore, fitReachablePawWindowBounds, pawWindowArea, type
 import { PawDesktopProvider } from '../runtime/desktop-context';
 import { usePawDesktopApi } from '../runtime/desktop-context';
 import { PawWindowChromePortal } from './PawWindowChrome';
-import { PawWindowFrame, PawWindowLayer, openDesktopRoute, resizeWindowBounds, roomWindowFlowGroups } from './PawWindowLayer';
+import { PawWindowFrame, PawWindowLayer, bindAgentMainRoute, openDesktopRoute, resizeWindowBounds, roomWindowFlowGroups } from './PawWindowLayer';
 import { pawExtensionApps } from '../extensions/registry';
 import { syncPawOsRoute } from '../PawOsApp';
 import windowLayerSource from './PawWindowLayer.tsx?raw';
@@ -45,6 +45,32 @@ afterEach(() => {
 });
 
 describe('PAWOS compositor window frame', () => {
+  it('keeps an active task reloadable without redispatching the hash or adding history', () => {
+    window.history.replaceState(null, '', '?frontend=paw-os#/agent');
+    const store = createPawDesktopStore('agent', '/agent');
+    const historyLength = window.history.length;
+    const hashchange = vi.fn();
+    window.addEventListener('hashchange', hashchange);
+    bindAgentMainRoute(store, 'agent', { kind: 'session', id: 'task / one', title: '任务' });
+    expect(window.location.hash).toBe('#/agent?session=task%20%2F%20one');
+    expect(window.location.search).toBe('?frontend=paw-os');
+    syncPawOsRoute(store);
+    expect(store.getState().windows.agent.target).toMatchObject({ kind: 'session', id: 'task / one' });
+    expect(window.history.length).toBe(historyLength);
+    expect(hashchange).not.toHaveBeenCalled();
+    bindAgentMainRoute(store, 'agent');
+    expect(window.location.hash).toBe('#/agent');
+    expect(store.getState().windows.agent.target).toBeUndefined();
+    window.removeEventListener('hashchange', hashchange);
+  });
+
+  it('does not let a background conversation replace the active Settings reload route', () => {
+    const store = createPawDesktopStore('agent', '/agent');
+    openDesktopRoute(store, '/configuration');
+    bindAgentMainRoute(store, 'agent', { kind: 'session', id: 'background', title: 'Task' });
+    expect(window.location.hash).toBe('#/configuration');
+  });
+
   it('activates the deferred observer only for Room focus, validates receipts, and keeps observing after focus leaves', async () => {
     let job = previewBackgroundJobs('session-states').find((value) => value.status === 'running')!;
     const malformed = { ...job, jobId: 'bg_invalid_contract', maxRunSeconds: 'not_a_number' };

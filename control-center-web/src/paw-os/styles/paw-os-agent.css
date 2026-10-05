@@ -409,17 +409,17 @@
 }
 
 /* 头部停止钮：红色语义，按下即知在停哪一轮。 */
-.paw-desktop-root .paw-session-workspace__runtime > button {
+.paw-desktop-root .paw-session-workspace__runtime > button[aria-label="停止当前回合"] {
   color: var(--paw-chat-danger);
   border-radius: 8px;
   transition: background-color 130ms ease, transform 120ms ease;
 }
 
-.paw-desktop-root .paw-session-workspace__runtime > button:hover {
+.paw-desktop-root .paw-session-workspace__runtime > button[aria-label="停止当前回合"]:hover {
   background: color-mix(in srgb, var(--paw-chat-danger) 9%, transparent);
 }
 
-.paw-desktop-root .paw-session-workspace__runtime > button:active {
+.paw-desktop-root .paw-session-workspace__runtime > button[aria-label="停止当前回合"]:active {
   transform: scale(.94);
 }
 

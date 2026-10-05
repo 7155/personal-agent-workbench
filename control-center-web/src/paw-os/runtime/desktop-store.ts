@@ -256,6 +256,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       const bounds = satelliteTarget
         ? roomParticipantWindowBounds(satelliteIndex)
         : initialWindowBounds(currentState.stack.length);
+      const startExpanded = appId === 'agent' && !options.entityId && !options.background && !satelliteTarget;
       const node: PawWindowNode = {
         id: windowId,
         appId,
@@ -263,7 +264,8 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
         entityId: options.entityId,
         initialRoute: options.initialRoute,
         target: options.target,
-        bounds,
+        bounds: startExpanded ? placementBounds('maximized') : bounds,
+        ...(startExpanded ? { placement: 'maximized' as const, restoreBounds: bounds } : {}),
         minimized: false,
       };
       set((state) => {

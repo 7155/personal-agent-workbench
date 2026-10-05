@@ -9,17 +9,17 @@
 .paw-desktop-root .paw-room-window-chrome[data-controls-expanded='false'] > .paw-room-workspace__mode { display: none; }
 .paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] { grid-template-rows: minmax(0, 1fr); grid-template-areas: 'room-main'; }
 .paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-rail='open'] { grid-template-areas: 'room-main jev-rail'; }
-.paw-desktop-root .paw-session-workspace[data-design='workbench'] { --wb-read: 1480px !important; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] { --wb-read: 960px !important; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 4px 12px 6px; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn { max-width: min(var(--wb-read), 100%); }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-user-message { max-width: 94%; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer > .agent-composer-wrap { width: min(var(--wb-read), 100%) !important; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-first-response { width: min(var(--wb-read), 100%); }
 .paw-desktop-root .paw-room-workspace__composer { padding: 4px 12px 6px; }
-.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { width: 100%; max-width: 1520px; padding: 8px 16px 0; box-sizing: border-box; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { width: 100%; max-width: 1000px; margin-inline: auto; padding: 8px 16px 0; box-sizing: border-box; }
 @media (max-width: 620px) { .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { padding-inline: 12px; } }
 
-.agent-first-response { display: flex; align-items: center; gap: 8px; width: min(var(--wb-read, 1480px), 100%); margin: 0 auto 6px; padding-inline: 8px; box-sizing: border-box; color: var(--paw-muted); font-size: 13px; }
+.agent-first-response { display: flex; align-items: center; gap: 8px; width: min(var(--wb-read, 960px), 100%); margin: 0 auto 6px; padding-inline: 8px; box-sizing: border-box; color: var(--paw-muted); font-size: 13px; }
 .agent-first-response strong { font-weight: 500; }
 .paw-room-response-status span { font-size: 12px; }
 .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench']:not([data-expanded]) textarea { min-height: 40px; padding: 8px 42px 6px 12px; }
@@ -31,7 +31,7 @@
  * wider column for transcript, status and input so Thinking cannot drift away
  * from the messages it describes. */
 .paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation {
-  --wb-read: 1480px !important;
+  --wb-read: 960px !important;
 }
 .paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-timeline > .ccui-conversation-surface {
   --ccui-reading-width: var(--wb-read) !important;
@@ -44,3 +44,10 @@
 .paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-response-status {
   width: min(var(--wb-read), 100%) !important;
 }
+
+/* Recovery controls belong below the explanation, never squeeze it into a
+ * thin column. The underlying retry/stop admission rules remain unchanged. */
+.paw-desktop-root .paw-session-workspace .agent-turn__failure { width: 100%; max-width: 100%; box-sizing: border-box; grid-template-columns: 16px minmax(0, 1fr); padding: 10px 12px; }
+.paw-desktop-root .paw-session-workspace .agent-turn__failure-actions { grid-column: 2; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px; margin-top: 3px; }
+.paw-desktop-root .paw-session-workspace .agent-turn__failure small { overflow-wrap: anywhere; line-height: 1.6; }
+.paw-desktop-root .paw-session-workspace .agent-turn__failure-actions button { white-space: normal; }

@@ -25,6 +25,34 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 describe('primary assistant home', () => {
+  it('removes the previous project task rows immediately while the next project loads', async () => {
+    const nextProject = deferred<unknown>();
+    const { onOpen } = setup({ 'agent.primary.ensure': (request: ControlRequest) =>
+      (request.body as { workspaceRoots?: string[] }).workspaceRoots?.length
+        ? nextProject.promise
+        : { ok: true, session: primary, tasks: [task] } });
+    await screen.findByRole('button', { name: /检查项目/ });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '讨论项目' })).toBeEnabled());
+    fireEvent.change(screen.getByRole('combobox', { name: '讨论项目' }), { target: { value: '/work/project' } });
+    expect(screen.queryByRole('button', { name: /检查项目/ })).not.toBeInTheDocument();
+    expect(onOpen).not.toHaveBeenCalled();
+    await act(async () => nextProject.resolve({ ok: true, session: { ...primary, id: 'other-primary', workspaceRoots: ['/work/project'] }, tasks: [] }));
+    expect(screen.queryByRole('button', { name: /检查项目/ })).not.toBeInTheDocument();
+  });
+  it('preserves the visible conversation while gating admission during refresh', async () => {
+    const refresh = deferred<unknown>();
+    let reads = 0;
+    setup({ 'agent.primary.ensure': () => ++reads === 1
+      ? { ok: true, session: primary, tasks: [] }
+      : refresh.promise });
+    const open = await screen.findByRole('button', { name: /打开对话/ });
+    expect(open).toBeEnabled();
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(open).toBeDisabled());
+    expect(screen.getByRole('button', { name: /打开对话/ })).toBe(open);
+    await act(async () => refresh.resolve({ ok: true, session: primary, tasks: [] }));
+    await waitFor(() => expect(open).toBeEnabled());
+  });
   it('requires fresh scope confirmation after transport replacement and drops the old message cutoff', async () => {
     const original = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] } } });
     const next = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] }, 'agent.primary.tasks.create': { ok: true, session: task } } });

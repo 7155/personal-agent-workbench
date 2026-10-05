@@ -47,6 +47,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const attempt = useRef<{ signature: string; id: string } | undefined>(initialForm?.attempt);
   const attemptTransport = useRef(transport);
   const sourceTransport = useRef(transport);
+  const refreshSource = useRef(initialSource);
   const input = useRef<HTMLTextAreaElement>(null);
   const composerHintId = useId();
   const baseSubmitHint = submitting ? (intent === 'execute' ? '正在确认任务，请稍候…' : '正在打开对话…')
@@ -60,7 +61,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const executionRoots = workspace.trim() === initialSource?.workspaceRoots[0]
     ? initialSource.workspaceRoots : workspace.trim() ? [workspace.trim()] : [];
   useEffect(() => {
-    setSubmitting(false); setTasks([]); lock.current = false;
+    setSubmitting(false); setSession(undefined); setTasks([]); lock.current = false;
     picker.current = undefined; setPickingWorkspace(false); setPickerNotice('');
     if (attemptTransport.current !== transport) { attempt.current = undefined; attemptTransport.current = transport; setScopeConfirmed(false); }
     return () => { owner.current += 1; };
@@ -68,7 +69,10 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   useEffect(() => {
     const generation = ++readSequence.current;
     const controller = new AbortController();
-    setLoading(true); setError(''); setSession(undefined);
+    // Keep the last confirmed view during a same-context refresh. Admission
+    // remains gated by loading; project/transport changes clear identity first.
+    setLoading(true); setError('');
+    if (refreshSource.current !== initialSource) { setSession(undefined); setTasks([]); setAllTasks(false); refreshSource.current = initialSource; }
     const workspaceRoots = contextWorkspace === initialSource?.workspaceRoots[0]
       ? initialSource.workspaceRoots : contextWorkspace ? [contextWorkspace] : [];
     void transport.request<Record<string, unknown>>({ pathId: 'agent.primary.ensure', body: { workspaceRoots }, signal: controller.signal }).then(result => {
@@ -78,7 +82,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       setSession(primary);
       setTasks(sessionItems({ items: result.tasks }, { includeAppOwned: true }));
     }).catch(reason => {
-      if (readSequence.current === generation && !controller.signal.aborted) setError(publicAgentErrorText(reason));
+      if (readSequence.current === generation && !controller.signal.aborted) { setSession(undefined); setError(publicAgentErrorText(reason)); }
     }).finally(() => { if (readSequence.current === generation && !controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); readSequence.current += 1; };
   }, [transport, revision, contextWorkspace, initialSource]);
@@ -157,11 +161,11 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   function selectDiscussionProject(path: string) {
     // Retire admission synchronously with the user's selection. Do not leave
     // one render where the new project can submit into the old discussion.
-    if (path !== contextWorkspace) { setLoading(true); setSession(undefined); setContextWorkspace(path); }
+    if (path !== contextWorkspace) { setLoading(true); setSession(undefined); setTasks([]); setAllTasks(false); setContextWorkspace(path); }
     setWorkspace(path); setScopeConfirmed(false); setPickerNotice('');
   }
 
-  return <div className="paw-primary-home">
+  return <div className="paw-primary-home" data-intent={intent}>
     <div className="paw-primary-home__body">
       <header className="paw-primary-home__heading">
         <span className="paw-primary-home__eyebrow"><span aria-hidden="true" /> YOUR PERSONAL WORKBENCH</span>
@@ -173,6 +177,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
         <div className="paw-primary-home__identity"><span className="paw-primary-avatar"><Sparkles aria-hidden="true" size={20} /></span><span><strong>我的助手</strong><small>{loading ? '正在读取长期对话…' : session ? '长期对话 · 先讨论，再决定行动' : '对话暂未连接'}</small></span>
           {session ? <button disabled={submitting || pickingWorkspace || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="打开已有记录，未发送的文字会带入输入框" type="button">打开对话 <ArrowUpRight size={14} /></button> : null}
         </div>
+        <div className="paw-primary-home__fields">
         <textarea aria-label="和我的助手聊聊" aria-describedby={composerHintId} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); }
         }} placeholder={intent === 'discuss' ? '想法、问题，或一件还没想清楚的事…' : '这次要完成什么？'} rows={3} />
@@ -183,6 +188,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
           {executionRoots.length > 1 ? <ul className="paw-primary-home__root-list" aria-label="本次授权目录">{executionRoots.map(root => <li key={root}>{root}</li>)}</ul> : null}
           <label className="paw-primary-home__consent"><input type="checkbox" checked={scopeConfirmed} disabled={submitting || pickingWorkspace || !workspace.trim()} onChange={event => setScopeConfirmed(event.target.checked)} /><span>允许助手在{executionRoots.length > 1 ? `以上 ${executionRoots.length} 个目录` : '这个目录'}内执行本次任务、修改文件和运行命令。可以随时停止。</span></label>
         </div> : null}
+        </div>
         <footer><div className="paw-primary-home__intent" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className="paw-primary-home__send" disabled={loading || submitting || pickingWorkspace || !session || !draft.trim() || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : <ArrowUp size={17} />}<span>{submitting ? '请稍候' : intent === 'discuss' ? '发送' : '授权并开始'}</span></button></footer>
         <p className="paw-primary-home__composer-hint" id={composerHintId} role="status">{submitHint}</p>
       </section>
