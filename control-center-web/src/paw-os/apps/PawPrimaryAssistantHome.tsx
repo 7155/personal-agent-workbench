@@ -4,6 +4,9 @@ import { useControlTransport } from '@/app/control-transport';
 import { useProductIdentity } from '@/features/identity/product-identity';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
 import { publicAgentErrorText } from '@/features/agent/public-error';
+import { useAgentLiveSession, type AgentLiveSnapshotLoader } from '@/features/agent/runtime/use-agent-live-session';
+import { latestActiveAgentTurnId, useAgentLiveStore } from '@/features/agent/state/live-store';
+import { usePageVisibility } from '@/platform/use-page-visibility';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { warmAgentWorkspace, type InitialSessionSubmission, type PrimaryAssistantSource } from './agent-workspace-loader';
 import './primary-assistant.css';
@@ -17,6 +20,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const transport = useControlTransport();
   const desktop = usePawOsDesktop();
   const identity = useProductIdentity();
+  const pageVisible = usePageVisibility();
   const [session, setSession] = useState<SessionSummary>();
   const [tasks, setTasks] = useState<SessionSummary[]>([]);
   const [allTasks, setAllTasks] = useState(false);
@@ -37,8 +41,6 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const input = useRef<HTMLTextAreaElement>(null);
   const executionRoots = workspace.trim() === initialSource?.workspaceRoots[0]
     ? initialSource.workspaceRoots : workspace.trim() ? [workspace.trim()] : [];
-  const taskCursors = useRef({ transport, values: new Map<string, string>() });
-  if (taskCursors.current.transport !== transport) taskCursors.current = { transport, values: new Map() };
   useEffect(() => {
     setSubmitting(false); lock.current = false; attempt.current = undefined;
     return () => { owner.current += 1; };
@@ -60,35 +62,12 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     }).finally(() => { if (readSequence.current === generation && !controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); readSequence.current += 1; };
   }, [transport, revision, contextWorkspace, initialSource]);
-  const liveTaskIds = tasks.filter((task, index) => task.status === 'busy' || (index < (allTasks ? tasks.length : 4) && task.goal?.status === 'active')).map(task => task.id).sort().join('\n');
   useEffect(() => {
     const refresh = () => { if (document.visibilityState !== 'hidden') setRevision(value => value + 1); };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, []);
-  useEffect(() => {
-    if (!liveTaskIds) return;
-    let active = true;
-    let queued = false;
-    const refresh = () => {
-      if (!active || queued) return;
-      queued = true;
-      queueMicrotask(() => { queued = false; if (active) setRevision(value => value + 1); });
-    };
-    const unsubscribers = liveTaskIds.split('\n').map(sessionId => transport.subscribe({ pathId: 'agent.session.events', params: { sessionId }, lastEventId: taskCursors.current.values.get(sessionId) ?? '' }, {
-      next: value => {
-        const event = value as { eventType?: string; sessionId?: string; eventId?: string; resumeToken?: string };
-        if (event.sessionId !== sessionId) return;
-        const cursor = event.resumeToken || event.eventId;
-        if (cursor && cursor === taskCursors.current.values.get(sessionId)) return;
-        if (cursor) taskCursors.current.values.set(sessionId, cursor);
-        if (event.sessionId === sessionId && ['turn_completed', 'turn_failed', 'workflow_changed'].includes(event.eventType ?? '')) refresh();
-      },
-      snapshotRequired: refresh,
-    }));
-    return () => { active = false; unsubscribers.forEach(unsubscribe => unsubscribe()); };
-  }, [transport, liveTaskIds]);
 
   async function submit() {
     const message = draft.trim();
@@ -165,11 +144,64 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       {intent === 'discuss' ? <div className="paw-primary-home__project"><Folder aria-hidden="true" size={13} /><select aria-label="讨论项目" disabled={submitting || loading} value={contextWorkspace} onChange={event => { setContextWorkspace(event.target.value); setWorkspace(event.target.value); setScopeConfirmed(false); }}><option value="">日常对话 · 不绑定项目</option>{Array.from(new Set([...projectRoots, ...(contextWorkspace ? [contextWorkspace] : [])])).map(root => <option key={root} value={root}>{root}</option>)}</select>{transport.pickFiles ? <button disabled={submitting || loading} onClick={() => void chooseWorkspace(true)} type="button">选择项目</button> : null}</div> : null}
       <div className="paw-primary-home__hint"><span>{intent === 'discuss' ? '当前只讨论和查阅，不授予写入或命令执行权限。' : '任务会保留在独立对话中；回来聊别的，也不会丢失进度。'}</span>{desktop ? <button onClick={() => openPawOsRoute(desktop, '/memory?view=profile')} type="button"><BookOpen size={13} />关于我</button> : null}</div>
       {error ? <div className="paw-primary-home__error" role="alert">{error}{!session && !loading ? <button onClick={() => setRevision(value => value + 1)} type="button">重新连接</button> : null}</div> : null}
-      <section className="paw-primary-home__tasks" aria-label="助手的任务"><header><h2>接着做</h2><span>{tasks.length ? `${tasks.length} 个任务` : '一件事，一段清楚的记录'}</span></header>{tasks.length ? <ul>{(allTasks ? tasks : tasks.slice(0, 4)).map(task => <li key={task.id}><button onClick={() => onOpen(task)} onPointerEnter={() => warmAgentWorkspace('session')} type="button"><span><strong>{task.title}</strong><small>{taskStatus(task)}{task.lastMessagePreview ? ` · ${task.lastMessagePreview}` : ''}</small></span><ChevronRight size={16} /></button></li>)}</ul> : <p>交给助手的工作会出现在这里，过程、结果和停止入口都在任务里。</p>}{tasks.length > 4 ? <button className="paw-primary-home__advanced" onClick={() => setAllTasks(value => !value)} type="button">{allTasks ? '收起任务' : `查看全部 ${tasks.length} 个任务`}</button> : null}</section>
+      <section className="paw-primary-home__tasks" aria-label="助手的任务"><header><h2>接着做</h2><span>{tasks.length ? `${tasks.length} 个任务` : '一件事，一段清楚的记录'}</span></header>{tasks.length ? <ul>{tasks.map((task, index) => <PrimaryTaskRow key={task.id} task={task} initiallyVisible={index < 4} hidden={!allTasks && index >= 4} pageVisible={pageVisible} onOpen={onOpen} />)}</ul> : <p>交给助手的工作会出现在这里，过程、结果和停止入口都在任务里。</p>}{tasks.length > 4 ? <button className="paw-primary-home__advanced" onClick={() => setAllTasks(value => !value)} type="button">{allTasks ? '收起任务' : `查看全部 ${tasks.length} 个任务`}</button> : null}</section>
       <button className="paw-primary-home__advanced" onClick={onAdvanced} disabled={submitting} type="button">新建独立 Session 或多人 Room <ChevronRight size={13} /></button>
     </div>
   </div>;
 }
+
+/** A view lease, not a second stream/recovery owner. Hidden idle rows stay cold. */
+function PrimaryTaskRow({ task, hidden, initiallyVisible, pageVisible, onOpen }: {
+  task: SessionSummary; hidden: boolean; initiallyVisible: boolean; pageVisible: boolean;
+  onOpen: (session: SessionSummary) => void;
+}) {
+  const transport = useControlTransport();
+  const row = useRef<HTMLLIElement>(null);
+  const [visible, setVisible] = useState(initiallyVisible);
+  const scopeRef = useRef({ transport, id: task.id });
+  if (scopeRef.current.transport !== transport || scopeRef.current.id !== task.id) scopeRef.current = { transport, id: task.id };
+  const scope = scopeRef.current;
+  const [acceptedScope, setAcceptedScope] = useState<typeof scope>();
+  const projection = useAgentLiveStore(state => state.projections[task.id]);
+  const current = acceptedScope === scope ? projection : undefined;
+  const busy = current ? Boolean(current.durableRecovery?.compactionTarget
+    || current.durableRecovery?.activeTurn?.turnId || latestActiveAgentTurnId(current)
+    || ['busy', 'analyzing', 'working', 'waiting', 'retrying', 'aborting', 'stopping'].includes(current.status)) : task.status === 'busy';
+  useEffect(() => {
+    if (hidden) { setVisible(false); return; }
+    if (typeof IntersectionObserver === 'undefined') { setVisible(initiallyVisible); return; }
+    const observer = new IntersectionObserver(entries => setVisible(entries.some(entry => entry.isIntersecting)));
+    if (row.current) observer.observe(row.current);
+    return () => observer.disconnect();
+  }, [hidden, initiallyVisible]);
+  const loadRef = useRef<AgentLiveSnapshotLoader>(async () => false);
+  const load = useAgentLiveSession({
+    sessionId: task.id, transport, active: pageVisible && ((!hidden && visible) || busy), snapshotView: 'recent',
+    onSnapshot: () => setAcceptedScope(scope),
+    onEvent: event => {
+      if (['turn_completed', 'turn_failed', 'compaction_completed'].includes(event.eventType)) {
+        void loadRef.current({ preserveAfterSequence: event.sequence });
+      }
+    },
+  });
+  loadRef.current = load;
+  const liveGoal = current?.goal;
+  const useGoal = liveGoal?.sessionId === task.id && (liveGoal.revision > 0 || Boolean(liveGoal.goalId))
+    && (!task.goal || liveGoal.goalId !== task.goal.goalId || liveGoal.revision >= task.goal.revision);
+  const latestAnswer = current && [...current.messageOrder].reverse().map(id => current.messagesById[id])
+    .find(message => message?.role === 'assistant' && message.status === 'completed');
+  const preview = latestAnswer?.blocks.filter(block => block.type === 'text')
+    .map(block => typeof block.data.text === 'string' ? block.data.text : '').join('\n').trim().slice(0, 180);
+  const displayed: SessionSummary = current ? {
+    ...task,
+    status: task.status === 'archived' ? 'archived' : busy ? 'busy' : ['failed', 'faulted'].includes(current.status) ? 'faulted' : 'idle',
+    ...(useGoal ? { goal: liveGoal } : {}),
+    ...(preview ? { lastMessagePreview: preview } : {}),
+  } : task;
+  const status = current?.durableRecovery?.paused && !current.durableRecovery.compactionTarget ? '已暂停' : taskStatus(displayed);
+  return <li ref={row} hidden={hidden}><button onClick={() => onOpen(displayed)} onFocus={() => setVisible(true)} onPointerEnter={() => { setVisible(true); warmAgentWorkspace('session'); }} type="button"><span><strong>{task.title}</strong><small>{status}{displayed.lastMessagePreview ? ` · ${displayed.lastMessagePreview}` : ''}</small></span><ChevronRight size={16} /></button></li>;
+}
+
 function taskStatus(task: SessionSummary): string {
   if (task.status === 'busy') return '进行中';
   if (task.status === 'faulted') return '需要查看';

@@ -7,13 +7,19 @@ import type { SessionSummary } from '@/features/agent/types';
 import type { ControlRequest } from '@/platform/transport';
 import { PawPrimaryAssistantHome } from './PawPrimaryAssistantHome';
 import type { PrimaryAssistantSource } from './agent-workspace-loader';
+import { useAgentLiveSession } from '@/features/agent/runtime/use-agent-live-session';
+import { useAgentLiveStore } from '@/features/agent/state/live-store';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  for (const id of Object.keys(useAgentLiveStore.getState().projections)) useAgentLiveStore.getState().clear(id);
+});
 const primary: SessionSummary = { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', roleId: '', roleVersion: '', roleBookRevisionId: '', workspaceRoots: [], updatedAtMs: 1, executionMode: 'read_only', metadata: { primaryAssistant: true } };
 const task: SessionSummary = { ...primary, id: 'task', title: '检查项目', executionMode: 'workspace_managed', metadata: { primaryTask: true, sourceSessionId: 'primary' } };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler>> = {}, initialSource?: PrimaryAssistantSource) {
-  const transport = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] }, ...routes } });
+  const transport = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] },
+    'agent.session.snapshot': (request: ControlRequest) => taskSnapshot(String(request.params?.sessionId)), ...routes } });
   const onOpen = vi.fn();
   const tree = <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ControlTransportProvider transport={transport}><PawPrimaryAssistantHome onOpen={onOpen} onAdvanced={vi.fn()} projectRoots={['/work/project']} initialSource={initialSource} /></ControlTransportProvider></QueryClientProvider>;
   return { transport, onOpen, ...render(tree) };
@@ -118,15 +124,84 @@ describe('primary assistant home', () => {
     expect(screen.queryByRole('button', { name: /打开对话/ })).not.toBeInTheDocument();
     expect(onOpen).not.toHaveBeenCalled();
   });
-  it('refreshes unfinished tasks from terminal events without starting another work loop', async () => {
-    let done = false;
-    const { transport } = setup({ 'agent.primary.ensure': () => ({ ok: true, session: primary, tasks: [{ ...task, goal: { goalId: 'goal', revision: 1, status: done ? 'completed' : 'active', objective: task.title, successCriteria: '' } }] }) });
+  it('projects authoritative goal changes immediately without refetching the task directory', async () => {
+    const { transport } = setup({
+      'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, goal: taskGoal('active') }] },
+      'agent.session.snapshot': taskSnapshot('task', 'active'),
+    });
     await screen.findByRole('button', { name: /检查项目.*任务未完成/ });
     await waitFor(() => expect(transport.subscriptionCalls.filter(call => call.request.pathId === 'agent.session.events')).toHaveLength(1));
-    done = true;
-    act(() => { transport.emit('agent.session.events', { schemaVersion: 'rag-ime.agent-event.v1', eventId: 'task:1', sessionId: 'task', turnId: 'turn', sequence: 1, createdAtMs: Date.now(), eventType: 'turn_completed', payload: { status: 'completed' }, resumeToken: 'task:1' }); });
+    act(() => { transport.emit('agent.session.events', taskEvent('workflow_changed', { goal: taskGoal('completed', 2) })); });
     await screen.findByRole('button', { name: /检查项目.*已完成/ });
-    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(2);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(1);
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
   });
+
+  it('shares one live owner with a task detail observer and ignores a stale busy directory row', async () => {
+    const transport = new MockControlTransport({ routes: {
+      'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, status: 'busy', goal: taskGoal('active') }] },
+      'agent.session.snapshot': taskSnapshot('task', 'active'),
+    } });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ControlTransportProvider transport={transport}>
+      <PawPrimaryAssistantHome onOpen={vi.fn()} onAdvanced={vi.fn()} />
+      <TaskDetailProjection transport={transport} />
+    </ControlTransportProvider></QueryClientProvider>);
+    await screen.findByRole('button', { name: /检查项目.*任务未完成/ });
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(1);
+    act(() => { transport.emit('agent.session.events', taskEvent('workflow_changed', { goal: taskGoal('completed', 2) })); });
+    expect(await screen.findByRole('button', { name: /检查项目.*已完成/ })).toBeVisible();
+    expect(screen.getByTestId('detail-goal')).toHaveTextContent('completed:2');
+    expect(transport.activeSubscriptionCount()).toBe(1);
+  });
+
+  it('keeps a stopped or finished turn distinct from a completed goal', async () => {
+    let sequence = 0;
+    const { transport } = setup({
+      'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, goal: taskGoal('active') }] },
+      'agent.session.snapshot': () => ({ ...taskSnapshot('task', 'active'), lastSequence: sequence }),
+    });
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    act(() => { sequence = 1; transport.emit('agent.session.events', taskEvent('turn_completed', { status: 'aborted', aborted: true })); });
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(2));
+    expect(screen.getByRole('button', { name: /检查项目/ })).toHaveTextContent('任务未完成');
+    expect(screen.getByRole('button', { name: /检查项目/ })).not.toHaveTextContent('已完成');
+  });
+
+  it('does not open a stream for every active idle task when expanding the directory', async () => {
+    const tasks = Array.from({ length: 12 }, (_, index) => ({ ...task, id: `bounded-${index}`, title: `任务 ${index}`,
+      status: index === 10 ? 'busy' : 'idle', goal: taskGoal('active') }));
+    const { transport } = setup({
+      'agent.primary.ensure': { ok: true, session: primary, tasks },
+      'agent.session.snapshot': (request: ControlRequest) => ({
+        ...taskSnapshot(String(request.params?.sessionId), 'active'), status: request.params?.sessionId === 'bounded-10' ? 'busy' : 'idle',
+      }),
+    });
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(5));
+    fireEvent.click(screen.getByRole('button', { name: '查看全部 12 个任务' }));
+    expect(screen.getByRole('button', { name: /任务 11/ })).toBeVisible();
+    expect(transport.activeSubscriptionCount()).toBe(5);
+    fireEvent.focus(screen.getByRole('button', { name: /任务 6/ }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(6));
+  });
 });
+
+function taskGoal(status: 'active' | 'completed', revision = 1, sessionId = 'task') {
+  return { schemaVersion: 'rag-ime.agent-goal.v1', sessionId, configured: true,
+    goalId: 'goal', revision, status, objective: '检查项目', successCriteria: '' };
+}
+function taskSnapshot(sessionId: string, status?: 'active' | 'completed') {
+  return { sessionId, snapshotScope: 'recent', partial: true, status: 'idle', runtimeQuiescent: true,
+    messages: [], liveEvents: [], lastSequence: 0, resumeToken: `${sessionId}:0`,
+    ...(status ? { goal: taskGoal(status, 1, sessionId) } : {}) };
+}
+function taskEvent(eventType: string, payload: Record<string, unknown>) {
+  return { schemaVersion: 'rag-ime.agent-event.v1', eventId: 'task:1', sessionId: 'task', turnId: 'turn',
+    sequence: 1, createdAtMs: Date.now(), eventType, payload, resumeToken: 'task:1' };
+}
+/** The same production owner/projection used by an open detail surface. */
+function TaskDetailProjection({ transport }: { transport: MockControlTransport }) {
+  useAgentLiveSession({ sessionId: 'task', transport, snapshotView: 'recent' });
+  const goal = useAgentLiveStore(state => state.projections.task?.goal);
+  return <output data-testid="detail-goal">{goal?.status}:{goal?.revision}</output>;
+}

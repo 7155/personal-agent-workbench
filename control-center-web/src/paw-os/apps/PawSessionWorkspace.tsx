@@ -84,7 +84,7 @@ import {
   resolveConversationEntryId,
   type ConversationNode,
 } from '@/features/agent/sessions/ConversationForkDialog';
-import { agentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjection, latestActiveAgentTurnId as latestActiveTurnId, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { AgentStatusPanel } from '@/features/agent/status/AgentStatusPanel';
 import { AgentTimeline, initialAgentResponseTurnId, labProjectUserDraft, type AgentUserMessagePresentation } from '@/features/agent/timeline/AgentTimeline';
 import { QueueTray, useConversationQueue } from '@/features/conversation-ui';
@@ -175,7 +175,7 @@ export function PawSessionWorkspace({
   showComposerControls = appearance !== 'embedded',
   composerPlaceholder,
   userMessagePresentation,
-  fullHistoryOnOpen = true,
+  fullHistoryOnOpen = false,
 }: {
   active?: boolean;
   persona?: AgentPersonaV1;
@@ -205,6 +205,11 @@ export function PawSessionWorkspace({
   fullHistoryOnOpen?: boolean;
 }) {
   const transport = useControlTransport();
+  const workspaceScopeRef = useRef({ recordId, transport });
+  if (workspaceScopeRef.current.recordId !== recordId || workspaceScopeRef.current.transport !== transport) {
+    workspaceScopeRef.current = { recordId, transport };
+  }
+  const workspaceScope = workspaceScopeRef.current;
   const electronHost = pawBrowserHost();
   const desktop = usePawOsDesktop();
   const windowChromeTarget = usePawWindowChromeTarget();
@@ -310,8 +315,19 @@ export function PawSessionWorkspace({
   useEffect(() => { setAttachmentError(''); }, [recordId]);
   const [syncError, setSyncError] = useState('');
   const [syncState, setSyncState] = useState<AgentRecoveryState>('recovering');
-  const [hasSnapshot, setHasSnapshot] = useState(false);
-  useEffect(() => { setSyncError(''); setSyncState('recovering'); setHasSnapshot(false); }, [recordId]);
+  // Visible history is independent of command admission. A background expansion
+  // does not revoke an accepted recent snapshot, and an old owner cannot grant it.
+  const [historyRead, setHistoryRead] = useState<{
+    scope: typeof workspaceScope; view?: 'recent' | 'full'; expanding?: boolean;
+  }>();
+  const hasSnapshot = historyRead?.scope === workspaceScope && Boolean(historyRead.view);
+  const contextSnapshotState = historyRead?.scope === workspaceScope && historyRead.expanding
+    ? 'restoring' : hasSnapshot && historyRead?.view === 'full' ? undefined : 'partial';
+  useEffect(() => {
+    setSyncError(''); setSyncState('recovering'); setHistoryRead(undefined);
+    setCatalog(undefined); setTools([]); setCommands([]); setCapabilityCatalog(undefined);
+    setCapabilityCatalogError(''); setToolCatalogStatus('loading');
+  }, [recordId, transport]);
   const visibleError = error || compactionStopError || (syncError && (!hasSnapshot || syncState === 'failed')
     ? '连接暂时不可用，系统会继续自动重连。' : '');
   const [modelPickerRequest, setModelPickerRequest] = useState(0);
@@ -337,7 +353,6 @@ export function PawSessionWorkspace({
   const [jumpRequest, setJumpRequest] = useState<{ messageId: string; requestId: number }>();
   const [timelineFollow, setTimelineFollow] = useState({ following: true, unseenUpdates: 0 });
   const [scrollToLatestRequest, setScrollToLatestRequest] = useState(0);
-  const [contextSnapshotState, setContextSnapshotState] = useState<'restoring' | 'partial'>();
   const toolMenuContainerRef = useRef<HTMLDivElement>(null);
   const toolMenuButtonRef = useRef<HTMLButtonElement>(null);
   const toolMenuRef = useRef<HTMLElement>(null);
@@ -345,6 +360,7 @@ export function PawSessionWorkspace({
   const primaryRef = useRef<HTMLDivElement>(null);
   const terminalSnapshotTimerRef = useRef<number | undefined>(undefined);
   const catalogAbortRef = useRef<AbortController | undefined>(undefined);
+  const catalogRequestRef = useRef(0);
   const loadAgentSnapshotRef = useRef<AgentLiveSnapshotLoader>(
     async () => false,
   );
@@ -387,49 +403,56 @@ export function PawSessionWorkspace({
 
   const loadFullSnapshot = useCallback(async (): Promise<void> => {
     if (!liveActive) return;
-    setContextSnapshotState('restoring');
-    const loaded = await loadAgentSnapshotRef.current({ view: 'full' });
-    if (!loaded) setContextSnapshotState('partial');
-  }, [liveActive]);
+    const scope = workspaceScope;
+    const load = loadAgentSnapshotRef.current;
+    if (workspaceScopeRef.current !== scope) return;
+    setHistoryRead(current => ({ ...(current?.scope === scope ? current : {}), scope, expanding: true }));
+    const loaded = await load({ view: 'full' });
+    if (workspaceScopeRef.current !== scope) return;
+    if (!loaded) setHistoryRead(current => current?.scope === scope ? { ...current, expanding: false } : current);
+  }, [liveActive, workspaceScope]);
 
   const loadControlCatalog = useCallback(async (signal?: AbortSignal) => {
-    if ((!liveActive && !signal) || signal?.aborted) return;
+    const scope = workspaceScope;
+    if ((!liveActive && !signal) || signal?.aborted || workspaceScopeRef.current !== scope) return;
+    const requestId = ++catalogRequestRef.current;
+    const isCurrent = () => workspaceScopeRef.current === scope && requestId === catalogRequestRef.current && !signal?.aborted;
     setToolCatalogStatus('loading');
     // Publish each independent catalog as it arrives. A slow model/command
     // lookup must not keep the already-confirmed memory and tool switches hidden.
     const requestOptions = signal ? { signal } : {};
     await Promise.allSettled([
       transport.request({ pathId: 'agent.session.models', params: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (!signal?.aborted && isModelCatalog(value)) setCatalog(value);
+        if (isCurrent() && isModelCatalog(value)) setCatalog(value);
       }),
       transport.request({ pathId: 'agent.session.commands', params: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (!signal?.aborted) setCommands(commandItems(value));
+        if (isCurrent()) setCommands(commandItems(value));
       }),
       transport.request({ pathId: 'agent.tools.list', query: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (signal?.aborted) return;
+        if (!isCurrent()) return;
         setTools(toolItems(value));
         setCapabilityCatalog(requireSessionCapabilityCatalog(value, recordId));
         setCapabilityCatalogError('');
         setToolCatalogStatus('ready');
       }).catch((reason: unknown) => {
-        if (signal?.aborted) return;
+        if (!isCurrent()) return;
         setTools([]);
         setCapabilityCatalog(undefined);
         setCapabilityCatalogError(errorText(reason));
         setToolCatalogStatus('failed');
       }),
       transport.request<Record<string, unknown>>({ pathId: 'agent.runtime.get', ...requestOptions }).then((value) => {
-        if (signal?.aborted) return;
+        if (!isCurrent()) return;
         const capabilities = asRecord(value.capabilities);
         setConversationForkAvailable(capabilities.conversationFork === true);
         setConversationRewriteAvailable(capabilities.conversationRewrite === true);
       }).catch(() => {
-        if (signal?.aborted) return;
+        if (!isCurrent()) return;
         setConversationForkAvailable(false);
         setConversationRewriteAvailable(false);
       }),
     ]);
-  }, [liveActive, recordId, transport]);
+  }, [liveActive, recordId, transport, workspaceScope]);
 
   const refreshControlCatalog = useCallback(() => {
     if (evaluationSnapshot || !liveActive) return;
@@ -450,15 +473,17 @@ export function PawSessionWorkspace({
     onLoadingChange: setLoading,
     onRecoveryState: setSyncState,
     onSnapshot: (snapshot) => {
-      setHasSnapshot(true);
+      setHistoryRead(current => ({
+        scope: workspaceScope,
+        view: current?.scope === workspaceScope && current.view === 'full' ? 'full' : snapshot.view,
+      }));
       setSyncError('');
-      setContextSnapshotState(snapshot.view === 'recent' ? 'partial' : undefined);
       // A transcript snapshot cannot confirm that a captured process drained.
       setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
       refreshControlCatalog();
     },
     onSnapshotError: (failure) => {
-      setContextSnapshotState('partial');
+      setHistoryRead(current => current?.scope === workspaceScope ? { ...current, expanding: false } : current);
       if (isAgentWorkspaceMissingError(failure.error)) {
         setError(errorText(failure.error));
       } else {
@@ -479,6 +504,7 @@ export function PawSessionWorkspace({
         }
         terminalSnapshotTimerRef.current = window.setTimeout(() => {
           terminalSnapshotTimerRef.current = undefined;
+          if (workspaceScopeRef.current !== workspaceScope) return;
           void loadAgentSnapshotRef.current({
             preserveAfterSequence: event.sequence,
           });
@@ -508,7 +534,7 @@ export function PawSessionWorkspace({
     },
     onConnectionError: (_sessionId, reason) => {
       setStopping(false);
-      setContextSnapshotState('partial');
+      setHistoryRead(current => current?.scope === workspaceScope ? { ...current, expanding: false } : current);
       setSyncError(errorText(reason));
     },
     onConnectionRestored: () => { if (hasSnapshot) setSyncError(''); },
@@ -516,13 +542,14 @@ export function PawSessionWorkspace({
   loadAgentSnapshotRef.current = loadAgentSnapshot;
 
   useEffect(() => () => {
+    catalogRequestRef.current += 1;
     catalogAbortRef.current?.abort();
     catalogAbortRef.current = undefined;
     if (terminalSnapshotTimerRef.current !== undefined) {
       window.clearTimeout(terminalSnapshotTimerRef.current);
       terminalSnapshotTimerRef.current = undefined;
     }
-  }, [liveActive, recordId]);
+  }, [liveActive, recordId, transport]);
 
   async function reconcileSessionForAction(): Promise<SessionSummary | undefined> {
     let canonical = record;
@@ -712,9 +739,9 @@ export function PawSessionWorkspace({
 
   useEffect(() => {
     if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
-      || loading || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
+      || !hasSnapshot || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
     void send('prompt', initialSubmission.message, initialSubmission.message, initialSubmission.clientMessageId);
-  }, [initialSubmission, loading, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
+  }, [initialSubmission, hasSnapshot, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
 
   async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft, initialClientMessageId?: string): Promise<void> {
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
@@ -2013,33 +2040,6 @@ function timelineOwnsTurnFailure(
   if (message?.status !== 'failed') return false;
   if (projection.turnOrder.at(-1) !== message.turnId) return false;
   return projection.turnsById[message.turnId]?.status === 'failed';
-}
-
-function latestActiveTurnId(projection?: AgentProjectionState): string {
-  if (!projection) return '';
-  // A rejected follow-up is not a terminal fence for Pi's ongoing retry.
-  if (projection.status === 'retrying') {
-    for (const id of [...projection.activityOrder].reverse()) {
-      const activity = projection.activitiesById[id];
-      if (activity?.payload.phase === 'provider_retry' && activity.status === 'running'
-        && projection.turnsById[activity.turnId]?.status === 'running') return activity.turnId;
-    }
-  }
-
-  /* The newest visible turn is a terminal fence. An older turn can retain a
-     stale running flag after recovery, but it must never revive the composer,
-     stop button or planet once a later turn has completed. Keep this aligned
-     with the canonical Agent surface instead of scanning backward for any
-     historical active status. */
-  for (let index = projection.turnOrder.length - 1; index >= 0; index -= 1) {
-    const turnId = projection.turnOrder[index] ?? '';
-    const turn = projection.turnsById[turnId];
-    if (!turn || (turn.messageIds.length === 0 && turn.activityIds.length === 0)) continue;
-    // A maintenance timeline row is never an original-input control target.
-    if (!turn.messageIds.length && turn.activityIds.every(id => projection.activitiesById[id]?.kind === 'context_compaction')) return '';
-    return ['queued', 'running', 'waiting'].includes(turn.status) ? turnId : '';
-  }
-  return '';
 }
 
 function latestWaitingActivity(

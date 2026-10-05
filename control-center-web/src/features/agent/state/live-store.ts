@@ -20,6 +20,26 @@ import {
 import type { UiAgentEvent } from '@/contracts/ui-events';
 
 type AgentLiveProjection = AgentProjectionState & { recoveryCursor?: number };
+
+/** Shared by task summaries and the Session composer; old turns cannot revive work. */
+export function latestActiveAgentTurnId(projection?: AgentProjectionState): string {
+  if (!projection) return '';
+  if (projection.status === 'retrying') {
+    for (const id of [...projection.activityOrder].reverse()) {
+      const activity = projection.activitiesById[id];
+      if (activity?.payload.phase === 'provider_retry' && activity.status === 'running'
+        && projection.turnsById[activity.turnId]?.status === 'running') return activity.turnId;
+    }
+  }
+  for (let index = projection.turnOrder.length - 1; index >= 0; index -= 1) {
+    const turnId = projection.turnOrder[index] ?? '';
+    const turn = projection.turnsById[turnId];
+    if (!turn || (turn.messageIds.length === 0 && turn.activityIds.length === 0)) continue;
+    if (!turn.messageIds.length && turn.activityIds.every(id => projection.activitiesById[id]?.kind === 'context_compaction')) return '';
+    return ['queued', 'running', 'waiting'].includes(turn.status) ? turnId : '';
+  }
+  return '';
+}
 interface AgentSnapshotHydrationOptions {
   /** Only a read started by the recovery owner after this control may rewind. */
   recoveryCursor?: number;

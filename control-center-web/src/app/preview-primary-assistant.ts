@@ -65,9 +65,14 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
     const id = String(request.params?.sessionId); const history = histories.get(id);
     if (!history && id.startsWith('session-primary-preview-')) return { sessionId: id, runtimeEngine: 'classic', messages: [], liveEvents: [], lastSequence: 0, status: 'idle', runtimeQuiescent: true };
     if (!history) return call(originalSnapshot, request);
+    const session = sessions.find(item => item.id === id);
+    const goal = record(session?.goal);
     return { sessionId: id, runtimeEngine: 'classic', messages: [...history.messages], liveEvents: [...history.events],
       lastSequence: history.events.length, resumeToken: `${id}:${history.events.length}`, status: history.active ? 'busy' : 'idle',
-      goal: sessions.find(item => item.id === id)?.goal, runtimeQuiescent: !history.active };
+      ...(goal.goalId ? { goal: { ...goal, schemaVersion: 'rag-ime.agent-goal.v1', sessionId: id, configured: true,
+        evidenceExpectations: [], budget: { tokenLimit: null, timeLimitMs: null }, usage: { tokens: 0, elapsedMs: 0 },
+        remaining: { tokens: null, timeMs: null }, budgetExceeded: false, completionAudit: null, cancellationAudit: null,
+        updatedAtMs: session?.updatedAtMs } } : {}), runtimeQuiescent: !history.active };
   };
   routes['agent.session.prompt'] = (request: ControlRequest) => {
     const id = String(request.params?.sessionId); const history = histories.get(id);
@@ -89,7 +94,7 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
       message(id, turnId, 'assistant', text, clientId);
       history.active = undefined; session.status = 'idle'; session.lastMessagePreview = text; session.lastTerminalTurnId = turnId;
       session.messageCount = history.messages.length;
-      if (task) session.goal = { ...record(session.goal), status: 'completed' };
+      if (task) session.goal = { ...record(session.goal), status: 'completed', revision: Number(record(session.goal).revision) + 1 };
       event(id, turnId, 'turn_completed', { summary: '演示完成', status: 'completed' });
     }, task ? 4000 : 150);
     return { ok: true, accepted: true, sessionId: id, clientMessageId: clientId };
