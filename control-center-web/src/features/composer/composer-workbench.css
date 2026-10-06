@@ -43,11 +43,14 @@
 .agent-composer[data-composer-design='workbench'] .agent-composer__actions { display: flex; flex: none; align-items: center; gap: 7px; margin-left: auto; }
 .agent-composer[data-composer-design='workbench'] .agent-composer__controls :is(button, .an-chip) {
   min-height: 32px; max-width: 100%; box-sizing: border-box; border-radius: var(--radius-2);
-  font-family: var(--wb-font); font-size: 12px; line-height: 1.4;
+  font-family: var(--wb-font); font-size: var(--text-label); font-weight: var(--font-weight-regular); line-height: var(--text-label-lh); letter-spacing: var(--tracking-body);
 }
 .agent-composer[data-composer-design='workbench'] .agent-composer__controls :is(button, .an-chip):not(:disabled):hover { background-color: var(--wb-hover); }
 .agent-composer[data-composer-design='workbench'] .agent-composer__controls > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 8px; border: 0; color: var(--wb-muted); background: transparent; }
 .agent-composer[data-composer-design='workbench'] .agent-composer__controls :is(button, .an-chip) > svg { flex: none; width: 15px; height: 15px; }
+.agent-composer[data-composer-design='workbench'] .agent-composer__picker .ui-button__label { align-items: center; gap: 6px; min-width: 0; }
+.agent-composer[data-composer-design='workbench'] .agent-composer__picker-thinking { margin-inline-start: 0; font-size: inherit; font-weight: inherit; line-height: inherit; color: var(--wb-muted); }
+.agent-composer[data-composer-design='workbench'] .agent-composer__picker .caret { flex: none; }
 .agent-composer[data-composer-design='workbench'] .agent-composer__actions > button { flex: none; }
 .paw-desktop-root .agent-composer[data-composer-design='workbench'] .agent-composer__send,
 .agent-composer[data-composer-design='workbench'] .agent-composer__send {
@@ -85,12 +88,12 @@
   overflow: hidden; white-space: nowrap; clip-path: inset(50%);
 }
 @container workbench-composer (max-width: 460px) {
+  .paw-desktop-root .agent-composer[data-composer-design='workbench'] textarea,
   .agent-composer[data-composer-design='workbench'] textarea { padding: 14px 48px 10px 14px; font-size: 16px; }
   .agent-composer[data-composer-design='workbench'] :is(.agent-composer__controls button, .agent-composer__editor > button) { min-width: 40px; min-height: 40px; }
   .agent-composer[data-composer-design='workbench'] .agent-composer__send { min-width: 44px; min-height: 44px; }
   .agent-composer[data-composer-design='workbench'] .agent-composer__toolbar { gap: 7px; padding: 4px 7px 7px; }
   .agent-composer[data-composer-design='workbench'] .agent-composer__controls { gap: 1px; }
-  .agent-composer[data-composer-design='workbench'] .agent-composer__controls :is(button, .an-chip) { font-size: 12px; }
   .agent-composer[data-composer-design='workbench'] .room-composer__count > span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .agent-composer[data-composer-design='workbench'] *, .agent-composer[data-composer-design='workbench'] { transition: none !important; animation: none !important; } }

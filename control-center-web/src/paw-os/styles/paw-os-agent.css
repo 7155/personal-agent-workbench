@@ -762,7 +762,7 @@
     0 0 0 4px color-mix(in srgb, var(--paw-chat-accent) 9%, transparent);
 }
 
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer textarea {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer:not([data-composer-design='workbench']) textarea {
   min-height: 40px;
   max-height: 120px;
   padding: 13px 15px 3px;
