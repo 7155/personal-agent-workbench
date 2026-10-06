@@ -309,8 +309,14 @@
 }
 
 /* Only reserve room for a page toolbar when the page actually renders one. */
-.paw-desktop-root .paw-system-app__stage:has(.mgmt-page__native-actions) .paw-system-app__chrome {
+.paw-desktop-root .paw-system-app__stage:not([data-switching]):has(.mgmt-page__native-actions) .paw-system-app__chrome {
   padding-inline-end: var(--paw-stage-actions);
+}
+
+/* The retained page is inert during a handoff. Its absolute toolbar must
+   yield the band to the switch status until the selected page is ready. */
+.paw-desktop-root .paw-system-app__stage[data-switching] .mgmt-page__native-actions {
+  visibility: hidden;
 }
 
 @keyframes paw-system-chrome-in {
@@ -1266,7 +1272,7 @@
 
   /* The band keeps the page name and gives up the purpose line first. */
   .paw-desktop-root .paw-system-app__page-purpose { display: none; }
-  .paw-desktop-root .paw-system-app__stage:has(.mgmt-page__native-actions) .paw-system-app__chrome {
+  .paw-desktop-root .paw-system-app__stage:not([data-switching]):has(.mgmt-page__native-actions) .paw-system-app__chrome {
     padding-inline-end: 104px;
   }
 
@@ -1352,7 +1358,7 @@
   .paw-desktop-root .paw-system-app :is(.ui-button, button) { transition: none; }
 }
 
-.paw-system-app__switching { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--paw-muted); font-size: 11px; }
+.paw-system-app__switching { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--paw-muted); font-size: 12px; }
 
 /* Window navigation already names each console. Keep the outer reading group
    open; independent package/list items and form controls own their boundaries. */

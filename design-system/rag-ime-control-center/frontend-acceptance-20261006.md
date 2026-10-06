@@ -583,3 +583,22 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 最终 Files 与 preview transport 两完整文件共 93 项通过；shared chrome 静态 guard 扩展 Files 覆盖，新增覆盖先失败，最后选中 1 项通过（74 项未选）。本批完整 Files/CSS 检查为 124 通过、3 失败，其中 CSS 72 通过、3 失败；三个失败在固定 `c2058493` 上同样出现，基线证据 `/tmp/paw-css-baseline-c2058493-result-v2.txt`，不是全套 CSS 通过。正式 `pnpm typecheck` exit=0；owner/import/route 与 diff 检查通过。没有追 CI。
 - 截图与逐页 JSON 仍在被忽略的 `reports/frontend-audit-20261006/`，没有 force-add 大型原图目录。Library 保持 STOP：15 文件 43.8MB 的原清单 SHA256 为 `d2dcb49ae714ab3e11259a41da3345279e3d758d1ae61bf921ad5ba4ab1f09f2`，再次核对未变；403 发生在官方代理 CONNECT、TLS 和 tools/list 之前。未重建清单、重试/改代理或生成新 Library ID，原七个 C8 ID 保留。
 - 真实后端、原生 Electron/PTY/捕获、真实模型复杂任务和未安装的 Earth Research 内页仍未通过；公开模拟与故障注入均标明来源。未读/输出凭证，未新开付费测试或归零账本：已知估算 USD 0.1939704，本轮未知保留 USD 87.552，前轮未知保留 USD 116.736 继续保留。GH review API 原有访问限制未解除，未读取或宣称已解决原 review thread；未追 CI、强推、另开 PR、使用 admin 或合并 main。
+
+## 继续打磨：三项 CSS 失败与新增可达页实证
+
+用户再次明确继续，从远端已核实 `65b76cfe4a5cf344b546609fb38e07741a068566` 接续；未新开环境、分支或 PR。
+
+| 原失败 | 判断与代码证据 | 实现与断言处理 |
+| --- | --- | --- |
+| system-apps readable roles | `.paw-system-app__switching` 确实仍为 11px，违反 MASTER 的辅助文字 ≥12px；不是过时断言 | 所有者改为 12px，保留原字体底线断言。三宽度实测 computed=12px、颜色 rgb(93,102,117) |
+| Agent Home send final column | 原断言要求五列固定 32px，现有可达“新建独立对话或多人协作”页已采用配置换行区 + 独立发送列；断言过时。但实测另有手机 36px 发送、30×28px 模式、34px 配置控件的问题 | 保留双列和原控件；发送列与按钮共享 `max(36px, var(--paw-window-control-size,32px))`，模式/配置/项目命中区同步。断言继续检查独立列、配置可收缩换行、按钮尺寸来自同一 token 和不靠负 margin 定位，未删除检查 |
+| narrow Agent chrome / tool surface | 原断言硬编码 28px 和半高 `min(52%,340px)` 抽屉；当前视图已由原 Popover 承载，窄窗抽屉已有完整高度。实测实际工具按钮仍为桌面 26px/29px、紧凑 26px/29px、手机 40px，确实需修 | 标题栏视图/完整记录/工具入口继承 32/40/44px；视图 Popover 使用 ≥40px、手机 44px，保留共享所有者及返回焦点。更新旧断言检查 token、标签折叠、零宽 caption 列和全高抽屉，补实际 Popover/触发器所有者约束 |
+
+- 当前源码三项先复现失败，见 `/tmp/paw-css-three-current-red.txt`。本批最终 CSS 全文件 **75/75 通过**，此前“三项基线失败”不再作为当前结论；旧失败文件与记录保留。
+- `css-three-failures-before.json` 六组真实 Chromium：390/768/1440 × normal/reduce，全组首页/Session 目标检查失败；无页面横向溢出。正常动效抽屉的首帧在入场中，原 before 的边界不代表稳定状态；减少动效三组均在窗口内，未把它误判为新的稳定溢出。
+- `css-three-failures-final.json` 六组首页、Session 标题栏目标与可命中/在所属区域内检查全部通过；手机首页输入 computed=16px。实点 Room/Session 切换保留草稿、配置/项目弹层 Escape 回焦点、视图菜单→Agent 轨迹→对话、文件抽屉→Escape；最终稳定抽屉均在原窗口内。正常动效菜单的初始测量仍含 scale 入场，只有 reduce 组的菜单高度是稳定 44/40/40px，不把初帧数值改写成稳定值。首页与抽屉的手机/紧凑前后图已实际查看。
+- 三宽度自然切页实测还发现手机“正在切换…”与上一页高级设置工具重叠；`css-status-switching-before-layout.json` 手机 overlap=true，另两组 false。沿原 `switchingPage` 投影 stage 的 data-switching，等待时隐藏原本已 inert 的旧页绝对工具栏、取消该工具栏预留 padding；没有第二个切页状态或延迟期限。
+- `css-status-switching-final-layout.json` 三宽度 status=12px、visibleOldTools=0、overlap=false、切换完成；手机 before/final 原图均已实际查看。脚本尝试延迟 lazy 模块，实际 held=false，因此这些是自然切页证据，不称为成功延迟注入。
+- 本地完整 CSS/Home 两文件 106 项通过（75+31）；最后 System Apps/CSS 两文件 115 项通过（40+75，CSS 重复不重复累计）；原 Session 工具菜单/侧栏/键盘焦点选中五项通过、125 未选。第一次命令中的不存在的 paw-session-tools 文件没有运行，报告按实际两个文件计数；后续使用真正的 PawSessionWorkspace 文件补验。正式 `pnpm typecheck`、owner/import/route 和 diff 检查通过。
+- 新建独立页的“复工服务尚未提供有效状态”“部分 Agent 目录暂时不可用”仍需核查公开演示读契约。晚于预热的 prototype 探针没有截获失败，不能据 reads=[] 把界面错误称为已恢复；下一批继续从首次加载与契约位置核对。本批先交付已验证的 CSS/目标/切页修复。
+- Library STOP、原 15 文件清单/ZIP/SHA、七个旧 ID 与费用未知保留均不变；没有付费请求、CI、宿主或模型通过声明。

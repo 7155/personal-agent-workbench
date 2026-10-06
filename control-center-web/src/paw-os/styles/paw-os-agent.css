@@ -1521,7 +1521,7 @@
 
 /* Portalled Session chrome is sized by the window, not the viewport. At the
    720px acceptance viewport the usable frame is roughly 706px; compact the
-   three view labels before they can paint outside their 28px buttons. */
+   three view labels before they can paint outside their compact buttons. */
 @container paw-window (max-width: 760px) {
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__identity > div > small {
     display: none;
@@ -1529,8 +1529,8 @@
 
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__view-switch button,
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button {
-    width: 32px;
-    min-height: 32px;
+    width: var(--paw-window-control-size, 32px);
+    min-height: var(--paw-window-control-size, 32px);
     justify-content: center;
     padding-inline: 0;
   }
@@ -1853,5 +1853,5 @@
 }
 
 @container paw-window (max-width: 500px) {
-  .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button { width: 40px; min-height: 40px; }
+  .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button { width: var(--paw-window-control-size, 32px); min-height: var(--paw-window-control-size, 32px); }
 }

@@ -77,9 +77,11 @@ describe('PawSystemApps', () => {
     await user.click(screen.getByRole('button', { name: '配置' }));
     expect(screen.getByRole('heading', { name: '审批真实界面' })).toBeVisible();
     expect(screen.getByText('正在切换…')).toBeInTheDocument();
+    expect(screen.getByText('正在切换…').closest('.paw-system-app__stage')).toHaveAttribute('data-switching', 'true');
     expect(screen.getByRole('heading', { name: '审批真实界面' }).closest('.paw-system-app__page')).toHaveAttribute('inert');
     await user.click(screen.getByRole('button', { name: '治理' }));
     await screen.findByRole('heading', { name: '治理真实界面' });
+    expect(screen.getByRole('heading', { name: '治理真实界面' }).closest('.paw-system-app__stage')).not.toHaveAttribute('data-switching');
     await act(async () => { configurationLoad.pending = null; release(); });
     expect(screen.getByRole('heading', { name: '治理真实界面' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: '配置真实界面' })).not.toBeInTheDocument();

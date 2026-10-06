@@ -30,6 +30,7 @@
   --an-mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
   --an-ease-out: cubic-bezier(.16, 1, .3, 1);
   --an-spring: cubic-bezier(.22, 1, .36, 1);
+  --an-control-size: max(36px, var(--paw-window-control-size, 32px));
   color: var(--an-ink);
   font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif);
   font-size: 14px;
@@ -70,7 +71,7 @@
 .an-composer-foot {
   container: an-home-composer / inline-size;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr) var(--an-control-size);
   align-items: end;
   gap: 8px;
   min-height: 52px;
@@ -81,13 +82,14 @@
 .an-composer-controls > .an-mode-seg { flex: none; }
 .an-composer-controls > .an-anchor { width: auto; max-width: 100%; flex: 0 1 auto; }
 .an-composer-controls > .an-model-anchor { flex: 1 1 160px; min-width: min(160px, 100%); }
-.an-composer-controls .an-chip { width: auto; min-height: 34px; }
+.an-composer-controls .an-chip { width: auto; min-height: var(--an-control-size); }
 .an-composer-controls .an-model-chip { width: 100%; justify-content: flex-start; }
 .an-composer-controls .an-project-chip { max-width: 180px; }
 .an-mode-seg,
 .an-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--an-hairline); border-radius: 8px; background: var(--an-paper-soft); }
+.an-mode-seg button { min-width: var(--an-control-size); }
 .an-mode-seg button,
-.an-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 3px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--an-ink-2); font-size: 12.5px; font-weight: 650; transition: background 140ms ease, color 140ms ease, transform 160ms var(--an-spring); }
+.an-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--an-control-size); padding: 3px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--an-ink-2); font-size: 12.5px; font-weight: 650; transition: background 140ms ease, color 140ms ease, transform 160ms var(--an-spring); }
 .an-mode-seg button:hover,
 .an-seg button:hover { color: var(--an-ink); }
 .an-mode-seg button[aria-checked="true"] { background: var(--an-paper-bright); color: var(--an-ink); box-shadow: 0 1px 3px rgba(24, 32, 43, .12); }
@@ -118,7 +120,7 @@
 .an-chip .paw-mark,
 .an-mode-seg .paw-app-icon { flex: none; }
 .an-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.an-send { display: grid; width: 36px; height: 36px; margin-left: 0; justify-self: end; place-items: center; border: 0; border-radius: 10px; background: var(--an-ink); color: var(--an-paper-bright); transition: transform 140ms var(--an-spring), opacity 140ms ease, background 140ms ease; }
+.an-send { display: grid; width: var(--an-control-size); height: var(--an-control-size); margin-left: 0; justify-self: end; place-items: center; border: 0; border-radius: 10px; background: var(--an-ink); color: var(--an-paper-bright); transition: transform 140ms var(--an-spring), opacity 140ms ease, background 140ms ease; }
 .an-send:hover:not(:disabled) { background: var(--an-cobalt); }
 .an-send:active:not(:disabled) { transform: translateY(0) scale(.96); }
 .an-send:disabled { opacity: .34; }
@@ -452,14 +454,14 @@
 /* Configuration wraps independently; the send column never participates in
    chip placement. Keep model/loading labels readable at narrow App widths. */
 @container an-home-composer (max-width: 560px) {
-  .an-composer-controls .an-project-chip { width: 34px; min-width: 34px; padding: 0; justify-content: center; }
+  .an-composer-controls .an-project-chip { width: var(--an-control-size); min-width: var(--an-control-size); padding: 0; justify-content: center; }
   .an-project-chip :is(.an-chip-text, .caret) { display: none; }
 }
 
 @container an-home-composer (max-width: 420px) {
   .an-mode-seg button {
-    width: 30px;
-    min-width: 30px;
+    width: var(--an-control-size);
+    min-width: var(--an-control-size);
     padding-inline: 0;
   }
 
@@ -534,3 +536,7 @@
 .an-turn-context__disclosure > summary h2 { flex: 1; }
 .an-turn-context__disclosure > summary > span { color: var(--an-ink-3); font-size: 12px; }
 .an-turn-context__disclosure[data-expanded="true"] > summary .an-disclosure-caret { transform: rotate(90deg); }
+
+@container paw-agent-shell (max-width: 480px) {
+  .an-composer textarea { font-size: 16px; }
+}

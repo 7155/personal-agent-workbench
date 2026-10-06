@@ -239,7 +239,7 @@ export function PawSystemApps({
           </nav>
         </aside>
 
-        <section className="paw-system-app__stage">
+        <section className="paw-system-app__stage" data-switching={switchingPage || undefined}>
           <header className="paw-system-app__chrome" key={page.id}>
             <span aria-hidden="true" className="paw-system-app__page-title">
               {page.group ? `${page.group} · ${page.label}` : page.label}
