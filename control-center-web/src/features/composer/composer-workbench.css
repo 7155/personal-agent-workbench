@@ -95,3 +95,8 @@
 }
 @media (prefers-reduced-motion: reduce) { .agent-composer[data-composer-design='workbench'] *, .agent-composer[data-composer-design='workbench'] { transition: none !important; animation: none !important; } }
 [data-reduce-motion='true'] .agent-composer[data-composer-design='workbench'] *, [data-reduce-motion='true'] .agent-composer[data-composer-design='workbench'] { transition: none !important; animation: none !important; }
+
+@container workbench-composer (max-width: 460px) {
+  .paw-desktop-root .agent-composer[data-composer-design='workbench'] :is(.agent-composer__controls button, .agent-composer__editor > button) { min-width: 40px; min-height: 40px; }
+  .paw-desktop-root .agent-composer[data-composer-design='workbench'] .agent-composer__send { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}

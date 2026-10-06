@@ -1,3 +1,4 @@
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import type { InitialSessionSubmission } from './agent-workspace-loader';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, installationChangeMatchesTransport } from '@/paw-os/extensions/installation';
 import { capabilityCatalogQueryOptions, observeCatalogQuery, pluginQueryKeys, prepareCatalogRefresh, readCatalogQuery, useCatalogQueryClient } from '@/features/plugins/catalog-queries';
@@ -1711,12 +1712,17 @@ export function PawSessionWorkspace({
             <small>Session · {workspaceRecord.mode === 'coordinator' ? '协调' : '单聊'}</small>
           </div>
         </div> : null}
-        {!evaluationSnapshot && controlsExpanded ? <nav aria-label="当前 Session 视图" className="paw-session-workspace__view-switch">
-          <button aria-label="对话" aria-pressed={workspaceView === 'conversation'} onClick={() => { setWorkspaceView('conversation'); setPanel('none'); setToolMenuOpen(false); }} type="button"><MessageSquare size={15} /><span>对话</span></button>
-          <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setToolMenuOpen(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
-          <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setToolMenuOpen(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
-        </nav> : evaluationSnapshot ? <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span> : null}
-        {!evaluationSnapshot ? <button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起对话控件' : '展开对话控件'} onClick={() => setControlsExpanded(value => !value)}><ChevronDown size={15} /><span>视图</span></button> : null}
+        {!evaluationSnapshot ? <Popover open={controlsExpanded} onOpenChange={setControlsExpanded}>
+          <PopoverTrigger asChild><button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起对话控件' : '展开对话控件'}><ChevronDown size={15} /><span>视图</span></button></PopoverTrigger>
+          <PopoverContent align="end" className="paw-session-view-popover" aria-label="对话视图">
+            <nav aria-label="当前 Session 视图" className="paw-session-workspace__view-switch">
+              <button aria-label="对话" aria-pressed={workspaceView === 'conversation'} onClick={() => { setWorkspaceView('conversation'); setPanel('none'); setControlsExpanded(false); }} type="button"><MessageSquare size={15} /><span>对话</span></button>
+              <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setControlsExpanded(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
+              <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setControlsExpanded(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
+            </nav>
+            <button className="paw-session-view-popover__history" disabled={contextSnapshotState === 'restoring'} onClick={() => { setControlsExpanded(false); void loadFullSnapshot(); }} type="button"><History size={15} />加载完整记录</button>
+          </PopoverContent>
+        </Popover> : <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span>}
         <div className="paw-session-workspace__runtime">
           <span data-context={contextSnapshotState}><i />{evaluationSnapshot
             ? '只读证据'
@@ -1733,7 +1739,7 @@ export function PawSessionWorkspace({
               : contextSnapshotState === 'partial'
                 ? '最近消息'
                 : '已同步'}</span>
-          {!evaluationSnapshot && (controlsExpanded || contextSnapshotState === 'partial' || contextSnapshotState === 'restoring') ? (
+          {!evaluationSnapshot && (contextSnapshotState === 'partial' || contextSnapshotState === 'restoring') ? (
             <button
               aria-label="加载完整记录"
               className="paw-session-history-load"
@@ -2013,8 +2019,8 @@ export function PawSessionWorkspace({
           </div>
         </div>
 
-        {/* 工具侧栏是一层浮卡：只覆盖在消息流之上，绝不挤压对话列。
-            在浮层内按 Esc 关闭并把焦点还给“对话工具”触发钮。 */}
+        {/* Wide windows place files beside the conversation; compact windows use
+            the same labelled drawer. Close and Escape return to its trigger. */}
         {!evaluationSnapshot && !embedded && (panel !== 'none' || statusPanelVisited) ? <aside
           aria-hidden={panel === 'none' || undefined}
           className="paw-session-workspace__side"
@@ -2029,17 +2035,14 @@ export function PawSessionWorkspace({
           }}
         >
           {panel === 'files' ? (
-            <>
-              {!evaluationSnapshot && !workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (
-                <ProjectQuickActions active={active && liveActive && !loading && panel === 'files'} compact context={{
+            <AgentFilesPanel
+              key={agentProjectionKey(address)}
+              toolbar={!workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (<ProjectQuickActions active={active && liveActive && !loading && panel === 'files'} compact context={{
                   projectId: recordId,
                   title: workspaceRecord.title || recordId,
                   sessionId: recordId,
                   cwd: workspaceRecord.workspaceRoots[0],
-                }} />
-              ) : null}
-            <AgentFilesPanel
-              key={agentProjectionKey(address)}
+                }} />) : undefined}
               sessionId={recordId}
               workspaceRoots={workspaceRecord.workspaceRoots ?? []}
               rootsLockedReason={permissionsLocked ? '工作区已在开始时确定。要使用其他目录，请返回入口新建工作。' : undefined}
@@ -2047,7 +2050,6 @@ export function PawSessionWorkspace({
               onClose={closeToolPanel}
               onManageRoots={() => void manageWorkspaceRoots()}
             />
-            </>
           ) : panel === 'subagents' ? (
             <SessionSubagentPanel
               sessionId={recordId}

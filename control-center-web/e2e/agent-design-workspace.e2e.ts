@@ -9,7 +9,7 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await message.fill('保留这段尚未发送的文字');
   await expect(app.getByRole('region', { name: 'Session 对话' }).locator('.project-quick-actions')).toHaveCount(0);
   await app.getByRole('button', { name: '展开对话控件' }).click();
-  await expect(app.getByRole('navigation', { name: '当前 Session 视图' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '当前 Session 视图' })).toBeVisible();
   await expect(app.getByRole('button', { name: '打开对话文件' })).toHaveCount(0);
   const tools = app.getByRole('button', { name: '对话工具', exact: true });
   await tools.focus();
@@ -25,7 +25,7 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await expect(panel.getByRole('region', { name: '项目快速动作' })).toBeVisible();
   await expect(panel.getByRole('button', { name: '运行预览', exact: true })).toBeVisible();
   const actions = await panel.locator('.project-quick-actions').boundingBox();
-  const files = await panel.locator('.agent-files-panel').boundingBox();
+  const files = await panel.locator('.agent-files-panel__body').boundingBox();
   expect(actions).not.toBeNull();
   expect(files).not.toBeNull();
   expect(actions!.y + actions!.height).toBeLessThanOrEqual(files!.y + 1);
@@ -34,5 +34,34 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await expect(panel).toBeHidden();
   await expect(tools).toBeFocused();
   await expect(message).toHaveValue('保留这段尚未发送的文字');
+  await tools.click();
+  await menu.getByRole('menuitem', { name: '文件', exact: true }).click();
+  await panel.getByRole('button', { name: '收起文件目录' }).click();
+  await expect(panel).toBeHidden();
+  await expect(tools).toBeFocused();
+  await expect(message).toHaveValue('保留这段尚未发送的文字');
   await expectNoHorizontalPageOverflow(page);
+});
+
+
+test('model and permission popovers track their trigger through viewport changes', async ({ page }) => {
+  await page.goto('/?controlTransport=mock#/agent?session=session-preview');
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible({timeout: 30_000});
+  for (const name of [/^模型与推理：/, /^对话权限：/]) {
+    const trigger = page.getByRole('button', { name });
+    await trigger.click();
+    const content = page.locator(name.source.includes('模型') ? '.agent-model-picker' : '.agent-picker-popover');
+    for (const width of [768, 390, 1440]) {
+      await page.setViewportSize({width, height: 900});
+      await expect.poll(async () => {
+        const anchor = await trigger.boundingBox(), popup = await content.boundingBox();
+        return anchor && popup ? Math.abs(anchor.y - popup.y - popup.height - 6) : 999;
+      }).toBeLessThan(2);
+      const bounds = await content.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    }
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+  }
 });

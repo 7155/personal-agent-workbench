@@ -53,3 +53,12 @@
   .paw-desktop-root .paw-session-workspace[data-design='workbench'] .project-quick-actions button { min-height: 40px; }
   .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-files-panel :is(button, .agent-files-panel__row) { min-height: 40px; }
 }
+
+@container paw-session-workspace (min-width: 1100px) {
+  .paw-desktop-root .paw-session-workspace[data-design='workbench'][data-panel='files'] .paw-session-workspace__body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+  .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__side[data-tool='files'] { position: static; width: auto; height: 100%; min-height: 0; border: 0; border-left: 1px solid var(--wb-line); border-radius: 0; box-shadow: none; animation: none; }
+}
+
+/* One content column aligns prose, rich results and the editor. */
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-assistant-turn__body { width: 100%; max-width: 100%; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.agent-code-block, .agent-citation, .agent-file-block) { margin-inline: 0; max-width: 100%; box-sizing: border-box; border-radius: var(--radius-sheet); }

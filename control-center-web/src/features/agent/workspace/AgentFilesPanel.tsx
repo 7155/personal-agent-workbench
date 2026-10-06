@@ -38,6 +38,7 @@ interface AgentFilesPanelProps {
   onClose: () => void;
   onManageRoots: () => void;
   rootsLockedReason?: string;
+  toolbar?: ReactNode;
 }
 
 interface WorkspaceEntry {
@@ -61,6 +62,7 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
   onClose,
   onManageRoots,
   rootsLockedReason,
+  toolbar,
 }, ref) {
   const transport = useControlTransport();
   const rootsLockedReasonId = useId();
@@ -315,6 +317,7 @@ export const AgentFilesPanel = forwardRef<HTMLElement, AgentFilesPanelProps>(fun
             <IconButton data-drawer-autofocus label="收起文件目录" icon={<PanelRightClose size={17} />} onClick={onClose} tooltip />
           </div>
         </header>
+        {toolbar}
         <div className="agent-files-panel__body" data-revision={revision}>
           {rootsLockedReason ? <p className="agent-files-panel__empty" id={rootsLockedReasonId}>{rootsLockedReason}</p> : null}
           {roots.length ? (

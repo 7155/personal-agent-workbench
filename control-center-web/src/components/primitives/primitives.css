@@ -990,3 +990,9 @@ input[type='radio']:focus-visible {
 :root[data-reduce-motion='true'] .ui-tabs__content,
 :root[data-reduce-motion='true'] .ui-skeleton::after,
 :root[data-reduce-motion='true'] .ui-button__progress::before { animation: none !important; }
+
+/* Radix owns these coordinates. Interpolating them makes a popover travel
+   from its initial offscreen measurement and lag behind a resized window. */
+[data-radix-popper-content-wrapper] { transition-property: none !important; }
+@media (prefers-reduced-motion: reduce) { .ui-popover[data-state='open'], .ui-menu[data-state='open'] { animation: none !important; } }
+:root[data-reduce-motion='true'] :is(.ui-popover, .ui-menu)[data-state='open'] { animation: none !important; }
