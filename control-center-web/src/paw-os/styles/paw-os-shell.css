@@ -667,7 +667,7 @@
 }
 .paw-desktop-root .paw-traffic-lights > button::before {
   position: absolute;
-  inset: 6px;
+  inset: calc((var(--paw-window-control-size) - 12px) / 2);
   border: 1.5px solid rgb(23 26 33 / .28);
   border-radius: 50%;
   background: transparent;

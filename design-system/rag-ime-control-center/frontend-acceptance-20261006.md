@@ -473,3 +473,22 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - `settings-major-actions-final.json` 七入口 × 390/1440 共 14 组全部通过，零 pageerror/页面横向溢出。截图 `settings-actions-final-*` 保存动作和宽度；设置首图与关键保存/撤销、深色主题、治理、审批、提示词、子 Agent 原图已人工查看。通用 `settings-remaining-before.json` 的宽屏 last-window 定位器和旧掌柜/笔记路由错误，不能作对应页面通过证据；最终 corrected 路由记录保留。
 - 提示词按其内容容器宽度切成单列；子 Agent 按实际窗口宽度排列。`settings-window-final-v2.json` 两分区 × 手机/374px 窄桌面窗口/最大化 × normal/reduce 共 12 组无正文或页面横向溢出；窄窗提示词列宽 314px、子 Agent 说明宽 157px。原 `settings-window-final.json` 把上次最大化布局误作窄窗，并将 frame 外 resize handles 的 scrollWidth 误作正文溢出，原失败不覆盖；v2 在公开 preview 首开重置布局、使用真实最大化按钮并分别记录 shell/body 几何。修复前 `remaining-final-prompts-1440.png` / `remaining-final-subagents-1440.png`，修复后 `settings-window-final-v2-*`；四张手机/窄窗/最大化图人工查看。
 - 本地完整文件检查：Preview transport 41 项；System Apps/roles/Agent preferences 三文件 67 项；Provider/configuration-management/scenario-skill 三文件 31 项；提示词/审批/治理最终三文件 17 项，共 156 项通过。正式 `pnpm typecheck` exit=0，owner/import/route 和 diff 检查通过；没有追 CI。Library 403、原生宿主、真实后端和费用账本边界未变。共享窗口信号灯实际命中区仅 24px，后续仍需按既有 32/40/44px 标准核实与修正，未将其称为通过。
+
+## 日程、Golden、浏览器、终端、掌柜问数与笔记：主要操作及共享窗口
+
+基于已推送 `c2058493e5a557313d603b61a343b107a47eb884`。六入口在实际 Chromium、390/1440 逐页打开和点击；所有数据为明确公开的 in-memory preview，未调用模型、真实 PTY、系统屏幕或本机文件夹。
+
+| 页面 | 实际发现、修改与点击结果 | 未覆盖边界 |
+| --- | --- | --- |
+| 日程 `/schedules` | Eval 间隔 3、Memory 频率 4 在切分组后被重置。保留访问过的原页所有者，隐藏时暂停读取/轮询；两宽度草稿保留。搜索、状态、Agent 普通/PR 日程弹窗的周期、取消/Escape 回焦点，Eval 周期/展开、Memory 编辑、根刷新均通过 | 没有保存或启用真实日程，没有启动维护或评测 |
+| Golden `/eval-lab` | 建立评测集被 preview 明确拒收；长表单顶部错误在保存位置不可见。原错误同时放到原表单 footer，草稿保留。空字段/样本数校验、来源增删、填写、保存拒收和近按钮错误均通过 | 没有真实 suite，依赖其存在的运行/结果等视图禁用，未计通过 |
+| Browser `/browser` | preview 新标签回 ok 却无 tab，补齐公开空标签新增/关闭；真实导航/捕获明确返回不可用。Home/End 选中空标签时地址栏抢焦点，导致 Delete 关标签失败；地址栏不再抢 tab 的焦点。错误重试恢复截图请求；重复等待文案收起，空态按钮对比度和换行修正 | 新建/关闭、Home/End/Delete、地址草稿 Escape、Trace 开关通过。后退/前进/刷新实际点击后显示演示限制，不称真实导航通过；无 Electron 浏览器 |
+| Terminal `/terminal` | 搜索下一项按钮获得焦点后 Escape 无效；搜索容器统一关闭/回焦点。手机固定 76px leading 导致最大化按钮重叠标签，改为跟随共享控件真实宽度 | 公开终端文本搜索/上下项/Escape、目录验证、创建弹窗取消、模拟新会话、Home/End、切换/关闭通过；未执行真实命令/PTY |
+| 掌柜问数 `/zhanggui` | 当前已能打开，没有重现旧“已安装不能打开”。三模式、建议填入/编辑、更多动作 Enter 关闭、演示自检勾选/撤销通过 | 没有发送模型请求；本机迁移/目录操作未验 |
+| 本地笔记 `/knowledge?space=notes` | 路径草稿切来源保留；连接明确显示演示限制并保留路径 | 没有连接、读写本机笔记文件夹 |
+
+- `remaining-major-actions-final-v4.json` 六入口 × 两宽度，共 12 组主要交互通过。Golden 行的 error 是期望的拒收文案，不是成功建立 suite。最终 Terminal 手机、Browser 桌面、Room 手机窗口以及 Golden footer 手机图已人工查看。原图 `remaining-actions-final-v4-*`，页面首图/关键弹窗、空态、错误、Trace、终端和笔记图均保留。
+- 共享窗口红黄绿真实命中区原先为 24px。保留 12px 原生外观，沿同一套 token 扩大命中区至桌面 32px、紧凑 40px、手机 44px；frame 高度、leading track、Agent/Room 双行 caption 同步留空间。Browser 和 Terminal 独有固定列宽移除。`window-chrome-final-v3.json` 五类窗口 × 390/768/1440 × normal/reduce 共 30 组：目标在标题栏内、中心可命中、无信号灯与应用按钮重叠、页面无横向溢出；30 次最小化和关闭均通过。原先最大化的 Agent/Room 另外实点还原→最大化→还原，见 `window-chrome-max-restore-final.json`，不把首轮跳过的 maxRestore=false 改成通过。
+- 修复前真实记录：日程草稿两宽度丢失、浏览器新标签两宽度无新 tab；行为检查的日程频率、preview tab 回执、空标签键盘焦点、终端搜索 Escape 均先失败再修复。早期 JSON 的错误路由、重复隐藏按钮定位器、把两个可见标签误当必须有 overflow 菜单等脚本失败保留，未计产品通过。
+- 本地检查：Schedules/Preview pages/Preview transport/Observability 四完整文件 87 项通过；Window layer/Browser chrome/Terminal 三文件首批 123 项通过；补键盘后 Browser chrome/Terminal 两文件 60 项通过；Browser App 完整文件 33 项通过；Golden 完整文件 44 项通过。CSS 与 Terminal 最终共 105 项通过、3 项失败：三个 CSS 静态断言在固定已推送 c2058493 源码上同样失败，证据 `/tmp/paw-css-baseline-c2058493-result-v2.txt`；没有称全套 CSS 通过，也没有扩展到 CI 修复。两项因本批目标/leading 正当变化的断言已同步。正式 `pnpm typecheck` 修正一个遗漏的 ControlRequest 注解后 exit=0；owner/import/route/diff 检查通过。
+- Library 原 15 项、清单 SHA 与未知费用保留不变，不再重试前置 403，不启动付费模型。工作台、规划、文档、Capsule 与桌面已经逐页拍到新首图，主要操作继续验收，尚不称全部功能块完成。

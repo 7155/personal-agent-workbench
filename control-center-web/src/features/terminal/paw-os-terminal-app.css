@@ -121,7 +121,7 @@
    carries the App identity once.
    ------------------------------------------------------------------------- */
 .paw-window-titlebar[data-window-chrome='terminal-tabs'] {
-  grid-template-columns: 76px 96px minmax(0, 1fr);
+  grid-template-columns: var(--paw-titlebar-lead, max-content) 96px minmax(0, 1fr);
   gap: 8px;
   padding-right: 8px;
   border-bottom: 1px solid var(--paw-terminal-line);
@@ -1042,7 +1042,7 @@
 }
 
 @container paw-window (max-width: 480px) {
-  .paw-window-titlebar[data-window-chrome='terminal-tabs'] { grid-template-columns: 76px 20px minmax(0, 1fr); gap: 6px; }
+  .paw-window-titlebar[data-window-chrome='terminal-tabs'] { grid-template-columns: var(--paw-titlebar-lead, max-content) 20px minmax(0, 1fr); gap: 6px; }
   .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-title strong { display: none; }
   .paw-terminal-app__toolbar { padding-inline: 6px; }
   .paw-terminal-app__toolbar[data-window-chrome] { padding-inline: 0; }

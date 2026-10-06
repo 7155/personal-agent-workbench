@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, Field, Input, Switch } from '@/components/primitives';
 import { configurationQueryKeys } from '@/features/configuration/api';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import { memoryQueryKeys } from '@/features/memory/api';
 import { parseManagementWorkPreview, parseManagementWorkReceipt } from '@/features/overview/management-mutation';
 import { InlineNotice, arrayRecords, asRecord, numberValue, publicErrorText, stringValue } from '@/features/overview/management-ui';
@@ -10,8 +11,9 @@ import { memoryScheduleDefinitions, scheduleTime } from './schedule-model';
 
 export function useMemoryScheduleSources() {
   const transport = useControlTransport();
-  const settings = useQuery({ queryKey: configurationQueryKeys.settings(), queryFn: ({ signal }) => transport.request({ pathId: 'configuration.settings', signal }) });
-  const status = useQuery({ queryKey: memoryQueryKeys.curationStatus(), queryFn: ({ signal }) => transport.request({ pathId: 'agent.memoryMaintenance.run', query: { limit: 12 }, signal }), refetchInterval: 30_000 });
+  const active = usePawOsAppActive() ?? true;
+  const settings = useQuery({ queryKey: configurationQueryKeys.settings(), queryFn: ({ signal }) => transport.request({ pathId: 'configuration.settings', signal }), enabled: active });
+  const status = useQuery({ queryKey: memoryQueryKeys.curationStatus(), queryFn: ({ signal }) => transport.request({ pathId: 'agent.memoryMaintenance.run', query: { limit: 12 }, signal }), enabled: active, refetchInterval: active ? 30_000 : false });
   return { settings, status };
 }
 
@@ -19,8 +21,9 @@ export function MemorySchedules() {
   const transport = useControlTransport();
   const client = useQueryClient();
   const { settings, status } = useMemoryScheduleSources();
+  const active = usePawOsAppActive() ?? true;
   const memory = asRecord(asRecord(asRecord(settings.data).settings).memory);
-  const capabilities = useQuery({ queryKey: configurationQueryKeys.capabilities(), queryFn: () => transport.capabilities(), staleTime: 30_000 });
+  const capabilities = useQuery({ queryKey: configurationQueryKeys.capabilities(), queryFn: () => transport.capabilities(), staleTime: 30_000, enabled: active });
   const [draft, setDraft] = useState<Record<string, number | boolean>>({});
   const [saved, setSaved] = useState(false);
   const mutation = useMutation({

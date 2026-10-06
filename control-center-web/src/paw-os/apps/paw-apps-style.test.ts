@@ -186,7 +186,7 @@ describe('PAWOS semantic type roles', () => {
     expect(webmodelCss).not.toMatch(/\.paw-desktop-root \.paw-window-shell(?:\[[^\]]+\])? \.paw-window\s*\{/);
     expect(webmodelCss).not.toMatch(/\.paw-desktop-root \.paw-window-titlebar\s*\{/);
     expect(webmodelCss).not.toMatch(/\.paw-desktop-root \.paw-menu-bar\s*\{/);
-    expect(pawOsCss).toMatch(/\.paw-window-titlebar\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, 76px\) minmax\(0, 1fr\) minmax\(0, auto\);/s);
+    expect(pawOsCss).toMatch(/\.paw-window-titlebar\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, max-content\) minmax\(0, 1fr\) minmax\(0, auto\);/s);
     expect(shellMigratedCss).toMatch(/\.paw-desktop-root \.paw-window-titlebar\s*\{[^}]*background:\s*#fff;/s);
     expect(shellMigratedCss).toMatch(/\.paw-desktop-root \.paw-window-shell\[data-app\] \.paw-window-titlebar\s*\{[^}]*background:\s*var\(--paw-app-nav,/s);
     expect(shellMigratedCss).toMatch(/\.paw-desktop-root \.paw-traffic-lights > button\s*\{[^}]*background:\s*transparent;/s);
@@ -930,10 +930,10 @@ describe('PAWOS semantic type roles', () => {
     );
   });
 
-  it('keeps one 24px traffic-light target on every window that docks App chrome', () => {
+  it('keeps one shared traffic-light target scale on every window that docks App chrome', () => {
     // A light never flex-shrinks, so the main Room's close target measures the
     // same as a satellite's even when the cluster outgrows its column.
-    expect(pawOsCss).toMatch(/\.paw-traffic-lights > button\s*\{[^}]*flex:\s*0 0 24px;/s);
+    expect(pawOsCss).toMatch(/\.paw-traffic-lights > button\s*\{[^}]*flex:\s*0 0 var\(--paw-window-control-size\);/s);
     // Only the column gives ground, through one token every titlebar reads.
     expect(pawOsCss).toMatch(
       /\.paw-window-titlebar:has\(\.paw-window-leading-slot:not\(:empty\)\)\s*\{[^}]*--paw-titlebar-lead:\s*auto;/s,
@@ -943,10 +943,9 @@ describe('PAWOS semantic type roles', () => {
       // lights start shrinking again the moment an App docks a control.
       expect(css).not.toMatch(/\.paw-window-titlebar[^{]*\{[^}]*grid-template-columns:\s*\d+px/s);
     }
-    // Browser's approved single titlebar is the deliberate exception: the
-    // 76px light column sits beside its compact title and live tab deck.
+    // Browser's live tab deck uses the same content-sized leading track.
     expect(toolsMigratedCss).toMatch(
-      /\.paw-window-titlebar\[data-window-chrome='browser-tabs'\]\s*\{[^}]*grid-template-columns:\s*76px minmax\(54px, 86px\) minmax\(0, 1fr\);/s,
+      /\.paw-window-titlebar\[data-window-chrome='browser-tabs'\]\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, max-content\) minmax\(54px, 86px\) minmax\(0, 1fr\);/s,
     );
   });
 

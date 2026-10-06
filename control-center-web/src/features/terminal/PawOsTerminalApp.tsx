@@ -709,7 +709,12 @@ export function PawOsTerminalApp() {
             role={selected ? 'tabpanel' : 'region'}
           >
             {selected && showSearch ? (
-              <div className="paw-terminal-search" role="search">
+              <div className="paw-terminal-search" role="search" onKeyDown={(event) => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                event.stopPropagation();
+                closeSearch();
+              }}>
                 <Search aria-hidden="true" className="paw-terminal-search__glyph" size={13} />
                 <input
                   aria-label="搜索终端输出"
@@ -719,7 +724,6 @@ export function PawOsTerminalApp() {
                   }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') runScrollbackSearch(searchDraft, event.shiftKey ? 'previous' : 'next');
-                    if (event.key === 'Escape') closeSearch();
                   }}
                   placeholder="搜索输出"
                   ref={searchInputRef}

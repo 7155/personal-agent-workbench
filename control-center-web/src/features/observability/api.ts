@@ -1,6 +1,7 @@
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import type { EvalRunV1 } from '@/contracts/generated/eval-run.v1';
 import type { EvalScheduleCreateV1 } from '@/contracts/generated/eval-schedule-create.v1';
 import type { EvalScheduleListV1 } from '@/contracts/generated/eval-schedule-list.v1';
@@ -244,7 +245,9 @@ export function useObservationEvals(traceId: string) {
 
 export function useSandboxRuns() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   return useQuery({
+    enabled: active,
     queryKey: observabilityQueryKeys.sandboxRuns(),
     queryFn: ({ signal }) => transport.request<SandboxRunList>({
       pathId: SANDBOX_RUNS_PATH_ID,
@@ -253,7 +256,7 @@ export function useSandboxRuns() {
     }),
     retry: false,
     refetchOnWindowFocus: false,
-    refetchInterval: (query) => hasActiveSandboxRun(query.state.data) ? SANDBOX_RUN_ACTIVE_POLL_MS : false,
+    refetchInterval: (query) => active && hasActiveSandboxRun(query.state.data) ? SANDBOX_RUN_ACTIVE_POLL_MS : false,
     refetchIntervalInBackground: false,
   });
 }
@@ -284,7 +287,9 @@ export function useObservationAiJudge() {
 
 export function useEvalSchedules() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   return useQuery({
+    enabled: active,
     queryKey: observabilityQueryKeys.evalSchedules(),
     queryFn: ({ signal }) => transport.request<EvalScheduleListV1>({
       pathId: 'observability.evalSchedules.list',
@@ -294,14 +299,16 @@ export function useEvalSchedules() {
     }),
     retry: false,
     refetchOnWindowFocus: false,
-    refetchInterval: (query) => scheduleRefreshInterval(query.state.data),
+    refetchInterval: (query) => active ? scheduleRefreshInterval(query.state.data) : false,
     refetchIntervalInBackground: false,
   });
 }
 
 export function useEvalSuites() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   return useQuery({
+    enabled: active,
     queryKey: observabilityQueryKeys.evalSuites(),
     queryFn: ({ signal }) => transport.request<EvalSuiteListV1>({
       pathId: 'observability.evalSuites.list',
@@ -341,9 +348,10 @@ export function useEvalScheduleAction() {
 
 export function useEvalScheduleRuns(scheduleId: string) {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   return useQuery({
     queryKey: observabilityQueryKeys.evalScheduleRuns(scheduleId),
-    enabled: Boolean(scheduleId),
+    enabled: active && Boolean(scheduleId),
     queryFn: ({ signal }) => transport.request<EvalScheduleRunListV1>({
       pathId: 'observability.evalSchedule.runs',
       params: { scheduleId },
@@ -353,7 +361,7 @@ export function useEvalScheduleRuns(scheduleId: string) {
     }),
     retry: false,
     refetchOnWindowFocus: false,
-    refetchInterval: (query) => scheduleRunRefreshInterval(query.state.data),
+    refetchInterval: (query) => active ? scheduleRunRefreshInterval(query.state.data) : false,
     refetchIntervalInBackground: false,
   });
 }

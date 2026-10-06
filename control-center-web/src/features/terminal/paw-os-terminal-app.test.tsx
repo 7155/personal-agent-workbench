@@ -590,6 +590,11 @@ describe('PawOsTerminalApp', () => {
     await user.click(screen.getByRole('button', { name: '关闭搜索' }));
     expect(screen.queryByRole('textbox', { name: '搜索终端输出' })).not.toBeInTheDocument();
     expect(searchAddonState.calls.at(-1)).toMatchObject({ kind: 'clear' });
+    await user.click(screen.getByRole('button', { name: '搜索终端输出' }));
+    await user.type(screen.getByRole('textbox', { name: '搜索终端输出' }), 'PAW');
+    await user.click(screen.getByRole('button', { name: '下一个匹配' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('search')).not.toBeInTheDocument();
   });
 
   it('opens scrollback search as a console band instead of a panel over the output it reports', async () => {

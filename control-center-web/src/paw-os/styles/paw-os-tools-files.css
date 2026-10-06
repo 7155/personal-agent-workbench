@@ -36,7 +36,7 @@
   --paw-browser-chrome: #f4f6f9;
   --paw-browser-control: #fff;
   --paw-browser-hover: rgb(24 32 44 / 6%);
-  grid-template-columns: 76px minmax(54px, 86px) minmax(0, 1fr);
+  grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(54px, 86px) minmax(0, 1fr);
   gap: 7px;
   border-bottom-color: rgb(24 32 44 / 9%);
   background: rgb(247 248 250 / 96%);

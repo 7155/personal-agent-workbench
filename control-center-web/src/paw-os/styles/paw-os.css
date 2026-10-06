@@ -28,6 +28,7 @@
      the viewport offset, drag surfaces and body padding can never drift. */
   --paw-menu-h: 34px;
   --paw-titlebar-h: 40px;
+  --paw-window-control-size: 32px;
   --paw-dock-h: 62px;
   --paw-bg: #eef3f9;
   --paw-panel: #ffffff;
@@ -682,7 +683,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   z-index: 9;
   inset: 0 0 auto;
   height: var(--paw-titlebar-h);
-  display: grid; grid-template-columns: var(--paw-titlebar-lead, 76px) minmax(0, 1fr) minmax(0, auto); align-items: center;
+  display: grid; grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(0, 1fr) minmax(0, auto); align-items: center;
   padding: 0 14px;
   /* The empty title area is the drag target. Controls opt back in below. */
   pointer-events: auto;
@@ -699,14 +700,14 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    whose control keeps its own size and shape. */
 .paw-traffic-lights > button {
   position: relative;
-  width: 24px; height: 24px;
-  /* The native 12px light remains visually unchanged inside a 24px motor and
-     touch target. The fixed outer box also prevents flex shrink. */
-  flex: 0 0 24px;
-  display: grid; place-items: center; padding: 6px;
+  width: var(--paw-window-control-size); height: var(--paw-window-control-size);
+  /* Keep the 12px light while the hit target follows the shared control scale. */
+  flex: 0 0 var(--paw-window-control-size);
+  display: grid; place-items: center; padding: 0;
   cursor: pointer;
 }
 .paw-traffic-lights > button svg { position: relative; z-index: 1; width: 7px; height: 7px; }
+.paw-traffic-lights > button:focus-visible { outline: 2px solid var(--paw-accent); outline-offset: -2px; border-radius: 6px; }
 
 .paw-window-title { display: flex; align-items: center; justify-content: flex-start; gap: 6px; overflow: hidden; color: var(--paw-ink); text-overflow: ellipsis; white-space: nowrap; transition: opacity 120ms ease, visibility 120ms ease; }
 .paw-window-title > strong,
@@ -727,13 +728,13 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
 }
 .paw-window-leading-slot:empty { display: none; }
 .paw-desktop-root .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) .paw-window-leading-slot > button {
-  min-width: 24px;
-  min-height: 24px;
+  min-width: var(--paw-window-control-size);
+  min-height: var(--paw-window-control-size);
 }
 .paw-traffic-lights .paw-window-leading-slot .paw-agent-rail-toggle {
   position: static;
   z-index: auto;
-  flex: 0 0 30px;
+  flex: 0 0 var(--paw-window-control-size);
 }
 .paw-traffic-lights:has(.paw-window-leading-slot:not(:empty)) {
   width: auto;
@@ -1209,6 +1210,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   .paw-wayfinder-work__bucket { grid-template-columns: 1fr; }
 }
 @media (max-width: 820px) {
+  .paw-window { --paw-window-control-size: 40px; --paw-titlebar-h: 48px; }
   .paw-menu-bar { padding-inline: 8px; gap: 9px; }
   .paw-menu-status > span { display: none; }
   .paw-menu-app { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1217,7 +1219,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
      last control never sit under the Dock's pointer plane. */
   .paw-window-shell:not([data-overview]):not([data-focus-layout]):not([data-placement='maximized']) { min-width: 0; min-height: 0; width: calc(100% - 12px) !important; height: calc(100% - var(--paw-dock-h) - 22px) !important; transform: translate3d(6px, 6px, 0) !important; }
   .paw-window-shell:not([data-focus-layout]):not([data-placement='maximized']) .paw-window-resize { display: none; }
-  .paw-window-titlebar { grid-template-columns: var(--paw-titlebar-lead, 70px) minmax(0, 1fr) minmax(0, auto); }
+  .paw-window-titlebar { grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(0, 1fr) minmax(0, auto); }
   .paw-wayfinder { overflow: auto; padding-bottom: 92px; }
   .paw-wayfinder-work { position: relative; z-index: auto; top: auto; right: auto; width: auto; max-height: 330px; margin: 18px 20px 108px; }
   .paw-dock {
@@ -1238,13 +1240,20 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   .paw-launchpad > section { width: 100%; max-height: calc(100vh - var(--paw-menu-h) - 24px); }
   .paw-launchpad section > div { grid-template-columns: repeat(3, 1fr); }
 }
+@media (max-width: 480px) {
+  .paw-window { --paw-window-control-size: 44px; --paw-titlebar-h: 52px; }
+}
 /* Window chrome ladder. The acceptance widths are 760 / 560 / 375 and they are
    read from the window container, never the document: a 375px-wide window on a
    1440px desktop has exactly the 375px problem. Text yields before controls —
    the traffic lights, the App identity mark and every docked App verb survive
    every step, and no slot is ever allowed to grow across another. */
 @container paw-window (max-width: 760px) {
+  .paw-window { --paw-window-control-size: 40px; --paw-titlebar-h: 48px; }
   .paw-window-titlebar { padding-inline: 12px; column-gap: 8px; }
+}
+@container paw-window (max-width: 480px) {
+  .paw-window { --paw-window-control-size: 44px; --paw-titlebar-h: 52px; }
 }
 @container paw-window (max-width: 620px) {
   .paw-window-titlebar:has(.paw-window-chrome-slot:not(:empty)) .paw-window-title { visibility: hidden; opacity: 0; }
@@ -1275,11 +1284,11 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    Focus-primary Rooms omit this caption and retain their existing chrome. */
 @container paw-window (max-width: 700px) {
   .paw-desktop-root .paw-window:has(> .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title) {
-    --paw-titlebar-h: 64px;
+    --paw-titlebar-h: calc(var(--paw-window-control-size) + 32px);
   }
   .paw-desktop-root .paw-window > .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']):has(> .paw-window-title) {
     grid-template-columns: max-content minmax(0, 1fr);
-    grid-template-rows: 40px 24px;
+    grid-template-rows: calc(var(--paw-window-control-size) + 8px) 24px;
     column-gap: 6px;
     row-gap: 0;
     padding: 0 8px;

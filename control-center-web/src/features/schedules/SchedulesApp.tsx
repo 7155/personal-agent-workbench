@@ -6,6 +6,7 @@ import { Button, EmptyState, IconButton, Input, Select } from '@/components/prim
 import { useEvalSchedules } from '@/features/observability/api';
 import { AgentWakeSchedules } from '@/features/planning/AgentWakeSchedules';
 import { InlineNotice, publicErrorText } from '@/features/overview/management-ui';
+import { PawOsAppActivityProvider, usePawOsAppActive } from '@/features/paw-os/surface-context';
 import { MemorySchedules, useMemoryScheduleSources } from './MemorySchedules';
 import { agentScheduleRows, evalScheduleRows, memoryScheduleRows, scheduleGroupLabels, scheduleStatusLabels, scheduleTime, type ScheduleGroup } from './schedule-model';
 import './schedules.css';
@@ -17,11 +18,14 @@ const emptyTasks: readonly Record<string, unknown>[] = [];
 
 export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
   const transport = useControlTransport();
+  const appActive = usePawOsAppActive() ?? true;
   const [group, setGroup] = useState<ScheduleGroup | 'all'>(() => initialRoute.includes('view=agent') ? 'agent' : 'all');
+  const [visitedGroups, setVisitedGroups] = useState<string[]>([]);
+  useEffect(() => { setVisitedGroups(current => current.includes(group) ? current : [...current, group]); }, [group]);
   const [selectedId, setSelectedId] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const agent = useQuery({ queryKey: ['planning', 'agent-wake-schedules'], queryFn: ({ signal }) => transport.request({ pathId: 'agent.wakeSchedules.list', query: { limit: 500 }, signal }), refetchInterval: 15_000 });
+  const agent = useQuery({ queryKey: ['planning', 'agent-wake-schedules'], queryFn: ({ signal }) => transport.request({ pathId: 'agent.wakeSchedules.list', query: { limit: 500 }, signal }), enabled: appActive, refetchInterval: appActive ? 15_000 : false });
   const evaluation = useEvalSchedules();
   const memory = useMemoryScheduleSources();
   useEffect(() => { if (initialRoute.includes('view=agent')) setGroup('agent'); }, [initialRoute]);
@@ -36,7 +40,7 @@ export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
     <header className="schedule-app__header"><span className="schedule-app__identity"><CalendarClock size={23} /><span><h1>定时任务</h1><p>把需要惦记的事，交给下一次执行。</p></span></span><IconButton label="刷新所有任务" icon={<RefreshCw size={17} className={refreshing ? 'ui-spin' : ''} />} disabled={refreshing} onClick={() => { void agent.refetch(); void evaluation.refetch(); void memory.settings.refetch(); void memory.status.refetch(); }} tooltip /></header>
     <nav className="schedule-app__nav" aria-label="任务类型">{groups.map((item) => <button key={item.id} aria-pressed={group === item.id} onClick={() => selectGroup(item.id)} type="button"><item.icon size={16} /><span>{item.label}</span><small>{pending ? '·' : item.id === 'all' ? rows.length : rows.filter((row) => row.group === item.id).length}</small></button>)}</nav>
     {group === 'all' || group === 'agent' ? <div className="schedule-app__filters"><label><Search size={16} /><Input aria-label="搜索定时任务" placeholder="搜索任务、PR 或关注点" value={search} onChange={(event) => setSearch(event.target.value)} /></label><Select aria-label="任务状态" value={statusFilter} onValueChange={setStatusFilter} options={[{ value: 'all', label: '所有状态' }, ...Object.entries(scheduleStatusLabels).map(([value, label]) => ({ value, label }))]} /></div> : null}
-    <main className="schedule-app__content" key={group}>
+    <main className="schedule-app__content">
       {group === 'all' ? <>
         <div className="schedule-app__overview"><span><strong>{rows.filter((row) => row.status === 'running').length}</strong> 正在执行<span className="schedule-app__separator">/</span><strong>{rows.filter((row) => row.status === 'scheduled').length}</strong> 等待执行</span><Button size="small" variant="primary" onClick={() => selectGroup('agent')}>安排新任务</Button></div>
         {sources.map((source) => source.query.error ? <InlineNotice key={source.title} title={`${source.title}暂时无法读取`} tone="danger">{publicErrorText(source.query.error)}<Button size="small" onClick={() => void source.query.refetch()}>重试</Button></InlineNotice> : null)}
@@ -50,7 +54,9 @@ export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
           </button>;
         })}</div> : !pending ? <EmptyState icon={CalendarClock} title={rows.length ? '没有匹配的任务' : '还没有任务安排'} description={rows.length ? '换个关键词或状态试试。' : '可以安排一次提醒、一段定时对话，或定期跟进 GitHub PR。'} /> : null}
         {rows.length >= 500 ? <p className="schedule-muted">Agent 列表显示最近 500 项，周期评测显示最近 100 项。</p> : null}
-      </> : group === 'agent' ? <AgentWakeSchedules key={selectedId} embedded tasks={emptyTasks} search={search} statusFilter={statusFilter} initialHistoryId={selectedId} /> : group === 'eval' ? <Suspense fallback={<p role="status">正在打开周期评测…</p>}><EvalSchedules key={selectedId} initialScheduleId={selectedId} /></Suspense> : <MemorySchedules />}
+      </> : group === 'agent' ? <AgentWakeSchedules key={selectedId} embedded tasks={emptyTasks} search={search} statusFilter={statusFilter} initialHistoryId={selectedId} /> : null}
+      {group === 'eval' || visitedGroups.includes('eval') ? <div hidden={group !== 'eval'} inert={group !== 'eval'}><PawOsAppActivityProvider active={appActive && group === 'eval'}><Suspense fallback={<p role="status">正在打开周期评测…</p>}><EvalSchedules initialScheduleId={selectedId} /></Suspense></PawOsAppActivityProvider></div> : null}
+      {group === 'memory' || visitedGroups.includes('memory') ? <div hidden={group !== 'memory'} inert={group !== 'memory'}><PawOsAppActivityProvider active={appActive && group === 'memory'}><MemorySchedules /></PawOsAppActivityProvider></div> : null}
     </main>
     <footer className="schedule-app__footer">本机服务运行时按计划执行 · 结果会留在任务记录中</footer>
   </div>;

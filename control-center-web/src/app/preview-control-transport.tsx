@@ -386,6 +386,25 @@ export function createPreviewTransport(): MockControlTransport {
       schedule,
     };
   };
+  let nextBrowserTabId = 24;
+  let browserTabs = [{ deviceId: 'paw-browser', tabId: 23, title: '浏览器协作指南', url: 'https://docs.example.com/browser-guide', active: true }];
+  routes['browser.tabs'] = () => ({ ok: true, items: browserTabs.map(tab => ({ ...tab })) });
+  routes['browser.command'] = (request: ControlRequest) => {
+    const body = record(request.body);
+    if (body.action === 'new_tab' && body.url === 'about:blank') {
+      const tab = { deviceId: 'paw-browser', tabId: nextBrowserTabId++, title: '新标签页', url: 'about:blank', active: true };
+      browserTabs = [...browserTabs.map(tab => ({ ...tab, active: false })), tab];
+      return { ok: true, preview: true, result: { tabId: tab.tabId, url: tab.url } };
+    }
+    if (body.action === 'close_tab') {
+      const tabId = Number(body.tabId);
+      if (!browserTabs.some(tab => tab.tabId === tabId)) return { ok: false, summary: '演示标签页已经不存在。' };
+      browserTabs = browserTabs.filter(tab => tab.tabId !== tabId);
+      if (!browserTabs.some(tab => tab.active) && browserTabs[0]) browserTabs[0].active = true;
+      return { ok: true, preview: true, result: { tabId: browserTabs.find(tab => tab.active)?.tabId ?? 0 } };
+    }
+    return { ok: false, summary: '演示模式不访问或捕获真实网页；请在 PAW 桌面应用中使用完整浏览器。' };
+  };
   routes['terminal.sessions.list'] = () => ({ schemaVersion: 'rag-ime.system-terminal.v1', ok: true, items: previewTerminals });
   routes['terminal.session.create'] = (request: ControlRequest) => {
     const body = record(request.body);

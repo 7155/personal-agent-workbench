@@ -8,6 +8,18 @@ import { pawExtensionApps } from '@/paw-os/extensions/registry';
 import { projectPawExtensionInstallation } from '@/paw-os/extensions/installation';
 
 describe('preview page contracts', () => {
+  it('creates and closes the exact public Browser tab without claiming a real screenshot', async () => {
+    const transport = createPreviewTransport();
+    const created = await transport.request<{ result: { tabId: number } }>({ pathId: 'browser.command', body: { action: 'new_tab', url: 'about:blank' } });
+    expect(created.result.tabId).not.toBe(23);
+    const tabs = await transport.request<{ items: { tabId: number; url: string }[] }>({ pathId: 'browser.tabs' });
+    expect(tabs.items).toHaveLength(2);
+    expect(tabs.items.find(tab => tab.tabId === created.result.tabId)?.url).toBe('about:blank');
+    await transport.request({ pathId: 'browser.command', body: { action: 'close_tab', tabId: 23 } });
+    expect((await transport.request<{ items: { tabId: number }[] }>({ pathId: 'browser.tabs' })).items.map(tab => tab.tabId)).toEqual([created.result.tabId]);
+    expect(await transport.request({ pathId: 'browser.command', body: { action: 'screenshot', tabId: created.result.tabId } })).toMatchObject({ ok: false, summary: expect.stringContaining('演示模式') });
+    expect((await createPreviewTransport().request<{ items: unknown[] }>({ pathId: 'browser.tabs' })).items).toHaveLength(1);
+  });
   it('opens local notes without fabricating a file connection', async () => {
     const transport = createPreviewTransport();
     expect(await transport.request({ pathId: 'knowledgeVault.manage', body: { action: 'list' } })).toEqual({ spaces: [] });

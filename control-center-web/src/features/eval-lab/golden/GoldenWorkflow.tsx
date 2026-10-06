@@ -37,6 +37,8 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '',
   const lastJob = suite ? [...suite.jobs].sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0] : undefined;
   const visibleJob = activeJob ?? (lastJob && ['failed', 'interrupted', 'cancelled'].includes(lastJob.state) ? lastJob : undefined);
   const commandBusy = selectedSuiteId === undefined || Boolean(workflow.pending) || workflow.mutation.isPending || !workflow.query.isFetched || workflow.query.isPending || workflow.query.isError;
+  const rejectedCommandError = workflow.mutation.error && isGoldenRejection(workflow.mutation.error)
+    ? goldenErrorMessage(workflow.mutation.error, '这次操作未被接受，已重新读取当前版本。请核对后重试。') : '';
   const disabled = commandBusy || Boolean(activeJob);
   const journey = goldenJourney(suite, hasUnsaved);
   useEffect(() => {
@@ -94,14 +96,14 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '',
     {workflow.query.isPending ? <p className="golden-reading" role="status">正在读取评测集…</p> : null}
     {workflow.query.isError ? <div className="golden-recovery" role="alert"><div><strong>无法读取评测集</strong><p>{goldenErrorMessage(workflow.query.error)}</p></div><Button size="small" leadingIcon={<RefreshCw size={14} />} loading={workflow.query.isFetching} onClick={() => void workflow.query.refetch()}>重新读取</Button></div> : null}
     {workflow.pending?.outcome === 'unknown' ? <div className="golden-recovery" role="alert"><div><strong>本次操作的结果尚未确认</strong><p>核对回执会复用原请求；在确认结果前，不会提交另一项操作。</p></div><Button variant="primary" size="small" onClick={() => void verifyPending()}>核对本次操作</Button></div>
-      : workflow.mutation.error && isGoldenRejection(workflow.mutation.error) ? <p className="golden-command-error" role="alert">{goldenErrorMessage(workflow.mutation.error, '这次操作未被接受，已重新读取当前版本。请核对后重试。')}</p> : null}
+      : suite && rejectedCommandError ? <p className="golden-command-error" role="alert">{rejectedCommandError}</p> : null}
     {workflow.pending?.outcome === 'sending' ? <p className="golden-reading" role="status">正在提交本次操作…</p> : null}
     {visibleJob ? <JobStatus job={visibleJob} stale={workflow.query.isError} disabled={commandBusy} onCancel={() => void submit('cancel', { jobId: visibleJob.jobId })} onResume={() => void resumeJob(visibleJob)} /> : null}
     {suite?.knowledge ? <p className="golden-note">知识库回答评测 · {suite.knowledge.documentCount.toLocaleString()} 篇文档 / {suite.knowledge.chunkCount.toLocaleString()} 个切片。每题先检索，再把有界证据交给 Pi 回答；参考答案只用于评审。</p> : null}
     {suite?.calibration?.referenceAuthority === 'agent_assisted' ? <p className="golden-note">本轮包含 Agent 辅助标注，用于验证流程和比较配置；不代表独立人工金标验收。</p> : null}
     {suite?.datasetProvenance?.kind === 'imported_reference' ? <p className="golden-note">本次从 {suite.datasetProvenance.totalCases} 道原题中选取 {suite.datasetProvenance.selectedCases} 道。原题和参考答案已保留，请核对标准；错误与边界样例是本地构造的校准草稿，需要编辑和标注，不是数据集原始答案。</p> : null}
     <div id={`${id}-panel-0`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-0`} hidden={step !== 0}>
-      {suite ? <SourceSummary suite={suite} disabled={disabled || reviewDirty || calibrationDirty} onDirtyChange={reportSourceDirty} onJudge={(input) => submit('judge_config', input)} onDraft={() => void submit('draft').then((accepted) => { if (accepted) setStep(1); })} /> : <SourceForm key={newGeneration} disabled={commandBusy} onCreate={async (input) => { const receipt = await workflow.submit('create', input); if (receipt) setSelectedSuiteId(receipt.suite.suiteId); }} />}
+      {suite ? <SourceSummary suite={suite} disabled={disabled || reviewDirty || calibrationDirty} onDirtyChange={reportSourceDirty} onJudge={(input) => submit('judge_config', input)} onDraft={() => void submit('draft').then((accepted) => { if (accepted) setStep(1); })} /> : <SourceForm key={newGeneration} disabled={commandBusy} submissionError={rejectedCommandError} onCreate={async (input) => { const receipt = await workflow.submit('create', input); if (receipt) setSelectedSuiteId(receipt.suite.suiteId); }} />}
     </div>
     {suite ? <>
         <div id={`${id}-panel-1`} className="golden-panel" role="tabpanel" aria-labelledby={`${id}-tab-1`} hidden={step !== 1}><CaseReview key={suite.suiteId} suite={suite} disabled={disabled} onDirtyChange={reportReviewDirty} onReview={(input) => submit('review_case', input)} onAgentReview={(input) => submit('review', input)} onNext={() => setStep(2)} onDraft={() => setStep(0)} /></div>
@@ -111,7 +113,7 @@ export function GoldenWorkflow({ onClose, startNew = false, initialSuiteId = '',
   </section></GoldenModelCatalog>;
 }
 
-function SourceForm({ disabled, onCreate }: { disabled: boolean; onCreate: (input: GoldenCommand['input']) => Promise<void> }) {
+function SourceForm({ disabled, onCreate, submissionError }: { disabled: boolean; submissionError?: string; onCreate: (input: GoldenCommand['input']) => Promise<void> }) {
   const id = useId();
   const [title, setTitle] = useState('');
   const [scenario, setScenario] = useState('');
@@ -137,7 +139,7 @@ function SourceForm({ disabled, onCreate }: { disabled: boolean; onCreate: (inpu
         </section>)}</div>
         <Button variant="quiet" size="small" leadingIcon={<Plus size={14} />} onClick={() => setSources((current) => [...current, emptySource()])}>添加来源</Button>
       </fieldset>
-      <footer className="golden-section__footer golden-action-bar"><div><p className="golden-note">保存只建立评测集；下一步点击起草才会调用模型。</p>{missing.length ? <p className="golden-note" role="status">还需填写：{missing.join('、')}。</p> : <p className="golden-ready" role="status">资料已填齐，可以继续。</p>}</div><Button type="submit" variant="primary" disabled={disabled || !valid}>保存来源，建立评测集</Button></footer>
+      <footer className="golden-section__footer golden-action-bar"><div>{submissionError ? <p className="golden-command-error" role="alert">{submissionError}</p> : <><p className="golden-note">保存只建立评测集；下一步点击起草才会调用模型。</p>{missing.length ? <p className="golden-note" role="status">还需填写：{missing.join('、')}。</p> : <p className="golden-ready" role="status">资料已填齐，可以继续。</p>}</>}</div><Button type="submit" variant="primary" disabled={disabled || !valid}>保存来源，建立评测集</Button></footer>
     </form>
   </section>;
 }
