@@ -238,7 +238,7 @@ def _validate_web_control_app(
         raise ValueError("control app provenance does not describe the Electron PAW OS host")
     if any(marker.get(key) != value for key, value in required_provenance.items()):
         raise ValueError("control app marker does not match its Electron PAW OS provenance")
-    dist_digest = content_tree_digest(dist, excluded_paths=(CONTROL_DIST_MARKER,))
+    dist_digest = control_center_dist_digest(dist)
     if (
         not isinstance(provenance.get("distTreeDigest"), str)
         or provenance.get("distTreeDigest") != dist_digest
@@ -398,11 +398,13 @@ def content_tree_digest(
     root: str | Path,
     *,
     excluded_paths: Iterable[str] = (),
+    excluded_file_names: Iterable[str] = (),
 ) -> str:
     """Return the stable bare-hex digest used by the frontend dist marker."""
 
     tree_root = Path(root).resolve()
     excluded = {PurePosixPath(path).as_posix() for path in excluded_paths}
+    excluded_names = set(excluded_file_names)
     if not tree_root.is_dir() or tree_root.is_symlink():
         raise ValueError(f"invalid content tree: {root}")
     digest = hashlib.sha256()
@@ -412,13 +414,23 @@ def content_tree_digest(
             continue
         if path.is_symlink():
             raise ValueError(f"content tree contains a symlink: {relative}")
-        if not path.is_file():
+        if not path.is_file() or path.name in excluded_names:
             continue
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def control_center_dist_digest(root: str | Path) -> str:
+    """Bind frontend code while allowing Finder to update directory metadata."""
+    if Path(root).is_symlink():
+        raise ValueError(f"invalid control-center dist tree: {root}")
+    return content_tree_digest(
+        root, excluded_paths=(CONTROL_DIST_MARKER,),
+        excluded_file_names=(".DS_Store",),
+    )
 
 
 def _tree_snapshot(root: Path, *, excluded_parts: set[str] | None = None) -> list[dict[str, object]]:

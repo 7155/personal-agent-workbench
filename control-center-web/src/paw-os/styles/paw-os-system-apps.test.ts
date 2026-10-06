@@ -57,7 +57,7 @@ describe('PAWOS system Apps shared accent', () => {
 
   it('gives the rail and compact ui-* controls a shared paw-os-controls height instead of an invented 30px', () => {
     expect(sysAppsCss).toMatch(/\.paw-system-app__nav nav button\s*\{[^}]*min-height:\s*var\(--paw-control-h, 32px\);/s);
-    expect(sysAppsCss).toMatch(/:is\(\.ui-button, \.ui-input, \.ui-select__trigger\)\s*\{[^}]*min-height:\s*var\(--paw-control-h-sm, 28px\);/s);
+    expect(sysAppsCss).toMatch(/:is\(\.ui-button, \.ui-input, \.ui-select__trigger\)\s*\{[^}]*min-height:\s*max\(var\(--paw-stage-control-h\), var\(--paw-control-h-sm, 28px\)\);/s);
   });
 });
 

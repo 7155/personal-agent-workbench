@@ -106,12 +106,16 @@ function makeTransport(extra: Record<string, unknown> = {}) {
   });
 }
 
-function showLab(transport: MockControlTransport, route = '/eval-lab', openExisting = true) {
+async function showLab(transport: MockControlTransport, route = '/eval-lab', openExisting = true) {
   const openRoute = vi.fn();
   render(<MemoryRouter initialEntries={[route]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <ControlTransportProvider transport={transport}><PawOsDesktopProvider openWindow={vi.fn()} openRoute={openRoute}><EvalLabFeature /></PawOsDesktopProvider></ControlTransportProvider>
   </QueryClientProvider></MemoryRouter>);
-  if (openExisting) fireEvent.click(screen.getByRole('button', { name: '已有实验' }));
+  if (openExisting) {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    await user.click(screen.getByRole('menuitem', { name: '已有实验' }));
+  }
   return { openRoute };
 }
 
@@ -130,7 +134,7 @@ describe('experiment workspace', () => {
         return { schemaVersion: 'rag-ime.agent-lab-trial.v1', job, replayed: false };
       },
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await screen.findByRole('heading', { name: '保留这个候选' });
     await user.click(screen.getByRole('tab', { name: '运行' }));
@@ -162,7 +166,7 @@ describe('experiment workspace', () => {
       'agent.eval-lab.trials.get': { schemaVersion: 'rag-ime.agent-lab-trial.v1', jobs: [previous], registeredSceneIds: ['enterprise-rag'] },
       'agent.eval-lab.trials.start': (request: ControlRequest) => { requestId = String((request.body as Record<string, unknown>).clientRequestId); return new Promise((resolve) => { resolveStart = resolve; }); },
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '运行' }));
     await user.click(await screen.findByRole('button', { name: '运行验证' }));
@@ -185,7 +189,7 @@ describe('experiment workspace', () => {
       'agent.eval-lab.trials.get': { schemaVersion: 'rag-ime.agent-lab-trial.v1', jobs: [previous], registeredSceneIds: ['enterprise-rag'] },
       'agent.eval-lab.trials.start': () => { throw Object.assign(new Error('unsupported model'), { status: 422 }); },
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '运行' }));
     await user.click(await screen.findByRole('button', { name: '运行验证' }));
@@ -216,7 +220,7 @@ describe('experiment workspace', () => {
       'agent.room.snapshot': () => { if (!readable) throw new TypeError('snapshot unavailable'); return { ...source, room, events: [], firstSequence: 0, lastSequence: 0, resumeToken: '' }; },
       'agent.room.message': () => { if (++attempts === 1) throw new TypeError('network disconnected after send'); return { ok: true }; },
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '设置实验' }));
     await user.click(screen.getByRole('button', { name: '选择候选目录' }));
@@ -224,7 +228,7 @@ describe('experiment workspace', () => {
     expect(await screen.findByLabelText('运行中的原生 Room')).toHaveAttribute('data-room-id', room.id);
     await screen.findByRole('button', { name: '核对并重试原派发' });
     cleanup();
-    showLab(transport);
+    await showLab(transport);
     await screen.findByRole('button', { name: '核对并重试原派发' });
     await user.click(screen.getByRole('tab', { name: '设置实验' }));
     fireEvent.change(screen.getByRole('textbox', { name: '优化目标' }), { target: { value: '下次再提交的另一个目标' } });
@@ -253,7 +257,7 @@ describe('experiment workspace', () => {
       'agent.room.snapshot': { ...source, room, events: [], firstSequence: 0, lastSequence: 0, resumeToken: '' },
       'agent.room.message': (request: ControlRequest) => { throw Object.assign(new Error('original command pending'), { payload: { code: 'AGENT_COMMAND_PENDING', commandReceipt: { state: 'pending', clientMessageId: (request.body as Record<string, unknown>).clientMessageId, recoveryState } } }); },
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '设置实验' }));
     await user.click(screen.getByRole('button', { name: '选择候选目录' }));
@@ -276,7 +280,7 @@ describe('experiment workspace', () => {
       'agent.room.message': (request: ControlRequest) => { sent = request.body as Record<string, unknown>; throw new TypeError('receipt lost'); },
       'agent.room.snapshot': () => ({ ...source, room, events: [{ ...source.events[0], payload: { ...source.events[0].payload, text: sent.message, clientMessageId: sent.clientMessageId } }], firstSequence: 1, lastSequence: 1, resumeToken: `${room.id}:1` }),
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '设置实验' }));
     await user.click(screen.getByRole('button', { name: '选择候选目录' }));
@@ -300,7 +304,7 @@ describe('experiment workspace', () => {
         return { ok: true };
       },
     });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '设置实验' }));
     await user.click(screen.getByRole('button', { name: '选择候选目录' }));
@@ -325,7 +329,7 @@ describe('experiment workspace', () => {
       if (unavailable) throw new Error('Runtime disconnected');
       return saved;
     } });
-    showLab(transport);
+    await showLab(transport);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: '设置实验' }));
     const goal = screen.getByRole('textbox', { name: '优化目标' });
@@ -383,7 +387,7 @@ describe('experiment workspace', () => {
     expect(screen.queryByText(/从桌面 App 打开 Lab/)).not.toBeInTheDocument();
   });
   it('opens the current Enterprise RAG experiment and keeps Keep separate from application', async () => {
-    showLab(makeTransport());
+    await showLab(makeTransport());
     expect(await screen.findByRole('combobox', { name: '当前实验' })).toHaveValue(experiment.experimentId);
     const steps = within(screen.getByRole('tablist', { name: '实验流程' }));
     expect(steps.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['1设置实验', '2运行', '3检查结果', '4应用版本']);
@@ -404,7 +408,7 @@ describe('experiment workspace', () => {
   it('dispatches edited implementation scope and limits to a real full-trust Room, then retains the experiment', async () => {
     const room = { id: 'room-experiment', title: '新实验', ownerAppId: 'extension:agent-lab', surfaceKey: `candidate.${experiment.experimentId}`.slice(0, 64), participants: [] };
     const transport = makeTransport({ 'agent.rooms.create': { ok: true, room }, 'agent.room.message': { ok: true } });
-    showLab(transport);
+    await showLab(transport);
     await screen.findByRole('combobox', { name: '当前实验' });
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '设置实验' }));
@@ -439,7 +443,7 @@ describe('experiment workspace', () => {
 
   it('requires an actual candidate directory before dispatch and describes unenforced budget truthfully', async () => {
     const transport = makeTransport();
-    showLab(transport);
+    await showLab(transport);
     await screen.findByRole('combobox', { name: '当前实验' });
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '设置实验' }));
@@ -451,7 +455,7 @@ describe('experiment workspace', () => {
 
   it('shows real frozen diff and paired case scores without inventing a per-case Session position', async () => {
     const transport = makeTransport({ 'agent.eval-lab.evidence': catalog([evidenceRun('rag--rag-baseline', 'trace:baseline'), evidenceRun('rag--rag-candidate', 'trace:candidate')]) });
-    const { openRoute } = showLab(transport);
+    const { openRoute } = await showLab(transport);
     const cases = await screen.findByLabelText('逐 Case 前后对比');
     expect(within(cases).getAllByRole('listitem')).toHaveLength(1);
     expect(cases).not.toHaveTextContent('整批问答 Session');
@@ -478,7 +482,7 @@ describe('experiment workspace', () => {
       targets: [{ targetKey: 'run:unrelated-run', kind: 'run', id: 'unrelated-run', title: 'Other run', traceIds: [], sourceAvailable: true }],
       traceIds: [], inspectionSha256: 'd'.repeat(64), inspection: {}, result: {}, failureReason: '', createdAtMs: 1, updatedAtMs: 1,
     } });
-    const { openRoute } = showLab(transport, `/eval-lab?traceReportId=${encodeURIComponent(reportId)}`, false);
+    const { openRoute } = await showLab(transport, `/eval-lab?traceReportId=${encodeURIComponent(reportId)}`, false);
     expect(await screen.findByText('另一轮任务诊断')).toBeVisible();
     expect(screen.getByText(/来源报告尚未与本实验基线关联/)).toBeVisible();
     expect(screen.getByRole('combobox', { name: '当前实验' })).toHaveValue(experiment.experimentId);

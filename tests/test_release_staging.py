@@ -195,6 +195,37 @@ class ReleaseStagingTests(unittest.TestCase):
                 project_files=("README.md",),
             )
 
+    def test_frontend_provenance_ignores_finder_metadata_but_detects_asset_changes(self) -> None:
+        dist = self.apps["control"] / "Contents/Resources/app/dist"
+        (dist / ".DS_Store").write_bytes(b"Finder window settings")
+        (dist / "assets/.DS_Store").write_bytes(b"Finder icon positions")
+        report = prepare_release_candidate(
+            self.root, release_id="finder-metadata",
+            output_root=self.root / "out-finder-metadata",
+            squirrel_source=self.squirrel, apps=self.apps,
+            project_files=("README.md",),
+        )
+        self.assertTrue(Path(report["manifest"]).is_file())
+        (dist / "assets/main.js").write_text("unexpected replacement", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "dist tree digest"):
+            prepare_release_candidate(
+                self.root, release_id="changed-asset",
+                output_root=self.root / "out-changed-asset",
+                squirrel_source=self.squirrel, apps=self.apps,
+                project_files=("README.md",),
+            )
+
+    def test_frontend_metadata_name_does_not_hide_a_symlink(self) -> None:
+        dist = self.apps["control"] / "Contents/Resources/app/dist"
+        (dist / ".DS_Store").symlink_to(dist / "assets/main.js")
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            prepare_release_candidate(
+                self.root, release_id="metadata-symlink",
+                output_root=self.root / "out-metadata-symlink",
+                squirrel_source=self.squirrel, apps=self.apps,
+                project_files=("README.md",),
+            )
+
     def _app(self, name: str, bundle_id: str) -> Path:
         app = self.root / "apps" / name
         contents = app / "Contents"

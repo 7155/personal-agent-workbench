@@ -125,7 +125,8 @@ describe('Minecraft harness collaboration flow', () => {
     expect(abortView.fields.find((field) => field.id === 'abortRequested')?.value)
       .toBe('已发出，等待子 Agent 停止');
     expect(abortView.resultItemsLabel).toBe('子任务结果');
-    expect(abortView.resultItems[0]?.text).toContain('TaskBrief');
+    expect(abortView.resultItems[0]?.title).toContain('TaskBrief');
+    expect(abortView.resultItems[0]?.text).toBe('进行中 · 研究员');
   });
 
   it('renders a route_decision activity as an expandable dispatch plan', () => {

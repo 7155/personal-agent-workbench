@@ -136,6 +136,15 @@ def _retrieval_result(node: dict[str, Any], result: Mapping[str, Any]) -> None:
         metrics.append(row)
 
     metric('MRR', values.get('mrr'))
+    # Retrieval-only runs persist timing receipts even when the provider has no
+    # billable cost receipt. Project only that measured latency; never turn a
+    # missing providerCost into an invented $0 estimate.
+    costs = _mapping(report.get('costs'))
+    latency = _number(costs.get('meanRetrievalLatencyMs'))
+    calls = _count(costs.get('retrievalCalls'))
+    if latency is not None and latency >= 0 and calls is not None and calls > 0:
+        metrics.append({'label': '平均检索耗时', 'value': latency, 'baseline': None,
+                        'candidate': None, 'unit': 'ms', 'sampleCount': calls})
     for key, label in (('recallAtK', 'Recall'), ('ndcgAtK', 'nDCG')):
         # Keep only bounded numeric cutoffs, never arbitrary result keys.
         cutoffs = [(int(k), value) for k, value in _mapping(values.get(key)).items()

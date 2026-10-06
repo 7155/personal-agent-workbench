@@ -291,7 +291,7 @@ describe('PAWOS shell visual language', () => {
     expect(reduced).toContain('.paw-wayfinder-work__folder-art, .paw-wayfinder-work__file-art');
   });
 
-  it('anchors the icon project window and gives work names and the inline panel normal flow', () => {
+  it('anchors the bounded icon project window and keeps work names readable', () => {
     const desktopProjectWindow = lastRule(pawOsCss, '\n.paw-wayfinder-work__project-content');
     const narrowProjectWindow = lastRule(shellCss, '.paw-desktop-root .paw-wayfinder-work__project-content');
     expect(desktopProjectWindow).toContain('position: absolute');
@@ -300,13 +300,10 @@ describe('PAWOS shell visual language', () => {
     expect(narrowProjectWindow).not.toContain('position: fixed');
     expect(narrowProjectWindow).toContain('height: auto');
     expect(lastRule(pawOsCss, '\n.paw-wayfinder-work__project-content-scroll')).toContain('overflow-y: auto');
-    const work = ".paw-desktop-root .paw-wayfinder-work[data-work-layout='work']";
-    expect(rule(pawOsCss, `${work} .paw-wayfinder-work__project-content`)).toContain('position: relative');
-    expect(rule(pawOsCss, `${work} .paw-wayfinder-work__project-content-scroll`)).toContain('max-height: min(380px, 45vh)');
-    const workName = rule(pawOsCss, `${work} .paw-wayfinder-work__project > summary .paw-wayfinder-work__project-copy strong`);
-    expect(workName).toContain('max-width: none');
-    expect(workName).toContain('-webkit-line-clamp: unset');
-    expect(workName).toContain('text-align: left');
+    expect(narrowProjectWindow).toContain('max-height: calc(100vh - 140px)');
+    expect(narrowProjectWindow).toContain('overflow: hidden');
+    expect(narrowProjectWindow).toContain('left: var(--wayfinder-panel-x, 0px)');
+    expect(narrowProjectWindow).toContain('top: var(--wayfinder-panel-y, calc(100% + 10px))');
 
     for (const [name, css, selector] of [
       ['App name', pawOsCss, '.paw-desktop-shortcuts button strong'],
@@ -406,10 +403,13 @@ describe('PAWOS shell visual language', () => {
 
   it('keeps macOS traffic-light artwork small inside an accessible hit target', () => {
     const lights = rule(pawOsCss, '.paw-traffic-lights > button');
-    expect(lights).toMatch(/width:\s*24px/);
-    expect(lights).toMatch(/height:\s*24px/);
-    expect(lights).toMatch(/flex:\s*0 0 24px/);
-    expect(lights).toContain('padding: 6px');
+    const target = Number(rule(pawOsCss, '.paw-desktop-root').match(/--paw-window-control-size:\s*(\d+)px;/)?.[1]);
+    expect(target).toBeGreaterThanOrEqual(24);
+    expect(lights).toContain('width: var(--paw-window-control-size)');
+    expect(lights).toContain('height: var(--paw-window-control-size)');
+    expect(lights).toContain('flex: 0 0 var(--paw-window-control-size)');
+    expect(rule(shellCss, '.paw-desktop-root .paw-traffic-lights > button::before'))
+      .toContain('inset: calc((var(--paw-window-control-size) - 12px) / 2)');
   });
 
   it('keeps every pointer resize edge at least 24px thick', () => {
@@ -448,16 +448,16 @@ describe('PAWOS shell visual language', () => {
     expect(shellCss).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.paw-desktop-root \.paw-launchpad-group,/);
   });
 
-  it('keeps traffic lights the fixed leftmost column of every window titlebar', () => {
-    // The titlebar grid's first track is a fixed pixel column that always
+  it('keeps traffic lights the reachable leftmost column of every window titlebar', () => {
+    // The titlebar grid's first track fits the shared control size and always
     // resolves to the traffic-light slot, at both the default and the narrow
     // breakpoint, so no App can push the lights out of their left position by
     // widening the title or chrome-slot tracks.
-    // Both widths resolve one shared token, so a window that docks App
+    // Both widths resolve the shared token or max-content, so a window that docks App
     // chrome widens the column through --paw-titlebar-lead instead of any
     // owner re-declaring a competing pixel value.
-    expect(pawOsCss).toMatch(/\.paw-window-titlebar\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, 76px\) minmax\(0, 1fr\) minmax\(0, auto\);/s);
-    expect(pawOsCss).toMatch(/@media \(max-width: 820px\)[\s\S]*?\.paw-window-titlebar\s*\{\s*grid-template-columns:\s*var\(--paw-titlebar-lead, 70px\) minmax\(0, 1fr\) minmax\(0, auto\);/);
+    expect(pawOsCss).toMatch(/\.paw-window-titlebar\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, max-content\) minmax\(0, 1fr\) minmax\(0, auto\);/s);
+    expect(pawOsCss).toMatch(/@media \(max-width: 820px\)[\s\S]*?\.paw-window-titlebar\s*\{\s*grid-template-columns:\s*var\(--paw-titlebar-lead, max-content\) minmax\(0, 1fr\) minmax\(0, auto\);/);
     // No shell owner may re-key that grid per App: the recipe is one shared
     // geometry, not a per-window rediscovery.
     for (const [name, css] of Object.entries({
@@ -488,19 +488,29 @@ describe('PAWOS shell visual language', () => {
       `.paw-desktop-root .paw-window:has(> .paw-window-titlebar${conversationChrome} > .paw-window-title)`);
     const contextTitlebar = rule(contextStep,
       `.paw-desktop-root .paw-window > .paw-window-titlebar${conversationChrome}:has(> .paw-window-title)`);
-    const captionRows = contextTitlebar.match(/grid-template-rows:\s*(\d+)px (\d+)px;/);
-    expect(captionRows, 'a control row and a visible conversation-name row').not.toBeNull();
-    const [, controlsHeight, captionHeight] = captionRows!;
-    expect(Number(controlsHeight)).toBe(defaultHeight);
+    const controlSize = Number(defaultGeometry.match(/--paw-window-control-size:\s*(\d+)px;/)?.[1]);
+    const captionRows = contextTitlebar.match(/grid-template-rows:\s*calc\(var\(--paw-window-control-size\) \+ (\d+)px\) (\d+)px;/);
+    expect(captionRows, 'a reachable control row and a visible conversation-name row').not.toBeNull();
+    const [, controlsInset, captionHeight] = captionRows!;
+    expect(controlSize + Number(controlsInset)).toBe(defaultHeight);
     expect(Number(captionHeight)).toBe(24);
-    expect(Number(contextWindow.match(/--paw-titlebar-h:\s*(\d+)px;/)?.[1]))
-      .toBe(Number(controlsHeight) + Number(captionHeight));
+    const captionInset = Number(contextWindow.match(/--paw-titlebar-h:\s*calc\(var\(--paw-window-control-size\) \+ (\d+)px\);/)?.[1]);
+    const responsiveGeometry = [
+      '@media (max-width: 820px)', '@media (max-width: 480px)',
+      '@container paw-window (max-width: 760px)', '@container paw-window (max-width: 480px)',
+    ].map(header => rule(pawOsCss.slice(pawOsCss.indexOf(header)), '.paw-window'));
+    for (const geometry of responsiveGeometry) {
+      const size = Number(geometry.match(/--paw-window-control-size:\s*(\d+)px;/)?.[1]);
+      expect(size).toBeGreaterThanOrEqual(controlSize);
+      expect(Number(geometry.match(/--paw-titlebar-h:\s*(\d+)px;/)?.[1])).toBe(size + Number(controlsInset));
+      expect(size + captionInset).toBe(size + Number(controlsInset) + Number(captionHeight));
+    }
     expect(rule(contextStep,
       `.paw-desktop-root .paw-window > .paw-window-titlebar${conversationChrome} > .paw-window-title`))
       .toContain('grid-row: 2;');
     // All other selectors must inherit this geometry, not invent another
-    // height token outside the default and the bounded caption context.
-    expect(pawOsCss.replace(defaultGeometry, '').replace(contextWindow, ''))
+    // height token outside the shared responsive steps and bounded caption context.
+    expect(responsiveGeometry.reduce((css, geometry) => css.replace(geometry, ''), pawOsCss.replace(defaultGeometry, '').replace(contextWindow, '')))
       .not.toMatch(/--paw-titlebar-h:\s*/);
 
     const structureRadius = pawOsCss.match(/--paw-radius:\s*([^;]+);/)?.[1]?.trim();
@@ -570,7 +580,7 @@ describe('PAWOS shell visual language', () => {
     // The clip chain continues up to the document, so resizing a window can
     // never turn into page-level horizontal scroll.
     expect(rule(pawOsCss, '.paw-desktop-root')).toContain('overflow: hidden');
-    expect(rule(pawOsCss, '.paw-desktop-viewport')).toContain('overflow: hidden');
+    expect(rule(pawOsCss, '.paw-desktop-viewport')).toContain('overflow: clip');
   });
 
   it('yields window caption text before any window control down to 375px', () => {

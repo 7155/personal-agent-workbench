@@ -137,7 +137,9 @@ class ProjectWorkflowTests(unittest.TestCase):
         from rag_ime.agent_lab.project_workflow import project_workflow
         result = {'jobId': 'eval-one', 'kind': 'evaluation', 'evaluatedCount': 37, 'plannedCount': 40,
                   'profile': {'mode': 'hybrid', 'topK': 16, 'rerank': False, 'prompt': 'SECRET_PROFILE'},
-                  'report': {'privateCases': ['SECRET_CASE'], 'metrics': {'queryCount': 37, 'metrics': {
+                  'report': {'privateCases': ['SECRET_CASE'], 'costs': {
+                      'meanRetrievalLatencyMs': 37713.142, 'retrievalCalls': 37},
+                      'metrics': {'queryCount': 37, 'metrics': {
                       'mrr': .47, 'recallAtK': {'1': .28, '16': .82}, 'ndcgAtK': {'16': .53}}}}}
         flow = project_workflow(self.project, knowledge={'jobs': [
             {'jobId': 'eval-one', 'state': 'completed', 'publicSpec': {'operation': 'evaluate'}, 'result': result}],
@@ -145,11 +147,13 @@ class ProjectWorkflowTests(unittest.TestCase):
         node = next(n for n in flow['nodes'] if n['id'] == 'eval-one')
         self.assertEqual(node['title'], '检索评测')
         self.assertEqual({metric['label']: metric['value'] for metric in node['metrics']},
-                         {'MRR': .47, 'Recall@1': .28, 'Recall@16': .82, 'nDCG@16': .53})
+                         {'MRR': .47, '平均检索耗时': 37713.142, 'Recall@1': .28, 'Recall@16': .82, 'nDCG@16': .53})
         for metric in node['metrics']:
             self.assertIsNone(metric['baseline'])
             self.assertIsNone(metric['candidate'])
             self.assertEqual(metric['sampleCount'], 37)
+        self.assertEqual(next(metric for metric in node['metrics'] if metric['label'] == '平均检索耗时')['unit'], 'ms')
+        self.assertFalse(any(metric['unit'] == 'USD' for metric in node['metrics']))
         self.assertIn('37 / 40', node['summary'])
         self.assertEqual(node['factors'][0], {'name': 'mode', 'before': '', 'after': 'hybrid', 'reason': '本次检索配置'})
         self.assertNotIn('SECRET_', json.dumps(flow))
@@ -173,6 +177,20 @@ class ProjectWorkflowTests(unittest.TestCase):
                                                            'candidate': None, 'unit': 'ratio'}])
                     else:
                         self.assertNotIn('metrics', node)
+
+    def test_retrieval_costs_without_valid_timing_receipts_remain_unmeasured(self):
+        from rag_ime.agent_lab.project_workflow import project_workflow
+        for costs in ({'meanRetrievalLatencyMs': -1, 'retrievalCalls': 2},
+                      {'meanRetrievalLatencyMs': 0, 'retrievalCalls': 0},
+                      {'meanRetrievalLatencyMs': float('nan'), 'retrievalCalls': 2},
+                      {'meanRetrievalLatencyMs': 20, 'retrievalCalls': True}):
+            with self.subTest(costs=costs):
+                result = {'report': {'metrics': {'queryCount': 2, 'metrics': {'mrr': .3}}, 'costs': costs},
+                          'providerCost': None}
+                flow = project_workflow(self.project, knowledge={'jobs': [
+                    {'jobId': 'eval-one', 'state': 'completed', 'publicSpec': {'operation': 'evaluate'}, 'result': result}]})
+                node = next(n for n in flow['nodes'] if n['id'] == 'eval-one')
+                self.assertEqual([m['label'] for m in node['metrics']], ['MRR'])
 
     def test_restored_index_keeps_runtime_identity_and_kind(self):
         from rag_ime.agent_lab.project_workflow import project_workflow

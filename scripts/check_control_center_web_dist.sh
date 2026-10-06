@@ -33,7 +33,7 @@ from pathlib import Path
 
 root, dist_path, marker_path, expected_transport, expected_channel, expected_commit, expected_dist_digest = sys.argv[1:]
 sys.path.insert(0, root)
-from rag_ime.release_staging import content_tree_digest
+from rag_ime.release_staging import control_center_dist_digest
 
 with open(marker_path, encoding="utf-8") as handle:
     marker = json.load(handle)
@@ -66,10 +66,7 @@ if expected_commit and marker.get("sourceCommit") != expected_commit:
     raise SystemExit(
         f"control-center source commit is {marker.get('sourceCommit')!r}, expected {expected_commit!r}"
     )
-dist_digest = content_tree_digest(
-    Path(dist_path),
-    excluded_paths=("rag-ime-control-web-build.json",),
-)
+dist_digest = control_center_dist_digest(Path(dist_path))
 if expected_transport == "http" and marker.get("frontendProduct") != "paw-os":
     raise SystemExit("http control-center build is not the PAWOS frontend")
 if marker.get("distTreeDigest") != dist_digest:

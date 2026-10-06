@@ -142,9 +142,9 @@ from pathlib import Path
 
 root, dist = sys.argv[1:]
 sys.path.insert(0, root)
-from rag_ime.release_staging import content_tree_digest
+from rag_ime.release_staging import control_center_dist_digest
 
-print(content_tree_digest(Path(dist), excluded_paths=("rag-ime-control-web-build.json",)))
+print(control_center_dist_digest(Path(dist)))
 PY
 )"
 "$ROOT/scripts/check_control_center_web_dist.sh" \
@@ -329,6 +329,12 @@ if [[ "$ACTION" == install-* ]]; then
   echo "Previous application retained at $BACKUP_DIR" >&2
   touch "$INSTALL_DEST"
   "$LSREGISTER" -f "$INSTALL_DEST" >/dev/null
+  if [[ "$CHANNEL" == "release" ]]; then
+    # Archival is best effort after a verified install. Never make recovery
+    # depend on an external volume being present during installation.
+    python3 "$ROOT/scripts/archive_paw_app_backups.py" >&2 || \
+      echo "PAW backup archival skipped; local recovery copies remain." >&2
+  fi
   echo "$INSTALL_DEST"
 else
   echo "$APP"

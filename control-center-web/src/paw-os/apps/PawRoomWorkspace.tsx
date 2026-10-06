@@ -412,10 +412,16 @@ export function PawRoomWorkspace({
       const admission = send(value, { preserveDraft: true });
       if (admission === false) return false;
       if (typeof admission !== 'boolean') {
-        const recover = () => recovery.recoverInput(current => ({
-          ...current,
-          draft: current.draft ? `${current.draft}\n\n${value}` : value,
-        }));
+        const admittedId = sendJournal.getSnapshot()?.clientMessageId;
+        const recover = () => {
+          // An unknown ACK still belongs to this exact admitted command.
+          // Returning it to editable input would invite a second request.
+          if (admittedId && sendJournal.getSnapshot()?.clientMessageId === admittedId) return;
+          recovery.recoverInput(current => ({
+            ...current,
+            draft: current.draft ? `${current.draft}\n\n${value}` : value,
+          }));
+        };
         void admission.then(accepted => { if (!accepted) recover(); }, recover);
       }
     },

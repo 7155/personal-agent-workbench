@@ -100,7 +100,14 @@ describe('Lab project dependency canvas', () => {
     const detail = within(screen.getByRole('region', { name: '所选节点详情' }));
     expect(detail.getByText('0美元')).toBeInTheDocument(); expect(detail.getByText('未回报')).toBeInTheDocument();
     expect(detail.getByText('暂不能比较')).toBeInTheDocument(); expect(detail.getByText('仅测试模型因素')).toBeInTheDocument();
-    expect(detail.getByText('效果尚未判定')).toBeInTheDocument();
+    expect(detail.getByText('已测量 · 待结论')).toBeInTheDocument();
+  });
+  it('separates recorded measurements from the missing keep/reject decision', () => {
+    const paired = node('有对照', { decision: 'unknown', metrics: [{ label: 'MRR', baseline: .45, candidate: .47 }] });
+    mount(workflow([paired, node('无指标')]));
+    expect(screen.getAllByText('已有对照 · 待判定')).toHaveLength(2);
+    expect(screen.getByText('效果尚未判定')).toBeInTheDocument();
+    expect(screen.queryByText('候选有改善')).not.toBeInTheDocument();
   });
   it('opens the exact reused call version with its App owner intact', () => {
     const current = node('追问整理', { kind: 'job', ref: { kind: 'application_call', id: 'followup-call', version: 7 }, evidenceRefs: [{ kind: 'application', id: 'polar-app', version: 7 }, { kind: 'application_call', id: 'original-call', version: 5 }], summary: '复用前次 34 个原文窗口' });
