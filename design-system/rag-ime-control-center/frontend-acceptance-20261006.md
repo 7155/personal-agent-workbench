@@ -385,3 +385,19 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - Knowledge/Vault 两文件 48 项通过；原生 Memory/Knowledge 路由所有者两项通过（另 30 项未在这次选中）；Memory 已访问偏好草稿补查 1 项通过。owner/import/route 检查及 diff check 通过，路由统计 94 dispatched / 280 declared / 29 of 40 undeclared 为既有检查输出。
 - 类型检查口径纠正：根 tsconfig 的 files=[] 和 references 导致先前 tsc --noEmit 未检查应用源文件，不能当作完整类型验证。改用仓库正式 pnpm typecheck（tsc -b --pretty false），发现并移除三个 RTL 测试文件误用的 Playwright exact 选项；运行结果 exit=0，日志 /tmp/paw-knowledge-typecheck-verified.txt。运行期查询仍使用原精确字符串。
 - Library 仍被 tools/list 前置代理 CONNECT 403 阻塞，15 项清单及原图原包未改、无新 file_id；按最新指示不再机械重试。无付费模型调用，无预算账本变更。本批不宣称全部 Apps/功能块重设计完成。
+
+## 三条 UI 审查意见：实际拒收与同一连接的回执
+
+基于远端 `c04bea08ac48d8b2946ce2cd41d0c2151b935391`。GitHub review-comments API 的实际只读动作返回 Forbidden，默认和授权只读重试均失败；没有读到原评论正文或标记线程解决。按父线程提供的三条具体候选，先复现再修改。没有 CI、后端大改或真实模型启动。
+
+| 候选及页面 | 复现与修改 | 验收及限制 |
+| --- | --- | --- |
+| [Room 排队异步拒收](https://github.com/7155/personal-agent-workbench/pull/135#discussion_r4192433412) | 排队 B 后填写新草稿 C，旧回合结束；发送异步 422 拒收后只剩 C，B 丢失。队列交接只发送其文字，不借用新草稿/附件；异步未接收时归还原草稿所有者，不自动重放。同步 false 仍留队列 | 修复前正确断言日志明确 received=C；修复后拒收恢复 C+B。两个新迟到回执用例：成功保留 C、拒收恢复 C+B；关闭重开后新附件仍在，请求 attachmentIds=[]，只发送一次。浏览器 390/1440 同样恢复 C+B，请求均 1 次。实际 Jev 专用“排队异步 false”未单独注入，但现有 Jev 完整文件通过 |
+| [子 Agent 列表刷新](https://github.com/7155/personal-agent-workbench/pull/135#discussion_r4192433427) | 原 StatusPanel 已按连接+Session 读取，但 Launch 刷新裸 Session。新增活动缓存交互先失败（1 次读取未变成 2 次）。沿真实独立面板发现读取仍裸 Session；两个连接的同名 Session 实际显示了甲连接的列表。将两处读者和写后刷新对齐到已有 agentSessionAddress/agentProjectionKey，精确刷新原连接 | 四个相关面板文件全 13 项通过；跨连接列表隔离及别的连接不被刷新。真实浏览器打开对话工具→子 Agent→填写→启动，两个宽度分别约 50.8/25.7ms 读到更新后列表。明确模拟运行树，没有真实子 Agent 执行/模型验收 |
+| [Lab 预算回执](https://github.com/7155/personal-agent-workbench/pull/135#discussion_r4192433419) | 找到 GuideBudget 写者：原先裸键写缓存，读取者使用连接作用域。保存后按钮仍可保存、原 revision 未更新，新增交互先失败。请求绑定原 transport/session/address/revision；成功回执写同一作用域，完成后精确刷新该键 | 保存后按钮禁用，当前预算更新，第二次保存使用 revision=2；保留原用量。浏览器 390/1440 实际将演示 48000→52000→54000，两次请求 revision=1/2。截图项目名标记“公开模拟”；其 Guide Session 不存在的边界另显示准确错误，没有称真实项目 Agent 通过。预算只属于此 Guide，不是全局费用上限 |
+
+- 修复前：/tmp/paw-three-reviews-before.txt；Room 原首轮误等被公共错误文案清理的原始英文，保留该定位失败；纠正断言 /tmp/paw-room-queue-before-corrected.txt 后实际证明 B 丢失。同名 Session 复现 /tmp/paw-session-subagent-before.txt。
+- 本批最终本地检查：Room/Jev 两个完整文件 59 项通过（345.57 秒），四个面板完整文件 13 项通过；正式 pnpm typecheck exit=0，owner/import/route/diff 检查通过。没有追 CI。
+- 浏览器证据：three-review-browser-final.json 的子 Agent 两组；three-review-v2-browser-final.json 的 Lab 两组；three-review-v4-browser-final.json 的 Room 两组，六组 pageerror=0、无页面横向溢出。原截图 three-review-subagents-refreshed-*、three-review-v2-budget-saved-*、three-review-v4-room-recovered-* 已人工查看。
+- 首轮浏览器注入漏 mode/expectedRevision 字段、未填消息就等条件按钮，以及预置 room-preview 的已完成演示流覆盖截短快照，失败 JSON/PNG 全保留；补查使用独立公开合成 Room，原应用交互与所有者照常运行。它们是浏览器中的有界故障注入，不是服务端验收。
+- Library 的原 15 项原图/原包仍保留，不重试 403、不新增 file_id。原费用保留数不变。本批没有绕过 GitHub 权限、代理策略或仓库保护。

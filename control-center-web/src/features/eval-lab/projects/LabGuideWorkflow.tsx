@@ -6,6 +6,8 @@ import { Button, Input } from '@/components/primitives';
 import { parseContract } from '@/contracts/validators';
 import type { AgentWorkflowStateV1, Goal } from '@/contracts/generated/agent-workflow-state.v1';
 import { AgentWorkflowPanel } from '@/features/agent/status/AgentWorkflowPanel';
+import { agentProjectionKey, agentSessionAddress, type AgentSessionTarget } from '@/features/agent/state/live-store';
+import type { ControlTransport } from '@/platform/transport';
 import { projectError } from './api';
 
 /** Native Goal controls for the same Guide Session; no project scheduler. */
@@ -19,6 +21,15 @@ export function LabGuideWorkflow({ sessionId }: { sessionId: string }) {
   </div>;
 }
 
+type BudgetMutationInput = {
+  sessionId: string;
+  address: AgentSessionTarget;
+  transport: ControlTransport;
+  expectedRevision: number;
+  tokenBudget: number | null;
+  timeBudgetMs: number | null;
+};
+
 function GuideBudget({ sessionId, goal }: { sessionId: string; goal: Goal }) {
   const transport = useControlTransport(); const client = useQueryClient();
   const [tokens, setTokens] = useState(goal.budget.tokenLimit === null ? '' : String(goal.budget.tokenLimit)); const [minutes, setMinutes] = useState(goal.budget.timeLimitMs === null ? '' : String(goal.budget.timeLimitMs / 60000));
@@ -28,13 +39,17 @@ function GuideBudget({ sessionId, goal }: { sessionId: string; goal: Goal }) {
   const valid = (tokenBudget === null || (Number.isSafeInteger(tokenBudget) && tokenBudget > 0 && tokenBudget <= 100000000))
     && (timeBudgetMs === null || (Number.isSafeInteger(timeBudgetMs) && timeBudgetMs > 0 && timeBudgetMs <= 31536000000));
   const changed = tokenBudget !== goal.budget.tokenLimit || timeBudgetMs !== goal.budget.timeLimitMs;
-  const mutation = useMutation({ mutationFn: async () => {
-    const raw = await transport.request({ pathId: 'agent.session.goal.mutate', params: { sessionId }, body: { action: 'update', expectedRevision: goal.revision, tokenBudget, timeBudgetMs } });
+  const mutation = useMutation({ mutationFn: async (input: BudgetMutationInput) => {
+    const raw = await input.transport.request({ pathId: 'agent.session.goal.mutate', params: { sessionId: input.sessionId }, body: { action: 'update', expectedRevision: input.expectedRevision, tokenBudget: input.tokenBudget, timeBudgetMs: input.timeBudgetMs } });
     const next = parseContract('agent-workflow-state.v1', raw);
-    if (next.sessionId !== sessionId) throw new Error('预算回执不属于当前项目 Agent。');
-    client.setQueryData(['agent', 'workflow', sessionId], next);
-  }, onSettled: () => { void client.invalidateQueries({ queryKey: ['agent', 'workflow', sessionId] }); } });
-  return <form className="lab-guide-budget" aria-label="项目 Agent 续行预算" onSubmit={(event) => { event.preventDefault(); if (valid && changed && !mutation.isPending) mutation.mutate(); }}>
+    if (next.sessionId !== input.sessionId) throw new Error('预算回执不属于当前项目 Agent。');
+    return next;
+  }, onSuccess: (next, input) => {
+    client.setQueryData(['agent', 'workflow', agentProjectionKey(input.address)], next);
+  }, onSettled: (_next, _error, input) => {
+    void client.invalidateQueries({ queryKey: ['agent', 'workflow', agentProjectionKey(input.address)], exact: true });
+  } });
+  return <form className="lab-guide-budget" aria-label="项目 Agent 续行预算" onSubmit={(event) => { event.preventDefault(); if (valid && changed && !mutation.isPending) mutation.mutate({ sessionId, address: agentSessionAddress(transport, sessionId), transport, expectedRevision: goal.revision, tokenBudget, timeBudgetMs }); }}>
     <h4>调整此 Agent 的续行预算</h4><p>保留已有用量，不会重新开始目标。留空表示不设置该项上限。</p>
     <label>Token 上限<Input type="number" min={1} max={100000000} step={1} value={tokens} disabled={mutation.isPending} onChange={(event) => setTokens(event.target.value)} /></label>
     <label>时间上限（分钟）<Input type="number" min={0} max={525600} step="any" value={minutes} disabled={mutation.isPending} onChange={(event) => setMinutes(event.target.value)} /></label>

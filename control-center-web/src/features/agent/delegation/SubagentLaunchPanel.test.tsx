@@ -1,14 +1,48 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { SubagentLaunchPanel } from './SubagentLaunchPanel';
+import { agentProjectionKey, agentSessionAddress } from '../state/live-store';
+const observers: (() => void)[] = [];
+afterEach(() => observers.splice(0).forEach(unsubscribe => unsubscribe()));
 
 afterEach(cleanup);
 
 describe('SubagentLaunchPanel', () => {
+  it('refreshes the active scoped run list immediately after launch without refreshing another connection', async () => {
+    const transport = new StubControlTransport('mock', {
+      'agent.subagents.templates': { ok: true, items: [template('worker', '执行者', 'write', ['read_only', 'write'])] },
+      'agent.subagents.create': { ok: true, accepted: true, batch: { runs: [{ id: 'new-run' }] } },
+      'agent.subagents.list': { ok: true, items: [] },
+    });
+    const foreign = new StubControlTransport('mock', { 'agent.subagents.list': { ok: true, items: [] } });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    for (const source of [transport, foreign]) {
+      const observer = new QueryObserver(queryClient, {
+        queryKey: ['agent', 'status-panel', 'subagents', agentProjectionKey(agentSessionAddress(source, 'session:root'))],
+        queryFn: () => source.request({ pathId: 'agent.subagents.list', query: { sessionId: 'session:root', limit: 50 } }),
+        staleTime: Infinity,
+      });
+      observers.push(observer.subscribe(() => {}));
+    }
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.subagents.list')).toHaveLength(1));
+    render(<ControlTransportProvider transport={transport}><QueryClientProvider client={queryClient}>
+      <SubagentLaunchPanel availableTools={[]} parents={[{ sessionId: 'session:root', label: 'Root', canWrite: true }]} />
+    </QueryClientProvider></ControlTransportProvider>);
+    const user = userEvent.setup();
+    await screen.findByRole('radio', { name: /^执行者/ });
+    await user.type(screen.getByRole('textbox', { name: '子 Agent 有界任务' }), '核对页面');
+    await user.type(screen.getByRole('textbox', { name: '子 Agent 预期交付' }), '核对结论');
+    await user.type(screen.getByRole('textbox', { name: '子 Agent 验收条件' }), '只读');
+    await user.click(screen.getByRole('button', { name: '启动子 Agent' }));
+    await screen.findByText(/1 个子 Agent 已排队/);
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.subagents.list')).toHaveLength(2));
+    expect(foreign.requests.filter(request => request.pathId === 'agent.subagents.list')).toHaveLength(1);
+  });
+
   it('keeps the reviewer read-only and launches a real Pi fork with a structured contract', async () => {
     const transport = new StubControlTransport('mock', {
       'agent.subagents.templates': {

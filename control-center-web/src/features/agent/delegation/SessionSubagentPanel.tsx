@@ -35,6 +35,7 @@ import {
   subagentTemplateLabel,
 } from '../status/subagent-presentation';
 import { SubagentLaunchPanel } from './SubagentLaunchPanel';
+import { agentProjectionKey, agentSessionAddress } from '../state/live-store';
 import { SessionCollabTimeline } from '@/features/collab-timeline/SessionCollabTimeline';
 import './session-subagent.css';
 
@@ -60,7 +61,7 @@ export const SessionSubagentPanel = forwardRef<HTMLElement, {
   const transport = useControlTransport();
   const pageVisible = usePageVisibility();
   const runsQuery = useQuery({
-    queryKey: ['agent', 'status-panel', 'subagents', sessionId],
+    queryKey: ['agent', 'status-panel', 'subagents', agentProjectionKey(agentSessionAddress(transport, sessionId))],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.subagents.list',
       query: { sessionId, limit: 50 },

@@ -19,6 +19,7 @@ import type { AgentTemplateV1 } from '@/contracts/generated/agent-template.v1';
 import type { ToolManifest } from '@/features/agent/types';
 import { toolItems } from '@/features/agent/types';
 import { publicAgentErrorText } from '@/features/agent/public-error';
+import { agentProjectionKey, agentSessionAddress } from '../state/live-store';
 import './subagent-launch.css';
 
 export interface SubagentParentOption {
@@ -200,7 +201,8 @@ function SubagentLaunchForm({
       setNotice(`${runs} 个子 Agent 已排队；实际配置会以 Launch Digest 固化。`);
       setTask('');
       await queryClient.invalidateQueries({
-        queryKey: ['agent', 'status-panel', 'subagents', parent.sessionId],
+        queryKey: ['agent', 'status-panel', 'subagents', agentProjectionKey(agentSessionAddress(transport, parent.sessionId))],
+        exact: true,
       });
     } catch (reason) {
       setError(publicAgentErrorText(reason, '子 Agent 启动失败。'));

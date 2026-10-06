@@ -406,9 +406,18 @@ export function PawRoomWorkspace({
       // The queue still owns input refused before admission. Read the journal
       // synchronously, including before React renders a newly admitted send.
       if (sending || sendJournal.getSnapshot()) return false;
-      const admission = send(value);
+      // A queued message owns only its held text, never the next composer
+      // draft or attachments. The command journal owns it after handoff;
+      // a refused asynchronous delivery returns it to this original owner.
+      const admission = send(value, { preserveDraft: true });
       if (admission === false) return false;
-      void admission;
+      if (typeof admission !== 'boolean') {
+        const recover = () => recovery.recoverInput(current => ({
+          ...current,
+          draft: current.draft ? `${current.draft}\n\n${value}` : value,
+        }));
+        void admission.then(accepted => { if (!accepted) recover(); }, recover);
+      }
     },
   });
   const queueFollowUp = useCallback((value: string) => queue.enqueue(value), [queue]);
