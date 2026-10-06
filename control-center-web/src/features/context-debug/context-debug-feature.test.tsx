@@ -346,9 +346,11 @@ describe('ContextDebugFeature', () => {
     renderFeature(transport, '/context-debug?sessionId=session-a&turnId=turn-initial');
 
     expect(await screen.findByRole('heading', { name: '首轮装配' })).toBeInTheDocument();
+    await user.type(screen.getByRole('searchbox', { name: '搜索上下文条目' }), 'memory_search');
     const turnNavigation = screen.getByRole('navigation', { name: '对话轮次' });
     await user.click(within(turnNavigation).getByRole('button', { name: /压缩后恢复/ }));
     expect(await screen.findByRole('heading', { name: '压缩后恢复' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: '搜索上下文条目' })).toHaveValue('memory_search');
     expect(screen.getByText('旧消息已被低分辨率恢复材料替代', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('压缩恢复与运行时')).toBeInTheDocument();
     expect(screen.getByText('+2 / -12')).toBeInTheDocument();

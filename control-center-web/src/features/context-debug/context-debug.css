@@ -2097,6 +2097,7 @@
   :is(main, section)[data-route-id='context-debug'][data-paw-os-app] .context-debug-select--session { width: min(100%, 420px); }
   :is(main, section)[data-route-id='context-debug'][data-paw-os-app] .context-debug-session-viewer {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content max-content;
     overflow-x: hidden;
     overflow-y: auto;
     /* The desktop two-column layout stretches the tree to the full column; in

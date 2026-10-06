@@ -366,7 +366,6 @@ function ContextDebugDocument({
 
   useEffect(() => {
     setActiveEntryId('');
-    setTreeQuery('');
   }, [context?.turnId]);
 
   if (!context?.modelCalls.length) {

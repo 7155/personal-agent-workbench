@@ -247,8 +247,8 @@ export function PawSystemApps({
           </header>
           <div className="paw-system-app__workspace" aria-busy={switchingPage}>
             <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
-              <MemoryRouter initialEntries={[visibleRoute]} key={preserveInputPages ? appId : visibleRoute}>
-                <PawSystemRouteReporter expectedRoute={visibleRoute} preservePage={preserveInputPages} />
+              <MemoryRouter initialEntries={[visibleRoute]} key={preserveInputPages ? appId : `${appId}:${visiblePage.id}`}>
+                <PawSystemRouteReporter expectedRoute={visibleRoute} preservePage />
                 {renderedPages.map(candidate => <div className="paw-system-app__page" key={`${appId}:${candidate.id}`} hidden={candidate.id !== visiblePage.id} inert={switchingPage || candidate.id !== visiblePage.id}>
                   <PawOsAppActivityProvider active={!switchingPage && candidate.id === visiblePage.id}>
                     <PawSystemSurface appId={appId} pageId={candidate.id} />

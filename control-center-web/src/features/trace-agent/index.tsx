@@ -45,7 +45,7 @@ import {
   stringValue,
 } from '@/features/overview/management-ui';
 import { parseRoomEventPage, type RoomEventPage } from '@/contracts/room-reducer';
-import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import { openPawOsRoute, PawOsAppActivityProvider, usePawOsAppActive, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { pawBrowserHost } from '@/paw-os/apps/paw-browser-host';
 import {
   parseTraceAgentHandoff,
@@ -170,14 +170,15 @@ export function TraceAgentFeature() {
   const reportId = searchParams.get('reportId')?.trim() ?? '';
   const requestedView = searchParams.get('view') ?? '';
   const view: TraceAppView = reportId ? 'report' : ['workspace', 'new', 'knowledge', 'capabilities'].includes(requestedView) ? requestedView as TraceAppView : parseTraceAgentHandoff(searchParams) ? 'new' : 'workspace';
-  const [draftOpened, setDraftOpened] = useState(view === 'new');
-  useEffect(() => { if (view === 'new') setDraftOpened(true); }, [view]);
+  const [visitedViews, setVisitedViews] = useState<TraceAppView[]>([view]);
+  useEffect(() => { setVisitedViews(current => current.includes(view) ? current : [...current, view]); }, [view]);
+  const visited = (candidate: TraceAppView) => view === candidate || visitedViews.includes(candidate);
   const navigate = (next: TraceAppView) => setSearchParams({ view: next });
   return <TraceAppShell onNavigate={navigate} view={view}>
-    {view === 'workspace' ? <TraceTaskWorkspace onCreate={() => navigate('new')} onOpen={(id) => setSearchParams({ reportId: id })} /> : null}
-    {draftOpened || view === 'new' ? <div hidden={view !== 'new'}><TraceAgentWorkbench /></div> : null}
-    {view === 'knowledge' ? <TraceKnowledgeLibrary /> : null}
-    {view === 'capabilities' ? <TraceCapabilityLibrary /> : null}
+    {visited('workspace') ? <div hidden={view !== 'workspace'} inert={view !== 'workspace'}><PawOsAppActivityProvider active={view === 'workspace'}><TraceTaskWorkspace onCreate={() => navigate('new')} onOpen={(id) => setSearchParams({ reportId: id })} /></PawOsAppActivityProvider></div> : null}
+    {visited('new') ? <div hidden={view !== 'new'} inert={view !== 'new'}><TraceAgentWorkbench /></div> : null}
+    {visited('knowledge') ? <div hidden={view !== 'knowledge'} inert={view !== 'knowledge'}><PawOsAppActivityProvider active={view === 'knowledge'}><TraceKnowledgeLibrary /></PawOsAppActivityProvider></div> : null}
+    {visited('capabilities') ? <div hidden={view !== 'capabilities'} inert={view !== 'capabilities'}><PawOsAppActivityProvider active={view === 'capabilities'}><TraceCapabilityLibrary /></PawOsAppActivityProvider></div> : null}
     {view === 'report' ? <TraceDiagnosticReportPage reportId={reportId} /> : null}
   </TraceAppShell>;
 }
@@ -208,7 +209,9 @@ function TraceTaskWorkspace({ onCreate, onOpen }: { onCreate: () => void; onOpen
 }
 
 function useTraceDiagnosticReports(transport: ReturnType<typeof useControlTransport>) {
+  const active = usePawOsAppActive() ?? true;
   return useInfiniteQuery<TraceDiagnosticReportListV1>({
+    enabled: active,
     queryKey: ['trace-agent', 'diagnostic-reports'],
     initialPageParam: '',
     queryFn: ({ pageParam, signal }) => transport.request<TraceDiagnosticReportListV1>({

@@ -28,6 +28,31 @@ afterEach(() => {
 });
 
 describe('TraceAgentFeature', () => {
+  it('retains visited library drafts and capability filters without starting an execution', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'observability.traceOptimization.library': { ok: true, projects: [], projectId: '', patterns: [], truncated: false },
+      'observability.traceOptimization.capabilities': { ok: true, items: [], unavailable: [] },
+    } });
+    renderFeature(transport, [], ['/trace-agent?view=knowledge']);
+    const search = await screen.findByRole('searchbox', { name: '查找经验' });
+    await user.type(search, '还未提交的查找');
+    const navigation = screen.getByRole('navigation', { name: 'Trace Agent 应用导航' });
+    await user.click(within(navigation).getByRole('button', { name: '能力库' }));
+    const kind = await screen.findByRole('combobox', { name: '能力类型' });
+    await user.selectOptions(kind, 'tool');
+    await user.selectOptions(screen.getByRole('combobox', { name: '版本状态' }), 'candidate');
+    await user.click(within(navigation).getByRole('button', { name: '经验库' }));
+    expect(screen.getByRole('searchbox', { name: '查找经验' })).toBe(search);
+    expect(search).toHaveValue('还未提交的查找');
+    await user.click(within(navigation).getByRole('button', { name: '能力库' }));
+    expect(screen.getByRole('combobox', { name: '能力类型' })).toBe(kind);
+    expect(kind).toHaveValue('tool');
+    expect(screen.getByRole('combobox', { name: '版本状态' })).toHaveValue('candidate');
+    expect(transport.requests.every(({ request }) => request.pathId === 'observability.traceOptimization.library'
+      || request.pathId === 'observability.traceOptimization.capabilities')).toBe(true);
+  });
+
   it('opens an independent workspace and preserves the new-task draft across app views', async () => {
     const user = userEvent.setup();
     const transport = traceAgentTransport();

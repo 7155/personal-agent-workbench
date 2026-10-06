@@ -1,7 +1,8 @@
 .paw-trace-agent-app { height: 100%; min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--color-surface); scrollbar-color: var(--color-border-strong, #aebbb4) transparent; }
-.trace-app { container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 100%; color: var(--color-text); background: var(--color-surface); font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif); font-size: 15px; line-height: 1.6; }
+.trace-app { --trace-control-height: 32px; container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 100%; color: var(--color-text); background: var(--color-surface); font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif); font-size: 15px; line-height: 1.6; }
 .trace-app *, .trace-app *::before, .trace-app *::after { box-sizing: border-box; }
 .trace-app :focus-visible { outline: 2px solid var(--color-focus, var(--color-accent)); outline-offset: 3px; }
+.trace-app :is(.ui-button, select, input:not([type='checkbox']):not([type='radio']), .trace-agent-kind-tabs button, .trace-agent-optimization-focus label, summary) { min-height: var(--trace-control-height); }
 .trace-app ::selection { color: var(--color-text); background: var(--color-accent-soft); }
 .trace-app__layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); min-height: 100%; }
 .trace-app__layout[data-sidebar-collapsed='true'] { grid-template-columns: 48px minmax(0, 1fr); }
@@ -105,4 +106,14 @@
   .trace-app__sidebar nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
   .trace-app__sidebar nav button { justify-content: center; gap: 5px; padding-inline: 2px; font-size: 13px; white-space: nowrap; }
   .trace-app__sidebar nav button svg { width: 14px; height: 14px; }
+}
+
+@container paw-window (max-width: 880px) {
+  .trace-app { --trace-control-height: 40px; }
+}
+
+@container paw-window (max-width: 420px) {
+  .trace-app { --trace-control-height: 44px; }
+  .trace-app :is(.trace-app__sidebar nav button, .trace-app__task-toolbar select, .trace-app__library-filters select, .trace-app__library-filters input) { min-height: 44px; }
+  .trace-app :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { font-size: 16px; }
 }

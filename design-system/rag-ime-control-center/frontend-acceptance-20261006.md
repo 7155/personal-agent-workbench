@@ -432,3 +432,24 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - input-controls-final.json 真实四页×390/1440 八组 loading 按钮尺寸不变、label 不变、disabled=true；44/32px 高度通过，延迟→失败→恢复仍保留原值，pageerror=0、无页面横向溢出。system-controls-final-v2.json 四个系统 App×390/768/1440 共 12 组全部符合 44/40/32px，页首动作完整处于 chrome 内且无页面横向溢出。已查看各手机页和按钮焦点截图；首次脚本等了旧 App Center 的分区类名，定位失败独立保留，改等真实“打开 掌柜问数”后复查。
 - InteractionMotion/Dialog 两完整文件 8 项通过，正式 pnpm typecheck exit=0，owner/import/route/diff 检查通过。继续对 Monitor 三页及 Trace 四视图实点，当前仅新拍了 14 组页面/分区图，不用这些打开截图代替主要按钮验收。
 - Library、原生 IPC、真实后端/模型和费用账本边界与前批一致；未重试 Library 403，未启动付费模型。
+
+## Monitor 三页与 Trace 四视图：同页草稿与上下文窄屏
+
+基于已推送 `d4f3ce39c40d0920861c159c3b3e8d757b028042`。检查中原环境曾短暂返回 `exec-server transport disconnected`，旧 exec session 续读返回 `pong_timeout` / `unknown session id`。原环境连接恢复后继续同一工作树，取回原始记录并完成复查。没有替换环境、绕过网络限制或启动模型。
+
+| 页面 | 实际发现和本地修改 | 390/1440 主要按钮实点结果 | 未覆盖边界 |
+| --- | --- | --- | --- |
+| 活动 `/observability` | 换事件类型重挂载整个页面，未提交搜索丢失；系统 App 按页面身份保留同页 query 的既有所有者 | 无结果/清除、十类事件筛选、事件与同流程步骤、刷新均通过 | 不点击模型评审、证据评估或任务启动 |
+| 上下文 `/context-debug` | 同页路由修复之外，Document 还显式清空每轮搜索；移除这项清空，仍重置旧轮选中条目。390/768 目录实际高 711/677px，但正文从目录内的 216/280px 开始，确有重叠；紧凑布局的两行改按内容高度排列 | 实时暂停、四种目录筛选、搜索与切轮、清除、刷新、HTML 本机快照预览、Escape 关闭并回焦点均通过 | 默认快照为公开 preview；无真实模型请求。快速进入时两次草稿脚本仍记有丢失，成因尚未定位，不改写失败为通过 |
+| 诊断 `/diagnostics` | 现有准确原生不可用提示保留 | 复制公开模拟排查报告、两项重新检查、刷新均通过 | 无原生前台候选、辅助功能或服务实测 |
+| Trace 工作台 `/trace-agent` | 保留已访问工作台的筛选所有者，隐藏时暂停列表读取 | 四种任务状态、刷新、空态选择工作记录进入新任务均通过 | 默认没有报告，真实报告详情未验 |
+| Trace 新建 `?view=new` | 已有草稿保留行为继续保留，不覆盖已有修复 | 对象取消/恢复、零对象禁用启动、Room/运行记录/Session 三类切换、沉淀模式、方向清空禁用、Skill 选择、目标编辑、刷新均通过 | 不点击开始诊断；不证明后台执行或模型结果 |
+| Trace 经验库 `?view=knowledge` | 已访问页切换不再卸载草稿所有者；隐藏时暂停列表/详情查询 | 用明确公开只读夹具打开冻结版本、来源、查找空结果与清除恢复均通过 | 合成公开观察，没有真实任务验证、写入或沉淀执行 |
+| Trace 能力库 `?view=capabilities` | 已访问页保留类型和版本筛选，隐藏时暂停查询 | 公开工具候选、版本身份展开、组合筛选空态、恢复已安装目录均通过 | 只读夹具不证明真实安装或候选评估 |
+
+- `monitor-trace-before.json` 14 个页面/宽度组合已打开并拍分区图；14 张页首原图人工查看。`monitor-trace-actions-final.json` 14 组主要操作全部通过，零 pageerror/页面横向溢出；本批 16 张主要操作/预览截图人工查看。它们是真实运行的浏览器 UI，数据为 preview 或明确标识的只读公开夹具，不称真实后端通过。
+- 草稿首轮 `monitor-trace-drafts-before.json` 四类共八组丢失，新建任务两组已保留。`monitor-trace-drafts-final.json` 上下文两组仍失败，`monitor-trace-drafts-corrected-final.json` 上下文 1440 一组仍失败，其余保留；这些失败原始文件不覆盖、不算通过。稳定页面单独补查 `context-settled-final.json`：390/768/1440 × normal/reduce 六组、24 次切轮全部保留；初次换未缓存轮次会重建搜索 DOM，但现有 React 草稿状态仍在，不能把 DOM 身份变化单独判为草稿丢失。
+- 上下文几何修复前 `context-settled-before.json`：390 两组、768 两组 overlap=true；修复后 `context-settled-final.json` 六组全部 overlap=false，正文从目录实际底部开始。修复后的 390/768/1440 三张稳定截图已人工查看；尚未验证滚动末尾和目录定位条目的焦点。
+- 本地行为检查：系统 App 完整文件 39 项、Trace 两完整文件 54 项、上下文完整文件 9 项，共 102 项通过。新增系统所有者、Trace 库切页、上下文搜索检查均先记录实际失败再修复。正式 `pnpm typecheck` exit=0，owner/import/route 检查通过；之后仅改两处 CSS，最终 diff check 通过。
+- Trace 控件沿同一套 32/40/44px 高度与手机输入 16px；首轮 trace-controls-final.json 的 768 三页 Select 仅 32px，真实失败保留，修正后 trace-controls-final-v2.json 四视图×三宽度共 12 组全部通过，无页面横向溢出。四张手机和一张紧凑页原图已人工查看；monitor-trace-actions-final-v2.json 最终 14 组主要操作均通过。恢复连接后取回 monitor-trace-drafts-post-settled.json，10 组全部保留；此前快速进入的偶发丢失成因仍未定位，真实宿主首开需补查，不删除原失败。
+- Library 原 15 项原图/原包与清单 SHA 未变，无新 ID；费用账本与未知保留未变。Settings 五页及其他剩余功能块仍需继续逐项审查，49 路由打开基线不等于全 App 重设计完成。未合并 main、未追 CI。

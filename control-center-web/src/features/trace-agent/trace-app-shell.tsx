@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button } from '@/components/primitives';
 import { publicErrorText } from '@/features/overview/management-ui';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import { AppSidebarToggle, useAppSidebar } from '@/paw-os/apps/app-sidebar';
 
 export type TraceAppView = 'workspace' | 'new' | 'knowledge' | 'capabilities' | 'report';
@@ -42,18 +43,20 @@ interface CapabilityLibrary {
 
 export function TraceKnowledgeLibrary() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const [projectId, setProjectId] = useState('');
   const [draftQuery, setDraftQuery] = useState('');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<PatternSummary | null>(null);
   const library = useQuery({
+    enabled: active,
     queryKey: ['trace-agent', 'optimization-library', projectId, query],
     queryFn: ({ signal }) => transport.request<KnowledgeLibrary>({ pathId: 'observability.traceOptimization.library', query: { ...(projectId ? { projectId } : {}), ...(query ? { query } : {}) }, signal }),
     retry: false,
   });
   const detail = useQuery({
     queryKey: ['trace-agent', 'optimization-pattern', projectId || library.data?.projectId, selected?.patternId, selected?.revision],
-    enabled: Boolean(selected && library.data),
+    enabled: active && Boolean(selected && library.data),
     queryFn: ({ signal }) => transport.request<KnowledgeLibrary>({ pathId: 'observability.traceOptimization.library', query: { projectId: projectId || library.data?.projectId || '', patternId: selected!.patternId, revision: selected!.revision }, signal }),
     retry: false,
   });
@@ -72,9 +75,10 @@ export function TraceKnowledgeLibrary() {
 
 export function TraceCapabilityLibrary() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const [kind, setKind] = useState('all');
   const [status, setStatus] = useState('all');
-  const library = useQuery({ queryKey: ['trace-agent', 'optimization-capabilities'], queryFn: ({ signal }) => transport.request<CapabilityLibrary>({ pathId: 'observability.traceOptimization.capabilities', signal }), retry: false });
+  const library = useQuery({ enabled: active, queryKey: ['trace-agent', 'optimization-capabilities'], queryFn: ({ signal }) => transport.request<CapabilityLibrary>({ pathId: 'observability.traceOptimization.capabilities', signal }), retry: false });
   const items = (library.data?.items ?? []).filter((item) => (kind === 'all' || item.kind === kind) && (status === 'all' || item.status === status));
   return <section aria-labelledby="trace-capabilities-heading" className="trace-app__page">
     <header className="trace-app__page-heading"><div><h1 id="trace-capabilities-heading">能力库</h1><p>先检查现有能力，再决定更新或创建。候选与已安装版本分开列出。</p></div><Button loading={library.isFetching} onClick={() => void library.refetch()} size="small">刷新</Button></header>

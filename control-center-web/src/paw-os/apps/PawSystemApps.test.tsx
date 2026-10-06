@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
@@ -25,7 +26,12 @@ vi.mock('@/features/input-method', () => ({
   InputLexiconFeature: () => <h1>词库真实界面</h1>,
   InputMethodFeature: () => <h1>输入法真实界面</h1>,
 }));
-vi.mock('@/features/observability', () => ({ ObservabilityFeature: () => <h1>活动真实界面</h1> }));
+vi.mock('@/features/observability', () => ({ ObservabilityFeature: () => {
+  const [draft, setDraft] = useState('');
+  const [params, setParams] = useSearchParams();
+  return <><h1>活动真实界面</h1><input aria-label="监控草稿" value={draft} onChange={event => setDraft(event.target.value)} />
+    <button onClick={() => setParams({ category: 'tool' })}>筛选模拟工具</button><span>分类：{params.get('category')}</span></>;
+} }));
 vi.mock('@/features/plugins', () => ({ PluginsFeature: () => <h1>Package 生命周期真实界面</h1> }));
 vi.mock('@/features/voice', () => ({ VoiceFeature: () => { const [draft, setDraft] = useState(''); const active = usePawOsAppActive(); return <><h1>语音真实界面</h1><input aria-label="语音草稿" value={draft} onChange={event => setDraft(event.target.value)} /><span data-testid="voice-page-active">{String(active)}</span></>; } }));
 
@@ -275,6 +281,17 @@ describe('PawSystemApps', () => {
     expect(await screen.findByRole('textbox', { name: '语音草稿' })).toBe(input);
     expect(input).toHaveValue('未保存热词');
     expect(screen.getByTestId('voice-page-active')).toHaveTextContent('true');
+  });
+
+  it('keeps the current Monitor owner when its own route query changes', async () => {
+    const user = userEvent.setup();
+    renderSystemApp('system-monitor', '/observability');
+    const input = await screen.findByRole('textbox', { name: '监控草稿' });
+    await user.type(input, '等待检查');
+    await user.click(screen.getByRole('button', { name: '筛选模拟工具' }));
+    await screen.findByText('分类：tool');
+    expect(screen.getByRole('textbox', { name: '监控草稿' })).toBe(input);
+    expect(input).toHaveValue('等待检查');
   });
 
   it('moves between Input Studio pages while retaining the real feature owners', async () => {
