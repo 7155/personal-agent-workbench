@@ -938,7 +938,7 @@ describe('PAWOS semantic type roles', () => {
     expect(pawOsCss).toMatch(
       /\.paw-window-titlebar:has\(\.paw-window-leading-slot:not\(:empty\)\)\s*\{[^}]*--paw-titlebar-lead:\s*auto;/s,
     );
-    for (const css of [pawOsCss, roomMigratedCss, agentMigratedCss]) {
+    for (const css of [pawOsCss, roomMigratedCss, agentMigratedCss, filesCss, terminalCss, toolsMigratedCss]) {
       // No titlebar may pin its leading track past the shared token, or its
       // lights start shrinking again the moment an App docks a control.
       expect(css).not.toMatch(/\.paw-window-titlebar[^{]*\{[^}]*grid-template-columns:\s*\d+px/s);

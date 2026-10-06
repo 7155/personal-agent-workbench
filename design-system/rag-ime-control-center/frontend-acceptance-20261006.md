@@ -566,3 +566,20 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 最终 `context-navigation-report-final-v3.json`：390/768/1440 × normal/reduce 六组全部通过，共 90 次目录条目实点，焦点与目标都落在实际 viewer；末尾原始记录可展开；报告展开全部/折叠全部、搜索无匹配/清除恢复、下载、关闭回焦点全部通过。报告没有页面横向溢出，关闭/下载目标符合标准。最新手机报告、768 末尾、关闭后桌面原图已由本云代理实际查看，主线程未查看这些新图。
 - 历史 `before` 首轮仅检查目标相对整个长正文可见，其六组不能替代实际 viewport；`final` 的过短滚动等待与把 searchbox 写成 textbox 的失败保留。`final-v2` 的真实目录、报告准备及尺寸问题以本段和 v3 复查替代，原文件不覆盖。
 - Context feature/export 两完整文件 12 项通过，正式 `pnpm typecheck` exit=0；owner/import/route/diff 检查通过。原 Context 首开 24 次输入验收及同页 query 修复保留。没有 CI、付费调用、Library 重试或安装扩展 App。
+
+## 最终全入口复扫与 Files 余项修复
+
+本批从已推送 `52f7281b0e0a8b3bb7c38511dd984d18be8a14e9` 继续。全入口复扫开始与结束 HEAD 相同；之后只修改 Files 的窗口布局、公开演示文件地址响应及相关回归检查。
+
+- `final-route-sweep-52f7281b.json`：49 条登记入口 × 手机 390/普通动效、桌面 1440/减少动效，共 98 组。实际打开、两次 Tab、刷新后原 App/入口检查全部通过，保存 196 张带入口索引与阶段的原图。页面运行异常、开发错误遮罩和 document 横向溢出均为零。该轮只验路由/窗口框架/刷新/键盘入口，不替代前面逐页主要按钮、弹窗及各类状态的实点记录，也不将 unavailable/正在读取的后端区域称为正常业务状态通过。
+- 本云代理又实际查看 Memory、关系、词库、能力、诊断、设置、提示词、Schedules、Trace 新建等手机主页面，以及桌面 Trace、Files 和掌柜問数图；完整图片保存在 `final-route-52f7281b-{入口索引}-{宽度}-{open或refresh}.png`。主线程没有查看这些新云图，不记录为主线程设计批准。
+- 诊断/配置工具栏曾在截图上疑似截断。`system-toolbar-settling-final.json` 两页 × 390/768/1440 × normal/reduce 共 12 组，每组初始、400ms、1500ms 三阶段：clipped=false，stablePass=true；诊断页六次实点复制公开排查报告、两页各六次实点刷新。稳定手机原图已实际查看，未确认缺陷，不额外改样式。
+- Files 遗留固定 76px leading 列未随窗口目标扩展。`files-window-chrome-before.json` 六组：手机 App 按钮与信号灯命中区重叠，紧凑/桌面 caption 与信号灯重叠。中心仍能命中，最大化/还原/最小化/关闭也能使用，不把这个重叠夸大为所有窗口按钮被遮挡。
+- Files 两条固定列宽改用既有 shared leading token；App 控件沿用 32/40/44px 窗口尺度；字段 border 留出两像素，搜索输入占满实际字段高度，窄窗字段使用 16px。窗口宽度 ≤520 时，将原 Session/筛选/刷新投射区放在原标题栏第二行，第一行保留信号灯和 Files 身份。没有增加控件或滚动所有者，也未修改独立嵌入时的 32px fallback。
+- 最终 `files-window-chrome-final-v4.json`：三宽度 × normal/reduce 六组全部通过；无控件/标题与信号灯重叠、目标在标题栏内且可命中、页面不横向溢出；每组实点最大化→还原、最小化、关闭均通过。桌面前后图和最终手机图已实际查看。早期 final/v2/v3 仅测按钮；不以这些结果代替后续 select/input 的完整几何检查。
+- 文件地址栏实点发现公开 preview 把 `README.md` 当成目录。补齐演示 `files.list` 对已有 README/package.json 文件的 requestedPath/selectedPath 和父目录响应；真实文件接口与磁盘未改。原完整演示测试增加直接文件路径断言，先失败再修复，证据 `/tmp/paw-files-address-contract-red.txt`。
+- `files-final-v4-major-actions.json` 手机 390 和桌面 1440 两组全部通过：无匹配筛选、Escape 清空、筛选后打开 Markdown、复制内容/路径、手机读者 Escape 返回、目录收放、刷新、本机无需 Session、文件地址打开、主目录/上一级；桌面用原键盘 resize 连续缩至约 432px。手机与桌面窄窗的 button/select/input 都为 44px，字段字体 16px、标题可见且全部在标题栏内。最终 Markdown、手机目录与桌面窄窗图已实际查看。
+- 初轮脚本误写空态文字导致两次定位超时，保留 `files-final-major-actions.json`；final-v2 记录了真实文件地址缺陷；final-v3 记录搜索 input 仅约 24.4px，修复后以 final-v4 替代。没有覆盖失败原图或把重试后的通过写回失败记录。
+- 最终 Files 与 preview transport 两完整文件共 93 项通过；shared chrome 静态 guard 扩展 Files 覆盖，新增覆盖先失败，最后选中 1 项通过（74 项未选）。本批完整 Files/CSS 检查为 124 通过、3 失败，其中 CSS 72 通过、3 失败；三个失败在固定 `c2058493` 上同样出现，基线证据 `/tmp/paw-css-baseline-c2058493-result-v2.txt`，不是全套 CSS 通过。正式 `pnpm typecheck` exit=0；owner/import/route 与 diff 检查通过。没有追 CI。
+- 截图与逐页 JSON 仍在被忽略的 `reports/frontend-audit-20261006/`，没有 force-add 大型原图目录。Library 保持 STOP：15 文件 43.8MB 的原清单 SHA256 为 `d2dcb49ae714ab3e11259a41da3345279e3d758d1ae61bf921ad5ba4ab1f09f2`，再次核对未变；403 发生在官方代理 CONNECT、TLS 和 tools/list 之前。未重建清单、重试/改代理或生成新 Library ID，原七个 C8 ID 保留。
+- 真实后端、原生 Electron/PTY/捕获、真实模型复杂任务和未安装的 Earth Research 内页仍未通过；公开模拟与故障注入均标明来源。未读/输出凭证，未新开付费测试或归零账本：已知估算 USD 0.1939704，本轮未知保留 USD 87.552，前轮未知保留 USD 116.736 继续保留。GH review API 原有访问限制未解除，未读取或宣称已解决原 review thread；未追 CI、强推、另开 PR、使用 admin 或合并 main。

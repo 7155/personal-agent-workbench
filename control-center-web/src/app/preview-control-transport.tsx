@@ -1852,7 +1852,9 @@ function previewResponse(pathId: ControlPathId): unknown {
     case 'files.list':
       return (request: ControlRequest) => {
         const path = stringValue(record(request.query).path) || '/Users/example/Projects/personal-agent-workbench';
-        return { ...previewWorkspaceList(path), scope: 'local', homePath: '/Users/example/Projects/personal-agent-workbench' };
+        const selectedPath = /\/(?:README\.md|package\.json)$/.test(path) ? path : '';
+        const directory = selectedPath ? path.slice(0, path.lastIndexOf('/')) || '/' : path;
+        return { ...previewWorkspaceList(directory), scope: 'local', requestedPath: path, selectedPath, homePath: '/Users/example/Projects/personal-agent-workbench' };
       };
     case 'files.read':
       return (request: ControlRequest) => {

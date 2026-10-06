@@ -500,6 +500,9 @@ describe('preview control transport', () => {
       expect(file.byteSize).toBe(new TextEncoder().encode(String(read.content)).byteLength);
       expect(read.byteSize).toBe(file.byteSize);
       if (String(file.name).endsWith('.json')) expect(JSON.parse(String(read.content))).toMatchObject({ private: true, preview: true });
+      const direct = record(await transport.request({ pathId: 'files.list', query: { path: String(file.path) } }));
+      expect(direct).toMatchObject({ path, selectedPath: file.path, requestedPath: file.path, scope: 'local' });
+      expect(arrayRecords(direct.items).map(item => item.path)).toContain(file.path);
     }
   });
 
