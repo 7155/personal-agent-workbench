@@ -11,14 +11,9 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await app.getByRole('button', { name: '展开对话控件' }).click();
   await expect(page.getByRole('navigation', { name: '当前 Session 视图' })).toBeVisible();
   await expect(app.getByRole('button', { name: '打开对话文件' })).toHaveCount(0);
-  const tools = app.getByRole('button', { name: '对话工具', exact: true });
+  await page.keyboard.press('Escape');
+  const tools = app.getByRole('navigation', { name: '当前工作内容' }).getByRole('button', { name: '文件', exact: true });
   await tools.focus();
-  await page.keyboard.press('ArrowDown');
-  const menu = app.getByRole('menu', { name: '对话工具菜单' });
-  await expect(menu.getByRole('menuitem', { name: '任务与状态' })).toBeFocused();
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await expect(menu.getByRole('menuitem', { name: '文件', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
   const panel = app.getByLabel('对话工具侧栏', {exact:true});
   await expect(panel).toBeVisible();
@@ -37,7 +32,6 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await expect(tools).toBeFocused();
   await expect(message).toHaveValue('保留这段尚未发送的文字');
   await tools.click();
-  await menu.getByRole('menuitem', { name: '文件', exact: true }).click();
   await panel.getByRole('button', { name: '收起文件目录' }).click();
   await expect(panel).toBeHidden();
   await expect(tools).toBeFocused();
@@ -91,9 +85,8 @@ test('file browsing keeps focus visible and preserves its tree through resizing'
   const message = app.getByRole('textbox', {name:'消息', exact:true});
   await expect(message).toBeVisible({timeout:30_000});
   await message.fill('文件浏览期间保留的草稿');
-  const tools = app.getByRole('button', {name:'对话工具', exact:true});
+  const tools = app.getByRole('navigation', {name:'当前工作内容'}).getByRole('button', {name:'文件', exact:true});
   await tools.click();
-  await app.getByRole('menuitem', {name:'文件', exact:true}).click();
   const panel = app.getByLabel('对话工具侧栏', {exact:true});
   const close = panel.getByRole('button', {name:'收起文件目录'});
   await expect(close).toBeFocused();

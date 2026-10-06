@@ -30,9 +30,6 @@
 .paw-primary-home__composer:has(.paw-primary-home__fields > textarea:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .paw-desktop-root[data-paw-visual] .paw-primary-home .paw-primary-home__fields > textarea:focus-visible { outline: 0; }
 .paw-primary-home__composer footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 12px; border-top: 0; background: var(--color-surface); }
-.paw-primary-home__intent { display: inline-flex; gap: 4px; }
-.paw-primary-home__intent button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid transparent; background: transparent; color: var(--color-text-secondary); }
-.paw-primary-home__intent button[aria-pressed='true'] { border-color: transparent; background: var(--color-surface-subtle); color: var(--color-text-primary); }
 .paw-primary-home .paw-primary-home__send { min-width: 34px; min-height: 34px; padding: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; border: 0; border-radius: var(--radius-round); color: var(--color-accent-text); background: var(--color-accent); }
 .paw-primary-home .paw-primary-home__send:not(:disabled):hover { background: var(--color-accent-hover); }
 .paw-primary-home__composer-hint { margin: 0; padding: 0 16px 12px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.5; }
@@ -87,7 +84,7 @@
 .paw-session-workspace__runtime > button.paw-session-history-load { width: auto; display: inline-flex; gap: 4px; padding: 0 8px; white-space: nowrap; color: var(--paw-muted); }
 .paw-session-workspace__runtime > button.paw-session-history-load:hover { background: var(--paw-panel-soft); }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__heading p { display: none; }
-.paw-primary-home[data-intent='execute'] .paw-primary-home__entry { display: grid; grid-template-rows: auto minmax(0, 1fr); height: auto; max-height: min(720px, calc(100cqh - 80px)); min-height: 0; }
+.paw-primary-home[data-intent='execute'] .paw-primary-home__entry { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: auto; max-height: min(720px, calc(100cqh - 80px)); min-height: 0; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__composer { min-height: 0; max-height: none; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__fields { flex: 1 1 auto; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__fields > textarea { min-height: 88px; }
@@ -101,7 +98,6 @@
   .paw-primary-home :is(button, select) { min-width: 40px; min-height: 40px; }
   .paw-primary-home__composer footer { gap: 8px; padding-inline: 8px; }
   .paw-primary-home .paw-primary-home__send { min-width: 44px; min-height: 44px; }
-  .paw-primary-home__intent button { padding-inline: 6px; }
   .paw-primary-home[data-intent='execute'] .paw-primary-home__entry { max-height: calc(100cqh - 48px); }
 }
 @container primary-home (max-width: 360px) {
@@ -127,3 +123,29 @@
 
 .paw-primary-home__source-roots { display: grid; gap: 2px; margin-block: 4px; }
 .paw-primary-home__source-roots code { font: inherit; overflow-wrap: anywhere; white-space: normal; }
+
+/* Choose the intent before writing; submission remains beside its own input. */
+.paw-primary-home__eyebrow { display: block; margin-bottom: 8px; color: var(--color-text-secondary); font-size: 12px; line-height: 18px; }
+.paw-primary-home__entry > .paw-primary-home__intent { display: flex; gap: 16px; margin-bottom: 12px; }
+.paw-primary-home__entry > .paw-primary-home__intent > button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--color-text-secondary); background: transparent; font: 13px var(--font-sans); cursor: pointer; }
+.paw-primary-home__entry > .paw-primary-home__intent > button[aria-pressed='true'] { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.paw-primary-home .paw-primary-home__composer footer { justify-content: flex-end; }
+@container primary-home (max-width: 500px) {
+  .paw-primary-home__entry > .paw-primary-home__intent > button { min-height: 40px; }
+}
+
+/* A short window scrolls the form; fixed consent/send rows must not consume
+   the whole editable field area. Keep the same input and its draft mounted. */
+@container primary-home (max-height: 600px) {
+  .paw-primary-home[data-intent='execute'] .paw-primary-home__entry { max-height: none; }
+  .paw-primary-home[data-intent='execute'] .paw-primary-home__fields { min-height: 120px; }
+  .paw-primary-home[data-intent='execute'] .paw-primary-home__eyebrow { display: none; }
+  .paw-primary-home[data-intent='execute'] .paw-primary-home__heading { display: flex; align-items: center; }
+  .paw-primary-home[data-intent='execute'] h1 { font-size: 20px; }
+}
+.paw-primary-session-context > details { flex: 1 1 auto; min-width: 0; }
+.paw-primary-session-context > details > summary { display: flex; align-items: center; min-height: 32px; cursor: pointer; color: var(--color-text-secondary); font-size: 12px; }
+.paw-primary-session-context > details > p { margin: 4px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+@container paw-session-workspace (max-width: 500px) {
+  .paw-primary-session-context > details > summary, .paw-primary-session-context > button { min-height: 40px; }
+}

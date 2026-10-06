@@ -65,9 +65,8 @@
 .paw-chat-controls-toggle { flex: none; min-height: 32px; white-space: nowrap; }
 .paw-session-view-popover { width: 230px; padding: 8px; }
 .paw-session-view-popover .paw-session-workspace__view-switch { display: grid; gap: 4px; }
-.paw-session-view-popover :is(nav button, .paw-session-view-popover__history) { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--radius-2); background: transparent; color: var(--color-text); text-align: left; font: 13px var(--font-sans); cursor: pointer; }
+.paw-session-view-popover nav button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--radius-2); background: transparent; color: var(--color-text); text-align: left; font: 13px var(--font-sans); cursor: pointer; }
 .paw-session-view-popover nav button[aria-pressed='true'] { background: var(--color-surface-hover); font-weight: 600; }
-.paw-session-view-popover__history { margin-top: 8px; border-top: 1px solid var(--color-border) !important; }
 
 @container paw-window (max-width: 500px) {
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-chat-controls-toggle { min-height: 40px; }

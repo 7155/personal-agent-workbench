@@ -171,6 +171,16 @@ export function AgentWorkflowPanel({
     );
   }
 
+  const goalMode = (
+    <GoalMode
+      key={`goal:${agentProjectionKey(address)}`}
+      goal={workflow.goal}
+      pending={mutation.isPending && mutation.variables?.address === address}
+      error={mutation.variables?.address === address ? mutation.error : null}
+      mutate={(body) => mutation.mutateAsync({ sessionId, address, transport, body })}
+    />
+  );
+
   return (
     <div className="agent-workflow-panel" aria-label="Todo 与长期目标">
       {workflowQuery.error && !isAbsentWorkflow(workflowQuery.error) ? (
@@ -189,15 +199,10 @@ export function AgentWorkflowPanel({
           </Button>
         </div>
       ) : null}
+      {workflow.goal.configured ? goalMode : null}
       <TodoProgress todo={workflow.todo} />
       <ExecutionGate gate={workflow.actGate} />
-      <GoalMode
-        key={`goal:${agentProjectionKey(address)}`}
-        goal={workflow.goal}
-        pending={mutation.isPending && mutation.variables?.address === address}
-        error={mutation.variables?.address === address ? mutation.error : null}
-        mutate={(body) => mutation.mutateAsync({ sessionId, address, transport, body })}
-      />
+      {!workflow.goal.configured ? goalMode : null}
     </div>
   );
 }

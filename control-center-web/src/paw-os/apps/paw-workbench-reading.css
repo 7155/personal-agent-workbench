@@ -64,3 +64,24 @@
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.agent-code-block, .agent-citation, .agent-file-block) { margin-inline: 0; max-width: 100%; box-sizing: border-box; border-radius: var(--radius-sheet); }
 
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-files-panel:has(> .project-quick-actions) { grid-template-rows: auto auto minmax(0, 1fr); }
+
+/* Task identity and task/file access stay visible while the transcript scrolls. */
+.paw-session-taskbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-bottom: 1px solid var(--wb-line); background: var(--wb-sunken); }
+.paw-session-taskbar__copy { display: grid; gap: 4px; min-width: 0; }
+.paw-session-taskbar__state { display: inline-flex; align-items: center; gap: 6px; color: var(--wb-muted); font-size: 12px; line-height: 18px; }
+.paw-session-taskbar[data-attention] .paw-session-taskbar__state { color: var(--wb-warning); }
+.paw-session-taskbar__copy > strong { overflow: hidden; color: var(--wb-ink); font-size: 14px; line-height: 21px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.paw-session-taskbar > nav { display: flex; flex: none; gap: 4px; }
+.paw-session-taskbar > nav > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 10px; border: 0; border-radius: var(--radius-2); background: transparent; color: var(--wb-muted); font: 13px var(--font-sans); cursor: pointer; }
+.paw-session-taskbar > nav > button:hover { background: var(--wb-hover); }
+.paw-session-taskbar > nav > button[aria-pressed='true'] { background: var(--wb-accent-soft); color: var(--wb-accent); }
+@container paw-session-workspace (max-width: 500px) {
+  .paw-session-taskbar { padding: 10px 12px; gap: 8px; }
+  .paw-session-taskbar > nav > button { min-height: 40px; padding-inline: 8px; }
+}
+
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-workflow-section__icon { border: 0; background: transparent; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-todo-phase { border: 0; border-radius: 0; background: transparent; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-todo-phase > header { background: transparent; border: 0; padding-inline: 0; }
+
+.paw-session-taskbar__state > small { margin-left: 4px; color: var(--wb-faint); font-size: 12px; }

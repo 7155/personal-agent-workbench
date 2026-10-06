@@ -20,6 +20,23 @@ describe('preview primary task directory', () => {
     expect(one.tasks.map(task => task.id)).toEqual([a.session.id]);
     expect(two.tasks.map(task => task.id)).toEqual([b.session.id]);
   });
+  it('keeps primary task goals and criteria isolated from the sample workflow', async () => {
+    const transport = createPreviewTransport();
+    const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    const task = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: source.session.id, clientRequestId: 'own-workflow', objective: 'A'.repeat(120),
+      acceptanceCriteria: ['保留输入', '说明未验证状态'], workspaceRoots: ['/work/task'],
+      workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    const workflow = record(await transport.request({ pathId: 'agent.session.workflow.get', params: { sessionId: task.session.id } }));
+    expect(record(workflow.goal)).toMatchObject({ sessionId: task.session.id, objective: 'A'.repeat(120), successCriteria: '保留输入\n说明未验证状态', status: 'active' });
+    expect(record(workflow.todo).phases).toEqual([]);
+    const discussion = record(await transport.request({ pathId: 'agent.session.workflow.get', params: { sessionId: source.session.id } }));
+    expect(record(discussion.goal)).toMatchObject({ configured: false, objective: '', sessionId: source.session.id });
+    await expect(transport.request({ pathId: 'agent.session.goal.mutate', params: { sessionId: task.session.id }, body: { action: 'pause' } })).rejects.toThrow('演示任务不支持修改目标');
+    const sample = record(await transport.request({ pathId: 'agent.session.workflow.get', params: { sessionId: 'session-preview' } }));
+    expect(record(sample.todo).phases).not.toEqual([]);
+  });
   it('omits archived tasks while keeping the persisted session available', async () => {
     const transport = createPreviewTransport();
     const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });

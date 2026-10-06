@@ -6,6 +6,7 @@ import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contrac
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
 import './paw-workbench-reading.css';
+import { PawSessionTaskbar } from './PawSessionTaskbar';
 import {
   ChevronDown,
   CircleAlert,
@@ -135,6 +136,8 @@ export function sessionWorkspaceProjectionSlice(
   return {
     activeTurnId: projection?.durableRecovery?.activeTurn?.turnId ?? latestActiveTurnId(projection),
     hasTurns: Boolean(projection?.turnOrder.length),
+    goal: projection?.goal,
+    lastTurnStatus: projection?.turnsById[projection.turnOrder.at(-1) ?? '']?.status,
     pendingMemoryReview: latestWaitingActivity(
       projection,
       (activity) => activity.kind === 'user_input_required' && activity.payload.requestKind === 'memory_review',
@@ -379,6 +382,7 @@ export function PawSessionWorkspace({
   const [scrollToLatestRequest, setScrollToLatestRequest] = useState(0);
   const toolMenuContainerRef = useRef<HTMLDivElement>(null);
   const toolMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const toolPanelReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuRef = useRef<HTMLElement>(null);
   const toolMenuInitialFocusRef = useRef<'first' | 'last'>('first');
   const primaryRef = useRef<HTMLDivElement>(null);
@@ -1626,7 +1630,10 @@ export function PawSessionWorkspace({
   }, []);
   const closeToolPanel = useCallback((): void => {
     setPanel('none');
-    requestAnimationFrame(() => { if (toolMenuButtonRef.current?.isConnected) toolMenuButtonRef.current.focus({ preventScroll: true }); });
+    requestAnimationFrame(() => {
+      const trigger = toolPanelReturnFocusRef.current ?? toolMenuButtonRef.current;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    });
   }, []);
 
   const openToolMenu = useCallback((initialFocus: 'first' | 'last' = 'first'): void => {
@@ -1721,7 +1728,8 @@ export function PawSessionWorkspace({
     }
   }
 
-  function openToolPanel(next: Exclude<WorkbenchPanel, 'none'>): void {
+  function openToolPanel(next: Exclude<WorkbenchPanel, 'none'>, trigger?: HTMLButtonElement): void {
+    toolPanelReturnFocusRef.current = trigger ?? toolMenuButtonRef.current;
     if (next === 'status') setStatusPanelVisited(true);
     setPanel(next);
     closeToolMenu(true);
@@ -1744,7 +1752,6 @@ export function PawSessionWorkspace({
               <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setControlsExpanded(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
               <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setControlsExpanded(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
             </nav>
-            <button className="paw-session-view-popover__history" disabled={contextSnapshotState === 'restoring'} onClick={() => { setControlsExpanded(false); void loadFullSnapshot(); }} type="button"><History size={15} />加载完整记录</button>
           </PopoverContent>
         </Popover> : <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span>}
         <div className="paw-session-workspace__runtime">
@@ -1763,7 +1770,7 @@ export function PawSessionWorkspace({
               : contextSnapshotState === 'partial'
                 ? '最近消息'
                 : '已同步'}</span>
-          {!evaluationSnapshot && (contextSnapshotState === 'partial' || contextSnapshotState === 'restoring') ? (
+          {!evaluationSnapshot ? (
             <button
               aria-label="加载完整记录"
               className="paw-session-history-load"
@@ -1778,7 +1785,7 @@ export function PawSessionWorkspace({
               <span>加载完整记录</span>
             </button>
           ) : null}
-          {!evaluationSnapshot && busy && !compactionTarget ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
+          {!windowChromeTarget && !evaluationSnapshot && busy && !compactionTarget ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
         </div>
         {!evaluationSnapshot ? <div className="paw-session-workspace__tools" data-open={toolMenuOpen || undefined} ref={toolMenuContainerRef}>
           <button
@@ -1803,10 +1810,10 @@ export function PawSessionWorkspace({
             ref={toolMenuRef}
             role="menu"
           >
-            <button data-active={panel === 'status' || undefined} onClick={() => openToolPanel('status')} role="menuitem" type="button"><ListChecks size={15} /><span>任务与状态</span></button>
+            {!windowChromeTarget ? <button data-active={panel === 'status' || undefined} onClick={() => openToolPanel('status')} role="menuitem" type="button"><ListChecks size={15} /><span>任务与状态</span></button> : null}
             <button data-active={panel === 'subagents' || undefined} onClick={() => openToolPanel('subagents')} role="menuitem" type="button"><Network size={15} /><span>子 Agent</span></button>
-            <button data-active={panel === 'files' || undefined} onClick={() => openToolPanel('files')} role="menuitem" type="button"><FolderTree size={15} /><span>文件</span></button>
-            {contextSnapshotState ? <button disabled={contextSnapshotState === 'restoring'} onClick={() => { closeToolMenu(true); void loadFullSnapshot(); }} role="menuitem" type="button"><History size={15} /><span>{contextSnapshotState === 'restoring' ? '正在恢复完整对话' : '恢复完整对话与待办'}</span></button> : null}
+            {!windowChromeTarget ? <button data-active={panel === 'files' || undefined} onClick={() => openToolPanel('files')} role="menuitem" type="button"><FolderTree size={15} /><span>文件</span></button> : null}
+            {!windowChromeTarget && contextSnapshotState ? <button disabled={contextSnapshotState === 'restoring'} onClick={() => { closeToolMenu(true); void loadFullSnapshot(); }} role="menuitem" type="button"><History size={15} /><span>{contextSnapshotState === 'restoring' ? '正在恢复完整对话' : '恢复完整对话与待办'}</span></button> : null}
           </nav> : null}
         </div> : null}
       </div>
@@ -1824,6 +1831,11 @@ export function PawSessionWorkspace({
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
       <WorkspaceRecoveryNotice recovery={recovery} />
+      {!embedded && !evaluationSnapshot && windowChromeTarget ? <div inert={toolPanelTrapsFocus || undefined}><PawSessionTaskbar title={title} selected={panel} demo={transport.kind === 'mock'}
+        state={{ busy, stopping, paused: durablePaused, pending: sending || Boolean(pendingFeedbackTurnId),
+          waiting: Boolean(pendingApproval || pendingGenericInput || pendingMemoryReview), disconnected: syncState !== 'synced',
+          error: Boolean(visibleError), goal: projectionSlice.goal, turnStatus: projectionSlice.lastTurnStatus }}
+        onOpenPanel={(next, trigger) => { if (panel === next) closeToolPanel(); else openToolPanel(next, trigger); }} /></div> : null}
 
       <div className="paw-session-workspace__body">
         <div className="paw-session-workspace__primary" ref={primaryRef} inert={toolPanelTrapsFocus || undefined}>

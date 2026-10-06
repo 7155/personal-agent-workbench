@@ -200,8 +200,16 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       const visible = element.getBoundingClientRect();
       if (bounds.bottom > visible.bottom) element.scrollTop += bounds.bottom - visible.bottom;
       else if (bounds.top < visible.top) element.scrollTop -= visible.top - bounds.top;
+      const home = element.closest<HTMLElement>('.paw-primary-home');
+      if (home) {
+        const fieldBounds = focused.getBoundingClientRect(), homeBounds = home.getBoundingClientRect();
+        if (fieldBounds.bottom > homeBounds.bottom - 12) home.scrollTop += fieldBounds.bottom - homeBounds.bottom + 12;
+        else if (fieldBounds.top < homeBounds.top + 12) home.scrollTop -= homeBounds.top - fieldBounds.top + 12;
+      }
     });
     observer.observe(element);
+    const home = element.closest<HTMLElement>('.paw-primary-home');
+    if (home) observer.observe(home);
     return () => observer.disconnect();
   }, []);
 
@@ -216,9 +224,10 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     <div className="paw-primary-home__body">
       <div className="paw-primary-home__entry">
       <header className="paw-primary-home__heading">
-        <div><h1>继续之前的事。</h1><p>和 {identity.assistantName} 继续同一段对话。</p></div>
+        <div><small className="paw-primary-home__eyebrow">我的助手</small><h1>{intent === 'execute' ? '把这件事交给助手。' : '这次想做什么？'}</h1><p>和 {identity.assistantName} 说清楚目标，再决定要不要执行。</p></div>
         {session ? <button className="paw-primary-home__continue" disabled={submitting || pickingWorkspace || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="进入这段对话；草稿会带入输入框，点击发送后才会提交" type="button">进入对话 <ArrowUpRight size={15} /></button> : null}
       </header>
+      <div className="paw-primary-home__intent agent-composer__controls" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div>
       <section className="paw-primary-home__composer agent-composer paw-unified-composer" data-composer-design="workbench" aria-label="我的长期助手">
         <div className="paw-primary-home__fields" ref={fields}>
         <textarea aria-label="和我的助手聊聊" aria-invalid={objectiveInvalid || undefined} aria-describedby={`${composerHintId}${objectiveInvalid ? ` ${objectiveErrorId}` : ''}`} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }} onKeyDown={event => {
@@ -237,7 +246,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
         </div> : null}
         </div>
         {intent === 'execute' ? <label className="paw-primary-home__consent"><input type="checkbox" checked={scopeConfirmed} disabled={submitting || pickingWorkspace || !workspace.trim()} onChange={event => setScopeConfirmed(event.target.checked)} /><span>允许助手在{executionRoots.length > 1 ? `以上 ${executionRoots.length} 个目录` : '这个目录'}内执行本次任务、修改文件和运行命令。可以随时停止。</span></label> : null}
-        <footer className="agent-composer__toolbar"><div className="paw-primary-home__intent agent-composer__controls" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className={`paw-primary-home__send${intent === 'discuss' ? ' agent-composer__send' : ''}`} disabled={loading || submitting || pickingWorkspace || !session || !message || taskInvalid || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : intent === 'discuss' ? <Send size={16} /> : <Check size={17} />}<span>{intent === 'discuss' ? null : '授权并开始'}</span></button></footer>
+        <footer className="agent-composer__toolbar"><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className={`paw-primary-home__send${intent === 'discuss' ? ' agent-composer__send' : ''}`} disabled={loading || submitting || pickingWorkspace || !session || !message || taskInvalid || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : intent === 'discuss' ? <Send size={16} /> : <Check size={17} />}<span>{intent === 'discuss' ? null : '授权并开始'}</span></button></footer>
         <p data-essential={baseSubmitHint !== 'Enter 发送 · Shift + Enter 换行' || Boolean(pickerNotice) || undefined} className="paw-primary-home__composer-hint" id={composerHintId} role="status">{submitHint}</p>
       </section>
       </div>

@@ -211,6 +211,15 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           </StatusSection>
         ) : null}
 
+        <StatusSection icon={FolderKanban} title="产物" count={view.artifacts.length + runs.filter((run) => run.artifact).length} defaultOpen>
+          {view.artifacts.length || runs.some((run) => run.artifact) ? (
+            <div className="agent-status-files">
+              {view.artifacts.map((artifact) => <StatusRow key={artifact.id} icon={FolderKanban} title={artifact.name} detail={artifact.kind} />)}
+              {runs.filter((run) => run.artifact).map((run) => <StatusRow key={`artifact:${run.id}`} icon={FolderKanban} title={`${subagentTemplateLabel(run.templateId)}协作产物`} detail={subagentStateLabel(run, 'result')} />)}
+            </div>
+          ) : <EmptyLine>本轮还没有可交付产物</EmptyLine>}
+        </StatusSection>
+
         <StatusSection icon={SquareTerminal} title="后台任务" count={backgroundJobs.length} defaultOpen={!minimal}>
           <AgentBackgroundJobsView
             active={surfaceActive}
@@ -224,7 +233,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           <MessageQueueView projection={projection} />
         </StatusSection>
 
-        <StatusSection icon={Gauge} title="上下文与用量" count={projection?.telemetry?.compactionCount ?? 0} defaultOpen={!minimal}>
+        <StatusSection icon={Gauge} title="上下文与用量" count={projection?.telemetry?.compactionCount ?? 0} defaultOpen={false}>
           <SessionTelemetryView projection={projection} />
         </StatusSection>
         <ContextXraySections sessionId={sessionId} open={open && surfaceActive} />
@@ -262,7 +271,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           />
         </StatusSection>
 
-        <StatusSection icon={Wrench} title="关键步骤" count={logicalTools.length} defaultOpen={!minimal}>
+        <StatusSection icon={Wrench} title="关键步骤" count={logicalTools.length} defaultOpen={false}>
           {logicalTools.length ? (
             <div className="agent-status-tools">
               {logicalTools.map((item) => item.kind === 'attempts'
@@ -272,7 +281,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           ) : <EmptyLine>本轮还没有工具步骤</EmptyLine>}
         </StatusSection>
 
-        <StatusSection icon={Paperclip} title="附件与文件" count={view.files.length + view.attachmentCount} defaultOpen={!minimal}>
+        <StatusSection icon={Paperclip} title="附件与文件" count={view.files.length + view.attachmentCount} defaultOpen={false}>
           {view.files.length || view.attachmentCount ? (
             <div className="agent-status-files">
               {view.attachmentCount ? <StatusRow icon={Paperclip} title={`${view.attachmentCount} 个受管附件`} detail="随会话消息保存" /> : null}
@@ -281,14 +290,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           ) : <EmptyLine>当前会话没有附件或文件</EmptyLine>}
         </StatusSection>
 
-        <StatusSection icon={FolderKanban} title="产物" count={view.artifacts.length + runs.filter((run) => run.artifact).length} defaultOpen={!minimal}>
-          {view.artifacts.length || runs.some((run) => run.artifact) ? (
-            <div className="agent-status-files">
-              {view.artifacts.map((artifact) => <StatusRow key={artifact.id} icon={FolderKanban} title={artifact.name} detail={artifact.kind} />)}
-              {runs.filter((run) => run.artifact).map((run) => <StatusRow key={`artifact:${run.id}`} icon={FolderKanban} title={`${subagentTemplateLabel(run.templateId)}协作产物`} detail={subagentStateLabel(run, 'result')} />)}
-            </div>
-          ) : <EmptyLine>本轮还没有可交付产物</EmptyLine>}
-        </StatusSection>
+
 
         <StatusSection icon={Plus} title="启动子 Agent" count={1} defaultOpen={false}>
           <SubagentLaunchPanel

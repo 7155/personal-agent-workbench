@@ -854,7 +854,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(screen.queryByText('正在执行')).not.toBeInTheDocument();
     expect(view.container.querySelector('.paw-session-workspace')).toHaveAttribute('data-status', 'paused');
     expect(view.container.querySelector('.paw-session-workspace__header')).toHaveAttribute('data-status', 'paused');
-    expect(view.container.querySelector('.paw-session-focus')).not.toHaveAttribute('data-motion', 'active');
+    expect(view.container.querySelector('.paw-session-focus')).toBeNull();
     expect(transport.requests.some(request => request.pathId === 'agent.session.resume' || request.pathId === 'agent.session.prompt')).toBe(false);
   });
 
@@ -1629,9 +1629,9 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(window.querySelector('.paw-window-body .paw-session-workspace__header')).toBeNull();
     expect(within(titlebar).queryByRole('button', { name: '对话' })).not.toBeInTheDocument();
     fireEvent.click(within(titlebar).getByRole('button', { name: '展开对话控件' }));
-    expect(within(titlebar).getByRole('button', { name: '对话' })).toBeInTheDocument();
-    expect(within(titlebar).getByRole('button', { name: 'Agent 轨迹' })).toBeInTheDocument();
-    expect(within(titlebar).getByRole('button', { name: '星空' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: '对话' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: 'Agent 轨迹' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: '星空' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: '对话工具' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: '加载完整记录' })).toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 文件' })).not.toBeInTheDocument();
@@ -1692,7 +1692,7 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(screen.queryByRole('dialog', { name: '对话工具侧栏' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '展开对话控件' }));
     await user.click(screen.getByRole('button', { name: 'Agent 轨迹' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent 轨迹' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(trace).toHaveAttribute('data-active', 'true'));
     expect(conversation).toHaveAttribute('inert');
     expect(trace).not.toHaveAttribute('inert');
     expect(screen.getByRole('textbox', { name: '消息' })).toBe(composer);

@@ -2,6 +2,7 @@ import type { ControlPathId } from '@/platform/routes';
 import type { ControlRequest } from '@/platform/transport';
 import type { MockRouteHandler } from '@/test/mock-transport';
 import { ControlTransportHttpError } from '@/platform/http-transport';
+import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-state.v1';
 import type { PersonalProfile } from '@/features/memory/MemoryProfile';
 
 /** Explicit demo data only; the live transport never falls back to this. */
@@ -12,6 +13,8 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
   const originalSnapshot = routes['agent.session.snapshot'];
   const originalPrompt = routes['agent.session.prompt'];
   const originalAbort = routes['agent.session.abort'];
+  const originalWorkflow = routes['agent.session.workflow.get'];
+  const originalGoalMutation = routes['agent.session.goal.mutate'];
   // Desktop windows can survive a renderer reload; in-memory demo histories
   // cannot. Never recycle their identities into another preview instance.
   const instanceId = crypto.randomUUID();
@@ -63,7 +66,10 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
     if (body.workspaceScopeConfirmation !== 'APPROVE_WORKSPACE_SCOPE' || !roots.length) throw new Error('workspace_scope_confirmation_required');
     const session = existing?.session ?? makeSession(String(body.objective).slice(0, 80), roots,
       { assistantId: 'primary:preview', primaryTask: true, sourceSessionId: body.sourceSessionId, clientRequestId: id }, true);
-    if (!existing) tasksByRequest.set(id, { signature, session });
+    if (!existing) {
+      session.goal = { ...record(session.goal), objective: String(body.objective), successCriteria: strings(body.acceptanceCriteria).join('\n') };
+      tasksByRequest.set(id, { signature, session });
+    }
     return { ok: true, assistantId: 'primary:preview', created: !existing, session,
       authorization: { ...body, workspaceScopeSha256: 'preview-scope', workspaceScopeGrantedAtMs: Date.now() } };
   };
@@ -79,6 +85,34 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
         evidenceExpectations: [], budget: { tokenLimit: null, timeLimitMs: null }, usage: { tokens: 0, elapsedMs: 0 },
         remaining: { tokens: null, timeMs: null }, budgetExceeded: false, completionAudit: null, cancellationAudit: null,
         updatedAtMs: session?.updatedAtMs } } : {}), runtimeQuiescent: !history.active };
+  };
+  // Fresh primary demo tasks own their goal. Never transplant the shared
+  // sample Session's Todo, budget or goal into an unrelated task identity.
+  routes['agent.session.workflow.get'] = (request: ControlRequest) => {
+    const id = String(request.params?.sessionId);
+    const session = sessions.find(item => item.id === id);
+    if (!histories.has(id) || !session) return call(originalWorkflow, request);
+    const source = record(session.goal);
+    const goal: AgentWorkflowStateV1['goal'] = {
+      schemaVersion: 'rag-ime.agent-goal.v1', sessionId: id, configured: Boolean(source.goalId),
+      goalId: String(source.goalId ?? ''), revision: Number(source.revision ?? 0),
+      objective: String(source.objective ?? ''), successCriteria: String(source.successCriteria ?? ''),
+      evidenceExpectations: [], status: (source.status ?? 'cleared') as AgentWorkflowStateV1['goal']['status'],
+      budget: { tokenLimit: null, timeLimitMs: null }, usage: { tokens: 0, elapsedMs: 0 },
+      remaining: { tokens: null, timeMs: null }, budgetExceeded: false, completionAudit: null,
+      cancellationAudit: null, updatedAtMs: Number(session.updatedAtMs),
+    };
+    return { schemaVersion: 'rag-ime.agent-workflow-state.v1', ok: true, sessionId: id, goal,
+      todo: { schemaVersion: 'rag-ime.agent-todo.v1', id: `todo:${id}`, sessionId: id,
+        revision: 0, actor: 'agent', updatedAtMs: Number(session.updatedAtMs), roomLineage: null,
+        phases: [], counts: { total: 0, pending: 0, inProgress: 0, blocked: 0, completed: 0, abandoned: 0 } },
+      actGate: { allowed: true, reason: session.workspaceScopeGranted ? 'user_execution_request' : 'approved',
+        message: session.workspaceScopeGranted ? '演示任务已获得目录授权。' : '演示讨论保持只读。', todoRevision: 0, goalRevision: goal.revision },
+    } satisfies AgentWorkflowStateV1;
+  };
+  routes['agent.session.goal.mutate'] = (request: ControlRequest) => {
+    if (!histories.has(String(request.params?.sessionId))) return call(originalGoalMutation, request);
+    throw new ControlTransportHttpError('agent.session.goal.mutate', 422, '演示任务不支持修改目标；请在真实服务中使用此操作。');
   };
   routes['agent.session.prompt'] = (request: ControlRequest) => {
     const id = String(request.params?.sessionId); const history = histories.get(id);
