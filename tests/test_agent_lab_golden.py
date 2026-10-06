@@ -610,6 +610,75 @@ class GoldenStoreTests(unittest.TestCase):
         interrupted = self.command('resume',{'jobId':job['jobId']})['job']
         self.assertEqual(interrupted['requestRetries'],resumed['requestRetries'])
 
+    def test_rejected_standard_requires_explicit_reopen_before_only_corrected_cases_are_reviewed(self) -> None:
+        self.draft()
+        other = copy.deepcopy(self.suite['cases'][1])
+        self.command('review_case', {**other, 'verdict': 'approved', 'reviewAuthor': 'agent',
+                                     'note': '原题已有独立核对'})
+        original = copy.deepcopy(self.suite['cases'][0])
+        self.command('review_case', {**original, 'verdict': 'rejected', 'reviewAuthor': 'agent',
+                                     'note': '证据未覆盖必答事实'})
+        self.command('label_sample', {'caseId': original['caseId'], 'sampleId': original['samples'][0]['sampleId'],
+                                      'answer': original['samples'][0]['answer'], 'humanVerdict': 'uncertain',
+                                      'labelAuthor': 'agent'})
+        correction = {**original, 'rubric': ['修订后的可执行评分标准'], 'verdict': 'pending',
+                      'note': '补充证据并独立重审'}
+        with self.assertRaises(AgentLabGoldenConflict):
+            self.command('review_case', correction)
+        with self.assertRaises(AgentLabGoldenConflict):
+            self.command('review_case', {**self.suite['cases'][1], 'verdict': 'pending',
+                                         'reopenForReview': True, 'note': '不允许重开未拒绝题目'})
+        self.command('review_case', {**correction, 'reopenForReview': True})
+        pending = next(c for c in self.suite['cases'] if c['caseId'] == original['caseId'])
+        self.assertEqual(pending['review']['status'], 'pending')
+        self.assertEqual(pending['review']['note'], '补充证据并独立重审')
+        self.assertEqual(pending['rubric'], ['修订后的可执行评分标准'])
+        self.assertIsNone(pending['samples'][0]['humanVerdict'])
+        self.assertEqual(self.command('review')['job']['kind'], 'review')
+        review_job = next(j for j in self.suite['jobs'] if j['kind'] == 'review')
+        self.assertEqual(self.store.job_input(review_job['jobId'])['input']['caseIds'], [original['caseId']])
+
+    def test_explicit_unsettled_review_retry_is_single_attempt_audited_and_preserves_receipts(self) -> None:
+        self.draft()
+        job = self.command('review')['job']
+        base = quote(job['jobId'], safe='-_.') + ':review:hold'
+        successful = {'requestId': quote(job['jobId'], safe='-_.') + ':review:dev',
+                      'sessionId': 's-ok', 'turnId': 't-ok', 'stage': 'review',
+                      'receipt': {'status': 'completed'}}
+        with closing(sqlite3.connect(self.path)) as conn:
+            conn.execute('INSERT INTO agent_lab_golden_model_calls '
+                         '(request_id,session_id,turn_id,model_json,prompt,state,created_at_ms,updated_at_ms) '
+                         'VALUES (?,?,?,?,?,?,?,?)',
+                         (base, 's-unknown', 't-unknown', '{}', 'frozen prompt', 'interrupted', 1, 1))
+            conn.commit()
+        self.store.update_job(job['jobId'], {'state': 'running'})
+        self.store.update_job(job['jobId'], {'state': 'interrupted', 'result': {
+            'partial': True, 'pendingRequestId': base, 'receipts': [successful]}})
+        for value in ({'jobId': job['jobId'], 'acknowledgeUnsettledRetry': True,
+                       'expectedPendingRequestId': base + ':other'},
+                      {'jobId': job['jobId'], 'acknowledgeUnsettledRetry': 'true',
+                       'expectedPendingRequestId': base}):
+            with self.assertRaises((AgentLabGoldenConflict, AgentLabGoldenValidationError)):
+                self.command('resume', value)
+        request = self.payload('resume', {'jobId': job['jobId'], 'acknowledgeUnsettledRetry': True,
+                                          'expectedPendingRequestId': base})
+        resumed = self.store.command(request)['job']
+        self.assertEqual(resumed['jobId'], job['jobId'])
+        self.assertEqual(resumed['state'], 'queued')
+        self.assertEqual(resumed['requestRetries'][base]['requestId'], base + ':retry:1')
+        self.assertEqual(resumed['result']['receipts'], [successful])
+        self.assertEqual(resumed['retryHistory'][0]['originalSessionId'], 's-unknown')
+        self.assertEqual(resumed['retryHistory'][0]['originalTurnId'], 't-unknown')
+        self.assertTrue(resumed['retryHistory'][0]['acknowledgedPotentialDuplicateBilling'])
+        self.assertTrue(self.store.command(request)['replayed'])
+        self.store.update_job(job['jobId'], {'state': 'running'})
+        self.store.update_job(job['jobId'], {'state': 'interrupted'})
+        with self.assertRaises(AgentLabGoldenConflict):
+            self.command('resume', {'jobId': job['jobId'], 'acknowledgeUnsettledRetry': True,
+                                    'expectedPendingRequestId': base})
+        self.assertEqual(self.command('resume', {'jobId': job['jobId']})['job']['requestRetries'],
+                         resumed['requestRetries'])
+
     def test_confirmed_cancelled_pi_call_can_be_explicitly_retried_after_host_recovery(self) -> None:
         for status in ('cancelled', 'aborted'):
             with self.subTest(status=status):

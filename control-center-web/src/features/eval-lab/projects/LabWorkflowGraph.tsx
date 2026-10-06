@@ -17,6 +17,15 @@ export function workflowDecisionName(decision?: string) {
   if (!decision) return '效果尚未判定';
   return ({ keep: '保留候选', improved: '候选有改善', reject: '不保留候选', no_improvement: '无提升 · 沿用基线', inconclusive: '结论不足 · 沿用基线', unknown: '效果尚未判定', blocked: '判定受阻' } as Record<string, string>)[decision.toLowerCase()] ?? decision;
 }
+/** An observed metric is evidence of a measurement, not an optimization decision. */
+export function workflowNodeDecisionName(node: LabWorkflowNode): string {
+  if (node.status !== 'completed') return workflowNodeStatus(node);
+  if (node.decision && node.decision.toLowerCase() !== 'unknown') return workflowDecisionName(node.decision);
+  const metrics = node.metrics ?? [];
+  if (metrics.some((metric) => metric.baseline !== null && metric.candidate !== null)) return '已有对照 · 待判定';
+  if (metrics.some((metric) => metric.value != null || metric.baseline !== null || metric.candidate !== null)) return '已测量 · 待结论';
+  return '效果尚未判定';
+}
 export function workflowNodeStatus(node: LabWorkflowNode): string {
   if (node.source === 'artifact' && node.kind === 'step') return ({ running: '计划进行中', completed: '计划已记录完成', pending: '计划待准备', unavailable: '计划待补齐' } as Record<string, string>)[node.status] ?? `计划：${statusNames[node.status]}`;
   if (node.source === 'artifact' && node.status === 'completed') return node.kind === 'experiment' ? '历史已完成' : '已保存';
@@ -147,7 +156,7 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
             return <button type="button" key={node.id} className={`lab-flow-node lab-flow-node--${node.kind}`} data-status={node.source === 'artifact' && node.status === 'running' ? 'pending' : node.status} data-child={Boolean(node.parentId)} aria-pressed={selected?.id === node.id} aria-label={`${node.title} · ${workflowNodeStatus(node)}`} onClick={() => select(node)} style={{ left: pos.x, top: pos.y, width: nodeWidth, height: pos.height }}>
               <span className="lab-flow-node__type"><Icon size={15} />{kindNames[node.kind]}{node.ref.version !== undefined ? <span>v{node.ref.version}</span> : null}</span>
               <strong className="lab-flow-node__title">{node.title}</strong><span className="lab-flow-node__summary">{node.summary || '等待执行器补充记录'}</span>
-              <span className="lab-flow-node__bottom"><span className={`lab-flow-status lab-flow-status--${node.status}`}><StatusIcon status={node.source === 'artifact' && node.status === 'running' ? 'pending' : node.status} />{workflowNodeStatus(node)}</span>{node.kind === 'experiment' ? <span>{workflowDecisionName(node.decision)}</span> : childCount > 0 ? <span>{childCount} 个子任务</span> : node.source === 'artifact' ? <span>{node.kind === 'step' ? 'Agent 计划' : '已保存版本'}</span> : null}</span>
+              <span className="lab-flow-node__bottom"><span className={`lab-flow-status lab-flow-status--${node.status}`}><StatusIcon status={node.source === 'artifact' && node.status === 'running' ? 'pending' : node.status} />{workflowNodeStatus(node)}</span>{node.kind === 'experiment' ? <span>{workflowNodeDecisionName(node)}</span> : childCount > 0 ? <span>{childCount} 个子任务</span> : node.source === 'artifact' ? <span>{node.kind === 'step' ? 'Agent 计划' : '已保存版本'}</span> : null}</span>
               {node.kind === 'experiment' && childCount > 0 ? <span className="lab-flow-node__children"><GitBranch size={12} />{childCount} 个验证任务</span> : null}
             </button>;
           })}
@@ -164,7 +173,7 @@ export function LabWorkflowNodeDetail({ selected, nodes, onOpenNode, onSelect, o
   const parents = nodes.filter((node) => selected.dependencies.includes(node.id));
   const focusNode = onSelect;
   return <section className="lab-flow-detail" aria-label="所选节点详情"><header><div><span className={`lab-flow-status lab-flow-status--${selected.status}`}><StatusIcon status={selected.source === 'artifact' && selected.status === 'running' ? 'pending' : selected.status} />{workflowNodeStatus(selected)}</span><h3>{selected.title}</h3></div><Button size="small" onClick={() => onOpenNode(selected)}>{selected.status === 'completed' ? '查看结果' : selected.kind === 'application' ? '打开应用交付' : '打开任务详情'}<ArrowUpRight size={15} /></Button></header>
-      <div className="lab-flow-detail__body"><div className="lab-flow-detail__record"><h4>{selected.kind === 'experiment' ? '这一轮改了什么' : '记录与结果'}</h4><p>{selected.summary || '执行器尚未补充此节点的详细说明。'}</p>{selected.kind === 'experiment' ? <p className="lab-flow-detail__decision"><Check size={14} />{workflowDecisionName(selected.decision)}</p> : null}
+      <div className="lab-flow-detail__body"><div className="lab-flow-detail__record"><h4>{selected.kind === 'experiment' ? '这一轮改了什么' : '记录与结果'}</h4><p>{selected.summary || '执行器尚未补充此节点的详细说明。'}</p>{selected.kind === 'experiment' ? <p className="lab-flow-detail__decision">{['keep', 'improved'].includes(selected.decision?.toLowerCase() ?? '') ? <Check size={14} aria-hidden="true" /> : <Circle size={14} aria-hidden="true" />}{workflowNodeDecisionName(selected)}</p> : null}
         {selected.optimization ? <dl className="lab-flow-detail__configuration"><dt>本轮方向</dt><dd>{selected.optimization.scope}</dd>{selected.optimization.baselineModel ? <><dt>基线模型</dt><dd>{selected.optimization.baselineModel}</dd></> : null}{selected.optimization.candidateModel ? <><dt>候选模型</dt><dd>{selected.optimization.candidateModel}</dd></> : null}{selected.optimization.promptChanged !== undefined ? <><dt>提示词</dt><dd>{selected.optimization.promptChanged ? '已调整' : '保持一致'}</dd></> : null}</dl> : null}
         {selected.reasons?.length ? <ul className="lab-flow-detail__reasons">{selected.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul> : null}
         {parents.length ? <div className="lab-flow-detail__relations"><span>依赖</span>{parents.map((node) => <button key={node.id} onClick={() => focusNode(node)}>{node.title}<ArrowRight size={12} /></button>)}</div> : null}

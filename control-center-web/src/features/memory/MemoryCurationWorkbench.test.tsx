@@ -136,6 +136,8 @@ describe('Memory curation progress and recovery', () => {
 it('keeps an organization entry available even when the known backlog is empty', async () => {
   const organize = vi.fn();
   render(<MemoryLibraryNavigation activeLayer="evidence" onOpenLayer={vi.fn()} onOpenOrganize={organize} onRetry={vi.fn()} summary={{ pendingGovernedEvidenceCount: 0 }} summaryState="ready" />);
+  expect(screen.getByRole('button', { name: '整理记忆' })).toBeVisible();
+  await userEvent.setup().click(screen.getByRole('button', { name: '整理状态摘要' }));
   expect(screen.getByText('来源是原始记录，不代表已经保存为记忆。')).toBeVisible();
   await userEvent.setup().click(screen.getByRole('button', { name: '整理记忆' }));
   expect(organize).toHaveBeenCalledOnce();

@@ -5,6 +5,21 @@
 These optional maintenance workflows apply to a configured local PAW installation.
 Keep personal data and receipts outside Git.
 
+## Archive Old App Install Backups
+
+With an external archive configured, each successful release install keeps at
+least the two newest `.paw-update.*` recovery directories in `~/Applications`. To
+offload older ones, create an archive directory on a mounted external disk,
+then put its absolute path on one line in
+`~/Library/Application Support/RagIme/app-backup-archive-root.txt`. The
+`RAG_IME_APP_BACKUP_ARCHIVE_ROOT` environment variable can override that file.
+
+After a verified install, the existing installer copies inactive older backups
+with `ditto`, compares contents with `rsync`, records each move in
+`migration.jsonl`, and leaves a link at the original path. If the disk is
+unmounted, full, or a backup is open, the local backup remains. The installer
+does not archive application data, databases, Lab packages, or Pi generations.
+
 ## Import Existing Conversations
 
 Completed local Codex conversations can be staged and then registered as

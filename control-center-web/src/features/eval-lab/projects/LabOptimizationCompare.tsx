@@ -4,7 +4,7 @@ import { preferenceWeights } from './optimization-weights';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleHelp, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/primitives';
-import { LabWorkflowNodeDetail, workflowDecisionName, workflowNodeStatus } from './LabWorkflowGraph';
+import { LabWorkflowNodeDetail, workflowNodeDecisionName, workflowNodeStatus } from './LabWorkflowGraph';
 import { optimizationDraft, optimizationGroups, optimizationObjectives, testedDimensions, type OptimizationDimension, type OptimizationPreference, type OptimizationObjective } from './optimization-parameters';
 import type { LabWorkflowMetric, LabWorkflowNode } from './project-workflow-types';
 import { decisionGroup, metricIsCost, metricIsLatency, pairedMetricVisual, type DecisionGroup } from './comparison-metrics';
@@ -31,7 +31,7 @@ function MetricPair({ metric, compact = false }: { metric: LabWorkflowMetric; co
 function Decision({ node }: { node: LabWorkflowNode }) {
   const rawDecision = node.status === 'completed' ? node.decision?.toLowerCase() : undefined;
   const decision = rawDecision === 'improved' ? 'keep' : rawDecision;
-  return <span className="lab-compare-decision" data-decision={decision}>{decision === 'keep' ? <Check size={13} /> : null}{node.status === 'completed' ? decision === 'baseline' ? '基线' : workflowDecisionName(node.decision) : workflowNodeStatus(node)}</span>;
+  return <span className="lab-compare-decision" data-decision={decision}>{decision === 'keep' ? <Check size={13} /> : null}{node.status === 'completed' ? decision === 'baseline' ? '基线' : workflowNodeDecisionName(node) : workflowNodeStatus(node)}</span>;
 }
 
 export function LabOptimizationCompare({ nodes, selected, onSelect, onOpenNode, onOpenSource, onDraft, onOpenKnowledge, preferenceKey }: {

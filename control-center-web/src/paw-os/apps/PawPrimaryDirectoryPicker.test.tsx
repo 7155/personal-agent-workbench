@@ -154,7 +154,8 @@ describe('primary assistant directory picker', () => {
     const pickWorkspaceDirectory = vi.fn(async () => ({ name: 'native-project', path: '/work/native-project' }));
     vi.stubGlobal('pawBrowserHost', { kind: 'electron-webview', partition: 'persist:paw-browser', pickWorkspaceDirectory });
     const transport = createPreviewTransport();
-    const { onOpen } = setup(transport);
+    // This task starts from an unbound discussion; bound projects reject a different execution root.
+    const { onOpen } = setup(transport, { ...initialForm, contextWorkspace: '' });
     await ready();
     fireEvent.click(screen.getByRole('button', { name: '选择目录' }));
     await waitFor(() => expect(screen.getByRole('textbox', { name: '本次工作目录' })).toHaveValue('/work/native-project'));
@@ -176,7 +177,8 @@ describe('primary assistant directory picker', () => {
   it('explains browser preview limitations and recovers through a manually entered path', async () => {
     vi.stubGlobal('pawBrowserHost', undefined);
     const transport = createPreviewTransport();
-    const { onOpen } = setup(transport);
+    // This task starts from an unbound discussion; bound projects reject a different execution root.
+    const { onOpen } = setup(transport, { ...initialForm, contextWorkspace: '' });
     await ready();
     fireEvent.click(screen.getByRole('button', { name: '选择目录' }));
     const notice = await screen.findByRole('alert');

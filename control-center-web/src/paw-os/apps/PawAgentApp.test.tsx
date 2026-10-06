@@ -117,11 +117,13 @@ describe('PAWOS Agent App', () => {
       fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
       await screen.findByText(/草稿已保留；重试会核对同一次请求/);
     }
+    await userEvent.setup().click(await screen.findByRole('button', { name: /^任务记录/ }));
     fireEvent.click(await screen.findByRole('button', { name: /已有任务/ }));
     expect(await screen.findByTestId('session-record-id')).toHaveTextContent('task-existing');
     expect(screen.getByTestId('session-initial-draft')).toBeEmptyDOMElement();
     if (replacement) view.rerender(agentTree(createTransport({ primaryTasks: [oldTask] }), { initialRoute: '/agent?session=task-existing' }));
-    fireEvent.click(screen.getByRole('button', { name: '返回我的助手' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: '工作台选项' }));
+    await userEvent.setup().click(screen.getByRole('menuitem', { name: '返回我的助手' }));
     const restored = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
     if (replacement) {
       expect(restored).toHaveValue('');
@@ -202,7 +204,7 @@ describe('PAWOS Agent App', () => {
   it('makes the stable assistant the default entry while keeping the advanced creator explicit', async () => {
     const transport = createTransport();
     renderAgent(transport, { initialRoute: '/agent' });
-    expect(await screen.findByRole('heading', { name: '有事，接着聊。' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '这次想做什么？' })).toBeVisible();
     expect(screen.getByRole('region', { name: 'Agent 工作台' })).toHaveAttribute('data-compact-work');
     expect(screen.queryByRole('group', { name: 'Agent 界面模式' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());

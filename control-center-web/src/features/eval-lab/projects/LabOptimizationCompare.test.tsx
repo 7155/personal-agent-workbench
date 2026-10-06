@@ -68,6 +68,14 @@ describe('optimization objectives, comparison and parameters', () => {
     expect(testedDimensions(retrieval)).toEqual(['RAG']);
     expect(testedDimensions({ ...retrieval, factors: [{ name: 'rerank', before: 'true', after: 'false', reason: '' }] })).toEqual(['RAG', '重排']);
   });
+  it('shows measured-but-undecided results without claiming an optimization gain', () => {
+    const undecided = { ...run, decision: 'unknown', metrics: [{ label: 'MRR', unit: 'ratio', baseline: null, candidate: .4545 }] };
+    mount([undecided]);
+    const table = screen.getByRole('region', { name: '优化轮次对照表' });
+    expect(table).toHaveTextContent('45.45%');
+    expect(table).toHaveTextContent('已测量 · 待结论');
+    expect(table).not.toHaveTextContent('保留候选');
+  });
   it('keeps unmatched measurements single and never fabricates a pair or a tradeoff plot', () => {
     const single = { ...run, metrics: [{ label: 'MRR', baseline: null, candidate: null, value: .7 }] };
     mount([single], single);

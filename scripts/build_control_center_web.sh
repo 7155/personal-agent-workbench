@@ -66,36 +66,18 @@ if grep -R -E -q 'unsafe-eval|new Function|require\("|eval\(' "$WEB/dist"; then
   echo "control-center bundle contains runtime code generation or unresolved CommonJS" >&2
   exit 1
 fi
-python3 - "$WEB/dist/rag-ime-control-web-build.json" "$WEB/dist" "$FRONTEND_PRODUCT" <<'PY'
-import hashlib
+python3 - "$ROOT" "$WEB/dist/rag-ime-control-web-build.json" "$WEB/dist" "$FRONTEND_PRODUCT" <<'PY'
 import json
 import os
 import sys
 from pathlib import Path
 
-marker_path = Path(sys.argv[1])
-dist_path = Path(sys.argv[2])
-frontend_product = sys.argv[3]
+sys.path.insert(0, sys.argv[1])
+from rag_ime.release_staging import control_center_dist_digest
 
-
-def tree_digest(root: Path) -> str:
-    if not root.is_dir() or root.is_symlink():
-        raise SystemExit(f"invalid control-center dist tree: {root}")
-    digest = hashlib.sha256()
-    paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
-    for path in paths:
-        relative = path.relative_to(root)
-        if relative.as_posix() == "rag-ime-control-web-build.json":
-            continue
-        if path.is_symlink():
-            raise SystemExit(f"control-center dist contains a symlink: {relative}")
-        if not path.is_file():
-            continue
-        digest.update(relative.as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
+marker_path = Path(sys.argv[2])
+dist_path = Path(sys.argv[3])
+frontend_product = sys.argv[4]
 
 
 try:
@@ -106,7 +88,7 @@ except (OSError, json.JSONDecodeError) as error:
 if marker.get("schemaVersion") != "rag-ime.control-web-build.v1":
     raise SystemExit("control-center web build marker has the wrong schema")
 marker["frontendProduct"] = frontend_product
-marker["distTreeDigest"] = tree_digest(dist_path)
+marker["distTreeDigest"] = control_center_dist_digest(dist_path)
 temporary = marker_path.with_name(f".{marker_path.name}.tmp")
 temporary.write_text(
     json.dumps(marker, ensure_ascii=False, indent=2) + "\n",

@@ -61,32 +61,15 @@ cleanup_web_install_state() {
 }
 
 verify_copied_web_dist() {
-  python3 - "$1" "$2" <<'PY'
-import hashlib
+  python3 - "$ROOT" "$1" "$2" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-source_root, installed_root = map(Path, sys.argv[1:])
+sys.path.insert(0, sys.argv[1])
+from rag_ime.release_staging import control_center_dist_digest
 
-
-def tree_digest(root: Path) -> str:
-    if not root.is_dir() or root.is_symlink():
-        raise ValueError(f"invalid control-center dist tree: {root}")
-    digest = hashlib.sha256()
-    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
-        relative = path.relative_to(root)
-        if relative.as_posix() == "rag-ime-control-web-build.json":
-            continue
-        if path.is_symlink():
-            raise ValueError(f"control-center dist contains a symlink: {relative}")
-        if not path.is_file():
-            continue
-        digest.update(relative.as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
+source_root, installed_root = map(Path, sys.argv[2:])
 
 
 source_marker = json.loads(
@@ -104,8 +87,8 @@ if source_marker.get("frontendProduct") != "paw-os":
 expected_digest = source_marker.get("distTreeDigest")
 if not isinstance(expected_digest, str) or len(expected_digest) != 64:
     raise ValueError("copied control-center dist marker has no tree digest")
-source_digest = tree_digest(source_root)
-installed_digest = tree_digest(installed_root)
+source_digest = control_center_dist_digest(source_root)
+installed_digest = control_center_dist_digest(installed_root)
 if source_digest != installed_digest or installed_digest != expected_digest:
     raise ValueError("copied control-center dist tree digest does not match the marker")
 PY

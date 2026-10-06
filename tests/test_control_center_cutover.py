@@ -545,6 +545,10 @@ class WebGateOrchestrationTests(unittest.TestCase):
                 "support/prebuilt_product.sh",
             ):
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
+            # The real build now consumes the shared frontend digest owner.
+            (root / "rag_ime").mkdir()
+            for name in ("__init__.py", "release_staging.py"):
+                shutil.copy2(ROOT / "rag_ime" / name, root / "rag_ime" / name)
             # The host double preserves its nested web-build invocation; native
             # packaging and footprint verification are outside this gate test.
             doubles = {

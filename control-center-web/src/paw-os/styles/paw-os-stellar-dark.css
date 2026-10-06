@@ -172,6 +172,13 @@
   box-shadow: var(--paw-shadow);
 }
 
+/* The work plane spans the desktop; only its child panels own surfaces. */
+:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-wayfinder-work {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-menu, .paw-context-menu) {
   --paw-menu-ink: var(--paw-stellar-ink);
   --paw-menu-bg: var(--paw-stellar-surface);

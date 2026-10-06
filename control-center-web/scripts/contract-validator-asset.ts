@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { transformWithEsbuild, type Plugin, type ResolvedConfig } from 'vite';
@@ -10,6 +11,7 @@ import { transformWithEsbuild, type Plugin, type ResolvedConfig } from 'vite';
 export function contractValidatorAsset(): Plugin {
   let config: ResolvedConfig;
   let sourceFile: string;
+  let sourceAlias: string;
   let assetFileName: string | undefined;
   return {
     name: 'paw-contract-validator-asset',
@@ -17,7 +19,10 @@ export function contractValidatorAsset(): Plugin {
     enforce: 'pre',
     configResolved(resolved) {
       config = resolved;
-      sourceFile = path.resolve(config.root, 'src/contracts/generated-validators.ts');
+      sourceAlias = path.resolve(config.root, 'src/contracts/generated-validators.ts');
+      // Rollup normalizes importers through symlinks (including macOS tmpdir).
+      // Keep one physical external identity and accept the configured alias.
+      sourceFile = realpathSync(sourceAlias);
     },
     async buildStart() {
       this.addWatchFile(sourceFile);
@@ -39,7 +44,7 @@ export function contractValidatorAsset(): Plugin {
       handler(source, importer) {
         if (!importer || source.includes('?') || source.startsWith('\0')) return null;
         const candidate = path.resolve(path.dirname(importer.split('?')[0]), source);
-        if (candidate !== sourceFile && `${candidate}.ts` !== sourceFile) return null;
+        if (![sourceFile, sourceAlias].includes(candidate) && ![sourceFile, sourceAlias].includes(`${candidate}.ts`)) return null;
         return { id: sourceFile, external: 'relative', moduleSideEffects: false };
       },
     },

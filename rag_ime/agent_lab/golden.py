@@ -573,7 +573,22 @@ class AgentLabGoldenStore:
                 raise AgentLabGoldenValidationError("题目不存在，请刷新后重试。")
             if action == "review_case":
                 reviewed = _case_standard(value, suite["sources"])
-                verdict = _choice(value.get("verdict"), "人工审核", {"approved", "rejected"})
+                verdict = _choice(value.get("verdict"), "人工审核", {"approved", "rejected", "pending"})
+                if verdict == 'pending':
+                    if item['review']['status'] != 'rejected' or value.get('reopenForReview') is not True:
+                        raise AgentLabGoldenConflict('只有明确拒绝的题目可在修订证据后进入独立重审。')
+                    note = _text(value.get('note'), '修订原因', limit=2000)
+                    reviewed['review'] = {'status': 'pending', 'note': note, 'reviewedAtMs': None}
+                    item.update(reviewed)
+                    # Never carry an Agent's rejected draft labels into the
+                    # corrected standard. Human reference labels are not ours
+                    # to discard and remain attached to their original answer.
+                    for sample in item['samples']:
+                        if sample.get('labelAuthor') == 'agent':
+                            sample.update(humanVerdict=None, humanNote='', labelAuthor='')
+                    suite['revision'] += 1
+                    suite['calibration'] = None
+                    return
                 if verdict == "approved":
                     if not reviewed["rubric"]:
                         raise AgentLabGoldenValidationError("审核通过前，请填写可执行的评分标准。")
@@ -749,6 +764,39 @@ class AgentLabGoldenStore:
             bound = json.loads(row["input_json"])
             reprocess = _can_reprocess_draft(job) or _can_reprocess_experiment(job, bound)
             retry = _retryable_request(job)
+            # A human may explicitly accept one potentially double-billed call
+            # after bounded settlement recovery failed. Never reinterpret the
+            # original unknown Pi receipt as failed or completed. The new
+            # attempt has its own identity and preserves every prior receipt.
+            unsettled = value.get('acknowledgeUnsettledRetry')
+            if unsettled is not None and type(unsettled) is not bool:
+                raise AgentLabGoldenValidationError('未知调用重试确认必须是布尔值。')
+            ambiguous = False
+            original_call = None
+            if unsettled:
+                result = job.get('result')
+                pending = result.get('pendingRequestId') if isinstance(result, Mapping) else None
+                expected = _text(value.get('expectedPendingRequestId'), '原调用标识', limit=240)
+                if (job['kind'] != 'review' or job['state'] != 'interrupted'
+                        or not isinstance(result, Mapping) or result.get('partial') is not True
+                        or not isinstance(result.get('receipts'), list)
+                        or pending != expected or retry or reprocess
+                        or not expected.startswith(quote(job['jobId'], safe='-_.') + ':review:')
+                        or any(row.get('ambiguous') for row in job.get('retryHistory', []) if isinstance(row, Mapping))):
+                    raise AgentLabGoldenConflict('原调用不符合一次性未知回执恢复条件，请核对当前任务。')
+                if any(isinstance(row, Mapping) and row.get('requestId') == expected
+                       and isinstance(row.get('receipt'), Mapping)
+                       and row['receipt'].get('status') == 'completed'
+                       for row in result.get('receipts', [])):
+                    raise AgentLabGoldenConflict('原调用已有完成回执，不能重试。')
+                original_call = conn.execute(
+                    'SELECT state,session_id,turn_id,updated_at_ms FROM agent_lab_golden_model_calls WHERE request_id=?',
+                    (expected,)).fetchone()
+                if (original_call is None or original_call['state'] != 'interrupted'
+                        or not original_call['session_id'] or not original_call['turn_id']
+                        or original_call['updated_at_ms'] > _now() - 900_000):
+                    raise AgentLabGoldenConflict('原调用尚未完成有界恢复或缺少原 Session 身份，不能重试。')
+                retry, ambiguous = expected, True
             if job["state"] != "interrupted" and not reprocess and not retry:
                 raise AgentLabGoldenConflict("只有已中断的任务或有明确失败回执的调用可以恢复。")
             if job["kind"] != "experiment" and bound["suite"]["revision"] != suite["revision"]:
@@ -768,7 +816,12 @@ class AgentLabGoldenStore:
                 receipt = {'requestId':f'{base}:retry:{attempt}', 'attempt':attempt,
                            'previousRequestId':retry,'createdAtMs':_now()}
                 retries[base] = receipt
-                job.setdefault('retryHistory', []).append({'baseRequestId':base, **receipt})
+                audit = {'baseRequestId':base, **receipt}
+                if ambiguous and original_call is not None:
+                    audit.update(ambiguous=True, acknowledgedPotentialDuplicateBilling=True,
+                                 originalCallState='interrupted', originalSessionId=original_call['session_id'],
+                                 originalTurnId=original_call['turn_id'])
+                job.setdefault('retryHistory', []).append(audit)
             job.update(state="queued", progress="等待恢复", error="")
         self._save_job(conn, job)
         return job

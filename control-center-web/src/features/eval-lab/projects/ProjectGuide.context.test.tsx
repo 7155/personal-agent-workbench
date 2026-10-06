@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceComposerContext } from '@/paw-os/apps/workspace-draft';
 import { ProjectGuide } from './ProjectGuide';
+import { projectGuidanceMessage } from './project-guidance';
 import type { LabProject } from './types';
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { id: 'guide' } }) }));
@@ -15,6 +16,12 @@ vi.mock('@/paw-os/apps/PawSessionWorkspace', () => ({
 }));
 
 describe('ProjectGuide context dismissal', () => {
+  it('asks for an actual saved preview rather than dumping source into the chat', () => {
+    const request = projectGuidanceMessage('guided');
+    expect(request).toContain('实际修改、保存为可预览的新版本');
+    expect(request).toContain('不要仅在回复或输入框粘贴整页 HTML/CSS/JSON');
+    expect(request).toContain('没有保存成功时明确告知原因');
+  });
   it('keeps a dismissed artifact removed across progress updates and attaches a newly selected revision', () => {
     const project = { projectId: 'project', guideSessionId: 'guide' } as LabProject;
     const context = { contextId: 'artifact-a:v1', kind: 'project' as const, label: '原报告', detail: 'v1', text: 'running: 1' };

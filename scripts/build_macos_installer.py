@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER_FILES = (
     'scripts/install_product_stack.sh', 'scripts/install_binary_payload.py',
     'scripts/build_control_center_web.sh', 'scripts/build_paw_os_electron_host.sh',
+    'scripts/archive_paw_app_backups.py',
     'scripts/build_voice_input.sh', 'scripts/build_desktop_bridge.sh',
     'scripts/install_sidecar_launch_agent.sh',
     'scripts/build_ego_browser_runtime.py',
