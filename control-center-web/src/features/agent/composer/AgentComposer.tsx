@@ -580,7 +580,7 @@ export function AgentComposer({
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder={placeholder ?? (attachmentsAvailable ? composerPlaceholder(imageSupport) : '给当前 Session 发消息…')}
+            placeholder={placeholder ?? (attachmentsAvailable ? composerPlaceholder(imageSupport) : '继续这段对话…')}
             aria-label="消息"
             role={commandPanelVisible ? 'combobox' : undefined}
             aria-autocomplete={commandPanelVisible ? 'list' : undefined}
@@ -676,10 +676,9 @@ function isCommandLookupDraft(value: string): boolean {
 }
 
 function composerPlaceholder(support: 'supported' | 'unsupported' | 'unknown'): string {
-  const target = '当前 Session';
-  if (support === 'supported') return `给${target}发消息，输入 / 查看命令，或粘贴图片、文件…`;
-  if (support === 'unsupported') return `给${target}发消息，输入 / 查看命令，或粘贴文件；当前模型不识别图片…`;
-  return `给${target}发消息，输入 / 查看命令，或粘贴文件；当前模型图片能力未知…`;
+  if (support === 'supported') return '继续这段对话，输入 / 查看命令，或粘贴图片、文件…';
+  if (support === 'unsupported') return '继续这段对话，输入 / 查看命令，或粘贴文件；当前模型不识别图片…';
+  return '继续这段对话，输入 / 查看命令，或粘贴文件；当前模型图片能力未知…';
 }
 
 /**

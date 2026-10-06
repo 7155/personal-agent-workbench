@@ -85,7 +85,7 @@ describe('ProjectQuickActions', () => {
       },
     });
     const openWindow = renderActions(transport);
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Run Checks' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: '运行检核' }));
     await waitFor(() => expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'terminal' })));
     expect(transport.requests.some((call) => call.request.pathId === 'agent.session.backgroundJob.start')).toBe(true);
   });
@@ -100,7 +100,7 @@ describe('ProjectQuickActions', () => {
       },
     });
     const openWindow = renderActions(transport);
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Run Preview' }));
+    await userEvent.setup().click(await screen.findByRole('button', { name: '运行预览' }));
     expect(transport.requests.some((call) => call.request.pathId === 'agent.session.backgroundJob.start')).toBe(false);
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'terminal' }));
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'browser', target: expect.objectContaining({ url: context.previewUrl }) }));
@@ -115,7 +115,7 @@ describe('ProjectQuickActions', () => {
     } });
     const openWindow = renderActions(transport);
     await screen.findByText('后台任务运行中');
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Run Preview' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: '运行预览' }));
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.backgroundJob.start')).toBe(false);
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'terminal' }));
     expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ appId: 'browser' }));

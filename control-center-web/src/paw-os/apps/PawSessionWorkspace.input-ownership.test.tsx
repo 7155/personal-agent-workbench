@@ -86,7 +86,7 @@ describe('Session composer asynchronous input ownership', () => {
       onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>);
     await screen.findByRole('textbox', { name: '消息' });
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Session 工具' }));
+    await user.click(screen.getByRole('button', { name: '对话工具' }));
     await user.click(screen.getByRole('menuitem', { name: '文件' }));
     const manage = screen.getByRole('button', { name: '管理工作区目录' });
     expect(manage).toBeDisabled();
@@ -103,7 +103,7 @@ describe('Session composer asynchronous input ownership', () => {
     const second = transportFor(id, { 'agent.session.workspace.list': () => newListing.promise });
     const user = userEvent.setup(); const view = render(workspace(first, id));
     await screen.findByRole('textbox', { name: '消息' });
-    await user.click(screen.getByRole('button', { name: 'Session 工具' }));
+    await user.click(screen.getByRole('button', { name: '对话工具' }));
     await user.click(screen.getByRole('menuitem', { name: '文件' }));
     await screen.findByRole('treeitem', { name: '预览文件 old.md' });
     if (pendingRefresh) {

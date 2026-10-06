@@ -44,7 +44,7 @@ describe('AgentComposer macOS input methods', () => {
     render(<Harness />);
     const composer = screen.getByRole('textbox', { name: '消息' });
 
-    expect(composer).toHaveAttribute('placeholder', expect.stringContaining('给当前 Session发消息'));
+    expect(composer).toHaveAttribute('placeholder', expect.stringContaining('继续这段对话'));
     expect(composer).toHaveAttribute('autocapitalize', 'none');
     expect(composer).toHaveAttribute('autocomplete', 'off');
     expect(composer).toHaveAttribute('autocorrect', 'off');

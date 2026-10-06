@@ -4,7 +4,7 @@ import { capabilityCatalogQueryOptions, observeCatalogQuery, pluginQueryKeys, pr
 import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
-import { PawSessionFocusHeader } from './PawSessionFocusHeader';
+import './paw-workbench-reading.css';
 import {
   ChevronDown,
   CircleAlert,
@@ -1755,18 +1755,18 @@ export function PawSessionWorkspace({
             aria-controls="paw-session-tools-menu"
             aria-expanded={toolMenuOpen}
             aria-haspopup="menu"
-            aria-label="Session 工具"
+            aria-label="对话工具"
             onClick={() => { if (toolMenuOpen) closeToolMenu(true); else openToolMenu(); }}
             onKeyDown={handleToolMenuButtonKeyDown}
             ref={toolMenuButtonRef}
             type="button"
           >
             <Wrench size={15} />
-            <span>Session 工具</span>
+            <span>对话工具</span>
             {pendingApproval || pendingGenericInput || pendingMemoryReview ? <small className="paw-session-workspace__attention">待处理</small> : null}
           </button>
           {toolMenuOpen ? <nav
-            aria-label="Session 工具菜单"
+            aria-label="对话工具菜单"
             id="paw-session-tools-menu"
             onBlur={handleToolMenuBlur}
             onKeyDown={handleToolMenuKeyDown}
@@ -1794,18 +1794,6 @@ export function PawSessionWorkspace({
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
       <WorkspaceRecoveryNotice recovery={recovery} />
-      {controlsExpanded && !embedded && !evaluationSnapshot && workspaceView === 'conversation' ? <PawSessionFocusHeader
-        title={title}
-        busy={busy && !durablePaused}
-        stopping={stopping}
-        active={active}
-        hasMessages={projectionSlice.hasTurns}
-        needsAttention={Boolean(pendingApproval || pendingGenericInput || pendingMemoryReview)}
-        panel={panel}
-        onOpenTasks={() => panel === 'status' ? setPanel('none') : openToolPanel('status')}
-        onOpenFiles={() => panel === 'files' ? setPanel('none') : openToolPanel('files')}
-        onOpenSubagents={() => panel === 'subagents' ? setPanel('none') : openToolPanel('subagents')}
-      /> : null}
 
       <div className="paw-session-workspace__body">
         <div className="paw-session-workspace__primary" ref={primaryRef}>
@@ -1823,14 +1811,6 @@ export function PawSessionWorkspace({
               <div aria-hidden="true" className="agent-fx-fade agent-fx-fade--top" />
               <div aria-hidden="true" className="agent-fx-fade agent-fx-fade--bottom" />
               {loading && !projectionSlice.hasTurns ? <div className="paw-session-workspace__loading"><LoaderCircle className="ui-spin" size={18} />正在载入最近对话</div> : null}
-              {!evaluationSnapshot && !workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (
-                <ProjectQuickActions active={active && liveActive && !loading && workspaceView === 'conversation'} compact context={{
-                  projectId: recordId,
-                  title: workspaceRecord.title || recordId,
-                  sessionId: recordId,
-                  cwd: workspaceRecord.workspaceRoots[0],
-                }} />
-              ) : null}
               <AgentTimeline
                 pendingFeedbackTurnId={evaluationSnapshot ? '' : pendingFeedbackTurnId}
                 active={liveActive}
@@ -2034,11 +2014,11 @@ export function PawSessionWorkspace({
         </div>
 
         {/* 工具侧栏是一层浮卡：只覆盖在消息流之上，绝不挤压对话列。
-            在浮层内按 Esc 关闭并把焦点还给“Session 工具”触发钮。 */}
+            在浮层内按 Esc 关闭并把焦点还给“对话工具”触发钮。 */}
         {!evaluationSnapshot && !embedded && (panel !== 'none' || statusPanelVisited) ? <aside
           aria-hidden={panel === 'none' || undefined}
           className="paw-session-workspace__side"
-          aria-label="Session 工具侧栏"
+          aria-label="对话工具侧栏"
           data-tool={panel}
           hidden={panel === 'none'}
           inert={panel === 'none' ? true : undefined}
@@ -2049,6 +2029,15 @@ export function PawSessionWorkspace({
           }}
         >
           {panel === 'files' ? (
+            <>
+              {!evaluationSnapshot && !workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (
+                <ProjectQuickActions active={active && liveActive && !loading && panel === 'files'} compact context={{
+                  projectId: recordId,
+                  title: workspaceRecord.title || recordId,
+                  sessionId: recordId,
+                  cwd: workspaceRecord.workspaceRoots[0],
+                }} />
+              ) : null}
             <AgentFilesPanel
               key={agentProjectionKey(address)}
               sessionId={recordId}
@@ -2058,6 +2047,7 @@ export function PawSessionWorkspace({
               onClose={closeToolPanel}
               onManageRoots={() => void manageWorkspaceRoots()}
             />
+            </>
           ) : panel === 'subagents' ? (
             <SessionSubagentPanel
               sessionId={recordId}
