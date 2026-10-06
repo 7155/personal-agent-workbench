@@ -1796,6 +1796,11 @@ function previewManagedFile(request: ControlRequest): Record<string, unknown> {
 
 function previewResponse(pathId: ControlPathId): unknown {
   switch (pathId) {
+    case 'knowledgeVault.manage':
+      return (request: ControlRequest) => {
+        if (record(request.body).action === 'list') return { spaces: [] };
+        throw new Error('演示模式不连接本机笔记文件夹；请连接真实服务后再试。');
+      };
     case 'observability.traceDiagnosticReports.list':
       return { schemaVersion: 'rag-ime.trace-diagnostic-report-list.v1', items: [], total: 0, truncated: false, nextCursor: null };
     case 'files.list':

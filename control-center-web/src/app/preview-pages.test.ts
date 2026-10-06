@@ -2,10 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { createPreviewTransport } from './preview-control-transport';
 import { parseProjectRead } from '@/features/eval-lab/projects/types';
 import { parseGoldenRead } from '@/features/eval-lab/golden/types';
+import { parseLabAppRead } from '@/features/eval-lab/projects/apps';
 import { pawExtensionApps } from '@/paw-os/extensions/registry';
 import { projectPawExtensionInstallation } from '@/paw-os/extensions/installation';
 
 describe('preview page contracts', () => {
+  it('opens local notes without fabricating a file connection', async () => {
+    const transport = createPreviewTransport();
+    expect(await transport.request({ pathId: 'knowledgeVault.manage', body: { action: 'list' } })).toEqual({ spaces: [] });
+    await expect(transport.request({ pathId: 'knowledgeVault.manage', body: { action: 'connect', root: '/private-notes' } })).rejects.toThrow('不连接本机笔记');
+  });
+  it('opens the application delivery workspace without inventing a version', async () => {
+    const transport = createPreviewTransport();
+    expect(parseLabAppRead(await transport.request({ pathId: 'agent.eval-lab.apps.get' })).items).toEqual([]);
+    await expect(transport.request({ pathId: 'agent.eval-lab.apps.command', body: { action: 'invoke', appId: 'extension:lab-' + '1'.repeat(32), expectedRevision: 1, clientRequestId: 'preview-invoke', input: {} } })).rejects.toThrow('没有真实应用版本');
+  });
   it('opens an empty Lab, creates a project and reads the exact saved project', async () => {
     const transport = createPreviewTransport();
     expect(parseProjectRead(await transport.request({ pathId: 'agent.eval-lab.projects.get' })).items).toEqual([]);

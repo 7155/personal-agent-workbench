@@ -19,7 +19,11 @@ export function VaultWorkspace(){
   const [spaceId,setSpaceId]=useState(''),[noteId,setNoteId]=useState(''),[query,setQuery]=useState(''),[search,setSearch]=useState('');
   const [view,setView]=useState<'list'|'graph'|'day'|'review'|'settings'>('list'),[edge,setEdge]=useState<Edge|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const call=async<T,>(body:Record<string,string|boolean|string[]>)=>await transport.request({pathId:'knowledgeVault.manage',body}) as T;
-  const spaces=useQuery({queryKey:['knowledge-vaults'],queryFn:()=>call<{spaces:Space[]}>({action:'list'})});
+  const spaces=useQuery({queryKey:['knowledge-vaults'],queryFn:async()=>{
+    const value=await call<{spaces:Space[]}>({action:'list'});
+    if(!value || !Array.isArray(value.spaces))throw new Error('笔记文件夹列表未完整返回，请重新读取。');
+    return value;
+  },retry:false});
   const space=spaces.data?.spaces.find(s=>s.id===spaceId);
   useEffect(()=>{if(!spaceId&&spaces.data?.spaces[0])setSpaceId(spaces.data.spaces[0].id);},[spaceId,spaces.data]);
   const snapshot=useQuery({queryKey:['knowledge-vault',spaceId,search,view==='graph'?noteId:''],queryFn:()=>call<Snapshot>({action:'snapshot',vaultId:spaceId,query:search,focusId:view==='graph'?noteId:''}),enabled:!!space&&!space.paused,refetchInterval:15_000});
@@ -30,6 +34,7 @@ export function VaultWorkspace(){
   const active=notes.find(n=>n.id===noteId);
   function open(note:Note){setNoteId(note.id);setEdge(null);}
   return <section className="vault-workspace" aria-label="本地笔记">
+    {spaces.isError?<p role="alert">{spaces.error instanceof Error?spaces.error.message:'笔记文件夹读取失败。'} <button onClick={()=>void spaces.refetch()}>重新读取文件夹</button></p>:null}
     <header className="vault-workspace__header"><div><h2>本地笔记</h2><p>直接阅读同一份 Markdown。原文留在你的文件夹里，默认不交给模型。</p></div>
       {space?<><select aria-label="笔记文件夹" value={spaceId} onChange={e=>{setSpaceId(e.target.value);setNoteId('');setEdge(null);}}>{spaces.data?.spaces.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><button disabled={busy} onClick={()=>void pause()}>{space.paused?'恢复读取':'暂停读取'}</button><button disabled={space.paused||snapshot.isFetching} onClick={()=>{void snapshot.refetch();if(noteId)void reading.refetch();}}>刷新</button></>:null}
     </header>
@@ -38,7 +43,7 @@ export function VaultWorkspace(){
       <label>排除目录（每行一个相对路径）<textarea rows={3} value={excluded} onChange={e=>setExcluded(e.target.value)}/></label>
       <p>这里只授权读取。私人日记默认排除；不复制原文、不改已有笔记，也不自动采纳为 Memory。</p><button disabled={busy||!root.trim()} type="submit">{busy?'正在连接…':'连接并读取'}</button>
     </form></details>
-    {(error||spaces.error||snapshot.error||reading.error)?<p role="alert">{error||String(spaces.error||snapshot.error||reading.error)}</p>:null}
+    {(error||snapshot.error||reading.error)?<p role="alert">{error||String(snapshot.error||reading.error)}</p>:null}
     {space?.paused?<p role="status">此文件夹已暂停读取，正文、搜索和关系图均已收起。</p>:space?<>
       <nav className="vault-workspace__tools" aria-label="笔记浏览"><form onSubmit={e=>{e.preventDefault();setSearch(query);}}><input aria-label="搜索笔记" value={query} onChange={e=>setQuery(e.target.value)} placeholder="正文、标题、中文或别名"/><button type="submit">搜索</button></form><button aria-pressed={view==='list'} onClick={()=>setView('list')}>笔记</button><button aria-pressed={view==='graph'} onClick={()=>setView('graph')}>关系图</button><button aria-pressed={view==='day'} onClick={()=>setView('day')}>日期页</button><button aria-pressed={view==='review'} onClick={()=>setView('review')}>待审核</button><button aria-pressed={view==='settings'} onClick={()=>setView('settings')}>设置</button><span>{snapshot.data?.total??0} 篇</span></nav>
       {snapshot.data?.truncated?<p role="status">本次显示最多 200 篇；部分文件未读取或结果超出范围，请缩小目录或搜索范围。不会将缺失内容当作已索引。</p>:null}

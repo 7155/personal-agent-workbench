@@ -17,6 +17,8 @@ export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, M
     artifacts: [], bindings: [], workspace: { artifactOrder: [], primaryArtifactId: '', layout: 'split' }, workspaceBinding: null,
   });
   return {
+    'agent.eval-lab.apps.get': { ok: true, items: [], app: null, versions: [], calls: [] },
+    'agent.eval-lab.apps.command': () => { throw new Error('演示模式没有真实应用版本；请连接 Lab 服务后再执行。'); },
     'agent.eval-lab.golden.get': { ok: true, items: [], suite: null },
     'agent.eval-lab.golden.command': () => { throw new Error('演示模式不运行评测；请连接真实 Lab 服务后创建评测集。'); },
     'agent.eval-lab.projects.get': (request: ControlRequest) => {
