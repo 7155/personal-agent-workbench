@@ -5,6 +5,7 @@ import { textCodePointCount, trimContractText } from '@/contracts/text-budget';
 import { useProductIdentity } from '@/features/identity/product-identity';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
 import { publicAgentErrorText } from '@/features/agent/public-error';
+import { publicErrorText } from '@/features/overview/management-ui';
 import { useAgentLiveSession, type AgentLiveSnapshotLoader, type AgentRecoveryState } from '@/features/agent/runtime/use-agent-live-session';
 import { agentSessionAddress, latestActiveAgentTurnId, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { usePageVisibility } from '@/platform/use-page-visibility';
@@ -99,7 +100,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       setSession(primary);
       setTasks(sessionItems({ items: result.tasks }, { includeAppOwned: true }));
     }).catch(reason => {
-      if (readSequence.current === generation && !controller.signal.aborted) { setSession(undefined); setError(publicAgentErrorText(reason)); }
+      if (readSequence.current === generation && !controller.signal.aborted) { setSession(undefined); setError(publicErrorText(reason, '暂时无法读取已有对话，请重新连接。')); }
     }).finally(() => { if (readSequence.current === generation && !controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); readSequence.current += 1; };
   }, [transport, revision, contextWorkspace, initialSource]);
@@ -151,7 +152,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       // exactly once and owns optimistic rows, reconnection, results and Stop.
       openSession(target, { clientMessageId, message });
     } catch (reason) {
-      if (generation === owner.current) setError(`${publicAgentErrorText(reason)} 草稿已保留；重试会核对同一次请求。`);
+      if (generation === owner.current) setError(`${publicErrorText(reason, '本次任务尚未确认，请重试。')} 草稿已保留；重试会核对同一次请求。`);
     } finally {
       if (generation === owner.current) { lock.current = false; setSubmitting(false); }
     }
@@ -171,7 +172,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
         if (forDiscussion) selectDiscussionProject(path);
         else { setWorkspace(path); setScopeConfirmed(false); }
       } else setPickerNotice('已取消选择，原目录保持不变。');
-    } catch (reason) { if (isCurrent()) setError(publicAgentErrorText(reason)); }
+    } catch (reason) { if (isCurrent()) setError(publicErrorText(reason, '未能打开目录选择器，请重试。')); }
     finally { if (isCurrent()) { picker.current = undefined; setPickingWorkspace(false); } }
   }
 

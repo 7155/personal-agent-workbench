@@ -1,4 +1,4 @@
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
+import { FocusScope, Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import type { InitialSessionSubmission } from './agent-workspace-loader';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, installationChangeMatchesTransport } from '@/paw-os/extensions/installation';
 import { capabilityCatalogQueryOptions, observeCatalogQuery, pluginQueryKeys, prepareCatalogRefresh, readCatalogQuery, useCatalogQueryClient } from '@/features/plugins/catalog-queries';
@@ -382,6 +382,30 @@ export function PawSessionWorkspace({
   const toolMenuRef = useRef<HTMLElement>(null);
   const toolMenuInitialFocusRef = useRef<'first' | 'last'>('first');
   const primaryRef = useRef<HTMLDivElement>(null);
+  const toolPanelRef = useRef<HTMLElement>(null);
+  const [toolPanelOverlay, setToolPanelOverlay] = useState(true);
+  const previousToolPanel = useRef<WorkbenchPanel>('none');
+  const toolPanelTrapsFocus = active && panel !== 'none' && toolPanelOverlay;
+  // CSS owns docking. Observe its result rather than duplicate breakpoints or
+  // remount the file tree when a window moves between docked and overlay layouts.
+  useEffect(() => {
+    const element = toolPanelRef.current;
+    const body = primaryRef.current?.parentElement;
+    if (!element || !body || panel === 'none') return;
+    const update = () => setToolPanelOverlay(getComputedStyle(element).position !== 'static');
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [panel]);
+  useEffect(() => {
+    const opened = previousToolPanel.current !== panel;
+    previousToolPanel.current = panel;
+    if (active && panel !== 'none' && (opened || toolPanelOverlay)) {
+      toolPanelRef.current?.querySelector<HTMLElement>('[data-drawer-autofocus]')?.focus({ preventScroll: true });
+    }
+  }, [active, panel, toolPanelOverlay]);
   const terminalSnapshotTimerRef = useRef<number | undefined>(undefined);
   const catalogAbortRef = useRef<AbortController | undefined>(undefined);
   const catalogRequestRef = useRef(0);
@@ -1602,7 +1626,7 @@ export function PawSessionWorkspace({
   }, []);
   const closeToolPanel = useCallback((): void => {
     setPanel('none');
-    toolMenuButtonRef.current?.focus();
+    requestAnimationFrame(() => { if (toolMenuButtonRef.current?.isConnected) toolMenuButtonRef.current.focus({ preventScroll: true }); });
   }, []);
 
   const openToolMenu = useCallback((initialFocus: 'first' | 'last' = 'first'): void => {
@@ -1802,7 +1826,7 @@ export function PawSessionWorkspace({
       <WorkspaceRecoveryNotice recovery={recovery} />
 
       <div className="paw-session-workspace__body">
-        <div className="paw-session-workspace__primary" ref={primaryRef}>
+        <div className="paw-session-workspace__primary" ref={primaryRef} inert={toolPanelTrapsFocus || undefined}>
           <div className="paw-session-workspace__viewport">
             <section
               aria-hidden={workspaceView !== 'conversation'}
@@ -2021,7 +2045,10 @@ export function PawSessionWorkspace({
 
         {/* Wide windows place files beside the conversation; compact windows use
             the same labelled drawer. Close and Escape return to its trigger. */}
-        {!evaluationSnapshot && !embedded && (panel !== 'none' || statusPanelVisited) ? <aside
+        {!evaluationSnapshot && !embedded && (panel !== 'none' || statusPanelVisited) ? <FocusScope asChild loop={toolPanelTrapsFocus} trapped={toolPanelTrapsFocus} onMountAutoFocus={event => event.preventDefault()} onUnmountAutoFocus={event => event.preventDefault()}><aside
+          ref={toolPanelRef}
+          role={toolPanelOverlay ? 'dialog' : undefined}
+          aria-modal={toolPanelTrapsFocus || undefined}
           aria-hidden={panel === 'none' || undefined}
           className="paw-session-workspace__side"
           aria-label="对话工具侧栏"
@@ -2092,7 +2119,7 @@ export function PawSessionWorkspace({
               onClose={closeToolPanel}
             />
           )}
-        </aside> : null}
+        </aside></FocusScope> : null}
       </div>
 
       {!evaluationSnapshot ? <MemoryReviewDialog activity={pendingApproval ? undefined : pendingMemoryReview} sessionId={recordId} onError={setError} /> : null}

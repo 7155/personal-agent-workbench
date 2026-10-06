@@ -13,3 +13,4 @@ export * from './Switch';
 export * from './Tabs';
 export * from './Toast';
 export * from './Tooltip';
+export { FocusScope } from '@radix-ui/react-focus-scope';

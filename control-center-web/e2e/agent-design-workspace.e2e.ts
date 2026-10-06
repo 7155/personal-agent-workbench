@@ -20,7 +20,7 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await page.keyboard.press('ArrowDown');
   await expect(menu.getByRole('menuitem', { name: '文件', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
-  const panel = app.getByRole('complementary', { name: '对话工具侧栏' });
+  const panel = app.getByLabel('对话工具侧栏', {exact:true});
   await expect(panel).toBeVisible();
   await expect(panel.getByRole('region', { name: '项目快速动作' })).toBeVisible();
   await expect(panel.getByRole('button', { name: '运行预览', exact: true })).toBeVisible();
@@ -82,4 +82,36 @@ test('focused task criteria remains visible when the window becomes short', asyn
   })).toBe(true);
   await expect(criteria).toBeFocused();
   await expect(criteria).toHaveValue('说明修改和验证结果');
+});
+
+
+test('file browsing keeps focus visible and preserves its tree through resizing', async ({page}) => {
+  await page.goto('/?controlTransport=mock#/agent?session=session-preview');
+  const app = page.locator('.paw-window-shell[data-app="agent"]');
+  const message = app.getByRole('textbox', {name:'消息', exact:true});
+  await expect(message).toBeVisible({timeout:30_000});
+  await message.fill('文件浏览期间保留的草稿');
+  const tools = app.getByRole('button', {name:'对话工具', exact:true});
+  await tools.click();
+  await app.getByRole('menuitem', {name:'文件', exact:true}).click();
+  const panel = app.getByLabel('对话工具侧栏', {exact:true});
+  const close = panel.getByRole('button', {name:'收起文件目录'});
+  await expect(close).toBeFocused();
+  await page.setViewportSize({width:390,height:844});
+  await expect(app.locator('.paw-session-workspace__primary')).toHaveAttribute('inert','');
+  for(let i=0;i<12;i++){
+    await page.keyboard.press('Tab');
+    await expect.poll(()=>panel.evaluate(e=>e.contains(document.activeElement))).toBe(true);
+  }
+  const root = panel.getByRole('treeitem').first();
+  if(await root.getAttribute('aria-expanded') === 'false') await root.click();
+  await expect(panel.getByRole('treeitem', {name:'预览文件 README.md'})).toBeVisible();
+  await page.setViewportSize({width:1440,height:900});
+  await expect(app.locator('.paw-session-workspace__primary')).not.toHaveAttribute('inert','');
+  await expect(panel.getByRole('treeitem', {name:'预览文件 README.md'})).toBeVisible();
+  await message.focus();
+  await expect(message).toBeFocused();
+  await expect(message).toHaveValue('文件浏览期间保留的草稿');
+  await close.click();
+  await expect(tools).toBeFocused();
 });

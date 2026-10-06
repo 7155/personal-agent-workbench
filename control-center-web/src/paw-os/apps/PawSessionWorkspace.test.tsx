@@ -1689,7 +1689,7 @@ describe('PAWOS Agent Session structural migration', () => {
     const trace = container.querySelector('.paw-session-workspace__trace');
     expect(conversation).not.toHaveAttribute('inert');
     expect(trace).toHaveAttribute('inert');
-    expect(screen.queryByRole('complementary', { name: '对话工具侧栏' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '对话工具侧栏' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '展开对话控件' }));
     await user.click(screen.getByRole('button', { name: 'Agent 轨迹' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Agent 轨迹' })).toHaveAttribute('aria-pressed', 'true'));
@@ -1825,20 +1825,21 @@ describe('PAWOS Agent Session structural migration', () => {
     );
 
     await screen.findByRole('textbox', { name: '消息' });
-    expect(screen.queryByRole('complementary', { name: '对话工具侧栏' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '对话工具侧栏' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '对话工具' }));
     const menu = screen.getByRole('menu', { name: '对话工具菜单' });
     expect(within(menu).getAllByRole('menuitem')).toHaveLength(3);
     await user.click(within(menu).getByRole('menuitem', { name: '文件' }));
 
-    let sidebar = screen.getByRole('complementary', { name: '对话工具侧栏' });
+    let sidebar = screen.getByRole('dialog', { name: '对话工具侧栏' });
     expect(sidebar.querySelectorAll(':scope > .agent-files-panel, :scope > .session-subagent-panel, :scope > .agent-status-panel')).toHaveLength(1);
     expect(sidebar.querySelector('.agent-files-panel')).not.toBeNull();
+    await user.click(within(sidebar).getByRole('button', {name: '收起文件目录'}));
 
     await user.click(screen.getByRole('button', { name: '对话工具' }));
     await user.click(screen.getByRole('menuitem', { name: '任务与状态' }));
-    sidebar = screen.getByRole('complementary', { name: '对话工具侧栏' });
+    sidebar = screen.getByRole('dialog', { name: '对话工具侧栏' });
     expect(sidebar.querySelectorAll(':scope > .agent-files-panel, :scope > .session-subagent-panel, :scope > .agent-status-panel')).toHaveLength(1);
     expect(sidebar.querySelector('.agent-files-panel')).toBeNull();
     expect(sidebar.querySelector('.agent-status-panel')).not.toBeNull();
@@ -1849,8 +1850,8 @@ describe('PAWOS Agent Session structural migration', () => {
 
     const statusPanel = sidebar.querySelector('.agent-status-panel');
     await user.click(within(sidebar).getByRole('button', { name: '收起任务中心' }));
-    expect(screen.queryByRole('complementary', { name: '对话工具侧栏' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '对话工具' })).toHaveFocus();
+    expect(screen.queryByRole('dialog', { name: '对话工具侧栏' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: '对话工具' })).toHaveFocus());
     const residentSidebar = document.querySelector('.paw-session-workspace__side');
     expect(residentSidebar).toHaveAttribute('hidden');
     expect(residentSidebar?.querySelector('.agent-status-panel')).toBe(statusPanel);
@@ -1953,11 +1954,11 @@ describe('PAWOS Agent Session structural migration', () => {
     await user.click(screen.getByRole('button', { name: '对话工具' }));
     await user.click(screen.getByRole('menuitem', { name: '文件' }));
 
-    const sidebar = screen.getByRole('complementary', { name: '对话工具侧栏' });
+    const sidebar = screen.getByRole('dialog', { name: '对话工具侧栏' });
     fireEvent.keyDown(sidebar, { key: 'Escape' });
 
-    expect(screen.queryByRole('complementary', { name: '对话工具侧栏' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '对话工具' })).toHaveFocus();
+    expect(screen.queryByRole('dialog', { name: '对话工具侧栏' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: '对话工具' })).toHaveFocus());
   });
 
   it('returns focus to the Session tools trigger when a sidebar close button is clicked', async () => {
@@ -1983,7 +1984,7 @@ describe('PAWOS Agent Session structural migration', () => {
     const trigger = screen.getByRole('button', { name: '对话工具' });
     await user.click(trigger);
     await user.click(screen.getByRole('menuitem', { name: '任务与状态' }));
-    const sidebar = screen.getByRole('complementary', { name: '对话工具侧栏' });
+    const sidebar = screen.getByRole('dialog', { name: '对话工具侧栏' });
     await user.click(within(sidebar).getByRole('button', { name: '收起任务中心' }));
 
     expect(trigger).toHaveFocus();
@@ -2054,7 +2055,7 @@ describe('PAWOS Agent Session structural migration', () => {
     await user.click(screen.getByRole('button', { name: '对话工具' }));
     await user.click(screen.getByRole('menuitem', { name: '文件' }));
 
-    const sidebar = screen.getByRole('complementary', { name: '对话工具侧栏' });
+    const sidebar = screen.getByRole('dialog', { name: '对话工具侧栏' });
     const empty = within(sidebar).getByRole('status');
     expect(empty).toHaveTextContent('当前没有文件；选择工作区目录后即可浏览。');
     expect(within(empty).getByRole('button', { name: '选择目录' })).toBeInTheDocument();

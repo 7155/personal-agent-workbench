@@ -236,10 +236,11 @@ describe('primary assistant home', () => {
     const writes = transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create');
     expect(writes[0].request.body).toEqual(writes[1].request.body);
   });
-  it('retains a draft through a disconnected ensure and never falls back to new-session creation', async () => {
-    const { transport } = setup({ 'agent.primary.ensure': () => { throw new Error('offline'); } });
+  it.each(['offline', 'fetch failed'])('retains a draft through disconnected ensure (%s) without model-turn advice or creating a new session', async reason => {
+    const { transport } = setup({ 'agent.primary.ensure': () => { throw new Error(reason); } });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '我的草稿' } });
-    await screen.findByRole('alert');
+    expect(await screen.findByRole('alert')).toHaveTextContent('暂时无法读取已有对话');
+    expect(screen.queryByText('本轮没有完成，请重试或切换模型。')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重新连接' }));
     await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(2));
     expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('我的草稿');

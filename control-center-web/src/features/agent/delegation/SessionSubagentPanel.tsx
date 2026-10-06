@@ -118,7 +118,7 @@ export const SessionSubagentPanel = forwardRef<HTMLElement, {
             <a aria-label="打开子 Agent 设置" title="打开子 Agent 设置" href="#/configuration?section=subagents">
               <Settings2 size={16} />
             </a>
-            <IconButton icon={<PanelRightClose size={17} />} label="收起子 Agent 工作台" onClick={onClose} tooltip />
+            <IconButton data-drawer-autofocus icon={<PanelRightClose size={17} />} label="收起子 Agent 工作台" onClick={onClose} tooltip />
           </div>
         </header>
 

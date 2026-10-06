@@ -24,7 +24,7 @@
 
 ## Agent 聊天样板的设计决定
 
-实际阅读项目 MASTER.md、前端 AGENTS.md、Apple Layout 的官方 JSON、Google Common layouts、Geist Typography/Button、Vercel 指南及 pi-web-ui 的 MessageList/ChatInput 源码。Apple 的层级、对齐和逐步展开；Google 的窄屏辅助面板；Geist 的字体角色、操作主次及可访问名称用于这里的具体布局。没有复制新框架、另一套状态管理或上游不同的 Enter 行为。具体来源：[Apple Layout](https://developer.apple.com/design/human-interface-guidelines/layout)、[Google Common layouts](https://developer.android.com/design/ui/mobile/guides/layout-and-content/common-layouts)、[Geist Typography](https://vercel.com/geist/typography)、[Geist Button](https://vercel.com/geist/button)、[pi-web-ui ChatInput](https://github.com/xing-shuyin/pi-web-ui/blob/main/web/src/components/ChatInput.tsx)。Joye Lab / VCP 的准确参考地址尚未收到，不声称已读取。
+实际阅读项目 MASTER.md、前端 AGENTS.md、Apple Layout 的官方 JSON、Google Common layouts、Geist Typography/Button、Vercel 指南及 pi-web-ui 的 MessageList/ChatInput 源码。Apple 的层级、对齐和逐步展开；Google 的窄屏辅助面板；Geist 的字体角色、操作主次及可访问名称用于这里的具体布局。没有复制新框架、另一套状态管理或上游不同的 Enter 行为。具体来源：[Apple Layout](https://developer.apple.com/design/human-interface-guidelines/layout)、[Google Common layouts](https://developer.android.com/design/ui/mobile/guides/layout-and-content/common-layouts)、[Geist Typography](https://vercel.com/geist/typography)、[Geist Button](https://vercel.com/geist/button)、[pi-web-ui ChatInput](https://github.com/xing-shuyin/pi-web-ui/blob/main/web/src/components/ChatInput.tsx)。Joye Lab / VCP 地址在后续已收到；对应正文和源码的读取范围见本记录末尾。
 
 | 入口或区域 | 必要性与主次 | 本批修改 / 验证 |
 | --- | --- | --- |
@@ -131,10 +131,19 @@ HTTP transport 两个 Blob.arrayBuffer 单测失败在起始 `9b2771` 与同一�
 
 第二轮样式归属收尾：旧 Agent/Stellar 皮肤的发送与焦点规则仅继续覆盖旧 composer，workbench 输入区由现有共享组件管理；文件工具内“运行预览”使用次级按钮，保留原处理器；窄窗口的视图与工具触发范围达到 40px。额外运行的两份 CSS 静态套件有 3 项既有失败，在起始 `9b277155` 的隔离源码与同一依赖环境复现同样 3 项（小字规则、旧首页列定义、旧项目浮层选择器）；本批未为此扩张修复范围。项目快速动作 7 项通过。
 
-新增参考已收到并读取：Joye 页面正文经其公开仓库对应 MDX 读取（网站浏览工具未能访问），落实“用字号/留白表达层级、必要状态仍配文字”；未复制其组件或图案。NN/g 的 skeleton 指导用于后续检查加载反馈，尚未新增或宣称全站采用 skeleton。VCPChat 固定提交的会话管理入口已读取，确认其引用外部 messageRenderer；尚未完成这些具体 UI 组件阅读，不能作为视觉实现依据。参考链接：
+新增参考已收到并读取：Joye 页面正文经其公开仓库对应 MDX 读取（网站浏览工具未能访问），落实“用字号/留白表达层级、必要状态仍配文字”；未复制其组件或图案。NN/g 的 skeleton 指导用于后续检查加载反馈，尚未新增或宣称全站采用 skeleton。VCPChat 固定提交的会话管理入口及其 renderer、messageRenderer、domBuilder 已读取，用于核对会话渲染分工；没有据此宣称完成其视觉规范审查。参考链接：
 - https://www.joyehuang.me/lab/info-hierarchy
 - https://www.joyehuang.me/lab/status-shapes
 - https://github.com/joyehuang/blog
 - https://vercel.com/design/guidelines
 - https://www.nngroup.com/articles/skeleton-screens/
 - https://github.com/lioensky/VCPChat/blob/f06ca2f27fe721d9c2a44e30d6f413187f5282af/modules/chatManager.js
+
+来源澄清：暖白/墨绿的描述属于本轮样板的设计建议，不能当作用户今天确认的唯一历史风格；早期 Composition 与后续 OS 皮肤曾有更替。本轮沿仓库 MASTER 与既有 token 继续，不再切换主题，也不宣称设计建议已经过用户最终批准。
+
+Agent 状态与键盘后续复核（第二轮独立原图仍保留 `8f6116a2` 身份）：
+- 浏览器 HTTP 离线读取已有对话时，旧错误误报成模型回合失败。使用已有通用公开错误函数区分读取、创建任务和目录选择的失败，保留重试、草稿与幂等请求。
+- 窄屏文件抽屉 Tab 曾进入其后方被遮住的聊天控件，已实际复现。使用已有 Radix FocusScope 同版本组件；CSS 仍决定停靠方式，观察布局结果决定焦点范围，保持同一个文件树和预览实例。抽屉打开时进入关闭入口并限制后台交互；并列布局允许对话继续操作。窗口失去活动状态时释放焦点，关闭回到原工具按钮。未新建 runtime 或业务状态。
+- 已沿 VCPChat 固定源码的 renderer → messageRenderer → domBuilder 阅读角色/正文/头像结构与会话渲染分工；只作为现有分工的复核依据，没有复制其组件、样式或内容。Joye 仓库许可为 Apache-2.0，未复制其代码资产。
+
+本次状态与焦点批次的复核范围：HTTP 后端未运行时实际点击重试，已有草稿保留、提交仍不可用，提示指出对话读取失败；首页相关 28 项测试通过。窄屏文件抽屉连续 Tab 12 次均留在可见面板内，恢复宽窗口后同一文件树保持展开且聊天输入可聚焦；关闭和 Escape 回到工具按钮。演示的“运行预览”会打开新项目窗口，旧窗口释放焦点、草稿保留（合成任务，不代表本机 shell 或真实模型运行）。增加现有 Radix 1.1.12 FocusScope 的直接依赖，未升级依赖图。视觉截图继续单独复核，未把交互通过计为美观验收。
