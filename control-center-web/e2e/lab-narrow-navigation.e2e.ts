@@ -11,31 +11,39 @@ test('project chat and results switch without covering keyboard or pointer targe
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.lab-project-results')).toBeHidden();
   await page.getByRole('button', { name: '收起项目 Agent', exact: true }).click();
-  for (const name of ['材料 0', '运行', '成果 0', '应用交付', '优化对比']) {
-    await page.getByRole('button', { name, exact: true }).click();
-    await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute('aria-current', 'page');
+  const view = page.getByRole('combobox', { name: '当前项目视图' });
+  for (const value of ['materials', 'runs', 'artifact', 'apps', 'lifecycle', 'brief', 'workspace']) {
+    await view.selectOption(value);
+    await expect(view).toHaveValue(value);
   }
-  await page.getByRole('button', { name: '材料 0', exact: true }).click();
-  await page.getByRole('button', { name: '知识库实验', exact: true }).click();
+  await view.selectOption('knowledge');
   for (const name of ['资料', '索引与检索', '评测']) {
     await page.locator('nav[aria-label="知识库实验步骤"]').getByRole('button', { name, exact: true }).click();
     await expect(page.getByText('知识库实验数据未完整返回，请重新读取。')).toHaveCount(0);
   }
-  await page.getByRole('combobox', { name: '更多项目视图' }).selectOption('workflow');
-  const tools = page.locator('.lab-flow__canvas-tools');
-  await tools.scrollIntoViewIfNeeded();
-  const geometry = await page.evaluate(() => {
-    const bar = document.querySelector('.lab-flow__canvas-tools')!.getBoundingClientRect();
-    const empty = document.querySelector('.lab-flow__empty')!.getBoundingClientRect();
-    return { bar: { left: bar.left, right: bar.right, top: bar.top }, emptyBottom: empty.bottom, width: innerWidth };
+  await view.selectOption('materials');
+  await page.getByRole('button', { name: '添加材料', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '添加项目材料' });
+  await dialog.getByLabel('粘贴材料标题', { exact: true }).fill('公开演示材料');
+  await dialog.getByRole('textbox', { name: '材料正文', exact: true }).fill('这次演示不写入本机文件。');
+  await dialog.getByRole('button', { name: '保存文本材料', exact: true }).click();
+  await expect(dialog.getByText('此操作需要真实 Lab 服务；演示模式没有执行模型、评测或文件写入。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '核对原操作', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('textbox', { name: '材料正文', exact: true })).toHaveValue('这次演示不写入本机文件。');
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await view.selectOption('workflow');
+  await expect(page.locator('.lab-flow__canvas-tools')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '工作流记录尚未返回' })).toBeVisible();
+  const geometry = await page.locator('.lab-project-header').evaluate(el => {
+    const heading = el.querySelector('h1')!.getBoundingClientRect();
+    const actions = el.querySelector('.lab-project-header__actions')!.getBoundingClientRect();
+    return { headingWidth: heading.width, headingRight: heading.right, actionsLeft: actions.left, actionsRight: actions.right, width: innerWidth };
   });
-  expect(geometry.bar.left).toBeGreaterThanOrEqual(0);
-  expect(geometry.bar.right).toBeLessThanOrEqual(geometry.width);
-  expect(geometry.bar.top).toBeGreaterThanOrEqual(geometry.emptyBottom);
-  for (const name of ['适应窗口', '回到起点', '恢复默认缩放', '缩小画布', '放大画布']) {
-    await page.getByRole('button', { name, exact: true }).click();
-  }
-  await info.attach('lab-workflow-controls-without-covered-content.png', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(geometry.headingWidth).toBeGreaterThan(64);
+  expect(geometry.headingRight).toBeLessThanOrEqual(geometry.actionsLeft + 1);
+  expect(geometry.actionsRight).toBeLessThanOrEqual(geometry.width);
+  await info.attach('lab-workflow-without-unused-tools.png', { body: await page.screenshot(), contentType: 'image/png' });
   await page.getByRole('button', { name: '展开项目 Agent', exact: true }).click();
   await expect(page.getByRole('region', { name: '项目 Agent', exact: true })).toBeVisible();
   await expect(page.locator('.lab-project-results')).toBeHidden();

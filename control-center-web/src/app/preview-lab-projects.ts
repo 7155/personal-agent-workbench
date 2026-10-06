@@ -18,12 +18,12 @@ export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, M
   });
   return {
     'agent.eval-lab.apps.get': { ok: true, items: [], app: null, versions: [], calls: [] },
-    'agent.eval-lab.apps.command': () => { throw new Error('演示模式没有真实应用版本；请连接 Lab 服务后再执行。'); },
+    'agent.eval-lab.apps.command': () => { throw Object.assign(new Error('演示模式没有真实应用版本；请连接 Lab 服务后再执行。'), { status: 422 }); },
     'agent.eval-lab.golden.get': { ok: true, items: [], suite: null },
-    'agent.eval-lab.golden.command': () => { throw new Error('演示模式不运行评测；请连接真实 Lab 服务后创建评测集。'); },
+    'agent.eval-lab.golden.command': () => { throw Object.assign(new Error('演示模式不运行评测；请连接真实 Lab 服务后创建评测集。'), { status: 422 }); },
     'agent.eval-lab.projects.get': (request: ControlRequest) => {
       const id = String(request.query?.projectId ?? '');
-      if (id && !projects.has(id)) throw new Error('演示项目不存在，请返回工作台新建项目。');
+      if (id && !projects.has(id)) throw Object.assign(new Error('演示项目不存在，请返回工作台新建项目。'), { status: 404 });
       return { ok: true, items: [...projects.values()], project: projects.get(id) ?? null,
         knowledge: { schemaVersion: 'paw.lab-knowledge-resource.v1', corpora: [], indexes: [], datasets: [], evaluations: [], jobs: [], embedding: { provider: 'none', model: '' } },
         supportedViews: ['markdown', 'table', 'form', 'code', 'html', 'json'], availableAdapters: [], historyCollections: [], historyUnavailable: true };
@@ -34,17 +34,17 @@ export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, M
       let project = projects.get(String(body.projectId ?? ''));
       if (body.action === 'create') {
         const description = String(input.description ?? '').trim();
-        if (!description) throw new Error('请描述项目目标。');
-        if (input.path || Array.isArray(input.materials) && input.materials.length) throw new Error('演示模式不读取本机材料；请先创建无附件项目，或连接真实服务后导入。');
+        if (!description) throw Object.assign(new Error('请描述项目目标。'), { status: 422 });
+        if (input.path || Array.isArray(input.materials) && input.materials.length) throw Object.assign(new Error('演示模式不读取本机材料；请先创建无附件项目，或连接真实服务后导入。'), { status: 422 });
         project = makeProject(`preview-project-${nextId++}`, description);
       } else {
-        if (!project || body.expectedRevision !== project.revision) throw new Error('演示项目已变化，请重新读取。');
+        if (!project || body.expectedRevision !== project.revision) throw Object.assign(new Error('演示项目已变化，请重新读取。'), { status: 409 });
         if (body.action === 'update_brief') {
           project = { ...project, title: String(input.title ?? project.title), description: String(input.description ?? project.description), briefVersion: project.briefVersion + 1 };
         } else if (body.action === 'set_workspace') {
           project = { ...project, workspace: { ...project.workspace, ...input } };
         } else {
-          throw new Error('此操作需要真实 Lab 服务；演示模式没有执行模型、评测或文件写入。');
+          throw Object.assign(new Error('此操作需要真实 Lab 服务；演示模式没有执行模型、评测或文件写入。'), { status: 422 });
         }
         project = { ...project, revision: project.revision + 1, updatedAtMs: Date.now() };
       }

@@ -1,8 +1,8 @@
-import { ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, FileText, FolderOpen, FlaskConical, GitBranch, Layers3, Play, PackageCheck, LayoutDashboard, Database, History, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, FileText, FolderOpen, GitBranch, Layers3, Play, PackageCheck, LayoutDashboard, Database, History, LoaderCircle, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useControlTransport } from '@/app/control-transport';
-import { Button, IconButton } from '@/components/primitives';
+import { Button, IconButton, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/primitives';
 import { GoldenWorkflow } from '../golden/GoldenWorkflow';
 import { SceneTrialPanel } from '../trials/SceneTrialPanel';
 import { ArtifactSurface, type ArtifactDraft } from './ArtifactSurface';
@@ -26,6 +26,8 @@ import { defaultProjectView, readProjectViews, writeProjectViews, type ProjectPa
 import { object, type ArtifactAction, type JsonValue, type LabBinding, type LabBindingExecution, type LabProject, type ProjectReceipt } from './types';
 import './lab-project-workbench.css';
 
+const PROJECT_VIEWS: readonly [ProjectPage, string][] = [['workspace', '优化对比'], ['materials', '项目材料'], ['knowledge', '知识库实验'], ['runs', '运行记录'], ['artifact', '成果'], ['apps', '应用交付'], ['workflow', '工作流'], ['lifecycle', '实验闭环'], ['brief', '项目说明']];
+
 type Intake = { sourceId?: string; title: string; kind?: string; text: string };
 function BindingExecutionStatus({ execution }: { execution?: LabBindingExecution }) {
   if (!execution) return <small className="lab-binding-execution lab-binding-execution--unknown">读取运行状态中…</small>;
@@ -39,7 +41,7 @@ function BindingExecutionStatus({ execution }: { execution?: LabBindingExecution
 
 function ProjectBindingList({ bindings, onOpen }: { bindings: LabBinding[]; onOpen: (binding: LabBinding) => void }) {
   return <section className="lab-project-bindings" aria-label="真实模型运行与优化">
-    <header className="lab-project-bindings__header"><div><small>执行回执</small><h2>模型运行与下一轮优化</h2><p>这里的状态来自 Golden/Pi 或场景执行器的真实回执。进入后才能开始模型调用、查看逐题结果和提交下一轮候选。</p></div><span>{bindings.length} 个绑定</span></header>
+    <header className="lab-project-bindings__header"><div><small>运行记录</small><h2>模型运行与下一轮优化</h2><p>{bindings.length ? '打开一次运行，查看进度、逐题结果和下一轮方案。结果以实际运行记录为准。' : '还没有运行记录。和项目 Agent 确定评测任务后，这里会显示实际运行的进度与结果。'}</p></div>{bindings.length ? <span>{bindings.length} 次运行</span> : null}</header>
     {bindings.map((item) => <button className="lab-project-binding" key={item.bindingId} onClick={() => onOpen(item)}>
       <span><strong>{item.adapterId === 'golden.context_qa' ? '资料问答评测' : item.adapterId === 'golden.knowledge_qa' ? '知识库回答评测' : item.adapterId === 'scene.trial' ? '场景验证' : item.adapterId}</strong><small>{item.execution?.status === 'completed' ? `真实模型运行已完成${item.execution.latestJob?.decision ? ` · ${item.execution.latestJob.decision}` : ''}` : item.summary || '进入执行器'}</small><BindingExecutionStatus execution={item.execution} /></span><ArrowUpRight size={18} />
     </button>)}
@@ -238,12 +240,21 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
   const projectItems = workflow.catalog.data?.items ?? [];
   return <main className="eval-lab lab-project-workbench" aria-label="Agent Lab 项目工作台">
     <header className="lab-project-header">
-      <div className="lab-project-heading">{projectId ? <IconButton icon={<ArrowLeft size={17} />} label="返回 Lab 项目" onClick={() => openProject('')} /> : <span className="lab-project-logo" aria-hidden="true"><FlaskConical size={21} /></span>}
-        <div><small>Agent Lab</small><h1>{project?.title ?? (projectId ? '正在读取项目' : '工作台')}</h1></div></div>
-      <div className="lab-project-header__actions"><IconButton icon={<RefreshCw size={16} />} label="重新读取 Lab 项目" onClick={refresh} disabled={workflow.catalog.isFetching || workflow.project.isFetching} />
-        {project ? <><Button size="small" variant="primary" title={project.nextAction?.reason} disabled={busy || sending} onClick={() => void continueProject('guided')}>继续下一步</Button><Button size="small" onClick={() => setPage('brief')}>项目说明</Button>{project.directory?.path ? <IconButton icon={<FolderOpen size={16} />} label="在 Files 打开项目文件夹" onClick={() => openPawOsRoute(desktop, `/files?path=${encodeURIComponent(project.directory!.path)}`)} /> : null}<IconButton icon={<Upload size={16} />} label="添加材料" onClick={() => setIntakeOpen(true)} /><IconButton icon={guideOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />} label={guideOpen ? '收起项目 Agent' : '展开项目 Agent'} onClick={() => setGuideOpen((value) => !value)} /></> : null}
-        {!projectId ? <><Button size="small" onClick={() => setHistoryImportOpen(true)}><History size={14} />导入已有实验</Button></> : null}
-        {onOpenHistory ? <Button size="small" onClick={onOpenHistory}><History size={14} />已有实验</Button> : null}</div>
+      <div className="lab-project-heading">{projectId ? <IconButton icon={<ArrowLeft size={17} />} label="返回 Lab 项目" onClick={() => openProject('')} /> : null}
+        <h1>{project?.title ?? (projectId ? '正在读取项目' : '项目')}</h1></div>
+      <div className="lab-project-header__actions">
+        {project ? <><Button size="small" variant="primary" title={project.nextAction?.reason} disabled={busy || sending} onClick={() => void continueProject('guided')}>继续下一步</Button><IconButton icon={guideOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />} label={guideOpen ? '收起项目 Agent' : '展开项目 Agent'} onClick={() => setGuideOpen((value) => !value)} /></> : null}
+        <Menu><MenuTrigger asChild><IconButton icon={<MoreHorizontal size={17} />} label="项目更多操作" /></MenuTrigger>
+          <MenuContent className="lab-project-menu" align="end" aria-label="项目更多操作" onCloseAutoFocus={(event) => { if (intakeOpen || historyImportOpen) event.preventDefault(); }}>
+            <MenuItem disabled={workflow.catalog.isFetching || workflow.project.isFetching} onSelect={refresh}><RefreshCw size={16} />重新读取 Lab 项目</MenuItem>
+            {project ? <><MenuItem onSelect={() => setPage('brief')}>项目说明</MenuItem>
+              {project.directory?.path ? <MenuItem onSelect={() => openPawOsRoute(desktop, `/files?path=${encodeURIComponent(project.directory!.path)}`)}><FolderOpen size={16} />在 Files 打开项目文件夹</MenuItem> : null}
+              <MenuItem onSelect={() => setIntakeOpen(true)}><Upload size={16} />添加材料</MenuItem></> : null}
+            {!projectId ? <MenuItem onSelect={() => setHistoryImportOpen(true)}><History size={14} />导入已有实验</MenuItem> : null}
+            {onOpenHistory ? <MenuItem onSelect={onOpenHistory}><History size={14} />已有实验</MenuItem> : null}
+          </MenuContent>
+        </Menu>
+      </div>
     </header>
     {workflow.pending?.outcome === 'unknown' ? <div className="lab-project-notice" role="status"><p>上次操作的回执尚未确认，原请求和输入已保留。</p><Button disabled={workflow.mutation.isPending} onClick={() => void workflow.reconcile().then((receipt) => { if (receipt && workflow.pending?.command.action === 'create') void created(receipt); else if (receipt && workflow.pending?.command.action === 'import_history') { setHistoryImportOpen(false); openProject(receipt.project.projectId); } })}>核对原操作</Button></div> : null}
     {activeError ? <p className="lab-project-error" role="alert">{projectError(activeError)}</p> : null}
@@ -254,6 +265,7 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
         {guideOpen ? <ProjectGuide key={project.projectId} project={project} viewContext={{ ...projectViewContext(project, page, selected, artifact.data, page === 'workspace' ? project.workflow?.nodes.find((node) => node.id === selectedNodeId) : undefined), onOpen: openGuideContext }} draftRequest={draftRequest} onNewProject={() => openProject('')} onProjectActivity={refresh} onEnsure={() => void ensureGuide()} /> : null}
         <div className="lab-project-results">
           <nav className="lab-project-tabs" aria-label="项目成果">
+            <select className="lab-project-current-view" aria-label="当前项目视图" value={page} onChange={(event) => setPage(event.target.value as ProjectPage)}>{PROJECT_VIEWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
             <div className="lab-project-tabs__resources"><button aria-current={page === 'workspace' ? 'page' : undefined} onClick={() => setPage('workspace')}><LayoutDashboard size={15} />优化对比</button><button aria-current={page === 'materials' || page === 'knowledge' ? 'page' : undefined} onClick={() => setPage(project.knowledgeResources?.documentCount ? 'knowledge' : 'materials')}><Database size={15} />{project.knowledgeResources?.documentCount ? `知识库 ${project.knowledgeResources.documentCount} 篇` : `材料 ${project.materialCount}`}</button>
             <button aria-current={page === 'runs' ? 'page' : undefined} onClick={() => setPage('runs')}><Play size={15} />运行</button><button aria-current={page === 'artifact' ? 'page' : undefined} onClick={() => setPage('artifact')}><Layers3 size={15} />成果 {project.artifactCount}</button>
             <button aria-current={page === 'apps' ? 'page' : undefined} onClick={() => setPage('apps')}><PackageCheck size={15} />应用交付</button><select className="lab-project-more-views" aria-label="更多项目视图" value={page === 'workflow' || page === 'lifecycle' ? page : ''} onChange={(event) => { if (event.target.value) setPage(event.target.value as ProjectPage); }}><option value="" disabled>更多视图</option><option value="workflow">工作流</option><option value="lifecycle">实验闭环</option></select>
@@ -279,13 +291,13 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
           </div>
         </div>
       </div></>}
-    <Dialog.Root open={intakeOpen && Boolean(project)} onOpenChange={setIntakeOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby={undefined}><header><Dialog.Title asChild><h2>添加项目材料</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header>{project ? <MaterialIntake busy={busy || sending} onAdd={async (input, resume) => { const receipt = await workflow.submit('import_materials', input, project); if (receipt) { setIntakeOpen(false); setPage('materials'); if (resume) await continueProject('guided', receipt.project); } }} /> : null}</Dialog.Content></Dialog.Root>
-    <Dialog.Root open={newProjectOpen && !projectId} onOpenChange={setNewProjectOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-new-project-description"><header><Dialog.Title asChild><h2>新建项目</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><p id="lab-new-project-description">先保存项目和材料，再由 Agent 在同一个项目里继续组织计划、实验与交付。创建不会伪造评测结果。</p><NewProject key={`dialog:${workflow.connection}`} connection={workflow.connection} busy={busy || sending} onCreate={async (input) => created(await workflow.submit('create', input))} /></Dialog.Content></Dialog.Root>
-    <Dialog.Root open={historyImportOpen} onOpenChange={setHistoryImportOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-history-import-description"><header><Dialog.Title asChild><h2>导入已有实验</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><p id="lab-history-import-description">把已有基线、候选、失败记录和原始指标保留为项目成果。导入不会运行模型或重新评分。</p>
+    <Dialog.Root open={intakeOpen && Boolean(project)} onOpenChange={setIntakeOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby={undefined}><header><Dialog.Title asChild><h2>添加项目材料</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body">{project ? <MaterialIntake saveError={workflow.mutation.variables?.action === 'import_materials' ? workflow.mutation.error : undefined} busy={busy || sending} onAdd={async (input, resume) => { const receipt = await workflow.submit('import_materials', input, project); if (receipt) { setIntakeOpen(false); setPage('materials'); if (resume) await continueProject('guided', receipt.project); } }} /> : null}</div></Dialog.Content></Dialog.Root>
+    <Dialog.Root open={newProjectOpen && !projectId} onOpenChange={setNewProjectOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-new-project-description"><header><Dialog.Title asChild><h2>新建项目</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body"><p id="lab-new-project-description">先保存项目和材料，再由 Agent 在同一个项目里继续组织计划、实验与交付。创建不会伪造评测结果。</p><NewProject key={`dialog:${workflow.connection}`} connection={workflow.connection} busy={busy || sending} onCreate={async (input) => created(await workflow.submit('create', input))} /></div></Dialog.Content></Dialog.Root>
+    <Dialog.Root open={historyImportOpen} onOpenChange={setHistoryImportOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-history-import-description"><header><Dialog.Title asChild><h2>导入已有实验</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body"><p id="lab-history-import-description">把已有基线、候选、失败记录和原始指标保留为项目成果。导入不会运行模型或重新评分。</p>
       {workflow.catalog.data?.historyUnavailable ? <p role="alert">已有实验来源暂时不可读取，请重新读取后再试。</p> : null}
       {workflow.catalog.data?.historyCollections?.map((source) => { const imported = workflow.catalog.data?.items.find((item) => item.historyOrigin?.sceneId === source.sceneId); return <section key={source.sceneId} className="lab-project-bindings" aria-label={source.title}><h3>{source.title}</h3><p>{source.experimentCount} 条实验记录 · {source.datasetIds.length} 个数据集版本</p><Button disabled={busy} onClick={() => { if (imported) { setHistoryImportOpen(false); openProject(imported.projectId); } else void workflow.submit('import_history', { sceneId: source.sceneId, sourceHash: source.sourceHash }).then((receipt) => { if (receipt) { setHistoryImportOpen(false); openProject(receipt.project.projectId); } }); }}>{imported ? '打开已导入项目' : '导入为项目'}</Button></section>; })}
       {!workflow.catalog.isPending && !workflow.catalog.data?.historyUnavailable && !workflow.catalog.data?.historyCollections?.length ? <p>当前执行器没有可导入的已有实验。</p> : null}
-    </Dialog.Content></Dialog.Root>
+    </div></Dialog.Content></Dialog.Root>
   </main>;
 }
 
@@ -314,13 +326,13 @@ function NewProject({ connection, busy, onCreate }: { connection: string; busy: 
     {error ? <p role="alert" className="lab-project-error">{error}</p> : null}<footer><span>项目内容由 Agent 按实际任务组织。</span><Button type="submit" variant="primary" disabled={busy || reading || !description.trim()}>{busy ? '正在建立项目…' : reading ? '正在读取材料…' : '创建并开始'}<ArrowUpRight size={16} /></Button></footer>
   </form>;
 }
-function MaterialIntake({ busy, onAdd }: { busy: boolean; onAdd: (input: Record<string, JsonValue>, resume?: boolean) => Promise<void> }) {
+function MaterialIntake({ busy, onAdd, saveError }: { saveError?: unknown; busy: boolean; onAdd: (input: Record<string, JsonValue>, resume?: boolean) => Promise<void> }) {
   const [path, setPath] = useState(''); const [title, setTitle] = useState(''); const [text, setText] = useState(''); const [error, setError] = useState('');
   const [resume, setResume] = useState(true);
   return <div className="lab-project-intake"><p>选择文件、输入路径或粘贴正文。材料保存后可以直接继续评测准备。</p><label className="lab-project-intake__resume"><input type="checkbox" checked={resume} disabled={busy} onChange={(event) => setResume(event.target.checked)} />材料接入后，让 Agent 继续推进</label><label className="lab-project-file-picker"><Upload size={16} />上传文本或源码文件<input type="file" multiple disabled={busy} onChange={(event) => { const files = event.target.files; if (!files?.length) return; void loadFiles(files).then((materials) => onAdd({ materials }, resume)).catch((reason) => setError(projectError(reason))); }} /></label>
     <label>已连接执行器上的路径<input value={path} placeholder="绝对路径" onChange={(event) => setPath(event.target.value)} disabled={busy} /></label><Button disabled={busy || !path.trim()} onClick={() => void onAdd({ path: path.trim() }, resume)}>读取路径</Button>
     <hr /><label>粘贴材料标题<input value={title} onChange={(event) => setTitle(event.target.value)} disabled={busy} /></label><label>材料正文<textarea rows={7} value={text} onChange={(event) => setText(event.target.value)} disabled={busy} /></label>
-    <Button disabled={busy || !title.trim() || !text.trim()} onClick={() => void onAdd({ materials: [{ title: title.trim(), text }] }, resume)}>保存文本材料</Button>{error ? <p role="alert" className="lab-project-error">{error}</p> : null}</div>;
+    <Button disabled={busy || !title.trim() || !text.trim()} onClick={() => void onAdd({ materials: [{ title: title.trim(), text }] }, resume)}>保存文本材料</Button>{error || saveError ? <p role="alert" className="lab-project-error">{error || projectError(saveError)}</p> : null}</div>;
 }
 function Materials({ project, onAdd }: { project: LabProject; onAdd: () => void }) {
   const [selectedId, setSelectedId] = useState(''); const selected = project.materialSet.materials.find((item) => item.sourceId === selectedId) ?? project.materialSet.materials[0];

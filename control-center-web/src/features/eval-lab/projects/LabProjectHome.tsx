@@ -35,6 +35,6 @@ export function LabProjectHome({ items, onOpen, onCreate }: {
       <footer>{filtered.length} / {items.length} 个项目<span>实验结果和交付版本会随项目保存</span></footer>
     </section>
     </> : <section className="lab-home__first-project"><FolderOpen size={28} aria-hidden="true" /><h3>让第一个项目开始工作</h3><p>描述你要完成的任务，可以同时添加资料或项目目录。Agent 会检查已有条件，带你完成第一轮验证。</p></section>}
-    <section className="lab-home__path" aria-label="项目完成路径"><div><span>01</span><h3>定义任务</h3><p>目标、资料和通过标准</p></div><ArrowRight size={17} aria-hidden="true" /><div><span>02</span><h3>验证与优化</h3><p>运行、对照与改进依据</p></div><ArrowRight size={17} aria-hidden="true" /><div><span>03</span><h3>交付应用</h3><p>试用、导出与部署</p></div></section>
+
   </div>;
 }
