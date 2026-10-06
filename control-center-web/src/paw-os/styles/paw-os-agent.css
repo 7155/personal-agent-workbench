@@ -1583,7 +1583,8 @@
 }
 
 @container paw-session-workspace (max-width: 520px) {
-  /* 窄窗退化为底部抽屉：同一张浮卡换个停靠边，动效改为自下而上。 */
+  /* The modal drawer uses the available height so task actions and editable
+     fields are not crowded into half a window. Its body retains scrolling. */
   .paw-desktop-root .paw-session-workspace__side {
     top: auto;
     right: 0;
@@ -1591,7 +1592,7 @@
     left: 0;
     width: 100%;
     min-width: 0;
-    height: min(52%, 340px);
+    height: calc(100% - 12px);
     border: 0;
     border-radius: 16px 16px 0 0;
     border-top: 1px solid var(--paw-chat-border);

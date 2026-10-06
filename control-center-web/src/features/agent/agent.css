@@ -65,6 +65,7 @@
 .agent-workflow-confirm { flex: 1 1 100%; color: var(--color-text-secondary); font-size: var(--font-size-caption); line-height: var(--line-height-ui); text-align: right; }
 .agent-act-gate { display: grid; min-height: 45px; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 8px; margin: 0 14px 14px; padding: 8px 9px; border-left: 3px solid var(--color-warning); background: color-mix(in srgb, var(--color-warning-soft) 54%, transparent); color: var(--color-warning); }
 .agent-act-gate[data-open] { border-left-color: var(--color-success); background: color-mix(in srgb, var(--color-success-soft) 48%, transparent); color: var(--color-success); }
+.agent-act-gate[data-settled] { border-left-color: var(--color-border); background: var(--color-surface); color: var(--color-text-secondary); }
 .agent-act-gate > span { display: grid; min-width: 0; gap: 2px; }
 .agent-act-gate strong { color: var(--color-text); font-size: 12px; }
 .agent-act-gate small { color: var(--color-text-secondary); font-size: 12px; line-height: 1.35; }
@@ -86,9 +87,20 @@
 .agent-goal-budget i b { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
 .agent-goal-unbounded { display: block; margin-top: 8px; }
 .agent-goal-audit { display: grid; gap: 4px; margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--color-border); }
-.agent-goal-audit > strong { display: flex; align-items: center; gap: 5px; color: var(--color-success); font-size: 12px; }
+.agent-goal-audit > strong { display: flex; align-items: center; gap: 5px; color: var(--color-text); font-size: 12px; }
 .agent-goal-audit p { margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.4; }
 .agent-goal-audit small { color: var(--color-text-tertiary); font-size: 12px; overflow-wrap: anywhere; }
+.agent-goal-details { margin-top: 12px; }
+.agent-goal-details > summary, .agent-goal-evidence > summary { display: flex; align-items: center; min-height: 32px; gap: 6px; color: var(--color-text-secondary); font-size: 12px; cursor: pointer; }
+.agent-goal-details[data-expanded] > summary > svg, .agent-goal-evidence[data-expanded] > summary > svg { transform: rotate(90deg); }
+.agent-goal-evidence ul { display: grid; gap: 8px; padding: 4px 0; margin: 0; list-style: none; }
+.agent-goal-evidence li { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-2); color: var(--color-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-goal-evidence code { color: var(--color-text-secondary); font-size: 12px; white-space: pre-wrap; }
+.agent-goal-criteria > span { white-space: pre-wrap; }
+@media (max-width: 600px) {
+  .agent-goal-details > summary, .agent-goal-evidence > summary { min-height: 40px; }
+  .agent-goal-cancel-editor textarea { font-size: 16px; }
+}
 .agent-goal-cancel-editor > small { color: var(--color-text-tertiary); font-size: var(--text-label); line-height: var(--line-height-ui); }
 .agent-goal-criteria { display: grid; gap: var(--space-1); margin-top: var(--space-2); padding-left: var(--space-2); border-left: var(--radius-1) solid var(--color-border-strong); }
 .agent-goal-criteria strong { color: var(--color-text-secondary); font-size: var(--text-label); }
@@ -1221,7 +1233,7 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-status-panel > header > span { display: grid; min-width: 0; gap: 1px; }
 .agent-status-panel > header strong { font-size: 14px; }
 .agent-status-panel > header small { color: var(--color-text-tertiary); font-size: 13px; }
-.agent-status-panel__body { min-height: 0; overflow-y: auto; }
+.agent-status-panel__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .agent-status-panel[data-minimal='true'] .agent-status-panel__body { padding: 8px; }
 .agent-status-panel[data-minimal='true'] .agent-status-section:not([data-status-title='关键步骤']):not([data-status-title='消息队列']) { display: none; }
 .agent-status-panel[data-minimal='true'] .agent-workflow-panel { margin-bottom: 8px; }

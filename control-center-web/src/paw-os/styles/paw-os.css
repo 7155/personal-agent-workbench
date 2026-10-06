@@ -123,7 +123,9 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
 .paw-menu-extra { display: inline-flex; align-items: center; flex: 0 0 auto; cursor: pointer; }
 .paw-menu-status { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
-.paw-desktop-viewport { position: absolute; left: 0; top: var(--paw-menu-h); right: 0; bottom: 0; overflow: hidden; }
+/* Window contents own scrolling. Clipping the desktop also prevents browser
+   focus/scroll-into-view from moving every window beneath the menu bar. */
+.paw-desktop-viewport { position: absolute; left: 0; top: var(--paw-menu-h); right: 0; bottom: 0; overflow: clip; }
 .paw-desktop-viewport::after {
   position: absolute;
   z-index: 74;

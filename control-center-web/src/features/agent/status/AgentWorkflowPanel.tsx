@@ -3,6 +3,9 @@ import {
   CircleCheck,
   CirclePause,
   CirclePlay,
+  ChevronRight,
+  Clock3,
+  FileText,
   Flag,
   ListChecks,
   LoaderCircle,
@@ -11,7 +14,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
-import { Button, TextArea } from '@/components/primitives';
+import { Button, Disclosure, TextArea } from '@/components/primitives';
 import type { AgentTodoProjection } from '@/contracts/agent-reducer';
 import type {
   ActGate,
@@ -262,11 +265,12 @@ function TodoProgress({ todo }: { todo: Todo }) {
 }
 
 function ExecutionGate({ gate }: { gate: ActGate }) {
+  const settled = ['goal_completed', 'goal_cancelled'].includes(gate.reason);
   return (
-    <div className="agent-act-gate" data-open={gate.allowed || undefined}>
+    <div className="agent-act-gate" data-open={gate.allowed || undefined} data-settled={settled || undefined}>
       {gate.allowed ? <ShieldCheck size={15} /> : <CirclePause size={15} />}
       <span>
-        <strong>{gate.allowed ? '当前请求可以继续' : '执行条件未满足'}</strong>
+        <strong>{gate.allowed ? '当前请求可以继续' : gate.reason === 'goal_completed' ? '目标已结束' : gate.reason === 'goal_cancelled' ? '目标已取消' : '执行条件未满足'}</strong>
         <small>{gate.message}</small>
       </span>
     </div>
@@ -345,24 +349,18 @@ function GoalMode({
       ) : (
         <div className="agent-goal-summary" data-state={goal.status}>
           <p>{goal.objective}</p>
-          {goal.successCriteria ? <div className="agent-goal-criteria"><strong>完成标准</strong><span>{goal.successCriteria}</span></div> : null}
-          {persistedExpectations.length ? (
-            <div className="agent-goal-criteria">
-              <strong>证据预期</strong>
-              <ul>{persistedExpectations.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ul>
-            </div>
-          ) : null}
-          {budgetRows.length ? <div className="agent-goal-budget">{budgetRows.map((row) => (
-            <div key={row.label}>
-              <span><small>{row.label}</small><strong>{row.value}</strong></span>
-              <i><b style={{ width: `${row.percent}%` }} /></i>
-            </div>
-          ))}</div> : <small className="agent-goal-unbounded">未设置预算上限</small>}
           {goal.completionAudit ? (
             <div className="agent-goal-audit">
-              <strong><ShieldCheck size={14} />完成依据</strong>
+              <strong><FileText size={14} />完成依据</strong>
               <p>{goal.completionAudit.summary}</p>
-              {goal.completionAudit.evidence.map((item) => <small key={`${item.kind}:${item.reference}`}>{item.summary} · {item.reference}</small>)}
+              <Disclosure className="agent-goal-evidence" summary={<><ChevronRight size={14} aria-hidden="true" /><span>查看 {goal.completionAudit.evidence.length} 项依据</span></>}>
+                <ul>{goal.completionAudit.evidence.map((item) => <li key={`${item.kind}:${item.reference}`}><span>{item.summary}</span><code>{item.reference}</code></li>)}</ul>
+              </Disclosure>
+            </div>
+          ) : goal.status === 'completed' ? (
+            <div className="agent-goal-audit agent-goal-audit--missing">
+              <strong><Clock3 size={14} />尚无完成依据</strong>
+              <p>目标状态已标记为完成，但没有可核对的完成依据。请结合对话中的结果复核。</p>
             </div>
           ) : null}
           {goal.cancellationAudit ? (
@@ -416,6 +414,21 @@ function GoalMode({
               )}
             </div>
           )}
+          <Disclosure className="agent-goal-details" defaultOpen={goal.budgetExceeded} summary={<><ChevronRight size={14} aria-hidden="true" /><span>完成标准与预算</span></>}>
+            {goal.successCriteria ? <div className="agent-goal-criteria"><strong>完成标准</strong><span>{goal.successCriteria}</span></div> : <small className="agent-goal-unbounded">未设置完成标准</small>}
+            {persistedExpectations.length ? (
+              <div className="agent-goal-criteria">
+                <strong>证据预期</strong>
+                <ul>{persistedExpectations.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ul>
+              </div>
+            ) : null}
+            {budgetRows.length ? <div className="agent-goal-budget">{budgetRows.map((row) => (
+              <div key={row.label}>
+                <span><small>{row.label}</small><strong>{row.value}</strong></span>
+                <i><b style={{ width: `${row.percent}%` }} /></i>
+              </div>
+            ))}</div> : <small className="agent-goal-unbounded">未设置预算上限</small>}
+          </Disclosure>
         </div>
       )}
       {error ? <p className="agent-workflow-error" role="alert">{publicError(error)}</p> : null}
@@ -529,7 +542,7 @@ function derivedActGate(todo: Todo, goal: Goal): ActGate {
     return { ...base, allowed: false, reason: 'goal_paused', message: '当前长期目标已暂停，恢复后才能继续写入。' };
   }
   if (goal.configured && goal.status === 'completed') {
-    return { ...base, allowed: false, reason: 'goal_completed', message: '当前长期目标已完成审计，请清除或设置新目标。' };
+    return { ...base, allowed: false, reason: 'goal_completed', message: '当前长期目标已结束，请清除或设置新目标后继续执行。' };
   }
   if (goal.configured && goal.status === 'cancelled') {
     return { ...base, allowed: false, reason: 'goal_cancelled', message: '当前长期目标已取消，清除后才能开始新目标。' };

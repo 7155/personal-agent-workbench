@@ -106,8 +106,8 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
       todo: { schemaVersion: 'rag-ime.agent-todo.v1', id: `todo:${id}`, sessionId: id,
         revision: 0, actor: 'agent', updatedAtMs: Number(session.updatedAtMs), roomLineage: null,
         phases: [], counts: { total: 0, pending: 0, inProgress: 0, blocked: 0, completed: 0, abandoned: 0 } },
-      actGate: { allowed: true, reason: session.workspaceScopeGranted ? 'user_execution_request' : 'approved',
-        message: session.workspaceScopeGranted ? '演示任务已获得目录授权。' : '演示讨论保持只读。', todoRevision: 0, goalRevision: goal.revision },
+      actGate: { allowed: goal.status !== 'completed', reason: goal.status === 'completed' ? 'goal_completed' : session.workspaceScopeGranted ? 'user_execution_request' : 'approved',
+        message: goal.status === 'completed' ? '演示目标已结束，没有真实模型的验收依据。' : session.workspaceScopeGranted ? '演示任务已获得目录授权。' : '演示讨论保持只读。', todoRevision: 0, goalRevision: goal.revision },
     } satisfies AgentWorkflowStateV1;
   };
   routes['agent.session.goal.mutate'] = (request: ControlRequest) => {

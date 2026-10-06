@@ -16,6 +16,34 @@ afterEach(() => {
 });
 
 describe('AgentWorkflowPanel', () => {
+  it('shows completion evidence before supporting criteria without inventing verification', async () => {
+    const state = workflowState();
+    state.goal.status = 'completed';
+    state.goal.completionAudit = { auditId: 'audit:1', summary: '检查已结束，仍需核对部署环境', evidence: [{ kind: 'test', reference: 'reports/frontend-check.txt', summary: '本地检查记录' }], completedBy: 'agent', createdAtMs: 100 };
+    renderWorkflow(transportFor(state));
+    const basis = await screen.findByText('检查已结束，仍需核对部署环境');
+    const criteria = screen.getByText('完成标准与预算');
+    expect(basis.compareDocumentPosition(criteria) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('reports/frontend-check.txt')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText('查看 1 项依据'));
+    expect(screen.getByText('reports/frontend-check.txt')).toBeVisible();
+    await userEvent.click(criteria);
+    expect(screen.getByText('Todo 全部收束')).toBeVisible();
+    expect(screen.getByText('聚焦测试结果')).toBeVisible();
+    expect(screen.queryByText('验收通过')).not.toBeInTheDocument();
+  });
+
+  it('states the missing evidence when the owner reports completion without an audit', async () => {
+    const state = workflowState();
+    state.goal.status = 'completed';
+    state.actGate = { allowed: false, reason: 'goal_completed', message: '目标已结束', todoRevision: 2, goalRevision: 1 };
+    renderWorkflow(transportFor(state));
+    expect(await screen.findByText('尚无完成依据')).toBeVisible();
+    expect(screen.getByText('目标状态已标记为完成，但没有可核对的完成依据。请结合对话中的结果复核。')).toBeVisible();
+    expect(screen.queryByText('执行条件未满足')).not.toBeInTheDocument();
+    expect(screen.queryByText('完成依据', { exact: true })).not.toBeInTheDocument();
+  });
+
   it('keeps same-ID workflows separate when transports share a query client', async () => {
     const stateA = workflowState();
     const stateB = workflowState();
