@@ -582,6 +582,7 @@ class AgentSessionStore:
                 "JOIN agent_sessions discussion ON discussion.id = source.session_id "
                 "WHERE p.kind = 'task' AND source.kind = 'discussion' "
                 "AND p.assistant_id = source.assistant_id AND p.source_session_id = ? "
+                "AND s.status <> 'archived' "
                 "ORDER BY s.updated_at_ms DESC, s.id DESC LIMIT 8",
                 (source_session_id,),
             ).fetchall()

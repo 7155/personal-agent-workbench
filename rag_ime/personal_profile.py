@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from .memory_card_mutations import (
     MemoryRevisionConflict, atomic_memory_write, canonical_json, card_revision,
-    card_source_refs, correct_memory_card, digest, personal_card_scope,
+    card_source_count, card_source_refs, correct_memory_card, digest, personal_card_scope,
     record_personal_edit_source, replay_receipt, retract_memory_card, save_receipt,
 )
 from .sensitive_content import contains_sensitive_content
@@ -44,14 +44,16 @@ def read_personal_profile(conn: sqlite3.Connection, *, owner_id: str = "default"
         support_ids = {ref['id'] for ref in refs}
         refs = [*refs, *(ref for ref in card_source_refs(conn, str(atom["id"]), include_context=True)
                         if ref['id'] not in support_ids)][:32]
+        source_count = card_source_count(conn, str(atom['id']), include_context=True) if len(refs) == 32 else len(refs)
         revision = card_revision(atom)
-        revisions.append([atom["id"], revision, refs])
+        revisions.append([atom["id"], revision, refs, source_count])
         # Omit overlong facts instead of presenting a clipped editable sentence.
         if len(text) > MAX_PARAGRAPH_CHARS or len(paragraphs) >= MAX_PARAGRAPHS or used + len(text) + (2 if paragraphs else 0) > MAX_PROFILE_CHARS:
             truncated = True
             continue
         paragraphs.append({"id": atom["id"], "memoryIds": [atom["id"]], "text": text,
-                           "revision": revision, "sourceCount": len(refs), "sourceRefs": refs})
+                           "revision": revision, "sourceCount": source_count, "sourceRefs": refs,
+                           "sourceRefsTruncated": source_count > len(refs)})
         used += len(text) + (2 if len(paragraphs) > 1 else 0)
     return {"schemaVersion": "paw.personal-profile.v1", "revision": digest(revisions),
             "text": "\n\n".join(str(item["text"]) for item in paragraphs),

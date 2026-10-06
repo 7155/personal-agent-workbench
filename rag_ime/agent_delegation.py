@@ -191,6 +191,7 @@ class AgentDelegationStore:
         runs: Sequence[Mapping[str, object]],
         result_delivery_mode: str = "inline",
         causal_metadata: Mapping[str, object] | None = None,
+        parent_tool_scope: tuple[str, str] | None = None,
         created_at_ms: int | None = None,
     ) -> dict[str, object]:
         values = [dict(item) for item in runs]
@@ -206,6 +207,11 @@ class AgentDelegationStore:
         batch_id = f"subagent-batch:{uuid.uuid4()}"
         run_ids: list[str] = []
         causal = _delegation_causal_metadata(causal_metadata)
+        parent_call_id, parent_turn_id = parent_tool_scope or ('', '')
+        parent_call_id = _bounded_text(parent_call_id, maximum=512)
+        parent_turn_id = _bounded_text(parent_turn_id, maximum=512)
+        if bool(parent_call_id) != bool(parent_turn_id):
+            raise ValueError('delegation parent Tool identity must include both call and turn')
         with self._connect() as conn:
             conn.execute(
                 """
@@ -214,14 +220,15 @@ class AgentDelegationStore:
                     result_delivery_mode, depth, max_depth, causal_todo_id,
                     causal_todo_revision, causal_goal_id, causal_goal_revision,
                     room_bound, causal_room_id, causal_root_id, causal_task_id,
-                    causal_dispatch_id, causal_generation, created_at_ms, updated_at_ms
+                    causal_dispatch_id, causal_generation, created_at_ms, updated_at_ms,
+                    parent_tool_call_id, parent_turn_id
                 ) VALUES (
                     ?, ?, ?, ?,
                     'queued',
                     ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
-                    ?, ?
+                    ?, ?, ?, ?
                 )
                 """,
                 (
@@ -244,6 +251,8 @@ class AgentDelegationStore:
                     causal["generation"],
                     now,
                     now,
+                    parent_call_id,
+                    parent_turn_id,
                 ),
             )
             for ordinal, value in enumerate(values):
@@ -378,6 +387,13 @@ class AgentDelegationStore:
         # artifacts are advisory and are materialized by the worker so a
         # contended artifact lock cannot delay wait=false acknowledgement.
         return self.get_batch(batch_id, hydrate_artifacts=False)
+
+    def parent_tool_scope(self, batch_id: str) -> tuple[str, str] | None:
+        with self._connect() as conn:
+            row = conn.execute('SELECT parent_tool_call_id,parent_turn_id FROM agent_subagent_batches WHERE id=?', (batch_id,)).fetchone()
+        if row is None:
+            raise KeyError(batch_id)
+        return (str(row[0]), str(row[1])) if row[0] and row[1] else None
 
     def get_batch(
         self,
@@ -2496,6 +2512,7 @@ class AgentDelegationCoordinator:
                             "maxOutputChars": budget.max_output_chars,
                         }
                     )
+                parent_tool_scope = self._parent_progress_scope(parent_session_id, payload)
                 batch = self.store.create_batch(
                     parent_session_id=parent_session_id,
                     parent_run_id=parent_run_id,
@@ -2505,6 +2522,7 @@ class AgentDelegationCoordinator:
                     result_delivery_mode="inline" if wait else "next_turn",
                     runs=run_specs,
                     causal_metadata=causal_metadata,
+                    parent_tool_scope=parent_tool_scope,
                 )
             except Exception:
                 for child in reversed(created_sessions):
@@ -2526,7 +2544,6 @@ class AgentDelegationCoordinator:
                         pass
                 raise
 
-            parent_tool_scope = self._parent_progress_scope(parent_session_id, payload)
             for run in batch["runs"]:
                 self._start_run_thread(
                     str(run["id"]), parent_tool_scope=parent_tool_scope,
@@ -3426,6 +3443,8 @@ class AgentDelegationCoordinator:
         batch = self.store.get_batch(str(run["batchId"]))
         child_session_id = str(run["childSessionId"])
         parent_session_id = str(batch["parentSessionId"])
+        if parent_tool_scope is None:
+            parent_tool_scope = self.store.parent_tool_scope(str(batch['id']))
         terminal = threading.Event()
         forced = threading.Event()
         terminal_error = ""

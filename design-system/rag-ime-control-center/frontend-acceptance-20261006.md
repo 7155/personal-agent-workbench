@@ -618,3 +618,78 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 尝试完整 LabWorkbench 29 项与恢复文件时，fork worker 持续高 CPU、未返回用例结果；停止该次进程，日志 `/tmp/paw-lab-dialog-recovery-final.txt` 保留，不能称完整 LabWorkbench 文件通过。随后 45 秒边界内的对应恢复用例与 API 恢复检查完成通过。正式 typecheck 的测试请求 union 曾导致 undefined 不符合 JsonValue，已按 ControlRequest[] 修正；最后正式 `pnpm typecheck` exit=0。
 - 浏览器 v1-v5 定位失败与 JSON 保留，不覆盖为通过；v6 四组通过后发现弹窗恢复体验缺陷，修复后 v7 四组再次通过。v7 图在动效稳定后保存；raw screenshot、JSON 仍是 ignored 本地证据。手机复工摘要/按钮 >=44px、桌面 >=32px 的边界由实测记录；尚未覆盖本批 768px 和 200% zoom。
 - owner/import/route 与 diff 检查通过；初次 uv 默认只读 cache 未启动检查，随后指定可写 `/tmp/paw-uv-cache` 完成，未改系统权限。没有 CI 请求、付费调用、凭证访问、Library 重试、归零账本、强推、admin 或重复 PR。Library STOP、原清单 SHA、15 项 pending 和旧七个 ID 保持原状。
+
+## 原始 review 逐项复核与真实后端零费用预检
+
+本批从远端 `0e59cb4d6197745f9cb6d1d496d204c8363acac3` 接续；开始与提交前均核实 feature 同一 HEAD，main 仍为 `8dc32f7425d49acd436d1e5eb7f7d9042575ba45`。实际检查使用该提交加本批工作树补丁；不称为冻结旧提交的检查。以下是取得原评论后按当前源码判断的全部 33 条未 resolved 评论，不以 outdated 标记代替证据。GitHub thread 状态未修改，没有回复评论或声称 GitHub 已 resolved。
+
+| 原评论 ID | 当前判断、实现或本批修复 | 验证 / 界限 |
+| --- | --- | --- |
+| 4186354310 | 前批已修：简介预算按非空规范化段落 join 的真实分隔符计数 | 当前 MemoryProfile owner 与对应测试；本批完整文件通过 |
+| 4186354320 | 已有键盘移动模式，Enter/Space 开启、方向键移动、Escape 结束并保留焦点 | 当前 desktop-pet-surface 及测试；没有原生桌宠前台验收 |
+| 4186354329 | 已有桌宠 chrome ≥32px 命中区 | 当前 CSS；原生显示仍未覆盖 |
+| 4186354339 | 已在 renderer ready 和 showInactive 后确认 visible，旧 ready/hide 受隔离 | 当前 Electron owner 与 fake-window 回归；不等于原生呈现通过 |
+| 4186354351 | 前批已修：任务说明 4000、验收条件 20×2000，规范化和字段回焦点 | 当前 Primary owner / 前批浏览器与断言 |
+| 4187659862 | 前批已修：归档讨论不能作为任务来源，事务内也检查 | 本批完整 PrimaryAssistantSessions 文件通过 |
+| 4187659871 | 前批已修：显示前三条之外的已返回来源 | 当前 MemoryProfile；超过 32 条的问题由 4190728941 补齐 |
+| 4187659879 | 已有边界：live 状态不能放在 runtime payload、仓库或授权目录内，账本另存 | 本批只跑默认 offline；没有 live 或新账本 |
+| 4188452794 | 前批已修：续做任务在 LIMIT 前过滤 archived | 本批完整 PrimaryAssistantSessions 文件通过 |
+| 4188452802 | 前批已修：preview task 按 sourceSessionId 且非归档过滤 | 当前 preview-primary owner / 现有测试 |
+| 4189341612 | 已有版本迁移 aliases，未重复覆盖 | 本批完整 PersonalProfile 文件通过 |
+| 4190305573 | 本批成立并修复：锁住工具预算计数与时间/上限检查 | 24 并发、上限 8；修前放行 24、修后放行 8。合成计数器，不创建付费账本 |
+| 4190305578 | 前批已修：主助手意图控件继承 32/40/44 | 前批实际三宽度目标检查 |
+| 4190305584 | 前批已修：来源按钮使用同一窗口命中区 token | 前批 Memory 浏览器与当前 CSS |
+| 4190305588 | 前批已修：Room 同步拒收保留排队草稿 | 原队列 owner 与前批实际故障注入 |
+| 4190488811 | 已在 0e59cb4d 修复：原请求 ID 回执重放及原弹窗恢复 | 本批补验 768 两种动效和原生 Chromium 200% 设置；同 ID、同项目、目录仅一项 |
+| 4190488821 | 本批成立并修复：父 Tool call/turn 标识与 batch 同事务持久化；恢复线程读取原绑定 | append-only migration 0221；新恢复断言及原排队/中断恢复、迁移原子性通过 |
+| 4190728941 | 本批成立并修复：来源引用仍最多 32 条，但总数按相同准入 SQL COUNT，标明截断 | 36 个合成来源返回 32 引用、sourceCount=36；revision 包含真实总数 |
+| 4190728946 | 前批已修：授权前拒绝系统根目录 / | 当前 Primary owner / 前批字段焦点检查 |
+| 4190728952 | 已在 0e59cb4d 修复：permissionLocked 同步给原命令可用性 | 本批 768 与 200% 实点拒绝 /permissions，草稿保留；普通 Session 可打开原弹层 |
+| 4190860836 | 本批成立并修复：助手结果上下文在 LIMIT 8 前排除 archived | 八项更新的归档任务不再挤掉可见任务；先红后绿 |
+| 4190860839 | 本批成立并修复：合并相同 Tag 保留较强 weight，并明确 user_merge 来源 | 原不可变 0e59 merge 函数基线 .2，新实现 .9；合成 SQLite 回归 |
+| 4191003108 | 前批已修：所选项目与工作目录按原 roots 绑定校验 | 当前 Primary owner / 前批验证 |
+| 4191003112 | 已有 panel header/footer ≥32px、列表动作 35px | 当前 CSS；原生桌宠未覆盖 |
+| 4191852563 | 前批已修：preview 缓存复用前核查目录中 Session 非归档及 roots | 当前 preview-primary owner / 现有测试 |
+| 4191852576 | 本批成立并修复：合并携带 lifecycle source 和继承 context，不丢证据 | 原不可变 0e59 函数确实丢一项继承证据；新断言通过 |
+| 4191852581 | 本批成立并修复：Python 与 TS 原路由边界同时要求 Atom expectedRevision/clientRequestId，合并还需目标 revision | 空白、错误类型、缺失、超长值拒绝；其他类型原契约保留；先红后绿 |
+| 4191852591 | 本批成立并修复：Knowledge 检索用 Timeline 日历，提示日期与相对范围用同一已解析时区/时刻 | New York 午夜及 DST 边界，修前日期/范围日历不一致，修后两项通过；未调用模型 |
+| 4191852595 | 前批已修：独立 ChatSurface 使用共享 busy 判定，包含 compaction | 当前 owner / 前批模拟；未安装 Earth Research 内页不能称实跑通过 |
+| 4191934857 | 前批已修：criteria 规范化后用于 payload 与重试指纹，等价输入保留原 ID | 当前 Primary owner / 前批回归 |
+| 4192433412 | 前批已修：异步 Room admission 未落定前保留队列，拒收合并回原草稿 | 原 queue owner / 前批浏览器故障注入 |
+| 4192433419 | 前批已修：Lab Guide workflow 与预算回执使用同一 scoped address/key；onSuccess 使用 mutation variables | 当前 workflow owner / 前批实际两次保存 revision 递增 |
+| 4192433427 | 前批已修：子任务 launch 后 invalidate 原 parent scoped projection key | 当前 subagent owner / 前批实际创建后及时读取 |
+
+本批 8 条原 review 对应 7 类缺陷；未提高 8192 字符输出预算、改写角色、创建另一状态所有者或覆盖已完成的前批改动。
+
+- 后端完整相关 owner 加新增回归 **126 项通过**，另恢复/取消/迁移边界 **12 项通过**；两次集合有重叠，不累加为唯一测试数量。Python RED、原不可变 merge 基线失败及 GREEN 日志分别保留在 `/tmp/paw-review-*-red.txt`、`/tmp/paw-review-merge-baseline-red.txt`、`/tmp/paw-review-backend-final.txt` 与 `/tmp/paw-review-delegation-recovery-final.txt`。
+- 前端路由、Preview、Workspace、MemoryProfile 四文件 **83 项通过**。完整 LabWorkbench 最终 **29/29 通过**，日志 `/tmp/paw-lab-workbench-full-30s-final.txt`：本次命令使用 30 秒单项上限，总耗时约 264 秒；没有修改项目 timeout 或 CI。此前默认 15 秒完整运行是 27 通过、两项超时，日志保留；两项先独立以 30 秒界限通过。最早中断的高 CPU worker 不再解释为产品死循环。
+- 正式 `pnpm typecheck` exit=0；owner/import/route、修改 Python 文件 ruff 0.14.2 及 diff 检查通过。首次误写不存在的 owner 脚本没有运行，随后用真实 `check_owner_boundaries.py` 通过；uvx 默认工具目录只读，使用可写 `/tmp/paw-uv-tools` 后通过，未调整系统权限。生产 HTTP Vite 构建输出到 `/tmp/paw-real-http-build-20261006`，exit=0，原 transport boundary 校验通过；只有既有 chunk 大小提示，未新增 CI 修复。
+- 公开 preview 的对应 Home/权限/Lab 恢复补验：`preview-review-major-actions-compact-final-v8.json` 的 768px normal/reduce 两组通过；`preview-review-major-actions-zoom-200-final-v8.json` 一组通过，使用已有独立 Chromium 测试 profile 的真实 200% 设置，outerWidth=1440、innerWidth=720、devicePixelRatio=2，不是 CSS zoom 或 pinch。分页、草稿、锁定/普通命令、弹窗内原回执恢复和无横向溢出均实点通过；两者仍为公开模拟，不是模型或原生宿主验收。200% 只补本批这些操作，不扩充为全站所有状态通过。
+
+### 同一容器的真实 HTTP 后端与模型就绪情况
+
+父任务新增要求只读真实预检。已实际启动当前生产 `DebugImeService`、`QuietThreadingHTTPServer`、生产路由和 SQLite migrations，绑定 loopback `127.0.0.1:8768`。使用同一云容器的临时空数据库 `/tmp/paw-zero-cost-http-7iuy12fm/app.sqlite`；runtime 显式关闭、不启后台任务、不 seed demo。Knowledge 使用原 HttpKnowledgeClient 指向未启动 worker，避免 Supervisor 隐式创建管理 token。没有创建/复制 provider 授权、费用账本、宿主或新执行环境。正常服务初始化的进程内 capability 标识不作为模型凭据使用，不输出。
+
+| 实际动作 | 结果与证据 | 限制 |
+| --- | --- | --- |
+| 生产服务启动与 GET /api/health | 200、ok=true、真实 local SQLite；runtime GET enabled=false/status=disabled/openSessionIds=[] | 默认 Pi 自动发现试图在只读且不存在的 home 支持目录建立 lifecycle lock，失败；没有重试写 home，改用显式 disabled config 做零费用服务检查 |
+| Session/Room、配置、Memory 简介/关系、时间线日历、Lab 项目/运行目录、本机 Files 列目录及读取 README | 有效 12 条初始 API GET 全部 200，关系图修正为允许的 plane=tags 后 200；`real-backend-zero-cost-preflight.json` | 初始误探 plane=personal 返回 400、standalone /control/v1/health 返回 404 均保留；不把错误探针修正算为产品修复 |
+| 实际 HTTP 前端：Files、Memory 简介/时间线/关系图、Lab 首页、独立 Agent 起始页，390/1440 | **12 组**均等待本页所有者读取 200 和实际内容后截图，`real-backend-ui-preflight-final-v4.json`。Files 实点地址、筛选 README、读取、复制真实路径、手机 Escape 返回、刷新；页面无横向溢出，Tab 有焦点。手机 README 与 Lab 空态原图已查看 | 空数据库、模型关闭；未提交 Memory 修改、生成日记、创建/发送模型任务或触发 Knowledge worker。只读可用不代表完整 Agent 回合成功 |
+| 实际 HTTP transport / production channel 前端构建 | 已有 Vite HTTP 入口、生产通道构建及 boundary 检查通过 | dev 首次 dependency scan 扫到 e2e fixtures 的 preview imports 有提示并重新预热；未改生产 owner 或网络策略。最终内容检查有效，最早预热/定位失败和 v3 仍读取中的截图均保留，不计最终通过 |
+| 现有 managed Pi、provider 授权存在性 | 只读 snapshot：application support root missing；Pi 命令/显式 executable 未发现；既有 auth.json/models.json 未发现，OpenAI/Anthropic/DeepSeek/Jev/Typesafe 相关指定环境值均不在 | 未输出凭据内容；没有向 provider 发连通或收费请求，不能称 provider 连通 |
+| 真实任务集入口 | 实际运行 `scripts/run_paw_acceptance.py` 默认路径，offline_passed，8 case IDs、7 oracle negatives、providerCalls=0 | 第一次错误 `--offline` 参数被解析器拒绝，默认无参数随后通过；没有 --live、付费模式或新账本 |
+| 原付费账本核对 | 可见 `/workspace`、`/tmp` 的账本文件名候选 0；14 个现有 SQLite 文件以 mode=ro/immutable=1 只读检查，无 acceptance_budget_meta；`paid-ledger-readonly-preflight.json` | `/tmp/codex-daemon-1000` 无读权限，未升级/重试。原账本、reservation/run IDs、逐 run 用量/收费回执、未决 run 的 terminal quiescence 证明缺失 |
+
+| 实际模式 / 最小下一任务 | 当前状态 |
+| --- | --- |
+| 本地 Files 路径读取、Memory/时间线/Lab 目录读取 | 已完成上述实际后端及浏览器交互；这些不需要付费模型 |
+| 主助手与普通 classic Session；最小 discussion-no-write / classic-handoff | 源码与真实服务入口存在，managed Pi 与既有授权缺失、费用可审计余量未知；未发送真实模型回合 |
+| Tool Agent / subagents 与恢复 | 本批持久化和恢复边界通过合成 Runtime 回归；真实子任务因相同 runtime/provider/账本缺口受阻，不能称各 Agent 都能完成 |
+| Codemode on/only/off、PTC error / parallel barrier | 模式与 case 入口存在；未启动实际 Pi，未跑真实代码模式 / PTC provider 任务 |
+| Room 传统协作、Jev、角色与 Trace Agent | 普通目录可读；真实派发仍受 Pi/provider/账本缺口阻塞，Jev/Typesafe 既有配置也未发现 |
+| Lab 项目 Agent、真实模型评测/优化；Memory 更新/forget、scope isolation、invoice reconciliation | 最小任务见固定 8 case manifest；仅 oracle 离线检查通过，没有真实模型或复杂任务完成证明 |
+| 原生 Electron、PTY/捕获、桌宠，未安装 Earth Research | 原生前台缺 DISPLAY/宿主 IPC；不以 Chromium / fake host 代替。Earth 内页保持未覆盖 |
+
+已知估算 **USD 0.1939704**、本轮未知保留 **USD 87.552**、前轮未知保留 **USD 116.736** 原样保留。没有把未知当零、计算虚假的可花余量或建立归零账本。先前真实子任务超过 8192 字符预算的问题仍保留为失败事实；这次没有收费模型重试。前端成果与真实后端读取已交付，**完整真实 Agent 模型任务仍未通过**。
+
+Library 保持 STOP：原 15 项清单、ZIP/SHA `d2dcb49ae714ab3e11259a41da3345279e3d758d1ae61bf921ad5ba4ab1f09f2`、七个旧 ID 不动；不重试代理/上传，不改网络安全设置。截图与 JSON 继续保存在 ignored 本地目录，不 force-add 大型原图。未追/等待 CI、强推、使用 admin 或另开 PR。

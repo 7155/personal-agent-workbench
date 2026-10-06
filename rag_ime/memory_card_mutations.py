@@ -96,10 +96,9 @@ def personal_card_scope(atom: Mapping[str, object], owner_id: str = "default") -
     )
 
 
-def card_source_refs(conn: sqlite3.Connection, atom_id: str, *, personal_only: bool = True,
-                     include_context: bool = False, limit: int | None = 32) -> list[dict[str, str]]:
+def _card_source_query(personal_only: bool) -> str:
     predicate = admitted_personal_evidence_sql("evidence") if personal_only else "evidence.status='active' AND evidence.admission_state != 'forgotten'"
-    rows = conn.execute(f"""
+    return f"""
         SELECT DISTINCT evidence.evidence_id FROM agent_memory_evidence evidence
         WHERE ({predicate}) AND evidence.evidence_id IN (
             SELECT evidence_id FROM memory_atom_evidence_links WHERE memory_atom_id=? AND relation IN ('supports','corrects')
@@ -110,8 +109,21 @@ def card_source_refs(conn: sqlite3.Connection, atom_id: str, *, personal_only: b
               WHERE source.relation='source'
                 AND NOT EXISTS (SELECT 1 FROM memory_atom_evidence_links WHERE memory_atom_id=atom.id)
                 AND NOT EXISTS (SELECT 1 FROM memory_lifecycle_atom_evidence_links WHERE atom_id=atom.id)
-        ) ORDER BY evidence.evidence_id LIMIT ?
-        """, (atom_id, atom_id, int(include_context), atom_id, -1 if limit is None else max(1, int(limit)))).fetchall()
+        )"""
+
+
+def card_source_count(conn: sqlite3.Connection, atom_id: str, *, personal_only: bool = True,
+                      include_context: bool = False) -> int:
+    query = _card_source_query(personal_only)
+    return int(conn.execute(f'SELECT COUNT(*) FROM ({query})',
+               (atom_id, atom_id, int(include_context), atom_id)).fetchone()[0])
+
+
+def card_source_refs(conn: sqlite3.Connection, atom_id: str, *, personal_only: bool = True,
+                     include_context: bool = False, limit: int | None = 32) -> list[dict[str, str]]:
+    query = _card_source_query(personal_only)
+    rows = conn.execute(f'{query} ORDER BY evidence.evidence_id LIMIT ?',
+        (atom_id, atom_id, int(include_context), atom_id, -1 if limit is None else max(1, int(limit)))).fetchall()
     return [{"kind": "evidence", "id": str(row[0])} for row in rows]
 
 
@@ -258,8 +270,9 @@ def merge_memory_cards(conn: sqlite3.Connection, source_id: str, target_id: str,
     conn.execute("""INSERT OR IGNORE INTO memory_lifecycle_atom_evidence_links(atom_id,evidence_id,relation,created_at_ms)
         SELECT ?,evidence_id,'context',? FROM (
             SELECT evidence_id FROM memory_atom_evidence_links WHERE memory_atom_id=? AND relation IN ('supports','corrects')
-            UNION SELECT evidence_id FROM memory_lifecycle_atom_evidence_links WHERE atom_id=? AND relation='source')""", (new_id,timestamp,source_id,source_id))
-    conn.execute('INSERT OR IGNORE INTO memory_atom_tags SELECT ?,tag_id,weight,source FROM memory_atom_tags WHERE memory_atom_id=?', (new_id,source_id))
+            UNION SELECT evidence_id FROM memory_lifecycle_atom_evidence_links WHERE atom_id=? AND relation IN ('source','context'))""", (new_id,timestamp,source_id,source_id))
+    conn.execute("""INSERT INTO memory_atom_tags SELECT ?,tag_id,weight,'user_merge' FROM memory_atom_tags WHERE memory_atom_id=?
+        ON CONFLICT(memory_atom_id,tag_id) DO UPDATE SET weight=MAX(memory_atom_tags.weight,excluded.weight),source='user_merge'""", (new_id,source_id))
     for alias in conn.execute('SELECT * FROM memory_aliases WHERE memory_atom_id=?', (source_id,)).fetchall():
         conn.execute('INSERT INTO memory_aliases VALUES (?,?,?,?,?,?,?)',
                      ('alias:merge:' + digest([new_id, alias['id']])[:32], new_id,

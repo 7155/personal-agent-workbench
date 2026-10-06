@@ -473,6 +473,14 @@ class ControlRouteSpec:
             required=required_body,
             field_name="body",
         )
+        if self.path_id is ControlPathId.MEMORY_EDIT and request.body.get('kind') == 'atom':
+            fields = ['expectedRevision', 'clientRequestId']
+            if request.body.get('mergeIntoId'):
+                fields.append('expectedMergeRevision')
+            for key in fields:
+                value = request.body.get(key)
+                if not isinstance(value, str) or not value.strip() or len(value) > 240:
+                    raise _invalid_field('body', key)
         if self.path_id in {ControlPathId.AGENT_SESSION_ABORT, ControlPathId.AGENT_SESSION_RESUME}:
             if "compactionTarget" in request.body:
                 try:

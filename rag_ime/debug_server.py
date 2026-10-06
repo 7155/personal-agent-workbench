@@ -3571,7 +3571,7 @@ class DebugImeService:
         runtime_config = self.runtime_config_snapshot()
         if not runtime_config.hybrid_rag.enabled or not runtime_config.memory.enabled:
             return ()
-        temporal_query = parse_temporal_query(request.question)
+        temporal_query = parse_temporal_query(request.question, timezone=self.activity_timelines.timezone_name)
         if temporal_query.matched:
             return self._temporal_knowledge_evidence(request, temporal_query)
         # The native workbench is a global knowledge surface rather than the

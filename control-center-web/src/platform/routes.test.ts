@@ -7,6 +7,17 @@ import {
 } from './routes';
 import { assertControlRequest, assertControlSubscription } from './transport';
 
+it('requires the original atom mutation identity and both revisions for a merge', () => {
+  const body = { kind: 'atom', id: 'atom:example', expectedRevision: 'card-revision', clientRequestId: 'request:edit' };
+  for (const invalid of [
+    { kind: 'atom', id: body.id }, { ...body, expectedRevision: 1 }, { ...body, clientRequestId: '' },
+    { ...body, mergeIntoId: 'atom:target' },
+  ]) expect(() => assertControlRequest({ pathId: 'memory.edit', body: invalid })).toThrow();
+  expect(() => assertControlRequest({ pathId: 'memory.edit', body })).not.toThrow();
+  expect(() => assertControlRequest({ pathId: 'memory.edit', body: { ...body, mergeIntoId: 'atom:target', expectedMergeRevision: 'target-revision' } })).not.toThrow();
+  expect(() => assertControlRequest({ pathId: 'memory.edit', body: { kind: 'tag', id: '1', title: '项目' } })).not.toThrow();
+});
+
 it('requires both original Durable input identities on the local explicit resume route', () => {
   expect(resolveControlPath('agent.session.resume', { sessionId: 'session:paused' })).toBe('/api/agent/sessions/session%3Apaused/resume');
   expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { turnId: 'original-turn' } })).toThrow();

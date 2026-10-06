@@ -2029,6 +2029,16 @@ export function assertAllowedBody(
       throw new ControlRoutePolicyError(pathId, `body field is not allowlisted: ${key}`);
     }
   }
+  if (pathId === 'memory.edit' && (body as Record<string, unknown>).kind === 'atom') {
+    const target = body as Record<string, unknown>;
+    const fields = ['expectedRevision', 'clientRequestId', ...(target.mergeIntoId ? ['expectedMergeRevision'] : [])];
+    for (const key of fields) {
+      const value = target[key];
+      if (typeof value !== 'string' || !value.trim() || value.length > 240) {
+        throw new ControlRoutePolicyError(pathId, `invalid or missing atom mutation field: ${key}`);
+      }
+    }
+  }
   if (pathId === 'agent.session.resume' || pathId === 'agent.session.abort') {
     const target = body as Record<string, unknown>;
     if (Object.hasOwn(target, 'compactionTarget')) {

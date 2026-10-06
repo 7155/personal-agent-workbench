@@ -12,6 +12,7 @@ import json
 import math
 from pathlib import Path
 import sqlite3
+import threading
 import time
 
 _SCALE = Decimal(1_000_000_000)
@@ -194,6 +195,7 @@ class AcceptanceRunBudget:
         self.rows = []
         self.service = None
         self.tool_calls = 0
+        self._tool_admission_lock = threading.Lock()
         self.started = time.monotonic()
         self.timeout = 180
         self.quiescence = None
@@ -214,9 +216,10 @@ class AcceptanceRunBudget:
         yield self
 
     def check_tool_admission(self):
-        self.tool_calls += 1
-        if self.tool_calls > self.max_tool_calls or time.monotonic()-self.started > self.timeout:
-            raise AcceptanceBudgetError("bounded tool/time admission exceeded")
+        with self._tool_admission_lock:
+            self.tool_calls += 1
+            if self.tool_calls > self.max_tool_calls or time.monotonic()-self.started > self.timeout:
+                raise AcceptanceBudgetError("bounded tool/time admission exceeded")
 
     def account_exact_turn(self, sid, tid, usage):
         if self.service is None:

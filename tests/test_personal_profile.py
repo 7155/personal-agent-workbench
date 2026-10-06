@@ -35,6 +35,39 @@ class PersonalProfileTests(unittest.TestCase):
         result = self.save([{'id': None, 'memoryIds': [], 'text': text}])
         return result['profile']['paragraphs'][0]
 
+    def test_profile_discloses_evidence_omitted_by_the_reference_cap(self):
+        from rag_ime.memory_card_mutations import record_personal_edit_source
+        first = self.add()
+        for index in range(35):
+            _, evidence_id = record_personal_edit_source(self.conn, f'公开测试背景来源 {index}', timestamp=200 + index)
+            self.conn.execute('INSERT INTO memory_lifecycle_atom_evidence_links VALUES (?,?,?,?)',
+                              (first['id'], evidence_id, 'context', 200 + index))
+        paragraph = read_personal_profile(self.conn)['paragraphs'][0]
+        self.assertEqual(paragraph['sourceCount'], 36)
+        self.assertEqual(len(paragraph['sourceRefs']), 32)
+        self.assertTrue(paragraph['sourceRefsTruncated'])
+
+    def test_merge_retains_the_stronger_tag_and_inherited_context(self):
+        from rag_ime.memory_card_mutations import card_source_refs, correct_memory_card, merge_memory_cards
+        from rag_ime.personal_profile import _new_personal_card
+        target = self.add()
+        source = _new_personal_card(self.conn, text='公开测试：中文沟通。', mutation_id='context-source', timestamp=110)
+        source = correct_memory_card(self.conn, source['memoryId'], text='公开测试：继续使用中文。',
+            expected_revision=source['revision'], timestamp=120, mutation_id='source-correction', reason='user_correction', user_edit=True)
+        source_refs = card_source_refs(self.conn, source['memoryId'], include_context=True)
+        self.assertEqual(len(source_refs), 2)
+        tag_id = self.conn.execute("INSERT INTO memory_tags(tag,normalized_tag,created_at_ms,updated_at_ms) VALUES ('语言','语言',100,100)").lastrowid
+        self.conn.executemany('INSERT INTO memory_atom_tags VALUES (?,?,?,?)',
+            [(target['id'], tag_id, .2, 'offline'), (source['memoryId'], tag_id, .9, 'offline')])
+        result = merge_memory_cards(self.conn, source['memoryId'], target['id'],
+            expected_revision=source['revision'], expected_target_revision=target['revision'], timestamp=200, mutation_id='context-merge')
+        weight, origin = self.conn.execute('SELECT weight,source FROM memory_atom_tags WHERE memory_atom_id=? AND tag_id=?',
+                                           (result['memoryId'], tag_id)).fetchone()
+        with self.subTest('stronger tag'):
+            self.assertEqual((weight, origin), (.9, 'user_merge'))
+        with self.subTest('inherited evidence'):
+            self.assertTrue({ref['id'] for ref in source_refs}.issubset(ref['id'] for ref in card_source_refs(self.conn, result['memoryId'], include_context=True)))
+
     def test_profile_add_edit_retry_conflict_and_sources(self):
         first = self.add()
         before = read_personal_profile(self.conn)

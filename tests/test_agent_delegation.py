@@ -546,6 +546,27 @@ class AgentDelegationTests(unittest.TestCase):
         self._coordinators.append(coordinator)
         return coordinator
 
+    def test_restart_retains_verified_parent_tool_identity_without_ephemeral_scope(self) -> None:
+        self.events.publish(str(self.parent['id']), 'tool_started',
+            {'toolName': 'agents', 'toolCallId': 'parent:restart-child'}, turn_id='parent:restart-turn')
+        coordinator = self.coordinator()
+        with patch.object(coordinator, '_start_run_thread'):
+            batch = coordinator.delegate(str(self.parent['id']), {
+                'agent': 'researcher', 'task': '公开合成恢复检查', '_toolCallId': 'parent:restart-child',
+                'wait': False, **_TASK_CONTRACT,
+            })['batch']
+        restarted = self.coordinator()
+        run_id = str(batch['runs'][0]['id'])
+        restarted._start_run_thread(run_id)
+        def bound_terminal():
+            events, _ = self.events.replay(str(self.parent['id']))
+            return [event.payload for event in events if event.event_type == 'tool_progress'
+                    and event.payload.get('runId') == run_id and event.payload.get('state') == 'completed']
+        _wait_until(lambda: bool(bound_terminal()))
+        self.assertEqual(bound_terminal()[-1].get('parentToolCallId'), 'parent:restart-child')
+        self.assertEqual(bound_terminal()[-1].get('parentTurnId'), 'parent:restart-turn')
+        self.assertEqual(bound_terminal()[-1]['childProgress']['phase'], 'terminal')
+
     def test_child_progress_mirrors_bounded_reads_and_mixed_terminal_results(self) -> None:
         # Synthetic regression based on observed policy/ledger read receipts.
         # It makes no model calls and is not a new live acceptance run.

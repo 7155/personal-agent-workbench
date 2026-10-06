@@ -146,6 +146,17 @@ class PrimaryAssistantSessionTests(unittest.TestCase):
         self.assertEqual([task["id"] for task in self.service.ensure_primary_assistant(
             {"workspaceRoots": [str(self.root)]})["tasks"]], [second["id"]])
 
+    def test_archived_tasks_do_not_displace_current_results_at_the_context_limit(self) -> None:
+        request = self.request(clientRequestId='visible-context-task')
+        visible = self.service.create_primary_task(request)['session']
+        newer = int(visible['updatedAtMs']) + 1000
+        for index in range(8):
+            task = self.service.create_primary_task({**request, 'clientRequestId': f'archived-context-{index}'})['session']
+            self.service.sessions.archive(task['id'], updated_at_ms=newer + index)
+        results = self.service.sessions.primary_task_results(str(request['sourceSessionId']))
+        self.assertEqual([item['sessionId'] for item in results], [visible['id']])
+        self.assertEqual(self.service.sessions.get(task['id'])['status'], 'archived')
+
     def test_archived_tasks_do_not_displace_current_tasks_at_the_directory_limit(self) -> None:
         request = self.request(clientRequestId="visible-task")
         visible = self.service.create_primary_task(request)["session"]

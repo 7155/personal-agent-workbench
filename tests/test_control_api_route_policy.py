@@ -15,6 +15,16 @@ from rag_ime.control_api import (
 
 
 class ControlRoutePolicyTests(unittest.TestCase):
+    def test_atom_mutations_require_exact_revision_and_request_identity(self):
+        valid = {'kind': 'atom', 'id': 'atom:example', 'expectedRevision': 'card-revision', 'clientRequestId': 'request:edit'}
+        bodies = [{k: v for k, v in valid.items() if k != field} for field in ('expectedRevision', 'clientRequestId')]
+        bodies += [{**valid, 'clientRequestId': ''}, {**valid, 'expectedRevision': 1}, {**valid, 'mergeIntoId': 'atom:target'}]
+        for body in bodies:
+            with self.subTest(body=body), self.assertRaises(ControlApiError):
+                self.policy.authorize(ControlRequest(request_id='request:policy', path_id=ControlPathId.MEMORY_EDIT.value, body=body), ControlAccessContext.native())
+        for body in (valid, {**valid, 'mergeIntoId': 'atom:target', 'expectedMergeRevision': 'target-revision'}, {'kind': 'tag', 'id': '1', 'title': '项目'}):
+            self.policy.authorize(ControlRequest(request_id='request:policy', path_id=ControlPathId.MEMORY_EDIT.value, body=body), ControlAccessContext.native())
+
     def setUp(self) -> None:
         self.policy = default_route_policy()
 
