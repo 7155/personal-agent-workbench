@@ -8,6 +8,7 @@ import type { ToolManifest } from '../types';
 import { ToolPicker } from './ToolPicker';
 import { countAvailableTools } from './tool-policy';
 import { buildCapabilityRows } from './capability-display';
+import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 
 afterEach(cleanup);
 const tools: ToolManifest[] = (['memory', 'knowledge'] as const).map(id => ({
@@ -30,11 +31,11 @@ function catalog(): CapabilityCatalog {
     })),
   };
 }
-function setup(overrides: Partial<ComponentProps<typeof ToolPicker>> = {}) {
+function setup(overrides: Partial<ComponentProps<typeof ToolPicker>> = {}, openRoute?: (route:string) => void) {
   const props: ComponentProps<typeof ToolPicker> = { adjustmentDisabled: false, capabilityCatalog: catalog(), capabilityPolicyPending: false,
     disabled: false, onCapabilityPreferenceChange: vi.fn(), onSelect: vi.fn(), requestOpen: 0,
     session: previewSessions[0], status: 'ready', tools, ...overrides };
-  return { ...render(<ToolPicker {...props}/>), props, user: userEvent.setup() };
+  return { ...render(<ToolPicker {...props}/>, {wrapper:openRoute ? ({children}) => <PawOsDesktopProvider openRoute={openRoute} openWindow={()=>{}}>{children}</PawOsDesktopProvider> : undefined}), props, user: userEvent.setup() };
 }
 async function open(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /对话功能：/ }));
@@ -42,6 +43,30 @@ async function open(user: ReturnType<typeof userEvent.setup>) {
 const memory = () => screen.getByRole('button', { name: /^记忆召回 当前可用/ });
 
 describe('ToolPicker conversation capability presentation', () => {
+  it('retains search and selected capability when returning from defaults to the same conversation', async () => {
+    const openRoute=vi.fn();const {user,props,rerender}=setup({},openRoute);await open(user);
+    await user.type(screen.getByRole('textbox',{name:'搜索当前对话功能'}),'记忆');await user.click(memory());
+    await user.click(screen.getByText('权限与标识'));
+    await user.click(screen.getByRole('button',{name:'管理功能与默认设置'}));
+    expect(openRoute).toHaveBeenCalledWith(`/plugins?view=capabilities&sessionId=${props.session!.id}&capability=tool%3Amemory`);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    rerender(<ToolPicker {...props} requestOpen={1}/>);
+    expect(await screen.findByRole('textbox',{name:'搜索当前对话功能'})).toHaveValue('记忆');
+    const detail=screen.getByRole('complementary',{name:'记忆召回的功能详情'});
+    expect(detail).toBeVisible();
+    await vi.waitFor(()=>expect(within(detail).getByText('权限与标识').closest('details')).toHaveAttribute('open'));
+    expect(props.onSelect).not.toHaveBeenCalled();expect(props.onCapabilityPreferenceChange).not.toHaveBeenCalled();
+  });
+
+  it('drops the previous management view when the conversation owner changes', async () => {
+    const {user,props,rerender}=setup({},vi.fn());await open(user);
+    await user.type(screen.getByRole('textbox',{name:'搜索当前对话功能'}),'记忆');await user.click(memory());
+    await user.click(screen.getByRole('button',{name:'管理功能与默认设置'}));
+    const next=catalog();next.sessionPolicy!.sessionId='other-session';
+    rerender(<ToolPicker {...props} sessionId="other-session" capabilityCatalog={next} requestOpen={1}/>);
+    expect(await screen.findByRole('textbox',{name:'搜索当前对话功能'})).toHaveValue('');
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+  });
   it('counts matching executable tools separately from registered resources', () => {
     setup();
     expect(screen.getByRole('button', { name: /1 个当前可用工具，2 个已登记工具/ })).toBeInTheDocument();

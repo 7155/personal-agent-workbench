@@ -1235,7 +1235,7 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
 .agent-status-panel > header small { color: var(--color-text-tertiary); font-size: 13px; }
 .agent-status-panel__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .agent-status-panel[data-minimal='true'] .agent-status-panel__body { padding: 8px; }
-.agent-status-panel[data-minimal='true'] .agent-status-section:not([data-status-title='关键步骤']):not([data-status-title='消息队列']) { display: none; }
+.agent-status-panel[data-minimal='true'] .agent-status-section:not([data-task-essential]) { display: none; }
 .agent-status-panel[data-minimal='true'] .agent-workflow-panel { margin-bottom: 8px; }
 .agent-status-panel[data-minimal='true'] .agent-workflow-panel--compact-empty { margin: 0 0 8px; padding: 10px; color: var(--color-text-tertiary); font-size: 12px; line-height: 1.45; }
 .agent-status-panel[data-minimal='true'] .agent-status-turn { margin: 0 0 8px; }

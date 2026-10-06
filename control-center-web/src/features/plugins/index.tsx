@@ -564,7 +564,7 @@ export function PluginsFeature() {
         <div><strong>{sessionContextId ? '正在查看当前对话的功能设置' : '正在设置所有对话的默认功能'}</strong>
           <p>对话单独设置优先，其次是项目设置，最后是所有对话默认。更改从下一轮生效。</p>
         </div>
-        {sessionContextId ? <Button onClick={() => openPawOsRoute(desktop, `/agent?session=${encodeURIComponent(sessionContextId)}&tools=open&toolsRequest=${Date.now()}`)} size="small" variant="quiet">调整本对话开关</Button> : null}
+        {sessionContextId ? <Button onClick={() => openPawOsRoute(desktop, `/agent?session=${encodeURIComponent(sessionContextId)}&tools=open&toolsRequest=${Date.now()}`)} size="small" variant="quiet">返回当前对话</Button> : null}
       </div>
       <div className="capability-policy-feedback">
         {defaults.error ? (

@@ -326,7 +326,14 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
         const mainWindow = state.windows[windowId];
         if (!mainWindow || mainWindow.appId !== 'agent' || isAgentSatellite(mainWindow.target)) return state;
         const title = target?.title ?? pawApp('agent').label;
-        const initialRoute = target
+        const params = new URLSearchParams(mainWindow.initialRoute?.split('?', 2)[1] ?? '');
+        const routeSessionId = params.get('session') || params.get('sessionId');
+        const routeKind = routeSessionId ? 'session' : 'room';
+        const routeOwner = routeSessionId || params.get('room');
+        // Metadata refresh must not erase an intent addressed to this owner.
+        const preservesRoute = target && routeKind === target.kind
+          && mainWindow.initialRoute?.split('?', 1)[0] === '/agent' && routeOwner === target.id;
+        const initialRoute = preservesRoute ? mainWindow.initialRoute : target
           ? `/agent?${target.kind === 'room' ? 'room' : 'session'}=${encodeURIComponent(target.id)}`
           : '/agent';
         if (mainWindow.target?.kind === target?.kind

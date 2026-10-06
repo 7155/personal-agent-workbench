@@ -981,6 +981,12 @@ export function openDesktopRoute(api: ReturnType<typeof usePawDesktopApi>, route
   if (app.id === 'agent') {
     const sessionId = params.get('session') || params.get('sessionId');
     if (sessionId) {
+      const existing = [...api.getState().stack].reverse().map(id => api.getState().windows[id])
+        .find(node => node?.appId === 'agent' && node.target?.kind === 'session' && node.target.id === sessionId);
+      if (existing) {
+        api.getState().openApp('agent', { entityId: existing.entityId, initialRoute: normalized });
+        return;
+      }
       api.getState().openApp('agent', {
         entityId: sessionId,
         initialRoute: normalized,

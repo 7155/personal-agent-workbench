@@ -1,6 +1,52 @@
 import { expect, test } from '@playwright/test';
 import { expectNoHorizontalPageOverflow } from './helpers';
 
+for (const width of [390,1440]) {
+  test(`capability defaults return to the same conversation and reading state at ${width}px`, async ({page}) => {
+    await page.setViewportSize({width,height:900});
+    await page.goto('/?controlTransport=mock#/agent?session=session-preview');
+    const agent=page.locator('.paw-window-shell[data-app="agent"]');
+    const input=agent.getByRole('textbox',{name:'消息',exact:true});
+    await expect(input).toBeVisible({timeout:30_000});await input.fill('保留原窗口的草稿');
+    const originalInput=await input.elementHandle();
+    await agent.getByRole('button',{name:'展开对话控件',exact:true}).click();await page.keyboard.press('Escape');
+    const trigger=agent.getByRole('button',{name:/^对话功能：/});await trigger.click();
+    const picker=page.locator('.pi-capabilities-popover');
+    await picker.getByRole('textbox',{name:'搜索当前对话功能',exact:true}).fill('记忆');
+    await picker.getByRole('button',{name:/^记忆召回/}).click();
+    const detail=picker.getByRole('complementary',{name:'记忆召回的功能详情',exact:true});
+    await detail.locator('summary').filter({hasText:'权限与标识'}).click();
+    await detail.evaluate(e=>e.scrollTop=e.scrollHeight);const scrollBefore=await detail.evaluate(e=>e.scrollTop);
+    await picker.getByRole('button',{name:'管理功能与默认设置',exact:true}).click();
+    const defaults=page.locator('.paw-window-shell[data-app="app-center"]');
+    await expect(defaults.getByText('正在查看当前对话的功能设置',{exact:true})).toBeVisible();
+    await expect(defaults.getByText('当前项目默认',{exact:true})).toBeVisible();
+    await defaults.getByRole('button',{name:'返回当前对话',exact:true}).click();
+    await expect(agent).toHaveCount(1);await expect(input).toHaveValue('保留原窗口的草稿');
+    expect(await originalInput!.evaluate(e=>e.isConnected)).toBe(true);
+    await expect(detail).toBeVisible();
+    await expect(detail.locator('details').last()).toHaveAttribute('open');
+    await expect.poll(()=>detail.evaluate(e=>e.scrollTop)).toBe(scrollBefore);
+    await detail.getByRole('button',{name:'返回功能列表',exact:true}).click();
+    await expect(picker.getByRole('textbox',{name:'搜索当前对话功能',exact:true})).toHaveValue('记忆');
+    await page.keyboard.press('Escape');await expect(trigger).toBeFocused();
+    await expectNoHorizontalPageOverflow(page);
+  });
+}
+
+test('compact task center exposes artifact and background empty states', async ({page}) => {
+  await page.goto('/?controlTransport=mock#/agent?session=session-preview');
+  await expect(page.getByRole('textbox',{name:'消息',exact:true})).toBeVisible({timeout:30_000});
+  await page.getByRole('navigation',{name:'当前工作内容'}).getByRole('button',{name:'任务',exact:true}).click();
+  const panel=page.getByLabel('对话工具侧栏',{exact:true});
+  const artifacts=panel.locator('.agent-status-section[data-status-title="产物"]');
+  await expect(artifacts.getByRole('button')).toBeVisible();
+  await expect(artifacts.getByText('本轮还没有可交付产物',{exact:true})).toBeVisible();
+  const jobs=panel.getByRole('button',{name:/^后台任务/});await jobs.click();
+  await expect(panel.getByText('当前会话没有后台任务；后台运行命令后会显示在这里。',{exact:true})).toBeVisible();
+  await expectNoHorizontalPageOverflow(page);
+});
+
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   test(`task records retain the home draft and old task access (${reducedMotion})`, async ({page}) => {
     await page.setViewportSize({width:390,height:900});

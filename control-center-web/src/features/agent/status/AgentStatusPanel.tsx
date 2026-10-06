@@ -193,7 +193,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           onWorkflowResolved={handleWorkflowResolved}
         />
         {lifecycleCancellationAudits.length ? (
-          <StatusSection icon={CircleDashed} title="取消与暂停回执" count={lifecycleCancellationAudits.length} defaultOpen={!minimal}>
+          <StatusSection essential icon={CircleDashed} title="取消与暂停回执" count={lifecycleCancellationAudits.length} defaultOpen={!minimal}>
             <LifecycleCancellationView audits={lifecycleCancellationAudits} />
           </StatusSection>
         ) : null}
@@ -211,7 +211,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           </StatusSection>
         ) : null}
 
-        <StatusSection icon={FolderKanban} title="产物" count={view.artifacts.length + runs.filter((run) => run.artifact).length} defaultOpen>
+        <StatusSection essential icon={FolderKanban} title="产物" count={view.artifacts.length + runs.filter((run) => run.artifact).length} defaultOpen>
           {view.artifacts.length || runs.some((run) => run.artifact) ? (
             <div className="agent-status-files">
               {view.artifacts.map((artifact) => <StatusRow key={artifact.id} icon={FolderKanban} title={artifact.name} detail={artifact.kind} />)}
@@ -220,7 +220,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           ) : <EmptyLine>本轮还没有可交付产物</EmptyLine>}
         </StatusSection>
 
-        <StatusSection icon={SquareTerminal} title="后台任务" count={backgroundJobs.length} defaultOpen={!minimal}>
+        <StatusSection essential icon={SquareTerminal} title="后台任务" count={backgroundJobs.length} defaultOpen={!minimal}>
           <AgentBackgroundJobsView
             active={surfaceActive}
             sessionId={sessionId}
@@ -229,7 +229,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           />
         </StatusSection>
 
-        <StatusSection icon={MessagesSquare} title="消息队列" count={(projection?.messageQueue.steering.length ?? 0) + (projection?.messageQueue.followUp.length ?? 0)} defaultOpen={!minimal}>
+        <StatusSection essential icon={MessagesSquare} title="消息队列" count={(projection?.messageQueue.steering.length ?? 0) + (projection?.messageQueue.followUp.length ?? 0)} defaultOpen={!minimal}>
           <MessageQueueView projection={projection} />
         </StatusSection>
 
@@ -271,7 +271,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           />
         </StatusSection>
 
-        <StatusSection icon={Wrench} title="关键步骤" count={logicalTools.length} defaultOpen={false}>
+        <StatusSection essential icon={Wrench} title="关键步骤" count={logicalTools.length} defaultOpen={false}>
           {logicalTools.length ? (
             <div className="agent-status-tools">
               {logicalTools.map((item) => item.kind === 'attempts'
@@ -606,17 +606,19 @@ function StatusSection({
   count,
   children,
   defaultOpen = true,
+  essential = false,
 }: {
   icon: LucideIcon;
   title: string;
   count: number;
   children: ReactNode;
   defaultOpen?: boolean;
+  essential?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const contentId = useId();
   return (
-    <section className="agent-status-section" data-open={open} data-status-title={title}>
+    <section className="agent-status-section" data-open={open} data-status-title={title} data-task-essential={essential || undefined}>
       <header>
         <button aria-controls={contentId} aria-expanded={open} onClick={() => setOpen((value) => !value)} type="button">
           <Icon size={15} />

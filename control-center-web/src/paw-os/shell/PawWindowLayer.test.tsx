@@ -45,6 +45,25 @@ afterEach(() => {
 });
 
 describe('PAWOS compositor window frame', () => {
+  it('returns a Session route to its existing main window without opening a duplicate', () => {
+    const store=createPawDesktopStore('agent','/agent');
+    store.getState().bindAgentMain('agent',{kind:'session',id:'task-one',title:'原任务标题'});
+    store.getState().openApp('app-center');
+    const route='/agent?session=task-one&tools=open&toolsRequest=100';
+    openDesktopRoute(store,route);
+    expect(Object.keys(store.getState().windows)).toEqual(['agent','app-center']);
+    expect(store.getState().activeWindowId).toBe('agent');
+    expect(store.getState().windows.agent).toMatchObject({initialRoute:route,title:'原任务标题',target:{kind:'session',id:'task-one'}});
+  });
+
+  it('keeps a different task in its own window when no matching Session is already open', () => {
+    const store=createPawDesktopStore('agent','/agent');
+    store.getState().bindAgentMain('agent',{kind:'session',id:'task-one',title:'原任务'});
+    openDesktopRoute(store,'/agent?session=task-two&tools=open');
+    expect(store.getState().activeWindowId).toBe('agent:task-two');
+    expect(store.getState().windows.agent.target?.id).toBe('task-one');
+    expect(store.getState().windows['agent:task-two'].target?.id).toBe('task-two');
+  });
   it('keeps an active task reloadable without redispatching the hash or adding history', () => {
     window.history.replaceState(null, '', '?frontend=paw-os#/agent');
     const store = createPawDesktopStore('agent', '/agent');

@@ -261,6 +261,18 @@ describe('PAWOS desktop store', () => {
     expect(store.getState().windows.agent?.title).toBe('Agent');
   });
 
+  it.each(['/agent?session=session-8&tools=open&toolsRequest=100', '/agent?sessionId=session-8&tools=memory'])(
+    'retains the same-owner deep-link intent when Session metadata is bound: %s', route => {
+      const store = createPawDesktopStore('agent', route);
+      store.getState().bindAgentMain('agent', {kind:'session',id:'session-8',title:'原任务'});
+      expect(store.getState().windows.agent.initialRoute).toBe(route);
+      store.getState().bindAgentMain('agent', {kind:'session',id:'session-8',title:'更新后的任务标题'});
+      expect(store.getState().windows.agent.initialRoute).toBe(route);
+      store.getState().bindAgentMain('agent', {kind:'session',id:'session-other',title:'另一项任务'});
+      expect(store.getState().windows.agent.initialRoute).toBe('/agent?session=session-other');
+    },
+  );
+
   it('does not publish a new window snapshot when bounds are unchanged', () => {
     const store = createPawDesktopStore('agent');
     const before = store.getState().windows.agent;

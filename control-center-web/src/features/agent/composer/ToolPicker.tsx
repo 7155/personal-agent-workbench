@@ -46,16 +46,37 @@ export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPo
   const open = openedFor === scope && !disabled;
   const motion = usePresentationMotion(open);
   const browserRef = useRef<HTMLDivElement>(null);
+  const managedViewRef = useRef<{ scope: string; scrollPositions: Record<string, number>; expandedDetails: number[] } | undefined>(undefined);
+  const restoringViewRef = useRef<typeof managedViewRef.current>(undefined);
+  const mountBrowser = useCallback((node: HTMLDivElement | null) => {
+    browserRef.current = node;
+    const retained = restoringViewRef.current;
+    if (!node || !retained) return;
+    requestAnimationFrame(() => {
+      if (!node.isConnected || restoringViewRef.current !== retained) return;
+      const details = node.querySelectorAll<HTMLDetailsElement>('.pi-capabilities__detail details');
+      retained.expandedDetails.forEach(index => { if (details[index]) details[index].open = true; });
+      for (const [selector, scrollTop] of Object.entries(retained.scrollPositions)) {
+        const element = node.querySelector<HTMLElement>(selector);
+        if (element) element.scrollTop = scrollTop;
+      }
+      restoringViewRef.current = undefined;
+    });
+  }, []);
   const availableCount = matched && status === 'ready' ? countAvailableTools(tools, session, capabilityCatalog, sessionId) : 0;
   const registeredCount = matched && status === 'ready' ? countRegisteredTools(tools) : 0;
   const rows = useMemo(() => status === 'ready' ? buildCapabilityRows(tools, session, capabilityCatalog, sessionId) : [],
     [tools, session, capabilityCatalog, sessionId, status]);
-  function begin(value = '') { setQuery(value); setSection('all'); setFilter('all'); setSelectedKey(''); setOpenedFor(scope); }
-  useEffect(() => { setOpenedFor(null); setSelectedKey(''); }, [scope]);
+  function begin(value = '') { managedViewRef.current = undefined; restoringViewRef.current = undefined; setQuery(value); setSection('all'); setFilter('all'); setSelectedKey(''); setOpenedFor(scope); }
+  useEffect(() => { setOpenedFor(null); setSelectedKey(''); managedViewRef.current = undefined; restoringViewRef.current = undefined; }, [scope]);
   useEffect(() => {
     const request = `${scope}:${requestOpen}`;
     if (requestOpen <= 0 || consumedRequest.current === request || status !== 'ready' || disabled) return;
-    consumedRequest.current = request; begin(requestQuery);
+    consumedRequest.current = request;
+    if (managedViewRef.current?.scope === scope && !requestQuery) {
+      restoringViewRef.current = managedViewRef.current; managedViewRef.current = undefined;
+      setOpenedFor(scope);
+    } else begin(requestQuery);
   }, [scope, requestOpen, requestQuery, status, disabled]);
   const label = status === 'ready' ? `${availableCount} 个当前可用工具，${registeredCount} 个已登记工具`
     : status === 'failed' ? '能力目录暂不可用' : '能力目录正在读取';
@@ -68,7 +89,7 @@ export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPo
     </Button></PopoverTrigger>
     <PopoverContent align="start" aria-labelledby={titleId} className="pi-capabilities-popover" onMouseDown={event => event.stopPropagation()}
       onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }}>
-      <div ref={browserRef}><PiCapabilityBrowser rows={rows} query={query} section={section} filter={filter} selectedKey={selectedKey}
+      <div ref={mountBrowser}><PiCapabilityBrowser rows={rows} query={query} section={section} filter={filter} selectedKey={selectedKey}
         status={status} motion={motion} locked={adjustmentDisabled || disabled} pending={capabilityPolicyPending} titleId={titleId} searchRef={searchRef}
         codemodeMode={codemodeMode} codemodeModePending={codemodeModePending} onCodemodeModeChange={onCodemodeModeChange}
         mcpPanel={open && section === 'mcp' ? <NativeMcpPanel key={scope} sessionId={scope} query={query} filter={filter}
@@ -94,6 +115,11 @@ export function ToolPicker({ adjustmentDisabled, capabilityCatalog, capabilityPo
           if (!toolAvailableForConversation(row.tool, session, capabilityCatalog, sessionId)) return;
           setOpenedFor(null); onSelect(row.tool);
         }} onClose={() => setOpenedFor(null)} onManage={() => {
+          const node = browserRef.current;
+          managedViewRef.current = { scope,
+            scrollPositions: Object.fromEntries(['.pi-capabilities__body', '.pi-capabilities__list', '.pi-capabilities__detail'].map(selector => [selector, node?.querySelector<HTMLElement>(selector)?.scrollTop ?? 0])),
+            expandedDetails: Array.from(node?.querySelectorAll<HTMLDetailsElement>('.pi-capabilities__detail details') ?? []).flatMap((detail, index) => detail.open ? [index] : []),
+          };
           setOpenedFor(null); const params = new URLSearchParams({ view: 'capabilities' });
           if (sessionId) params.set('sessionId', sessionId);
           if (section === 'memory') params.set('capability', 'tool:memory');
