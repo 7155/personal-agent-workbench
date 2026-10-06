@@ -2,8 +2,10 @@ import { expect, test } from '@playwright/test';
 import { expectNoHorizontalPageOverflow } from './helpers';
 
 test('primary assistant discusses, delegates, stops, returns to work and edits the sourced profile', async ({ page }, info) => {
+  test.setTimeout(90_000);
   await page.goto('/?controlTransport=mock#/agent');
   const agent = page.locator('.paw-window-shell[data-app="agent"]');
+  await expect(agent.locator('.paw-app-boot, .paw-app-loading')).toHaveCount(0, { timeout: 30_000 });
   await expect(agent.getByRole('button', { name: /打开对话/ })).toBeEnabled();
   await expectNoHorizontalPageOverflow(page);
   await info.attach('primary-assistant-home.png', { body: await page.screenshot(), contentType: 'image/png' });
@@ -37,7 +39,7 @@ test('primary assistant discusses, delegates, stops, returns to work and edits t
   await task.click();
   await agent.getByRole('textbox', { name: '消息', exact: true }).fill('继续检查，给我结果');
   await agent.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(agent.getByText('这是演示任务的结果：', { exact: false })).toBeVisible({ timeout: 10000 });
+  await expect(agent.getByTestId('virtuoso-item-list').getByText('这是演示任务的结果：', { exact: false })).toBeVisible({ timeout: 10000 });
   await info.attach('primary-assistant-result.png', { body: await page.screenshot(), contentType: 'image/png' });
   await agent.getByRole('button', { name: '返回我的助手', exact: true }).click();
   await expect(agent.getByRole('button', { name: /检查工作台的对话入口.*已完成/ })).toBeVisible();
