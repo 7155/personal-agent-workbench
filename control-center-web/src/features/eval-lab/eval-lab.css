@@ -1,4 +1,4 @@
-.eval-lab {
+:is(.eval-lab, .lab-project-modal) {
   /* Pair each opaque reading surface with ink from the selected desktop theme. */
   --lab-surface: var(--color-workspace-paper);
   --lab-surface-raised: var(--color-workspace-surface);
@@ -8,7 +8,7 @@
   --lab-line: var(--color-workspace-border-soft);
   --lab-line-strong: var(--color-workspace-border);
   --lab-accent: var(--color-workspace-accent);
-  --lab-accent-soft: var(--color-accent-soft);
+  --lab-accent-soft: color-mix(in srgb, var(--lab-accent) 10%, transparent);
   --lab-action: var(--color-workspace-accent);
   --lab-on-action: var(--color-workspace-on-accent);
   --lab-success: var(--color-success);
@@ -38,6 +38,9 @@
   --color-accent-soft: var(--lab-accent-soft);
   --color-focus: var(--lab-accent);
   color-scheme: inherit;
+}
+
+.eval-lab {
   align-content: start;
   background: var(--lab-surface);
   box-sizing: border-box;

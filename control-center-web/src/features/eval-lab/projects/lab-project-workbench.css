@@ -372,3 +372,8 @@
   .lab-project-workbench .lab-project-header button { min-height: 40px; min-width: 40px; }
 }
 @media (max-width: 620px) { .lab-project-menu .ui-menu__item { min-height: 40px; } }
+
+.lab-project-intake__hint { margin: -6px 0 0; font-size: 12px; line-height: 1.5; }
+.lab-project-intake :is(input:not([type='checkbox']):not([type='file']), textarea):focus-visible {
+  outline: 2px solid var(--lab-accent); outline-offset: 2px; border-color: var(--lab-accent);
+}

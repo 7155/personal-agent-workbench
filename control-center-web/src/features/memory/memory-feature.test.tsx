@@ -38,6 +38,7 @@ describe('MemoryFeature relations', () => {
     await waitFor(() => expect(transport.requests.some(({ request }) => (
       request.pathId === 'memory.pages' && request.params?.kind === 'books' && request.query?.status === 'active'
     ))).toBe(true));
+    await user.click(screen.getByText(/^筛选 ·/));
     await user.click(screen.getByRole('combobox', { name: '状态' }));
     await user.click(await screen.findByRole('option', { name: '已归档' }));
     await waitFor(() => expect(transport.requests.some(({ request }) => (
@@ -841,6 +842,7 @@ describe('MemoryFeature relations', () => {
     expect(topic).toHaveTextContent('审批后才会联想这部分内容。');
     expect(screen.getByText('伙伴记忆 · 澄')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /时间线联想规则/ })).toBeInTheDocument();
+    await user.click(screen.getByText(/^筛选 ·/));
     await user.click(screen.getByRole('combobox', { name: '归属' }));
     expect(await screen.findByRole('option', { name: '伙伴记忆 · 澄 · 1 项' })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(ownerId);
@@ -861,6 +863,7 @@ describe('MemoryFeature relations', () => {
       const request = transport.requests.find((call) => call.request.pathId === 'memory.pages');
       expect(request?.request.query?.status).toBe('current');
     });
+    await user.click(screen.getByText(/^筛选 ·/));
     await user.click(await screen.findByRole('combobox', { name: '状态' }));
     expect(await screen.findByRole('option', { name: '历史保留' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '已合并' })).toBeInTheDocument();
@@ -1493,6 +1496,7 @@ describe('MemoryFeature relations', () => {
     expect(document.body).not.toHaveTextContent('reviewed_non_durable_source');
     expect(document.body).not.toHaveTextContent('命令执行完成');
     expect(screen.queryByText('恢复证据')).not.toBeInTheDocument();
+    await user.click(screen.getByText(/^筛选 ·/));
     await user.click(screen.getByRole('combobox', { name: '状态' }));
     expect(screen.queryByRole('option', { name: '已遗忘' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '已过期' })).not.toBeInTheDocument();

@@ -124,3 +124,6 @@
 .paw-desktop-root .paw-primary-home .paw-primary-home__project select { border: 0; background: transparent; padding-inline: 0; font-size: 12px; }
 .paw-primary-home__project { flex: 1 1 260px; }
 .paw-primary-home__hint { gap: 16px; }
+
+.paw-primary-home__source-roots { display: grid; gap: 2px; margin-block: 4px; }
+.paw-primary-home__source-roots code { font: inherit; overflow-wrap: anywhere; white-space: normal; }

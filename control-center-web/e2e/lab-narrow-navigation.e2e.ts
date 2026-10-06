@@ -24,9 +24,16 @@ test('project chat and results switch without covering keyboard or pointer targe
   await view.selectOption('materials');
   await page.getByRole('button', { name: '添加材料', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '添加项目材料' });
+  await expect(dialog.getByRole('button', { name: '读取路径', exact: true })).toBeDisabled();
+  await expect(dialog.getByText('填写已连接执行器上的绝对路径后可读取。')).toBeVisible();
   await dialog.getByLabel('粘贴材料标题', { exact: true }).fill('公开演示材料');
   await dialog.getByRole('textbox', { name: '材料正文', exact: true }).fill('这次演示不写入本机文件。');
-  await dialog.getByRole('button', { name: '保存文本材料', exact: true }).click();
+  const save = dialog.getByRole('button', { name: '保存文本材料', exact: true });
+  await expect(save).toBeEnabled();
+  await expect(save).toHaveAttribute('data-variant', 'primary');
+  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport({ ratio: 1 });
+  await save.click();
   await expect(dialog.getByText('此操作需要真实 Lab 服务；演示模式没有执行模型、评测或文件写入。')).toBeVisible();
   await expect(dialog.getByRole('alert')).toBeInViewport();
   await expect(page.getByRole('button', { name: '核对原操作', exact: true })).toHaveCount(0);

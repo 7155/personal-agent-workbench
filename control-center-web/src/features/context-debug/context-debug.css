@@ -1882,7 +1882,7 @@
 
 .context-debug-assembly__metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr));
   margin: 0;
   padding-block: 8px;
   border-block: 1px solid var(--context-reader-hairline);
@@ -1892,11 +1892,11 @@
 .context-debug-assembly__metrics > div:first-child { padding-left: 0; }
 .context-debug-assembly__metrics > div:last-child { padding-right: 0; border-right: 0; }
 .context-debug-assembly__metrics dt { color: var(--color-text-tertiary); font-size: 11px; }
-.context-debug-assembly__metrics dd { overflow: hidden; margin: 0; color: var(--color-text-primary); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.context-debug-assembly__metrics dd { min-width: 0; margin: 0; color: var(--color-text-primary); font-size: 13px; font-weight: 650; overflow-wrap: anywhere; white-space: normal; }
 
 .context-debug-assembly__layers {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;

@@ -17,6 +17,17 @@ test('memory content classes remain clickable beside curation controls in narrow
     expect(geometry.labelHeight).toBeLessThan(geometry.countHeight * 1.6);
     expect(geometry.countLeft).toBeGreaterThan(geometry.labelRight);
   }
+  const filters = page.locator('.memory-catalog-filters__secondary');
+  await expect(filters).not.toHaveAttribute('open', '');
+  const cards = page.locator('.memory-layer-list .mgmt-list__row');
+  if (info.project.name === 'mobile-390x844') {
+    const top = await cards.first().evaluate(e => e.getBoundingClientRect().top);
+    expect(top).toBeLessThan(430);
+  }
+  await filters.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('combobox', { name: '状态', exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: '归属', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '整理状态摘要', exact: true }).click();
   await expect(page.locator('#memory-library-status')).toBeVisible();
   await info.attach('memory-classes-and-curation.png', { body: await page.screenshot(), contentType: 'image/png' });

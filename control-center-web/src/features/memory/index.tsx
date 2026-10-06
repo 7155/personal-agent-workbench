@@ -223,6 +223,7 @@ export function MemoryFeature() {
       <div className="memory-second-brain" data-layer={layer} data-topic-open={kind === 'books' && selected && !catalogDetailCollapsed ? true : undefined} data-view={view}>
         {view === 'catalog' ? <MemoryLibraryNavigation
           activeLayer={layer}
+          showOrganizeAction={!appSurface}
           onOpenLayer={openCatalogLayer}
           onOpenOrganize={() => openView('organize')}
           onRetry={refresh}
@@ -263,6 +264,7 @@ export function MemoryFeature() {
                           {draftQuery ? <IconButton className="memory-catalog-filters__clear" icon={<X size={14} />} label="清除搜索" onClick={() => { setDraftQuery(''); setQuery(''); searchRef.current?.focus(); }} size="small" /> : null}
                         </span>
                       </Field>
+                      <Disclosure className="memory-catalog-filters__secondary" contentClassName="memory-catalog-filters__options" summary={<span>筛选 · {memoryStatusOptions(kind).find((option) => option.value === status)?.label ?? status}{ownerAwareKind(kind) ? ` · ${ownerOptions.find((option) => option.value === ownerKey)?.label ?? '全部归属'}` : ''}</span>}>
                       <Field className="memory-catalog-filters__status" htmlFor="memory-status-filter" label="状态">
                         <Select
                           id="memory-status-filter"
@@ -289,6 +291,7 @@ export function MemoryFeature() {
                           />
                         </Field>
                       ) : null}
+                      </Disclosure>
                     </div>
                   </div>
                   <QueryState error={error} isPending={pending} onRetry={() => void pages.refetch()}>
