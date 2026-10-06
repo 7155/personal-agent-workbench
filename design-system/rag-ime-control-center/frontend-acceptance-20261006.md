@@ -319,3 +319,23 @@ Agent 任务依据与恢复批（基于 5ea79b99）：
 - 最终 Home、WorkflowPanel、Taskbar、recovery 四文件 69 项通过；最终工作区恢复/重挂载筛选检查 10 项通过、120 项未选中；完整 primary flow 独立通过（14.57 秒，原 15 秒单项上限），最终类型检查通过。早先并发运行的 primary flow 15 秒超时保留，未延长测试期限或称全套一次通过。
 - 任务栏只读取现有 QueryClient 中同 transport/Session 地址的 workflow 回执，没有新增请求所有者。早先尝试 disabled query observer 导致缺少 queryFn 警告，已删除，最终使用只读缓存订阅并实际复查。
 - 官方 Library 同一 15 项清单约 06:34 UTC 再试，在 tools/list 网络预检失败；未进入 prepare/finalize，无新 Library ID。原图、原 ZIP、历史失败保留。逐页台账与代码可独立交付。
+
+## 独立 Files 与独立网页入口补查
+
+基于 `089680bddb9074f20cabcd8c9b514b505e76210a`。Files 是单独 App，本批不以 Agent 的文件面板替代。独立网页使用 pathname，Agent Capsule 捕获入口需要 `?surface=capture`；普通 `/agent-capsule` 仍属于 PAWOS App。
+
+| 独立入口 | 390/1440 实际交互及结果 | 未覆盖状态/证据性质 |
+| --- | --- | --- |
+| `/files` 浏览和阅读 | Enter 打开 Markdown；390 Escape 返回选中文件并恢复焦点；1440 目录始终可见。筛选已加载条目/Escape 清除，展开目录/切换阅读，清空 Session 后仍可打开本机路径，上级/主目录/刷新均成功 | 内容来自 preview，无真实磁盘读取。本批修正 JSON 示例原为 JavaScript、目录字节数与读取结果不一致；没有赋予演示文件保存权限 |
+| `/files` 迟到结果 | 延迟文件 A 读取后切换文件 B；延迟 Session A 读取后在 Session B 打开同一路径；释放旧响应后当前正文保持 B | 浏览器中的有界故障注入，合成路径及 Session，不证明真实文件服务器 |
+| `/files` 编辑、冲突与恢复 | Ctrl+S 版本冲突后草稿保留；主动核对后同时读取磁盘版本，明确选择保留草稿，预览/继续编辑仍保留。延迟 A 保存回执时切到 B 编辑，释放回执后 B 草稿保留；回到 A 原草稿也保留。读取失败→点击重试恢复 | 合成可编辑回执；未写真实文件。8 项原始通过 + 2 项迟到保存补查通过。初始脚本错误等待已保持编辑状态下不存在的“继续编辑”，保留失败 JSON |
+| `/evolution-report` | 八章按钮逐个点击，定位章节并滚动；实际键盘返回 PAW。修正按钮遗漏 border/background 重置导致独立页呈现浏览器原生灰色边框；沿现有样式与字体恢复，触摸目标至少 44px | 静态 2026-09-01 证据阅读页，页头改为“固定证据快照”，不是当前本机动态运行结果 |
+| `/desktop-pet` | 独立页面实际打开，状态提示从桌面端开启，缺少宿主时三个操作禁用 | 原生移动、隐藏、当前对话同步未验，无原生 IPC；禁用状态不是桌宠运行通过 |
+| `/screen-assistant` | 缺少宿主的错误可读。修正未准备好选区时仍声称已交给 Session，以及可点击却无操作的重新框选；390/1440 复查禁用与准确提示 | 捕获/附件、翻译、保存笔记等真实宿主路径未验 |
+| `/agent-capsule?surface=capture` | 通过明确捕获 pathname + query 单独打开，与屏幕助手同一所有者；宿主缺失、重新框选禁用、无错误成功文案 | 普通 Capsule App 的已有检查保留，不将两种入口互相替代 |
+
+- Files 五组主要操作在两个宽度共 10 组实际通过；Files 两测试文件 74 项通过。故障注入原图及数据：files-boundary-actions.json、files-boundary-actions-final.json、files-boundary-actions-contrast.json。错误首帧处于现有到达过渡，补拍稳定图并读取颜色/透明度：rgb(215,0,21)、opacity=1、白底；重试按钮实际可用，未因首帧较淡而任意改色。
+- App Center 目录与建议各在 390/1440 重新预览并取消，权限现在与目录一致，原图 plugins-flow-permission-fixed-*。验证另一已安装包时不再借用上次检查的其他包元数据。手写制作的 preview 仍不写本机；实际返回清楚的演示边界，输入保留，未称安装检查成功。
+- standalone-major-review-final.json 包含四个独立入口的两个宽度；章节/触摸按钮补查见 standalone-major-review-polished.json。初次返回使用错误的 .paw-os 定位器，以及遗漏 Capsule 的 surface=capture 参数的失败保留，未算作产品失败或通过。
+- 当前无需模型的验收继续；不存在新的模型花费或新账本。原生 Electron、真实后端和完整复杂模型任务仍未通过；逐页打开不等于全部功能块重设计完成。
+- 本批 preview transport、屏幕助手准备模型及实验账本四文件最终 45 项通过；类型检查、import/owner 检查通过。首轮新权限检查误把未声明 permissions 的 installed fixture 期望为 undefined，而回执规范化为 []，修正期望后通过；首轮手写页面检查受开发过程中重新载入影响未读到字段，稳定页面两宽度补查均显示明确错误并保留输入，原失败保留。

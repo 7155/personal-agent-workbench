@@ -165,15 +165,26 @@
 }
 
 .evolution-report__toc button {
+  appearance: none;
   min-height: 32px;
   padding: 7px 11px;
+  border: 0;
   border-radius: var(--radius-2);
+  background: transparent;
   color: var(--color-text-secondary);
+  font-family: inherit;
   font-size: var(--text-label);
   font-weight: 620;
   line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .evolution-report__toc button,
+  .evolution-report-site-header a {
+    min-height: 44px;
+  }
 }
 
 .evolution-report__toc button:hover {

@@ -518,18 +518,23 @@ export function createPreviewTransport(): MockControlTransport {
     ok: true,
     items: [previewExtensionProposal()],
   });
+  routes['agent.extensions.create'] = () => {
+    throw new Error('演示模式不写入本机插件草稿。内容已保留；请连接真实服务后继续安装检查。');
+  };
   routes['agent.extensions.validate'] = (request: ControlRequest) => {
     const body = record(request.body);
     const packageSource = stringValue(body.packageSource);
     const packageIdentity = previewPiPackageIdentity(packageSource);
     const pluginId = stringValue(body.catalogId) || packageIdentity.id || 'session-review';
+    const catalogItem = previewExtensionCatalogItems(previewInstalledExtensions)
+      .find((item) => stringValue(item.id) === stringValue(body.catalogId));
     previewValidatedExtension = {
       id: pluginId,
       displayName: packageIdentity.displayName
         || (pluginId === 'session-review' ? 'Session Review' : pluginId),
       version: stringValue(body.catalogVersion) || packageIdentity.version || '1.1.0',
       totalBytes: 18_432,
-      permissions: [],
+      permissions: catalogItem?.permissions ?? [],
       resources: packageSource
         ? { extensions: [], skills: [`skills/${pluginId}/SKILL.md`], prompts: [], themes: [] }
         : { extensions: [], skills: ['skills/session-review/SKILL.md'], prompts: [], themes: [] },
@@ -553,6 +558,8 @@ export function createPreviewTransport(): MockControlTransport {
     const installedExtension = previewInstalledExtensions.find(
       (item) => stringValue(item.id) === pluginId,
     );
+    const inspectedExtension = stringValue(previewValidatedExtension.id) === pluginId
+      ? previewValidatedExtension : installedExtension;
     if (action === 'rollback' && installedExtension?.rollbackAvailable !== true) {
       throw new Error('这个扩展当前没有可恢复的上一版本。');
     }
@@ -566,13 +573,13 @@ export function createPreviewTransport(): MockControlTransport {
       action,
       pluginId,
       displayName: stringValue(installedExtension?.displayName)
-        || stringValue(previewValidatedExtension.displayName)
+        || stringValue(inspectedExtension?.displayName)
         || (pluginId === 'session-review' ? 'Session Review' : pluginId),
       enable: body.enable !== false,
-      version: stringValue(previewValidatedExtension.version) || stringValue(installedExtension?.version),
-      permissions: previewValidatedExtension.permissions ?? installedExtension?.permissions ?? [],
-      resources: previewValidatedExtension.resources ?? installedExtension?.resources ?? {},
-      source: previewValidatedExtension.source ?? installedExtension?.source ?? {},
+      version: stringValue(inspectedExtension?.version) || stringValue(installedExtension?.version),
+      permissions: inspectedExtension?.permissions ?? [],
+      resources: inspectedExtension?.resources ?? {},
+      source: inspectedExtension?.source ?? {},
       ...(rollbackVersion ? { version: rollbackVersion } : {}),
     };
     return {
@@ -3227,6 +3234,7 @@ function previewExtensionProposal(): Record<string, unknown> {
       action: 'install',
       pluginId: 'session-review',
       displayName: 'Session Review',
+      permissions: previewExtensionCatalogItems([])[0].permissions,
     },
   };
 }
@@ -4597,12 +4605,12 @@ function previewWorkspaceList(path: string): Record<string, unknown> {
   const items = path.endsWith('/control-center-web')
     ? [
         { path: `${path}/src`, name: 'src', kind: 'directory' },
-        { path: `${path}/package.json`, name: 'package.json', kind: 'file', byteSize: 3_842 },
+        { path: `${path}/package.json`, name: 'package.json', kind: 'file', byteSize: previewWorkspaceRead(`${path}/package.json`).byteSize },
       ]
     : [
         { path: `${path}/control-center-web`, name: 'control-center-web', kind: 'directory' },
         { path: `${path}/rag_ime`, name: 'rag_ime', kind: 'directory' },
-        { path: `${path}/README.md`, name: 'README.md', kind: 'file', byteSize: 12_480 },
+        { path: `${path}/README.md`, name: 'README.md', kind: 'file', byteSize: previewWorkspaceRead(`${path}/README.md`).byteSize },
       ];
   return {
     schemaVersion: 'rag-ime.agent-workspace-list.v1',
@@ -4618,6 +4626,8 @@ function previewWorkspaceList(path: string): Record<string, unknown> {
 function previewWorkspaceRead(path: string): Record<string, unknown> {
   const content = path.endsWith('.md')
     ? '# Personal Agent Workbench\n\n这是工作区文件预览。\n'
+    : path.endsWith('.json')
+    ? `${JSON.stringify({ name: 'paw-preview-workspace', private: true, preview: true }, null, 2)}\n`
     : 'export function previewWorkspace() {\n  return "ready";\n}\n';
   return {
     schemaVersion: 'rag-ime.agent-workspace-read.v1',

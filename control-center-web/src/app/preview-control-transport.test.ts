@@ -445,6 +445,31 @@ describe('preview control transport', () => {
     });
   });
 
+  it('keeps catalog permissions in the review and isolates another installed package from a stale inspection', async () => {
+    const transport = createPreviewTransport();
+    const validation = record(await transport.request({ pathId: 'agent.extensions.validate', body: { catalogId: 'session-review' } }));
+    const review = record(await transport.request({ pathId: 'agent.extensions.preview', body: { action: 'install', validationToken: String(validation.validationToken) } }));
+    expect(record(review.summary).permissions).toEqual(['session.read', 'memory.review']);
+    const proposal = arrayRecords(record(await transport.request({ pathId: 'agent.extensions.proposals' })).items)[0];
+    expect(record(proposal.summary).permissions).toEqual(['session.read', 'memory.review']);
+    const installed = arrayRecords(record(await transport.request({ pathId: 'agent.extensions.list' })).items)
+      .find(item => item.id === 'timeline-inspector')!;
+    const maintenance = record(await transport.request({ pathId: 'agent.extensions.preview', body: { action: 'uninstall', pluginId: 'timeline-inspector' } }));
+    expect(record(maintenance.summary)).toMatchObject({ pluginId: installed.id, permissions: installed.permissions ?? [], resources: installed.resources });
+  });
+
+  it('returns a JSON demo file and list sizes that match the bytes actually read', async () => {
+    const transport = createPreviewTransport();
+    for (const path of ['/preview', '/preview/control-center-web']) {
+      const listing = record(await transport.request({ pathId: 'files.list', query: { path } }));
+      const file = arrayRecords(listing.items).find(item => item.kind === 'file')!;
+      const read = record(await transport.request({ pathId: 'files.read', query: { path: String(file.path) } }));
+      expect(file.byteSize).toBe(new TextEncoder().encode(String(read.content)).byteLength);
+      expect(read.byteSize).toBe(file.byteSize);
+      if (String(file.name).endsWith('.json')) expect(JSON.parse(String(read.content))).toMatchObject({ private: true, preview: true });
+    }
+  });
+
   it('keeps the Preview Trace, Eval, suite, and schedule chain coherent', async () => {
     const transport = createPreviewTransport();
     const traceId = 'trace:turn:preview';

@@ -17,7 +17,7 @@ export function StandaloneEvolutionReportPage() {
           返回 PAW
         </a>
         <span>PAW · 实验报告</span>
-        <small>本机证据快照</small>
+        <small>固定证据快照</small>
       </header>
       <EvolutionReportFeature />
     </div>
