@@ -105,7 +105,17 @@ test('file browsing keeps focus visible and preserves its tree through resizing'
   }
   const root = panel.getByRole('treeitem').first();
   if(await root.getAttribute('aria-expanded') === 'false') await root.click();
-  await expect(panel.getByRole('treeitem', {name:'预览文件 README.md'})).toBeVisible();
+  const readme = panel.getByRole('treeitem', {name:'预览文件 README.md'});
+  await expect(readme).toBeVisible();
+  await readme.click();
+  const preview = page.getByRole('dialog').filter({has: page.getByRole('heading', {name:'README.md',exact:true})});
+  await expect(preview.getByRole('heading', {name:'README.md',exact:true})).toBeFocused();
+  await expect(page.getByRole('tooltip', {name:'在 Finder 中显示'})).toHaveCount(0);
+  await expect(preview.getByText('这是工作区文件预览。', {exact:true})).toBeVisible();
+  await preview.getByRole('button', {name:'关闭',exact:true}).click();
+  await expect(readme).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect.poll(()=>panel.evaluate(e=>e.contains(document.activeElement))).toBe(true);
   await page.setViewportSize({width:1440,height:900});
   await expect(app.locator('.paw-session-workspace__primary')).not.toHaveAttribute('inert','');
   await expect(panel.getByRole('treeitem', {name:'预览文件 README.md'})).toBeVisible();
