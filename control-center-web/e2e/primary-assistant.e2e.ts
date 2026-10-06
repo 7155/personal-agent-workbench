@@ -1,6 +1,31 @@
 import { expect, test } from '@playwright/test';
 import { expectNoHorizontalPageOverflow } from './helpers';
 
+test('a project discussion explains and blocks a different task directory before submission', async ({ page }) => {
+  await page.goto('/?controlTransport=mock#/agent');
+  const project = page.getByRole('combobox', { name: '讨论项目' });
+  await expect.poll(() => project.locator('option').count()).toBeGreaterThan(1);
+  const root = await project.locator('option').evaluateAll(options => (options as HTMLOptionElement[]).find(option => option.value)!.value);
+  await project.selectOption(root);
+  await expect(page.getByRole('button', { name: '进入对话', exact: true })).toBeEnabled();
+  const draft = page.getByRole('textbox', { name: '和我的助手聊聊' });
+  await draft.fill('保留当前项目与草稿');
+  await page.getByRole('button', { name: '交给助手做', exact: true }).click();
+  const directory = page.getByRole('textbox', { name: '本次工作目录' });
+  await directory.fill('/work/another-project');
+  await page.getByRole('checkbox').check();
+  const submit = page.getByRole('button', { name: '授权并开始任务' });
+  await expect(submit).toBeDisabled();
+  await expect(directory).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('alert')).toContainText('执行目录必须与这个项目一致');
+  await draft.press('Enter');
+  await expect(directory).toBeFocused();
+  await expect(draft).toHaveValue('保留当前项目与草稿');
+  await directory.fill(root);
+  await page.getByRole('checkbox').check();
+  await expect(submit).toBeEnabled();
+});
+
 test('entering the primary conversation carries the draft without sending it', async ({ page }) => {
   await page.goto('/?controlTransport=mock#/agent');
   const agent = page.locator('.paw-window-shell[data-app="agent"]');

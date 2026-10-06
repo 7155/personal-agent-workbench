@@ -25,6 +25,26 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 describe('primary assistant home', () => {
+  it('blocks a different execution directory for a project-bound discussion without changing the draft or project', async () => {
+    const bound = { ...primary, workspaceRoots: ['/work/project'] };
+    const { transport } = setup({ 'agent.primary.ensure': { ok: true, session: bound, tasks: [] } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
+    const message = screen.getByRole('textbox', { name: '和我的助手聊聊' });
+    fireEvent.change(message, { target: { value: '保留这份目标' } });
+    fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
+    const directory = screen.getByRole('textbox', { name: '本次工作目录' });
+    fireEvent.change(directory, { target: { value: '/work/other' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeDisabled();
+    expect(directory).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.keyDown(message, { key: 'Enter' });
+    expect(directory).toHaveFocus();
+    expect(message).toHaveValue('保留这份目标');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.primary.tasks.create')).toBe(false);
+    fireEvent.change(directory, { target: { value: '/work/project' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled();
+  });
   it('keeps scope consent beside the fixed action instead of inside scrolling fields', async () => {
     setup();
     await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());

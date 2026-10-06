@@ -52,6 +52,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const sourceTransport = useRef(transport);
   const refreshSource = useRef(initialSource);
   const input = useRef<HTMLTextAreaElement>(null);
+  const workspaceInput = useRef<HTMLInputElement>(null);
   const fields = useRef<HTMLDivElement>(null);
   const acceptanceInput = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
@@ -60,24 +61,28 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const composerHintId = useId();
   const objectiveErrorId = useId();
   const acceptanceErrorId = useId();
+  const workspaceErrorId = useId();
   const message = trimContractText(draft);
   const criteria = acceptance.split('\n').map(trimContractText).filter(Boolean);
   const objectiveLength = textCodePointCount(message);
   const criteriaLength = textCodePointCount(criteria.join('\n'));
   const objectiveInvalid = intent === 'execute' && objectiveLength > 4000;
   const criteriaInvalid = intent === 'execute' && (criteria.length > 20 || criteriaLength > 2000);
-  const taskInvalid = objectiveInvalid || criteriaInvalid;
+  const executionRoots = workspace.trim() === initialSource?.workspaceRoots[0]
+    ? initialSource.workspaceRoots : workspace.trim() ? [workspace.trim()] : [];
+  const sourceRoots = session?.workspaceRoots ?? [];
+  const projectMismatch = intent === 'execute' && sourceRoots.length > 0 && JSON.stringify(sourceRoots) !== JSON.stringify(executionRoots);
+  const taskInvalid = objectiveInvalid || criteriaInvalid || projectMismatch;
   const baseSubmitHint = submitting ? (intent === 'execute' ? '正在确认任务，请稍候…' : '正在打开对话…')
     : pickingWorkspace ? (intent === 'execute' ? '正在选择目录，选好后再确认授权。' : '正在选择项目，选好后继续讨论。')
     : loading ? '正在连接对话，可以先写下想法。'
     : !session ? '暂时无法发送。草稿保留在这里，请重新连接。'
+    : projectMismatch ? '执行目录需要与当前讨论项目一致。草稿会完整保留。'
     : taskInvalid ? '请先修改超出限制的任务内容。草稿会完整保留。'
     : intent === 'execute' && !workspace.trim() ? '先选择本次工作目录。'
     : intent === 'execute' && !scopeConfirmed ? '确认目录权限后，才会开始执行。'
     : 'Enter 发送 · Shift + Enter 换行';
   const submitHint = pickerNotice ? `${pickerNotice} ${baseSubmitHint}` : baseSubmitHint;
-  const executionRoots = workspace.trim() === initialSource?.workspaceRoots[0]
-    ? initialSource.workspaceRoots : workspace.trim() ? [workspace.trim()] : [];
   useEffect(() => {
     setSubmitting(false); setSession(undefined); setTasks([]); lock.current = false;
     picker.current = undefined; setPickingWorkspace(false); setPickerNotice('');
@@ -123,7 +128,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
 
   async function submit() {
     if (lock.current || picker.current || !session || !message || loading) return;
-    if (taskInvalid) { (objectiveInvalid ? input : acceptanceInput).current?.focus(); return; }
+    if (taskInvalid) { (objectiveInvalid ? input : criteriaInvalid ? acceptanceInput : workspaceInput).current?.focus(); return; }
     if (intent === 'execute' && (!workspace.trim() || !scopeConfirmed)) {
       setError('请指定本次工作的目录，并确认这个目录内的执行权限。'); return;
     }
@@ -226,7 +231,8 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
           <p className="paw-primary-home__scope-note">会参考这段讨论中近期的消息，不包含全部历史。请确认要做什么、怎样算完成，以及允许操作的目录。</p>
           <label>完成标准 <span className="paw-primary-home__criteria-help"><span>可选 · 每行一项</span><span>{criteria.length} / 20 项 · {criteriaLength} / 2000 字（含换行）</span></span><textarea aria-label="完成标准" aria-invalid={criteriaInvalid || undefined} aria-describedby={criteriaInvalid ? acceptanceErrorId : undefined} ref={acceptanceInput} value={acceptance} disabled={submitting} onChange={event => setAcceptance(event.target.value)} placeholder="例如：测试通过，并说明修改了什么" rows={2} /></label>
           {criteriaInvalid ? <p className="paw-primary-home__field-error" id={acceptanceErrorId} role="alert">完成标准最多 20 项，总计最多 2000 字（含换行）。请精简后再授权。</p> : null}
-          <label>本次工作目录<div className="paw-primary-home__folder"><Folder aria-hidden="true" size={15} /><input aria-label="本次工作目录" value={workspace} disabled={submitting || pickingWorkspace} onChange={event => { setWorkspace(event.target.value); setScopeConfirmed(false); setPickerNotice(''); }} placeholder="/path/to/project" />{transport.pickFiles ? <button disabled={submitting || pickingWorkspace} aria-busy={pickingWorkspace} onClick={() => void chooseWorkspace()} type="button">{pickingWorkspace ? '正在选择…' : '选择目录'}</button> : null}</div></label>
+          <label>本次工作目录<div className="paw-primary-home__folder"><Folder aria-hidden="true" size={15} /><input aria-label="本次工作目录" ref={workspaceInput} aria-invalid={projectMismatch || undefined} aria-describedby={projectMismatch ? workspaceErrorId : undefined} value={workspace} disabled={submitting || pickingWorkspace} onChange={event => { setWorkspace(event.target.value); setScopeConfirmed(false); setPickerNotice(''); }} placeholder="/path/to/project" />{transport.pickFiles ? <button disabled={submitting || pickingWorkspace} aria-busy={pickingWorkspace} onClick={() => void chooseWorkspace()} type="button">{pickingWorkspace ? '正在选择…' : '选择目录'}</button> : null}</div></label>
+          {projectMismatch ? <p className="paw-primary-home__field-error" id={workspaceErrorId} role="alert">本次讨论属于 {sourceRoots.join("、")}，执行目录必须与这个项目一致。要换项目，请回到“聊一聊”选择讨论项目。</p> : null}
           {executionRoots.length > 1 ? <ul className="paw-primary-home__root-list" aria-label="本次授权目录">{executionRoots.map(root => <li key={root}>{root}</li>)}</ul> : null}
         </div> : null}
         </div>
