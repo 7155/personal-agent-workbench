@@ -236,6 +236,7 @@ export function InputMethodFeature() {
   const overviewError = queries.overview.error as Error | null;
   const settingsError = [queries.settings.error, queries.schema.error].find(Boolean) as Error | null;
   const settingsPending = queries.settings.isPending || queries.schema.isPending;
+  const hasRetainedSettings = Boolean(queries.settings.data && queries.schema.data);
   const isRefreshing = [
     queries.source,
     queries.overview,
@@ -418,7 +419,7 @@ export function InputMethodFeature() {
             </div>
             <ManagementMutationWorkflow
               availability={queries.settingsMutationAvailability(
-                runtimeRevision === null
+                settingsError || settingsPending || runtimeRevision === null
                   ? '当前设置状态尚未同步，刷新后才能继续。'
                     : !modeDraft
                     ? inferredMode
@@ -452,7 +453,7 @@ export function InputMethodFeature() {
                 void Promise.all([queries.settings.refetch(), queries.overview.refetch()]);
               }}
               onPreview={async () => {
-                if (!modeDraft || runtimeRevision === null || modeDiffItems.length === 0) {
+                if (settingsError || settingsPending || !modeDraft || runtimeRevision === null || modeDiffItems.length === 0) {
                   throw new Error('运行模式或当前设置版本已失效，请刷新后重试。');
                 }
                 const context = { mode: modeDraft, changes: { ...pendingModeChanges } };
@@ -508,7 +509,7 @@ export function InputMethodFeature() {
         )}
       >
         <QueryState
-          error={settingsError}
+          error={hasRetainedSettings ? null : settingsError}
           headingLevel={3}
           isPending={settingsPending}
           onRetry={() => void Promise.all([queries.settings.refetch(), queries.schema.refetch()])}
@@ -744,8 +745,11 @@ export function InputMethodFeature() {
           />
         )}
       >
+        {settingsError && hasRetainedSettings ? <InlineNotice title="输入设置刷新失败" tone="warning">
+          已读取的设置和未保存草稿仍在；重新读取成功前不能保存。请使用页面上的刷新重试。
+        </InlineNotice> : null}
         <QueryState
-          error={settingsError}
+          error={hasRetainedSettings ? null : settingsError}
           headingLevel={3}
           isPending={settingsPending}
           onRetry={() => void Promise.all([queries.settings.refetch(), queries.schema.refetch()])}
@@ -798,7 +802,7 @@ export function InputMethodFeature() {
                 ) : null}
                 <ManagementMutationWorkflow
                   availability={queries.settingsMutationAvailability(
-                    runtimeRevision === null
+                    settingsError || settingsPending || runtimeRevision === null
                       ? '当前设置状态尚未同步，刷新后才能继续。'
                       : hasInvalidChanges
                         ? '至少一项设置超出可用范围，请先修正。'
@@ -828,7 +832,7 @@ export function InputMethodFeature() {
                     void Promise.all([queries.settings.refetch(), queries.models.refetch(), queries.overview.refetch()]);
                   }}
                   onPreview={async () => {
-                    if (runtimeRevision === null || hasInvalidChanges || diffRows.length === 0) {
+                    if (settingsError || settingsPending || runtimeRevision === null || hasInvalidChanges || diffRows.length === 0) {
                       throw new Error('输入设置差异或当前版本已失效，请刷新后重试。');
                     }
                     const context = { changes: { ...pendingChanges } };

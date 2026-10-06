@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import type { MutationAvailability } from '@/features/overview/management-mutation';
 import { asRecord, stringValue } from '@/features/overview/management-ui';
 import type { ControlTransport, JsonValue } from '@/platform/transport';
@@ -26,7 +27,9 @@ export type HistoryMutationRequest = {
 
 export function useHistoryPages(query: string, filter: string) {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const pages = useInfiniteQuery({
+    enabled: active,
     queryKey: historyQueryKeys.page(query, filter),
     queryFn: ({ pageParam, signal }) => transport.request({
       pathId: 'history.page',
@@ -41,19 +44,22 @@ export function useHistoryPages(query: string, filter: string) {
 
 export function useHistoryDetail(eventId: number | null) {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   return useQuery({
     queryKey: historyQueryKeys.detail(eventId),
     queryFn: () => transport.request({
       pathId: 'history.detail',
       query: { eventId: eventId as number },
     }),
-    enabled: eventId !== null && Number.isInteger(eventId) && eventId > 0,
+    enabled: active && eventId !== null && Number.isInteger(eventId) && eventId > 0,
   });
 }
 
 export function useHistoryMutationBoundary() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const capabilities = useQuery({
+    enabled: active,
     queryKey: historyQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: 30_000,

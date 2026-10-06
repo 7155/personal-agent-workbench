@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import type { VoiceProviderId } from '@/platform/transport';
 
 export const voiceQueryKeys = {
@@ -14,15 +15,19 @@ export const voiceQueryKeys = {
 
 export function useVoiceQueries() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const settings = useQuery({
+    enabled: active,
     queryKey: voiceQueryKeys.settings(),
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.settings', signal }),
   });
   const schema = useQuery({
+    enabled: active,
     queryKey: voiceQueryKeys.schema(),
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.schema', signal }),
   });
   const runtime = useQuery({
+    enabled: active,
     queryKey: voiceQueryKeys.runtime(),
     queryFn: async ({ signal }) => {
       if (!transport.voiceStatus) return transport.request({ pathId: 'diagnostics.runtime', signal });
@@ -33,9 +38,10 @@ export function useVoiceQueries() {
         accessibility: { ok: status.accessibilityTrusted },
       } };
     },
-    refetchInterval: 10_000,
+    refetchInterval: active ? 10_000 : false,
   });
   const capabilities = useQuery({
+    enabled: active,
     queryKey: voiceQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: Infinity,
@@ -46,7 +52,7 @@ export function useVoiceQueries() {
   const modelCatalog = useQuery({
     queryKey: voiceQueryKeys.models(),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.role.models', signal }),
-    enabled: modelCatalogSupported,
+    enabled: active && modelCatalogSupported,
     staleTime: 0,
   });
   return {
@@ -63,7 +69,9 @@ export function useVoiceQueries() {
 
 export function useVoiceCredentialStatus(provider: VoiceProviderId) {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const capabilities = useQuery({
+    enabled: active,
     queryKey: voiceQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: Infinity,
@@ -73,7 +81,7 @@ export function useVoiceCredentialStatus(provider: VoiceProviderId) {
   const status = useQuery({
     queryKey: voiceQueryKeys.credentials(provider),
     queryFn: () => transport.voiceCredentialStatus!(provider),
-    enabled: supported,
+    enabled: active && supported,
   });
   return { capabilities, status, supported, transport };
 }

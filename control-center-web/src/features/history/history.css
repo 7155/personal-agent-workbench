@@ -1,3 +1,8 @@
+.mgmt-page[data-route-id='history'] {
+  container-name: history-page;
+  container-type: inline-size;
+}
+
 .history-filter-toolbar {
   display: grid;
   width: min(100%, 700px);
@@ -91,7 +96,7 @@
 .history-table th:nth-child(3) { width: 31%; }
 .history-table th:nth-child(4) { width: 17%; }
 .history-table th:nth-child(5) { width: 14%; }
-.history-table th:nth-child(6) { width: 68px; }
+.history-table th:nth-child(6) { width: 112px; }
 
 .history-table td {
   padding: 9px 10px;
@@ -247,7 +252,7 @@
   .history-table td:nth-child(5) { display: none; }
   .history-table th:nth-child(1) { width: 26%; }
   .history-table th:nth-child(3) { width: auto; }
-  .history-table th:nth-child(6) { width: 96px; }
+  .history-table th:nth-child(6) { width: 112px; }
   .history-table__open { min-height: 44px; }
   .history-filter-toolbar {
     width: 100%;
@@ -264,7 +269,7 @@
   .history-detail__section-heading > .ui-button { flex: 0 0 auto; }
 }
 
-@container paw-window (max-width: 620px) {
+@container history-page (max-width: 700px) {
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table { min-width: 0; }
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table th:nth-child(2),
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table td:nth-child(2),
@@ -272,6 +277,9 @@
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table td:nth-child(4),
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table th:nth-child(5),
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table td:nth-child(5) { display: none; }
+  :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table th:nth-child(1) { width: 26%; }
+  :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table th:nth-child(3) { width: auto; }
+  :is(main, section)[data-route-id='history'][data-paw-os-app] .history-table__open { min-height: 44px; }
   :is(main, section)[data-route-id='history'][data-paw-os-app] .history-filter-toolbar {
     width: 100%;
     grid-template-areas: 'search submit' 'source source';

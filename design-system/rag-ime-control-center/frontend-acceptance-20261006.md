@@ -401,3 +401,23 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 浏览器证据：three-review-browser-final.json 的子 Agent 两组；three-review-v2-browser-final.json 的 Lab 两组；three-review-v4-browser-final.json 的 Room 两组，六组 pageerror=0、无页面横向溢出。原截图 three-review-subagents-refreshed-*、three-review-v2-budget-saved-*、three-review-v4-room-recovered-* 已人工查看。
 - 首轮浏览器注入漏 mode/expectedRevision 字段、未填消息就等条件按钮，以及预置 room-preview 的已完成演示流覆盖截短快照，失败 JSON/PNG 全保留；补查使用独立公开合成 Room，原应用交互与所有者照常运行。它们是浏览器中的有界故障注入，不是服务端验收。
 - Library 的原 15 项原图/原包仍保留，不重试 403、不新增 file_id。原费用保留数不变。本批没有绕过 GitHub 权限、代理策略或仓库保护。
+
+## Input Studio 四页：切页保留草稿与记录详情
+
+基于已推送 `8d60e9188388f23a4b7d069429e4f4095860a072`。四页均在实际 Chromium 应用入口、390/1440 宽度逐页打开，查看各分区并点击主要操作。以下写入、撤销均为现有内存 preview 的合成回执，没有真实输入法、系统授权、钥匙串、后端或模型调用。
+
+| 页面 | 实际发现与修改 | 主要操作及修复后结果 | 未覆盖边界 |
+| --- | --- | --- | --- |
+| 输入法 `/input` | 修改生成框等待 8000→9100，切语音返回变回 8000。保留已访问页面的原输入所有者，隐藏时暂停读取与动效 | 两宽度均保留 9100；生成步骤展开/收起、六个设置分组展开/收起、设置模拟保存/撤销、安全模式键盘 Space 选择/保存/撤销均通过 | 未应用或重启模型；未重载 Rime、实际打字与选词；Trace 使用合成空摘要 |
+| 词库 `/input?view=lexicon` | 取消长期协作的选中，切语音返回又被选中。同一修复保留本轮选择 | 两宽度均保留未选；清除→空选择禁用加入、全选、单项选择、加入回执、继续审阅、精确撤销、返回审阅、刷新均通过 | 内存回执不证明真实用户词库写入，界面仍提示需重载后实测；未新增真实词条 |
+| 语音 `/voice` | 未保存热词切词库返回丢失。同一修复保留热词；隐藏读取/10 秒轮询停止 | 两宽度均保留两行热词；快捷键保存/撤销、热词建议/编辑/保存/撤销、三个引擎切换/返回、校对强度保存/撤销、定稿状态展开、连接信息展开/收起、刷新均通过。浏览器时钟补查：活动轮询 1 次，隐藏 22 秒仍 1 次，返回后 2→3 | 五个原生按钮明确禁用；无听写、TCC、钥匙串或校对模型执行；没有输入或读取凭证 |
+| 输入记录 `/history` | 未提交搜索切语音返回清空；页首三张重复统计卡延后了搜索。删除统计卡及无消费者图标/计数，保留一行数量和隐私说明。发现操作列实际宽 68/73/96px、小于 91px 按钮+内边距，详情按钮被裁掉 | 两宽度保留搜索；关键词/来源空结果→恢复、主动打开详情、复制公开模拟文本、高级详情、Escape 焦点返回、模拟停用记忆回执/撤销、刷新均通过。切页关闭 portal，返回不自行打开。操作列 112px，按实际内容区响应；390/768/1024/1440×normal/reduce 共 8 组不裁切、Enter 打开、Escape 返回，窄内容区按钮高 44px | 原有 preview 的停用回执不改变合成行的真实记忆状态，未称真实来源停用通过；没有真实输入历史读取 |
+
+- 草稿修复前：input-studio-drafts-before-corrected.json 八组均实际丢状态；修复后 input-studio-drafts-after.json 八组全部保留。首次脚本未展开隐藏的生成框设置，定位失败单独保留，不列为产品缺陷。页面/分区截图 input-studio-before-*、input-studio-after-*；行为截图 input-drafts-after-*、input-actions-v2-*、input-extra-*。
+- 主要操作：input-studio-actions-v2.json 八组、40 个操作组通过；input-studio-extra.json 四组、10 个补充操作组通过，pageerror=0、无页面横向溢出。首次脚本把规范化后的按钮名称当含换行、把原生 summary 当 role=button，失败 JSON/PNG 保留；使用真实 summary 和正确名称后完成复查。
+- 历史详情按钮几何证据 history-action-before.json；最终 history-action-final.json 八组全部通过，tableScrollWidth 与内容区一致，截图 history-action-final-*、history-detail-final-* 已人工查看。旧截图中的按钮裁切明确保留，不当作最终通过图。
+- 隐藏轮询证据 input-studio-polling.json 两组；这里模拟了浏览器时钟，只验证现有读取所有者的活动门控，不证明后台服务存活。只保留访问过的四个页面，没有增加缓存状态所有者或预挂载全站。
+- 四个相关完整测试文件原 106 项通过；新增历史 portal 隐藏/返回/草稿身份测试后完整历史文件 8 项通过。正式 pnpm typecheck exit=0，owner/import/route/diff 检查通过。没有等待或修复 CI。
+- 失败/恢复补查实际发现输入设置 QueryState 在缓存仍在时卸载已打开分组。新增交互先失败；保留已有表单与草稿，显示刷新失败，恢复读取前不提供保存入口。完整输入法测试文件新增后 49 项通过，历史完整文件 8 项通过。input-studio-faults-final.json 八组延迟→失败→刷新恢复均保留原草稿/选择，零 pageerror/页面横向溢出；原故障注入只拒绝一次被重试恢复、以及错误测试字段名的首轮失败均保留，未列为真实缺陷。
+- 上述加载测量另发现公共刷新按钮原高 28px，loading 将 15px 图标替为 16px 导致宽度变化；八组 sameButtonSize 均为 false，不能记为加载尺寸通过。这项公共控件修复继续单独处理，不被本批的草稿通过数覆盖。
+- Library 原 15 项原图/原包未改、无新 file_id；403 前置阻塞不再机械重试。费用未知保留不变。本批不把 49 路由基线称为 49 个 Apps，也不宣称全部功能块重设计完成。

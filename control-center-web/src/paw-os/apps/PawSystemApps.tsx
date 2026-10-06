@@ -27,8 +27,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { Fragment, lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, EmptyState, Input, SegmentedControl, Switch } from '@/components/primitives';
 import {
@@ -56,7 +56,7 @@ import {
   publicErrorText,
   stringValue,
 } from '@/features/overview/management-ui';
-import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import { openPawOsRoute, PawOsAppActivityProvider, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { pluginQueryKeys, usePluginCatalog } from '@/features/plugins/api';
 import {
   agentModelRouting,
@@ -169,6 +169,14 @@ export function PawSystemApps({
   const visibleRoute = useDeferredValue(route);
   const visiblePage = systemPageForRoute(pages, visibleRoute);
   const switchingPage = visibleRoute !== route;
+  const preserveInputPages = appId === 'input-studio';
+  const [visitedInputPages, setVisitedInputPages] = useState<string[]>([]);
+  useEffect(() => {
+    if (preserveInputPages) setVisitedInputPages(current => current.includes(visiblePage.id) ? current : [...current, visiblePage.id]);
+  }, [preserveInputPages, visiblePage.id]);
+  const renderedPages = preserveInputPages
+    ? pages.filter(candidate => candidate.id === visiblePage.id || visitedInputPages.includes(candidate.id))
+    : [visiblePage];
   // Each system rail reports one honest number from its own Runtime evidence:
   // Settings queues human approvals, App Center queues install proposals, and
   // Monitor relays components that report a problem.
@@ -239,11 +247,13 @@ export function PawSystemApps({
           </header>
           <div className="paw-system-app__workspace" aria-busy={switchingPage}>
             <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
-              <MemoryRouter initialEntries={[visibleRoute]} key={visibleRoute}>
-                <PawSystemRouteReporter expectedRoute={visibleRoute} />
-                <div className="paw-system-app__page" key={`${appId}:${visiblePage.id}`} inert={switchingPage}>
-                  <PawSystemSurface appId={appId} pageId={visiblePage.id} />
-                </div>
+              <MemoryRouter initialEntries={[visibleRoute]} key={preserveInputPages ? appId : visibleRoute}>
+                <PawSystemRouteReporter expectedRoute={visibleRoute} preservePage={preserveInputPages} />
+                {renderedPages.map(candidate => <div className="paw-system-app__page" key={`${appId}:${candidate.id}`} hidden={candidate.id !== visiblePage.id} inert={switchingPage || candidate.id !== visiblePage.id}>
+                  <PawOsAppActivityProvider active={!switchingPage && candidate.id === visiblePage.id}>
+                    <PawSystemSurface appId={appId} pageId={candidate.id} />
+                  </PawOsAppActivityProvider>
+                </div>)}
               </MemoryRouter>
             </Suspense>
           </div>
@@ -266,13 +276,20 @@ const systemStageKind: Record<PawSystemAppId, string> = {
   'system-settings': 'sheet',
 };
 
-function PawSystemRouteReporter({ expectedRoute }: { expectedRoute: string }) {
+function PawSystemRouteReporter({ expectedRoute, preservePage = false }: { expectedRoute: string; preservePage?: boolean }) {
   const desktop = usePawOsDesktop();
   const location = useLocation();
+  const navigate = useNavigate();
+  const previousExpected = useRef(expectedRoute);
   const route = `${location.pathname}${location.search}${location.hash}`;
   useEffect(() => {
+    if (preservePage && previousExpected.current !== expectedRoute) {
+      previousExpected.current = expectedRoute;
+      if (route !== expectedRoute) navigate(expectedRoute, { replace: true });
+      return;
+    }
     if (route !== expectedRoute) openPawOsRoute(desktop, route);
-  }, [desktop, expectedRoute, route]);
+  }, [desktop, expectedRoute, navigate, preservePage, route]);
   return null;
 }
 

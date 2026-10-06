@@ -121,6 +121,15 @@ export function usePawOsAppActive(): boolean | null {
   return useContext(PawOsAppActivityContext);
 }
 
+/** Keep a visited page's input owner while pausing its reads and motion. */
+export function PawOsAppActivityProvider({ active, children }: { active: boolean; children: ReactNode }) {
+  const parentActive = usePawOsAppActive();
+  const effectiveActive = active && (parentActive ?? true);
+  return <PawOsAppActivityContext.Provider value={effectiveActive}>
+    <MotionActivityBoundary active={effectiveActive}>{children}</MotionActivityBoundary>
+  </PawOsAppActivityContext.Provider>;
+}
+
 export function usePawOsAppCompact(): boolean | null {
   return useContext(PawOsAppCompactContext);
 }

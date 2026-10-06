@@ -7,7 +7,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { MotionProvider } from '@/design/motion';
 import { ThemeProvider } from '@/design/themes';
-import { PawOsAppSurfaceProvider, PawOsDesktopProvider } from '@/features/paw-os/surface-context';
+import { PawOsAppSurfaceProvider, PawOsDesktopProvider, usePawOsAppActive } from '@/features/paw-os/surface-context';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
 
@@ -27,7 +27,7 @@ vi.mock('@/features/input-method', () => ({
 }));
 vi.mock('@/features/observability', () => ({ ObservabilityFeature: () => <h1>活动真实界面</h1> }));
 vi.mock('@/features/plugins', () => ({ PluginsFeature: () => <h1>Package 生命周期真实界面</h1> }));
-vi.mock('@/features/voice', () => ({ VoiceFeature: () => <h1>语音真实界面</h1> }));
+vi.mock('@/features/voice', () => ({ VoiceFeature: () => { const [draft, setDraft] = useState(''); const active = usePawOsAppActive(); return <><h1>语音真实界面</h1><input aria-label="语音草稿" value={draft} onChange={event => setDraft(event.target.value)} /><span data-testid="voice-page-active">{String(active)}</span></>; } }));
 
 import {
   PawSystemApps,
@@ -260,6 +260,21 @@ describe('PawSystemApps', () => {
     renderSystemApp('app-center', '/plugins');
     expect(await screen.findByRole('button', { name: '建议' })).toBeInTheDocument();
     await waitFor(() => expect(document.querySelector('.paw-system-app__nav-badge')).toBeNull());
+  });
+
+  it('retains visited Input Studio drafts and deactivates the hidden page', async () => {
+    const user = userEvent.setup();
+    renderSystemApp('input-studio', '/voice');
+    const input = await screen.findByRole('textbox', { name: '语音草稿' });
+    await user.type(input, '未保存热词');
+    await user.click(screen.getByRole('button', { name: '输入记录' }));
+    await screen.findByRole('heading', { name: '输入记录真实界面' });
+    expect(screen.getByTestId('voice-page-active')).toHaveTextContent('false');
+    expect(screen.queryByRole('textbox', { name: '语音草稿' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '语音' }));
+    expect(await screen.findByRole('textbox', { name: '语音草稿' })).toBe(input);
+    expect(input).toHaveValue('未保存热词');
+    expect(screen.getByTestId('voice-page-active')).toHaveTextContent('true');
   });
 
   it('moves between Input Studio pages while retaining the real feature owners', async () => {

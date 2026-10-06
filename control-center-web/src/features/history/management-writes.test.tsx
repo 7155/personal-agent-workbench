@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
+import { PawOsAppActivityProvider } from '@/features/paw-os/surface-context';
 import type { ControlPathId } from '@/platform/routes';
 import type {
   ControlEventObserver,
@@ -20,6 +21,28 @@ const hash = 'sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 afterEach(cleanup);
 
 describe('History WorkContract UI', () => {
+  it('closes a detail portal when its retained page becomes inactive and keeps the unsent search', async () => {
+    const user = userEvent.setup();
+    const transport = new HistoryTransport();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const page = (active: boolean) => <MemoryRouter><TooltipProvider delayDuration={0}>
+      <ControlTransportProvider transport={transport}><QueryClientProvider client={client}>
+        <PawOsAppActivityProvider active={active}><HistoryFeature /></PawOsAppActivityProvider>
+      </QueryClientProvider></ControlTransportProvider>
+    </TooltipProvider></MemoryRouter>;
+    const view = render(page(true));
+    const input = await screen.findByRole('textbox', { name: '搜索' });
+    await user.type(input, '还未提交的搜索');
+    await user.click(await screen.findByRole('button', { name: /查看 .* 的输入详情/ }));
+    await screen.findByRole('dialog', { name: '输入详情' });
+    view.rerender(page(false));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '输入详情' })).not.toBeInTheDocument());
+    view.rerender(page(true));
+    expect(screen.getByRole('textbox', { name: '搜索' })).toBe(input);
+    expect(input).toHaveValue('还未提交的搜索');
+    expect(screen.queryByRole('dialog', { name: '输入详情' })).not.toBeInTheDocument();
+  });
+
   it('keeps the search input and focus through a slow search and ignores IME confirmation Enter', async () => {
     const user = userEvent.setup();
     const transport = renderHistory(new HistoryTransport((request) => request.query?.query
