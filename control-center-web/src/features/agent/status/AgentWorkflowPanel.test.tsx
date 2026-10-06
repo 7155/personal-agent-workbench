@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/primitives';
 import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-state.v1';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { agentProjectionKey, agentSessionAddress } from '../state/live-store';
-import { AgentWorkflowPanel } from './AgentWorkflowPanel';
+import { AgentWorkflowPanel, latestWorkflowGoal } from './AgentWorkflowPanel';
 
 afterEach(() => {
   cleanup();
@@ -16,6 +16,16 @@ afterEach(() => {
 });
 
 describe('AgentWorkflowPanel', () => {
+  it('keeps a newer live Goal ahead of an older receipt and uses timestamps for equal revisions', () => {
+    const live = { ...workflowState().goal, revision: 5, updatedAtMs: 100, status: 'active' as const };
+    const older = { ...live, revision: 4, updatedAtMs: 300, status: 'paused' as const };
+    expect(latestWorkflowGoal(older, live)).toBe(live);
+    const newer = { ...older, revision: 6 };
+    expect(latestWorkflowGoal(newer, live)).toBe(newer);
+    const equal = { ...older, revision: 5, updatedAtMs: 200 };
+    expect(latestWorkflowGoal(equal, live)).toBe(equal);
+    expect(latestWorkflowGoal(undefined, live)).toBe(live);
+  });
   it('shows completion evidence before supporting criteria without inventing verification', async () => {
     const state = workflowState();
     state.goal.status = 'completed';

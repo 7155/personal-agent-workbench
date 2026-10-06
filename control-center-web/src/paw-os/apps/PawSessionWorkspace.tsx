@@ -7,6 +7,8 @@ import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semant
 import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
 import './paw-workbench-reading.css';
 import { PawSessionTaskbar } from './PawSessionTaskbar';
+import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-state.v1';
+import { latestWorkflowGoal } from '@/features/agent/status/AgentWorkflowPanel';
 import {
   ChevronDown,
   CircleAlert,
@@ -29,6 +31,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FocusEvent,
   type ReactNode,
   type KeyboardEvent,
@@ -236,6 +239,19 @@ export function PawSessionWorkspace({
   const projectionSlice = useAgentLiveStore(useShallow(
     (state) => sessionWorkspaceProjectionSlice(state, address),
   ));
+  // Read the existing workflow cache without creating another query observer
+  // or changing its fetch options. The workflow panel owns reads/mutations.
+  const workflowKey = useMemo(() => ['agent', 'workflow', agentProjectionKey(address)] as const, [address]);
+  const workflowReceipt = useSyncExternalStore(
+    useCallback((notify) => catalogQueryClient.getQueryCache().subscribe(({ query }) => {
+      if (query.queryKey[0] === workflowKey[0] && query.queryKey[1] === workflowKey[1] && query.queryKey[2] === workflowKey[2]) notify();
+    }), [catalogQueryClient, workflowKey]),
+    useCallback(() => catalogQueryClient.getQueryData<AgentWorkflowStateV1>(workflowKey), [catalogQueryClient, workflowKey]),
+  );
+  const taskbarGoal = latestWorkflowGoal(
+    workflowReceipt?.sessionId === recordId && workflowReceipt.goal.sessionId === recordId ? workflowReceipt.goal : undefined,
+    projectionSlice.goal,
+  );
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const durableSession = workspaceRecord.runtimeEngine === 'durable' || catalog?.runtimeEngine === 'durable' || projectionSlice.runtimeEngine === 'durable';
   const durablePaused = projectionSlice.durableRecovery?.paused === true;
@@ -247,7 +263,7 @@ export function PawSessionWorkspace({
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalog>();
   const [capabilityCatalogError, setCapabilityCatalogError] = useState('');
   const [capabilityMutation, setCapabilityMutation] = useState<CapabilityMutationOutcome>();
-  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialSubmission?.message ?? initialDraft ?? '', initialAttachments);
+  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialSubmission?.message ?? initialDraft ?? '', initialAttachments, initialSubmission ? 'replace' : 'append');
   const { draft, setDraft, attachments, setAttachments } = recovery;
   useEffect(() => {
     if (draftRequest) setDraft(current => applyWorkspaceDraft(current, draftRequest));
@@ -1834,7 +1850,7 @@ export function PawSessionWorkspace({
       {!embedded && !evaluationSnapshot && windowChromeTarget ? <div inert={toolPanelTrapsFocus || undefined}><PawSessionTaskbar title={title} selected={panel} demo={transport.kind === 'mock'}
         state={{ busy, stopping, paused: durablePaused, pending: sending || Boolean(pendingFeedbackTurnId),
           waiting: Boolean(pendingApproval || pendingGenericInput || pendingMemoryReview), disconnected: syncState !== 'synced',
-          error: Boolean(visibleError), goal: projectionSlice.goal, turnStatus: projectionSlice.lastTurnStatus }}
+          error: Boolean(visibleError), goal: taskbarGoal, turnStatus: projectionSlice.lastTurnStatus }}
         onOpenPanel={(next, trigger) => { if (panel === next) closeToolPanel(); else openToolPanel(next, trigger); }} /></div> : null}
 
       <div className="paw-session-workspace__body">

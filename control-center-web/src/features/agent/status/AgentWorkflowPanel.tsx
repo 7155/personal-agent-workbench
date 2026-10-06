@@ -475,15 +475,8 @@ function mergeWorkflowState(
       && live.todo.updatedAtMs > queried.todo.updatedAtMs
     )
   );
-  const useLiveGoal = hasLiveGoal && (
-    live.goal.revision > queried.goal.revision
-    || (
-      live.goal.revision === queried.goal.revision
-      && live.goal.updatedAtMs > queried.goal.updatedAtMs
-    )
-  );
   const todo = useLiveTodo ? live.todo : queried.todo;
-  const goal = useLiveGoal ? live.goal : queried.goal;
+  const goal = latestWorkflowGoal(queried.goal, hasLiveGoal ? live.goal : undefined)!;
   const liveGateMatches = hasLiveActGate && gateMatches(live.actGate, todo, goal);
   const queriedGateMatches = gateMatches(queried.actGate, todo, goal);
   return {
@@ -496,6 +489,15 @@ function mergeWorkflowState(
         ? queried.actGate
         : derivedActGate(todo, goal),
   };
+}
+
+/** Read the latest owned Goal receipt without inferring Runtime pause state. */
+export function latestWorkflowGoal(queried: Goal | undefined, live: Goal | undefined): Goal | undefined {
+  if (!queried) return live;
+  if (!live) return queried;
+  return live.revision > queried.revision
+    || (live.revision === queried.revision && live.updatedAtMs > queried.updatedAtMs)
+    ? live : queried;
 }
 
 function emptyTodo(sessionId: string): Todo {

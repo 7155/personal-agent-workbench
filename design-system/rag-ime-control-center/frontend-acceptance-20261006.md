@@ -305,3 +305,17 @@ Agent 任务依据与恢复批（基于 5ea79b99）：
 - 71 项组件检查及类型检查通过。732px 窗口正文/详情/刷新/焦点返回在普通和 reduced motion 下两项浏览器检查通过（18.3 秒）。首次并发开发编译时两项浏览器启动等待超时，初始 after 截图也包含未载入 Skills；保留失败记录，以 after-settled 原图补充，未把加载图当已完成页面。
 - 原图：plugins-seven-before-*（14 张）、plugins-seven-after-settled-{installed,skills}-*（4 张）；交互证据 plugins-seven-actions-final.json + final-v2.json，后者补目录正确的 status 角色和手写制作边界。部分首轮脚本把语义 radio/summary 当 button 导致定位失败，修正后分别复查；失败数据保留。
 - 06:25 UTC 一次 exec-server transport disconnected 后，新的 pwd、Git/日志只读检查成功；文件与 HEAD 保留，未修改权限或另开环境。官方 Library 上传仍无新成功 ID。
+
+## Agent：目标暂停、草稿带入及不确定请求重试
+
+基于已推送 `6c61a249c5667304864fd0665c0497c2b5ed0c86`。390/1440 均独立实测，数据为浏览器 preview；本批没有调用真实模型或修改后端。
+
+| 路径/功能块 | 实际复现 → 修改 → 复查 | 证据与未覆盖边界 |
+| --- | --- | --- |
+| `/agent?session=session-preview` 目标与任务栏 | 暂停目标后，任务面板已暂停，任务栏仍显示本轮已结束。复用已有 workflow 查询缓存及 Goal 版本选择，关闭面板后任务栏显示“目标已暂停 · 进度保留”；Runtime 正在执行与 durable 暂停仍保持各自语义 | before-v3 / after-v3 的 goal-pause-only 截图与 JSON。before-v3 实际为固定 da8129f3 的 4187 编译预览，原 JSON 通用 source 字段未准确写版本，以此记录更正。新创建 primary 演示任务明确拒绝目标变更，首页相同任务的暂停标签仍未验，不伪造支持 |
+| `/agent` 长期对话 → 执行入口 → 返回对话 | 原草稿 A 被带入草稿 B 替换。未发送带入改为追加，390/1440 回到同一对话，输入为 A、空行、B，仍可继续编辑；没有发送 | agent-boundary-before / after-draft-collision-returned。匿名 preview 不具有磁盘恢复身份；现有持久化 recovery 的追加、附件保留、StrictMode 和重挂载由组件检查覆盖，原生刷新未验。显式授权发送仍使用原提交语义 |
+| 首页创建任务响应丢失 → 验收条件仅改变空行 → 重试 | 请求依据按实际发送的非空验收条目归一化，避免空白格式变化产生新请求 ID。故障注入在首次演示任务已创建后丢弃响应；两次请求 ID/完整有效载荷/返回 Session 均相同 | primary-retry-blank-lines.json；lost-response / same-task 原图。该演示证明重试保留身份，不证明此前真实后端已经发生重复创建。现有后端幂等检查 36 项通过，无后端改动或付费模型 |
+
+- 最终 Home、WorkflowPanel、Taskbar、recovery 四文件 69 项通过；最终工作区恢复/重挂载筛选检查 10 项通过、120 项未选中；完整 primary flow 独立通过（14.57 秒，原 15 秒单项上限），最终类型检查通过。早先并发运行的 primary flow 15 秒超时保留，未延长测试期限或称全套一次通过。
+- 任务栏只读取现有 QueryClient 中同 transport/Session 地址的 workflow 回执，没有新增请求所有者。早先尝试 disabled query observer 导致缺少 queryFn 警告，已删除，最终使用只读缓存订阅并实际复查。
+- 官方 Library 同一 15 项清单约 06:34 UTC 再试，在 tools/list 网络预检失败；未进入 prepare/finalize，无新 Library ID。原图、原 ZIP、历史失败保留。逐页台账与代码可独立交付。

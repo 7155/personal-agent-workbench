@@ -28,6 +28,14 @@ async function openTaskRecords() {
   fireEvent.click(await screen.findByRole('button', { name: /^任务记录/ }));
 }
 describe('primary assistant home', () => {
+  it.each(['primary', 'different-discussion'])('carries an anonymous unsent source draft only back to its owning discussion: %s', async (sessionId) => {
+    const { onOpen, transport } = setup({}, { sessionId, workspaceRoots: [], unsentDraft: '原草稿 A' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
+    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '带入草稿 B' } });
+    fireEvent.click(screen.getByRole('button', { name: /进入对话/ }));
+    expect(onOpen).toHaveBeenCalledWith(primary, undefined, sessionId === 'primary' ? '原草稿 A\n\n带入草稿 B' : '带入草稿 B');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
   it('blocks a different execution directory for a project-bound discussion without changing the draft or project', async () => {
     const bound = { ...primary, workspaceRoots: ['/work/project'] };
     const { transport } = setup({ 'agent.primary.ensure': { ok: true, session: bound, tasks: [] } });
@@ -252,10 +260,12 @@ describe('primary assistant home', () => {
     await screen.findByRole('button', { name: /进入对话/ });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '保留来源\n说明验证结果' } });
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('草稿已保留');
     expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('检查项目');
+    fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '\n 保留来源\n\n说明验证结果 \n' } });
     fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
     await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create')).toHaveLength(2));
     const writes = transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create');

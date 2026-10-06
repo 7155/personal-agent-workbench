@@ -23,6 +23,7 @@ export function sessionTaskStateLabel(state: SessionTaskState): string {
   if (state.paused) return '已暂停 · 进度保留';
   if (state.pending) return '等待响应';
   if (state.busy) return '正在执行';
+  if (state.goal?.configured && state.goal.status === 'paused') return '目标已暂停 · 进度保留';
   if (state.goal?.configured && state.goal.status === 'completed') return '任务已完成';
   if (state.goal?.configured && state.goal.status === 'cancelled') return '任务已取消';
   if (state.turnStatus === 'aborted') return '本轮已停止';

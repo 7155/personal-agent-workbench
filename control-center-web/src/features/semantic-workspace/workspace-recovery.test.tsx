@@ -57,6 +57,23 @@ it.each([false, true])('rejoins the latest draft owner after resubscription (new
   }
 });
 
+it('appends a carried draft to the current persisted input once, preserving references and StrictMode edits', () => {
+  const t = transport('append-initial-draft');
+  const key = recoveryScope(t, 'session:one');
+  localStorage.setItem(key, JSON.stringify({ draft: '原草稿 A', attachments: [{ id: 'old-media' }], savedAtMs: 1 }));
+  const view = renderHook(() => useWorkspaceRecovery<{ id: string }>('session:one', '带入草稿 B', [], 'append'), { wrapper: recoveryWrapper(t) });
+  expect(view.result.current.draft).toBe('原草稿 A\n\n带入草稿 B');
+  expect(view.result.current.attachments).toEqual([{ id: 'old-media' }]);
+  expect(view.result.current.warning).toContain('已保留原草稿');
+  expect(JSON.parse(localStorage.getItem(key)!)).toMatchObject({ draft: '原草稿 A\n\n带入草稿 B' });
+  act(() => view.result.current.setDraft('编辑后的 A 与 B'));
+  view.rerender();
+  expect(view.result.current.draft).toBe('编辑后的 A 与 B');
+  view.unmount();
+  const same = renderHook(() => useWorkspaceRecovery('session:one', '编辑后的 A 与 B', [], 'append'), { wrapper: recoveryWrapper(t) });
+  expect(same.result.current.draft).toBe('编辑后的 A 与 B');
+});
+
 it('resubscribes anonymous views without sharing their independent drafts', () => {
   const t = transport('');
   const tree = (hidden: boolean, second: boolean) => <ControlTransportProvider transport={t}>

@@ -9,6 +9,7 @@ import { publicErrorText } from '@/features/overview/management-ui';
 import { useAgentLiveSession, type AgentLiveSnapshotLoader, type AgentRecoveryState } from '@/features/agent/runtime/use-agent-live-session';
 import { agentSessionAddress, latestActiveAgentTurnId, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { usePageVisibility } from '@/platform/use-page-visibility';
+import { appendWorkspaceDraft } from '@/features/semantic-workspace/workspace-recovery';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { warmAgentWorkspace, type InitialSessionSubmission, type PrimaryAssistantSource } from './agent-workspace-loader';
 import '@/features/composer/composer-workbench.css';
@@ -127,6 +128,16 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     else onOpen(target);
   }
 
+  function enterDiscussion(target: SessionSummary) {
+    // Anonymous previews intentionally have no disk recovery identity. Carry
+    // the same discussion's unsent input through this existing Home handoff.
+    // Connected transports merge with their current saved draft in recovery.
+    const previous = !transport.connectionIdentity && transport.kind !== 'native'
+      && sourceTransport.current === transport && initialSource?.sessionId === target.id
+      ? initialSource.unsentDraft ?? '' : '';
+    openSession(target, undefined, appendWorkspaceDraft(previous, draft));
+  }
+
   async function submit() {
     if (lock.current || picker.current || !session || !message || loading) return;
     if (taskInvalid) { (objectiveInvalid ? input : criteriaInvalid ? acceptanceInput : workspaceInput).current?.focus(); return; }
@@ -136,7 +147,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     lock.current = true; setSubmitting(true); setError('');
     const generation = owner.current;
     const sourceMessageId = sourceTransport.current === transport && initialSource?.sessionId === session.id ? initialSource.messageId : undefined;
-    const signature = JSON.stringify([session.id, sourceMessageId, intent, message, executionRoots, acceptance.trim()]);
+    const signature = JSON.stringify([session.id, sourceMessageId, intent, message, executionRoots, criteria]);
     if (attempt.current?.signature !== signature) attempt.current = { signature, id: `primary-${crypto.randomUUID()}` };
     const clientMessageId = attempt.current.id;
     try {
@@ -226,7 +237,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       <div className="paw-primary-home__entry">
       <header className="paw-primary-home__heading">
         <div><small className="paw-primary-home__eyebrow">我的助手</small><h1>{intent === 'execute' ? '把这件事交给助手。' : '这次想做什么？'}</h1><p>和 {identity.assistantName} 说清楚目标，再决定要不要执行。</p></div>
-        {session ? <button className="paw-primary-home__continue" disabled={submitting || pickingWorkspace || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="进入这段对话；草稿会带入输入框，点击发送后才会提交" type="button">进入对话 <ArrowUpRight size={15} /></button> : null}
+        {session ? <button className="paw-primary-home__continue" disabled={submitting || pickingWorkspace || loading} onClick={() => enterDiscussion(session)} onPointerEnter={() => warmAgentWorkspace('session')} title="进入这段对话；草稿会带入输入框，点击发送后才会提交" type="button">进入对话 <ArrowUpRight size={15} /></button> : null}
       </header>
       <div className="paw-primary-home__intent agent-composer__controls" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div>
       <section className="paw-primary-home__composer agent-composer paw-unified-composer" data-composer-design="workbench" aria-label="我的长期助手">

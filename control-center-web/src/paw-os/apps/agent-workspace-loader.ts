@@ -35,7 +35,7 @@ export function agentWorkspaceIntent({ appId, entityId, initialRoute = '', targe
 }
 
 export type InitialSessionSubmission = { clientMessageId: string; message: string };
-export type PrimaryAssistantSource = { sessionId: string; workspaceRoots: string[]; messageId?: string };
+export type PrimaryAssistantSource = { sessionId: string; workspaceRoots: string[]; messageId?: string; unsentDraft?: string };
 
 export type AgentSelection =
   | { kind: 'new'; draft?: string; execute?: boolean; source?: PrimaryAssistantSource }

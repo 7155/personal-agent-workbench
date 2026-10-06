@@ -39,14 +39,22 @@ const owners = new Map<string, RecoveryOwner<object>>();
 function attachmentIds<T>(attachments: T[]): Set<string> {
   return new Set(attachments.map(raw => { const item = raw as Attachment; return item.id || item.mediaId || ''; }));
 }
-function createOwner<T extends object>(key: string, initialDraft: string, initialAttachments: T[]): RecoveryOwner<T> {
+export function appendWorkspaceDraft(current: string, incoming: string): string {
+  if (!current.trim()) return incoming;
+  if (!incoming.trim() || current === incoming) return current;
+  return `${current}\n\n${incoming}`;
+}
+function createOwner<T extends object>(key: string, initialDraft: string, initialAttachments: T[], initialDraftPolicy: 'replace' | 'append'): RecoveryOwner<T> {
   const existing = key && owners.get(key);
   if (existing) return existing as RecoveryOwner<T>;
   const saved = load<T>(key);
+  const seededDraft = initialDraftPolicy === 'append' ? appendWorkspaceDraft(saved?.draft ?? '', initialDraft) : initialDraft;
   const owner: RecoveryOwner<T> = { key, id: key || `anonymous-draft:${crypto.randomUUID()}`, listeners: new Set(), persistedValue: saved ? JSON.stringify(saved) : undefined, snapshot: {
     ...(saved ?? { draft: '', attachments: [], savedAtMs: 0 }),
-    ...(initialDraft ? { draft: initialDraft } : {}), ...(initialAttachments.length ? { attachments: initialAttachments } : {}),
-    warning: '', restored: Boolean(saved), restoredIds: attachmentIds(saved?.attachments ?? []),
+    ...(initialDraft ? { draft: seededDraft } : {}), ...(initialAttachments.length ? { attachments: initialAttachments } : {}),
+    warning: initialDraft && saved?.draft.trim() && seededDraft !== initialDraft && seededDraft !== saved.draft
+      ? '已保留原草稿，并追加本次带入内容；发送前请核对。' : '',
+    restored: Boolean(saved), restoredIds: attachmentIds(saved?.attachments ?? []),
   } };
   if (key) owners.set(key, owner as RecoveryOwner<object>);
   return owner;
@@ -95,10 +103,10 @@ function updateOwner<T extends object>(owner: RecoveryOwner<T>, update: (input: 
   persist(target);
   target.listeners.forEach(listener => listener());
 }
-export function useWorkspaceRecovery<T extends object>(spaceKey: string, initialDraft = '', initialAttachments: T[] = []) {
+export function useWorkspaceRecovery<T extends object>(spaceKey: string, initialDraft = '', initialAttachments: T[] = [], initialDraftPolicy: 'replace' | 'append' = 'replace') {
   const transport = useControlTransport();
   const key = recoveryScope(transport, spaceKey);
-  const owner = useMemo(() => createOwner<T>(key, initialDraft, initialAttachments), [key, spaceKey, key ? null : transport]);
+  const owner = useMemo(() => createOwner<T>(key, initialDraft, initialAttachments, initialDraftPolicy), [key, spaceKey, key ? null : transport]);
   const lifetime = useMemo(() => ({ active: false, subscribed: false, owner }), [owner]);
   const subscribe = useCallback((listener: () => void) => {
     // Effects may reconnect without recreating this hook. A later view may

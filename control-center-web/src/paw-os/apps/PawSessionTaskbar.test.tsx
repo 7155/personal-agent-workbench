@@ -20,4 +20,12 @@ describe('task state is a projection, not an inferred completion', () => {
     expect(sessionTaskStateLabel({...idle, waiting: true, busy: true})).toBe('等待你处理');
     expect(sessionTaskStateLabel({...idle, pending: true})).toBe('等待响应');
   });
+  it('names a paused goal without implying the Runtime itself has paused', () => {
+    const goal = { configured: true, objective: 'inspect', status: 'paused' as const };
+    expect(sessionTaskStateLabel({ ...idle, goal })).toBe('目标已暂停 · 进度保留');
+    expect(sessionTaskStateLabel({ ...idle, goal, turnStatus: 'completed' })).toBe('目标已暂停 · 进度保留');
+    expect(sessionTaskStateLabel({ ...idle, goal, busy: true })).toBe('正在执行');
+    expect(sessionTaskStateLabel({ ...idle, goal, paused: true })).toBe('已暂停 · 进度保留');
+    expect(sessionTaskStateLabel({ ...idle, goal: { ...goal, configured: false } })).toBe('可以继续对话');
+  });
 });

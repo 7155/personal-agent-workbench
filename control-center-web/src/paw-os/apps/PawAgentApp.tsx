@@ -557,7 +557,7 @@ export function PawAgentApp({
               initialDraft={selection.draft}
               initialSubmission={selection.submission}
               renderComposerHeader={view => <PrimaryAssistantComposerHeader view={view} onHome={(draft, execute, messageId) => { setAdvancedHome(false); setSelection({ kind: 'new', draft, execute,
-                ...(execute && view.session.metadata?.primaryAssistant ? { source: { sessionId: view.session.id, workspaceRoots: view.session.workspaceRoots, messageId } } : {}),
+                ...(execute && view.session.metadata?.primaryAssistant ? { source: { sessionId: view.session.id, workspaceRoots: view.session.workspaceRoots, messageId, unsentDraft: draft } } : {}),
               }); }} />}
               persona={personas.find((item) => item.roleId === sessions.find((session) => session.id === selection.id)?.roleId)}
               record={selectedSessionRecord}
