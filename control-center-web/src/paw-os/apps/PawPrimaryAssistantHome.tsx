@@ -51,6 +51,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const sourceTransport = useRef(transport);
   const refreshSource = useRef(initialSource);
   const input = useRef<HTMLTextAreaElement>(null);
+  const fields = useRef<HTMLDivElement>(null);
   const acceptanceInput = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const draftConsumed = useRef(false);
@@ -181,6 +182,23 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     setWorkspace(path); setScopeConfirmed(false); setPickerNotice('');
   }
 
+  // A focused task field must remain editable when its available scroll area
+  // shrinks (window resize or a keyboard). Keep this within the existing form.
+  useEffect(() => {
+    const element = fields.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const focused = document.activeElement;
+      if (!(focused instanceof HTMLElement) || !element.contains(focused)) return;
+      const bounds = focused.getBoundingClientRect();
+      const visible = element.getBoundingClientRect();
+      if (bounds.bottom > visible.bottom) element.scrollTop += bounds.bottom - visible.bottom;
+      else if (bounds.top < visible.top) element.scrollTop -= visible.top - bounds.top;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   // Parent-owned navigation (history, deep links, window close) can leave Home
   // without calling one of its own buttons. Keep the latest unsubmitted form.
   rememberLatestDraft.current = rememberDraft;
@@ -192,15 +210,15 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     <div className="paw-primary-home__body">
       <div className="paw-primary-home__entry">
       <header className="paw-primary-home__heading">
-        <div><h1>接着和{identity.assistantName}工作。</h1><p>想法、问题和下一步，都从这段对话继续。</p></div>
+        <div><h1>继续之前的事。</h1><p>和 {identity.assistantName} 继续同一段对话。</p></div>
         {session ? <button className="paw-primary-home__continue" disabled={submitting || pickingWorkspace || loading} onClick={() => openSession(session, undefined, draft)} onPointerEnter={() => warmAgentWorkspace('session')} title="打开已有记录，未发送的文字会带入输入框" type="button">打开对话 <ArrowUpRight size={15} /></button> : null}
       </header>
       <section className="paw-primary-home__composer agent-composer paw-unified-composer" data-composer-design="workbench" aria-label="我的长期助手">
-        <div className="paw-primary-home__fields">
+        <div className="paw-primary-home__fields" ref={fields}>
         <textarea aria-label="和我的助手聊聊" aria-invalid={objectiveInvalid || undefined} aria-describedby={`${composerHintId}${objectiveInvalid ? ` ${objectiveErrorId}` : ''}`} ref={input} value={draft} disabled={submitting} onChange={event => setDraft(event.target.value)} onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }} onKeyDown={event => {
           if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
           if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); }
-        }} placeholder={intent === 'discuss' ? '想法、问题，或一件还没想清楚的事…' : '这次要完成什么？'} rows={3} />
+        }} placeholder={intent === 'discuss' ? '写下想法，或接着做的事…' : '这次要完成什么？'} rows={3} />
         {intent === 'execute' ? <small className="paw-primary-home__field-counter">{objectiveLength} / 4000 字</small> : null}
         {objectiveInvalid ? <p className="paw-primary-home__field-error" id={objectiveErrorId} role="alert">任务目标最多 4000 字，请精简后再授权。</p> : null}
         {intent === 'execute' ? <div className="paw-primary-home__scope">

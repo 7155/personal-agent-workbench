@@ -28,6 +28,7 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   const files = await panel.locator('.agent-files-panel__body').boundingBox();
   expect(actions).not.toBeNull();
   expect(files).not.toBeNull();
+  expect(actions!.height).toBeLessThan(160);
   expect(actions!.y + actions!.height).toBeLessThanOrEqual(files!.y + 1);
   await panel.getByRole('button', { name: '运行预览', exact: true }).focus();
   await page.keyboard.press('Escape');
@@ -64,4 +65,20 @@ test('model and permission popovers track their trigger through viewport changes
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
   }
+});
+
+
+test('focused task criteria remains visible when the window becomes short', async ({ page }) => {
+  await page.goto('/?controlTransport=mock#/agent');
+  await expect(page.getByRole('button', {name: /打开对话/})).toBeEnabled({timeout:30_000});
+  await page.getByRole('button', {name: '交给助手做', exact: true}).click();
+  const criteria = page.getByRole('textbox', {name:'完成标准'});
+  await criteria.fill('说明修改和验证结果');
+  await page.setViewportSize({width:390, height:480});
+  await expect.poll(() => criteria.evaluate(e => {
+    const rect = e.getBoundingClientRect();
+    return e.contains(document.elementFromPoint(rect.x + 20, rect.y + 10));
+  })).toBe(true);
+  await expect(criteria).toBeFocused();
+  await expect(criteria).toHaveValue('说明修改和验证结果');
 });

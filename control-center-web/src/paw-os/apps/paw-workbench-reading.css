@@ -62,3 +62,5 @@
 /* One content column aligns prose, rich results and the editor. */
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-assistant-turn__body { width: 100%; max-width: 100%; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] :is(.agent-code-block, .agent-citation, .agent-file-block) { margin-inline: 0; max-width: 100%; box-sizing: border-box; border-radius: var(--radius-sheet); }
+
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-files-panel:has(> .project-quick-actions) { grid-template-rows: auto auto minmax(0, 1fr); }

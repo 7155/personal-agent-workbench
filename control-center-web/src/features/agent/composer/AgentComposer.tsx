@@ -676,7 +676,7 @@ function isCommandLookupDraft(value: string): boolean {
 }
 
 function composerPlaceholder(support: 'supported' | 'unsupported' | 'unknown'): string {
-  if (support === 'supported') return '继续这段对话，输入 / 查看命令，或粘贴图片、文件…';
+  if (support === 'supported') return '继续对话，输入 / 查看命令…';
   if (support === 'unsupported') return '继续这段对话，输入 / 查看命令，或粘贴文件；当前模型不识别图片…';
   return '继续这段对话，输入 / 查看命令，或粘贴文件；当前模型图片能力未知…';
 }
