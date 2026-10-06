@@ -82,10 +82,10 @@ export function buildContextDebugHtml({
   </div>
   <dl>${metadata.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd></div>`).join('')}</dl>
 </header>
-<nav class="report-controls">
-  <input aria-label="搜索导出内容" id="search" placeholder="搜索消息、工具、错误或模型调用…" type="search">
-  <button id="expand" type="button">展开全部</button>
-  <button id="collapse" type="button">折叠全部</button>
+<nav aria-busy="true" class="report-controls">
+  <input aria-label="搜索导出内容" disabled id="search" placeholder="搜索消息、工具、错误或模型调用…" type="search">
+  <button disabled id="expand" type="button">展开全部</button>
+  <button disabled id="collapse" type="button">折叠全部</button>
   <span>导出于 ${escapeHtml(formatTimestamp(generatedAtMs))}</span>
 </nav>
 <main>
@@ -276,6 +276,11 @@ function escapeAttribute(value: string): string {
 }
 
 const REPORT_SCRIPT = String.raw`
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || window.parent === window) return;
+  event.preventDefault();
+  window.parent.postMessage({ type: 'paw:context-report:close' }, '*');
+});
 const details = () => [...document.querySelectorAll('details')];
 document.getElementById('expand').addEventListener('click', () => details().forEach((item) => { item.open = true; }));
 document.getElementById('collapse').addEventListener('click', () => details().forEach((item) => { item.open = false; }));
@@ -285,6 +290,8 @@ document.getElementById('search').addEventListener('input', (event) => {
     item.hidden = Boolean(query) && !item.dataset.search.includes(query);
   });
 });
+document.querySelectorAll('.report-controls button, .report-controls input').forEach((control) => { control.disabled = false; });
+document.querySelector('.report-controls').removeAttribute('aria-busy');
 `;
 
 const REPORT_CSS = `
@@ -293,7 +300,7 @@ const REPORT_CSS = `
 .report-header{padding:32px clamp(20px,5vw,72px);border-bottom:1px solid #2a303a;background:#161a21;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,520px);gap:32px}
 .eyebrow{color:#78c6b5;font-size:12px;letter-spacing:.12em}.report-header h1{font:700 clamp(24px,4vw,40px) system-ui;margin:8px 0}.report-header p{color:#9da7b4}
 .report-header dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#303743;border:1px solid #303743}.report-header dl div{padding:10px 12px;background:#171b22}.report-header dl div:last-child:nth-child(odd){grid-column:1/-1}.report-header dt{font-size:11px;color:#8995a4}.report-header dd{margin:4px 0 0;overflow-wrap:anywhere}
-.report-controls{position:sticky;top:0;z-index:4;padding:12px clamp(20px,5vw,72px);display:flex;gap:8px;align-items:center;background:#11141aee;border-bottom:1px solid #2a303a;backdrop-filter:blur(12px)}.report-controls input{min-width:240px;flex:1;padding:10px 12px;background:#191e26;color:inherit;border:1px solid #37404d}.report-controls button{padding:9px 12px;background:#202731;color:inherit;border:1px solid #3a4554;cursor:pointer}.report-controls span{color:#7f8a98;font-size:12px}
+.report-controls{position:sticky;top:0;z-index:4;padding:12px clamp(20px,5vw,72px);display:flex;gap:8px;align-items:center;background:#11141aee;border-bottom:1px solid #2a303a;backdrop-filter:blur(12px)}.report-controls input{min-width:240px;flex:1;padding:10px 12px;background:#191e26;color:inherit;border:1px solid #37404d}.report-controls button{padding:9px 12px;background:#202731;color:inherit;border:1px solid #3a4554;cursor:pointer}.report-controls span{color:#7f8a98;font-size:12px}.report-controls :disabled{opacity:.55;cursor:wait}
 main{width:min(1180px,calc(100% - 32px));margin:24px auto 80px}.legend{display:flex;gap:18px;align-items:center;padding:12px 16px;border:1px solid #2d3540;background:#151920}.legend span{font-size:12px;color:#a7b0bc}.legend i{display:inline-block;width:8px;height:8px;margin-right:6px;background:#78889c}.legend i[data-tone=stable]{background:#78c6b5}.legend i[data-tone=dynamic]{background:#78a9eb}.legend i[data-tone=tool]{background:#b69aea}.legend i[data-tone=error]{background:#e87979}
 .model-call{margin-top:18px;border:1px solid #303844;background:#151920;box-shadow:0 14px 36px #0004}.model-call>header{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:16px 18px;border-bottom:1px solid #303844}.call-index{display:grid;place-items:center;width:42px;height:42px;background:#202833;color:#82d3c0;border:1px solid #3d4c59}.model-call h2{font:700 18px system-ui;margin:0}.model-call header p,.model-call header time{margin:4px 0 0;color:#8f9aa8;font-size:12px}.status{padding:5px 8px;background:#1d3b34;color:#8ad9c6;font-size:12px}
 .delta{display:grid;grid-template-columns:repeat(4,1fr);margin:0;border-bottom:1px solid #303844}.delta div{padding:12px 16px;border-right:1px solid #303844}.delta dt{font-size:11px;color:#8793a1}.delta dd{margin:4px 0 0;font-weight:700}.delta [data-tone=dynamic] dd{color:#82b2f2}.delta [data-tone=removed] dd{color:#e98989}

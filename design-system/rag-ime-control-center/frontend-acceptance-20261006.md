@@ -542,7 +542,7 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 | Knowledge | 七视图、资料/阅读器/图谱/任务/设置、笔记连接拒收 | 真实文件夹、索引/检索模型 |
 | Input Studio | 输入/词库/语音/历史四页、记录详情、草稿、主要菜单 | 原生输入法/音频设备、真实转写 |
 | App Center | 已安装/能力/Skills/场景/制作/目录/建议七页、维护/预览/取消 | 真实安装/卸载/执行，手写制作受公开 preview 限制 |
-| System Monitor | 活动/上下文/诊断、筛选/步骤/轮次；首次输入 24 次最终全部接收并保留 | 真实运行日志、模型评审、目录定位末尾焦点未专门复测 |
+| System Monitor | 活动/上下文/诊断、筛选/步骤/轮次；首次输入 24 次最终全部接收并保留 | 真实运行日志、模型评审；目录/末尾/报告补查见文末 |
 | Trace Agent | 工作台/新建/经验/能力四视图、筛选/对象/预览 | 实际诊断/经验沉淀/候选评估未执行 |
 | System Settings | 配置/外观/Agent/治理/审批、提示词/子 Agent 两分区；14 组主要动作与 12 组真实窗口几何 | 磁盘持久化、OAuth/真实凭证、模型默认生效及原生系统外观 |
 | Schedules | Agent 普通/PR、Eval、Memory，弹窗周期、切组保留草稿 | 真实保存/启用/定时执行 |
@@ -554,3 +554,15 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 | 桌面与独立 surface | 全部 App、通知、菜单、窗口管理；evolution-report 八章、desktop-pet、screen-assistant、capture 页面 | 静态证据报告不等于动态本机结果；桌宠/捕获无原生宿主 |
 
 本轮不把所有页面改成另一套设计。保留真实任务/文档/历史，移除冗余入口、空展示和已无消费者的样式；旧桌面工作列表在起始版本已删除，未重新加入。检查、修复与截图证据逐批追加，没有只抽首页或只用单测代表全站。
+
+## 上下文目录、滚动末尾与报告：补齐明确留下的交互项
+
+基于已推送 `a20ffab779cdd214ed3078b1289cda0d6c6ad48b`，只读取公开 preview 和生成公开模拟报告。
+
+- `context-report-escape-before-v3.json` 两宽度实证：焦点在 sandbox iframe 的搜索框时，Escape 不关闭报告。报告的外部/内联脚本增加关闭请求；父页面仅接收当前 iframe 的精确消息类型，其他 source 忽略；仍由原 Dialog 释放 Blob 并返回焦点。新增行为检查先失败再修复。`context-report-escape-final.json` 390/1440 都 closed=true、returned=true。
+- `context-navigation-report-final-v2.json` 普通动效 768 连续目录定位，目标工具条目等待 2.5 秒仍不在可见 viewer；减少动效同组通过。目录跳转改为先完成 auto 定位再移动焦点，避免嵌套滚动与再次选择留下屏幕外焦点；没有新增滚动所有者。
+- 公开报告脚本延迟 1600ms 的真实浏览器检查：`context-report-readiness-before.json` 两宽度控件提前可用，首次“展开全部”后仍 allOpen=false。初始控件现 disabled/aria-busy，外部及内联脚本在绑定完成后启用。`context-report-readiness-final.json` 两宽度 initiallyDisabled=true、allOpen=true；没有依靠重试点击或更长固定等待掩盖首次输入。
+- 报告关闭原为手机 40px、紧凑 36px；紧凑下载约 35.5px。作用域内同步至 44/40/32px 最小目标和相应标题留白；iframe 内原搜索与展开/折叠继续保留。
+- 最终 `context-navigation-report-final-v3.json`：390/768/1440 × normal/reduce 六组全部通过，共 90 次目录条目实点，焦点与目标都落在实际 viewer；末尾原始记录可展开；报告展开全部/折叠全部、搜索无匹配/清除恢复、下载、关闭回焦点全部通过。报告没有页面横向溢出，关闭/下载目标符合标准。最新手机报告、768 末尾、关闭后桌面原图已由本云代理实际查看，主线程未查看这些新图。
+- 历史 `before` 首轮仅检查目标相对整个长正文可见，其六组不能替代实际 viewport；`final` 的过短滚动等待与把 searchbox 写成 textbox 的失败保留。`final-v2` 的真实目录、报告准备及尺寸问题以本段和 v3 复查替代，原文件不覆盖。
+- Context feature/export 两完整文件 12 项通过，正式 `pnpm typecheck` exit=0；owner/import/route/diff 检查通过。原 Context 首开 24 次输入验收及同页 query 修复保留。没有 CI、付费调用、Library 重试或安装扩展 App。
