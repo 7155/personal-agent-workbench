@@ -202,7 +202,7 @@
 
 /* Citation snippets are opt-in. No favicon loads, invented badges or source ratings. */
 .paw-rich-citation { margin: 12px 0; border: 1px solid var(--rc-line); border-radius: 9px; overflow: hidden; background: var(--rc-paper); }
-.paw-rich-citation .agent-citation { display: flex; align-items: center; gap: 12px; margin: 0; padding: 13px 15px; border: 0; border-radius: 0; background: transparent; text-decoration: none; color: var(--rc-ink); }
+.paw-rich-citation .agent-citation { width: 100%; max-width: none; display: flex; align-items: center; gap: 12px; margin: 0; padding: 13px 15px; border: 0; border-radius: 0; background: transparent; text-decoration: none; color: var(--rc-ink); }
 .paw-rich-citation a.agent-citation:hover { background: var(--rc-soft); }
 .paw-rich-citation .agent-citation > span:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .paw-rich-citation .agent-citation strong { font: 500 13px/1.5 var(--rc-sans); }
