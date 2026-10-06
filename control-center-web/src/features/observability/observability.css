@@ -31,10 +31,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
-  padding: 9px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-surface);
+  padding: 9px 0;
+  border: 0;
+  background: transparent;
 }
 
 /* Live means live: the connection dot breathes only while the stream is
@@ -200,9 +199,9 @@
   max-height: min(66vh, 720px);
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  background: var(--color-surface);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 :is(main, section)[data-route-id='observability'] .observation-timeline > li {
@@ -246,36 +245,9 @@
 }
 
 :is(main, section)[data-route-id='observability'] .observation-row__icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  color: var(--color-accent);
-  background: var(--color-surface);
-}
-
-:is(main, section)[data-route-id='observability'] li[data-category='tool'] .observation-row__icon {
-  color: var(--color-warning);
-  background: var(--color-warning-soft);
-}
-
-:is(main, section)[data-route-id='observability'] li[data-category='retrieval'] .observation-row__icon,
-:is(main, section)[data-route-id='observability'] li[data-category='context'] .observation-row__icon {
-  color: var(--color-info);
-  background: var(--color-info-soft);
-}
-
-:is(main, section)[data-route-id='observability'] li[data-category='memory'] .observation-row__icon {
-  color: var(--color-collaboration);
-  background: var(--color-collaboration-soft);
-}
-
-:is(main, section)[data-route-id='observability'] li[data-category='room'] .observation-row__icon,
-:is(main, section)[data-route-id='observability'] li[data-category='intercom'] .observation-row__icon {
-  color: var(--color-memory);
-  background: var(--color-memory-soft);
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: var(--radius-2); color: var(--color-text-secondary);
+  background: var(--color-surface-subtle);
 }
 
 :is(main, section)[data-route-id='observability'] .observation-row__copy,

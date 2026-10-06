@@ -1125,17 +1125,16 @@
  * Native App Center consoles — cool bright rounded PAWOS surface.
  *
  * Inside the PAWOS window, the titlebar and the App navigation already name
- * the App and the current page, so each console is a rounded white card with
- * one slim purpose heading instead of a repeated management-sheet header.
+ * the App and the current page, so each console uses spacing and one slim purpose heading instead of a repeated management-sheet header.
  * Token fallbacks keep the same geometry readable outside the desktop shell.
  * ------------------------------------------------------------------------ */
 
 :is(main, section)[data-route-id='plugins'][data-paw-os-app] .plugins-native-card {
   min-width: 0;
   padding: 16px 18px;
-  border: 1px solid var(--paw-system-line, var(--color-border));
-  border-radius: 14px;
-  background: var(--paw-system-surface, var(--color-surface));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   animation: plugins-card-arrive 320ms cubic-bezier(.16, 1, .3, 1) both;
 }
 

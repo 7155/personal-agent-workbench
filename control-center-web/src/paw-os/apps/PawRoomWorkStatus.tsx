@@ -42,7 +42,7 @@ export function PawRoomWorkStatus({ focus, status, onOpenParticipant, onRetrySyn
   const toggle = () => { if (expanded) close(); else { setEverExpanded(true); setExpanded(true); } };
   const Icon = status.state === 'offline' ? WifiOff
     : ['blocked', 'failed', 'needs-input'].includes(status.state) ? CircleAlert
-      : status.state === 'completed' ? CircleCheck : animate ? LoaderCircle : Clock3;
+      : status.state === 'completed' && !progress.incomplete && progress.total > 0 && progress.accepted === progress.total ? CircleCheck : animate ? LoaderCircle : Clock3;
   const date = status.updatedAtMs > 0 && Number.isFinite(status.updatedAtMs)
     ? new Date(status.updatedAtMs) : undefined;
   const updated = date && Number.isFinite(date.getTime()) ? date : undefined;

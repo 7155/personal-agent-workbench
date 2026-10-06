@@ -883,10 +883,10 @@
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .observation-controls {
-  padding: 9px 11px;
-  background: var(--paw-system-surface);
-  border: 1px solid var(--paw-system-line);
-  border-radius: var(--paw-system-radius-md);
+  padding: 9px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .observation-workspace {
@@ -1349,3 +1349,10 @@
 }
 
 .paw-system-app__switching { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--paw-muted); font-size: 11px; }
+
+/* Window navigation already names each console. Keep the outer reading group
+   open; independent package/list items and form controls own their boundaries. */
+.paw-desktop-root .paw-system-app[data-system-app='app-center'] .plugin-scenes > .mgmt-section,
+.paw-desktop-root .paw-system-app[data-system-app='app-center'] :is(main, section)[data-route-id='plugins-catalog'][data-paw-os-app] > .mgmt-page__body > .mgmt-section {
+  border: 0; border-radius: 0; background: transparent;
+}

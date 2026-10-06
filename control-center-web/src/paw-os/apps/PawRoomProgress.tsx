@@ -1,10 +1,10 @@
 import { useId } from 'react';
-import { Circle, CircleCheck, CircleHelp, CirclePause, CircleX, Clock3, LoaderCircle, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { Circle, CircleCheck, CircleHelp, CirclePause, CircleX, Clock3, LoaderCircle, ShieldQuestion, TriangleAlert } from 'lucide-react';
 import { usePageVisibility } from '@/platform/use-page-visibility';
 import type { RoomProgressBucket, RoomVisualProgress } from './room-visual-progress';
 
 export function RoomTaskStateIcon({ bucket, spinning = false }: { bucket: RoomProgressBucket; spinning?: boolean }) {
-  const Icon = { completed: CircleCheck, review: ShieldCheck, working: spinning ? LoaderCircle : Clock3,
+  const Icon = { completed: CircleCheck, review: ShieldQuestion, working: spinning ? LoaderCircle : Clock3,
     blocked: TriangleAlert, failed: CircleX, stopped: CirclePause, pending: Circle, unknown: CircleHelp }[bucket];
   return <Icon size={14} aria-hidden="true" className={spinning ? 'paw-room-task-spin' : undefined} />;
 }

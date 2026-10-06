@@ -208,7 +208,7 @@
 .paw-rich-citation .agent-citation strong { font: 500 13px/1.5 var(--rc-sans); }
 .paw-rich-citation .agent-citation small { color: var(--rc-faint); font: 11px/1.5 var(--rc-sans); }
 .paw-rich-citation .agent-citation__index { display: grid; place-items: center; width: 25px; height: 25px; flex: none; border: 1px solid var(--rc-line); border-radius: 6px; background: var(--rc-soft); color: var(--rc-muted); font: 11px/1 var(--rc-mono); }
-.paw-rich-citation > details { border-top: 1px solid var(--rc-line); padding: 9px 15px; color: var(--rc-muted); font: 12px/1.7 var(--rc-sans); }
+.paw-rich-citation > details { padding: 0 15px 12px; color: var(--rc-muted); font: 12px/1.7 var(--rc-sans); }
 .paw-rich-citation > details > summary { cursor: pointer; }
 .paw-rich-citation blockquote { margin: 10px 0 3px; padding-left: 12px; border-left: 2px solid var(--rc-line); }
 .agent-rich-artifact.paw-rich-artifact { display: flex; align-items: center; gap: 14px; margin: 16px 0; padding: 17px; border: 1px solid var(--rc-line); border-radius: 10px; box-shadow: none; background: var(--rc-paper); }

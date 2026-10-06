@@ -180,10 +180,10 @@
   font-size: 12px;
 }
 
-/* Book rows use one quiet indigo outline and a larger title to mark the
-   settled, long-term register without adding a decorative side stripe. */
+/* Neutral book boundaries identify clickable items; only selection and focus
+   use the memory accent. Titles retain the settled, long-term hierarchy. */
 .memory-second-brain[data-view='catalog'][data-layer='books'] .memory-layer-list .mgmt-list__row {
-  border-color: color-mix(in srgb, var(--memory-signal) 38%, var(--color-border));
+  border-color: var(--color-border);
   border-radius: 9px;
 }
 
