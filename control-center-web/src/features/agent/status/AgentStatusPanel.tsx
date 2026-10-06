@@ -24,7 +24,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { forwardRef, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import {
   Button,
@@ -41,7 +41,7 @@ import type {
   CapabilityPreference,
 } from '@/features/plugins/capability-policy';
 import { usePageVisibility } from '@/platform/use-page-visibility';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore, type AgentSessionTarget } from '../state/live-store';
 import type { AgentCommand, ToolManifest } from '../types';
 import { publicToolResultView } from '../timeline/public-tool-result';
 import { SubagentLaunchPanel } from '../delegation/SubagentLaunchPanel';
@@ -118,14 +118,18 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
   onOpenBackgroundJob,
 }, ref) {
   const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const contentReady = useDeferredStatusContent(open, keepContentMounted);
   const pageVisible = usePageVisibility();
-  const projection = useAgentLiveStore((state) => state.projections[sessionId]);
+  const projection = useAgentLiveStore((state) => selectAgentProjection(state, address));
   const view = useMemo(() => projectStatusPanel(projection), [projection]);
   const logicalTools = useMemo(() => groupToolActivities(view.tools), [view.tools]);
-  const [resolvedWorkflow, setResolvedWorkflow] = useState<AgentWorkflowStateV1>();
-  const resolvedTodo = resolvedWorkflow?.sessionId === sessionId
-    ? resolvedWorkflow.todo
+  const [resolvedWorkflow, setResolvedWorkflow] = useState<{ address: AgentSessionTarget; workflow: AgentWorkflowStateV1 }>();
+  const handleWorkflowResolved = useCallback((workflow: AgentWorkflowStateV1) => {
+    setResolvedWorkflow({ address, workflow });
+  }, [address]);
+  const resolvedTodo = resolvedWorkflow?.address === address && resolvedWorkflow.workflow.sessionId === sessionId
+    ? resolvedWorkflow.workflow.todo
     : undefined;
   const panelStatus = contextSnapshotState === 'restoring'
     ? '正在恢复上下文'
@@ -145,7 +149,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
     [projection],
   );
   const subagents = useQuery({
-    queryKey: ['agent', 'status-panel', 'subagents', sessionId],
+    queryKey: ['agent', 'status-panel', 'subagents', agentProjectionKey(address)],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.subagents.list',
       query: { sessionId, limit: 50 },
@@ -176,7 +180,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
     >
       <header>
         <span><strong>任务中心</strong><small>{panelStatus}</small></span>
-        <IconButton icon={<PanelRightClose size={16} />} label="收起任务中心" onClick={onClose} tooltip />
+        <IconButton data-drawer-autofocus icon={<PanelRightClose size={16} />} label="收起任务中心" onClick={onClose} tooltip />
       </header>
       {contentReady ? <div className="agent-status-panel__body">
         <AgentWorkflowPanel
@@ -186,10 +190,10 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           fallbackGoal={projection?.goal}
           fallbackActGate={projection?.actGate}
           compactEmpty={minimal}
-          onWorkflowResolved={setResolvedWorkflow}
+          onWorkflowResolved={handleWorkflowResolved}
         />
         {lifecycleCancellationAudits.length ? (
-          <StatusSection icon={CircleDashed} title="取消与暂停回执" count={lifecycleCancellationAudits.length} defaultOpen={!minimal}>
+          <StatusSection essential icon={CircleDashed} title="取消与暂停回执" count={lifecycleCancellationAudits.length} defaultOpen={!minimal}>
             <LifecycleCancellationView audits={lifecycleCancellationAudits} />
           </StatusSection>
         ) : null}
@@ -207,7 +211,16 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           </StatusSection>
         ) : null}
 
-        <StatusSection icon={SquareTerminal} title="后台任务" count={backgroundJobs.length} defaultOpen={!minimal}>
+        <StatusSection essential icon={FolderKanban} title="产物" count={view.artifacts.length + runs.filter((run) => run.artifact).length} defaultOpen>
+          {view.artifacts.length || runs.some((run) => run.artifact) ? (
+            <div className="agent-status-files">
+              {view.artifacts.map((artifact) => <StatusRow key={artifact.id} icon={FolderKanban} title={artifact.name} detail={artifact.kind} />)}
+              {runs.filter((run) => run.artifact).map((run) => <StatusRow key={`artifact:${run.id}`} icon={FolderKanban} title={`${subagentTemplateLabel(run.templateId)}协作产物`} detail={subagentStateLabel(run, 'result')} />)}
+            </div>
+          ) : <EmptyLine>本轮还没有可交付产物</EmptyLine>}
+        </StatusSection>
+
+        <StatusSection essential icon={SquareTerminal} title="后台任务" count={backgroundJobs.length} defaultOpen={!minimal}>
           <AgentBackgroundJobsView
             active={surfaceActive}
             sessionId={sessionId}
@@ -216,11 +229,11 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           />
         </StatusSection>
 
-        <StatusSection icon={MessagesSquare} title="消息队列" count={(projection?.messageQueue.steering.length ?? 0) + (projection?.messageQueue.followUp.length ?? 0)} defaultOpen={!minimal}>
+        <StatusSection essential icon={MessagesSquare} title="消息队列" count={(projection?.messageQueue.steering.length ?? 0) + (projection?.messageQueue.followUp.length ?? 0)} defaultOpen={!minimal}>
           <MessageQueueView projection={projection} />
         </StatusSection>
 
-        <StatusSection icon={Gauge} title="上下文与用量" count={projection?.telemetry?.compactionCount ?? 0} defaultOpen={!minimal}>
+        <StatusSection icon={Gauge} title="上下文与用量" count={projection?.telemetry?.compactionCount ?? 0} defaultOpen={false}>
           <SessionTelemetryView projection={projection} />
         </StatusSection>
         <ContextXraySections sessionId={sessionId} open={open && surfaceActive} />
@@ -258,7 +271,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           />
         </StatusSection>
 
-        <StatusSection icon={Wrench} title="关键步骤" count={logicalTools.length} defaultOpen={!minimal}>
+        <StatusSection essential icon={Wrench} title="关键步骤" count={logicalTools.length} defaultOpen={false}>
           {logicalTools.length ? (
             <div className="agent-status-tools">
               {logicalTools.map((item) => item.kind === 'attempts'
@@ -268,7 +281,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           ) : <EmptyLine>本轮还没有工具步骤</EmptyLine>}
         </StatusSection>
 
-        <StatusSection icon={Paperclip} title="附件与文件" count={view.files.length + view.attachmentCount} defaultOpen={!minimal}>
+        <StatusSection icon={Paperclip} title="附件与文件" count={view.files.length + view.attachmentCount} defaultOpen={false}>
           {view.files.length || view.attachmentCount ? (
             <div className="agent-status-files">
               {view.attachmentCount ? <StatusRow icon={Paperclip} title={`${view.attachmentCount} 个受管附件`} detail="随会话消息保存" /> : null}
@@ -277,14 +290,7 @@ export const AgentStatusPanel = forwardRef<HTMLElement, {
           ) : <EmptyLine>当前会话没有附件或文件</EmptyLine>}
         </StatusSection>
 
-        <StatusSection icon={FolderKanban} title="产物" count={view.artifacts.length + runs.filter((run) => run.artifact).length} defaultOpen={!minimal}>
-          {view.artifacts.length || runs.some((run) => run.artifact) ? (
-            <div className="agent-status-files">
-              {view.artifacts.map((artifact) => <StatusRow key={artifact.id} icon={FolderKanban} title={artifact.name} detail={artifact.kind} />)}
-              {runs.filter((run) => run.artifact).map((run) => <StatusRow key={`artifact:${run.id}`} icon={FolderKanban} title={`${subagentTemplateLabel(run.templateId)}协作产物`} detail={subagentStateLabel(run, 'result')} />)}
-            </div>
-          ) : <EmptyLine>本轮还没有可交付产物</EmptyLine>}
-        </StatusSection>
+
 
         <StatusSection icon={Plus} title="启动子 Agent" count={1} defaultOpen={false}>
           <SubagentLaunchPanel
@@ -600,17 +606,19 @@ function StatusSection({
   count,
   children,
   defaultOpen = true,
+  essential = false,
 }: {
   icon: LucideIcon;
   title: string;
   count: number;
   children: ReactNode;
   defaultOpen?: boolean;
+  essential?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const contentId = useId();
   return (
-    <section className="agent-status-section" data-open={open} data-status-title={title}>
+    <section className="agent-status-section" data-open={open} data-status-title={title} data-task-essential={essential || undefined}>
       <header>
         <button aria-controls={contentId} aria-expanded={open} onClick={() => setOpen((value) => !value)} type="button">
           <Icon size={15} />

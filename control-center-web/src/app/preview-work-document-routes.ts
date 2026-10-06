@@ -26,7 +26,7 @@ export function createPreviewWorkDocumentRoutes(): PreviewRoutes {
       const items = activeState === 'archived' ? [] : [activeDocument()];
       return { schemaVersion: 'rag-ime.work-document-list.v1', items, total: items.length };
     },
-    'workDocuments.history.search': () => {
+    'workDocuments.history.search': (request: ControlRequest) => {
       const items = [previewWorkDocument(
         ARCHIVED_DOCUMENT_ID,
         'archived',
@@ -34,7 +34,10 @@ export function createPreviewWorkDocumentRoutes(): PreviewRoutes {
         'terminal-receipt-preview-archived',
       )];
       if (activeState === 'archived') items.push(activeDocument());
-      return { schemaVersion: 'rag-ime.work-document-list.v1', items, total: items.length };
+      const query = stringValue(record(request.query).query).trim().toLocaleLowerCase();
+      const matches = query ? items.filter(document => ['title', 'authorityId', 'authorityKey', 'path', 'activePath', 'archivePath']
+        .some(key => stringValue(document[key]).toLocaleLowerCase().includes(query))) : items;
+      return { schemaVersion: 'rag-ime.work-document-list.v1', items: matches, total: matches.length };
     },
     'workDocuments.get': (request: ControlRequest) => {
       const documentId = stringValue(record(request.params).documentId);

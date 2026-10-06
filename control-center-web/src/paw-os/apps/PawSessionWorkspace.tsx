@@ -1,5 +1,14 @@
+import { FocusScope, Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
+import type { InitialSessionSubmission } from './agent-workspace-loader';
+import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, installationChangeMatchesTransport } from '@/paw-os/extensions/installation';
+import { capabilityCatalogQueryOptions, observeCatalogQuery, pluginQueryKeys, prepareCatalogRefresh, readCatalogQuery, useCatalogQueryClient } from '@/features/plugins/catalog-queries';
+import { sameAgentCompactionTarget, type AgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import { useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
-import { PawSessionFocusHeader } from './PawSessionFocusHeader';
+import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
+import './paw-workbench-reading.css';
+import { PawSessionTaskbar } from './PawSessionTaskbar';
+import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-state.v1';
+import { latestWorkflowGoal } from '@/features/agent/status/AgentWorkflowPanel';
 import {
   ChevronDown,
   CircleAlert,
@@ -22,7 +31,9 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FocusEvent,
+  type ReactNode,
   type KeyboardEvent,
 } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -80,7 +91,7 @@ import {
   resolveConversationEntryId,
   type ConversationNode,
 } from '@/features/agent/sessions/ConversationForkDialog';
-import { agentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjection, agentProjectionKey, agentSessionAddress, selectAgentProjection, latestActiveAgentTurnId as latestActiveTurnId, useAgentLiveStore, type AgentSessionTarget } from '@/features/agent/state/live-store';
 import { AgentStatusPanel } from '@/features/agent/status/AgentStatusPanel';
 import { AgentTimeline, initialAgentResponseTurnId, labProjectUserDraft, type AgentUserMessagePresentation } from '@/features/agent/timeline/AgentTimeline';
 import { QueueTray, useConversationQueue } from '@/features/conversation-ui';
@@ -108,7 +119,6 @@ import {
 } from '@/features/agent/types';
 import {
   capabilityScopeLabel,
-  requireSessionCapabilityCatalog,
   type CapabilityCatalog,
   type CapabilityMutationOutcome,
   type CapabilityPreference,
@@ -123,12 +133,14 @@ const STOP_UNCONFIRMED_TEXT = '尚有后台资源未确认停止。请查看任�
 
 export function sessionWorkspaceProjectionSlice(
   state: ReturnType<typeof useAgentLiveStore.getState>,
-  sessionId: string,
+  target: AgentSessionTarget,
 ) {
-  const projection = state.projections[sessionId];
+  const projection = selectAgentProjection(state, target);
   return {
     activeTurnId: projection?.durableRecovery?.activeTurn?.turnId ?? latestActiveTurnId(projection),
     hasTurns: Boolean(projection?.turnOrder.length),
+    goal: projection?.goal,
+    lastTurnStatus: projection?.turnsById[projection.turnOrder.at(-1) ?? '']?.status,
     pendingMemoryReview: latestWaitingActivity(
       projection,
       (activity) => activity.kind === 'user_input_required' && activity.payload.requestKind === 'memory_review',
@@ -148,6 +160,10 @@ export function sessionWorkspaceProjectionSlice(
 }
 
 
+export type WorkspaceComposerHeaderView = {
+  session: SessionSummary; draft: string; disabled: boolean; sourceMessageId(): string | undefined;
+};
+
 export function PawSessionWorkspace({
   active = true,
   persona,
@@ -155,6 +171,8 @@ export function PawSessionWorkspace({
   recordMetadataKnown = Boolean(record),
   recordId,
   initialDraft = '',
+  initialSubmission,
+  renderComposerHeader,
   initialAttachments = [],
   draftRequest,
   composerContext,
@@ -169,7 +187,7 @@ export function PawSessionWorkspace({
   showComposerControls = appearance !== 'embedded',
   composerPlaceholder,
   userMessagePresentation,
-  fullHistoryOnOpen = true,
+  fullHistoryOnOpen = false,
 }: {
   active?: boolean;
   persona?: AgentPersonaV1;
@@ -177,6 +195,8 @@ export function PawSessionWorkspace({
   recordMetadataKnown?: boolean;
   recordId: string;
   initialDraft?: string;
+  initialSubmission?: InitialSessionSubmission;
+  renderComposerHeader?: (view: WorkspaceComposerHeaderView) => ReactNode;
   initialAttachments?: ComposerAttachment[];
   draftRequest?: WorkspaceDraftRequest;
   composerContext?: WorkspaceComposerContext;
@@ -197,22 +217,45 @@ export function PawSessionWorkspace({
   fullHistoryOnOpen?: boolean;
 }) {
   const transport = useControlTransport();
+  const catalogQueryClient = useCatalogQueryClient();
+  const address = agentSessionAddress(transport, recordId);
+  const workspaceScopeRef = useRef({ recordId, transport });
+  if (workspaceScopeRef.current.recordId !== recordId || workspaceScopeRef.current.transport !== transport) {
+    workspaceScopeRef.current = { recordId, transport };
+  }
+  const workspaceScope = workspaceScopeRef.current;
   const electronHost = pawBrowserHost();
   const desktop = usePawOsDesktop();
   const windowChromeTarget = usePawWindowChromeTarget();
   const embedded = appearance === 'embedded';
   const workspaceRecord = record ?? provisionalSessionRecord(recordId);
+  const permissionsLocked = workspaceRecord.metadata?.primaryAssistant === true || workspaceRecord.metadata?.primaryTask === true;
+  const initialSubmissionRef = useRef<string | undefined>(undefined);
   const evaluationSnapshot = record?.evaluationSnapshot === true;
   const pageVisible = usePageVisibility();
   // Keep every mounted chat window current even when another PAW window has
   // focus. Only a hidden document suspends the authoritative event stream.
   const liveActive = pageVisible;
   const projectionSlice = useAgentLiveStore(useShallow(
-    (state) => sessionWorkspaceProjectionSlice(state, recordId),
+    (state) => sessionWorkspaceProjectionSlice(state, address),
   ));
+  // Read the existing workflow cache without creating another query observer
+  // or changing its fetch options. The workflow panel owns reads/mutations.
+  const workflowKey = useMemo(() => ['agent', 'workflow', agentProjectionKey(address)] as const, [address]);
+  const workflowReceipt = useSyncExternalStore(
+    useCallback((notify) => catalogQueryClient.getQueryCache().subscribe(({ query }) => {
+      if (query.queryKey[0] === workflowKey[0] && query.queryKey[1] === workflowKey[1] && query.queryKey[2] === workflowKey[2]) notify();
+    }), [catalogQueryClient, workflowKey]),
+    useCallback(() => catalogQueryClient.getQueryData<AgentWorkflowStateV1>(workflowKey), [catalogQueryClient, workflowKey]),
+  );
+  const taskbarGoal = latestWorkflowGoal(
+    workflowReceipt?.sessionId === recordId && workflowReceipt.goal.sessionId === recordId ? workflowReceipt.goal : undefined,
+    projectionSlice.goal,
+  );
   const [catalog, setCatalog] = useState<ModelCatalog>();
   const durableSession = workspaceRecord.runtimeEngine === 'durable' || catalog?.runtimeEngine === 'durable' || projectionSlice.runtimeEngine === 'durable';
   const durablePaused = projectionSlice.durableRecovery?.paused === true;
+  const compactionTarget = projectionSlice.durableRecovery?.compactionTarget;
   const classicHistoryAvailable = recordMetadataKnown && record?.id === recordId && !durableSession;
   const [commands, setCommands] = useState<AgentCommand[]>([]);
   const [tools, setTools] = useState<ToolManifest[]>([]);
@@ -220,7 +263,7 @@ export function PawSessionWorkspace({
   const [capabilityCatalog, setCapabilityCatalog] = useState<CapabilityCatalog>();
   const [capabilityCatalogError, setCapabilityCatalogError] = useState('');
   const [capabilityMutation, setCapabilityMutation] = useState<CapabilityMutationOutcome>();
-  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialDraft ?? '', initialAttachments);
+  const recovery = useWorkspaceRecovery<ComposerAttachment>(`session:${recordId}`, initialSubmission?.message ?? initialDraft ?? '', initialAttachments, initialSubmission ? 'replace' : 'append');
   const { draft, setDraft, attachments, setAttachments } = recovery;
   useEffect(() => {
     if (draftRequest) setDraft(current => applyWorkspaceDraft(current, draftRequest));
@@ -235,36 +278,95 @@ export function PawSessionWorkspace({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [resuming, setResuming] = useState(false);
-  const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport } | undefined>(undefined);
+  const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target?: AgentCompactionTarget } | undefined>(undefined);
+  const compactionStopRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target: AgentCompactionTarget } | undefined>(undefined);
+  const turnStopRequestRef = useRef<{
+    scope: typeof workspaceScope; clientMessageId?: string; acknowledged: boolean; admissionCancelled: boolean;
+  } | undefined>(undefined);
   const resumeOwnerRef = useRef({ recordId, transport });
   resumeOwnerRef.current = { recordId, transport };
   useEffect(() => {
     setResuming(false);
+    setStopping(false);
     return () => {
       const request = resumeRequestRef.current;
       if (request?.recordId === recordId && request.transport === transport) {
         request.controller.abort(); resumeRequestRef.current = undefined;
       }
+      const stopRequest = compactionStopRequestRef.current;
+      if (stopRequest?.recordId === recordId && stopRequest.transport === transport) {
+        stopRequest.controller.abort(); compactionStopRequestRef.current = undefined;
+      }
+      if (turnStopRequestRef.current?.scope === workspaceScope) turnStopRequestRef.current = undefined;
     };
   }, [recordId, transport]);
-  const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(state.projections[recordId]));
+  const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(selectAgentProjection(state, address)));
   const [stopping, setStopping] = useState(false);
-  const [modelChanging, setModelChanging] = useState(false);
+  useEffect(() => {
+    // A newer native target may appear before an older control request returns.
+    // Release only that stale request's local lock; never retarget its payload.
+    const resume = resumeRequestRef.current;
+    if (resume?.target && !sameAgentCompactionTarget(resume.target, compactionTarget)) {
+      resume.controller.abort(); resumeRequestRef.current = undefined; setResuming(false);
+    }
+    const stopRequest = compactionStopRequestRef.current;
+    if (stopRequest && !sameAgentCompactionTarget(stopRequest.target, compactionTarget)) {
+      stopRequest.controller.abort(); compactionStopRequestRef.current = undefined; setStopping(false);
+    }
+  }, [compactionTarget]);
+  const [modelChangeRequest, setModelChangeRequest] = useState<{ scope: typeof workspaceScope }>();
+  const modelChanging = modelChangeRequest?.scope === workspaceScope;
   const [panel, setPanel] = useState<WorkbenchPanel>('none');
   const [statusPanelVisited, setStatusPanelVisited] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [controlsExpanded, setControlsExpanded] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<SessionWorkspaceView>(embedded ? 'conversation' : traceFocusNodeId ? 'trace' : 'conversation');
   const [error, setError] = useState('');
+  // Switching Sessions must preserve each unresolved Stop's transport and target.
+  const [compactionStopWarnings, setCompactionStopWarnings] = useState(() => new Map<string, {
+    transport: typeof transport; target: AgentCompactionTarget;
+  }>());
+  useEffect(() => {
+    // Only validated owner metadata may retire this target's uncertainty.
+    // A missing/history-only target cannot clear it or a separate turn Stop.
+    if (compactionTarget === undefined) return;
+    setCompactionStopWarnings(current => {
+      const warning = current.get(recordId);
+      if (warning?.transport !== transport || sameAgentCompactionTarget(warning.target, compactionTarget)) return current;
+      const next = new Map(current);
+      next.delete(recordId);
+      return next;
+    });
+  }, [compactionTarget, recordId, transport]);
+  const compactionStopError = compactionStopWarnings.get(recordId)?.transport === transport
+    ? STOP_UNCONFIRMED_TEXT : '';
   const [attachmentError, setAttachmentError] = useState('');
-  const attachmentOwner = useRef(recordId);
-  attachmentOwner.current = recordId;
-  useEffect(() => { setAttachmentError(''); }, [recordId]);
+  // Import receipts belong to the current input owner. Count every in-flight
+  // picker/paste/drop so one completion cannot unlock another partial input.
+  const attachmentImports = useMemo(() => ({ active: false, pending: new Set<symbol>() }), [workspaceScope]);
+  const [, refreshAttachmentImports] = useState(0);
+  const attachmentImportPending = attachmentImports.pending.size > 0;
+  useEffect(() => {
+    attachmentImports.active = true;
+    setAttachmentError('');
+    return () => { attachmentImports.active = false; attachmentImports.pending.clear(); };
+  }, [attachmentImports]);
   const [syncError, setSyncError] = useState('');
   const [syncState, setSyncState] = useState<AgentRecoveryState>('recovering');
-  const [hasSnapshot, setHasSnapshot] = useState(false);
-  useEffect(() => { setSyncError(''); setSyncState('recovering'); setHasSnapshot(false); }, [recordId]);
-  const visibleError = error || (syncError && (!hasSnapshot || syncState === 'failed')
+  // Visible history is independent of command admission. A background expansion
+  // does not revoke an accepted recent snapshot, and an old owner cannot grant it.
+  const [historyRead, setHistoryRead] = useState<{
+    scope: typeof workspaceScope; view?: 'recent' | 'full'; expanding?: boolean;
+  }>();
+  const hasSnapshot = historyRead?.scope === workspaceScope && Boolean(historyRead.view);
+  const contextSnapshotState = historyRead?.scope === workspaceScope && historyRead.expanding
+    ? 'restoring' : hasSnapshot && historyRead?.view === 'full' ? undefined : 'partial';
+  useEffect(() => {
+    setSyncError(''); setSyncState('recovering'); setHistoryRead(undefined);
+    setCatalog(undefined); setTools([]); setCommands([]); setCapabilityCatalog(undefined);
+    setCapabilityCatalogError(''); setToolCatalogStatus('loading');
+  }, [recordId, transport]);
+  const visibleError = error || compactionStopError || (syncError && (!hasSnapshot || syncState === 'failed')
     ? '连接暂时不可用，系统会继续自动重连。' : '');
   const [modelPickerRequest, setModelPickerRequest] = useState(0);
   const [thinkingPickerRequest, setThinkingPickerRequest] = useState(0);
@@ -286,17 +388,47 @@ export function PawSessionWorkspace({
   const [forkDialogNodes, setForkDialogNodes] = useState<ConversationNode[]>([]);
   const [forkDialogInitialEntryId, setForkDialogInitialEntryId] = useState('');
   const [editState, setEditState] = useState<{ entryId: string; messageId: string; resolving?: boolean }>();
+  const editRequestRef = useRef(0);
+  useEffect(() => {
+    setEditState(undefined);
+    return () => { editRequestRef.current += 1; };
+  }, [workspaceScope]);
   const [jumpRequest, setJumpRequest] = useState<{ messageId: string; requestId: number }>();
   const [timelineFollow, setTimelineFollow] = useState({ following: true, unseenUpdates: 0 });
   const [scrollToLatestRequest, setScrollToLatestRequest] = useState(0);
-  const [contextSnapshotState, setContextSnapshotState] = useState<'restoring' | 'partial'>();
   const toolMenuContainerRef = useRef<HTMLDivElement>(null);
   const toolMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const toolPanelReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuRef = useRef<HTMLElement>(null);
   const toolMenuInitialFocusRef = useRef<'first' | 'last'>('first');
   const primaryRef = useRef<HTMLDivElement>(null);
+  const toolPanelRef = useRef<HTMLElement>(null);
+  const [toolPanelOverlay, setToolPanelOverlay] = useState(true);
+  const previousToolPanel = useRef<WorkbenchPanel>('none');
+  const toolPanelTrapsFocus = active && panel !== 'none' && toolPanelOverlay;
+  // CSS owns docking. Observe its result rather than duplicate breakpoints or
+  // remount the file tree when a window moves between docked and overlay layouts.
+  useEffect(() => {
+    const element = toolPanelRef.current;
+    const body = primaryRef.current?.parentElement;
+    if (!element || !body || panel === 'none') return;
+    const update = () => setToolPanelOverlay(getComputedStyle(element).position !== 'static');
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [panel]);
+  useEffect(() => {
+    const opened = previousToolPanel.current !== panel;
+    previousToolPanel.current = panel;
+    if (active && panel !== 'none' && (opened || toolPanelOverlay)) {
+      toolPanelRef.current?.querySelector<HTMLElement>('[data-drawer-autofocus]')?.focus({ preventScroll: true });
+    }
+  }, [active, panel, toolPanelOverlay]);
   const terminalSnapshotTimerRef = useRef<number | undefined>(undefined);
   const catalogAbortRef = useRef<AbortController | undefined>(undefined);
+  const catalogRequestRef = useRef(0);
   const loadAgentSnapshotRef = useRef<AgentLiveSnapshotLoader>(
     async () => false,
   );
@@ -314,15 +446,24 @@ export function PawSessionWorkspace({
     setToolMenuOpen(false);
   }, [embedded, recordId, traceFocusNodeId]);
 
-  const busy = Boolean(projectionSlice.activeTurnId);
+  const busy = Boolean(projectionSlice.activeTurnId || compactionTarget);
+  const submissionBlockedReason = attachmentImportPending ? '正在导入附件'
+    : editState && (editState.resolving || !editState.entryId) ? '正在定位历史消息'
+      : recovery.checking ? '正在核实恢复的附件'
+        : recovery.issues.length ? '请先处理失效附件' : '';
+  const queueAdmissionBlocked = sending || modelChanging || Boolean(submissionBlockedReason);
   /* A held follow-up is the composer's own queue, not a Runtime delivery.
      干预/接续 hand the message to Pi immediately; a queued draft never leaves
      the client until this turn settles, which is what keeps it editable,
      reorderable, revocable, and restorable when the turn is stopped. */
   const queue = useConversationQueue({
-    busy: busy || sending || durablePaused,
-    conversationId: recordId,
+    busy: busy || durablePaused || queueAdmissionBlocked,
+    conversationId: recovery.ownerId,
+    onDispose: items => recovery.recoverInput(current => ({ ...current, draft: mergeQueueBackToDraft(items, current.draft) })),
     send: (text) => {
+      // Queue consumption is synchronous; an async send that returns before
+      // admission must not discard the input the queue still owns.
+      if (queueAdmissionBlocked || !acceptsComposerInput()) return false;
       if (!acceptsImmediateInput(text)) return false;
       void send('prompt', text);
     },
@@ -334,59 +475,82 @@ export function PawSessionWorkspace({
 
   const loadFullSnapshot = useCallback(async (): Promise<void> => {
     if (!liveActive) return;
-    setContextSnapshotState('restoring');
-    const loaded = await loadAgentSnapshotRef.current({ view: 'full' });
-    if (!loaded) setContextSnapshotState('partial');
-  }, [liveActive]);
+    const scope = workspaceScope;
+    const load = loadAgentSnapshotRef.current;
+    if (workspaceScopeRef.current !== scope) return;
+    setHistoryRead(current => ({ ...(current?.scope === scope ? current : {}), scope, expanding: true }));
+    const loaded = await load({ view: 'full' });
+    if (workspaceScopeRef.current !== scope) return;
+    if (!loaded) setHistoryRead(current => current?.scope === scope ? { ...current, expanding: false } : current);
+  }, [liveActive, workspaceScope]);
 
-  const loadControlCatalog = useCallback(async (signal?: AbortSignal) => {
-    if ((!liveActive && !signal) || signal?.aborted) return;
+  const loadControlCatalog = useCallback(async (afterChange = false) => {
+    const scope = workspaceScope;
+    if (!liveActive || document.visibilityState === 'hidden' || workspaceScopeRef.current !== scope) return;
+    const postChangeRefresh = afterChange ? prepareCatalogRefresh(catalogQueryClient, [pluginQueryKeys.catalog(transport, recordId)]) : undefined;
+    catalogAbortRef.current?.abort();
+    const controller = new AbortController();
+    catalogAbortRef.current = controller;
+    const signal = controller.signal;
+    const requestId = ++catalogRequestRef.current;
+    const isCurrent = () => workspaceScopeRef.current === scope && requestId === catalogRequestRef.current && !signal?.aborted;
     setToolCatalogStatus('loading');
     // Publish each independent catalog as it arrives. A slow model/command
     // lookup must not keep the already-confirmed memory and tool switches hidden.
     const requestOptions = signal ? { signal } : {};
-    await Promise.allSettled([
+    const catalogReads = Promise.allSettled([
       transport.request({ pathId: 'agent.session.models', params: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (!signal?.aborted && isModelCatalog(value)) setCatalog(value);
+        if (isCurrent() && isModelCatalog(value)) setCatalog(value);
       }),
       transport.request({ pathId: 'agent.session.commands', params: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (!signal?.aborted) setCommands(commandItems(value));
+        if (isCurrent()) setCommands(commandItems(value));
       }),
-      transport.request({ pathId: 'agent.tools.list', query: { sessionId: recordId }, ...requestOptions }).then((value) => {
-        if (signal?.aborted) return;
-        setTools(toolItems(value));
-        setCapabilityCatalog(requireSessionCapabilityCatalog(value, recordId));
-        setCapabilityCatalogError('');
-        setToolCatalogStatus('ready');
-      }).catch((reason: unknown) => {
-        if (signal?.aborted) return;
-        setTools([]);
-        setCapabilityCatalog(undefined);
-        setCapabilityCatalogError(errorText(reason));
-        setToolCatalogStatus('failed');
+      observeCatalogQuery(catalogQueryClient, { ...capabilityCatalogQueryOptions(transport, recordId), staleTime: 0 }, signal, {
+        onData: value => {
+          if (!isCurrent()) return;
+          setTools(toolItems(value));
+          setCapabilityCatalog(value);
+          setCapabilityCatalogError('');
+          setToolCatalogStatus('ready');
+        },
+        onError: reason => {
+          if (!isCurrent()) return;
+          setTools([]);
+          setCapabilityCatalog(undefined);
+          setCapabilityCatalogError(errorText(reason));
+          setToolCatalogStatus('failed');
+        },
+        onFetching: () => { if (isCurrent()) setToolCatalogStatus('loading'); },
       }),
       transport.request<Record<string, unknown>>({ pathId: 'agent.runtime.get', ...requestOptions }).then((value) => {
-        if (signal?.aborted) return;
+        if (!isCurrent()) return;
         const capabilities = asRecord(value.capabilities);
         setConversationForkAvailable(capabilities.conversationFork === true);
         setConversationRewriteAvailable(capabilities.conversationRewrite === true);
       }).catch(() => {
-        if (signal?.aborted) return;
+        if (!isCurrent()) return;
         setConversationForkAvailable(false);
         setConversationRewriteAvailable(false);
       }),
     ]);
-  }, [liveActive, recordId, transport]);
+    await Promise.all([catalogReads, postChangeRefresh?.()]);
+  }, [catalogQueryClient, liveActive, recordId, transport, workspaceScope]);
 
-  const refreshControlCatalog = useCallback(() => {
+  const refreshControlCatalog = useCallback((afterChange = false) => {
     if (evaluationSnapshot || !liveActive) return;
-    catalogAbortRef.current?.abort();
-    const controller = new AbortController();
-    catalogAbortRef.current = controller;
-    void loadControlCatalog(controller.signal).finally(() => {
-      if (catalogAbortRef.current === controller) catalogAbortRef.current = undefined;
-    });
+    void loadControlCatalog(afterChange);
   }, [evaluationSnapshot, liveActive, loadControlCatalog]);
+
+  useEffect(() => {
+    if (evaluationSnapshot || !liveActive) return;
+    // An accepted installation receipt invalidates displayed capabilities;
+    // the session catalog remains the authority and no permissions are changed.
+    const refresh = (event: Event) => {
+      if (installationChangeMatchesTransport(event, transport)) refreshControlCatalog(true);
+    };
+    window.addEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, refresh);
+  }, [evaluationSnapshot, liveActive, refreshControlCatalog, transport]);
 
   const loadAgentSnapshot = useAgentLiveSession({
     sessionId: recordId,
@@ -397,15 +561,17 @@ export function PawSessionWorkspace({
     onLoadingChange: setLoading,
     onRecoveryState: setSyncState,
     onSnapshot: (snapshot) => {
-      setHasSnapshot(true);
+      setHistoryRead(current => ({
+        scope: workspaceScope,
+        view: current?.scope === workspaceScope && current.view === 'full' ? 'full' : snapshot.view,
+      }));
       setSyncError('');
-      setContextSnapshotState(snapshot.view === 'recent' ? 'partial' : undefined);
       // A transcript snapshot cannot confirm that a captured process drained.
       setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
       refreshControlCatalog();
     },
     onSnapshotError: (failure) => {
-      setContextSnapshotState('partial');
+      setHistoryRead(current => current?.scope === workspaceScope ? { ...current, expanding: false } : current);
       if (isAgentWorkspaceMissingError(failure.error)) {
         setError(errorText(failure.error));
       } else {
@@ -415,6 +581,7 @@ export function PawSessionWorkspace({
     },
     onEvent: (event) => {
       if (event.eventType === 'snapshot_required') return;
+      if (event.eventType === 'session_configuration_changed') refreshControlCatalog(true);
       const completedMessage = asRecord(asRecord(event.payload).message);
       if (
         event.eventType === 'message_completed'
@@ -426,10 +593,16 @@ export function PawSessionWorkspace({
         }
         terminalSnapshotTimerRef.current = window.setTimeout(() => {
           terminalSnapshotTimerRef.current = undefined;
+          if (workspaceScopeRef.current !== workspaceScope) return;
           void loadAgentSnapshotRef.current({
             preserveAfterSequence: event.sequence,
           });
         }, 350);
+      }
+      if (event.eventType === 'compaction_started' || event.eventType === 'compaction_completed') {
+        // Standalone compaction has no turn terminal to refresh its controls.
+        // Only the following current native metadata may replace the target.
+        void loadAgentSnapshotRef.current({ preserveAfterSequence: event.sequence });
       }
       const runtimeWindow = runtimeToolWindow(event);
       if (runtimeWindow && shouldAutoOpenRuntimeToolWindow(runtimeWindow)) {
@@ -441,6 +614,7 @@ export function PawSessionWorkspace({
           terminalSnapshotTimerRef.current = undefined;
         }
         setStopping(false);
+        if (turnStopRequestRef.current?.acknowledged) turnStopRequestRef.current = undefined;
         setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
         void loadAgentSnapshotRef.current({
           preserveAfterSequence: event.sequence,
@@ -450,7 +624,7 @@ export function PawSessionWorkspace({
     },
     onConnectionError: (_sessionId, reason) => {
       setStopping(false);
-      setContextSnapshotState('partial');
+      setHistoryRead(current => current?.scope === workspaceScope ? { ...current, expanding: false } : current);
       setSyncError(errorText(reason));
     },
     onConnectionRestored: () => { if (hasSnapshot) setSyncError(''); },
@@ -458,13 +632,14 @@ export function PawSessionWorkspace({
   loadAgentSnapshotRef.current = loadAgentSnapshot;
 
   useEffect(() => () => {
+    catalogRequestRef.current += 1;
     catalogAbortRef.current?.abort();
     catalogAbortRef.current = undefined;
     if (terminalSnapshotTimerRef.current !== undefined) {
       window.clearTimeout(terminalSnapshotTimerRef.current);
       terminalSnapshotTimerRef.current = undefined;
     }
-  }, [liveActive, recordId]);
+  }, [liveActive, recordId, transport]);
 
   async function reconcileSessionForAction(): Promise<SessionSummary | undefined> {
     let canonical = record;
@@ -487,7 +662,7 @@ export function PawSessionWorkspace({
         params: { sessionId: recordId },
         query: { view: 'recent' },
       });
-      useAgentLiveStore.getState().hydrate(recordId, snapshot);
+      useAgentLiveStore.getState().hydrate(address, snapshot);
       return workspaceRecord;
     } catch {
       return undefined;
@@ -503,7 +678,7 @@ export function PawSessionWorkspace({
      a failure the reader cannot see because another view is on screen. */
   function turnFailureIsVisible(clientMessageId: string): boolean {
     return workspaceView === 'conversation'
-      && timelineOwnsTurnFailure(agentProjection(recordId), clientMessageId);
+      && timelineOwnsTurnFailure(agentProjection(address), clientMessageId);
   }
 
   /* One settle path for every prompt admission failure, shared by send and
@@ -524,9 +699,9 @@ export function PawSessionWorkspace({
   ): void {
     const store = useAgentLiveStore.getState();
     if (isAgentCommandPending(reason)) {
-      if (agentProjection(recordId).optimisticByClientMessageId[clientMessageId]) {
+      if (agentProjection(address).optimisticByClientMessageId[clientMessageId]) {
         store.failOptimistic(
-          recordId,
+          address,
           clientMessageId,
           errorText(reason),
           Date.now(),
@@ -537,7 +712,7 @@ export function PawSessionWorkspace({
     }
     if (isAmbiguousAgentPromptFailure(reason)) {
       store.failOptimistic(
-        recordId,
+        address,
         clientMessageId,
         '暂时无法确认是否已接收。系统不会自动重试；手动重试会核对同一条消息。',
         Date.now(),
@@ -548,7 +723,7 @@ export function PawSessionWorkspace({
     }
     const commandConflict = agentCommandReceiptFailure(reason);
     if (commandConflict?.code === 'AGENT_COMMAND_CONFLICT') {
-      store.discardOptimistic(recordId, clientMessageId);
+      store.discardOptimistic(address, clientMessageId);
       options.restoreInput?.();
       options.onAdmissionRolledBack?.();
       if (isAgentTurnConflict(reason)) {
@@ -564,7 +739,7 @@ export function PawSessionWorkspace({
       return;
     }
     store.failOptimistic(
-      recordId,
+      address,
       clientMessageId,
       errorText(reason),
       Date.now(),
@@ -578,41 +753,51 @@ export function PawSessionWorkspace({
   }
 
   async function resumeCurrentTask(): Promise<void> {
-    const projection = agentProjection(recordId);
+    const projection = agentProjection(address);
     const recovery = projection.durableRecovery;
     if (resumeRequestRef.current?.recordId === recordId && resumeRequestRef.current.transport === transport
       || sending || stopping || modelChanging || projection.needsSnapshot
-      || !recovery?.paused || !recovery.recoverable || !recovery.activeTurn) return;
-    const { turnId, clientMessageId } = recovery.activeTurn;
+      || compactionStopRequestRef.current
+      || !recovery?.paused || !recovery.recoverable || !recovery.activeTurn && !recovery.compactionTarget) return;
+    const target = recovery.compactionTarget;
+    const turnId = recovery.activeTurn?.turnId;
+    const clientMessageId = recovery.activeTurn?.clientMessageId;
     resumeRequestRef.current?.controller.abort();
     const controller = new AbortController();
-    const request = { controller, recordId, transport };
+    const request = { controller, recordId, transport, target: target ?? undefined };
     resumeRequestRef.current = request;
     const ownsRequest = () => !controller.signal.aborted && resumeRequestRef.current === request
       && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
+    const ownsTarget = () => ownsRequest() && (target
+      ? sameAgentCompactionTarget(agentProjection(address).durableRecovery?.compactionTarget, target)
+      : agentProjection(address).durableRecovery?.activeTurn?.turnId === turnId
+        && agentProjection(address).durableRecovery?.activeTurn?.clientMessageId === clientMessageId);
     setResuming(true);
     setError('');
     try {
       const response = asRecord(await transport.request({
         pathId: 'agent.session.resume', params: { sessionId: recordId },
-        body: { turnId, clientMessageId }, signal: controller.signal,
+        body: target ? { compactionTarget: target } : { turnId: turnId!, clientMessageId: clientMessageId! }, signal: controller.signal,
       }));
-      if (!ownsRequest()) return;
+      if (!ownsTarget()) return;
       const receipt = asRecord(response.runtimeReceipt);
       if (response.schemaVersion !== 'rag-ime.agent-session-resume.v1' || response.ok !== true
-        || response.sessionId !== recordId || response.turnId !== turnId || response.clientMessageId !== clientMessageId
-        || receipt.schemaVersion !== 'rag-ime.pi-session-resume.v1' || receipt.accepted !== true
-        || receipt.runtimeEngine !== 'durable' || typeof receipt.resumed !== 'boolean') {
+        || response.sessionId !== recordId || (target
+          ? !sameAgentCompactionTarget(response.compactionTarget, target) || !validCompactionReceipt(receipt, target, 'resume')
+          : response.turnId !== turnId || response.clientMessageId !== clientMessageId
+            || receipt.schemaVersion !== 'rag-ime.pi-session-resume.v1' || receipt.accepted !== true
+            || receipt.runtimeEngine !== 'durable' || typeof receipt.resumed !== 'boolean')) {
         throw new Error('Durable resume receipt is not confirmed');
       }
+      if (target) clearCompactionStopWarning(target);
       // The ACK proves admission, not execution. Read the same Session and let
       // current native metadata/events clear pause without a new prompt/turn.
       const loaded = await loadAgentSnapshotRef.current();
-      if (ownsRequest() && !loaded) setError('恢复尚未确认，原任务与进度已保留。请重新同步后再继续。');
+      if (ownsTarget() && !loaded) setError('恢复尚未确认，原任务与进度已保留。请重新同步后再继续。');
     } catch {
-      if (!ownsRequest()) return;
+      if (!ownsTarget()) return;
       await loadAgentSnapshotRef.current();
-      if (ownsRequest() && agentProjection(recordId).durableRecovery?.paused) {
+      if (ownsTarget() && agentProjection(address).durableRecovery?.paused) {
         setError('恢复尚未确认，原任务与进度已保留。可以重新同步，或再次继续当前任务。');
       }
     } finally {
@@ -635,14 +820,46 @@ export function PawSessionWorkspace({
 
   function acceptsImmediateInput(rawDraft: string): boolean {
     if (!acceptsEngineInput(rawDraft)) return false;
-    if (durablePaused) {
-      setError('当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。');
+    if (durablePaused || compactionTarget) {
+      setError(compactionTarget ? '请先继续或停止压缩；新消息可以排到下一轮。' : '当前任务已暂停，请先继续当前任务；新消息可以排到下一轮。');
       return false;
     }
     return true;
   }
 
-  async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft): Promise<void> {
+  function acceptsComposerInput(): boolean {
+    // This guard is synchronous too: a file import may have started before
+    // React commits the disabled button, and false keeps Composer's draft.
+    return workspaceScopeRef.current === workspaceScope && !sending && !modelChanging
+      && !sessionActionLockRef.current && !attachmentImports.pending.size
+      && !recovery.checking && !recovery.issues.length
+      && !(editState && (editState.resolving || !editState.entryId));
+  }
+
+  function settleCancelledPromptAdmission(clientMessageId: string): void {
+    useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
+    if (workspaceScopeRef.current !== workspaceScope) return;
+    const stopRequest = turnStopRequestRef.current;
+    if (stopRequest?.scope === workspaceScope && stopRequest.clientMessageId === clientMessageId) {
+      stopRequest.admissionCancelled = true;
+      // Cancellation proves this input never became a native turn. The Stop
+      // receipt still owns background-resource drain and any warning about it.
+      if (stopRequest.acknowledged) {
+        turnStopRequestRef.current = undefined;
+        setStopping(false);
+      }
+    }
+    void loadAgentSnapshot();
+  }
+
+  useEffect(() => {
+    if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
+      || !hasSnapshot || attachmentImportPending || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
+    void send('prompt', initialSubmission.message, initialSubmission.message, initialSubmission.clientMessageId);
+  }, [initialSubmission, hasSnapshot, attachmentImportPending, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
+
+  async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft, initialClientMessageId?: string): Promise<void> {
+    if (attachmentImports.pending.size) return;
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
     if (!acceptsEngineInput(rawDraft)) return;
@@ -656,13 +873,15 @@ export function PawSessionWorkspace({
       const message = value || '请查看附件。';
       const selectedAttachments = attachments;
       const target = editState;
+      const scope = workspaceScope;
+      const editRequest = ++editRequestRef.current;
       const clientMessageId = `paw-rewrite-${crypto.randomUUID()}`;
       setSending(true);
       setDraft('');
       setAttachments([]);
       setEditState(undefined);
       setError('');
-      useAgentLiveStore.getState().rewriteOptimistic(recordId, target.messageId, {
+      useAgentLiveStore.getState().rewriteOptimistic(address, target.messageId, {
         clientMessageId,
         text: message,
         attachments: selectedAttachments.map((item) => item.id),
@@ -683,12 +902,20 @@ export function PawSessionWorkspace({
            snapshot's job and never holds the composer. */
         void loadAgentSnapshot();
       } catch (reason) {
-        useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+        useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
         await loadAgentSnapshot().catch(() => undefined);
-        setDraft(value);
-        setAttachments(selectedAttachments);
-        setEditState(target);
-        setError(errorText(reason));
+        let restored = false;
+        recovery.recoverInput(current => {
+          // A rejected rewrite still owns its original input, never a newer
+          // thought. Restore text and attachments together through that owner.
+          if (current.draft || current.attachments.length) return current;
+          restored = true;
+          return { draft: displayDraft, attachments: selectedAttachments };
+        });
+        if (workspaceScopeRef.current === scope && editRequestRef.current === editRequest) {
+          if (restored) setEditState(target);
+          setError(errorText(reason));
+        }
       } finally {
         setSending(false);
       }
@@ -734,8 +961,9 @@ export function PawSessionWorkspace({
     sessionActionLockRef.current = true;
     const message = value || '请查看附件。';
     const selectedAttachments = attachments;
-    const clientMessageId = `paw-${crypto.randomUUID()}`;
-    const selectedScreenContext = screenContextForMessage(screenContext, selectedAttachments.map((item) => item.id), agentProjection(recordId));
+    const clientMessageId = initialClientMessageId ?? `paw-${crypto.randomUUID()}`;
+    if (initialClientMessageId) initialSubmissionRef.current = initialClientMessageId;
+    const selectedScreenContext = screenContextForMessage(screenContext, selectedAttachments.map((item) => item.id), agentProjection(address));
     const effectiveDelivery: AgentMessageDelivery = busy
       ? (delivery === 'followUp' ? 'followUp' : 'steer')
       : 'prompt';
@@ -747,20 +975,22 @@ export function PawSessionWorkspace({
        who had scrolled up to check an earlier turn watched their own message
        land off-screen with no sign it was accepted. */
     setScrollToLatestRequest((value) => value + 1);
-    useAgentLiveStore.getState().appendOptimistic(recordId, {
+    useAgentLiveStore.getState().appendOptimistic(address, {
       clientMessageId,
       text: message,
       attachments: selectedAttachments.map((item) => item.id),
       nowMs: Date.now(),
       ...(effectiveDelivery === 'prompt'
         ? {}
-        : { turnId: latestActiveTurnId(agentProjection(recordId)), delivery: effectiveDelivery }),
+        : { turnId: latestActiveTurnId(agentProjection(address)), delivery: effectiveDelivery }),
     });
     /* The input only comes back if the reader has not already started the next
        thought; a fresh draft never gets clobbered by an old failure. */
     const restoreInput = (): void => {
-      setDraft((current) => (current.trim() ? current : displayDraft.trim()));
-      setAttachments((current) => (current.length ? current : selectedAttachments));
+      recovery.recoverInput(current => ({
+        draft: current.draft.trim() ? current.draft : displayDraft.trim(),
+        attachments: current.attachments.length ? current.attachments : selectedAttachments,
+      }));
     };
     // Admission and the optimistic turn are synchronous. Catalog reconciliation,
     // restoring a Pi Session, or starting a Provider can still make the receipt
@@ -774,7 +1004,7 @@ export function PawSessionWorkspace({
         if (!record) {
           const actionRecord = await reconcileSessionForAction();
           if (!actionRecord) {
-            useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+            useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
             restoreInput();
             setError('当前 Session 暂时无法确认，请重新打开后再发送。');
             return;
@@ -792,11 +1022,10 @@ export function PawSessionWorkspace({
           },
         });
         if (isCancelledPromptAdmission(response)) {
-          useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
-          void loadAgentSnapshot();
+          settleCancelledPromptAdmission(clientMessageId);
           return;
         }
-        useAgentLiveStore.getState().acknowledgeOptimistic(recordId, clientMessageId, Date.now());
+        useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
         void loadAgentSnapshot();
       } catch (reason) {
         if (effectiveDelivery !== 'prompt' && isAgentSessionIdleFailure(reason)) {
@@ -805,9 +1034,9 @@ export function PawSessionWorkspace({
           // is already idle, the rejected receipt is safe to supersede once
           // as a new prompt. Keep explicit lineage; never replay an unknown or
           // pending admission.
-          useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
+          useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
           const retryClientMessageId = `paw-retry-${crypto.randomUUID()}`;
-          useAgentLiveStore.getState().appendOptimistic(recordId, {
+          useAgentLiveStore.getState().appendOptimistic(address, {
             clientMessageId: retryClientMessageId,
             text: message,
             attachments: selectedAttachments.map((item) => item.id),
@@ -825,11 +1054,10 @@ export function PawSessionWorkspace({
               },
             });
             if (isCancelledPromptAdmission(retryResponse)) {
-              useAgentLiveStore.getState().discardOptimistic(recordId, retryClientMessageId);
-              void loadAgentSnapshot();
+              settleCancelledPromptAdmission(retryClientMessageId);
               return;
             }
-            useAgentLiveStore.getState().acknowledgeOptimistic(recordId, retryClientMessageId, Date.now());
+            useAgentLiveStore.getState().acknowledgeOptimistic(address, retryClientMessageId, Date.now());
             void loadAgentSnapshot();
           } catch (retryReason) {
             settlePromptAdmissionFailure(retryClientMessageId, retryReason, { restoreInput });
@@ -844,8 +1072,67 @@ export function PawSessionWorkspace({
     })();
   }
 
+  function clearCompactionStopWarning(target: AgentCompactionTarget): void {
+    setCompactionStopWarnings(current => {
+      const warning = current.get(recordId);
+      if (warning?.transport !== transport || !sameAgentCompactionTarget(warning.target, target)) return current;
+      const next = new Map(current);
+      next.delete(recordId);
+      return next;
+    });
+  }
+
+  function retainCompactionStopWarning(target: AgentCompactionTarget): void {
+    setCompactionStopWarnings(current => new Map(current).set(recordId, { transport, target }));
+  }
+
+  async function stopCompaction(target: AgentCompactionTarget): Promise<void> {
+    if (compactionStopRequestRef.current || resumeRequestRef.current || stopping) return;
+    const controller = new AbortController();
+    const request = { controller, recordId, transport, target };
+    compactionStopRequestRef.current = request;
+    const ownsRequest = () => !controller.signal.aborted && compactionStopRequestRef.current === request
+      && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
+    const ownsTarget = () => ownsRequest()
+      && sameAgentCompactionTarget(agentProjection(address).durableRecovery?.compactionTarget, target);
+    setStopping(true);
+    clearCompactionStopWarning(target);
+    setError('');
+    if (queue.queue.length) setDraft(current => queue.restoreToDraft(current));
+    try {
+      const response = asRecord(await transport.request({ pathId: 'agent.session.abort',
+        params: { sessionId: recordId }, body: { compactionTarget: target }, signal: controller.signal }));
+      if (!ownsTarget()) return;
+      if (response.schemaVersion !== 'rag-ime.agent-abort.v1' || response.ok !== true || response.sessionId !== recordId
+        || !sameAgentCompactionTarget(response.compactionTarget, target)
+        || !validCompactionReceipt(asRecord(response.runtimeReceipt), target, 'abort')) {
+        throw new Error(STOP_UNCONFIRMED_TEXT);
+      }
+      // A terminal receipt confirms these tasks only. Current native metadata
+      // clears the control target; no user turn is fabricated or settled here.
+      const loaded = await loadAgentSnapshotRef.current();
+      if (ownsTarget() && !loaded) retainCompactionStopWarning(target);
+    } catch {
+      if (!ownsTarget()) return;
+      await loadAgentSnapshotRef.current();
+      if (ownsTarget()) retainCompactionStopWarning(target);
+    } finally {
+      if (ownsRequest()) { compactionStopRequestRef.current = undefined; setStopping(false); }
+    }
+  }
+
   async function stop(): Promise<void> {
+    const projection = agentProjection(address);
+    const target = projection.durableRecovery?.compactionTarget;
+    if (target) { await stopCompaction(target); return; }
     if (!busy || stopping) return;
+    const activeTurnId = latestActiveTurnId(projection);
+    const pendingAdmission = activeTurnId.startsWith('local-turn:')
+      ? resolveAgentTurnUserMessage(projection, activeTurnId) : undefined;
+    const request = { scope: workspaceScope, clientMessageId: pendingAdmission?.clientMessageId,
+      acknowledged: false, admissionCancelled: false };
+    turnStopRequestRef.current = request;
+    const ownsRequest = () => turnStopRequestRef.current === request && workspaceScopeRef.current === workspaceScope;
     setStopping(true);
     /* Stopping the turn cancels the intent behind everything held for it, so
        the drafts come back to the composer instead of firing into a Session
@@ -853,18 +1140,29 @@ export function PawSessionWorkspace({
     if (queue.queue.length) setDraft((current) => queue.restoreToDraft(current));
     try {
       const receipt = asRecord(await transport.request({ pathId: 'agent.session.abort', params: { sessionId: recordId }, body: {} }));
+      if (!ownsRequest()) return;
       const jobs = asRecord(receipt.backgroundJobs);
       if (receipt.ok === false || jobs.drained === false
         || Array.isArray(jobs.pendingJobIds) && jobs.pendingJobIds.length > 0) {
+        turnStopRequestRef.current = undefined;
         setStopping(false);
         setError(STOP_UNCONFIRMED_TEXT);
         return;
       }
-      // Abort acknowledgement and history loading are different contracts.
-      // The subscribed terminal event settles the turn and refreshes recent
-      // state; full history remains user-requested.
+      request.acknowledged = true;
+      const runtimeReceipt = asRecord(receipt.runtimeReceipt);
+      // Stop can win before Pi creates a turn, so no terminal event exists.
+      // Either exact prompt cancellation or the captured admission's Stop
+      // receipt settles that local lock; an ordinary turn still waits for SSE.
+      if (request.admissionCancelled || (request.clientMessageId
+        && runtimeReceipt.pendingAdmission === true && runtimeReceipt.admissionCancelled === true)) {
+        turnStopRequestRef.current = undefined;
+        setStopping(false);
+      } else if (!request.clientMessageId) turnStopRequestRef.current = undefined;
       setError('');
     } catch (reason) {
+      if (!ownsRequest()) return;
+      turnStopRequestRef.current = undefined;
       setStopping(false);
       setError(errorText(reason));
     }
@@ -881,7 +1179,7 @@ export function PawSessionWorkspace({
           onAdmissionRolledBack?.();
           return;
         }
-        let current = agentProjection(recordId);
+        let current = agentProjection(address);
         let userMessage = resolveAgentTurnUserMessage(current, turnId);
         if (!userMessage) {
           try {
@@ -889,8 +1187,8 @@ export function PawSessionWorkspace({
               pathId: 'agent.session.snapshot',
               params: { sessionId: recordId },
             });
-            useAgentLiveStore.getState().hydrate(recordId, snapshot);
-            current = agentProjection(recordId);
+            useAgentLiveStore.getState().hydrate(address, snapshot);
+            current = agentProjection(address);
             userMessage = resolveAgentTurnUserMessage(current, turnId);
           } catch {
             // Keep the rendered failure available when a quiet resync is
@@ -946,7 +1244,7 @@ export function PawSessionWorkspace({
     message: string,
     onAdmissionRolledBack?: () => void,
   ): boolean {
-    const current = agentProjection(recordId);
+    const current = agentProjection(address);
     const selectedScreenContext = screenContextForMessage(screenContext, userMessage.attachments, current);
     // A durable Runtime message proves the original command was accepted; a
     // later Provider/Tool turn failure is a new execution attempt, not a
@@ -980,9 +1278,9 @@ export function PawSessionWorkspace({
     setSending(true);
     setError('');
     if (replayAmbiguousAdmission) {
-      useAgentLiveStore.getState().requeueOptimistic(recordId, clientMessageId, Date.now());
+      useAgentLiveStore.getState().requeueOptimistic(address, clientMessageId, Date.now());
     } else {
-      useAgentLiveStore.getState().appendOptimistic(recordId, {
+      useAgentLiveStore.getState().appendOptimistic(address, {
         clientMessageId,
         ...(retryOfClientMessageId ? { retryOfClientMessageId } : {}),
         text: message,
@@ -1009,11 +1307,10 @@ export function PawSessionWorkspace({
           },
         });
         if (isCancelledPromptAdmission(response)) {
-          useAgentLiveStore.getState().discardOptimistic(recordId, clientMessageId);
-          void loadAgentSnapshot();
+          settleCancelledPromptAdmission(clientMessageId);
           return;
         }
-        useAgentLiveStore.getState().acknowledgeOptimistic(recordId, clientMessageId, Date.now());
+        useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
         void loadAgentSnapshot();
       } catch (reason) {
         settlePromptAdmissionFailure(clientMessageId, reason, {
@@ -1028,7 +1325,7 @@ export function PawSessionWorkspace({
   }
 
   function continueTurn(turnId: string): boolean {
-    const current = agentProjection(recordId);
+    const current = agentProjection(address);
     if (current.turnOrder.at(-1) !== turnId || current.turnsById[turnId]?.status !== 'failed') return false;
     void send('prompt', '继续。请基于当前 Session 已保留的工具结果和文件生成最终回复，不要重试或重复已经完成的操作；如果仍缺少信息，明确说明下一步。');
     return true;
@@ -1036,7 +1333,7 @@ export function PawSessionWorkspace({
 
   function openForkDialog(initialEntryId = ''): void {
     if (durableSession) { setError('Pi Durable 暂不支持历史分支。'); return; }
-    setForkDialogNodes(conversationNodes(agentProjection(recordId)));
+    setForkDialogNodes(conversationNodes(agentProjection(address)));
     setForkDialogInitialEntryId(initialEntryId);
     setForkDialogOpen(true);
   }
@@ -1050,7 +1347,7 @@ export function PawSessionWorkspace({
           : '当前 Pi Runtime 尚未提供原位修改能力。');
       return;
     }
-    const current = agentProjection(recordId);
+    const current = agentProjection(address);
     const message = messageId
       ? current.messagesById[messageId]
       : [...current.messageOrder].reverse().map((id) => current.messagesById[id])
@@ -1071,6 +1368,10 @@ export function PawSessionWorkspace({
       byteSize: 0,
       source: 'path',
     }));
+    const scope = workspaceScope;
+    const request = ++editRequestRef.current;
+    const ownsEdit = () => workspaceScopeRef.current === scope && editRequestRef.current === request;
+    cancelAttachmentImports();
     setDraft(text);
     setAttachments(originalAttachments);
     setEditState({ entryId: '', messageId: message.id, resolving: true });
@@ -1081,10 +1382,12 @@ export function PawSessionWorkspace({
         pathId: 'agent.session.forks.list',
         params: { sessionId: recordId },
       });
+      if (!ownsEdit()) return;
       const entryId = resolveConversationEntryId(response, conversationNodes(current), message.id);
       if (!entryId) throw new Error('Pi 没有返回这条公开消息对应的可回溯锚点。');
       setEditState({ entryId, messageId: message.id });
     } catch (reason) {
+      if (!ownsEdit()) return;
       setEditState(undefined);
       setDraft('');
       setAttachments([]);
@@ -1093,6 +1396,8 @@ export function PawSessionWorkspace({
   }
 
   function cancelEdit(): void {
+    editRequestRef.current += 1;
+    cancelAttachmentImports();
     setEditState(undefined);
     setDraft('');
     setAttachments([]);
@@ -1113,11 +1418,32 @@ export function PawSessionWorkspace({
     }
   }
 
+  function cancelAttachmentImports(): void {
+    if (!attachmentImports.pending.size) return;
+    attachmentImports.pending.clear();
+    refreshAttachmentImports(value => value + 1);
+  }
+
+  function beginAttachmentImport() {
+    const scope = workspaceScope;
+    const token = Symbol('attachment-import');
+    attachmentImports.pending.add(token);
+    refreshAttachmentImports(value => value + 1);
+    setAttachmentError('');
+    return {
+      isCurrent: () => workspaceScopeRef.current === scope && attachmentImports.active && attachmentImports.pending.has(token),
+      finish: () => {
+        if (!attachmentImports.pending.delete(token)) return;
+        if (workspaceScopeRef.current === scope && attachmentImports.active) refreshAttachmentImports(value => value + 1);
+      },
+    };
+  }
+
   async function pickAttachments(): Promise<void> {
     if (durableSession) { setAttachmentError('Pi Durable 暂不支持附件。'); return; }
     if (!transport.pickFiles) { setAttachmentError('当前环境不能选择附件，请将文件放入项目后告诉 Agent 文件名。'); return; }
     if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return; }
-    const owner = recordId;
+    const request = beginAttachmentImport();
     try {
       const imported = await transport.pickFiles({
         multiple: true,
@@ -1125,20 +1451,20 @@ export function PawSessionWorkspace({
         sessionId: recordId,
         maxFiles: Math.max(1, 8 - attachments.length),
       });
-      if (attachmentOwner.current !== owner) return;
+      if (!request.isCurrent()) return;
       setAttachments((current) => mergeAttachments(current, imported.map((item) => ({ ...item, source: 'picker' as const }))));
-      if (imported.length) setAttachmentError('');
-    } catch (reason) { if (attachmentOwner.current === owner) setAttachmentError(attachmentImportErrorText(reason)); }
+    } catch (reason) { if (request.isCurrent()) setAttachmentError(attachmentImportErrorText(reason)); }
+    finally { request.finish(); }
   }
 
   async function pasteFiles(files?: File[]): Promise<boolean> {
     if (durableSession) { setAttachmentError('Pi Durable 暂不支持附件。'); return false; }
     if (!transport.pasteImages) { setAttachmentError('未能读取剪贴板文件，请改用选择附件。'); return false; }
     if (attachments.length >= 8) { setAttachmentError('最多添加 8 个附件，请先移除已有附件。'); return false; }
-    const owner = recordId;
+    const request = beginAttachmentImport();
     try {
       const imported = await transport.pasteImages({ sessionId: recordId, ...(files?.length ? { files } : {}), maxFiles: Math.max(1, 8 - attachments.length) });
-      if (attachmentOwner.current !== owner) return false;
+      if (!request.isCurrent()) return false;
       // Browser transports echo the pasted bytes back as receipts; reusing the
       // local File gives image chips an instant thumbnail before upload settles.
       setAttachments((current) => mergeAttachments(current, imported.map((item, index) => {
@@ -1151,13 +1477,15 @@ export function PawSessionWorkspace({
           : {};
         return { ...item, source: 'clipboard' as const, ...previewFile };
       })));
-      if (imported.length) setAttachmentError('');
       return imported.length > 0;
-    } catch (reason) { if (attachmentOwner.current === owner) setAttachmentError(attachmentImportErrorText(reason)); return false; }
+    } catch (reason) { if (request.isCurrent()) setAttachmentError(attachmentImportErrorText(reason)); return false; }
+    finally { request.finish(); }
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
     if (!record || busy) { setError('请先停止当前回合，再调整运行权限。'); return; }
+    const scope = workspaceScope;
+    const isCurrent = () => workspaceScopeRef.current === scope;
     try {
       const scopedWorkspaceRoots = (selection.workspaceRoots ?? record.workspaceRoots ?? [])
         .filter((root) => root !== '/');
@@ -1182,11 +1510,12 @@ export function PawSessionWorkspace({
             : {}),
         },
       });
+      if (!isCurrent()) return;
       const updated = asSession(response.session);
       if (updated) onSessionUpdated(updated);
-      await loadControlCatalog();
-      setError('');
-    } catch (reason) { setError(errorText(reason)); }
+      await loadControlCatalog(true);
+      if (isCurrent()) setError('');
+    } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
   }
 
   async function manageWorkspaceRoots(): Promise<void> {
@@ -1194,6 +1523,8 @@ export function PawSessionWorkspace({
       setError('当前环境不能选择起始项目。');
       return;
     }
+    const scope = workspaceScope;
+    const isCurrent = () => workspaceScopeRef.current === scope;
     try {
       const selectedRoots = transport.pickFiles
         ? (await transport.pickFiles({ purpose: 'workspace-root', selection: 'directory', multiple: true, maxFiles: 4 }))
@@ -1201,7 +1532,9 @@ export function PawSessionWorkspace({
           .filter((path): path is string => Boolean(path))
         : [(await electronHost?.pickWorkspaceDirectory?.())?.path?.trim()]
           .filter((path): path is string => Boolean(path));
-      if (!selectedRoots.length) return;
+      // A picker result is still an unsubmitted UI choice. Navigation retires
+      // it; an already-sent mutation below remains owned by its original A.
+      if (!isCurrent() || !selectedRoots.length) return;
       const executionMode = record.executionMode ?? 'per_action';
       const unrestricted = executionMode === 'per_action' || executionMode === 'full_trust';
       const workspaceRoots = unrestricted
@@ -1229,28 +1562,38 @@ export function PawSessionWorkspace({
             : {}),
         },
       });
+      if (!isCurrent()) return;
       const updated = asSession(response.session);
       if (updated) onSessionUpdated(updated);
-      await loadControlCatalog();
+      await loadControlCatalog(true);
+      if (!isCurrent()) return;
       await loadAgentSnapshot();
-      setError('');
-    } catch (reason) { setError(errorText(reason)); }
+      if (isCurrent()) setError('');
+    } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
   }
 
   async function changeModel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
-    setModelChanging(true);
+    const request = { scope: workspaceScope };
+    const isCurrent = () => workspaceScopeRef.current === request.scope;
+    setModelChangeRequest(request);
     try {
       await transport.request({ pathId: 'agent.session.model.select', params: { sessionId: recordId }, body: { provider, modelId } });
+      // Finish the already-authorized selection against the captured target,
+      // even if another workspace now owns the visible composer.
       await transport.request({ pathId: 'agent.session.thinking.select', params: { sessionId: recordId }, body: { level } });
+      if (!isCurrent()) return;
       const refreshed = await transport.request({ pathId: 'agent.session.models', params: { sessionId: recordId } });
+      if (!isCurrent()) return;
       if (isModelCatalog(refreshed)) setCatalog(refreshed);
       setError('');
-    } catch (reason) { setError(errorText(reason)); }
-    finally { setModelChanging(false); }
+    } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
+    finally { setModelChangeRequest(current => current === request ? undefined : current); }
   }
 
   async function changeCapabilityPreference(canonicalId: string, preference: CapabilityPreference): Promise<void> {
     if (!capabilityCatalog?.sessionPolicy) return;
+    const scope = workspaceScope;
+    const isCurrent = () => workspaceScopeRef.current === scope;
     setCapabilityMutation({ canonicalId, preference, status: 'pending', message: '正在更新当前 Session 的能力披露。' });
     try {
       await transport.request({
@@ -1263,10 +1606,12 @@ export function PawSessionWorkspace({
           },
         },
       });
-      const response = await transport.request({ pathId: 'agent.tools.list', query: { sessionId: recordId } });
-      const next = requireSessionCapabilityCatalog(response, recordId);
+      if (!isCurrent()) return;
+      await prepareCatalogRefresh(catalogQueryClient, [pluginQueryKeys.catalog(transport, recordId)])();
+      const next = await readCatalogQuery(catalogQueryClient, capabilityCatalogQueryOptions(transport, recordId));
+      if (!isCurrent()) return;
       setCapabilityCatalog(next);
-      setTools(toolItems(response));
+      setTools(toolItems(next));
       const updated = next.items.find((item) => item.canonicalId === canonicalId);
       setCapabilityMutation({
         canonicalId,
@@ -1275,7 +1620,7 @@ export function PawSessionWorkspace({
         message: `已按${capabilityScopeLabel(updated?.effectiveScope ?? 'session')}范围更新。`,
       });
     } catch (reason) {
-      setCapabilityMutation({ canonicalId, preference, status: 'failed', message: errorText(reason) });
+      if (isCurrent()) setCapabilityMutation({ canonicalId, preference, status: 'failed', message: errorText(reason) });
     }
   }
 
@@ -1301,7 +1646,10 @@ export function PawSessionWorkspace({
   }, []);
   const closeToolPanel = useCallback((): void => {
     setPanel('none');
-    toolMenuButtonRef.current?.focus();
+    requestAnimationFrame(() => {
+      const trigger = toolPanelReturnFocusRef.current ?? toolMenuButtonRef.current;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    });
   }, []);
 
   const openToolMenu = useCallback((initialFocus: 'first' | 'last' = 'first'): void => {
@@ -1396,7 +1744,8 @@ export function PawSessionWorkspace({
     }
   }
 
-  function openToolPanel(next: Exclude<WorkbenchPanel, 'none'>): void {
+  function openToolPanel(next: Exclude<WorkbenchPanel, 'none'>, trigger?: HTMLButtonElement): void {
+    toolPanelReturnFocusRef.current = trigger ?? toolMenuButtonRef.current;
     if (next === 'status') setStatusPanelVisited(true);
     setPanel(next);
     closeToolMenu(true);
@@ -1411,12 +1760,16 @@ export function PawSessionWorkspace({
             <small>Session · {workspaceRecord.mode === 'coordinator' ? '协调' : '单聊'}</small>
           </div>
         </div> : null}
-        {!evaluationSnapshot && controlsExpanded ? <nav aria-label="当前 Session 视图" className="paw-session-workspace__view-switch">
-          <button aria-label="对话" aria-pressed={workspaceView === 'conversation'} onClick={() => { setWorkspaceView('conversation'); setPanel('none'); setToolMenuOpen(false); }} type="button"><MessageSquare size={15} /><span>对话</span></button>
-          <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setToolMenuOpen(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
-          <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setToolMenuOpen(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
-        </nav> : evaluationSnapshot ? <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span> : null}
-        {!evaluationSnapshot ? <button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起对话控件' : '展开对话控件'} onClick={() => setControlsExpanded(value => !value)}><ChevronDown size={15} /><span>视图</span></button> : null}
+        {!evaluationSnapshot ? <Popover open={controlsExpanded} onOpenChange={setControlsExpanded}>
+          <PopoverTrigger asChild><button className="paw-chat-controls-toggle" type="button" aria-expanded={controlsExpanded} aria-label={controlsExpanded ? '收起对话控件' : '展开对话控件'}><ChevronDown size={15} /><span>视图</span></button></PopoverTrigger>
+          <PopoverContent align="end" className="paw-session-view-popover" aria-label="对话视图">
+            <nav aria-label="当前 Session 视图" className="paw-session-workspace__view-switch">
+              <button aria-label="对话" aria-pressed={workspaceView === 'conversation'} onClick={() => { setWorkspaceView('conversation'); setPanel('none'); setControlsExpanded(false); }} type="button"><MessageSquare size={15} /><span>对话</span></button>
+              <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setControlsExpanded(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
+              <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setControlsExpanded(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
+            </nav>
+          </PopoverContent>
+        </Popover> : <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span>}
         <div className="paw-session-workspace__runtime">
           <span data-context={contextSnapshotState}><i />{evaluationSnapshot
             ? '只读证据'
@@ -1431,11 +1784,12 @@ export function PawSessionWorkspace({
             : contextSnapshotState === 'restoring'
               ? '正在加载完整记录'
               : contextSnapshotState === 'partial'
-                ? '最近上下文'
+                ? '最近消息'
                 : '已同步'}</span>
-          {!evaluationSnapshot && controlsExpanded ? (
+          {!evaluationSnapshot ? (
             <button
               aria-label="加载完整记录"
+              className="paw-session-history-load"
               disabled={contextSnapshotState === 'restoring'}
               onClick={() => void loadFullSnapshot()}
               title={contextSnapshotState === 'restoring' ? '正在加载完整记录' : '加载完整记录'}
@@ -1444,37 +1798,38 @@ export function PawSessionWorkspace({
               {contextSnapshotState === 'restoring'
                 ? <LoaderCircle className="ui-spin" size={15} />
                 : <History size={15} />}
+              <span>加载完整记录</span>
             </button>
           ) : null}
-          {!evaluationSnapshot && busy ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
+          {!windowChromeTarget && !evaluationSnapshot && busy && !compactionTarget ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
         </div>
         {!evaluationSnapshot ? <div className="paw-session-workspace__tools" data-open={toolMenuOpen || undefined} ref={toolMenuContainerRef}>
           <button
             aria-controls="paw-session-tools-menu"
             aria-expanded={toolMenuOpen}
             aria-haspopup="menu"
-            aria-label="Session 工具"
+            aria-label="对话工具"
             onClick={() => { if (toolMenuOpen) closeToolMenu(true); else openToolMenu(); }}
             onKeyDown={handleToolMenuButtonKeyDown}
             ref={toolMenuButtonRef}
             type="button"
           >
             <Wrench size={15} />
-            <span>Session 工具</span>
+            <span>对话工具</span>
             {pendingApproval || pendingGenericInput || pendingMemoryReview ? <small className="paw-session-workspace__attention">待处理</small> : null}
           </button>
           {toolMenuOpen ? <nav
-            aria-label="Session 工具菜单"
+            aria-label="对话工具菜单"
             id="paw-session-tools-menu"
             onBlur={handleToolMenuBlur}
             onKeyDown={handleToolMenuKeyDown}
             ref={toolMenuRef}
             role="menu"
           >
-            <button data-active={panel === 'status' || undefined} onClick={() => openToolPanel('status')} role="menuitem" type="button"><ListChecks size={15} /><span>任务与状态</span></button>
+            {!windowChromeTarget ? <button data-active={panel === 'status' || undefined} onClick={() => openToolPanel('status')} role="menuitem" type="button"><ListChecks size={15} /><span>任务与状态</span></button> : null}
             <button data-active={panel === 'subagents' || undefined} onClick={() => openToolPanel('subagents')} role="menuitem" type="button"><Network size={15} /><span>子 Agent</span></button>
-            <button data-active={panel === 'files' || undefined} onClick={() => openToolPanel('files')} role="menuitem" type="button"><FolderTree size={15} /><span>文件</span></button>
-            {contextSnapshotState ? <button disabled={contextSnapshotState === 'restoring'} onClick={() => { closeToolMenu(true); void loadFullSnapshot(); }} role="menuitem" type="button"><History size={15} /><span>{contextSnapshotState === 'restoring' ? '正在恢复完整对话' : '恢复完整对话与待办'}</span></button> : null}
+            {!windowChromeTarget ? <button data-active={panel === 'files' || undefined} onClick={() => openToolPanel('files')} role="menuitem" type="button"><FolderTree size={15} /><span>文件</span></button> : null}
+            {!windowChromeTarget && contextSnapshotState ? <button disabled={contextSnapshotState === 'restoring'} onClick={() => { closeToolMenu(true); void loadFullSnapshot(); }} role="menuitem" type="button"><History size={15} /><span>{contextSnapshotState === 'restoring' ? '正在恢复完整对话' : '恢复完整对话与待办'}</span></button> : null}
           </nav> : null}
         </div> : null}
       </div>
@@ -1492,21 +1847,14 @@ export function PawSessionWorkspace({
       >
       {embedded || windowChromeTarget ? null : sessionChrome}
       <WorkspaceRecoveryNotice recovery={recovery} />
-      {controlsExpanded && !embedded && !evaluationSnapshot && workspaceView === 'conversation' ? <PawSessionFocusHeader
-        title={title}
-        busy={busy && !durablePaused}
-        stopping={stopping}
-        active={active}
-        hasMessages={projectionSlice.hasTurns}
-        needsAttention={Boolean(pendingApproval || pendingGenericInput || pendingMemoryReview)}
-        panel={panel}
-        onOpenTasks={() => panel === 'status' ? setPanel('none') : openToolPanel('status')}
-        onOpenFiles={() => panel === 'files' ? setPanel('none') : openToolPanel('files')}
-        onOpenSubagents={() => panel === 'subagents' ? setPanel('none') : openToolPanel('subagents')}
-      /> : null}
+      {!embedded && !evaluationSnapshot && windowChromeTarget ? <div inert={toolPanelTrapsFocus || undefined}><PawSessionTaskbar title={title} selected={panel} demo={transport.kind === 'mock'}
+        state={{ busy, stopping, paused: durablePaused, pending: sending || Boolean(pendingFeedbackTurnId),
+          waiting: Boolean(pendingApproval || pendingGenericInput || pendingMemoryReview), disconnected: syncState !== 'synced',
+          error: Boolean(visibleError), goal: taskbarGoal, turnStatus: projectionSlice.lastTurnStatus }}
+        onOpenPanel={(next, trigger) => { if (panel === next) closeToolPanel(); else openToolPanel(next, trigger); }} /></div> : null}
 
       <div className="paw-session-workspace__body">
-        <div className="paw-session-workspace__primary" ref={primaryRef}>
+        <div className="paw-session-workspace__primary" ref={primaryRef} inert={toolPanelTrapsFocus || undefined}>
           <div className="paw-session-workspace__viewport">
             <section
               aria-hidden={workspaceView !== 'conversation'}
@@ -1521,14 +1869,6 @@ export function PawSessionWorkspace({
               <div aria-hidden="true" className="agent-fx-fade agent-fx-fade--top" />
               <div aria-hidden="true" className="agent-fx-fade agent-fx-fade--bottom" />
               {loading && !projectionSlice.hasTurns ? <div className="paw-session-workspace__loading"><LoaderCircle className="ui-spin" size={18} />正在载入最近对话</div> : null}
-              {!evaluationSnapshot && !workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (
-                <ProjectQuickActions active={active && liveActive && !loading && workspaceView === 'conversation'} compact context={{
-                  projectId: recordId,
-                  title: workspaceRecord.title || recordId,
-                  sessionId: recordId,
-                  cwd: workspaceRecord.workspaceRoots[0],
-                }} />
-              ) : null}
               <AgentTimeline
                 pendingFeedbackTurnId={evaluationSnapshot ? '' : pendingFeedbackTurnId}
                 active={liveActive}
@@ -1606,12 +1946,17 @@ export function PawSessionWorkspace({
           </div>
 
           <div className="paw-session-workspace__composer" data-read-only={evaluationSnapshot || undefined}>
-            {durablePaused && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite">
-              <strong>任务已暂停，进度已保存</strong>
-              {projectionSlice.durableRecovery?.recoverable && projectionSlice.durableRecovery.activeTurn ? <button
-                aria-label="继续当前任务" disabled={resuming || sending || stopping || modelChanging}
-                onClick={() => void resumeCurrentTask()} type="button">{resuming ? '正在恢复…' : '继续当前任务'}</button> : null}
+            {(durablePaused || compactionTarget) && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite">
+              <strong>{compactionTarget ? durablePaused ? '压缩已暂停，进度已保存' : '正在压缩上下文' : '任务已暂停，进度已保存'}</strong>
+              {durablePaused && projectionSlice.durableRecovery?.recoverable && (projectionSlice.durableRecovery.activeTurn || compactionTarget) ? <button
+                aria-label={compactionTarget ? '继续压缩' : '继续当前任务'} disabled={resuming || sending || stopping || modelChanging}
+                onClick={() => void resumeCurrentTask()} type="button">{resuming ? '正在恢复…' : compactionTarget ? '继续压缩' : '继续当前任务'}</button> : null}
+              {compactionTarget ? <button aria-label="停止压缩" disabled={stopping || resuming}
+                onClick={() => void stop()} type="button">{stopping ? '正在停止…' : '停止压缩'}</button> : null}
             </div> : pendingFeedbackTurnId && !evaluationSnapshot ? <div className="agent-first-response" role="status" aria-live="polite"><LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>等待响应</strong></div> : null}
+            {attachmentImportPending ? <div className="agent-first-response" role="status" aria-live="polite">
+              <LoaderCircle aria-hidden className="ui-spin" size={15} /><strong>正在导入附件，完成后即可发送。</strong>
+            </div> : null}
             {attachmentError ? <div className="paw-session-workspace__error paw-session-workspace__attachment-error" role="alert">
               <CircleAlert size={14} aria-hidden="true" />
               <span>{attachmentError}</span>
@@ -1622,7 +1967,7 @@ export function PawSessionWorkspace({
               <div className="paw-session-workspace__error" role="alert">
                 <CircleAlert size={14} />
                 <span>{visibleError}</span>
-                {error === STOP_UNCONFIRMED_TEXT ? (
+                {visibleError === STOP_UNCONFIRMED_TEXT ? (
                   <button onClick={() => openToolPanel('status')} type="button">查看任务与状态</button>
                 ) : error === SESSION_WORKSPACE_MISSING_TEXT ? (
                   <button onClick={() => void manageWorkspaceRoots()} type="button">选择工作目录</button>
@@ -1635,7 +1980,7 @@ export function PawSessionWorkspace({
                     entityId: `session:${recordId}:error`,
                     title: 'Session 操作失败',
                     summary: visibleError,
-                    error: error || syncError,
+                    error: error || compactionStopError || syncError,
                     sessionId: recordId,
                     sourceRoute: `/agent?session=${encodeURIComponent(recordId)}`,
                     refs: { surface: 'session-workspace' },
@@ -1656,7 +2001,10 @@ export function PawSessionWorkspace({
             {workspaceRecord && !evaluationSnapshot ? (
               <>
               {composerContext?.kind === 'project' ? <WorkspaceProjectContext context={composerContext} /> : composerContext ? <div className="paw-workspace-context"><div className="paw-workspace-context__body"><details><summary><strong>{composerContext.label}</strong><span>{composerContext.detail}</span></summary><pre>{composerContext.text}</pre></details>{composerContext.items?.length ? <ul>{composerContext.items.map(item=><li key={item.id}><span>{item.label}</span><button aria-label={`移除 ${item.label}`} onClick={item.onRemove}><X size={12} aria-hidden="true"/></button></li>)}</ul> : null}</div><button aria-label="移除地图上下文" onClick={composerContext.onClear}><X size={16} aria-hidden="true"/></button></div> : null}
+              {renderComposerHeader?.({ session: workspaceRecord, draft, disabled: sending || stopping,
+                sourceMessageId: () => latestPublicSessionMessageId(agentProjection(address)) })}
               <AgentComposer
+                inputOwnerId={agentProjectionKey(address)}
                 attachments={attachments}
                 attachmentsAvailable={!durableSession}
                 busy={busy}
@@ -1677,12 +2025,15 @@ export function PawSessionWorkspace({
                 modelPickerRequest={modelPickerRequest}
                 thinkingPickerRequest={thinkingPickerRequest}
                 permissionPickerRequest={permissionPickerRequest}
+                permissionLocked={permissionsLocked}
                 persona={persona}
                 sending={sending}
-                submissionBlocked={recovery.checking || recovery.issues.length > 0}
+                submissionBlocked={Boolean(submissionBlockedReason)}
+                submissionBlockedReason={submissionBlockedReason}
                 session={workspaceRecord}
                 sessionMetadataKnown={recordMetadataKnown && record?.id === recordId}
                 stopping={stopping}
+                showStop={!compactionTarget}
                 toolCatalogStatus={toolCatalogStatus}
                 toolPickerRequest={toolPickerRequest}
                 toolPickerQuery={toolPickerQuery}
@@ -1700,9 +2051,10 @@ export function PawSessionWorkspace({
                 onPickAttachments={() => void pickAttachments()}
                 onProductCommand={runProductCommand}
                 onSend={(delivery, value) => {
-                  if (!acceptsImmediateInput(value)) return false;
+                  if (!acceptsComposerInput() || !acceptsImmediateInput(value)) return false;
                   const input = userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value;
                   void send(delivery, editState ? value : messageWithWorkspaceContext(input, composerContext), input);
+                  return true;
                 }}
                 onStop={() => void stop()}
                 showJumpLatest={!timelineFollow.following}
@@ -1712,19 +2064,22 @@ export function PawSessionWorkspace({
                 onPermissionChange={(selection) => void changePermission(selection)}
                 onWorkspaceRootsChange={() => void manageWorkspaceRoots()}
                 queueDepth={queue.queue.length}
-                onQueue={(value) => acceptsEngineInput(value) && queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
+                onQueue={(value) => acceptsComposerInput() && acceptsEngineInput(value) && queue.enqueue(messageWithWorkspaceContext(userMessagePresentation === 'project-context' ? labProjectUserDraft(value) ?? value : value, composerContext))}
               />
               </>
             ) : null}
           </div>
         </div>
 
-        {/* 工具侧栏是一层浮卡：只覆盖在消息流之上，绝不挤压对话列。
-            在浮层内按 Esc 关闭并把焦点还给“Session 工具”触发钮。 */}
-        {!evaluationSnapshot && !embedded && (panel !== 'none' || statusPanelVisited) ? <aside
+        {/* Wide windows place files beside the conversation; compact windows use
+            the same labelled drawer. Close and Escape return to its trigger. */}
+        {!evaluationSnapshot && !embedded && (panel !== 'none' || statusPanelVisited) ? <FocusScope asChild loop={toolPanelTrapsFocus} trapped={toolPanelTrapsFocus} onMountAutoFocus={event => event.preventDefault()} onUnmountAutoFocus={event => event.preventDefault()}><aside
+          ref={toolPanelRef}
+          role={toolPanelOverlay ? 'dialog' : undefined}
+          aria-modal={toolPanelTrapsFocus || undefined}
           aria-hidden={panel === 'none' || undefined}
           className="paw-session-workspace__side"
-          aria-label="Session 工具侧栏"
+          aria-label="对话工具侧栏"
           data-tool={panel}
           hidden={panel === 'none'}
           inert={panel === 'none' ? true : undefined}
@@ -1736,8 +2091,16 @@ export function PawSessionWorkspace({
         >
           {panel === 'files' ? (
             <AgentFilesPanel
+              key={agentProjectionKey(address)}
+              toolbar={!workspaceRecord.roomParticipant && workspaceRecord.workspaceRoots?.[0] ? (<ProjectQuickActions active={active && liveActive && !loading && panel === 'files'} compact context={{
+                  projectId: recordId,
+                  title: workspaceRecord.title || recordId,
+                  sessionId: recordId,
+                  cwd: workspaceRecord.workspaceRoots[0],
+                }} />) : undefined}
               sessionId={recordId}
               workspaceRoots={workspaceRecord.workspaceRoots ?? []}
+              rootsLockedReason={permissionsLocked ? '工作区已在开始时确定。要使用其他目录，请返回入口新建工作。' : undefined}
               open
               onClose={closeToolPanel}
               onManageRoots={() => void manageWorkspaceRoots()}
@@ -1784,7 +2147,7 @@ export function PawSessionWorkspace({
               onClose={closeToolPanel}
             />
           )}
-        </aside> : null}
+        </aside></FocusScope> : null}
       </div>
 
       {!evaluationSnapshot ? <MemoryReviewDialog activity={pendingApproval ? undefined : pendingMemoryReview} sessionId={recordId} onError={setError} /> : null}
@@ -1817,8 +2180,10 @@ function SessionContextTrace({
   focusNodeId: string;
   sessionId: string;
 }) {
+  const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const projection = useAgentLiveStore((state) => (
-    active ? state.projections[sessionId] : undefined
+    active ? selectAgentProjection(state, address) : undefined
   ));
   return (
     <PawContextTrace
@@ -1853,6 +2218,15 @@ function conversationText(blocks: Array<{ type: string; data: Record<string, unk
 
 /** Same receipt shape the standalone Agent feature reads: Stop raced the
  *  admission and won, so the optimistic message must vanish, not acknowledge. */
+export function latestPublicSessionMessageId(projection: AgentProjectionState): string | undefined {
+  return [...projection.messageOrder].reverse().find(id => {
+    const message = projection.messagesById[id];
+    return !id.startsWith('local:') && message?.status === 'completed'
+      && (message.role === 'user' || message.role === 'assistant')
+      && message.blocks.some(block => block.type === 'text' && typeof block.data.text === 'string' && block.data.text.trim());
+  });
+}
+
 function isCancelledPromptAdmission(value: unknown): boolean {
   return isRecord(value)
     && value.accepted === false
@@ -1871,31 +2245,6 @@ function timelineOwnsTurnFailure(
   if (message?.status !== 'failed') return false;
   if (projection.turnOrder.at(-1) !== message.turnId) return false;
   return projection.turnsById[message.turnId]?.status === 'failed';
-}
-
-function latestActiveTurnId(projection?: AgentProjectionState): string {
-  if (!projection) return '';
-  // A rejected follow-up is not a terminal fence for Pi's ongoing retry.
-  if (projection.status === 'retrying') {
-    for (const id of [...projection.activityOrder].reverse()) {
-      const activity = projection.activitiesById[id];
-      if (activity?.payload.phase === 'provider_retry' && activity.status === 'running'
-        && projection.turnsById[activity.turnId]?.status === 'running') return activity.turnId;
-    }
-  }
-
-  /* The newest visible turn is a terminal fence. An older turn can retain a
-     stale running flag after recovery, but it must never revive the composer,
-     stop button or planet once a later turn has completed. Keep this aligned
-     with the canonical Agent surface instead of scanning backward for any
-     historical active status. */
-  for (let index = projection.turnOrder.length - 1; index >= 0; index -= 1) {
-    const turnId = projection.turnOrder[index] ?? '';
-    const turn = projection.turnsById[turnId];
-    if (!turn || (turn.messageIds.length === 0 && turn.activityIds.length === 0)) continue;
-    return ['queued', 'running', 'waiting'].includes(turn.status) ? turnId : '';
-  }
-  return '';
 }
 
 function latestWaitingActivity(
@@ -1968,4 +2317,15 @@ function isCommand(value: string, command: string): boolean {
 
 function errorText(reason: unknown): string {
   return publicAgentErrorText(reason, 'Session 操作没有完成，请重新同步后重试。');
+}
+
+function validCompactionReceipt(receipt: Record<string, unknown>, target: AgentCompactionTarget, action: 'resume' | 'abort'): boolean {
+  if (receipt.schemaVersion !== `rag-ime.pi-compaction-${action}.v1` || receipt.accepted !== true
+    || receipt.runtimeEngine !== 'durable' || !sameAgentCompactionTarget(receipt.compactionTarget, target)
+    || !receipt.state || typeof receipt.state !== 'object' || Array.isArray(receipt.state)) return false;
+  if (action === 'resume') return typeof receipt.resumed === 'boolean';
+  if (receipt.drained !== true || !Array.isArray(receipt.outcomes) || receipt.outcomes.length !== target.taskIds.length) return false;
+  const outcomes = receipt.outcomes.map(asRecord);
+  return outcomes.every((outcome, index) => Object.keys(outcome).length === 2
+    && outcome.taskId === target.taskIds[index] && ['completed', 'aborted', 'failed'].includes(String(outcome.status)));
 }

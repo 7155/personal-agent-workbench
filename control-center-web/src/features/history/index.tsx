@@ -2,13 +2,10 @@ import {
   Check,
   Copy,
   Eye,
-  History,
-  MessageSquareText,
   RefreshCw,
   Search,
-  ShieldCheck,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Dialog,
@@ -33,7 +30,7 @@ import {
   InlineNotice,
   ManagementPage,
   ManagementSection,
-  MetricStrip,
+  StatusBadge,
   PaginationBar,
   QueryState,
   arrayRecords,
@@ -48,15 +45,18 @@ import {
   parseManagementWorkReceipt,
 } from '@/features/overview/management-mutation';
 import { useProductIdentity } from '@/features/identity/product-identity';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import './history.css';
 
 export function HistoryFeature() {
   const identity = useProductIdentity();
+  const active = usePawOsAppActive() ?? true;
   const [draftQuery, setDraftQuery] = useState('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [detailEventId, setDetailEventId] = useState<number | null>(null);
+  useEffect(() => { if (!active) setDetailEventId(null); }, [active]);
   const { pages } = useHistoryPages(query, filter);
   const mutationBoundary = useHistoryMutationBoundary();
   const rows = useMemo(() => (pages.data?.pages ?? [])
@@ -67,7 +67,6 @@ export function HistoryFeature() {
       sourceLabel: sourceLabel(stringValue(item.source), stringValue(item.sourceCategory)),
       text: stringValue(item.textPreview, `已脱敏 · ${numberValue(item.textChars)} 字`),
     } as Record<string, unknown>)), [pages.data]);
-  const sources = new Set(rows.map((row) => stringValue(row.source)).filter(Boolean));
   const rawRuntimeRevision = asRecord(pages.data?.pages[0]).runtimeRevision;
   const runtimeRevision = typeof rawRuntimeRevision === 'number'
     && Number.isInteger(rawRuntimeRevision)
@@ -99,18 +98,7 @@ export function HistoryFeature() {
       routeId="history"
       title="输入记录"
     >
-      {pages.data ? (
-        <ManagementSection title="当前记录">
-          <MetricStrip items={[
-            { label: '已显示', value: rows.length, detail: '这一页', icon: History },
-            { label: '来源', value: sources.size, detail: '不同来源', icon: MessageSquareText },
-            { label: '原文保护', value: '仅摘要', detail: '脱敏显示', icon: ShieldCheck, tone: 'success' },
-          ]} />
-          <InlineNotice title="隐私" tone="info">列表只显示脱敏摘要；完整输入仅在你主动打开详情时读取。</InlineNotice>
-        </ManagementSection>
-      ) : null}
-
-        <ManagementSection title="查找记录">
+        <ManagementSection title="查找记录" trailing={pages.data ? <StatusBadge label={`已显示 ${rows.length} 条`} /> : undefined}>
           <div aria-label="筛选输入记录" className="history-filter-toolbar" role="search">
             <Field className="history-filter-toolbar__search" htmlFor="history-search" label="搜索">
               <Input id="history-search" onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => {
@@ -130,6 +118,7 @@ export function HistoryFeature() {
               ]} value={filter} />
             </Field>
           </div>
+          <p className="mgmt-muted">列表只显示脱敏摘要；完整输入仅在你主动打开详情时读取。</p>
           {pages.error && pages.data ? <div className="history-refresh-issue">
             <InlineNotice title={pages.isFetchNextPageError ? '后续记录未能加载' : '记录刷新失败'} tone="warning">已加载的记录仍可查看，筛选条件保持不变。</InlineNotice>
             <Button loading={pages.isFetching} onClick={() => void (pages.isFetchNextPageError ? pages.fetchNextPage() : pages.refetch())} size="small">

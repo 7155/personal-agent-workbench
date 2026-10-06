@@ -409,17 +409,17 @@
 }
 
 /* 头部停止钮：红色语义，按下即知在停哪一轮。 */
-.paw-desktop-root .paw-session-workspace__runtime > button {
+.paw-desktop-root .paw-session-workspace__runtime > button[aria-label="停止当前回合"] {
   color: var(--paw-chat-danger);
   border-radius: 8px;
   transition: background-color 130ms ease, transform 120ms ease;
 }
 
-.paw-desktop-root .paw-session-workspace__runtime > button:hover {
+.paw-desktop-root .paw-session-workspace__runtime > button[aria-label="停止当前回合"]:hover {
   background: color-mix(in srgb, var(--paw-chat-danger) 9%, transparent);
 }
 
-.paw-desktop-root .paw-session-workspace__runtime > button:active {
+.paw-desktop-root .paw-session-workspace__runtime > button[aria-label="停止当前回合"]:active {
   transform: scale(.94);
 }
 
@@ -762,7 +762,7 @@
     0 0 0 4px color-mix(in srgb, var(--paw-chat-accent) 9%, transparent);
 }
 
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer textarea {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer:not([data-composer-design='workbench']) textarea {
   min-height: 40px;
   max-height: 120px;
   padding: 13px 15px 3px;
@@ -783,7 +783,7 @@
 /* Send is the composer's one primary action: a filled accent circle
    (baseline .send-btn), so it never competes with the quiet pickers on the
    same row. Disabled keeps the quiet outline so an empty draft doesn't shout. */
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:not(:disabled) {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:not(:disabled) {
   border-radius: 50%;
   background: var(--paw-chat-accent);
   color: #fff;
@@ -793,12 +793,12 @@
     color 120ms ease;
 }
 
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:hover:not(:disabled) {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:hover:not(:disabled) {
   background: color-mix(in srgb, var(--paw-chat-accent) 88%, #18202b);
   transform: translateY(-1px);
 }
 
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:active:not(:disabled) {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:active:not(:disabled) {
   background: color-mix(in srgb, var(--paw-chat-accent) 80%, #18202b);
   transform: scale(.94);
 }
@@ -811,7 +811,7 @@
   background: color-mix(in srgb, var(--paw-chat-success, #36b37e) 86%, #18202b);
 }
 
-:root[data-reduce-motion='true'] .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:not(:disabled) {
+:root[data-reduce-motion='true'] .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:not(:disabled) {
   transition: none;
   transform: none;
 }
@@ -1521,7 +1521,7 @@
 
 /* Portalled Session chrome is sized by the window, not the viewport. At the
    720px acceptance viewport the usable frame is roughly 706px; compact the
-   three view labels before they can paint outside their 28px buttons. */
+   three view labels before they can paint outside their compact buttons. */
 @container paw-window (max-width: 760px) {
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__identity > div > small {
     display: none;
@@ -1529,8 +1529,8 @@
 
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__view-switch button,
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button {
-    width: 28px;
-    min-height: 28px;
+    width: var(--paw-window-control-size, 32px);
+    min-height: var(--paw-window-control-size, 32px);
     justify-content: center;
     padding-inline: 0;
   }
@@ -1583,7 +1583,8 @@
 }
 
 @container paw-session-workspace (max-width: 520px) {
-  /* 窄窗退化为底部抽屉：同一张浮卡换个停靠边，动效改为自下而上。 */
+  /* The modal drawer uses the available height so task actions and editable
+     fields are not crowded into half a window. Its body retains scrolling. */
   .paw-desktop-root .paw-session-workspace__side {
     top: auto;
     right: 0;
@@ -1591,7 +1592,7 @@
     left: 0;
     width: 100%;
     min-width: 0;
-    height: min(52%, 340px);
+    height: calc(100% - 12px);
     border: 0;
     border-radius: 16px 16px 0 0;
     border-top: 1px solid var(--paw-chat-border);
@@ -1849,4 +1850,8 @@
   .paw-desktop-root .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline {
     padding-inline: 24px;
   }
+}
+
+@container paw-window (max-width: 500px) {
+  .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button { width: var(--paw-window-control-size, 32px); min-height: var(--paw-window-control-size, 32px); }
 }

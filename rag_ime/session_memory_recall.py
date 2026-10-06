@@ -13,11 +13,13 @@ from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations
 from .embeddings import EmbeddingProvider, NullEmbeddingProvider
 from .hybrid_rag_models import HybridRagQuery
-from .knowledge_scope import session_knowledge_caller
-from .hybrid_rag_retriever import retrieve_hybrid_rag_candidates
+from .knowledge_scope import scope_sql_predicate, session_knowledge_caller
+from .hybrid_rag_retriever import _active_docs, retrieve_hybrid_rag_candidates
+from .memory_card_mutations import card_source_refs
 from .input_event_assembly import recent_complete_input_context
-from .memory_ownership import agent_visible_memory_owners
+from .memory_ownership import agent_visible_memory_owners, resolve_visible_memory_owners, sql_memory_owner_predicate
 from .memory_maintenance_settings import MemoryMaintenanceSettings
+from .retrieval_docs import _source_events_retrievable
 from .text_utils import compact_whitespace, split_sentences, token_terms, truncate_text
 from .timeline_intent import classify_timeline_intent
 
@@ -433,6 +435,43 @@ class SessionMemoryRecallBuilder:
             ),
         }
 
+    def revalidate_items(
+        self, session_id: str, payload: Mapping[str, object],
+    ) -> list[dict[str, object]]:
+        """Check current sources of a primary Session pack; never run retrieval."""
+
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list):
+            return []
+        items = [dict(item) for item in raw_items[:32] if isinstance(item, Mapping)
+                 and item.get("sourceType") in {"memory_atom", "memory_book", "memory_timeline"}
+                 and isinstance(item.get("sourceId"), str) and 0 < len(str(item["sourceId"])) <= 240]
+        generated = payload.get("generatedAtMs")
+        if not items or not isinstance(generated, int) or isinstance(generated, bool) or generated <= 0:
+            return []
+        query_text = str(_mapping(payload.get("query")).get("preview") or "")
+        with self._connect() as conn:
+            query = HybridRagQuery(
+                query_text=query_text, project=self.project,
+                visible_owners=agent_visible_memory_owners(project=self.project, session_id=session_id),
+                knowledge_caller=session_knowledge_caller(conn, session_id),
+            )
+            docs = _active_docs(
+                conn, query=query,
+                source_ids=tuple(dict.fromkeys(str(item["sourceId"]) for item in items)),
+            )
+            current = {(str(doc["doc_type"]), str(doc["source_id"])): doc for doc in docs}
+            kept: list[dict[str, object]] = []
+            for item in items:
+                kind = str(item["sourceType"]).removeprefix("memory_")
+                doc = current.get((kind, str(item["sourceId"])))
+                if doc is None or int(doc.get("updated_at_ms") or 0) > generated:
+                    continue
+                if not _recalled_source_unchanged(conn, item, doc, generated_at_ms=generated, query=query):
+                    continue
+                kept.append(item)
+        return kept
+
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path, timeout=5.0)
@@ -477,6 +516,78 @@ def _curation_coverage(conn: sqlite3.Connection, project: str) -> dict[str, obje
     return {"status": str(row["status"]),
             "processedThroughAtMs": max(0, int(row["last_source_created_at_ms"] or 0)),
             "lastRunAtMs": max(0, int(row["last_run_ms"] or 0))}
+
+
+def _recalled_source_unchanged(
+    conn: sqlite3.Connection, item: Mapping[str, object], doc: Mapping[str, object], *, generated_at_ms: int,
+    query: HybridRagQuery,
+) -> bool:
+    kind = str(doc["doc_type"])
+    source_id = str(doc["source_id"])
+    if kind == "timeline":
+        # An old derived timeline must prove current admitted source support
+        # before a primary Session reuses it. Unknown historical sets omit.
+        event_ids = _mapping(doc.get("metadata")).get("sourceEventIds")
+        cached = compact_whitespace(str(item.get("text") or ""))
+        return bool(cached and isinstance(event_ids, list) and 0 < len(event_ids) <= 256
+                    and _source_events_retrievable(conn, event_ids)
+                    and cached == _focused_activity_excerpt(str(doc.get("raw_text") or ""),
+                        query_text=query.query_text, max_chars=len(cached)))
+    table, key = ("memory_atoms", "id") if kind == "atom" else ("memory_books", "book_id")
+    row = conn.execute(f"SELECT * FROM {table} WHERE {key}=?", (source_id,)).fetchone()
+    if row is None:
+        return False
+    source = dict(row)
+    if int(source.get("updated_at_ms") or 0) > generated_at_ms:
+        return False
+    metadata = _mapping(doc.get("metadata"))
+    for snake, camel in (
+        ("owner_kind", "ownerKind"), ("owner_id", "ownerId"), ("knowledge_domain", "knowledgeDomain"),
+        ("scope_kind", "scopeKind"), ("scope_id", "scopeId"), ("visibility", "visibility"),
+        ("authorization_revision", "authorizationRevision"), ("binding_id", "bindingId"), ("scope_mode", "scopeMode"),
+    ):
+        if str(source.get(snake) or "") != str(metadata.get(camel) or ""):
+            return False
+    cached = compact_whitespace(str(item.get("text") or ""))
+    if not cached:
+        return False
+    if kind == "atom":
+        current_text = str(source.get("canonical_text") or source.get("text") or "")
+        if truncate_text(current_text, len(cached)) != cached:
+            return False
+        atoms = [source]
+    else:
+        expanded, _ = _book_recall_text(str(doc.get("raw_text") or ""), metadata,
+                                       max_chars=len(cached), already_inlined=set())
+        if cached not in {expanded, truncate_text(str(source.get("summary") or ""), len(cached))}:
+            return False
+        atom_ids = json.loads(str(source.get("memory_atom_ids_json") or "[]"))
+        if not isinstance(atom_ids, list) or len(atom_ids) > 64:
+            return False
+        atoms = []
+        # A book projection can remain active while a member's authority changes.
+        # Reuse the retrieval owner's predicates against each current source row.
+        owner_clause, owner_params = sql_memory_owner_predicate(
+            resolve_visible_memory_owners(query.visible_owners, project=query.project), table_alias="atom",
+        )
+        scope_clause, scope_params = scope_sql_predicate(query.knowledge_caller, table_alias="atom")
+        for atom_id in atom_ids:
+            atom = conn.execute(
+                f"SELECT * FROM memory_atoms atom WHERE atom.id=? AND {owner_clause} AND {scope_clause} "
+                "AND atom.status IN ('active','approved') AND atom.claim_state='current' "
+                "AND atom.privacy_level != 'sensitive'",
+                (str(atom_id), *owner_params, *scope_params),
+            ).fetchone()
+            if atom is None:
+                return False
+            atoms.append(dict(atom))
+    for atom in atoms:
+        if int(atom.get("updated_at_ms") or 0) > generated_at_ms:
+            return False
+        if atom.get("scope_mode") == "authoritative" and atom.get("knowledge_domain") in {"personal_memory", "user_profile_preference"}:
+            if not card_source_refs(conn, str(atom["id"])):
+                return False
+    return True
 
 
 def _select_hits(

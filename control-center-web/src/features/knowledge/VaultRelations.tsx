@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
 type Relations={nodes:{id:string;kind:string;label:string;noteId:string}[];edges:{source:string;target:string;label:string;basis:string}[]};
-export function VaultRelations({vaultId,mode,onOpen}:{vaultId:string;mode:'project'|'growth';onOpen:(noteId:string)=>void}){
+export function VaultRelations({vaultId,mode,onOpen,active=true}:{active?:boolean;vaultId:string;mode:'project'|'growth';onOpen:(noteId:string)=>void}){
  const transport=useControlTransport();
- const data=useQuery({queryKey:['vault-relations',vaultId,mode],queryFn:async()=>await transport.request({pathId:'knowledgeVault.manage',body:{action:'graph_business',vaultId,graphMode:mode}}) as Relations});
+ const data=useQuery({queryKey:['vault-relations',vaultId,mode],enabled:active,queryFn:async()=>await transport.request({pathId:'knowledgeVault.manage',body:{action:'graph_business',vaultId,graphMode:mode}}) as Relations});
  if(data.isPending)return <p role="status">正在读取工作关系…</p>;
  if(data.error)return <p role="alert">关系读取失败，请刷新重试。</p>;
  const nodes=data.data?.nodes??[],edges=data.data?.edges??[];

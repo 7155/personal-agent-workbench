@@ -4,6 +4,7 @@ from __future__ import annotations
 import shutil
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,8 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@unittest.skipUnless(shutil.which("swift"), "Swift is required for the native presentation model")
 class AssistantGenerationBehaviorTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "the complete Squirrel model requires macOS CryptoKit")
+    @unittest.skipUnless(shutil.which("swift"), "Swift is required for the native presentation model")
     def test_native_response_tracks_worker_settlement_after_visible_timeout(self) -> None:
         patch = (ROOT / "squirrel-patches/0001-add-rag-ime-sidecar.patch").read_text()
         block = patch.split("diff --git a/sources/RagImeSidecarModels.swift b/sources/RagImeSidecarModels.swift\n", 1)[1].split("diff --git ", 1)[0]
@@ -51,6 +53,7 @@ class AssistantGenerationBehaviorTests(unittest.TestCase):
             result = subprocess.run([shutil.which("swift"), str(path)], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipUnless(shutil.which("swift"), "Swift is required for the Foundation progress planner")
     def test_progress_never_claims_unobserved_context_or_retrieval(self) -> None:
         source = (ROOT / "squirrel-patches/sources/RagImeSuggestionCardView.swift").read_text()
         planner = source[source.index("enum RagImeGenerationStageState"):source.index("final class RagImeSuggestionCardView")]

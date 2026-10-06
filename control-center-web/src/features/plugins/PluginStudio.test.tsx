@@ -17,10 +17,12 @@ function setup(fail = false) {
     'agent.extensions.preview': { ok: true, previewToken: 'preview-exact', payloadSha256: 'a'.repeat(64), summary: { action: 'install' } },
   });
   const onPreview = vi.fn();
+  const onPrepare = vi.fn();
+  const onPendingChange = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <ControlTransportProvider transport={transport}><TooltipProvider><PluginStudio onPreview={onPreview} /><Location /></TooltipProvider></ControlTransportProvider>
+    <ControlTransportProvider transport={transport}><TooltipProvider><PluginStudio onPendingChange={onPendingChange} onPrepare={onPrepare} onPreview={onPreview} /><Location /></TooltipProvider></ControlTransportProvider>
   </QueryClientProvider></MemoryRouter>);
-  return { transport, onPreview, user: userEvent.setup() };
+  return { transport, onPreview, onPrepare, onPendingChange, user: userEvent.setup() };
 }
 it('creates a native Skill package and prepares the exact retained draft for installation', async () => {
   const { transport, onPreview, user } = setup();
@@ -38,7 +40,7 @@ it('creates a native Skill package and prepares the exact retained draft for ins
   expect(transport.requests.some((r) => r.pathId === 'agent.extensions.apply')).toBe(false);
 });
 it('preserves authored text and does not propose or claim installation after validation fails', async () => {
-  const { transport, onPreview, user } = setup(true);
+  const { transport, onPreview, onPrepare, onPendingChange, user } = setup(true);
   await user.click(screen.getByRole('radio', { name: '自己编写' }));
   await user.type(screen.getByRole('textbox', { name: '插件标识' }), 'review-notes');
   await user.type(screen.getByRole('textbox', { name: '用途' }), '整理复盘笔记');
@@ -47,6 +49,8 @@ it('preserves authored text and does not propose or claim installation after val
   expect(await screen.findByRole('alert')).toHaveTextContent('草稿');
   expect(screen.getByRole('textbox', { name: '内容' })).toHaveValue('保留这段内容');
   expect(onPreview).not.toHaveBeenCalled();
+  expect(onPrepare).toHaveBeenCalledTimes(1);
+  expect(onPendingChange.mock.calls).toEqual([[true], [false]]);
   expect(transport.requests.some((r) => r.pathId === 'agent.extensions.preview')).toBe(false);
 });
 it('opens an App creation conversation with the user brief and explicit installation choice', async () => {

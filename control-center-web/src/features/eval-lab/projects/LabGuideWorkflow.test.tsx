@@ -7,6 +7,7 @@ import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-
 import { MockControlTransport } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { LabGuideWorkflow } from './LabGuideWorkflow';
+import { agentProjectionKey, agentSessionAddress } from '@/features/agent/state/live-store';
 
 const clients: QueryClient[] = [];
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); });
@@ -49,6 +50,14 @@ it('changes only the same Guide native budget after explicit save without resett
   fireEvent.click(screen.getByRole('button', { name: '保存预算' }));
   await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId.endsWith('.mutate'))).toBe(true));
   expect(transport.requests.find(({ request }) => request.pathId.endsWith('.mutate'))?.request).toMatchObject({ params: { sessionId: 'guide-session' }, body: { action: 'update', expectedRevision: 1, tokenBudget: 12000, timeBudgetMs: 3600000 } });
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存预算' })).toBeDisabled());
+  const client = clients.at(-1)!;
+  expect(client.getQueryData<AgentWorkflowStateV1>(['agent', 'workflow', agentProjectionKey(agentSessionAddress(transport, 'guide-session'))])?.goal).toMatchObject({ revision: 2, budget: { tokenLimit: 12000 }, usage: { tokens: 125 } });
+  expect(client.getQueryData(['agent', 'workflow', 'guide-session'])).toBeUndefined();
+  fireEvent.change(input, { target: { value: '14000' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存预算' }));
+  await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId.endsWith('.mutate'))).toHaveLength(2));
+  expect(transport.requests.filter(({ request }) => request.pathId.endsWith('.mutate'))[1]?.request.body).toMatchObject({ expectedRevision: 2, tokenBudget: 14000 });
   expect(transport.requests.every(({ request }) => ['agent.session.workflow.get', 'agent.session.goal.mutate'].includes(request.pathId))).toBe(true);
 });
 it('uses the existing same-Session pause and resume actions, without cancelling independent jobs', async () => {

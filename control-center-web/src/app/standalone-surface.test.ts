@@ -5,6 +5,11 @@ import {
 } from './standalone-surface';
 
 describe('standaloneSurfaceForPath', () => {
+  it('owns only the exact desktop pet surface route', () => {
+    expect(standaloneSurfaceForPath('/desktop-pet')).toBe('desktop-pet');
+    expect(standaloneSurfaceForPath('/desktop-pet/')).toBe('desktop-pet');
+    expect(standaloneSurfaceForPath('/desktop-pet-other')).toBeNull();
+  });
   it('opens a compact screen conversation without creating another desktop', () => {
     expect(standaloneSurfaceForPath('/screen-assistant')).toBe('screen-assistant');
     expect(standaloneSurfaceForPath('/screen-assistant/')).toBe('screen-assistant');

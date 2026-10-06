@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/primitives';
 import { InlineNotice, ManagementSection, asRecord, publicErrorText } from '@/features/overview/management-ui';
 import type { ControlTransport } from '@/platform/transport';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import './prompt-settings.css';
+import { useConfigurationSectionAnchor } from './useConfigurationSectionAnchor';
 
 type PromptValues = { systemInstructions: string; compactionInstructions: string };
 type PromptPolicy = { maxCharacters: number; defaults: PromptValues; builtInSystemPrompt: string };
@@ -18,6 +20,7 @@ export function PromptSettingsPanel({ routeIds, transport, highlighted = false }
   highlighted?: boolean;
 }) {
   const client = useQueryClient();
+  const active = usePawOsAppActive() ?? true;
   const panel = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saved, setSaved] = useState(false);
@@ -26,13 +29,11 @@ export function PromptSettingsPanel({ routeIds, transport, highlighted = false }
   const query = useQuery({
     queryKey,
     queryFn: async ({ signal }) => readSnapshot(await transport.request({ pathId: 'agent.configuration.get', signal })),
-    enabled: readable,
+    enabled: active && readable,
     retry: false,
     refetchOnWindowFocus: false,
   });
-  useEffect(() => {
-    if (highlighted && query.data) panel.current?.scrollIntoView?.({ block: 'start' });
-  }, [highlighted, query.data]);
+  useConfigurationSectionAnchor(panel, highlighted);
   const mutation = useMutation({
     mutationFn: async ({ changes, revision }: { changes: Record<string, string>; revision: number }) => {
       if (!writable) throw new Error('当前版本不支持保存提示词');

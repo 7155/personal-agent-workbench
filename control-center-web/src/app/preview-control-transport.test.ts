@@ -1,7 +1,166 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyAgentSnapshot, createAgentProjection } from '@/contracts/agent-reducer';
 import { createPreviewTransport } from './preview-control-transport';
 import { previewAgentSnapshot } from '@/features/agent/preview-data';
+
+describe('preview Agent prompt settings', () => {
+  it('round trips public prompt settings without replacing other Agent configuration', async () => {
+    const transport = createPreviewTransport();
+    const before = record(await transport.request({ pathId: 'agent.configuration.get' }));
+    expect(before.promptPolicy).toMatchObject({ schemaVersion: 'rag-ime.agent-prompt-policy.v1', maxCharacters: 8000 });
+    const current = record(before.configuration);
+    const configuration = record(current.configuration);
+    expect(configuration.prompts).toMatchObject({ systemInstructions: expect.any(String), compactionInstructions: expect.any(String) });
+    const updated = record(await transport.request({ pathId: 'agent.configuration.update', body: {
+      expectedRevision: current.revision as number,
+      changes: { 'prompts.systemInstructions': '公开模拟：核对来源。', 'prompts.compactionInstructions': '公开模拟：保留下一步。' },
+    } }));
+    expect(record(record(updated.configuration).configuration)).toMatchObject({
+      prompts: { systemInstructions: '公开模拟：核对来源。', compactionInstructions: '公开模拟：保留下一步。' },
+      sessionDefaults: configuration.sessionDefaults,
+      modelRouting: configuration.modelRouting,
+    });
+    await expect(transport.request({ pathId: 'agent.configuration.update', body: {
+      expectedRevision: current.revision as number, changes: { 'prompts.systemInstructions': '过期草稿' },
+    } })).rejects.toThrow('changed');
+  });
+  it('rejects invalid prompt changes atomically in the preview', async () => {
+    const transport = createPreviewTransport();
+    const before = await transport.request({ pathId: 'agent.configuration.get' });
+    for (const value of [42, 'x'.repeat(8001), '公开\u0000文本']) {
+      await expect(transport.request({ pathId: 'agent.configuration.update', body: {
+        expectedRevision: 1, changes: { 'prompts.systemInstructions': '不能部分应用', 'prompts.compactionInstructions': value },
+      } })).rejects.toThrow('提示词');
+      expect(await transport.request({ pathId: 'agent.configuration.get' })).toEqual(before);
+    }
+  });
+});
+
+describe('preview primary task directory', () => {
+  type Reply = { session: { id: string }; tasks: { id: string }[] };
+  it('rotates archived primary discussions and rejects new tasks from the retired source', async () => {
+    const transport = createPreviewTransport();
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    await transport.request({ pathId: 'agent.session.archive', params: { sessionId: first.session.id }, body: { archived: true } });
+    const replacement = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(replacement.session.id).not.toBe(first.session.id);
+    await expect(transport.request({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: first.session.id, clientRequestId: 'retired-source', objective: 'Check',
+      workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } })).rejects.toThrow('归档');
+    const task = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: replacement.session.id, clientRequestId: 'replacement-task', objective: 'Check',
+      workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    expect((await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} })).tasks.map(item=>item.id)).toEqual([task.session.id]);
+  });
+  it('keeps exact task replay after source archive without creating another task', async () => {
+    const transport = createPreviewTransport();
+    const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    const body = { sourceSessionId: source.session.id, clientRequestId: 'replay-retired', objective: 'Check', workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE' };
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body });
+    await transport.request({ pathId: 'agent.session.archive', params: { sessionId: source.session.id }, body: { archived: true } });
+    const replay = await transport.request<Reply & { created: boolean }>({ pathId: 'agent.primary.tasks.create', body });
+    expect(replay.session.id).toBe(first.session.id);
+    expect(replay.created).toBe(false);
+    const replacement = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(replacement.tasks).toEqual([]);
+  });
+  it('replaces deleted cached discussions and checks the source project', async () => {
+    const transport = createPreviewTransport();
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    await expect(transport.request({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: first.session.id, clientRequestId: 'wrong-project', objective: 'Check', workspaceRoots: ['/work/second'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } })).rejects.toThrow('目录');
+    await transport.request({ pathId: 'agent.session.delete', params: { sessionId: first.session.id } });
+    const next = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    expect(next.session.id).not.toBe(first.session.id);
+  });
+  it('returns only tasks belonging to the ensured source discussion', async () => {
+    const transport = createPreviewTransport();
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    const second = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/second'] } });
+    const create = (sourceSessionId: string, clientRequestId: string, root: string) => transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId, clientRequestId, objective: 'Check this project', acceptanceCriteria: [],
+      workspaceRoots: [root], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    const a = await create(first.session.id, 'first-task', '/work/first');
+    const b = await create(second.session.id, 'second-task', '/work/second');
+    const one = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    const two = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/second'] } });
+    expect(one.tasks.map(task => task.id)).toEqual([a.session.id]);
+    expect(two.tasks.map(task => task.id)).toEqual([b.session.id]);
+  });
+  it('keeps primary task goals and criteria isolated from the sample workflow', async () => {
+    const transport = createPreviewTransport();
+    const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    const task = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: source.session.id, clientRequestId: 'own-workflow', objective: 'A'.repeat(120),
+      acceptanceCriteria: ['保留输入', '说明未验证状态'], workspaceRoots: ['/work/task'],
+      workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    const workflow = record(await transport.request({ pathId: 'agent.session.workflow.get', params: { sessionId: task.session.id } }));
+    expect(record(workflow.goal)).toMatchObject({ sessionId: task.session.id, objective: 'A'.repeat(120), successCriteria: '保留输入\n说明未验证状态', status: 'active' });
+    expect(record(workflow.todo).phases).toEqual([]);
+    const discussion = record(await transport.request({ pathId: 'agent.session.workflow.get', params: { sessionId: source.session.id } }));
+    expect(record(discussion.goal)).toMatchObject({ configured: false, objective: '', sessionId: source.session.id });
+    await expect(transport.request({ pathId: 'agent.session.goal.mutate', params: { sessionId: task.session.id }, body: { action: 'pause' } })).rejects.toThrow('演示任务不支持修改目标');
+    const sample = record(await transport.request({ pathId: 'agent.session.workflow.get', params: { sessionId: 'session-preview' } }));
+    expect(record(sample.todo).phases).not.toEqual([]);
+  });
+  it('omits archived tasks while keeping the persisted session available', async () => {
+    const transport = createPreviewTransport();
+    const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    const task = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: source.session.id, clientRequestId: 'archive-task', objective: 'Check',
+      workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    const archived = await transport.request<{ session: { id: string; status: string } }>({ pathId: 'agent.session.archive', params: { sessionId: task.session.id }, body: { archived: true } });
+    expect(archived.session.status).toBe('archived');
+    const again = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(again.tasks).toEqual([]);
+    expect(again.session.id).toBe(source.session.id);
+  });
+});
+
+describe('preview workspace directory picker', () => {
+  afterEach(() => { delete window.pawBrowserHost; });
+  const options = { purpose: 'workspace-root' as const, selection: 'directory' as const, multiple: false, maxFiles: 1 };
+  function host(pickWorkspaceDirectory: () => Promise<{ name: string; path: string } | null>) {
+    window.pawBrowserHost = { kind: 'electron-webview', partition: 'persist:paw-browser', pickWorkspaceDirectory } as NonNullable<typeof window.pawBrowserHost>;
+  }
+  it('uses the installed native directory bridge instead of returning a synthetic image', async () => {
+    const pick = vi.fn(async () => ({ name: 'sample', path: '/work/sample' })); host(pick);
+    const transport = createPreviewTransport();
+    expect(await transport.pickFiles(options)).toEqual([{ id: 'workspace:/work/sample', name: 'sample', path: '/work/sample', mimeType: 'inode/directory', byteSize: 0 }]);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(transport.filePickCalls).toEqual([options]);
+    expect(transport.requests).toHaveLength(0);
+  });
+  it('reports web preview limitations rather than pretending the user cancelled a native picker', async () => {
+    const transport = createPreviewTransport();
+    await expect(transport.pickFiles(options)).rejects.toThrow('手动填写工作目录');
+    const pick = vi.fn(async () => null);
+    window.pawBrowserHost = { kind: 'electron-webview', partition: 'wrong', pickWorkspaceDirectory: pick } as unknown as NonNullable<typeof window.pawBrowserHost>;
+    await expect(transport.pickFiles(options)).rejects.toThrow('手动填写工作目录');
+    expect(pick).not.toHaveBeenCalled();
+  });
+  it('preserves native cancellation and errors without manufacturing a directory', async () => {
+    host(async () => null);
+    await expect(createPreviewTransport().pickFiles(options)).resolves.toEqual([]);
+    host(async () => { throw new Error('directory picker unavailable'); });
+    await expect(createPreviewTransport().pickFiles(options)).rejects.toThrow('directory picker unavailable');
+  });
+  it('honors cancellation before and after the native dialog while retaining attachment fixtures', async () => {
+    const controller = new AbortController();
+    const pick = vi.fn(async () => { controller.abort(); return { name: 'stale', path: '/work/stale' }; }); host(pick);
+    const transport = createPreviewTransport();
+    await expect(transport.pickFiles({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(transport.pickFiles({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(await transport.pickFiles({ purpose: 'attachment', sessionId: 'session-preview' })).toEqual([expect.objectContaining({ id: 'media_preview_attachment_01', mimeType: 'image/png' })]);
+  });
+});
 
 describe('preview control transport', () => {
   it('exposes Jev preview cards without fabricating provider decisions or writes', async () => {
@@ -317,6 +476,64 @@ describe('preview control transport', () => {
       resources: { skills: ['skills/example.context-helper/SKILL.md'] },
       source: { kind: 'npm' },
     });
+  });
+
+  it('keeps catalog permissions in the review and isolates another installed package from a stale inspection', async () => {
+    const transport = createPreviewTransport();
+    const validation = record(await transport.request({ pathId: 'agent.extensions.validate', body: { catalogId: 'session-review' } }));
+    const review = record(await transport.request({ pathId: 'agent.extensions.preview', body: { action: 'install', validationToken: String(validation.validationToken) } }));
+    expect(record(review.summary).permissions).toEqual(['session.read', 'memory.review']);
+    const proposal = arrayRecords(record(await transport.request({ pathId: 'agent.extensions.proposals' })).items)[0];
+    expect(record(proposal.summary).permissions).toEqual(['session.read', 'memory.review']);
+    const installed = arrayRecords(record(await transport.request({ pathId: 'agent.extensions.list' })).items)
+      .find(item => item.id === 'timeline-inspector')!;
+    const maintenance = record(await transport.request({ pathId: 'agent.extensions.preview', body: { action: 'uninstall', pluginId: 'timeline-inspector' } }));
+    expect(record(maintenance.summary)).toMatchObject({ pluginId: installed.id, permissions: installed.permissions ?? [], resources: installed.resources });
+  });
+
+  it('returns a JSON demo file and list sizes that match the bytes actually read', async () => {
+    const transport = createPreviewTransport();
+    for (const path of ['/preview', '/preview/control-center-web']) {
+      const listing = record(await transport.request({ pathId: 'files.list', query: { path } }));
+      const file = arrayRecords(listing.items).find(item => item.kind === 'file')!;
+      const read = record(await transport.request({ pathId: 'files.read', query: { path: String(file.path) } }));
+      expect(file.byteSize).toBe(new TextEncoder().encode(String(read.content)).byteLength);
+      expect(read.byteSize).toBe(file.byteSize);
+      if (String(file.name).endsWith('.json')) expect(JSON.parse(String(read.content))).toMatchObject({ private: true, preview: true });
+      const direct = record(await transport.request({ pathId: 'files.list', query: { path: String(file.path) } }));
+      expect(direct).toMatchObject({ path, selectedPath: file.path, requestedPath: file.path, scope: 'local' });
+      expect(arrayRecords(direct.items).map(item => item.path)).toContain(file.path);
+    }
+  });
+
+  it('keeps the known Memory topic label consistent and does not advertise unavailable archive receipts', async () => {
+    const transport = createPreviewTransport();
+    const page = record(await transport.request({ pathId: 'memory.pages', params: { kind: 'books' } }));
+    const topic = arrayRecords(page.items)[0];
+    const entity = record(await transport.request({ pathId: 'memory.entity.get', params: { kind: 'book', entityId: String(topic.id) } }));
+    const reference = record(await transport.request({ pathId: 'memory.reference.get', params: { kind: 'book', referenceId: String(topic.id) } }));
+    expect(record(entity.entity).label).toBe(topic.title);
+    expect(record(reference.item).title).toBe(topic.title);
+    expect((await transport.capabilities()).routeIds.some(id => id.startsWith('memory.book.archive.'))).toBe(false);
+  });
+
+  it('discloses semantic organization only for organized preview calendar days', async () => {
+    const transport = createPreviewTransport();
+    const calendar = record(await transport.request({ pathId: 'memory.activityTimeline.calendar', query: { month: '2026-09' } }));
+    const days = arrayRecords(calendar.days);
+    expect(days.some(day => day.organized === true && day.modelOrganized === true)).toBe(true);
+    expect(days.some(day => day.status === 'none' && day.modelOrganized === false)).toBe(true);
+    expect(days.every(day => day.modelOrganized === day.organized)).toBe(true);
+  });
+
+  it('searches preview relations while retaining the direct neighborhood of a matching label', async () => {
+    const transport = createPreviewTransport();
+    const empty = record(await transport.request({ pathId: 'memory.graph.get', query: { plane: 'tags', query: '没有这种关系_验收' } }));
+    expect(empty.nodes).toEqual([]);
+    expect(empty.edges).toEqual([]);
+    const matching = record(await transport.request({ pathId: 'memory.graph.get', query: { plane: 'groups', query: 'Backspace' } }));
+    expect(arrayRecords(matching.nodes).map(node => node.id)).toEqual(['group:input-method', 'tag:input-boundary']);
+    expect(arrayRecords(matching.edges)).toHaveLength(1);
   });
 
   it('keeps the Preview Trace, Eval, suite, and schedule chain coherent', async () => {

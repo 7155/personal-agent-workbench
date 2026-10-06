@@ -48,6 +48,7 @@ function boot() {
   });
   vm.runInContext(source, context, { filename: 'main.mjs' });
   return { app, releaseReady, windowCount: () => windowCount,
+    addAuxiliaryWindow() { windows.push({}); },
     completeHost() { hostReady = true; vm.runInContext("hostServer = { origin: 'http://127.0.0.1:12345' }", context); } };
 }
 
@@ -73,5 +74,11 @@ test('activate after readiness reopens one window without duplicating it', async
   host.completeHost();
   host.app.emit('activate');
   host.app.emit('activate');
+  assert.equal(host.windowCount(), 1);
+});
+
+test('an auxiliary pet window does not prevent activating the main workbench', async () => {
+  const host = boot(); host.releaseReady(); await Promise.resolve(); host.completeHost();
+  host.addAuxiliaryWindow(); host.app.emit('activate');
   assert.equal(host.windowCount(), 1);
 });

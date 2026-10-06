@@ -195,6 +195,18 @@
   --color-danger-border: color-mix(in srgb, var(--color-danger) 34%, var(--color-border));
   --color-success-border: color-mix(in srgb, var(--color-success) 34%, var(--color-border));
   --color-accent-border: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  /* Working content retains this paper palette when the desktop shell tints
+     its own controls. These aliases resolve here, including in dark mode. */
+  --color-workspace-paper: var(--color-paper);
+  --color-workspace-surface: var(--color-surface);
+  --color-workspace-ink: var(--color-text);
+  --color-workspace-secondary: var(--color-text-secondary);
+  --color-workspace-muted: var(--color-text-tertiary);
+  --color-workspace-border: var(--color-border);
+  --color-workspace-border-soft: var(--color-border-soft);
+  --color-workspace-accent: var(--color-accent);
+  --color-workspace-accent-hover: var(--color-accent-hover);
+  --color-workspace-on-accent: var(--color-accent-text);
   /* The editorial rule under a figure block. Near-ink on paper; in dark mode
      a full-strength rule would glare, so it steps back to a bright hairline. */
   --rule-figure: 2px solid color-mix(in srgb, var(--color-text) 82%, transparent);

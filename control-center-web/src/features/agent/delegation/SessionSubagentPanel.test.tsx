@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
@@ -10,6 +10,22 @@ import { SessionSubagentPanel } from './SessionSubagentPanel';
 afterEach(cleanup);
 
 describe('SessionSubagentPanel', () => {
+  it('isolates same-ID run lists between connections using the shared status-list owner', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const make = (label: string) => new StubControlTransport('mock', {
+      'agent.subagents.list': { tree: { schemaVersion: 'rag-ime.agent-subagent-tree.v1', rootSessionId: 'session:root', nodeCount: 1, maxDepth: 1,
+        roots: [{ run: { ...subagentRun('failed', label), id: `run:${label}`, task: label }, children: [] }] } },
+    });
+    render(<TooltipProvider><QueryClientProvider client={client}>
+      {(['甲连接独有任务', '乙连接独有任务'] as const).map(label => <ControlTransportProvider key={label} transport={make(label)}>
+        <section aria-label={label}><SessionSubagentPanel open onClose={() => {}} sessionId="session:root" tools={[]} /></section>
+      </ControlTransportProvider>)}
+    </QueryClientProvider></TooltipProvider>);
+    for (const label of ['甲连接独有任务', '乙连接独有任务']) {
+      expect(await within(screen.getByRole('region', { name: label })).findByRole('list', { name: '子 Agent 节点' })).toHaveTextContent(label);
+    }
+  });
+
   it('shows the concrete failure reason on failed and timed-out graph nodes', async () => {
     const failed = subagentRun('failed', 'workspace permission denied');
     const timedOut = subagentRun('timed_out', 'child run exceeded its deadline');

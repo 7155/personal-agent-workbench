@@ -1229,7 +1229,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
                 <strong>页面没有打开</strong>
                 <small>{error}</small>
               </span>
-              <button onClick={() => void refreshShell()} type="button">重试</button>
+              <button disabled={!selectedTabId || Boolean(busy)} onClick={() => void captureSnapshot(selectedTabId)} type="button">重试</button>
             </div>
           ) : null}
 
@@ -1281,7 +1281,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
                 ) : null}
               </div>
             </div>
-          ) : !electronHost ? (
+          ) : !electronHost && !error ? (
             /* Outside the desktop host there is no guest to embed, so the page
                is whatever Runtime last captured. A bare reload glyph left the
                reader staring at a blank sheet with nothing explaining it. */

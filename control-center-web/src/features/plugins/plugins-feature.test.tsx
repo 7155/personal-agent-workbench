@@ -1,7 +1,7 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { createPreviewTransport } from '@/app/preview-control-transport';
@@ -16,6 +16,7 @@ import { requireCapabilityCatalog } from './capability-policy';
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   onlineManager.setOnline(true);
 });
 
@@ -118,10 +119,12 @@ describe('PluginsFeature', () => {
       }] },
     }, '/plugins', true);
     const card = await screen.findByRole('article', { name: '掌柜问数 Package' });
+    await user.click(within(card).getByText('管理与使用记录'));
     expect(card).toHaveTextContent('可恢复到 v0.1.1');
     expect(card).not.toHaveTextContent('没有可恢复的历史版本');
     expect(card).not.toHaveTextContent('v0.0.1');
     const unknown = screen.getByRole('article', { name: 'Unknown target Package' });
+    await user.click(within(unknown).getByText('管理与使用记录'));
     expect(unknown).toHaveTextContent('可恢复上一版本，具体版本将在预览中显示');
     await user.click(within(card).getByRole('button', { name: '恢复上一版本' }));
     await waitFor(() => expect(transport.requests.find(({ request }) =>
@@ -148,6 +151,7 @@ describe('PluginsFeature', () => {
     expect(card).toHaveTextContent('扩展 1 · 技能 1');
     expect(card).not.toHaveTextContent('@paw/pi-session-workflow');
     expect(card).not.toHaveTextContent('Session-local');
+    await user.click(within(card).getByText('管理与使用记录'));
     await user.click(within(card).getByText('包标识与原始信息'));
     expect(card).toHaveTextContent('@paw/pi-session-workflow');
     expect(card).toHaveTextContent('Session-local');
@@ -372,16 +376,20 @@ describe('PluginsFeature', () => {
       },
     }, '/plugins', true);
 
-    // The capability browser and the curation hooks are now reachable in the
-    // native App Center instead of remaining web-only functions.
+    // The owning App navigation provides capability settings; the installed
+    // page does not repeat that navigation as another button.
     expect(screen.queryByRole('group', { name: '能力列表' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '管理 Agent 功能开关与默认设置' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '管理 Agent 功能开关与默认设置' })).not.toBeInTheDocument();
 
     const packages = await screen.findByRole('region', { name: '插件安装与更新' });
     const packageCard = await within(packages).findByRole('article', { name: 'Session Workflow Package' });
     expect(packageCard).toHaveTextContent('读取对话内容');
     expect(packageCard).toHaveTextContent('2 项资源');
     expect(packageCard).toHaveTextContent('npm 包');
+    expect(within(packageCard).queryByRole('button', { name: '卸载' })).not.toBeInTheDocument();
+    expect(within(packageCard).queryByRole('button', { name: '恢复上一版本' })).not.toBeInTheDocument();
+    expect(within(packageCard).getByRole('button', { name: '停用' })).toBeVisible();
+    await userEvent.click(within(packageCard).getByText('管理与使用记录'));
     expect(packageCard).toHaveTextContent('没有可恢复的历史版本');
     expect(within(packages).getByRole('textbox', { name: 'Pi Package 来源' })).toBeInTheDocument();
 
@@ -439,8 +447,11 @@ describe('PluginsFeature', () => {
 
     const packageCard = await screen.findByRole('article', { name: 'Pi Lens Package' });
     expect(packageCard).toHaveTextContent('已启用');
-    expect(packageCard).toHaveTextContent('已加载 · 3 个对话');
-    expect(packageCard).toHaveTextContent('已调用 · lens_diagnostics');
+    expect(packageCard).toHaveTextContent('历史加载 · 3 个对话');
+    expect(packageCard).toHaveTextContent('最近调用 · lens_diagnostics');
+    expect(packageCard).not.toHaveTextContent('18 次调用');
+    await userEvent.click(within(packageCard).getByText('管理与使用记录'));
+    expect(packageCard).toHaveTextContent('当前对话是否使用，请查看该对话的调用回执');
     expect(packageCard).toHaveTextContent('18 次调用');
     expect(packageCard).toHaveTextContent('成功 17 · 失败 1 · 取消 0');
     expect(packageCard).toHaveTextContent('平均 240 ms');
@@ -896,21 +907,76 @@ describe('PluginsFeature', () => {
     expect(screen.queryByText('还没有受管插件')).not.toBeInTheDocument();
   });
 
-  it('shows a recoverable Pi disconnect instead of an empty installed state', async () => {
+  it.each([false, true])('preserves the source draft and blocks writes until Pi reconnects (native: %s)', async (native) => {
     const user = userEvent.setup();
-    renderPlugins({
-      'agent.extensions.list': {
+    let connected = false;
+    const transport = renderPlugins({
+      'agent.extensions.list': () => ({
         schemaVersion: 'rag-ime.plugin-inventory.v1',
         ok: true,
-        runtimeAvailable: false,
+        runtimeAvailable: connected,
         items: [],
-      },
-    });
+      }),
+    }, '/plugins', native);
 
-    await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
-    expect(await screen.findByText('Pi Runtime 暂时未连接')).toBeVisible();
-    expect(screen.getByText('Pi 未连接')).toBeVisible();
-    expect(screen.getByText(/不会再把断连伪装成“0 个已安装”/)).toBeVisible();
+    if (!native) await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
+    expect(await screen.findByText('插件服务暂未连接')).toBeVisible();
+    expect(screen.getByText('安装状态未知')).toBeVisible();
+    expect(screen.queryByText('还没有额外扩展')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 个已安装')).not.toBeInTheDocument();
+    const source = screen.getByRole('textbox', { name: 'Pi Package 来源' });
+    await user.type(source, 'npm:my-package@1.0.0');
+    const preview = screen.getByRole('button', { name: '检查并预览' });
+    expect(preview).toBeDisabled();
+    await user.click(preview);
+    expect(transport.requests.some(({ request }) => ['agent.extensions.validate', 'agent.extensions.preview', 'agent.extensions.apply'].includes(request.pathId))).toBe(false);
+
+    connected = true;
+    await user.click(screen.getByRole('button', { name: '刷新状态' }));
+    expect(await screen.findByText('还没有额外扩展')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Pi Package 来源' })).toHaveValue('npm:my-package@1.0.0');
+    await user.click(screen.getByRole('button', { name: '检查并预览' }));
+    expect(await screen.findByRole('region', { name: '待确认的插件更改' })).toBeVisible();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.validate')).toHaveLength(1);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
+  });
+
+  it('does not dispatch a preview when Pi disconnects during source validation', async () => {
+    const user = userEvent.setup();
+    let connected = true;
+    let finishValidation!: (value: unknown) => void;
+    const validation = new Promise((resolve) => { finishValidation = resolve; });
+    const transport = renderPlugins({
+      'agent.extensions.list': () => ({ ok: true, runtimeAvailable: connected, items: [] }),
+      'agent.extensions.validate': () => validation,
+    }, '/plugins', true);
+    await user.type(await screen.findByRole('textbox', { name: 'Pi Package 来源' }), 'npm:my-package@1.0.0');
+    await user.click(screen.getByRole('button', { name: '检查并预览' }));
+    connected = false;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await screen.findByText('插件服务暂未连接');
+    await act(async () => { finishValidation({ ok: true, validationToken: 'checked-source', extension: { id: 'my-package' } }); });
+    expect(await screen.findByText('插件操作未完成')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Pi Package 来源' })).toHaveValue('npm:my-package@1.0.0');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.preview')).toBe(false);
+  });
+
+  it('retains a reviewed change without allowing apply while installation state is unknown', async () => {
+    const user = userEvent.setup();
+    let connected = true;
+    const transport = renderPlugins({
+      'agent.extensions.list': () => ({ ok: true, runtimeAvailable: connected, items: [{ id: 'session-review', displayName: 'Session Review', enabled: true }] }),
+    }, '/plugins', true);
+    await user.click(within(await screen.findByRole('article', { name: '对话复盘 Package' })).getByRole('button', { name: '停用' }));
+    await screen.findByRole('region', { name: '待确认的插件更改' });
+    connected = false;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await screen.findByText('插件服务暂未连接');
+    expect(screen.getByRole('region', { name: '待确认的插件更改' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '确认更改' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '取消' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '确认更改' }));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
   });
 
   it('opens the exact installed Package when entered from a PAWOS Package App window', async () => {
@@ -987,6 +1053,7 @@ describe('PluginsFeature', () => {
     await user.click(within(card).getByRole('button', { name: /打开\s*掌柜问数/ }));
     expect(window.location.hash).toBe('#/extensions/zhanggui-wenshu');
     expect(within(card).getByRole('button', { name: '停用' })).toBeInTheDocument();
+    await user.click(within(card).getByText('管理与使用记录'));
     expect(within(card).getByRole('button', { name: '卸载' })).toBeInTheDocument();
   });
 
@@ -1062,6 +1129,98 @@ describe('PluginsFeature', () => {
     expect(fact('需要的权限')).toHaveTextContent('读取对话内容');
     expect(fact('当前状态')).toHaveTextContent('已启用');
   });
+  it('discards the old approval when a different lifecycle preview fails', async () => {
+    const user = userEvent.setup();
+    let previews = 0;
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.preview': () => {
+        if (++previews > 1) throw new Error('卸载预览失败');
+        return { ok: true, previewToken: 'old-disable', payloadSha256: 'a'.repeat(64), summary: { action: 'disable', pluginId: 'session-review' } };
+      },
+    }, '/plugins', true);
+    const card = await screen.findByRole('article', { name: '对话复盘 Package' });
+    await user.click(within(card).getByRole('button', { name: '停用' }));
+    expect(await screen.findByRole('button', { name: '确认更改' })).toBeEnabled();
+    await user.click(within(card).getByText('管理与使用记录'));
+    await user.click(within(card).getByRole('button', { name: '卸载' }));
+    expect(await screen.findByText('卸载预览失败')).toBeVisible();
+    expect(screen.queryByRole('region', { name: '待确认的插件更改' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
+  });
+
+  it.each(['source', 'catalog', 'update'] as const)('retires old approval when %s preparation fails before preview', async (entry) => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      ...(entry === 'update' ? { 'agent.extensions.catalog': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', latestVersion: '1.1.0', installed: true, updateAvailable: true, actionable: true }] } } : {}),
+      'agent.extensions.validate': () => { throw new Error('来源准备失败'); },
+    });
+    await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
+    const card = await screen.findByRole('article', { name: '对话复盘 Package' });
+    await user.click(within(card).getByRole('button', { name: '停用' }));
+    expect(await screen.findByRole('button', { name: '确认更改' })).toBeEnabled();
+    if (entry === 'source') {
+      await user.type(screen.getByRole('textbox', { name: 'Pi Package 来源' }), 'npm:example-package');
+      await user.click(screen.getByRole('button', { name: '检查并预览' }));
+    } else if (entry === 'update') {
+      await user.click(within(card).getByRole('button', { name: '更新到 v1.1.0' }));
+    } else {
+      await user.click(screen.getByRole('button', { name: '查看安装内容' }));
+    }
+    expect(await screen.findByText('来源准备失败')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.preview')).toHaveLength(1);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
+  });
+
+  it('does not let a proposal replace an in-flight lifecycle intent', async () => {
+    const user = userEvent.setup();
+    let finishPreview!: (value: unknown) => void;
+    const pending = new Promise((resolve) => { finishPreview = resolve; });
+    renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.proposals': { ok: true, items: [{ proposalId: 'other-proposal', previewToken: 'other-token', summary: { action: 'uninstall', pluginId: 'other-plugin', displayName: '另一个插件' } }] },
+      'agent.extensions.preview': () => pending,
+    });
+    await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
+    await user.click(within(await screen.findByRole('article', { name: '对话复盘 Package' })).getByRole('button', { name: '停用' }));
+    expect(screen.getByRole('button', { name: /另一个插件/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    await act(async () => { finishPreview({ ok: true, previewToken: 'disable-token', payloadSha256: 'a'.repeat(64), summary: { action: 'disable', pluginId: 'session-review' } }); });
+    expect(await screen.findByRole('region', { name: '待确认的插件更改' })).toHaveTextContent('停用插件');
+    expect(screen.getByRole('button', { name: /另一个插件/ })).toBeEnabled();
+  });
+
+  it.each([{ ok: false }, { ok: true }, null])('does not report an unconfirmed apply as success: %j', async (response) => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.apply': () => response,
+    }, '/plugins', true);
+    const card = await screen.findByRole('article', { name: '对话复盘 Package' });
+    await user.click(within(card).getByRole('button', { name: '停用' }));
+    await user.click(await screen.findByRole('button', { name: '确认更改' }));
+    expect(await screen.findByText(/未收到有效的更改回执/)).toBeVisible();
+    expect(screen.queryByText('更改已应用')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.apply')).toHaveLength(1);
+  });
+
+  it('clears a consumed approval after a lost apply response without retrying', async () => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{ id: 'session-review', displayName: 'Session Review', version: '1.0.0', enabled: true, installed: true }] },
+      'agent.extensions.apply': () => { throw new Error('连接已断开'); },
+    }, '/plugins', true);
+    await user.click(within(await screen.findByRole('article', { name: '对话复盘 Package' })).getByRole('button', { name: '停用' }));
+    await user.click(await screen.findByRole('button', { name: '确认更改' }));
+    expect(await screen.findByText(/请先刷新安装状态/)).toHaveTextContent('连接已断开');
+    expect(screen.queryByRole('button', { name: '确认更改' })).not.toBeInTheDocument();
+    expect(screen.queryByText('更改已应用')).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.apply')).toHaveLength(1);
+  });
+
   it('requires explicit confirmation before disabling or rolling back an installed Package', async () => {
     const user = userEvent.setup();
     const transport = createPreviewTransport();
@@ -1069,8 +1228,9 @@ describe('PluginsFeature', () => {
 
     await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
     await screen.findByText('时间线检查');
-    expect(screen.getByText('可恢复到 v0.9.0')).toBeInTheDocument();
     const installedPackage = screen.getByRole('article', { name: '时间线检查 Package' });
+    await user.click(within(installedPackage).getByText('管理与使用记录'));
+    expect(screen.getByText('可恢复到 v0.9.0')).toBeInTheDocument();
     expect(within(installedPackage).getByText('1 项资源')).toBeInTheDocument();
 
     await user.click(within(installedPackage).getByRole('button', { name: '停用' }));
@@ -1100,8 +1260,9 @@ describe('PluginsFeature', () => {
 
     await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
     await screen.findByText('时间线检查');
-
-    await user.click(within(screen.getByRole('article', { name: '时间线检查 Package' })).getByRole('button', { name: '卸载' }));
+    const installedPackage = screen.getByRole('article', { name: '时间线检查 Package' });
+    await user.click(within(installedPackage).getByText('管理与使用记录'));
+    await user.click(within(installedPackage).getByRole('button', { name: '卸载' }));
 
     expect(await screen.findByText('等待你的批准')).toBeVisible();
     expect(screen.getByText(/不会删除项目文件、对话、WorkDocument 或个人数据/)).toBeVisible();
@@ -1151,6 +1312,127 @@ describe('PluginsFeature', () => {
     await user.click(within(detail).getByRole('button', { name: '设置场景加载' }));
     expect(screen.getByTestId('test-location')).toHaveTextContent('/plugins?view=scenes');
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.configuration.update')).toBe(false);
+  });
+
+  it('clears every capability filter from a zero-result search and returns focus to search', async () => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({}, '/plugins?view=capabilities', true);
+    const search = await screen.findByRole('textbox', { name: '搜索' });
+    await user.type(search, 'no-such-capability');
+    await user.click(screen.getByRole('combobox', { name: '状态' }));
+    await user.click(screen.getByRole('option', { name: '已关闭' }));
+    await user.click(screen.getByRole('radio', { name: '技能' }));
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(search).toHaveValue('');
+    expect(search).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('全部状态');
+    expect(screen.getByRole('radio', { name: '全部' })).toBeChecked();
+    expect(screen.getByRole('group', { name: '能力列表' })).toBeVisible();
+    expect(transport.requests.every(({ request }) => controlRoute(request.pathId).method === 'GET')).toBe(true);
+  });
+
+  it.each([false, true])('distinguishes unavailable Skills from a confirmed empty list (native: %s)', async (native) => {
+    const user = userEvent.setup();
+    let connected = false;
+    renderPlugins({
+      'agent.extensions.skills.list': () => ({ ok: true, runtimeAvailable: connected, items: [] }),
+    }, '/plugins?view=skills', native);
+    await screen.findByText('技能清单暂时无法更新');
+    expect(screen.queryByText('没有找到 Skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 项')).not.toBeInTheDocument();
+    expect(document.querySelector('.skills-surface .plugins-capability-counts')).not.toBeInTheDocument();
+    const search = screen.getByRole('textbox', { name: '搜索' });
+    await user.type(search, 'my draft search');
+    connected = true;
+    await user.click(screen.getByRole('button', { name: '重新读取技能' }));
+    expect(await screen.findByText('没有找到 Skill')).toBeVisible();
+    expect(document.querySelector('.skills-surface .plugins-capability-counts')).toHaveTextContent('0 项可查看');
+    expect(screen.getByRole('textbox', { name: '搜索' })).toHaveValue('my draft search');
+  });
+
+  it.each([
+    { view: 'skills', columns: '516px', stacked: true },
+    { view: 'skills', columns: '320px 400px', stacked: false },
+    { view: 'capabilities', columns: '516px', stacked: true },
+    { view: 'capabilities', columns: '320px 400px', stacked: false },
+  ])('reveals $view detail only for the actual $columns layout, without scrolling again on refresh', async ({ view, columns, stacked }) => {
+    const user = userEvent.setup();
+    const originalStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = originalStyle(element, pseudo);
+      if (element.classList.contains('plugins-browser')) {
+        Object.defineProperty(style, 'gridTemplateColumns', { configurable: true, value: columns });
+      }
+      return style;
+    });
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    const transport = renderPlugins({
+      'agent.extensions.skills.list': { ok: true, runtimeAvailable: true, items: [
+        { skillId: 'project:guide', name: 'Project Guide', sourceKind: 'project', enabled: null, management: 'inspect_only' },
+      ] },
+      'agent.extensions.skills.get': { ok: true, item: { body: 'Readable skill instructions' } },
+    }, '/plugins?view=' + view, true);
+    const list = await screen.findByRole('group', { name: view === 'skills' ? 'Skill 列表' : '能力列表' });
+    const trigger = within(list).getAllByRole('button')[0];
+    await user.click(trigger);
+    const detail = screen.getByRole('complementary', { name: view === 'skills' ? 'Skill 详情' : '能力详情' });
+    const detailScrollCount = () => scroll.mock.contexts.filter((element) => element === detail).length;
+    if (stacked) {
+      expect(detail).toHaveFocus();
+      expect(scroll).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' });
+      expect(detailScrollCount()).toBe(1);
+    } else {
+      expect(trigger).toHaveFocus();
+      expect(detailScrollCount()).toBe(0);
+    }
+    const inventoryPath = view === 'skills' ? 'agent.extensions.skills.list' : 'agent.tools.list';
+    const reads = transport.requests.filter(({ request }) => request.pathId === inventoryPath).length;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === inventoryPath).length).toBeGreaterThan(reads));
+    expect(detailScrollCount()).toBe(stacked ? 1 : 0);
+    // Returning to the list and choosing the same row is still an explicit
+    // request to read it, even though the selected ID has not changed.
+    await user.click(trigger);
+    expect(detailScrollCount()).toBe(stacked ? 2 : 0);
+    if (stacked) expect(detail).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: view === 'skills' ? 'Skill 详情' : '能力详情' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('clears Skill filters and restores the exact detail trigger after Escape or Close', async () => {
+    const user = userEvent.setup();
+    renderPlugins({
+      'agent.extensions.skills.list': { ok: true, runtimeAvailable: true, items: [
+        { skillId: 'project:guide', name: 'Project Guide', sourceKind: 'project', enabled: null, management: 'inspect_only' },
+        { skillId: 'package:guide', name: 'Package Guide', sourceKind: 'package', enabled: true, management: 'package' },
+      ] },
+      'agent.extensions.skills.get': { ok: true, item: { body: 'Readable skill instructions' } },
+    }, '/plugins?view=skills', true);
+    const search = await screen.findByRole('textbox', { name: '搜索' });
+    await user.type(search, 'no-such-skill');
+    await user.click(screen.getByRole('combobox', { name: '来源' }));
+    await user.click(screen.getByRole('option', { name: '当前项目' }));
+    await user.click(screen.getByRole('combobox', { name: '状态' }));
+    await user.click(screen.getByRole('option', { name: '已停用' }));
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(search).toHaveValue('');
+    expect(search).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: '来源' })).toHaveTextContent('全部来源');
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('全部状态');
+    const list = screen.getByRole('group', { name: 'Skill 列表' });
+    expect(within(list).getAllByRole('button')).toHaveLength(2);
+    const trigger = within(list).getByRole('button', { name: /Project Guide/ });
+    await user.click(trigger);
+    await screen.findByText('Readable skill instructions');
+    screen.getByRole('button', { name: '关闭 Skill 详情' }).focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: 'Skill 详情' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(screen.getByRole('button', { name: '关闭 Skill 详情' }));
+    expect(screen.queryByRole('complementary', { name: 'Skill 详情' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('browses Skills by source, reads bounded detail, and scopes Package actions', async () => {

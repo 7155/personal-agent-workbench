@@ -535,6 +535,7 @@
 .context-debug-feature > :last-child { border-bottom: 1px solid var(--color-border-soft); border-radius: 0 0 var(--radius-sheet) var(--radius-sheet); }
 
 .ui-dialog.context-debug-html-dialog {
+  --context-report-control-size: 32px;
   display: grid;
   width: calc(100vw - 24px);
   height: calc(100dvh - 24px);
@@ -544,7 +545,11 @@
   gap: var(--space-3);
   overflow: hidden;
 }
-.context-debug-html-dialog .ui-dialog__header { padding-right: 42px; }
+.context-debug-html-dialog .ui-dialog__header { padding-right: calc(var(--context-report-control-size) + 12px); }
+.context-debug-html-dialog .ui-dialog__close {
+  width: var(--context-report-control-size);
+  height: var(--context-report-control-size);
+}
 .context-debug-html-dialog iframe {
   width: 100%;
   height: 100%;
@@ -561,6 +566,7 @@
   font-size: var(--font-size-caption);
 }
 .context-debug-html-dialog__footer a {
+  min-height: var(--context-report-control-size);
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -568,6 +574,12 @@
   border: 1px solid var(--color-border-strong);
   color: var(--color-text-primary);
   text-decoration: none;
+}
+@media (max-width: 820px) {
+  .ui-dialog.context-debug-html-dialog { --context-report-control-size: 40px; }
+}
+@media (max-width: 480px) {
+  .ui-dialog.context-debug-html-dialog { --context-report-control-size: 44px; }
 }
 /* Phones: the console sheet goes full-bleed, like every framed route. */
 @media (max-width: 760px) {
@@ -1882,7 +1894,7 @@
 
 .context-debug-assembly__metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr));
   margin: 0;
   padding-block: 8px;
   border-block: 1px solid var(--context-reader-hairline);
@@ -1892,11 +1904,11 @@
 .context-debug-assembly__metrics > div:first-child { padding-left: 0; }
 .context-debug-assembly__metrics > div:last-child { padding-right: 0; border-right: 0; }
 .context-debug-assembly__metrics dt { color: var(--color-text-tertiary); font-size: 11px; }
-.context-debug-assembly__metrics dd { overflow: hidden; margin: 0; color: var(--color-text-primary); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.context-debug-assembly__metrics dd { min-width: 0; margin: 0; color: var(--color-text-primary); font-size: 13px; font-weight: 650; overflow-wrap: anywhere; white-space: normal; }
 
 .context-debug-assembly__layers {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -2097,6 +2109,7 @@
   :is(main, section)[data-route-id='context-debug'][data-paw-os-app] .context-debug-select--session { width: min(100%, 420px); }
   :is(main, section)[data-route-id='context-debug'][data-paw-os-app] .context-debug-session-viewer {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content max-content;
     overflow-x: hidden;
     overflow-y: auto;
     /* The desktop two-column layout stretches the tree to the full column; in

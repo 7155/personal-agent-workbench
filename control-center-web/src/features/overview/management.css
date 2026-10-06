@@ -208,6 +208,8 @@
 .mgmt-section__trailing { flex: 0 0 auto; }
 
 .mgmt-status {
+  flex-shrink: 0;
+  white-space: nowrap;
   display: inline-flex;
   min-width: 0;
   max-width: 100%;

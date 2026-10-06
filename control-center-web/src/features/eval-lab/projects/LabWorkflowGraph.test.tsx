@@ -135,6 +135,8 @@ describe('Lab project dependency canvas', () => {
     mount(); expect(screen.getByText('工作流记录尚未返回')).toBeInTheDocument();
     expect(screen.queryAllByRole('button').filter((button) => button.hasAttribute('aria-pressed'))).toHaveLength(0);
     expect(screen.getByRole('button', { name: '查看运行记录' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '放大画布' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '适应窗口' })).not.toBeInTheDocument();
   });
   it('validates numeric and identity boundaries and still renders dependency cycles finitely', () => {
     const data = workflow([node('a'), node('b', { dependencies: ['a'] })]);

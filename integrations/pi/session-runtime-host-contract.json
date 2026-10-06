@@ -3,7 +3,7 @@
   "sourceRepository": "https://github.com/7155/pi.git",
   "sourcePackage": "@earendil-works/pi-rag-ime-runtime-host",
   "protocolVersion": "2",
-  "minimumHandlersCommit": "9c3f93c8b1c409e82e14d458510c146088c44561",
+  "minimumHandlersCommit": "93f517925a64ae215ba3ae3fd6b925b9a8505ef6",
   "requiredMethods": [
     "hello",
     "health",
@@ -149,6 +149,8 @@
     "packageManager": [
       "export class NativePiPackageManager",
       "private readonly packageManager: DefaultPackageManager",
+      "hasEnabledCapability(capability: string, excludedPackageIds?: ReadonlySet<string>): boolean",
+      "if (!excludedPackageIds.has(packageId)) return true;",
       "async createDraft(input:",
       "async prepare(source: string)",
       "async install(input:",

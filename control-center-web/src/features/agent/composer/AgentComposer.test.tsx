@@ -8,6 +8,31 @@ import type { ToolManifest } from '../types';
 import { AgentComposer } from './AgentComposer';
 
 describe('AgentComposer macOS input methods', () => {
+  it('keeps the permissions command disabled and the draft intact while authority is locked', () => {
+    const onProductCommand = vi.fn();
+    const props = {
+      draft: '/permissions', attachments: [], session: previewSessions[0], commands: [], tools: [],
+      toolCatalogStatus: 'ready' as const, busy: false, sending: false, permissionLocked: true,
+      onDraftChange: vi.fn(), onAttachmentsChange: vi.fn(), onPickAttachments: vi.fn(),
+      onPasteImages: vi.fn(), onToolSelect: vi.fn(), onProductCommand,
+      onSend: vi.fn(), onStop: vi.fn(), onPermissionChange: vi.fn(),
+      onWorkspaceRootsChange: vi.fn(), onModelChange: vi.fn(),
+    };
+    const view = render(<TooltipProvider><AgentComposer {...props} /></TooltipProvider>);
+    const input = screen.getByRole('textbox', { name: '消息' });
+    fireEvent.focus(input);
+    const option = screen.getByRole('option', { name: /permissions/ });
+    expect(option).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(option);
+    expect(onProductCommand).not.toHaveBeenCalled();
+    expect(input).toHaveValue('/permissions');
+    view.rerender(<TooltipProvider><AgentComposer {...props} permissionLocked={false} /></TooltipProvider>);
+    expect(screen.getByRole('option', { name: /permissions/ })).not.toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(screen.getByRole('option', { name: /permissions/ }));
+    expect(onProductCommand).toHaveBeenCalledWith('permissions');
+    view.unmount();
+  });
+
   it('keeps marked text local until composition ends and does not send the commit key', () => {
     const onDraftChange = vi.fn();
     const onSend = vi.fn();
@@ -44,7 +69,7 @@ describe('AgentComposer macOS input methods', () => {
     render(<Harness />);
     const composer = screen.getByRole('textbox', { name: '消息' });
 
-    expect(composer).toHaveAttribute('placeholder', expect.stringContaining('给当前 Session发消息'));
+    expect(composer).toHaveAttribute('placeholder', expect.stringContaining('继续这段对话'));
     expect(composer).toHaveAttribute('autocapitalize', 'none');
     expect(composer).toHaveAttribute('autocomplete', 'off');
     expect(composer).toHaveAttribute('autocorrect', 'off');
@@ -317,6 +342,16 @@ describe('AgentComposer macOS input methods', () => {
     fireEvent.keyDown(view.getByRole('textbox', {name:'消息'}), {key:'Enter'});
     expect(view.getByRole('textbox', {name:'消息'})).toHaveValue('待核实附件的要求');
     expect(onSend).not.toHaveBeenCalled();
+    expect(onDraftChange).not.toHaveBeenCalled();
+    rerender(harness({ draft: '待导入附件的要求', submissionBlockedReason: '正在导入附件', onSend, onDraftChange }));
+    expect(view.getByRole('button', { name: '发送（正在导入附件）' })).toBeDisabled();
+    fireEvent.keyDown(view.getByRole('textbox', { name: '消息' }), { key: 'Enter' });
+    expect(view.getByRole('textbox', { name: '消息' })).toHaveValue('待导入附件的要求');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onDraftChange).not.toHaveBeenCalled();
+    rerender(harness({ draft: '同步拒绝必须保留', onSend: () => false, onDraftChange }));
+    fireEvent.keyDown(view.getByRole('textbox', { name: '消息' }), { key: 'Enter' });
+    expect(view.getByRole('textbox', { name: '消息' })).toHaveValue('同步拒绝必须保留');
     expect(onDraftChange).not.toHaveBeenCalled();
   });
 

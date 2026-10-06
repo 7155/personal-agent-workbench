@@ -11,7 +11,7 @@ type Day = { modelDrafts?: {id:string;markdown:string;sourcesCurrent:boolean;gen
 type Policy = { activityProject:string;activityTimezone:string; captureFolder:string;captureProject:string; inbox: string; personalDiary: string; remoteProcessing: boolean; jevEnabled: boolean };
 const labels: Record<string, string> = { prepared: '待审核', waiting_editor: '等待编辑器', applying: '等待写入回执', saved_index_pending: '正文已保存 · 索引待更新', saved: '原文已保存', dismissed: '已忽略' };
 
-export function VaultActivity({ vaultId, notes, view }: { vaultId: string; notes: Note[]; view: 'day' | 'review' | 'settings' }) {
+export function VaultActivity({ vaultId, notes, view, active = true }: { active?: boolean; vaultId: string; notes: Note[]; view: 'day' | 'review' | 'settings' }) {
   const transport = useControlTransport(), client = useQueryClient();
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [candidates,setCandidates]=useState<TargetCandidate[]>([]);
@@ -27,12 +27,12 @@ export function VaultActivity({ vaultId, notes, view }: { vaultId: string; notes
   const [pairing, setPairing] = useState<{ vaultId: string; pairingToken: string } | null>(null);
   const [draft, setDraft] = useState(''), [pack, setPack] = useState(''), [forgetPreview, setForgetPreview] = useState(false);
   const call = async <T,>(body: Record<string, JsonValue>) => await transport.request({ pathId: 'knowledgeVault.manage', body: { ...body, vaultId }, timeoutMs: body.action === 'organize' ? 180_000 : 60_000 }) as T;
-  const imeTarget = useQuery({queryKey:['vault-ime-target'],queryFn:()=>call<{project:string}>({action:'ime_target'}),enabled:view==='review'});
-  const policy = useQuery({ queryKey: ['vault-policy', vaultId], queryFn: () => call<{ policy: Policy }>({ action: 'settings' }) });
+  const imeTarget = useQuery({queryKey:['vault-ime-target'],queryFn:()=>call<{project:string}>({action:'ime_target'}),enabled:active&&view==='review'});
+  const policy = useQuery({ queryKey: ['vault-policy', vaultId], enabled:active, queryFn: () => call<{ policy: Policy }>({ action: 'settings' }) });
   const dayArgs = { includeActivity, date, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, project };
-  const day = useQuery({ queryKey: ['vault-day', vaultId, date, project, includeActivity], queryFn: () => call<Day>({ action: 'day', ...dayArgs }), enabled: view === 'day', refetchInterval: view === 'day' ? 15000 : false });
-  const adoptions = useQuery({ queryKey: ['vault-adoptions', vaultId], queryFn: () => call<{items:{id:string;statement:string;state:string}[]}>({action:'adoptions'}), enabled:view==='review', refetchInterval:view==='review'?15000:false });
-  const proposals = useQuery({ queryKey: ['vault-proposals', vaultId], queryFn: () => call<{ items: Proposal[] }>({ action: 'proposals' }), enabled: view === 'review', refetchInterval: view === 'review' ? 10_000 : false });
+  const day = useQuery({ queryKey: ['vault-day', vaultId, date, project, includeActivity], queryFn: () => call<Day>({ action: 'day', ...dayArgs }), enabled: active && view === 'day', refetchInterval: active && view === 'day' ? 15000 : false });
+  const adoptions = useQuery({ queryKey: ['vault-adoptions', vaultId], queryFn: () => call<{items:{id:string;statement:string;state:string}[]}>({action:'adoptions'}), enabled:active&&view==='review', refetchInterval:active&&view==='review'?15000:false });
+  const proposals = useQuery({ queryKey: ['vault-proposals', vaultId], queryFn: () => call<{ items: Proposal[] }>({ action: 'proposals' }), enabled: active && view === 'review', refetchInterval: active && view === 'review' ? 10_000 : false });
   async function run(work: () => Promise<void>) {
     if (busy) return; setBusy(true); setError(''); setNotice('');
     try { await work(); } catch (e) { setError(e instanceof Error ? e.message : '操作未完成，请重试。'); } finally { setBusy(false); }

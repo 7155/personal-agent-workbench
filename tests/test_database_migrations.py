@@ -18,7 +18,7 @@ from rag_ime.db.migration_runner import (
     migration_status,
 )
 
-TESTED_SCHEMA_HEAD = 218
+TESTED_SCHEMA_HEAD = 220
 POST_0126_MIGRATIONS = tuple(range(127, TESTED_SCHEMA_HEAD + 1))
 
 
@@ -88,6 +88,15 @@ class DatabaseMigrationTests(unittest.TestCase):
             self.assertIn("room_v2_knowledge_eval_fixture_datasets", tables)
             self.assertIn("room_v2_knowledge_search_use_eval_runs", tables)
             self.assertIn("memory_items", tables)
+            self.assertIn("memory_card_mutation_receipts", tables)
+            self.assertIn("agent_primary_assistants", tables)
+            self.assertIn("agent_primary_session_links", tables)
+            memory_atom_columns = {
+                str(row[1]): row
+                for row in conn.execute("PRAGMA table_info(memory_atoms)")
+            }
+            edit_revision = memory_atom_columns["user_edit_revision"]
+            self.assertEqual(edit_revision[2:5], ("INTEGER", 1, "0"))
             self.assertIn("memory_books", tables)
             self.assertIn("memory_group_overrides", tables)
             self.assertIn("memory_tag_profiles", tables)

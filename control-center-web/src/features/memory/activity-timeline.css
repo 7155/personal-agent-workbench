@@ -1396,6 +1396,9 @@
 .activity-timeline__dialog { width: min(520px, calc(100vw - 32px)); }
 
 @container memory-second-brain (max-width: 680px) {
+  .activity-timeline__decision-bar { align-items: stretch; flex-direction: column; gap: 12px; }
+  .activity-timeline__decision-bar > div:first-child { align-items: start; }
+  .activity-timeline__decision-bar > div:last-child { flex-wrap: wrap; }
   .activity-timeline__decision-bar > div:last-child .ui-button { flex: 1; }
   .activity-timeline__toolbar { align-items: center; flex-wrap: wrap; gap: 12px; }
   .activity-timeline__date-controls { flex-wrap: wrap; max-width: 100%; }

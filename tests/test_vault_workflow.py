@@ -1,6 +1,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+import os
 import unittest
 from unittest.mock import patch
 from rag_ime.knowledge_library.store import KnowledgeStore
@@ -179,7 +181,9 @@ class WorkflowTests(unittest.TestCase):
         (self.root / saved["path"]).unlink()
         self.assertEqual(self.call("graph_business")["nodes"], [])
 
-    def test_save_replay_short_question_and_day(self):
+    @patch("rag_ime.knowledge_library.vault_workflow.now_ms",
+           return_value=int(datetime(2026, 10, 5, 20, tzinfo=timezone.utc).timestamp() * 1000))
+    def test_save_replay_short_question_and_day(self, clock):
         a = self.saved("为什么？")
         b = self.saved("为什么？")
         self.assertEqual(a["noteId"], b["noteId"])
@@ -187,7 +191,7 @@ class WorkflowTests(unittest.TestCase):
             self.saved("不同内容")
         day = self.call(
             "day",
-            date=datetime.now().date().isoformat(),
+            date=datetime.fromtimestamp(clock.return_value / 1000, ZoneInfo("Asia/Shanghai")).date().isoformat(),
             timezone="Asia/Shanghai",
             project="demo",
         )
@@ -201,6 +205,54 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreater(later["revision"], day["revision"])
         self.assertIn("准备做实验", later["markdown"])
         self.assertNotIn("已完成实验", later["markdown"])
+
+    @patch("rag_ime.knowledge_library.vault_workflow.now_ms",
+           return_value=int(datetime(2026, 10, 5, 20, tzinfo=timezone.utc).timestamp() * 1000))
+    def test_current_day_uses_requested_and_configured_calendar(self, _clock):
+        with patch.dict(os.environ, {"TZ": "UTC", "RAG_IME_TIMEZONE": "America/Los_Angeles"}):
+            # A newly connected vault starts in the configured calendar; saved
+            # per-vault choices continue to override later host/env changes.
+            self.vault = MarkdownVault(KnowledgeStore(Path(self.temp.name) / "configured" / "knowledge.sqlite"))
+            self.space = self.vault.dispatch({"action": "connect", "root": str(self.root)})["space"]
+            self.call("configure", inbox="收件箱")
+            self.saved("跨日保存，仍是原始材料。")
+            default = self.call("day", project="demo")
+            self.assertEqual((default["date"], default["timezone"]), ("2026-10-05", "America/Los_Angeles"))
+            self.assertEqual(len(default["sources"]), 1)
+            requested = self.call("day", timezone="Asia/Shanghai", project="demo")
+            self.assertEqual(requested["date"], "2026-10-06")
+            self.assertEqual(len(requested["sources"]), 1)
+            self.call("configure", activityProject="demo", timezone="Pacific/Auckland")
+            configured = self.call("day", project="demo")
+            self.assertEqual((configured["date"], configured["timezone"]), ("2026-10-06", "Pacific/Auckland"))
+            self.assertEqual(len(configured["sources"]), 1)
+            self.call("configure", activityProject="other")
+            self.assertEqual(self.call("settings")["policy"]["activityTimezone"], "Pacific/Auckland")
+            explicit = self.call("day", timezone="UTC", project="demo")
+            self.assertEqual((explicit["date"], explicit["timezone"]), ("2026-10-05", "UTC"))
+            self.assertEqual(len(explicit["sources"]), 1)
+            historical = self.call("day", date="2026-10-05", timezone="Asia/Shanghai", project="demo")
+            self.assertEqual(historical["date"], "2026-10-05")
+            self.assertEqual(historical["sources"], [])
+
+    @patch("rag_ime.knowledge_library.vault_workflow.now_ms",
+           return_value=int(datetime(2026, 10, 5, 20, tzinfo=timezone.utc).timestamp() * 1000))
+    def test_diary_and_receipt_defaults_share_the_requested_date(self, _clock):
+        self.call("configure", remoteProcessing=True)
+        saved = self.saved("准备验证跨日整理。")
+        source = self.call("read", noteId=saved["noteId"])
+        request = {"sourceRefs": [{"noteId": source["noteId"], "revision": source["revision"]}],
+                   "timezone": "Asia/Shanghai", "project": "demo"}
+        diary = self.call("store_diary", **request, markdown="仅覆盖所选计划。", generator="fixture")
+        self.assertEqual(diary["date"], "2026-10-06")
+        view = self.call("day", date="2026-10-06", timezone="Asia/Shanghai", project="demo")
+        self.assertEqual(view["modelDrafts"][0]["id"], diary["id"])
+        self.call("organize_receipt", **request,
+                  result={"diaryRecord": diary, "diary": "仅覆盖所选计划。", "proposal": None})
+        self.vault = MarkdownVault(self.vault.store)
+        replay = self.call("organize_lookup", **request, date="2026-10-06")
+        self.assertEqual(replay["result"]["diaryRecord"]["id"], diary["id"])
+        self.assertTrue(replay["result"]["replayed"])
 
     def test_private_diary_is_separate_and_export_preserves_edits(self):
         (self.root / "日记").mkdir()

@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { agentEventFixture } from '@/test/fixtures/events';
 import { MockControlTransport } from '@/test/mock-transport';
 import { useAgentLiveSession } from './use-agent-live-session';
-import { useAgentLiveStore, agentProjection } from '../state/live-store';
+import { useAgentLiveStore, agentProjection, agentSessionAddress } from '../state/live-store';
 
 const sessionId = 'session-1';
 function snapshot(lastSequence: number) {
@@ -20,7 +20,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 async function flush() { await act(async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); }); }
-afterEach(() => { cleanup(); useAgentLiveStore.getState().clear(sessionId); vi.useRealTimers(); });
+afterEach(() => { cleanup(); useAgentLiveStore.setState({ projections: {} }); vi.useRealTimers(); });
 
 it('repairs an authoritative lower cursor after a replay reset and resumes its next event', async () => {
   vi.useFakeTimers(); let cursor = 10;
@@ -28,12 +28,12 @@ it('repairs an authoritative lower cursor after a replay reset and resumes its n
   const onEvents = vi.fn();
   renderHook(() => useAgentLiveSession({ sessionId, transport, onEvents })); await flush();
   cursor = 5; act(() => { transport.emit('agent.session.events', reset(5)); }); await flush();
-  expect(agentProjection(sessionId)).toMatchObject({ lastSequence: 5, needsSnapshot: false, resumeToken: 'session-1:5' });
+  expect(agentProjection(agentSessionAddress(transport, sessionId))).toMatchObject({ lastSequence: 5, needsSnapshot: false, resumeToken: 'session-1:5' });
   expect(transport.subscriptionCalls.at(-1)?.request.lastEventId).toBe('session-1:5');
   expect(transport.requests.at(-1)?.request.query).toBeUndefined();
   act(() => { transport.emit('agent.session.events', wire(agentEventFixture(6, 'text_delta', { delta: 'after restore' }))); });
   await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-  expect(agentProjection(sessionId).lastSequence).toBe(6); expect(onEvents).toHaveBeenCalledTimes(1);
+  expect(agentProjection(agentSessionAddress(transport, sessionId)).lastSequence).toBe(6); expect(onEvents).toHaveBeenCalledTimes(1);
 });
 
 it('ordinary delayed full history cannot rewind a healthy Session or swallow the next event', async () => {
@@ -41,10 +41,10 @@ it('ordinary delayed full history cannot rewind a healthy Session or swallow the
   const transport = new MockControlTransport({ routes: { 'agent.session.snapshot': () => snapshot(cursor) } });
   const hook = renderHook(() => useAgentLiveSession({ sessionId, transport })); await flush();
   cursor = 5; await act(async () => { await hook.result.current({ view: 'full' }); });
-  expect(agentProjection(sessionId)).toMatchObject({ lastSequence: 10, needsSnapshot: false });
+  expect(agentProjection(agentSessionAddress(transport, sessionId))).toMatchObject({ lastSequence: 10, needsSnapshot: false });
   act(() => { transport.emit('agent.session.events', wire(agentEventFixture(11, 'text_delta', { delta: 'newer' }))); });
   await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-  expect(agentProjection(sessionId).lastSequence).toBe(11);
+  expect(agentProjection(agentSessionAddress(transport, sessionId)).lastSequence).toBe(11);
 });
 
 it('does not let a snapshot below the explicit reset high-water mark clear recovery', async () => {
@@ -52,9 +52,9 @@ it('does not let a snapshot below the explicit reset high-water mark clear recov
   const transport = new MockControlTransport({ routes: { 'agent.session.snapshot': () => snapshot(cursor) } });
   const hook = renderHook(() => useAgentLiveSession({ sessionId, transport })); await flush();
   cursor = 4; act(() => { transport.emit('agent.session.events', reset(5)); }); await flush();
-  expect(agentProjection(sessionId)).toMatchObject({ lastSequence: 10, needsSnapshot: true });
+  expect(agentProjection(agentSessionAddress(transport, sessionId))).toMatchObject({ lastSequence: 10, needsSnapshot: true });
   cursor = 5; await act(async () => { await hook.result.current({ view: 'full' }); });
-  expect(agentProjection(sessionId)).toMatchObject({ lastSequence: 5, needsSnapshot: false });
+  expect(agentProjection(agentSessionAddress(transport, sessionId))).toMatchObject({ lastSequence: 5, needsSnapshot: false });
 });
 
 it.each([5, 10, 20])('a full history response at %i started before a reset is not its replacement authority', async oldSequence => {
@@ -66,7 +66,7 @@ it.each([5, 10, 20])('a full history response at %i started before a reset is no
   act(() => { transport.emit('agent.session.events', reset(5)); }); await flush();
   await act(async () => { old.resolve({ ...snapshot(oldSequence), ...(oldSequence === 10 ? { status: 'busy' } : {}) }); }); await flush();
   expect(read).toHaveBeenCalledTimes(3);
-  expect(agentProjection(sessionId)).toMatchObject({ lastSequence: 10, needsSnapshot: true });
+  expect(agentProjection(agentSessionAddress(transport, sessionId))).toMatchObject({ lastSequence: 10, needsSnapshot: true });
   await act(async () => { replacement.resolve(snapshot(5)); }); await flush();
-  expect(agentProjection(sessionId)).toMatchObject({ lastSequence: 5, needsSnapshot: false });
+  expect(agentProjection(agentSessionAddress(transport, sessionId))).toMatchObject({ lastSequence: 5, needsSnapshot: false });
 });

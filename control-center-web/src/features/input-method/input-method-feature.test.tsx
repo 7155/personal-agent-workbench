@@ -994,6 +994,41 @@ describe('InputMethodFeature', () => {
     expect(screen.getByRole('switch', { name: '上屏后联想' })).toBeChecked();
   });
 
+  it('keeps an expanded settings field and its draft through a failed refresh and recovery', async () => {
+    const user = userEvent.setup();
+    let failed = false;
+    const transport = new MockControlTransport({
+      capabilities: { features: { managementWorkContract: true, configurationSettingsWorkContract: true } },
+      routes: {
+        'input.source.get': { ok: true, typingReady: true, readinessState: 'ready' },
+        'overview.get': { ok: true, profile: '标准模式' },
+        'configuration.settings': () => {
+          if (failed) throw new Error('settings unavailable');
+          return { ok: true, runtimeRevision: 9, settings: { activeRag: { latencyBudgetMs: 8000 } } };
+        },
+        'configuration.schema': { ok: true, sections: [{ id: 'activeRag', fields: [
+          { key: 'activeRag.latencyBudgetMs', type: 'number', min: 1, max: 30000, applyMode: 'live' },
+        ] }] },
+      },
+    });
+    renderFeature(transport);
+    await user.click(await screen.findByRole('button', { name: /^知识建议/ }));
+    const input = screen.getByRole('spinbutton', { name: '生成框最长等待' });
+    await user.clear(input);
+    await user.type(input, '9100');
+    failed = true;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await screen.findByText('无法读取当前设置，请刷新后重试。');
+    expect(screen.getByRole('spinbutton', { name: '生成框最长等待' })).toBe(input);
+    expect(input).toHaveValue(9100);
+    expect(screen.queryByRole('button', { name: '保存输入体验设置' })).not.toBeInTheDocument();
+    failed = false;
+    await user.click(screen.getByRole('button', { name: '刷新' }));
+    await screen.findByRole('button', { name: '保存输入体验设置' });
+    expect(screen.getByRole('spinbutton', { name: '生成框最长等待' })).toBe(input);
+    expect(input).toHaveValue(9100);
+  });
+
   it('refreshes the input page queries without pulling the separate lexicon page', async () => {
     const user = userEvent.setup();
     const transport = new MockControlTransport({

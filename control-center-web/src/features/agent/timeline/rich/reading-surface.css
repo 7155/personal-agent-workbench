@@ -1,7 +1,7 @@
 /* Reply-local reading controls. No transitions on typography or message height. */
 .paw-reading-surface {
-  --reading-body-size: 16px;
-  --reading-line-height: 1.86;
+  --reading-body-size: 15px;
+  --reading-line-height: 1.66;
   --reading-paragraph-gap: 1em;
   --reading-paper: var(--wb-surface, var(--paw-panel, var(--color-surface, #fff)));
   --reading-ink: var(--wb-ink, var(--paw-ink, var(--color-text, #292927)));
@@ -13,7 +13,7 @@
   position: relative;
 }
 .paw-reading-surface[data-reading-size='large'] { --reading-body-size: 18px; }
-.paw-reading-surface[data-reading-spacing='compact'] { --reading-line-height: 1.72; --reading-paragraph-gap: .72em; }
+.paw-reading-surface[data-reading-spacing='compact'] { --reading-line-height: 1.55; --reading-paragraph-gap: .72em; }
 .paw-reading-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   position: relative; z-index: 2; min-height: 36px; margin: 0 0 18px;

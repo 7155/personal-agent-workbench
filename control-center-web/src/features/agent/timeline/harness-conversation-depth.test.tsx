@@ -91,7 +91,8 @@ describe('Minecraft harness conversation depth', () => {
     expect(fieldValue(view, 'batchState')).toBe('已完成');
     expect(view.resultItemsLabel).toBe('子任务结果');
     expect(view.resultItems.length).toBeGreaterThan(0);
-    expect(view.resultItems[0]?.label).toContain('worker');
+    expect(view.resultItems[0]?.label).toContain('Bounded registration repair');
+    expect(view.resultItems[0]?.text).toContain('执行者');
   });
 
   it('expands agent_goal into objective, state, and the recorded evidence list', () => {

@@ -16,6 +16,7 @@ from .deepseek_completion import _direct_deepseek_urlopen, _iter_model_deltas
 from .deepseek_config import DeepSeekConfig
 from .deepseek_memory_organizer import DEFAULT_MEMORY_ORGANIZATION_INSTRUCTION
 from .notion_knowledge import NotionAsyncKnowledgeClient, NotionKnowledgeError, NotionStaleResultError
+from .local_calendar import resolve_calendar_timezone
 from .temporal_query import parse_temporal_query
 from .text_utils import compact_whitespace, now_ms, stable_text_hash, truncate_text
 
@@ -85,9 +86,11 @@ class DeepSeekKnowledgeProvider:
         config: DeepSeekConfig,
         *,
         urlopen: Callable[..., Any] | None = None,
+        timezone_name: str = '',
     ):
         self.config = config
         self.urlopen = urlopen or _direct_deepseek_urlopen
+        self.calendar_timezone = resolve_calendar_timezone(timezone_name)
 
     @property
     def ready(self) -> bool:
@@ -110,6 +113,7 @@ class DeepSeekKnowledgeProvider:
             evidence=evidence,
             notion_answer=notion_answer,
             notion_sources=notion_sources or [],
+            timezone_name=self.calendar_timezone.key,
         )
         max_tokens = max(512, min(4096, int(getattr(self.config, "knowledge_max_tokens", 4096) or 4096)))
         body: dict[str, object] = {
@@ -612,9 +616,12 @@ def build_knowledge_workbench_messages(
     evidence: tuple[dict[str, object], ...],
     notion_answer: str = "",
     notion_sources: list[object] | None = None,
+    timezone_name: str = '',
 ) -> list[dict[str, str]]:
-    current_local_date = datetime.now().astimezone().date().isoformat()
-    temporal_query = parse_temporal_query(request.question)
+    calendar = resolve_calendar_timezone(timezone_name)
+    observed_at = datetime.now(calendar)
+    current_local_date = observed_at.date().isoformat()
+    temporal_query = parse_temporal_query(request.question, now=observed_at, timezone=calendar.key)
     mode_rules = {
         "long_form": (
             "生成可直接使用的高质量长文。先形成清楚主线，再写成自然的多段正文；"

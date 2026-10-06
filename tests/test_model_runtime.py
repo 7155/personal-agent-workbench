@@ -480,10 +480,16 @@ class ModelRuntimePlanTests(unittest.TestCase):
             env = _restart_env(home)
             env["RAG_IME_MODEL_REGISTRY"] = str(registry_path)
 
-            result = _run_restart(ROOT, env)
+            runtime_root = _runtime_checkout(root)
+            result = _run_restart(runtime_root, env)
             self.assertEqual(result.returncode, 0, result.stderr)
             mlx = _load_plist(home / "Library" / "LaunchAgents" / "com.rag-ime.mlx-predictor.plist")
             sidecar = _load_plist(home / "Library" / "LaunchAgents" / "com.rag-ime.sidecar.plist")
+
+            installed_ui = home / "Library" / "Application Support" / "RagIme" / "app" / "control-center-web" / ".generated" / "portable-agent-ui"
+            source_ui = runtime_root / "control-center-web" / ".generated" / "portable-agent-ui"
+            for name in ("agent-ui.js", "agent-ui.css"):
+                self.assertEqual((installed_ui / name).read_bytes(), (source_ui / name).read_bytes())
 
         mlx_port = int(mlx["EnvironmentVariables"]["RAG_IME_MLX_PORT"])
         sidecar_port = urlsplit(sidecar["EnvironmentVariables"]["RAG_IME_PREDICTOR_BASE_URL"]).port
@@ -502,7 +508,8 @@ class ModelRuntimePlanTests(unittest.TestCase):
             env = _restart_env(home)
             env["RAG_IME_MLX_MODEL"] = str(model)
 
-            result = _run_restart(ROOT, env)
+            runtime_root = _runtime_checkout(root)
+            result = _run_restart(runtime_root, env)
             self.assertEqual(result.returncode, 0, result.stderr)
             mlx = _load_plist(home / "Library" / "LaunchAgents" / "com.rag-ime.mlx-predictor.plist")
 
@@ -519,7 +526,8 @@ class ModelRuntimePlanTests(unittest.TestCase):
             env["RAG_IME_MLX_MODEL"] = str(model)
             env["RAG_IME_MLX_PORT"] = "18998"
 
-            result = _run_restart(ROOT, env)
+            runtime_root = _runtime_checkout(root)
+            result = _run_restart(runtime_root, env)
             self.assertEqual(result.returncode, 0, result.stderr)
             mlx = _load_plist(home / "Library" / "LaunchAgents" / "com.rag-ime.mlx-predictor.plist")
             sidecar = _load_plist(home / "Library" / "LaunchAgents" / "com.rag-ime.sidecar.plist")
@@ -549,7 +557,8 @@ class ModelRuntimePlanTests(unittest.TestCase):
                 env["PATH"] = f"{fake_bin}:{env['PATH']}"
                 env["RAG_IME_MODEL_REGISTRY"] = str(registry_path)
 
-                result = _run_restart(ROOT, env)
+                runtime_root = _runtime_checkout(root)
+                result = _run_restart(runtime_root, env)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 sidecar = _load_plist(home / "Library" / "LaunchAgents" / "com.rag-ime.sidecar.plist")
 
@@ -562,46 +571,7 @@ class ModelRuntimePlanTests(unittest.TestCase):
         with _json_server({"/api/tags": {"models": [{"name": "qwen3:0.6b"}]}}) as (base_url, _requests):
             with tempfile.TemporaryDirectory(prefix="rag-ime-runtime-no-mlx-venv-") as tmp:
                 root = Path(tmp)
-                runtime_root = root / "checkout"
-                scripts = runtime_root / "scripts"
-                scripts.mkdir(parents=True)
-                (scripts / "support").mkdir()
-                shutil.copy2(
-                    ROOT / "scripts" / "support" / "prebuilt_product.sh",
-                    scripts / "support" / "prebuilt_product.sh",
-                )
-                shutil.copytree(ROOT / "rag_ime", runtime_root / "rag_ime")
-                shutil.copytree(ROOT / "integrations" / "pi", runtime_root / "integrations" / "pi")
-                (runtime_root / "examples").mkdir()
-                shutil.copytree(
-                    ROOT / "examples" / "vertical_agents",
-                    runtime_root / "examples" / "vertical_agents",
-                )
-                # Portable controls are a prebuilt installer input; this probe
-                # exercises predictor switching without a frontend toolchain.
-                portable_ui = runtime_root / "control-center-web" / ".generated" / "portable-agent-ui"
-                portable_ui.mkdir(parents=True)
-                (portable_ui / "agent-ui.js").write_text("export {};\n", encoding="utf-8")
-                (portable_ui / "agent-ui.css").write_text(":root {}\n", encoding="utf-8")
-                eval_metrics = runtime_root / "eval" / "interview-metrics"
-                eval_metrics.mkdir(parents=True)
-                shutil.copy2(
-                    ROOT / "eval" / "interview-metrics" / "agent-experiments.v1.json",
-                    eval_metrics / "agent-experiments.v1.json",
-                )
-                from scripts.list_agent_lab_install_receipts import required_receipts
-                (eval_metrics / "runs").mkdir()
-                for receipt in required_receipts(ROOT / "eval/interview-metrics/agent-experiments.v1.json"):
-                    shutil.copy2(receipt, eval_metrics / "runs" / receipt.name)
-                for name in (
-                    "list_agent_lab_install_receipts.py",
-                    "restart_rag_ime_runtime.sh",
-                    "install_sidecar_launch_agent.sh",
-                    "import_agent_lab_experiments.py",
-                    "sidecar_launch.py",
-                    "portable_restore_supervisor.py",
-                ):
-                    shutil.copy2(ROOT / "scripts" / name, scripts / name)
+                runtime_root = _runtime_checkout(root)
                 home = root / "home"
                 fake_bin = _fake_launchctl_bin(root, with_python=True)
                 registry_path = _write_registry(
@@ -762,6 +732,48 @@ def _write_registry(home: Path, deployment: ModelDeployment) -> Path:
     return registry_path
 
 
+def _runtime_checkout(root: Path) -> Path:
+    """Use real installer sources with isolated, prebuilt portable UI inputs."""
+    runtime_root = root / "checkout"
+    scripts = runtime_root / "scripts"
+    (scripts / "support").mkdir(parents=True)
+    shutil.copy2(
+        ROOT / "scripts" / "support" / "prebuilt_product.sh",
+        scripts / "support" / "prebuilt_product.sh",
+    )
+    for relative in ("rag_ime", "integrations/pi", "examples/vertical_agents"):
+        shutil.copytree(
+            ROOT / relative,
+            runtime_root / relative,
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+    # These tests exercise model routing and real plist installation. Portable
+    # UI compilation belongs to the independent frontend/native build gates.
+    portable_ui = runtime_root / "control-center-web" / ".generated" / "portable-agent-ui"
+    portable_ui.mkdir(parents=True)
+    (portable_ui / "agent-ui.js").write_text("export {};\n", encoding="utf-8")
+    (portable_ui / "agent-ui.css").write_text(":root {}\n", encoding="utf-8")
+    eval_metrics = runtime_root / "eval" / "interview-metrics"
+    (eval_metrics / "runs").mkdir(parents=True)
+    ledger = ROOT / "eval" / "interview-metrics" / "agent-experiments.v1.json"
+    shutil.copy2(ledger, eval_metrics / ledger.name)
+    from scripts.list_agent_lab_install_receipts import required_receipts
+
+    for receipt in required_receipts(ledger):
+        shutil.copy2(receipt, eval_metrics / "runs" / receipt.name)
+    for name in (
+        "list_agent_lab_install_receipts.py",
+        "restart_rag_ime_runtime.sh",
+        "install_mlx_predictor_launch_agent.sh",
+        "install_sidecar_launch_agent.sh",
+        "import_agent_lab_experiments.py",
+        "sidecar_launch.py",
+        "portable_restore_supervisor.py",
+    ):
+        shutil.copy2(ROOT / "scripts" / name, scripts / name)
+    return runtime_root
+
+
 def _restart_env(home: Path, *, explicit_python: bool = True) -> dict[str, str]:
     env = dict(os.environ)
     for key in tuple(env):
@@ -781,15 +793,24 @@ def _restart_env(home: Path, *, explicit_python: bool = True) -> dict[str, str]:
 
 
 def _run_restart(root: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["bash", str(root / "scripts" / "restart_rag_ime_runtime.sh")],
-        cwd=root,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=20,
-    )
+    with tempfile.TemporaryDirectory(prefix="rag-ime-runtime-no-frontend-build-") as tmp:
+        pnpm = Path(tmp) / "pnpm"
+        pnpm.write_text(
+            "#!/bin/sh\n"
+            "echo 'model runtime tests must not build frontend assets' >&2\n"
+            "exit 97\n",
+            encoding="utf-8",
+        )
+        pnpm.chmod(0o755)
+        return subprocess.run(
+            ["bash", str(root / "scripts" / "restart_rag_ime_runtime.sh")],
+            cwd=root,
+            env={**env, "PATH": f"{tmp}:{env.get('PATH', '')}"},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=20,
+        )
 
 
 def _load_plist(path: Path) -> dict[str, object]:

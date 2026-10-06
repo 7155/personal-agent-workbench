@@ -52,6 +52,7 @@ export function buildCommandCatalog({
   toolCatalogStatus,
   busy,
   sending,
+  permissionLocked = false,
 }: {
   session?: SessionSummary;
   catalog?: ModelCatalog;
@@ -60,6 +61,7 @@ export function buildCommandCatalog({
   toolCatalogStatus: 'loading' | 'ready' | 'failed';
   busy: boolean;
   sending: boolean;
+  permissionLocked?: boolean;
 }): ComposerCommand[] {
   const advertisedPiCommandNames = new Set(piCommands.map((command) => command.name));
   const productCommands = productCommandDefinitions
@@ -77,6 +79,7 @@ export function buildCommandCatalog({
         toolCatalogStatus,
         busy,
         sending,
+        permissionLocked,
       })),
     }));
   const reserved = new Set(
@@ -123,9 +126,13 @@ function productCommandAvailability(
     toolCatalogStatus: 'loading' | 'ready' | 'failed';
     busy: boolean;
     sending: boolean;
+    permissionLocked: boolean;
   },
 ): CommandAvailability {
   const { session, catalog, tools, toolCatalogStatus, busy, sending } = context;
+  if (name === 'permissions' && context.permissionLocked) {
+    return { enabled: false, disabledReason: '当前对话权限由已授权的工作范围固定。' };
+  }
   if (
     (busy || sending)
     && name !== 'resume'

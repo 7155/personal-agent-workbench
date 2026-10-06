@@ -1168,13 +1168,13 @@ class AgentBackgroundJobService:
                 self._drain_raw_output(job_id, live, final=terminal)
                 if terminal:
                     break
+                if not self._live_identity_matches(live) or self._leader_exit_observed(live):
+                    break
                 elapsed_ms = max(0, _now_ms() - live.started_at_ms)
                 if elapsed_ms >= live.max_run_seconds * 1_000:
                     timed_out = True
                     self._request_timeout(job_id)
                     self._terminate_live(live)
-                    break
-                if not self._live_identity_matches(live):
                     break
             if live.detach_requested.is_set():
                 self._persist_live_progress(job_id, live, force=True)
@@ -1223,7 +1223,11 @@ class AgentBackgroundJobService:
         try:
             while not live.detach_requested.wait(0.1):
                 self._poll_control(job_id, live)
-                if not self._live_identity_matches(live):
+                if not self._live_identity_matches(live) or self._leader_exit_observed(live):
+                    # An exited leader can still anchor surviving descendants.
+                    # Keep its identity available until group cleanup is fenced.
+                    if self._live_identity_matches(live):
+                        self._terminate_live(live)
                     row = self._row_for_job(job_id)
                     cancelling = str(row["status"] or "") == "cancelling"
                     self._finalize_without_process(
@@ -1413,6 +1417,28 @@ class AgentBackgroundJobService:
             raise AgentBackgroundJobError(
                 "background job exit receipt is invalid"
             ) from exc
+
+    @staticmethod
+    def _leader_exit_observed(live: _LiveJob) -> bool:
+        """Observe exit without reaping or discarding the group identity."""
+        if isinstance(live.launched, SpawnedWorkspaceCommand):
+            return WorkspaceHarness._exit_observed_without_reaping(live.launched.process)
+        if live.pid <= 0:
+            return False
+        # A recovered worker is not our child, so waitid cannot observe it.
+        # A zombie retains its PID/birth identity but cannot write a receipt.
+        try:
+            result = subprocess.run(
+                ["ps", "-o", "stat=", "-p", str(live.pid)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=1,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        states = result.stdout.split()
+        return result.returncode == 0 and len(states) == 1 and states[0].startswith("Z")
 
     @staticmethod
     def _live_identity_matches(live: _LiveJob) -> bool:

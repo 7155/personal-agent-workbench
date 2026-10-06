@@ -31,6 +31,7 @@
 :is(main, section)[data-route-id='configuration'] .configuration-editor {
   display: grid;
   min-width: 0;
+  align-items: start;
   gap: var(--space-4);
   grid-template-columns: minmax(184px, .42fr) minmax(360px, 1.58fr);
 }
@@ -279,6 +280,10 @@
 
 :is(main, section)[data-route-id='configuration'] .configuration-editor > * {
   min-width: 0;
+}
+
+:is(main, section)[data-route-id='configuration'] .configuration-editor__fields {
+  align-content: start;
 }
 
 :is(main, section)[data-route-id='configuration'] .configuration-editor__title {
@@ -707,6 +712,12 @@
 }
 
 @container paw-window (max-width: 620px) {
+  :is(main, section)[data-route-id='configuration'] .configuration-subagents__summary { grid-template-columns: minmax(0, 1fr) auto; }
+  :is(main, section)[data-route-id='configuration'] .configuration-subagents__summary > .ui-button { grid-column: 1 / -1; }
+  :is(main, section)[data-route-id='configuration'] .configuration-subagents__rules { grid-template-columns: minmax(0, 1fr); }
+  :is(main, section)[data-route-id='configuration'] .configuration-subagents__rules article,
+  :is(main, section)[data-route-id='configuration'] .configuration-subagents__rules article:nth-child(2n),
+  :is(main, section)[data-route-id='configuration'] .configuration-subagents__rules article:nth-last-child(-n + 2) { border-right: 0; border-bottom: 1px solid var(--color-border); }
   :is(main, section)[data-route-id='configuration'][data-paw-os-app] .configuration-editor { grid-template-columns: minmax(0, 1fr); }
   /* Ten navigation cards pushed the actual settings below the window. The
      same selected group and pending counts fit in one keyboard-ready picker. */

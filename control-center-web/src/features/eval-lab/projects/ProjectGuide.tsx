@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button } from '@/components/primitives';
 import { agentCommandReceiptFailure, isAgentCommandPending, isAmbiguousAgentPromptFailure, isUnresolvedAgentCommandPending, publicAgentErrorText } from '@/features/agent/public-error';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
 import { PawSessionWorkspace, sessionWorkspaceProjectionSlice } from '@/paw-os/apps/PawSessionWorkspace';
 import type { ControlTransport } from '@/platform/transport';
@@ -71,34 +71,35 @@ export function retainProjectMessage(transport: ControlTransport, project: LabPr
 export async function sendProjectGuideMessage(transport: ControlTransport, project: LabProject, message: string, clientMessageId: string): Promise<void> {
   const sessionId = project.guideSessionId;
   if (!sessionId) throw new Error('项目 Agent 尚未连接。');
+  const address = agentSessionAddress(transport, sessionId);
   const store = useAgentLiveStore.getState();
-  const active = sessionWorkspaceProjectionSlice(store, sessionId).activeTurnId;
+  const active = sessionWorkspaceProjectionSlice(store, address).activeTurnId;
   const original = pendingProjectMessages(transport, project).find((item) => item.clientMessageId === clientMessageId);
   if (original && original.message !== message) throw new Error('原消息身份已绑定其他内容，请先核对已保留的消息。');
   const delivery = original?.delivery ?? (active ? 'steer' : 'prompt');
   const pending: PendingProjectMessage = { projectId: project.projectId, sessionId, clientMessageId, message, delivery, outcome: 'unknown', error: '' };
   retainProjectMessage(transport, project, pending);
-  store.appendOptimistic(sessionId, { clientMessageId, text: message, nowMs: Date.now() });
+  store.appendOptimistic(address, { clientMessageId, text: message, nowMs: Date.now() });
   try {
     const response = object(await requestLabControl(transport, { pathId: 'agent.session.prompt', params: { sessionId },
       body: { message, clientMessageId, delivery } }));
     if (response.accepted === false && response.cancelled === true && response.admissionCancelled === true) {
-      store.discardOptimistic(sessionId, clientMessageId);
+      store.discardOptimistic(address, clientMessageId);
       throw Object.assign(new Error('消息已取消，项目与成果已保留。'), { admissionCancelled: true });
     }
     if (response.accepted !== true) throw new TypeError('消息接纳回执未完整返回，请核对原消息。');
-    store.acknowledgeOptimistic(sessionId, clientMessageId, Date.now());
+    store.acknowledgeOptimistic(address, clientMessageId, Date.now());
     retainProjectMessage(transport, project, pending, true);
   } catch (reason) {
     const cancelled = object(reason).admissionCancelled === true;
     const uncertain = isAgentCommandPending(reason) || isAmbiguousAgentPromptFailure(reason)
       || (reason instanceof Error && /服务未及时返回回执|读取已取消/u.test(reason.message));
     retainProjectMessage(transport, project, { ...pending, outcome: uncertain ? 'unknown' : 'rejected', error: publicAgentErrorText(reason) }, cancelled);
-    if (agentCommandReceiptFailure(reason)?.code === 'AGENT_COMMAND_CONFLICT') store.discardOptimistic(sessionId, clientMessageId);
+    if (agentCommandReceiptFailure(reason)?.code === 'AGENT_COMMAND_CONFLICT') store.discardOptimistic(address, clientMessageId);
     else {
       const state = isAgentCommandPending(reason) ? isUnresolvedAgentCommandPending(reason) ? 'unresolved' : 'pending'
         : uncertain ? 'ambiguous' : undefined;
-      store.failOptimistic(sessionId, clientMessageId, publicAgentErrorText(reason), Date.now(), state);
+      store.failOptimistic(address, clientMessageId, publicAgentErrorText(reason), Date.now(), state);
     }
     throw reason;
   }

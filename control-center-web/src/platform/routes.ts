@@ -1,3 +1,4 @@
+import { parseAgentCompactionTarget } from '@/contracts/agent-compaction-target';
 import type { GeneratedContractName } from '@/contracts/generated';
 
 export type ControlHttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -507,6 +508,14 @@ export const CONTROL_ROUTES = {
     body: ['sceneId', 'expectedRevision', 'clientRequestId'],
     requiredBody: ['sceneId', 'expectedRevision', 'clientRequestId'],
   },
+  'agent.primary.ensure': {
+    method: 'POST', path: '/api/agent/primary/ensure', body: ['workspaceRoots'],
+  },
+  'agent.primary.tasks.create': {
+    method: 'POST', path: '/api/agent/primary/tasks',
+    body: ['clientRequestId', 'sourceSessionId', 'sourceMessageId', 'objective', 'acceptanceCriteria', 'workspaceRoots', 'workspaceScopeConfirmation'],
+    requiredBody: ['clientRequestId', 'sourceSessionId', 'objective', 'workspaceRoots', 'workspaceScopeConfirmation'],
+  },
   'agent.sessions.create': {
     method: 'POST',
     path: '/api/agent/sessions',
@@ -650,13 +659,13 @@ export const CONTROL_ROUTES = {
     method: 'POST',
     path: '/api/agent/sessions/:sessionId/abort',
     params: { sessionId: null },
+    body: ['compactionTarget'],
   },
   'agent.session.resume': {
     method: 'POST',
     path: '/api/agent/sessions/:sessionId/resume',
     params: { sessionId: null },
-    body: ['turnId', 'clientMessageId'],
-    requiredBody: ['turnId', 'clientMessageId'],
+    body: ['turnId', 'clientMessageId', 'compactionTarget'],
   },
   'agent.session.review.resolve': {
     method: 'POST',
@@ -1496,6 +1505,12 @@ export const CONTROL_ROUTES = {
     requiredBody: ['sessionId', 'approvalId', 'payloadSha256'],
     responseContract: 'work-document-command.v1',
   },
+  'memory.profile': { method: 'GET', path: '/api/memory/profile' },
+  'memory.profile.save': {
+    method: 'POST', path: '/api/memory/profile/save',
+    body: ['expectedRevision', 'clientRequestId', 'paragraphs'],
+    requiredBody: ['expectedRevision', 'clientRequestId', 'paragraphs'],
+  },
   'memory.summary': { method: 'GET', path: '/api/memory/summary' },
   'memory.pages': {
     method: 'GET',
@@ -1529,7 +1544,7 @@ export const CONTROL_ROUTES = {
   'memory.edit': {
     method: 'POST',
     path: '/api/memory/edit',
-    body: ['kind', 'id', 'title', 'text', 'summary', 'note', 'description', 'tags', 'aliases', 'type', 'color', 'reason', 'active'],
+    body: ['kind', 'id', 'title', 'text', 'summary', 'note', 'description', 'tags', 'aliases', 'type', 'color', 'reason', 'active', 'expectedRevision', 'expectedMergeRevision', 'clientRequestId', 'mergeIntoId'],
     requiredBody: ['kind', 'id'],
   },
   'memory.source.disposition': {
@@ -2000,7 +2015,7 @@ export function assertAllowedBody(
 ): void {
   const route = controlRoute(pathId);
   if (body === undefined) {
-    if ((route.requiredBody?.length ?? 0) > 0) {
+    if ((route.requiredBody?.length ?? 0) > 0 || pathId === 'agent.session.resume') {
       throw new ControlRoutePolicyError(pathId, 'required request body is missing');
     }
     return;
@@ -2012,6 +2027,29 @@ export function assertAllowedBody(
   for (const key of Object.keys(body)) {
     if (!allowed.has(key)) {
       throw new ControlRoutePolicyError(pathId, `body field is not allowlisted: ${key}`);
+    }
+  }
+  if (pathId === 'memory.edit' && (body as Record<string, unknown>).kind === 'atom') {
+    const target = body as Record<string, unknown>;
+    const fields = ['expectedRevision', 'clientRequestId', ...(target.mergeIntoId ? ['expectedMergeRevision'] : [])];
+    for (const key of fields) {
+      const value = target[key];
+      if (typeof value !== 'string' || !value.trim() || value.length > 240) {
+        throw new ControlRoutePolicyError(pathId, `invalid or missing atom mutation field: ${key}`);
+      }
+    }
+  }
+  if (pathId === 'agent.session.resume' || pathId === 'agent.session.abort') {
+    const target = body as Record<string, unknown>;
+    if (Object.hasOwn(target, 'compactionTarget')) {
+      if (!parseAgentCompactionTarget(target.compactionTarget) || Object.hasOwn(target, 'turnId') || Object.hasOwn(target, 'clientMessageId')) {
+        throw new ControlRoutePolicyError(pathId, 'invalid or ambiguous compaction target');
+      }
+    } else if (pathId === 'agent.session.resume' && (
+      typeof target.turnId !== 'string' || !target.turnId.trim()
+      || typeof target.clientMessageId !== 'string' || !target.clientMessageId.trim()
+    )) {
+      throw new ControlRoutePolicyError(pathId, 'resume requires an exact original input or compaction target');
     }
   }
   for (const key of route.requiredBody ?? []) {

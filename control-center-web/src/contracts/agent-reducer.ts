@@ -1,3 +1,4 @@
+import { parseAgentCompactionTarget, type AgentCompactionTarget } from './agent-compaction-target';
 import type { UiAgentEvent, UiAgentMessage } from './ui-events';
 import type { AgentSessionTelemetryV1 } from './generated/agent-session-telemetry.v1';
 import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
@@ -101,6 +102,7 @@ export interface AgentProjectionState {
 }
 
 export interface AgentDurableRecovery {
+  compactionTarget?: AgentCompactionTarget | null;
   paused: boolean;
   recoverable: boolean;
   activeTurn: { turnId: string; clientMessageId: string } | null;
@@ -132,6 +134,7 @@ export interface AgentSnapshot {
   paused?: boolean;
   recoverable?: boolean;
   activeTurn?: AgentDurableRecovery['activeTurn'];
+  compactionTarget?: AgentCompactionTarget | null;
   messages: unknown[];
   liveEvents: unknown[];
   lastSequence: number;
@@ -275,7 +278,12 @@ export function reduceAgentEvent(
     case 'compaction_completed':
       upsertCompactionActivity(next, event, payload, payload.error ? 'failed' : 'completed');
       break;
-    case 'status_changed':
+    case 'status_changed': {
+      const recovery = durableRecoveryFromSnapshot(agentSnapshotFromResponse({ ...payload, sessionId: event.sessionId }), state.sessionId);
+      if (recovery && (!next.durableRecovery?.compactionTarget || recovery.compactionTarget !== undefined)) {
+        next.durableRecovery = recovery;
+        next.runtimeEngine = 'durable';
+      }
       if (text(payload.phase) === 'provider_retry') {
         const activityState = text(payload.activityState);
         const retryStatus: AgentActivityProjection['status'] =
@@ -287,8 +295,11 @@ export function reduceAgentEvent(
         upsertActivity(next, event, payload, retryStatus);
       }
       next.status = text(payload.status) || next.status;
-      touchTurn(next, event.turnId, turnStatusFromRuntime(next.status), event.createdAtMs);
+      if (event.turnId || payload.projectionCurrent !== true || payload.runtimeEngine !== 'durable') {
+        touchTurn(next, event.turnId, turnStatusFromRuntime(next.status), event.createdAtMs);
+      }
       break;
+    }
     case 'message_queue_updated':
       {
         const previousQueue = next.messageQueue;
@@ -337,7 +348,10 @@ export function reduceAgentEvent(
         event.eventType === 'tool_progress'
         && !event.turnId
         && text(payload.toolCallId).startsWith('subagent:')
-      ) break;
+      ) {
+        mergeDelegatedProgress(next, event, payload);
+        break;
+      }
       upsertActivity(next, event, payload, payload.isError === true ? 'failed' : 'running');
       if (payload.isError !== true) {
         reopenProvisionalTurn(next, event.turnId, event.createdAtMs);
@@ -831,15 +845,19 @@ function preserveConfirmedSnapshotActivities(
   return next;
 }
 
+function isAuthoritativelyQuiescentSnapshot(snapshot: AgentSnapshot): boolean {
+  return (snapshot.runtimeQuiescent === true || !snapshot.partial)
+    && Boolean(snapshot.status)
+    && ['idle', 'ready', 'stopped', 'active', 'failed', 'faulted'].includes(snapshot.status ?? '');
+}
+
 /** Settle confirmed replay before restoring local prompt admissions. */
 function settleAgentSnapshotQuiescence(
   next: AgentProjectionState,
   snapshot: AgentSnapshot,
   replayStatus = next.status,
 ): void {
-  const authoritativeQuiescent = (snapshot.runtimeQuiescent === true || !snapshot.partial)
-    && Boolean(snapshot.status)
-    && ['idle', 'ready', 'stopped', 'active', 'failed', 'faulted'].includes(snapshot.status ?? '');
+  const authoritativeQuiescent = isAuthoritativelyQuiescentSnapshot(snapshot);
   if (authoritativeQuiescent && snapshot.status) {
     next.status = snapshot.status;
     // `status` is the Runtime's authoritative process boundary. A bounded
@@ -956,6 +974,7 @@ export function applyAgentSnapshot(
 
   const serverClientIds = new Set<string>();
   const transcriptMessageIds = new Set<string>();
+  const completedSnapshotMessages = new Map<string, AgentMessageProjection>();
   /* A bounded snapshot carries forward both prior transcript anchors and
      message_completed rows seen only through SSE. Only ids present in this
      response (plus already-normalized history turns) are transcript anchors;
@@ -969,6 +988,14 @@ export function applyAgentSnapshot(
   const snapshotMessages = snapshot.snapshotScope === 'recent' && snapshot.partial === true
     ? mergeBoundedRecentMessages(state, snapshot.messages)
     : snapshot.messages;
+  // Keep the pre-replay streaming boundary: turn_completed can settle a
+  // cached prefix even when its missing message_completed was never received.
+  const cachedStreamingIds = new Set(
+    snapshot.snapshotScope === 'recent' && snapshot.partial === true
+      && isAuthoritativelyQuiescentSnapshot(snapshot)
+      ? state.messageOrder.filter((id) => state.messagesById[id]?.status === 'streaming')
+      : [],
+  );
   for (const rawMessage of snapshotMessages) {
     const parsed = tryParseAgentMessage(rawMessage);
     if (!parsed.ok || parsed.value.sessionId !== state.sessionId) {
@@ -983,6 +1010,12 @@ export function applyAgentSnapshot(
       continue;
     }
     upsertMessage(next, parsed.value);
+    if (currentTranscriptMessageIds.has(parsed.value.id)
+      && parsed.value.role === 'assistant' && parsed.value.status === 'completed') {
+      // Keep the original completion receipt; terminal replay must not turn
+      // incomplete transcript metadata into proof of a complete replacement.
+      completedSnapshotMessages.set(parsed.value.id, parsed.value);
+    }
     if (
       currentTranscriptMessageIds.has(parsed.value.id)
       || parsed.value.turnId.startsWith('history:')
@@ -1001,6 +1034,12 @@ export function applyAgentSnapshot(
     try {
       const parsed = parseAgentEvent(rawEvent);
       if (parsed.sessionId !== state.sessionId) throw new TypeError('foreign snapshot event');
+      if (parsed.eventType === 'message_completed') {
+        // A real completed process message is not an interrupted prefix.
+        cachedStreamingIds.delete(text(record(parsed.payload.message).id));
+      } else if (parsed.eventType === 'text_delta' && parsed.payload.replaceBlock === true) {
+        cachedStreamingIds.delete(text(parsed.payload.messageId) || `${parsed.turnId}:assistant`);
+      }
       const hydrated = {
         ...parsed,
         sequence: next.lastSequence + 1,
@@ -1026,7 +1065,10 @@ export function applyAgentSnapshot(
   // the Pi message as the public anchor, absorb event-only metadata such as the
   // clientMessageId, and remove only a narrowly matched replay copy. In-flight
   // deltas remain untouched because they have no completed transcript match.
-  reconcileTranscriptReplayMessages(next, transcriptMessageIds, serverClientIds);
+  reconcileTranscriptReplayMessages(next, transcriptMessageIds, serverClientIds, {
+    cachedStreamingIds,
+    completedSnapshotMessages,
+  });
   if (snapshot.lastSequence === state.lastSequence) {
     reconcileEqualCursorAcceptedMessages(
       state,
@@ -1115,7 +1157,8 @@ export function applyAgentSnapshot(
   // Current native control metadata owns recovery; transcript-only enrichment
   // cannot invent or replace that authority. Assign after historical replay.
   next.durableRecovery = snapshot.projectionCurrent === true
-    ? durableRecoveryFromSnapshot(snapshot, state.sessionId)
+    && (!state.durableRecovery?.compactionTarget || snapshot.compactionTarget !== undefined)
+    ? durableRecoveryFromSnapshot(snapshot, state.sessionId) ?? state.durableRecovery
     : state.durableRecovery;
   const recoveryTurn = next.durableRecovery?.activeTurn;
   if (recoveryTurn && ['completed', 'failed', 'aborted'].includes(next.turnsById[recoveryTurn.turnId]?.status)) {
@@ -1124,12 +1167,18 @@ export function applyAgentSnapshot(
   return next;
 }
 
-function durableRecoveryFromSnapshot(snapshot: AgentSnapshot, sessionId: string): AgentDurableRecovery | undefined {
-  if (snapshot.runtimeEngine !== 'durable' || snapshot.sessionId !== sessionId
-    || typeof snapshot.paused !== 'boolean' || typeof snapshot.recoverable !== 'boolean'
-    || snapshot.activeTurn === undefined
-    || snapshot.recoverable && (!snapshot.paused || !snapshot.activeTurn)) return undefined;
-  return { paused: snapshot.paused, recoverable: snapshot.recoverable, activeTurn: snapshot.activeTurn };
+export function durableRecoveryFromSnapshot(snapshot: AgentSnapshot, sessionId: string): AgentDurableRecovery | undefined {
+  if (snapshot.projectionCurrent !== true || snapshot.runtimeEngine !== 'durable' || snapshot.sessionId !== sessionId
+    || typeof snapshot.paused !== 'boolean' || typeof snapshot.recoverable !== 'boolean') return undefined;
+  const compactionTarget = parseAgentCompactionTarget(snapshot.compactionTarget);
+  // Compaction has no input turn. Reject ambiguous or incomplete authority;
+  // retain the target while resumed so Stop still addresses the same tasks.
+  if (compactionTarget && snapshot.activeTurn) return undefined;
+  if (snapshot.activeTurn === undefined && snapshot.compactionTarget === undefined) return undefined;
+  if (snapshot.compactionTarget != null && !compactionTarget) return undefined;
+  if (snapshot.recoverable && (!snapshot.paused || !snapshot.activeTurn && !compactionTarget)) return undefined;
+  return { paused: snapshot.paused, recoverable: snapshot.recoverable, activeTurn: snapshot.activeTurn ?? null,
+    ...(snapshot.compactionTarget !== undefined ? { compactionTarget: compactionTarget ?? null } : {}) };
 }
 
 /**
@@ -1225,6 +1274,10 @@ function reconcileTranscriptReplayMessages(
   state: AgentProjectionState,
   transcriptMessageIds: ReadonlySet<string>,
   serverClientIds: Set<string>,
+  quiescentPrefixes?: {
+    cachedStreamingIds: ReadonlySet<string>;
+    completedSnapshotMessages: ReadonlyMap<string, AgentMessageProjection>;
+  },
 ): void {
   const transcriptByFingerprint = new Map<string, AgentMessageProjection[]>();
   const transcriptByMediaShapeFingerprint = new Map<string, AgentMessageProjection[]>();
@@ -1295,11 +1348,17 @@ function reconcileTranscriptReplayMessages(
     const mediaShapeCandidate = mediaShapeCandidates.length === 1
       ? mediaShapeCandidates[0]?.message
       : undefined;
+    const prefixCandidate = quiescentPrefixes?.cachedStreamingIds.has(replay.id)
+      ? completedStreamingPrefixCandidate(
+          state, replay, quiescentPrefixes.completedSnapshotMessages, claimedTranscriptIds,
+        )
+      : undefined;
     // A missing message_end leaves a live alias streaming after Pi has persisted it.
-    // Only a unique exact same-turn durable row can settle that alias.
+    // Exact same-turn text can settle it while active; a shorter cached prefix
+    // additionally needs the original quiescent completion proof above.
     const candidate = replay.status === 'streaming'
-      ? sameTurnFinal
-      : exactCandidate ?? sameTurnFinal ?? mediaShapeCandidate;
+      ? sameTurnFinal ?? prefixCandidate
+      : exactCandidate ?? sameTurnFinal ?? mediaShapeCandidate ?? prefixCandidate;
     if (!candidate) continue;
 
     claimedTranscriptIds.add(candidate.id);
@@ -1321,6 +1380,54 @@ function reconcileTranscriptReplayMessages(
     removeProjectedMessage(state, replay);
   }
   reconcileReplayTurnAnchors(state, replayTurnAnchors);
+}
+
+/** Recover only the Runtime's unfinished, plain-text base alias. The recent
+ * response must prove one completed replacement in the exact native turn;
+ * text length, similar openings, and transcript/SSE order alone prove nothing. */
+function completedStreamingPrefixCandidate(
+  state: AgentProjectionState,
+  replay: AgentMessageProjection,
+  completedSnapshotMessages: ReadonlyMap<string, AgentMessageProjection>,
+  claimedTranscriptIds: ReadonlySet<string>,
+): AgentMessageProjection | undefined {
+  const block = replay.blocks[0];
+  if (
+    replay.role !== 'assistant'
+    || replay.id !== `${replay.turnId}:assistant`
+    || replay.turnId.startsWith('history:')
+    || !Number.isInteger(replay.timelineSequence)
+    || replay.attachments.length > 0
+    || replay.citations.length > 0
+    || replay.blocks.length !== 1
+    || block.id !== `${replay.id}:text`
+    || block.type !== 'text'
+    || block.presentationKind !== 'markdown'
+    || Object.keys(block).some((key) => !['id', 'type', 'status', 'presentationKind', 'data'].includes(key))
+    || Object.keys(block.data).some((key) => key !== 'text')
+  ) return undefined;
+  const prefix = text(block.data.text);
+  if (!prefix.trim()) return undefined;
+  const candidates = [...completedSnapshotMessages.values()]
+    .filter((message) => message.turnId === replay.turnId);
+  // Multiple completed assistant rows can be real process messages. Do not
+  // choose among them even if only one happens to start with this prefix.
+  if (candidates.length !== 1) return undefined;
+  const message = candidates[0];
+  if (
+    claimedTranscriptIds.has(message.id)
+    || message.id === replay.id || message.id.startsWith(`${replay.id}:segment:`)
+    || message.createdAtMs < replay.createdAtMs
+    || message.completedAtMs == null || message.completedAtMs < message.createdAtMs
+    || message.blocks.some((candidateBlock) => candidateBlock.data.truncated === true)
+  ) return undefined;
+  const textBlocks = message.blocks.filter((candidateBlock) => candidateBlock.type === 'text');
+  const completeText = textBlocks.length === 1 ? text(textBlocks[0].data.text) : '';
+  const current = state.messagesById[message.id];
+  const currentTextBlocks = current?.blocks.filter((candidateBlock) => candidateBlock.type === 'text') ?? [];
+  return current?.status === 'completed' && current.turnId === replay.turnId
+    && currentTextBlocks.length === 1 && text(currentTextBlocks[0].data.text) === completeText
+    && completeText.length > prefix.length && completeText.startsWith(prefix) ? current : undefined;
 }
 
 /**
@@ -1498,6 +1605,7 @@ function removeProjectedMessage(
 export function agentSnapshotFromResponse(value: unknown): AgentSnapshot {
   const payload = record(value);
   const activeTurn = record(payload.activeTurn);
+  const compactionTarget = parseAgentCompactionTarget(payload.compactionTarget);
   const turnId = text(activeTurn.turnId);
   const clientMessageId = text(activeTurn.clientMessageId);
   const messages = Array.isArray(payload.messages)
@@ -1511,6 +1619,7 @@ export function agentSnapshotFromResponse(value: unknown): AgentSnapshot {
     ...(typeof payload.projectionCurrent === 'boolean' ? { projectionCurrent: payload.projectionCurrent } : {}),
     ...(typeof payload.paused === 'boolean' ? { paused: payload.paused } : {}),
     ...(typeof payload.recoverable === 'boolean' ? { recoverable: payload.recoverable } : {}),
+    ...(payload.compactionTarget === null ? { compactionTarget: null } : compactionTarget ? { compactionTarget } : {}),
     ...(payload.activeTurn === null ? { activeTurn: null } : turnId.trim() && clientMessageId.trim()
       ? { activeTurn: { turnId, clientMessageId } } : {}),
     messages,
@@ -1830,6 +1939,8 @@ function upsertCompactionActivity(
   state.activitiesById[id] = activity;
   const turn = ensureTurn(state, activity.turnId, activity.createdAtMs);
   if (!turn.activityIds.includes(id)) turn.activityIds.push(id);
+  // The maintenance row groups visible activity only; it is not a user turn.
+  if (!event.turnId && !turn.messageIds.length) turn.status = status === 'running' ? 'running' : status;
 }
 
 function compactionReasonLabel(reason: string): string {
@@ -2332,6 +2443,105 @@ function approvalIdFromActivityPayload(
 }
 
 
+
+export interface AgentChildProgress {
+  runId: string;
+  taskLabel: string;
+  childSessionId: string;
+  ordinal: number;
+  templateId: string;
+  state: string;
+  phase: 'running' | 'tool_started' | 'tool_finished' | 'waiting' | 'terminal';
+  sourceEventId: string;
+  sourceEventType: string;
+  updatedAtMs: number;
+  toolName: string;
+  toolCallId: string;
+  fileName: string;
+  isError: boolean;
+  contractStatus: string;
+  deliveryStatus: string;
+  verificationStatus: string;
+  failureReason: string;
+}
+
+const delegatedTerminalStates = new Set(['completed', 'failed', 'aborted', 'timed_out']);
+
+export function agentChildProgress(value: unknown): AgentChildProgress[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 2).flatMap((raw): AgentChildProgress[] => {
+    const item = record(raw);
+    const state = text(item.state);
+    const phase = text(item.phase);
+    const sourceEventType = text(item.sourceEventType);
+    if (!text(item.runId) || !text(item.childSessionId)
+      || !Number.isInteger(item.ordinal) || ![0, 1].includes(Number(item.ordinal))
+      || !['researcher', 'planner', 'worker', 'reviewer', 'delegate'].includes(text(item.templateId))
+      || !['queued', 'running', ...delegatedTerminalStates].includes(state)
+      || !['running', 'tool_started', 'tool_finished', 'waiting', 'terminal'].includes(phase)
+      || delegatedTerminalStates.has(state) !== (phase === 'terminal')
+      || (phase === 'tool_started' || phase === 'tool_finished') && phase !== sourceEventType
+      || phase === 'waiting' && sourceEventType !== 'user_input_required'
+      || !Number.isFinite(item.updatedAtMs) || Number(item.updatedAtMs) <= 0) return [];
+    const fileName = text(item.fileName).slice(0, 240);
+    return [{
+      runId: text(item.runId), childSessionId: text(item.childSessionId),
+      ordinal: Number(item.ordinal), templateId: text(item.templateId), state,
+      taskLabel: text(item.taskLabel).split(/\r?\n/u)[0]?.trim().slice(0, 80) ?? '',
+      phase: phase as AgentChildProgress['phase'],
+      sourceEventId: text(item.sourceEventId), sourceEventType,
+      updatedAtMs: Number(item.updatedAtMs),
+      toolName: text(item.toolName).slice(0, 120), toolCallId: text(item.toolCallId).slice(0, 512),
+      fileName: /[\/\\\u0000-\u001f]|token|secret|password|api.?key|authorization|cookie/iu.test(fileName) ? '' : fileName,
+      isError: item.isError === true,
+      contractStatus: text(item.contractStatus), deliveryStatus: text(item.deliveryStatus),
+      verificationStatus: text(item.verificationStatus),
+      failureReason: item.failureReason === 'output_budget' ? 'output_budget' : '',
+    }];
+  });
+}
+
+function mergeDelegatedProgress(
+  state: AgentProjectionState,
+  event: UiAgentEvent,
+  payload: Record<string, unknown>,
+): void {
+  const ownerId = text(payload.parentToolCallId);
+  const owner = state.activitiesById[ownerId];
+  const batchId = text(payload.batchId);
+  const incoming = agentChildProgress([payload.childProgress])[0];
+  if (!owner || !owner.kind.startsWith('tool_')
+    || text(owner.payload.toolName ?? owner.payload.toolId) !== 'agents'
+    || !owner.turnId || owner.turnId !== text(payload.parentTurnId)
+    || !batchId || payload.toolCallId !== `subagent:${batchId}`
+    || !incoming || incoming.runId !== text(payload.runId)
+    || incoming.childSessionId === event.sessionId) return;
+  const projection = record(owner.payload.delegationProgress);
+  if (text(projection.batchId) && projection.batchId !== batchId) return;
+  const runs = agentChildProgress(projection.runs);
+  const previous = runs.find((run) => run.runId === incoming.runId);
+  if (previous && (previous.childSessionId !== incoming.childSessionId
+    || previous.ordinal !== incoming.ordinal || previous.templateId !== incoming.templateId
+    || delegatedTerminalStates.has(previous.state)
+    || incoming.updatedAtMs < previous.updatedAtMs
+    || Boolean(incoming.sourceEventId) && incoming.sourceEventId === previous.sourceEventId)) return;
+  if (!previous && (runs.length >= 2 || runs.some((run) => run.ordinal === incoming.ordinal))) return;
+  if ((owner.settledByTurnStatus === 'aborted' || state.turnsById[owner.turnId]?.status === 'aborted')
+    && !delegatedTerminalStates.has(incoming.state)) return;
+  // This is display evidence on an existing Tool, not a parent lifecycle event.
+  // Preserve its status, timestamps, turn ownership and Session-wide status.
+  state.activitiesById[ownerId] = {
+    ...owner,
+    payload: {
+      ...owner.payload,
+      delegationProgress: {
+        batchId,
+        runs: [...runs.filter((run) => run.runId !== incoming.runId), incoming]
+          .sort((left, right) => left.ordinal - right.ordinal),
+      },
+    },
+  };
+}
 
 function mergeActivityPayload(
   previous: AgentActivityProjection | undefined,

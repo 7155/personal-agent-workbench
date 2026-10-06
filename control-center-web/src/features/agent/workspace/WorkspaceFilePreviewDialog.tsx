@@ -40,6 +40,7 @@ export function WorkspaceFilePreviewDialog({
 }: WorkspaceFilePreviewDialogProps) {
   const transport = useControlTransport();
   const requestGenerationRef = useRef(0);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const [preview, setPreview] = useState<WorkspaceFilePreview>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -77,10 +78,13 @@ export function WorkspaceFilePreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="agent-file-preview-dialog agent-workspace-file-dialog">
+      <DialogContent
+        className="agent-file-preview-dialog agent-workspace-file-dialog"
+        onOpenAutoFocus={event => { event.preventDefault(); titleRef.current?.focus({ preventScroll: true }); }}
+      >
         <DialogHeader>
           <span className="agent-file-preview-dialog__icon"><FileText size={20} /></span>
-          <DialogTitle>{fileName}</DialogTitle>
+          <DialogTitle ref={titleRef} tabIndex={-1}>{fileName}</DialogTitle>
           <DialogDescription>{[languageLabel(kind, language), formatBytes(preview?.byteSize ?? byteSize)].filter(Boolean).join(' · ')}</DialogDescription>
           {transport.revealPath ? (
             <IconButton

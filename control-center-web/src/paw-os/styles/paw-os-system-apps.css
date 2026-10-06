@@ -47,6 +47,7 @@
   --paw-system-radius-lg: var(--paw-panel-radius, 12px);
   /* Stage pacing defaults; `data-stage` below tunes them per purpose. */
   --paw-stage-chrome-h: 38px;
+  --paw-stage-control-h: 32px;
   --paw-stage-gutter: 20px;
   --paw-stage-rhythm: 13px;
   --paw-stage-lead: 14px;
@@ -308,8 +309,14 @@
 }
 
 /* Only reserve room for a page toolbar when the page actually renders one. */
-.paw-desktop-root .paw-system-app__stage:has(.mgmt-page__native-actions) .paw-system-app__chrome {
+.paw-desktop-root .paw-system-app__stage:not([data-switching]):has(.mgmt-page__native-actions) .paw-system-app__chrome {
   padding-inline-end: var(--paw-stage-actions);
+}
+
+/* The retained page is inert during a handoff. Its absolute toolbar must
+   yield the band to the switch status until the selected page is ready. */
+.paw-desktop-root .paw-system-app__stage[data-switching] .mgmt-page__native-actions {
+  visibility: hidden;
 }
 
 @keyframes paw-system-chrome-in {
@@ -356,15 +363,20 @@
   overflow: hidden;
 }
 
-/* Opacity only. A transform here would make the workspace a containing block
-   and tear the page toolbar out of the chrome band for the length of the
-   animation. */
+/* Keep the toolbar's ancestors free of animation-created stacking contexts:
+   an opacity animation with forwards fill would trap its z-index below the
+   chrome even after the page had finished entering. */
 .paw-desktop-root .paw-system-app__page {
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.paw-desktop-root .paw-system-app__page[hidden] { display: none; }
+
+.paw-desktop-root .paw-system-app__page .mgmt-page__body {
   animation: paw-system-page-in 200ms ease-out both;
 }
 
@@ -494,12 +506,10 @@
   font-family: inherit;
 }
 
-/* Native <select> now inherits the shared control language
-   (paw-os-controls.css); only the ui-* primitives keep the compact height —
-   the same --paw-control-h-sm every other PAWOS surface uses, not an
-   invented 30px. */
+/* Shared controls retain the desktop minimum and grow with the App's
+   compact frame; chrome and forms use the same reachable target size. */
 .paw-desktop-root .paw-system-app :is(.ui-button, .ui-input, .ui-select__trigger) {
-  min-height: var(--paw-control-h-sm, 28px);
+  min-height: max(var(--paw-stage-control-h), var(--paw-control-h-sm, 28px));
   border-radius: var(--paw-system-radius-sm);
 }
 
@@ -880,10 +890,10 @@
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .observation-controls {
-  padding: 9px 11px;
-  background: var(--paw-system-surface);
-  border: 1px solid var(--paw-system-line);
-  border-radius: var(--paw-system-radius-md);
+  padding: 9px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .observation-workspace {
@@ -1222,6 +1232,7 @@
    (approvals) already keys its own collapse to the window. */
 
 @container paw-sysapp (max-width: 880px) {
+  .paw-desktop-root .paw-system-app__frame { --paw-stage-control-h: 40px; --paw-stage-chrome-h: 48px; }
   .paw-desktop-root .paw-system-app .mgmt-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -1261,7 +1272,7 @@
 
   /* The band keeps the page name and gives up the purpose line first. */
   .paw-desktop-root .paw-system-app__page-purpose { display: none; }
-  .paw-desktop-root .paw-system-app__stage:has(.mgmt-page__native-actions) .paw-system-app__chrome {
+  .paw-desktop-root .paw-system-app__stage:not([data-switching]):has(.mgmt-page__native-actions) .paw-system-app__chrome {
     padding-inline-end: 104px;
   }
 
@@ -1278,6 +1289,8 @@
 }
 
 @container paw-sysapp (max-width: 420px) {
+  .paw-desktop-root .paw-system-app__frame { --paw-stage-control-h: 44px; --paw-stage-chrome-h: 52px; }
+  .paw-desktop-root .paw-system-app :is(.ui-input, .ui-select__trigger) { font-size: 16px; }
   /* At phone-sized windows, labeled destinations above the page give the
      working form its full width instead of reserving an opaque icon rail. */
   .paw-desktop-root .paw-system-app__frame {
@@ -1322,7 +1335,7 @@
    first control below the fold. */
 @container paw-sysapp (max-height: 420px) {
   .paw-desktop-root .paw-system-app__frame {
-    --paw-stage-chrome-h: 32px;
+    --paw-stage-chrome-h: max(38px, calc(var(--paw-stage-control-h) + 8px));
     --paw-stage-lead: 10px;
     --paw-stage-rhythm: 10px;
   }
@@ -1333,7 +1346,7 @@
 @media (prefers-reduced-motion: reduce) {
   .paw-desktop-root .paw-system-app .mgmt-section { animation: none; }
   .paw-desktop-root .paw-system-app__chrome,
-  .paw-desktop-root .paw-system-app__page,
+  .paw-desktop-root .paw-system-app__page .mgmt-page__body,
   .paw-desktop-root .paw-system-app__nav nav button .paw-system-app__nav-badge { animation: none; }
   .paw-desktop-root .paw-system-app .mgmt-status i,
   .paw-desktop-root .paw-system-resource-state[data-state='loading'] svg { animation: none; }
@@ -1343,4 +1356,13 @@
   .paw-desktop-root .paw-system-catalog-tracks button,
   .paw-desktop-root .paw-agent-mode,
   .paw-desktop-root .paw-system-app :is(.ui-button, button) { transition: none; }
+}
+
+.paw-system-app__switching { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--paw-muted); font-size: 12px; }
+
+/* Window navigation already names each console. Keep the outer reading group
+   open; independent package/list items and form controls own their boundaries. */
+.paw-desktop-root .paw-system-app[data-system-app='app-center'] .plugin-scenes > .mgmt-section,
+.paw-desktop-root .paw-system-app[data-system-app='app-center'] :is(main, section)[data-route-id='plugins-catalog'][data-paw-os-app] > .mgmt-page__body > .mgmt-section {
+  border: 0; border-radius: 0; background: transparent;
 }

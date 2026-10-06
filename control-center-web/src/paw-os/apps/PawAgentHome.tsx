@@ -86,7 +86,7 @@ import {
   roomPermissionLayerPresentation,
 } from '@/features/rooms/room-presentation';
 import { roomPlanetName } from '@/features/rooms/room-participant-identity';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore, type AgentSessionTarget } from '@/features/agent/state/live-store';
 import {
   isAgentCommandPending,
   isAmbiguousAgentPromptFailure,
@@ -128,6 +128,8 @@ export function PawAgentHome({
   interfaceMode = 'traditional',
   catalogError = '',
   catalogLoading = false,
+  modelLoading = catalogLoading,
+  modelError = '',
   defaultModel,
   durableAvailable = false,
   initialDraft,
@@ -145,6 +147,8 @@ export function PawAgentHome({
   interfaceMode?: 'traditional' | 'jev';
   catalogError?: string;
   catalogLoading?: boolean;
+  modelLoading?: boolean;
+  modelError?: string;
   defaultModel: string;
   durableAvailable?: boolean;
   initialDraft?: string;
@@ -416,6 +420,7 @@ export function PawAgentHome({
         const rawSession = record(record(response).session);
         const sessionId = text(rawSession.id);
         if (!sessionId) throw new Error('服务端没有返回可验证的 Session。');
+        const address = agentSessionAddress(transport, sessionId);
         const clientMessageId = clientId('session');
         const createdSession = createdSessionSummary(
           rawSession,
@@ -433,7 +438,7 @@ export function PawAgentHome({
         // import continues under that owner; local attachment identities keep
         // the optimistic row truthful until the durable message replaces it
         // with managed media receipts.
-        useAgentLiveStore.getState().appendOptimistic(sessionId, {
+        useAgentLiveStore.getState().appendOptimistic(address, {
           clientMessageId,
           text: message,
           attachments: pendingAttachmentIds,
@@ -465,14 +470,14 @@ export function PawAgentHome({
             importedAttachments = await attachmentImport;
           } catch (attachmentError) {
             failHomeAttachmentImportBeforeAdmission(
-              sessionId,
+              address,
               clientMessageId,
               attachmentError,
             );
             return;
           }
           const attachmentIds = importedAttachments.map((attachment) => attachment.id);
-          replaceHomeOptimisticAttachmentIds(sessionId, clientMessageId, attachmentIds);
+          replaceHomeOptimisticAttachmentIds(address, clientMessageId, attachmentIds);
           try {
             const response = await transport.request<Record<string, unknown>>({
               pathId: 'agent.session.prompt',
@@ -480,12 +485,12 @@ export function PawAgentHome({
               body: { message, attachments: attachmentIds, clientMessageId },
             });
             if (isCancelledPromptAdmission(response)) {
-              useAgentLiveStore.getState().discardOptimistic(sessionId, clientMessageId);
+              useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
               return;
             }
-            useAgentLiveStore.getState().acknowledgeOptimistic(sessionId, clientMessageId, Date.now());
+            useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
           } catch (requestError) {
-            settleHomePromptAdmissionFailure(sessionId, clientMessageId, requestError);
+            settleHomePromptAdmissionFailure(address, clientMessageId, requestError);
           }
         })();
       } else {
@@ -624,7 +629,7 @@ export function PawAgentHome({
               onPaste={pasteIntoHome}
               ref={promptRef}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                   event.preventDefault();
                   void startWork();
                 }
@@ -633,6 +638,7 @@ export function PawAgentHome({
               value={prompt}
             />
             <div className="an-composer-foot">
+              <div className="an-composer-controls">
               <span className="an-mode-seg" role="radiogroup" aria-label="工作类型">
                 <button
                   aria-checked={workMode === 'session'}
@@ -666,19 +672,6 @@ export function PawAgentHome({
                 </button>
               </span>
 
-              {workMode === 'session' ? (
-                <select
-                  aria-label="会话执行方式"
-                  className="an-chip"
-                  disabled={submitting}
-                  onChange={(event) => setRuntimeEngine(event.target.value === 'durable' ? 'durable' : 'classic')}
-                  value={runtimeEngine}
-                >
-                  <option value="classic">标准会话</option>
-                  <option disabled={!durableAvailable} value="durable">Pi Durable（实验）</option>
-                </select>
-              ) : null}
-
               <span className="an-anchor">
                 {workMode === 'room' ? (
                   <Popover open={optionsPanel === 'permission'} onOpenChange={(open) => setOptionsPanel(open ? 'permission' : null)}>
@@ -698,7 +691,7 @@ export function PawAgentHome({
                     <MenuTrigger asChild>{permissionTrigger}</MenuTrigger>
                     <MenuContent align="start" aria-label="权限模式" className="paw-agent-next an-home-menu" side="bottom">
                       <MenuLabel className="an-home-menu__title">权限模式</MenuLabel>
-                      <MenuRadioGroup value={executionMode}>
+                      <MenuRadioGroup aria-label="权限模式" value={executionMode}>
                         {SESSION_PERMISSION_PRESETS.map((item) => (
                           <MenuRadioItem
                             className="an-home-menu__item"
@@ -716,6 +709,16 @@ export function PawAgentHome({
                           </MenuRadioItem>
                         ))}
                       </MenuRadioGroup>
+                      <MenuSeparator />
+                      <MenuLabel className="an-home-menu__title">会话执行方式</MenuLabel>
+                      <MenuRadioGroup
+                        aria-label="会话执行方式"
+                        onValueChange={(value) => setRuntimeEngine(value === 'durable' ? 'durable' : 'classic')}
+                        value={runtimeEngine}
+                      >
+                        <MenuRadioItem className="an-home-menu__item" value="classic">标准会话</MenuRadioItem>
+                        <MenuRadioItem className="an-home-menu__item" disabled={!durableAvailable} value="durable">Pi Durable（实验）</MenuRadioItem>
+                      </MenuRadioGroup>
                     </MenuContent>
                   </Menu>
                 )}
@@ -726,7 +729,7 @@ export function PawAgentHome({
                   className="an-chip an-model-chip"
                   options={{ models, modelReference, thinking }}
                   disabled={submitting || !models.length}
-                  pending={catalogLoading}
+                  pending={modelLoading}
                   requestOpen={0}
                   onOpen={() => setOptionsPanel(null)}
                   onChange={(provider, modelId, level) => {
@@ -742,7 +745,7 @@ export function PawAgentHome({
                 <Menu modal={false} open={optionsPanel === 'project'} onOpenChange={(open) => setOptionsPanel(open ? 'project' : null)}>
                 <MenuTrigger asChild><button
                   aria-label={workspaceRoot ? `起始项目 · ${projectName([workspaceRoot])}` : '起始项目（可选）'}
-                  className="an-chip"
+                  className="an-chip an-project-chip"
                   disabled={submitting}
                   title={workspaceRoot || '起始项目（可选）'}
                   type="button"
@@ -777,7 +780,7 @@ export function PawAgentHome({
                   </MenuContent>
                 </Menu>
               </span>
-
+              </div>
               <button
                 aria-label={submitting ? '正在创建' : jevRoom ? '开始 Jev 任务' : `开始 ${workMode === 'session' ? 'Session' : 'Room'}`}
                 className="an-send"
@@ -861,6 +864,12 @@ export function PawAgentHome({
               <button onClick={preferenceRead.reload} type="button">重新读取</button>
             </p>
           ) : null}
+          {modelError ? (
+            <p className="an-home-error" role="alert">
+              <CircleAlert size={14} /><span>{modelError}</span>
+              {onReloadCatalog ? <button onClick={onReloadCatalog} type="button">重新读取模型</button> : null}
+            </p>
+          ) : null}
           {error ? (
             <p className="an-home-error" role="alert"><CircleAlert size={14} /><span>{error}</span></p>
           ) : null}
@@ -901,7 +910,7 @@ export function PawAgentHome({
           {(catalogLoading || catalogError || models.length || defaultModel) ? (
             <div className="an-home-foot">
               {catalogLoading ? (
-                <span><LoaderCircle className="ui-spin" size={12} />正在读取模型与工作记录…</span>
+                <span><LoaderCircle className="ui-spin" size={12} />正在读取工作记录…</span>
               ) : null}
               {!catalogLoading && catalogError ? (
                 <span className="is-warn" role="status">
@@ -1027,14 +1036,14 @@ function suggestedRoomParticipantCount(prompt: string, available: number): numbe
 }
 
 function settleHomePromptAdmissionFailure(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   reason: unknown,
 ): void {
   const store = useAgentLiveStore.getState();
   if (isAgentCommandPending(reason)) {
     store.failOptimistic(
-      sessionId,
+      address,
       clientMessageId,
       publicAgentErrorText(reason),
       Date.now(),
@@ -1044,7 +1053,7 @@ function settleHomePromptAdmissionFailure(
   }
   if (isAmbiguousAgentPromptFailure(reason)) {
     store.failOptimistic(
-      sessionId,
+      address,
       clientMessageId,
       '暂时无法确认是否已接收。系统不会自动重试；手动重试会核对同一条消息。',
       Date.now(),
@@ -1055,16 +1064,16 @@ function settleHomePromptAdmissionFailure(
   // Validation and provider rejections are definitive.
   // Keep the original optimistic row as one failed turn so the Session's
   // existing retry control can replay its exact text and client lineage.
-  failHomePromptBeforeAdmission(sessionId, clientMessageId, reason);
+  failHomePromptBeforeAdmission(address, clientMessageId, reason);
 }
 
 function failHomePromptBeforeAdmission(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   reason: unknown,
 ): void {
   useAgentLiveStore.getState().failOptimistic(
-    sessionId,
+    address,
     clientMessageId,
     publicAgentErrorText(reason, errorText(reason)),
     Date.now(),
@@ -1072,13 +1081,13 @@ function failHomePromptBeforeAdmission(
 }
 
 function failHomeAttachmentImportBeforeAdmission(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   reason: unknown,
 ): void {
   const detail = publicAgentErrorText(reason, errorText(reason));
   useAgentLiveStore.getState().failOptimistic(
-    sessionId,
+    address,
     clientMessageId,
     `附件未能导入，这条消息没有发送。请重新上传附件后发送。${detail ? ` 详情：${detail}` : ''}`,
     Date.now(),
@@ -1086,19 +1095,19 @@ function failHomeAttachmentImportBeforeAdmission(
 }
 
 function replaceHomeOptimisticAttachmentIds(
-  sessionId: string,
+  address: AgentSessionTarget,
   clientMessageId: string,
   attachmentIds: string[],
 ): void {
   useAgentLiveStore.setState((state) => {
-    const current = state.projections[sessionId];
+    const current = selectAgentProjection(state, address);
     const messageId = current?.optimisticByClientMessageId[clientMessageId];
     const message = messageId ? current?.messagesById[messageId] : undefined;
     if (!current || !messageId || !message) return state;
     return {
       projections: {
         ...state.projections,
-        [sessionId]: {
+        [agentProjectionKey(address)]: {
           ...current,
           messagesById: {
             ...current.messagesById,

@@ -27,8 +27,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { Fragment, lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, EmptyState, Input, SegmentedControl, Switch } from '@/components/primitives';
 import {
@@ -56,7 +56,7 @@ import {
   publicErrorText,
   stringValue,
 } from '@/features/overview/management-ui';
-import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import { openPawOsRoute, PawOsAppActivityProvider, usePawOsAppActive, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { pluginQueryKeys, usePluginCatalog } from '@/features/plugins/api';
 import {
   agentModelRouting,
@@ -166,6 +166,19 @@ export function PawSystemApps({
   const desktop = usePawOsDesktop();
   const route = initialRoute || app.route || pages[0].route;
   const page = systemPageForRoute(pages, route);
+  const visibleRoute = useDeferredValue(route);
+  const visiblePage = systemPageForRoute(pages, visibleRoute);
+  // Updating the current page's filters/default Session is not a page handoff.
+  // Making that live owner inert drops focus and can reject its first input.
+  const switchingPage = visiblePage.id !== page.id;
+  const preservePages = appId === 'input-studio' || appId === 'system-settings';
+  const [visitedPages, setVisitedPages] = useState<string[]>([]);
+  useEffect(() => {
+    if (preservePages) setVisitedPages(current => current.includes(visiblePage.id) ? current : [...current, visiblePage.id]);
+  }, [preservePages, visiblePage.id]);
+  const renderedPages = preservePages
+    ? pages.filter(candidate => candidate.id === visiblePage.id || visitedPages.includes(candidate.id))
+    : [visiblePage];
   // Each system rail reports one honest number from its own Runtime evidence:
   // Settings queues human approvals, App Center queues install proposals, and
   // Monitor relays components that report a problem.
@@ -226,22 +239,25 @@ export function PawSystemApps({
           </nav>
         </aside>
 
-        <section className="paw-system-app__stage">
+        <section className="paw-system-app__stage" data-switching={switchingPage || undefined}>
           <header className="paw-system-app__chrome" key={page.id}>
             <span aria-hidden="true" className="paw-system-app__page-title">
               {page.group ? `${page.group} · ${page.label}` : page.label}
             </span>
             <span aria-hidden="true" className="paw-system-app__page-purpose">{page.purpose}</span>
+            {switchingPage ? <span className="paw-system-app__switching" role="status"><LoaderCircle className="ui-spin" size={13} />正在切换…</span> : null}
           </header>
-          <div className="paw-system-app__workspace">
-            <MemoryRouter initialEntries={[route]} key={route}>
-              <PawSystemRouteReporter expectedRoute={route} />
-              <div className="paw-system-app__page" key={`${appId}:${page.id}`}>
-                <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
-                  <PawSystemSurface appId={appId} pageId={page.id} />
-                </Suspense>
-              </div>
-            </MemoryRouter>
+          <div className="paw-system-app__workspace" aria-busy={switchingPage}>
+            <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
+              <MemoryRouter initialEntries={[visibleRoute]} key={preservePages ? appId : `${appId}:${visiblePage.id}`}>
+                <PawSystemRouteReporter expectedRoute={visibleRoute} preservePage />
+                {renderedPages.map(candidate => <div className="paw-system-app__page" key={`${appId}:${candidate.id}`} hidden={candidate.id !== visiblePage.id} inert={switchingPage || candidate.id !== visiblePage.id}>
+                  <PawOsAppActivityProvider active={!switchingPage && candidate.id === visiblePage.id}>
+                    <PawSystemSurface appId={appId} pageId={candidate.id} />
+                  </PawOsAppActivityProvider>
+                </div>)}
+              </MemoryRouter>
+            </Suspense>
           </div>
         </section>
       </div>
@@ -262,13 +278,20 @@ const systemStageKind: Record<PawSystemAppId, string> = {
   'system-settings': 'sheet',
 };
 
-function PawSystemRouteReporter({ expectedRoute }: { expectedRoute: string }) {
+function PawSystemRouteReporter({ expectedRoute, preservePage = false }: { expectedRoute: string; preservePage?: boolean }) {
   const desktop = usePawOsDesktop();
   const location = useLocation();
+  const navigate = useNavigate();
+  const previousExpected = useRef(expectedRoute);
   const route = `${location.pathname}${location.search}${location.hash}`;
   useEffect(() => {
+    if (preservePage && previousExpected.current !== expectedRoute) {
+      previousExpected.current = expectedRoute;
+      if (route !== expectedRoute) navigate(expectedRoute, { replace: true });
+      return;
+    }
     if (route !== expectedRoute) openPawOsRoute(desktop, route);
-  }, [desktop, expectedRoute, route]);
+  }, [desktop, expectedRoute, navigate, preservePage, route]);
   return null;
 }
 
@@ -394,7 +417,7 @@ function PawAgentSettings() {
           <button onClick={authority.reload} type="button">重新读取</button>
         </div>
       ) : null}
-      {resource.loading || authority.isPending ? (
+      {(resource.loading && !Object.keys(resource.data).length) || authority.isPending ? (
         <div className="paw-system-resource-state" data-state="loading" role="status"><LoaderCircle aria-hidden="true" size={17} />正在读取 Agent 默认设置</div>
       ) : (
         <>
@@ -715,6 +738,7 @@ function PawPackageCatalog() {
 
 function useAgentModelResource() {
   const transport = useControlTransport();
+  const pageActive = usePawOsAppActive() ?? true;
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -722,6 +746,7 @@ function useAgentModelResource() {
   const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
+    if (!pageActive) return;
     let active = true;
     setLoading(true);
     void transport.request({ pathId: 'agent.role.models' }).then((response) => {
@@ -734,13 +759,14 @@ function useAgentModelResource() {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [revision, transport]);
+  }, [pageActive, revision, transport]);
 
   return { data, error, loading, reload };
 }
 
 function useAgentModelRoutingAuthority() {
   const transport = useControlTransport();
+  const pageActive = usePawOsAppActive() ?? true;
   const [routing, setRouting] = useState<AgentModelRouting | null>(null);
   const [readError, setReadError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -750,6 +776,7 @@ function useAgentModelRoutingAuthority() {
   const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
+    if (!pageActive) return;
     let active = true;
     setIsPending(true);
     void transport.request({ pathId: 'agent.configuration.get' }).then((response) => {
@@ -764,7 +791,7 @@ function useAgentModelRoutingAuthority() {
       if (active) setIsPending(false);
     });
     return () => { active = false; };
-  }, [revision, transport]);
+  }, [pageActive, revision, transport]);
 
   const save = useCallback(async (routeId: ModelRouteId, route: AgentModelRoute) => {
     if (!routing || saving) return;
@@ -798,7 +825,7 @@ type SystemRailContract = {
   pageId: string;
   /** decision: a queue waiting for the human; attention: self-reported health. */
   tone: 'decision' | 'attention';
-  queryKey: readonly unknown[];
+  queryKey: readonly unknown[] | ((transport: SystemRailTransport) => readonly unknown[]);
   read: (transport: SystemRailTransport, signal: AbortSignal | undefined) => Promise<unknown>;
   count: (value: unknown) => number;
   describe: (count: number) => string;
@@ -828,7 +855,7 @@ const systemRailContracts: Partial<Record<PawSystemAppId, SystemRailContract>> =
   'app-center': {
     pageId: 'proposals',
     tone: 'decision',
-    queryKey: pluginQueryKeys.proposals(),
+    queryKey: pluginQueryKeys.proposals,
     read: (transport, signal) => transport.request({ pathId: 'agent.extensions.proposals', signal }),
     count: (value) => arrayRecords(asRecord(value).items).length,
     describe: (count) => `${count} 项待确认`,
@@ -852,7 +879,7 @@ function useSystemRailSignal(appId: PawSystemAppId): {
   const transport = useControlTransport();
   const contract = systemRailContracts[appId];
   const signalQuery = useQuery({
-    queryKey: contract?.queryKey ?? ['paw-system-rail', appId],
+    queryKey: typeof contract?.queryKey === 'function' ? contract.queryKey(transport) : contract?.queryKey ?? ['paw-system-rail', appId],
     queryFn: ({ signal }) => contract
       ? contract.read(transport, signal)
       : Promise.resolve(null),

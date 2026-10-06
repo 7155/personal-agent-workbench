@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from rag_ime.agent_lab.app_sources import export_zip, freeze_source
 from tests.test_agent_lab_apps import MODEL, write_app
+from tests.subprocess_startup import StartupDiagnostics
 
 
 class AppBootstrapTests(unittest.TestCase):
@@ -81,23 +82,40 @@ class AppBootstrapTests(unittest.TestCase):
             bundle.extractall(target)
         command = [sys.executable, str(target / 'launch.py'), '--python', sys.executable]
         env = {key: value for key, value in os.environ.items() if key not in {'APP_PAW_GATEWAY_URL', 'APP_API_KEY', 'APP_API_BASE_URL'}}
+        startup = StartupDiagnostics(self.root / 'startup-diagnostics')
+        env = startup.environment(env)
         checked = subprocess.run([*command, '--check'], capture_output=True, text=True, env=env, timeout=10)
         self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
         self.assertFalse((target / '.venv').exists())
         # Actual CLI forwarding to the frozen runner, without starting a model.
-        with subprocess.Popen([*command, '--port', '0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env) as process:
+        stderr_path = self.root / 'launcher.stderr'
+        with stderr_path.open('wb') as stderr, subprocess.Popen(
+                [*command, '--port', '0'], stdout=subprocess.PIPE, stderr=stderr,
+                text=True, env=env) as process:
+            def failure_details():
+                return (f'runner never announced URL; returncode={process.poll()}\n'
+                        + stderr_path.read_text(encoding='utf-8', errors='replace')[-8000:])
             try:
                 import select
-                self.assertTrue(select.select([process.stdout], [], [], 10)[0], 'runner never announced URL')
+                self.assertTrue(select.select([process.stdout], [], [], 10)[0], failure_details())
                 line = process.stdout.readline()
+                self.assertTrue(line.strip(), failure_details())
                 url = line.strip().split()[-1]
+                self.assertTrue(url.startswith('http://127.0.0.1:'), line + failure_details())
+                startup.ready()
                 from urllib.request import urlopen
                 with urlopen(url + '/health', timeout=3) as response:
                     health = json.load(response)
                 self.assertEqual(health['runtime'], 'standalone')
                 self.assertFalse(health['configured'])
             finally:
-                process.terminate(); process.wait(timeout=5)
+                if process.poll() is None:
+                    process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
         self.assertFalse((target / '.venv').exists())
 
     def test_missing_environment_exits_with_setup_instruction_and_no_install(self):

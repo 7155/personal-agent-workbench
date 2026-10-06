@@ -35,6 +35,7 @@ import {
   subagentTemplateLabel,
 } from '../status/subagent-presentation';
 import { SubagentLaunchPanel } from './SubagentLaunchPanel';
+import { agentProjectionKey, agentSessionAddress } from '../state/live-store';
 import { SessionCollabTimeline } from '@/features/collab-timeline/SessionCollabTimeline';
 import './session-subagent.css';
 
@@ -60,7 +61,7 @@ export const SessionSubagentPanel = forwardRef<HTMLElement, {
   const transport = useControlTransport();
   const pageVisible = usePageVisibility();
   const runsQuery = useQuery({
-    queryKey: ['agent', 'status-panel', 'subagents', sessionId],
+    queryKey: ['agent', 'status-panel', 'subagents', agentProjectionKey(agentSessionAddress(transport, sessionId))],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.subagents.list',
       query: { sessionId, limit: 50 },
@@ -118,7 +119,7 @@ export const SessionSubagentPanel = forwardRef<HTMLElement, {
             <a aria-label="打开子 Agent 设置" title="打开子 Agent 设置" href="#/configuration?section=subagents">
               <Settings2 size={16} />
             </a>
-            <IconButton icon={<PanelRightClose size={17} />} label="收起子 Agent 工作台" onClick={onClose} tooltip />
+            <IconButton data-drawer-autofocus icon={<PanelRightClose size={17} />} label="收起子 Agent 工作台" onClick={onClose} tooltip />
           </div>
         </header>
 

@@ -27,6 +27,7 @@ from .memory_book_compiler import (
     store_memory_book_plan,
 )
 from .memory_evidence_ledger import backfill_input_event_evidence
+from .memory_card_mutations import card_revision, card_source_refs
 from .memory_evidence_admission import (
     PERSONAL_EVIDENCE_ORIGINS,
     admitted_personal_evidence_sql,
@@ -1752,6 +1753,7 @@ def _owner_curation_backlog_projection(
                   AND s.status = 'active'
                   AND (? = '' OR e.project = ? OR e.project = '')
                   AND s.disposition IN ({','.join('?' for _ in _ELIGIBLE_DISPOSITIONS)})
+                  AND e.source != 'personal_profile_editor'
                   {cursor_clause}
                 GROUP BY s.source_id, e.created_at_ms, e.app, e.source, s.disposition
                 {having}
@@ -2192,37 +2194,15 @@ def _build_current_personal_atom_catalog(
           )
           AND atom.status IN ('active', 'approved')
           AND atom.claim_state = 'current'
-          AND EXISTS (
-              SELECT 1
-              FROM memory_atom_evidence_links AS atom_link
-              JOIN agent_memory_evidence AS supporting_evidence
-                ON supporting_evidence.evidence_id = atom_link.evidence_id
-              WHERE atom_link.memory_atom_id = atom.id
-                AND atom_link.relation IN ('supports', 'corrects')
-                AND {admitted_personal_evidence_sql('supporting_evidence')}
-          )
         ORDER BY atom.claim_key, atom.id
         """
     ).fetchall()
     atoms: list[dict[str, object]] = []
     for row in rows:
         atom_id = str(row["id"])
-        evidence_ids = [
-            str(item["evidence_id"])
-            for item in conn.execute(
-                f"""
-                SELECT DISTINCT link.evidence_id
-                FROM memory_atom_evidence_links AS link
-                JOIN agent_memory_evidence AS linked_evidence
-                  ON linked_evidence.evidence_id = link.evidence_id
-                WHERE link.memory_atom_id = ?
-                  AND link.relation IN ('supports', 'corrects')
-                  AND {admitted_personal_evidence_sql('linked_evidence')}
-                ORDER BY link.evidence_id
-                """,
-                (atom_id,),
-            ).fetchall()
-        ]
+        evidence_ids = [ref["id"] for ref in card_source_refs(conn, atom_id, limit=None)]
+        if not evidence_ids:
+            continue
         tags = [
             str(item["tag"])
             for item in conn.execute(
@@ -2240,6 +2220,7 @@ def _build_current_personal_atom_catalog(
         atoms.append(
             {
                 "atomId": atom_id,
+                "revision": card_revision(dict(row)),
                 "kind": str(row["kind"]),
                 "claimKey": str(row["claim_key"]),
                 "canonicalText": str(row["canonical_text"] or row["text"] or ""),
@@ -2767,6 +2748,7 @@ def _build_owner_source_bundle(
         WHERE s.owner_kind = ? AND s.owner_id = ? AND s.status = 'active'
           AND (? = '' OR e.project = ? OR e.project = '')
           AND s.disposition IN ({','.join('?' for _ in _ELIGIBLE_DISPOSITIONS)})
+                  AND e.source != 'personal_profile_editor'
           AND (
               s.created_at_ms > ?
               OR (s.created_at_ms = ? AND s.source_id > ?)
@@ -5139,6 +5121,7 @@ def _pending_source_count(
             WHERE s.owner_kind = ? AND s.owner_id = ? AND s.status = 'active'
               AND (? = '' OR e.project = ? OR e.project = '')
               AND s.disposition IN ({','.join('?' for _ in _ELIGIBLE_DISPOSITIONS)})
+                  AND e.source != 'personal_profile_editor'
               {canonical_clause}
               AND (
                   s.created_at_ms > ?

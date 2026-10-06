@@ -1,3 +1,4 @@
+import { agentSnapshotFromResponse, durableRecoveryFromSnapshot } from '@/contracts/agent-reducer';
 import { useCallback, useEffect, useRef } from 'react';
 
 import { createAgentDeltaBatcher } from '@/contracts/batching';
@@ -7,7 +8,7 @@ import {
   retryAfterMsFromError,
 } from '@/platform/recovery-policy';
 import type { ControlTransport } from '@/platform/transport';
-import { agentProjection, useAgentLiveStore } from '../state/live-store';
+import { agentProjection, agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore, type AgentSessionTarget } from '../state/live-store';
 import { createSnapshotRequestQueue } from './snapshot-request-queue';
 import { readRecentSessionSnapshot } from '@/features/conversation-ui/conversation-preload';
 
@@ -174,6 +175,7 @@ function createSharedAgentLiveSession(
   sessionId: string,
   onEmpty: () => void,
 ): SharedAgentLiveSession {
+  const address = agentSessionAddress(transport, sessionId);
   const listeners = new Map<AgentLiveSessionCallbacks, ListenerState>();
   let active = false;
   let loading = false;
@@ -225,7 +227,7 @@ function createSharedAgentLiveSession(
   const markConnectionStable = () => {
     // A heartbeat proves connectivity, not that a failed/gapped snapshot was
     // repaired. Do not cancel its recovery timer or show a false "synced".
-    if (snapshotNeedsRepair || agentProjection(sessionId).needsSnapshot) return;
+    if (snapshotNeedsRepair || agentProjection(address).needsSnapshot) return;
     resetRecoveryBackoff();
     if (connected && recoveryState === 'synced') return;
     connected = true;
@@ -252,7 +254,7 @@ function createSharedAgentLiveSession(
       recoveryTimer = undefined;
       if (!active || !shouldStream()) return;
       void loadSnapshot({
-        preserveAfterSequence: agentProjection(sessionId).lastSequence,
+        preserveAfterSequence: agentProjection(address).lastSequence,
       });
     }, delayMs);
   };
@@ -263,7 +265,7 @@ function createSharedAgentLiveSession(
   );
   const shouldStream = (): boolean => [...listeners.values()].some(({ live }) => live);
   const currentResumeToken = (): string => (
-    agentProjection(sessionId).resumeToken
+    agentProjection(address).resumeToken
       || latestSnapshot?.resumeToken
       || ''
   );
@@ -302,9 +304,9 @@ function createSharedAgentLiveSession(
   };
   const batcher = createAgentDeltaBatcher((events) => {
     if (!active) return;
-    const before = agentProjection(sessionId);
-    const needsSnapshot = useAgentLiveStore.getState().applyEvents(sessionId, events);
-    const after = agentProjection(sessionId);
+    const before = agentProjection(address);
+    const needsSnapshot = useAgentLiveStore.getState().applyEvents(address, events);
+    const after = agentProjection(address);
     // A batch is text deltas or one non-delta event. Only its committed prefix
     // may notify views; duplicates, foreign events and the gap-causing suffix
     // must not open tool windows or schedule terminal refreshes.
@@ -350,7 +352,7 @@ function createSharedAgentLiveSession(
   ): Promise<boolean> {
     // Capture authority when the read starts. A full history request already
     // in flight when a reset arrives must not become its replacement read.
-    const beforeRead = agentProjection(sessionId);
+    const beforeRead = agentProjection(address);
     const recoveryCursor = beforeRead.needsSnapshot ? beforeRead.recoveryCursor : undefined;
     const resetRead = recoveryCursor !== undefined && recoveryCursor < beforeRead.lastSequence;
     let requestedView: AgentSnapshotView = resetRead ? 'full' : request.view ?? preferredSnapshotView();
@@ -390,7 +392,7 @@ function createSharedAgentLiveSession(
       const presentable = actualView === 'full' || recentAgentSnapshotIsPresentable(value);
       const sequence = agentSnapshotSequence(value);
       const resumeToken = agentSnapshotResumeToken(value);
-      const projectionBeforeHydration = agentProjection(sessionId);
+      const projectionBeforeHydration = agentProjection(address);
       // Equality is authoritative only for a quiescent snapshot. A stale busy
       // snapshot at the same cursor must not overwrite a terminal SSE event;
       // idle/quiescent metadata at that cursor may settle activity left behind
@@ -408,7 +410,11 @@ function createSharedAgentLiveSession(
       // while the Runtime remains busy.
       const equalCursorRepairsGap = projectionBeforeHydration.needsSnapshot
         && sequence === projectionBeforeHydration.lastSequence;
+      const nativeRecovery = durableRecoveryFromSnapshot(agentSnapshotFromResponse(value), sessionId);
+      const currentCompactionMetadata = Boolean(nativeRecovery && (nativeRecovery.compactionTarget
+        || projectionBeforeHydration.durableRecovery?.compactionTarget));
       const retainNewerTerminal = presentable
+        && !currentCompactionMetadata
         && equalCursorRepairsGap
         && isTerminalAgentProjection(projectionBeforeHydration)
         && isBusyAgentSnapshot(value);
@@ -420,11 +426,12 @@ function createSharedAgentLiveSession(
           || sequence > request.preserveAfterSequence
           || equalCursorIsQuiescent
           || equalCursorRepairsGap
+          || currentCompactionMetadata
         );
       const hydrated = shouldHydrate
-        && useAgentLiveStore.getState().hydrate(sessionId, value, { recoveryCursor });
+        && useAgentLiveStore.getState().hydrate(address, value, { recoveryCursor, controlMetadataSequence: beforeRead.lastSequence });
       const repairedWithoutRegression = retainNewerTerminal
-        && clearEqualCursorGap(sessionId, sequence, resumeToken);
+        && clearEqualCursorGap(address, sequence, resumeToken);
       const snapshot = {
         sessionId,
         value,
@@ -435,7 +442,7 @@ function createSharedAgentLiveSession(
         resumeToken,
       };
       snapshotAttempted = true;
-      snapshotNeedsRepair = !presentable || agentProjection(sessionId).needsSnapshot;
+      snapshotNeedsRepair = !presentable || agentProjection(address).needsSnapshot;
       if (snapshot.hydrated) {
         loadedView = actualView;
         latestSnapshot = snapshot;
@@ -487,7 +494,7 @@ function createSharedAgentLiveSession(
     batcher.flush();
     if (!active) return Promise.resolve(false);
     // Historical reads must not suspend the live subscription while Pi works.
-    if (request.view !== 'full' || !snapshotAttempted || agentProjection(sessionId).needsSnapshot) clearStream();
+    if (request.view !== 'full' || !snapshotAttempted || agentProjection(address).needsSnapshot) clearStream();
     const allowRecentCache = !initialSnapshotStarted && recentCacheEligible;
     initialSnapshotStarted = true;
     const requestId = ++snapshotGeneration;
@@ -537,8 +544,8 @@ function createSharedAgentLiveSession(
               // `currentSequence` look stale and reconnects from the old
               // cursor forever. Fence only the durable projection that was
               // actually applied before this control arrived.
-              const preserveAfterSequence = agentProjection(sessionId).lastSequence;
-              const needsSnapshot = useAgentLiveStore.getState().applyEvents(sessionId, [event]);
+              const preserveAfterSequence = agentProjection(address).lastSequence;
+              const needsSnapshot = useAgentLiveStore.getState().applyEvents(address, [event]);
               broadcast((listener) => listener.onEvent?.(event));
               if (needsSnapshot) {
                 setRecoveryState('recovering');
@@ -610,12 +617,13 @@ function createSharedAgentLiveSession(
       listeners.set(listener, { listener, ...options });
       if (!alreadyRunning) {
         active = true;
-        const existingProjection = useAgentLiveStore.getState().projections[sessionId];
+        useAgentLiveStore.getState().setLiveOwnerActive(address, true);
+        const existingProjection = selectAgentProjection(useAgentLiveStore.getState(), address);
         recentCacheEligible = Boolean(
           existingProjection
           && (existingProjection.lastSequence > 0 || existingProjection.messageOrder.length > 0)
         );
-        useAgentLiveStore.getState().ensure(sessionId);
+        useAgentLiveStore.getState().ensure(address);
         void loadSnapshot({ view: preferredSnapshotView() });
       } else {
         // A second window needs the accepted snapshot notification, not a
@@ -651,6 +659,7 @@ function createSharedAgentLiveSession(
           }
           stop();
           onEmpty();
+          useAgentLiveStore.getState().setLiveOwnerActive(address, false);
         },
       };
     },
@@ -710,13 +719,13 @@ function isBusyAgentSnapshot(value: unknown): boolean {
 }
 
 function clearEqualCursorGap(
-  sessionId: string,
+  address: AgentSessionTarget,
   sequence: number,
   resumeToken: string,
 ): boolean {
   let repaired = false;
   useAgentLiveStore.setState((state) => {
-    const current = state.projections[sessionId];
+    const current = selectAgentProjection(state, address);
     if (
       !current
       || !current.needsSnapshot
@@ -729,7 +738,7 @@ function clearEqualCursorGap(
     return {
       projections: {
         ...state.projections,
-        [sessionId]: {
+        [agentProjectionKey(address)]: {
           ...current,
           lastEventId: nextResumeToken || current.lastEventId,
           resumeToken: nextResumeToken,

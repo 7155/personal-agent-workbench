@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
+import shlex
+import shutil
+import struct
+import zipfile
+import zlib
 import plistlib
 import re
 import subprocess
@@ -1850,6 +1856,8 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
             workdir = _fake_patched_squirrel_workdir(tmp_path)
             fake_bin = tmp_path / "bin"
             fake_bin.mkdir()
+            sdk = tmp_path / "CLT-SDK"
+            headers = _fake_squirrel_sdk(sdk)
             fake_log = tmp_path / "xcodebuild.log"
             fake_xcodebuild = fake_bin / "xcodebuild"
             fake_xcodebuild.write_text(
@@ -1886,6 +1894,9 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
                     **os.environ,
                     "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
                     "FAKE_XCODEBUILD_LOG": str(fake_log),
+                    "RAG_IME_XCODEBUILD": str(fake_xcodebuild),
+                    "RAG_IME_CLT_SDK_ROOT": str(sdk),
+                    "DEVELOPER_DIR": "",
                     "RAG_IME_SQUIRREL_WORKDIR": str(workdir),
                     "RAG_IME_SQUIRREL_DERIVED_DATA": str(tmp_path / "derived-data"),
                 },
@@ -1903,6 +1914,7 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
         self.assertIn("INFOPLIST_KEY_LSRegisterProhibited=YES", xcodebuild_log)
         self.assertIn("SYSTEM_HEADER_SEARCH_PATHS=", xcodebuild_log)
         self.assertIn("Tk.framework/Headers", xcodebuild_log)
+        self.assertIn(f"SYSTEM_HEADER_SEARCH_PATHS={headers}", xcodebuild_log)
 
     def test_dependency_preinstall_overrides_install_name_tool_for_spaceful_developer_dir(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -1911,12 +1923,22 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
             workdir = _fake_patched_squirrel_workdir(tmp_path)
             developer_dir = tmp_path / "Xcode Beta" / "Contents" / "Developer"
             (developer_dir / "usr" / "bin").mkdir(parents=True)
-            (developer_dir / "usr" / "bin" / "make").symlink_to(
-                "/Library/Developer/CommandLineTools/usr/bin/make"
-            )
-            (developer_dir / "usr" / "bin" / "gnumake").symlink_to(
-                "/Library/Developer/CommandLineTools/usr/bin/gnumake"
-            )
+            make = shutil.which("make")
+            if sys.platform == "darwin":
+                # /usr/bin/make can be an Xcode shim. Resolve the real tool
+                # before applying the intentionally synthetic Developer path.
+                make = subprocess.run(
+                    ["xcrun", "--find", "make"],
+                    env={key: value for key, value in os.environ.items() if key != "DEVELOPER_DIR"},
+                    check=True, text=True, capture_output=True,
+                ).stdout.strip()
+            self.assertIsNotNone(make, "this contract requires real make")
+            self.assertTrue(Path(make).is_file())
+            (developer_dir / "usr" / "bin" / "make").symlink_to(make)
+            (developer_dir / "usr" / "bin" / "gnumake").symlink_to(make)
+            install_name_tool = tmp_path / "install_name_tool"
+            install_name_tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            install_name_tool.chmod(0o755)
             effective_install_name_tool = tmp_path / "effective-install-name-tool.txt"
             (workdir / "action-install-test.mk").write_text(
                 "INSTALL_NAME_TOOL = /tmp/Xcode Beta/Contents/Developer/usr/bin/install_name_tool\n"
@@ -1949,6 +1971,8 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
                 env={
                     **os.environ,
                     "DEVELOPER_DIR": str(developer_dir),
+                    "MAKEFLAGS": "",
+                    "RAG_IME_INSTALL_NAME_TOOL": str(install_name_tool),
                     "PATH": f"{developer_dir / 'usr' / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
                     "RAG_IME_XCODEBUILD": str(fake_xcodebuild),
                     "RAG_IME_SQUIRREL_PREINSTALL": "1",
@@ -1965,39 +1989,92 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
                 f"action-install verification log missing\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
             )
             observed = effective_install_name_tool.read_text(encoding="utf-8")
-            self.assertEqual(observed, "/usr/bin/install_name_tool")
+            self.assertEqual(observed, str(install_name_tool))
+
+    def test_dependency_preinstall_rejects_whitespace_install_name_tool(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        for whitespace in (" ", "\t"):
+            with self.subTest(whitespace=repr(whitespace)), tempfile.TemporaryDirectory(prefix="rag-ime-tool-path-") as tmp:
+                tmp_path = Path(tmp)
+                workdir = _fake_patched_squirrel_workdir(tmp_path)
+                tool = tmp_path / f"tool{whitespace}directory" / "install_name_tool"
+                tool.parent.mkdir()
+                tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                tool.chmod(0o755)
+                called = tmp_path / "action-install-called"
+                action = workdir / "action-install.sh"
+                action.write_text(
+                    "#!/bin/sh\nprintf called > " + shlex.quote(str(called)) + "\nexit 17\n",
+                    encoding="utf-8",
+                )
+                action.chmod(0o755)
+                xcodebuild = tmp_path / "xcodebuild"
+                xcodebuild.write_text(
+                    '#!/bin/sh\nif [ "$1" = "-version" ]; then echo "Xcode 16.0"; fi\nexit 0\n',
+                    encoding="utf-8",
+                )
+                xcodebuild.chmod(0o755)
+                result = subprocess.run(
+                    ["bash", str(root / "scripts/build_patched_squirrel.sh"), "build"],
+                    cwd=root,
+                    env={
+                        **{key: value for key, value in os.environ.items() if not key.startswith("RAG_IME_")},
+                        "DEVELOPER_DIR": str(tmp_path / "Xcode Beta"),
+                        "RAG_IME_XCODEBUILD": str(xcodebuild),
+                        "RAG_IME_INSTALL_NAME_TOOL": str(tool),
+                        "RAG_IME_SQUIRREL_WORKDIR": str(workdir),
+                        "RAG_IME_SQUIRREL_DERIVED_DATA": str(tmp_path / "derived-data"),
+                        "RAG_IME_SQUIRREL_PREINSTALL": "1",
+                    },
+                    text=True, capture_output=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("install_name_tool path without whitespace", result.stderr)
+                self.assertFalse(called.exists(), "invalid MAKEFLAGS path reached dependency installation")
 
     def test_spaceful_developer_dir_prefers_no_space_x11_header_root(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        result = subprocess.run(
-            ["bash", str(root / "scripts" / "build_patched_squirrel.sh"), "build"],
-            cwd=root,
-            env={
-                **os.environ,
-                "DEVELOPER_DIR": "/tmp/Xcode Beta/Contents/Developer",
-                "RAG_IME_SQUIRREL_BUILD_DRY_RUN": "1",
-            },
-            check=True,
-            text=True,
-            capture_output=True,
-        )
-
-        self.assertIn(
-            "SYSTEM_HEADER_SEARCH_PATHS=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/",
-            result.stdout,
-        )
-        self.assertNotIn(
-            "SYSTEM_HEADER_SEARCH_PATHS=/tmp/Xcode Beta/Contents/Developer",
-            result.stdout,
-        )
+        with tempfile.TemporaryDirectory(prefix="rag-ime-squirrel-sdk-") as tmp:
+            tmp_path = Path(tmp)
+            developer_dir = tmp_path / "Xcode Beta" / "Contents" / "Developer"
+            selected_sdk = developer_dir / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+            selected_headers = _fake_squirrel_sdk(selected_sdk)
+            clt_sdk = tmp_path / "CLT-SDK"
+            clt_headers = _fake_squirrel_sdk(clt_sdk)
+            result = subprocess.run(
+                ["bash", str(root / "scripts" / "build_patched_squirrel.sh"), "build"],
+                cwd=root,
+                env={
+                    **os.environ,
+                    "DEVELOPER_DIR": str(developer_dir),
+                    "RAG_IME_CLT_SDK_ROOT": str(clt_sdk),
+                    "RAG_IME_SQUIRREL_BUILD_DRY_RUN": "1",
+                },
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            self.assertTrue((selected_headers / "X11/keysym.h").is_file())
+            self.assertIn(f"SYSTEM_HEADER_SEARCH_PATHS={clt_headers}", result.stdout)
+            self.assertNotIn(f"SYSTEM_HEADER_SEARCH_PATHS={developer_dir}", result.stdout)
 
     def test_install_action_copies_app_and_installs_rag_config(self) -> None:
+        self._check_install_action(native_tools=False)
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires native macOS archive, plist and image tools")
+    def test_install_action_with_native_macos_tools(self) -> None:
+        # Retain the native tool integration previously implicit in the install
+        # fixture, while all four portable orchestration cases run on Linux too.
+        self._check_install_action(native_tools=True)
+
+    def _check_install_action(self, *, native_tools: bool) -> None:
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix="rag-ime-squirrel-install-") as tmp:
             tmp_path = Path(tmp)
             workdir = _fake_patched_squirrel_workdir(tmp_path)
             fake_bin = tmp_path / "bin"
             fake_bin.mkdir()
+            tool_env = _fake_squirrel_system_tools(tmp_path, fake_bin, native_tools=native_tools)
             fake_xcodebuild = fake_bin / "xcodebuild"
             fake_xcodebuild.write_text(
                 "\n".join(
@@ -2022,6 +2099,7 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
                         "if [[ \"$*\" == *'CODE_SIGNING_ALLOWED=NO'* && \"$*\" == *' build'* ]]; then",
                         "  mkdir -p \"$derived/Build/Products/Release/Squirrel.app/Contents/MacOS\"",
                         "  mkdir -p \"$derived/Build/Products/Release/Squirrel.app/Contents/SharedSupport\"",
+                        '  cp "$FAKE_SQUIRREL_INFO" "$derived/Build/Products/Release/Squirrel.app/Contents/Info.plist"',
                         "  printf 'schema_list:\\n  - schema: luna_pinyin\\n' > \"$derived/Build/Products/Release/Squirrel.app/Contents/SharedSupport/default.yaml\"",
                         "  printf 'schema:\\n  schema_id: luna_pinyin\\n' > \"$derived/Build/Products/Release/Squirrel.app/Contents/SharedSupport/luna_pinyin.schema.yaml\"",
                         "  printf -- '---\\nname: luna_pinyin\\n...\\n' > \"$derived/Build/Products/Release/Squirrel.app/Contents/SharedSupport/luna_pinyin.dict.yaml\"",
@@ -2054,9 +2132,12 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
             quarantine_root = tmp_path / "disabled-input-method-backups"
             (install_dir / "RAG-IME.app" / "Contents" / "MacOS").mkdir(parents=True)
             (install_dir / "RagIme.app" / "Contents" / "MacOS").mkdir(parents=True)
+            for alias in ("RAG-IME.app", "RagIme.app"):
+                (install_dir / alias / "Contents/sentinel.txt").write_text(alias, encoding="utf-8")
             rime_dir = tmp_path / "Rime"
             install_env = {
-                **os.environ,
+                **{key: value for key, value in os.environ.items() if not key.startswith("RAG_IME_")},
+                **tool_env,
                 "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
                 "RAG_IME_SQUIRREL_WORKDIR": str(workdir),
                 "RAG_IME_SQUIRREL_DERIVED_DATA": str(tmp_path / "derived-data"),
@@ -2084,14 +2165,49 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
             self.assertTrue((install_dir / "Squirrel.app" / "Contents" / "MacOS" / "Squirrel").is_file())
             menu_icon = install_dir / "Squirrel.app" / "Contents" / "Resources" / "RagImeInputMenuIcon.png"
             self.assertTrue(menu_icon.is_file())
-            menu_icon_info = subprocess.run(
-                ["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(menu_icon)],
-                check=True,
-                text=True,
-                capture_output=True,
-            ).stdout
-            self.assertIn("pixelWidth: 18", menu_icon_info)
-            self.assertIn("pixelHeight: 18", menu_icon_info)
+            resources = menu_icon.parent
+            icns = (resources / "RagImeIcon.icns").read_bytes()
+            if native_tools:
+                menu_icon_info = subprocess.run(
+                    ["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(menu_icon)],
+                    env=install_env, check=True, text=True, capture_output=True,
+                ).stdout
+                self.assertIn("pixelWidth: 18", menu_icon_info)
+                self.assertIn("pixelHeight: 18", menu_icon_info)
+                self.assertEqual(icns[:4], b"icns")
+                self.assertEqual(int.from_bytes(icns[4:8], "big"), len(icns))
+            else:
+                self.assertEqual(_validate_fixture_png(menu_icon.read_bytes()), (18, 18))
+                self.assertEqual(_validate_fixture_icns(icns), {
+                    b"icp4": (16, 16), b"icp5": (32, 32), b"icp6": (64, 64),
+                    b"ic07": (128, 128), b"ic08": (256, 256), b"ic09": (512, 512),
+                    b"ic10": (1024, 1024),
+                })
+            info = plistlib.loads((resources.parent / "Info.plist").read_bytes())
+            self.assertEqual(info["CFBundleIdentifier"], "im.rime.inputmethod.Squirrel")
+            self.assertEqual(info["CFBundleExecutable"], "Squirrel")
+            self.assertEqual(info["FixturePreserved"], {"value": "keep-me"})
+            self.assertEqual(info["CFBundleIconFile"], "RagImeIcon")
+            self.assertNotIn("LSRegisterProhibited", info)
+            product_info = tmp_path / "derived-data/Build/Products/Release/Squirrel.app/Contents/Info.plist"
+            self.assertIs(plistlib.loads(product_info.read_bytes())["LSRegisterProhibited"], True)
+            marker = json.loads((resources / "rag-ime-build-marker.json").read_text())
+            self.assertEqual(marker["repoRoot"], str(root))
+            archives = list(quarantine_root.rglob("*.zip"))
+            self.assertEqual(len(archives), 2)
+            preserved = {}
+            for archive_path in archives:
+                with zipfile.ZipFile(archive_path) as archive:
+                    self.assertIsNone(archive.testzip())
+                    sentinels = [name for name in archive.namelist() if name.endswith("/Contents/sentinel.txt")]
+                    self.assertEqual(len(sentinels), 1)
+                    preserved[sentinels[0]] = archive.read(sentinels[0]).decode()
+            self.assertEqual(preserved, {f"{alias}/Contents/sentinel.txt": alias for alias in ("RAG-IME.app", "RagIme.app")})
+            if not native_tools:
+                tool_calls = [json.loads(line) for line in Path(tool_env["FAKE_SYSTEM_TOOL_LOG"]).read_text().splitlines()]
+                self.assertEqual(sum(call["tool"] == "ditto" for call in tool_calls), 2)
+                self.assertEqual(sum(call["tool"] == "sips" for call in tool_calls), 12)
+                self.assertEqual(sum(call["tool"] == "iconutil" for call in tool_calls), 1)
             self.assertFalse((install_dir / "RAG-IME.app").exists())
             self.assertFalse((install_dir / "RagIme.app").exists())
             self.assertIn(str(quarantine_root), result.stdout)
@@ -2256,6 +2372,122 @@ def _write_same_bundle_app(path: Path) -> None:
         plistlib.dumps({"CFBundleIdentifier": "im.rime.inputmethod.Squirrel"})
     )
     executable.write_text("legacy\n", encoding="utf-8")
+
+
+def _fake_squirrel_sdk(sdk: Path) -> Path:
+    headers = sdk / "System/Library/Frameworks/Tk.framework/Headers"
+    (headers / "X11").mkdir(parents=True)
+    (headers / "X11/keysym.h").write_text("/* fixture X11 header */\n", encoding="utf-8")
+    return headers
+
+
+def _fake_squirrel_system_tools(tmp_path: Path, fake_bin: Path, *, native_tools: bool = False) -> dict[str, str]:
+    # These are command/artifact contracts, not native rendering or signing.
+    from tests.squirrel_system_tools import write_png
+
+    (tmp_path / "home").mkdir()
+    (tmp_path / "tmp").mkdir()
+    adapter = Path(__file__).with_name("squirrel_system_tools.py")
+    for name in (() if native_tools else ("ditto", "PlistBuddy", "sips", "iconutil")):
+        wrapper = fake_bin / name
+        wrapper.write_text(
+            "#!/usr/bin/env bash\nexec " + shlex.quote(sys.executable) + " "
+            + shlex.quote(str(adapter)) + " " + name + ' "$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+    # Host input sources and processes are outside this isolated install test.
+    controls = {
+        "check-input-source": 'echo "selected=false current=com.apple.keylayout.ABC"\n',
+        "select-input-source": 'echo "unexpected input-source selection" >&2\nexit 97\n',
+        "lsregister": '[[ "$1" == "-u" && "$2" == "$FAKE_SQUIRREL_ROOT/"* ]]\n',
+        "pkill": '[[ "$1" == "-f" && "$2" == "$FAKE_SQUIRREL_ROOT/"* ]] || exit 97\nexit 1\n',
+        "pgrep": '[[ "$1" == "-f" && "$2" == "$FAKE_SQUIRREL_ROOT/"* ]] || exit 97\nexit 1\n',
+    }
+    for name, body in controls.items():
+        wrapper = fake_bin / name
+        wrapper.write_text("#!/usr/bin/env bash\nset -eu\n" + body, encoding="utf-8")
+        wrapper.chmod(0o755)
+    source = tmp_path / "fixture-source.png"
+    write_png(source, 2, 2)
+    info = tmp_path / "fixture-Info.plist"
+    info.write_bytes(plistlib.dumps({
+        "CFBundleIdentifier": "im.rime.inputmethod.Squirrel",
+        "CFBundleExecutable": "Squirrel",
+        "LSRegisterProhibited": False,
+        "FixturePreserved": {"value": "keep-me"},
+    }))
+    environment = {
+        "HOME": str(tmp_path / "home"),
+        "TMPDIR": str(tmp_path / "tmp"),
+        "PYTHON_BIN": sys.executable,
+        "RAG_IME_XCODEBUILD": str(fake_bin / "xcodebuild"),
+        "RAG_IME_CHECK_INPUT_SOURCE_SCRIPT": str(fake_bin / "check-input-source"),
+        "RAG_IME_SELECT_INPUT_SOURCE_SCRIPT": str(fake_bin / "select-input-source"),
+        "RAG_IME_LSREGISTER": str(fake_bin / "lsregister"),
+        "RAG_IME_SQUIRREL_INSTALL_LOCK_DIR": str(tmp_path / "install.lock"),
+        "RAG_IME_SQUIRREL_CUSTOM_CONFIG": str(tmp_path / "Rime/squirrel.custom.yaml"),
+        "RAG_IME_RIME_DEFAULT_CUSTOM_CONFIG": str(tmp_path / "Rime/default.custom.yaml"),
+        "RAG_IME_SQUIRREL_AUTO_SELECT": "0",
+        "FAKE_SYSTEM_TOOL_LOG": str(tmp_path / "system-tools.jsonl"),
+        "FAKE_SQUIRREL_ROOT": str(tmp_path),
+        "FAKE_SQUIRREL_INFO": str(info),
+    }
+    if not native_tools:
+        environment.update({
+            "RAG_IME_DITTO": str(fake_bin / "ditto"),
+            "RAG_IME_PLISTBUDDY": str(fake_bin / "PlistBuddy"),
+            "RAG_IME_INPUT_MENU_ICON_SOURCE": str(source),
+            "RAG_IME_ICON_SOURCE": str(source),
+        })
+    return environment
+
+
+def _validate_fixture_png(data: bytes) -> tuple[int, int]:
+    # Independent output inspection: do not use the fake encoder's decoder.
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise AssertionError("invalid PNG signature")
+    chunks = []
+    offset = 8
+    while offset < len(data):
+        size = int.from_bytes(data[offset:offset + 4], "big")
+        kind = data[offset + 4:offset + 8]
+        payload = data[offset + 8:offset + 8 + size]
+        crc = data[offset + 8 + size:offset + 12 + size]
+        if len(crc) != 4 or int.from_bytes(crc, "big") != zlib.crc32(kind + payload):
+            raise AssertionError("invalid PNG CRC/framing")
+        chunks.append((kind, payload))
+        offset += size + 12
+    if [kind for kind, _ in chunks] != [b"IHDR", b"IDAT", b"IEND"]:
+        raise AssertionError("unexpected fixture PNG chunks")
+    width, height, *format_fields = struct.unpack(">IIBBBBB", chunks[0][1])
+    if format_fields != [8, 6, 0, 0, 0] or chunks[-1][1]:
+        raise AssertionError("unexpected fixture PNG format")
+    raw = zlib.decompress(chunks[1][1])
+    expected = b"".join(
+        b"\0" + bytes(
+            component for x in range(width)
+            for component in (255 * (x * 2 // width), 255 * (y * 2 // height), 127, 255)
+        ) for y in range(height)
+    )
+    if raw != expected:
+        raise AssertionError("resized PNG lost the four fixture color quadrants")
+    return width, height
+
+
+def _validate_fixture_icns(data: bytes) -> dict[bytes, tuple[int, int]]:
+    if data[:4] != b"icns" or int.from_bytes(data[4:8], "big") != len(data):
+        raise AssertionError("invalid ICNS framing")
+    chunks = {}
+    offset = 8
+    while offset < len(data):
+        kind = data[offset:offset + 4]
+        size = int.from_bytes(data[offset + 4:offset + 8], "big")
+        if size < 8 or offset + size > len(data) or kind in chunks:
+            raise AssertionError("invalid ICNS chunk")
+        chunks[kind] = _validate_fixture_png(data[offset + 8:offset + size])
+        offset += size
+    return chunks
 
 
 if __name__ == "__main__":

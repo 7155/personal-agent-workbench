@@ -7,6 +7,17 @@ import {
 } from './routes';
 import { assertControlRequest, assertControlSubscription } from './transport';
 
+it('requires the original atom mutation identity and both revisions for a merge', () => {
+  const body = { kind: 'atom', id: 'atom:example', expectedRevision: 'card-revision', clientRequestId: 'request:edit' };
+  for (const invalid of [
+    { kind: 'atom', id: body.id }, { ...body, expectedRevision: 1 }, { ...body, clientRequestId: '' },
+    { ...body, mergeIntoId: 'atom:target' },
+  ]) expect(() => assertControlRequest({ pathId: 'memory.edit', body: invalid })).toThrow();
+  expect(() => assertControlRequest({ pathId: 'memory.edit', body })).not.toThrow();
+  expect(() => assertControlRequest({ pathId: 'memory.edit', body: { ...body, mergeIntoId: 'atom:target', expectedMergeRevision: 'target-revision' } })).not.toThrow();
+  expect(() => assertControlRequest({ pathId: 'memory.edit', body: { kind: 'tag', id: '1', title: '项目' } })).not.toThrow();
+});
+
 it('requires both original Durable input identities on the local explicit resume route', () => {
   expect(resolveControlPath('agent.session.resume', { sessionId: 'session:paused' })).toBe('/api/agent/sessions/session%3Apaused/resume');
   expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { turnId: 'original-turn' } })).toThrow();
@@ -14,7 +25,33 @@ it('requires both original Durable input identities on the local explicit resume
   expect(() => assertControlRequest({ pathId: 'agent.session.resume', params: { sessionId: 'session:paused' }, body: { turnId: 'original-turn', clientMessageId: 'original-client' } })).not.toThrow();
 });
 
+
+it('requires one exact compaction or original-input target on resume and validates optional compaction abort', () => {
+  const compactionTarget = { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] };
+  const request = { pathId: 'agent.session.resume' as const, params: { sessionId: 'session:paused' } };
+  expect(() => assertControlRequest({ ...request, body: { compactionTarget } })).not.toThrow();
+  expect(() => assertControlRequest({ ...request, body: {} })).toThrow();
+  expect(() => assertControlRequest(request)).toThrow();
+  expect(() => assertControlRequest({ ...request, body: { compactionTarget, turnId: 'turn', clientMessageId: 'client' } })).toThrow();
+  expect(() => assertControlRequest({ ...request, body: { compactionTarget: { ...compactionTarget, taskIds: [] } } })).toThrow();
+  for (const malformed of [
+    { ...compactionTarget, taskIds: ['durable:task:0'] },
+    { ...compactionTarget, taskIds: ['durable:task:9007199254740992'] },
+    { ...compactionTarget, taskIds: ['durable:task:01'] },
+    { ...compactionTarget, turnId: 'injected' },
+  ]) {
+    expect(() => assertControlRequest({ ...request, body: { compactionTarget: malformed } })).toThrow();
+    expect(() => assertControlRequest({ ...request, pathId: 'agent.session.abort', body: { compactionTarget: malformed } })).toThrow();
+  }
+  expect(() => assertControlRequest({ ...request, pathId: 'agent.session.abort', body: { compactionTarget } })).not.toThrow();
+  expect(() => assertControlRequest({ ...request, pathId: 'agent.session.abort', body: {} })).not.toThrow();
+});
+
 const canonicalPathIds = [
+  'agent.primary.ensure',
+  'agent.primary.tasks.create',
+  'memory.profile',
+  'memory.profile.save',
   'control.bootstrap',
   'control.capabilities',
   'control.events',

@@ -42,8 +42,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-motion-active={motionActive}
       {...props}
     >
-      <span className="ui-button__icon" aria-hidden="true">
-        {loading ? <LoaderCircle className="ui-spin" size={16} /> : leadingIcon}
+      <span className="ui-button__icon" aria-hidden="true" data-loading={loading || undefined}>
+        {leadingIcon ? <>
+          <span className="ui-button__icon-content">{leadingIcon}</span>
+          {loading ? <LoaderCircle className="ui-spin ui-button__spinner" size={16} /> : null}
+        </> : null}
       </span>
       {children ? <span className="ui-button__label">{children}</span> : null}
       {trailingIcon ? (

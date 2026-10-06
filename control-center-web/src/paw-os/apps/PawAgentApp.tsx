@@ -33,7 +33,7 @@ import {
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import { parsePiModelCatalogOptions, type PiModelOption } from '@/features/agent/model-catalog-options';
 import { roleItems, sessionItems, type SessionSummary } from '@/features/agent/types';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import type { RoomProjectionState } from '@/contracts/room-reducer';
 import { buildRoomCollabTimeline } from '@/features/collab-timeline/room-timeline';
@@ -45,6 +45,8 @@ import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
 import { usePawOsAppActive, usePawOsAppIdentity, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { PawAgentHome } from './PawAgentHome';
+import { PawPrimaryAssistantHome, type PrimaryAssistantHomeDraft } from './PawPrimaryAssistantHome';
+import { PrimaryAssistantComposerHeader } from './PrimaryAssistantComposerHeader';
 import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-workspace/AgentModeSwitch';
 import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { OrganizationWorkspace } from '@/features/semantic-workspace/OrganizationWorkspace';
@@ -75,6 +77,8 @@ export function PawAgentApp({
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [personas, setPersonas] = useState<AgentPersonaV1[]>([]);
   const [models, setModels] = useState<PiModelOption[]>([]);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [modelError, setModelError] = useState('');
   const [durableAvailable, setDurableAvailable] = useState(false);
   const [defaultModel, setDefaultModel] = useState('');
   const [selection, setSelection] = useState<Selection>(() => initialAgentSelection(
@@ -84,6 +88,7 @@ export function PawAgentApp({
     target?.kind === 'participant' ? target.roomId : undefined,
   ));
   if (selection.kind !== 'new') warmAgentWorkspace(selection.kind);
+  const [advancedHome, setAdvancedHome] = useState(() => new URLSearchParams(initialRoute.split('?', 2)[1] ?? '').get('new') === 'advanced');
   const [railOpen, setRailOpen] = useState(false);
   const [interfaceMode, setInterfaceMode] = useAgentInterfaceMode();
   const [organizationOpen, setOrganizationOpen] = useState(false);
@@ -106,6 +111,9 @@ export function PawAgentApp({
   }, []);
   const optimisticSessionsRef = useRef<Record<string, SessionSummary>>({});
   const optimisticRoomsRef = useRef<Record<string, RoomSummary>>({});
+  const primaryHomeDraftRef = useRef<{ transport: typeof transport; draft: PrimaryAssistantHomeDraft } | undefined>(undefined);
+  const restoredHomeDraft = selection.kind === 'new' && selection.draft === undefined && !selection.execute && !selection.source
+    && primaryHomeDraftRef.current?.transport === transport ? primaryHomeDraftRef.current.draft : undefined;
   /* Catalog hydration is deliberately cancellable. Opening Agent first commits
      the lightweight new-work shell; a superseded route, filter change or an
      unmounted window must never let an older catalog write into the new view. */
@@ -134,7 +142,18 @@ export function PawAgentApp({
   }, [initialRoute, selectedSessionId]);
 
   useEffect(() => {
-    setSelection(initialAgentSelection(initialRoute, targetKind, targetId, targetRoomId));
+    setSelection((current) => {
+      const next = initialAgentSelection(initialRoute, targetKind, targetId, targetRoomId);
+      // The desktop acknowledges an in-window selection by normalizing its route.
+      // Keep the submission until the selected workspace can admit it.
+      if (current.kind === 'session' && next.kind === 'session' && current.id === next.id && (current.submission || current.draft !== undefined)) {
+        return { ...next, draft: current.draft, submission: current.submission };
+      }
+      // Likewise, returning to Home must retain the explicit execution intent
+      // and its discussion source. An explicit draft deep link still wins.
+      if (current.kind === 'new' && next.kind === 'new' && !next.draft) return current;
+      return next;
+    });
     setRailOpen(false);
   }, [initialRoute, targetId, targetKind, targetRoomId]);
 
@@ -146,6 +165,10 @@ export function PawAgentApp({
     const includeSessions = selection.kind !== 'room' || directoryNeeded;
     const includeRooms = selection.kind !== 'session' || directoryNeeded;
     const includeRoleModels = selection.kind === 'new';
+    if (includeRoleModels) {
+      setModelLoading(true);
+      setModelError('');
+    }
     const publishSessions = (page: unknown) => {
       if (!isCurrent()) return;
       startTransition(() => {
@@ -168,16 +191,34 @@ export function PawAgentApp({
     const sessionRead = includeSessions
       ? readSessionCatalog(transport, showArchived, isCurrent, controller.signal, publishSessions)
       : Promise.resolve(undefined);
+    const roomRead = includeRooms
+      ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' }, signal: controller.signal })
+      : Promise.resolve(undefined);
+    const roleRead = transport.request({ pathId: 'agent.roles.list', signal: controller.signal });
+    const modelRead = includeRoleModels
+      ? transport.request({ pathId: 'agent.role.models', signal: controller.signal }).then((response) => {
+          if (!isCurrent()) return response;
+          const catalog = parsePiModelCatalogOptions(response);
+          setModels(catalog.models);
+          setDefaultModel(catalog.selectedReference);
+          setDurableAvailable(record(record(record(response).sessionEngines).durable).available === true);
+          setModelLoading(false);
+          return response;
+        }).catch((requestError) => {
+          if (isCurrent()) {
+            setModelError('模型目录暂时无法读取。');
+            setModelLoading(false);
+            setDurableAvailable(false);
+          }
+          throw requestError;
+        })
+      : Promise.resolve(undefined);
     /* Room and role metadata can render while a visible Session catalog pages
      * through older records. Every result still belongs to this request id. */
     const metadataRead = Promise.allSettled([
-      includeRooms
-        ? transport.request({ pathId: 'agent.rooms.list', query: { limit: 100, ownerAppId: '' }, signal: controller.signal })
-        : Promise.resolve(undefined),
-      transport.request({ pathId: 'agent.roles.list', signal: controller.signal }),
-      includeRoleModels
-        ? transport.request({ pathId: 'agent.role.models', signal: controller.signal })
-        : Promise.resolve(undefined),
+      roomRead,
+      roleRead,
+      modelRead,
     ]).then(([roomResult, roleResult, modelResult]) => {
       if (!isCurrent()) return [roomResult, roleResult, modelResult] as const;
       startTransition(() => {
@@ -196,30 +237,21 @@ export function PawAgentApp({
           ]);
         }
         if (roleResult.status === 'fulfilled') setPersonas(roleItems(roleResult.value));
-        if (modelResult.status === 'fulfilled' && modelResult.value !== undefined) {
-          const catalog = parsePiModelCatalogOptions(modelResult.value);
-          setModels(catalog.models);
-          setDefaultModel(catalog.selectedReference);
-          setDurableAvailable(record(record(record(modelResult.value).sessionEngines).durable).available === true);
-        } else if (modelResult.status === 'rejected') {
-          setDurableAvailable(false);
-        }
       });
       return [roomResult, roleResult, modelResult] as const;
     });
     const [sessionResult] = await Promise.allSettled([sessionRead]);
-    const [roomResult, roleResult, modelResult] = await metadataRead;
+    const [roomResult, roleResult] = await metadataRead;
     if (!isCurrent()) return;
     const failures = [roleResult,
       ...(includeSessions ? [sessionResult] : []),
       ...(includeRooms ? [roomResult] : []),
-      ...(includeRoleModels ? [modelResult] : []),
     ].filter((result) => result.status === 'rejected').length;
     /* Rows are already visible; only the loading/error summary waits for the
      * complete directory and independent metadata to settle. */
     startTransition(() => {
       if (!isCurrent()) return;
-      if (failures) setLoadError(failures === 4 ? 'Agent 工作记录暂时无法读取。' : '部分 Agent 目录暂时不可用。');
+      if (failures) setLoadError(failures === 3 ? 'Agent 工作记录暂时无法读取。' : '部分 Agent 目录暂时不可用。');
       setLoading(false);
     });
   }, [directoryNeeded, selectedRoomId, selectedSessionId, selection.kind, showArchived, transport]);
@@ -361,7 +393,7 @@ export function PawAgentApp({
       });
       if (!archived && !showArchived) {
         setSessions((current) => current.filter((item) => item.id !== session.id));
-        if (selection.kind === 'session' && selection.id === session.id) setSelection({ kind: 'new' });
+        setSelection((current) => current.kind === 'session' && current.id === session.id ? { kind: 'new' } : current);
       } else {
         setSessions((current) => current.map((item) => item.id === session.id
           ? { ...item, status: archived ? 'idle' : 'archived', updatedAtMs: Date.now() }
@@ -381,7 +413,7 @@ export function PawAgentApp({
     setActionTrace(undefined);
     try {
       await transport.request({ pathId: 'agent.session.delete', params: { sessionId: deleteTarget.id } });
-      useAgentLiveStore.getState().clear(deleteTarget.id);
+      useAgentLiveStore.getState().clear(agentSessionAddress(transport, deleteTarget.id));
       delete optimisticSessionsRef.current[deleteTarget.id];
       setSessions((current) => current.filter((item) => item.id !== deleteTarget.id));
       if (selection.kind === 'session' && selection.id === deleteTarget.id) setSelection({ kind: 'new' });
@@ -395,15 +427,16 @@ export function PawAgentApp({
   }
 
   const workspaceOptions = <Menu><MenuTrigger asChild><button ref={organizationToggleRef} aria-label="工作台选项" type="button"><MoreHorizontal size={16} /></button></MenuTrigger><MenuContent align="start">
-    <MenuItem onSelect={() => setSelection({ kind: 'new' })}>返回复工首页</MenuItem>
+    <MenuItem onSelect={() => { setAdvancedHome(false); setSelection({ kind: 'new' }); }}>返回我的助手</MenuItem>
     <MenuItem onSelect={() => setOrganizationOpen(open => !open)}>工作空间</MenuItem>
     <MenuSeparator />
     <MenuItem onSelect={() => setInterfaceMode(interfaceMode === 'jev' ? 'traditional' : 'jev')}>切换到{interfaceMode === 'jev' ? '传统' : 'Jev'}界面</MenuItem>
   </MenuContent></Menu>;
   const railToggle = <button aria-controls="paw-agent-work-records" aria-expanded={railOpen} aria-label={railOpen ? '收起工作记录' : '打开工作记录'} className="paw-agent-rail-toggle" onClick={() => setRailOpen((open) => !open)} ref={railToggleRef} type="button"><PanelLeft size={16} /></button>;
   return (
-    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} data-compact-work={selection.kind !== 'new' || undefined} role="region">
-      {selection.kind === 'new' ? <header className="paw-agent-modebar" inert={railOpen}>
+    <section aria-label="Agent 工作台" className="paw-agent-app paw-agent-app--dual-mode" data-agent-mode={interfaceMode} data-rail-open={railOpen || undefined} data-selection={selection.kind} data-compact-work={!(selection.kind === 'new' && advancedHome) || undefined} role="region">
+      {selection.kind === 'new' && advancedHome ? <header className="paw-agent-modebar" inert={railOpen}>
+        <button onClick={() => setAdvancedHome(false)} type="button">返回我的助手</button>
         <AgentModeSwitch mode={interfaceMode} onChange={setInterfaceMode} />
         {interfaceMode === 'jev' ? <button ref={organizationToggleRef} aria-expanded={organizationOpen} onClick={() => setOrganizationOpen(open => !open)} type="button">工作空间</button> : null}
       </header> : !windowChromeTarget ? <div className="paw-workspace-options">{workspaceOptions}</div> : null}
@@ -467,12 +500,30 @@ export function PawAgentApp({
       {railOpen ? <button aria-label="关闭工作记录" className="paw-agent-rail-backdrop" onClick={closeRail} type="button" /> : null}
       <section className="paw-agent-stage" inert={railOpen}>
         <div className="paw-agent-content">
-        {selection.kind === 'new' ? (
+        {selection.kind === 'new' && !advancedHome ? (
+          <PawPrimaryAssistantHome
+            key={`primary:${selection.draft ?? ''}:${selection.execute ?? false}:${selection.source?.sessionId ?? ''}:${selection.source?.messageId ?? ''}`}
+            initialDraft={selection.draft}
+            initialExecute={selection.execute}
+            initialSource={selection.source ?? restoredHomeDraft?.source}
+            initialForm={restoredHomeDraft}
+            onRememberDraft={draft => { primaryHomeDraftRef.current = draft ? { transport, draft } : undefined; }}
+            projectRoots={projectRoots}
+            onAdvanced={(draft) => { setSelection(current => ({ ...current, draft })); setAdvancedHome(true); }}
+            onOpen={(created, submission, draft) => {
+              optimisticSessionsRef.current[created.id] = created;
+              setSessions(current => [created, ...current.filter(item => item.id !== created.id)]);
+              setSelection({ kind: 'session', id: created.id, ...(submission ? { draft: submission.message, submission } : draft !== undefined ? { draft } : {}) });
+            }}
+          />
+        ) : selection.kind === 'new' ? (
           <PawAgentHome
             active={surfaceActive ?? true}
             interfaceMode={interfaceMode}
             catalogError={loadError}
             catalogLoading={loading}
+            modelLoading={modelLoading}
+            modelError={modelError}
             defaultModel={defaultModel}
             durableAvailable={durableAvailable}
             initialDraft={selection.draft}
@@ -504,13 +555,17 @@ export function PawAgentApp({
               active={surfaceActive ?? true}
               key={`session:${selection.id}`}
               initialDraft={selection.draft}
+              initialSubmission={selection.submission}
+              renderComposerHeader={view => <PrimaryAssistantComposerHeader view={view} onHome={(draft, execute, messageId) => { setAdvancedHome(false); setSelection({ kind: 'new', draft, execute,
+                ...(execute && view.session.metadata?.primaryAssistant ? { source: { sessionId: view.session.id, workspaceRoots: view.session.workspaceRoots, messageId, unsentDraft: draft } } : {}),
+              }); }} />}
               persona={personas.find((item) => item.roleId === sessions.find((session) => session.id === selection.id)?.roleId)}
               record={selectedSessionRecord}
               recordMetadataKnown={Boolean(selectedSession)}
               recordId={selection.id}
               traceFocusNodeId={evidenceFocus}
               toolPickerIntent={toolPickerIntent}
-              onNewWork={() => setSelection({ kind: 'new' })}
+              onNewWork={() => { primaryHomeDraftRef.current = undefined; setAdvancedHome(false); setSelection({ kind: 'new' }); }}
               onSessionCreated={(created, draft) => {
                 optimisticSessionsRef.current[created.id] = created;
                 setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);

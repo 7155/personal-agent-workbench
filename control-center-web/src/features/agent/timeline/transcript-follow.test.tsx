@@ -1,11 +1,13 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/primitives';
+import { ControlTransportProvider } from '@/app/control-transport';
 import type { UiAgentMessage } from '@/contracts/ui-events';
 import { agentEventFixture } from '@/test/fixtures/events';
+import { MockControlTransport } from '@/test/mock-transport';
 import { AgentComposer } from '../composer/AgentComposer';
 import { previewSessions } from '../preview-data';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentSessionAddress, useAgentLiveStore, type AgentSessionTarget } from '../state/live-store';
 import { SettledTurnAnnouncer, settledTurnAnnouncement } from './SettledTurnAnnouncer';
 import {
   FOLLOWING_TRANSCRIPT,
@@ -19,7 +21,7 @@ const TURN_ID = 'turn-1';
 
 afterEach(() => {
   cleanup();
-  useAgentLiveStore.getState().clear(SESSION_ID);
+  useAgentLiveStore.setState({ projections: {} });
 });
 
 describe('transcript follow ownership', () => {
@@ -177,15 +179,15 @@ describe('jump-to-latest control', () => {
 });
 
 describe('settle-only transcript announcement', () => {
-  function hydrateRunningTurn(): void {
-    useAgentLiveStore.getState().hydrateSnapshot(SESSION_ID, {
+  function hydrateRunningTurn(address: AgentSessionTarget = SESSION_ID): void {
+    useAgentLiveStore.getState().hydrateSnapshot(address, {
       messages: [userMessage()],
       liveEvents: [],
       lastSequence: 0,
       resumeToken: '',
       status: 'idle',
     });
-    useAgentLiveStore.getState().applyEvents(SESSION_ID, [
+    useAgentLiveStore.getState().applyEvents(address, [
       agentEventFixture(1, 'text_delta', { delta: '正在检查运行状态', replaceBlock: true }),
     ]);
   }
@@ -208,6 +210,39 @@ describe('settle-only transcript announcement', () => {
     });
 
     expect(announcer(container)).toHaveTextContent('');
+  });
+
+  it('announces only its transport and replaces the subscription when the provider changes', () => {
+    const a = new MockControlTransport();
+    const b = new MockControlTransport();
+    const addressA = agentSessionAddress(a, SESSION_ID);
+    const addressB = agentSessionAddress(b, SESSION_ID);
+    hydrateRunningTurn(addressA);
+    hydrateRunningTurn(addressB);
+    hydrateRunningTurn(); // A provider must not read the unscoped fixture.
+    const element = (transport: MockControlTransport) => (
+      <ControlTransportProvider transport={transport}>
+        <SettledTurnAnnouncer sessionId={SESSION_ID} />
+      </ControlTransportProvider>
+    );
+    const view = render(element(a));
+    act(() => {
+      useAgentLiveStore.getState().applyEvents(SESSION_ID, [agentEventFixture(2, 'turn_completed', { status: 'aborted' })]);
+      useAgentLiveStore.getState().applyEvents(addressB, [agentEventFixture(2, 'turn_completed', { status: 'aborted' })]);
+    });
+    expect(announcer(view.container)).toBeEmptyDOMElement();
+
+    view.rerender(element(b));
+    act(() => {
+      useAgentLiveStore.getState().applyEvents(addressA, [agentEventFixture(2, 'turn_completed', { status: 'aborted' })]);
+    });
+    expect(announcer(view.container)).toBeEmptyDOMElement();
+    act(() => {
+      useAgentLiveStore.getState().clear(addressB);
+      hydrateRunningTurn(addressB);
+      useAgentLiveStore.getState().applyEvents(addressB, [agentEventFixture(2, 'turn_completed', { status: 'aborted' })]);
+    });
+    expect(announcer(view.container)).toHaveTextContent('本轮已停止。');
   });
 
   it('speaks once when the turn reaches a terminal status', () => {

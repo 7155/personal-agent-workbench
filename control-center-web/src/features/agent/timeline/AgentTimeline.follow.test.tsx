@@ -6,7 +6,7 @@ import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/primitives';
 import { previewAgentSnapshot } from '../preview-data';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '../state/live-store';
 import { AgentTimeline } from './AgentTimeline';
 
 const virtuosoMock = vi.hoisted(() => ({
@@ -53,13 +53,77 @@ const SESSION_ID = 'session-follow-intent';
 
 afterEach(() => {
   cleanup();
-  useAgentLiveStore.getState().clear(SESSION_ID);
+  useAgentLiveStore.setState({ projections: {} });
   virtuosoMock.atBottomStateChange = undefined;
   virtuosoMock.followOutput = undefined;
   virtuosoMock.scroller = undefined;
 });
 
 describe('Agent timeline follow intent', () => {
+  it('counts only the owning transport and resets follow state when the provider changes', async () => {
+    const a = new MockControlTransport();
+    const b = new MockControlTransport();
+    const addressA = agentSessionAddress(a, SESSION_ID);
+    const addressB = agentSessionAddress(b, SESSION_ID);
+    useAgentLiveStore.getState().hydrateSnapshot(addressA, previewAgentSnapshot(SESSION_ID));
+    useAgentLiveStore.getState().hydrateSnapshot(addressB, previewAgentSnapshot(SESSION_ID));
+    const onFollowStateChange = vi.fn();
+    const element = (transport: MockControlTransport) => (
+      <ControlTransportProvider transport={transport}><TooltipProvider>
+        <AgentTimeline modelSelectionAvailable onApprovalDecision={() => {}}
+          onRetryTurn={() => false} onSwitchModel={() => {}} sessionId={SESSION_ID}
+          onFollowStateChange={onFollowStateChange} />
+      </TooltipProvider></ControlTransportProvider>
+    );
+    const view = render(element(a));
+    await waitFor(() => expect(virtuosoMock.scroller).toBeTruthy());
+    act(() => virtuosoMock.scroller!.dispatchEvent(new WheelEvent('wheel', { deltaY: -24 })));
+    onFollowStateChange.mockClear();
+    act(() => useAgentLiveStore.getState().appendOptimistic(addressB, {
+      clientMessageId: 'other-transport', text: '乙的新消息', nowMs: 200,
+    }));
+    expect(onFollowStateChange).not.toHaveBeenCalled();
+    act(() => useAgentLiveStore.getState().appendOptimistic(addressA, {
+      clientMessageId: 'own-transport', text: '甲的新消息', nowMs: 200,
+    }));
+    expect(onFollowStateChange).toHaveBeenLastCalledWith({ following: false, unseenUpdates: 1 });
+
+    view.rerender(element(b));
+    expect(virtuosoMock.followOutput?.()).toBe('auto');
+    expect(onFollowStateChange).toHaveBeenLastCalledWith({ following: true, unseenUpdates: 0 });
+    act(() => virtuosoMock.scroller!.dispatchEvent(new WheelEvent('wheel', { deltaY: -24 })));
+    onFollowStateChange.mockClear();
+    act(() => useAgentLiveStore.getState().appendOptimistic(addressA, {
+      clientMessageId: 'old-owner', text: '旧连接消息', nowMs: 300,
+    }));
+    expect(onFollowStateChange).not.toHaveBeenCalled();
+  });
+
+  it('focuses a jump inside its own transcript when both transports use the same message IDs', async () => {
+    const a = new MockControlTransport();
+    const b = new MockControlTransport();
+    const snapshot = previewAgentSnapshot(SESSION_ID);
+    const addressA = agentSessionAddress(a, SESSION_ID);
+    useAgentLiveStore.getState().hydrateSnapshot(addressA, snapshot);
+    useAgentLiveStore.getState().hydrateSnapshot(agentSessionAddress(b, SESSION_ID), snapshot);
+    const messageId = selectAgentProjection(useAgentLiveStore.getState(), addressA)?.messageOrder[0];
+    if (!messageId) throw new Error('The hydrated transcript fixture must contain a message');
+    const view = render(<TooltipProvider>
+      <ControlTransportProvider transport={a}>
+        <AgentTimeline modelSelectionAvailable onApprovalDecision={() => {}}
+          onRetryTurn={() => false} onSwitchModel={() => {}} sessionId={SESSION_ID} />
+      </ControlTransportProvider>
+      <ControlTransportProvider transport={b}>
+        <AgentTimeline modelSelectionAvailable onApprovalDecision={() => {}}
+          onRetryTurn={() => false} onSwitchModel={() => {}} sessionId={SESSION_ID}
+          jumpRequest={{ messageId, requestId: 1 }} />
+      </ControlTransportProvider>
+    </TooltipProvider>);
+    const messages = view.container.querySelectorAll<HTMLElement>(`[data-agent-message-id="${messageId}"]`);
+    expect(messages).toHaveLength(2);
+    await waitFor(() => expect(document.activeElement).toBe(messages[1]));
+  });
+
   it('lets wheel, touch and keyboard reading detach until the user actually returns', async () => {
     useAgentLiveStore.getState().hydrateSnapshot(
       SESSION_ID,

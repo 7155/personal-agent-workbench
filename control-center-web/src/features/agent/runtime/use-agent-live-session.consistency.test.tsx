@@ -2,7 +2,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agentEventFixture } from '@/test/fixtures/events';
 import { MockControlTransport } from '@/test/mock-transport';
-import { agentProjection, useAgentLiveStore } from '../state/live-store';
+import { agentProjection, useAgentLiveStore, agentSessionAddress } from '../state/live-store';
 import { useAgentLiveSession } from './use-agent-live-session';
 
 const SESSION_ID = 'session-consistency';
@@ -25,7 +25,7 @@ function event(sequence: number, type: string) {
 
 afterEach(() => {
   cleanup();
-  useAgentLiveStore.getState().clear(SESSION_ID);
+  useAgentLiveStore.setState({ projections: {} });
   vi.useRealTimers();
 });
 
@@ -45,7 +45,7 @@ describe('Session projection consistency', () => {
     expect(done).not.toHaveBeenCalled();
     await act(async () => { second.resolve(snapshot(2)); await result; });
     expect(await result).toBe(true);
-    expect(agentProjection(SESSION_ID).lastSequence).toBe(2);
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID)).lastSequence).toBe(2);
   });
 
   it('notifies a late window of the accepted snapshot without another read or stream', async () => {
@@ -71,7 +71,7 @@ describe('Session projection consistency', () => {
       transport.emit('agent.session.events', event(2, 'turn_completed'));
     });
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(agentProjection(SESSION_ID).lastSequence).toBe(2);
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID)).lastSequence).toBe(2);
   });
 
   it('does not let a gap-causing terminal event run view side effects', async () => {
@@ -83,7 +83,7 @@ describe('Session projection consistency', () => {
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
     act(() => { transport.emit('agent.session.events', event(3, 'turn_completed')); });
     expect(notify).not.toHaveBeenCalled();
-    expect(agentProjection(SESSION_ID)).toMatchObject({ lastSequence: 1, needsSnapshot: true });
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))).toMatchObject({ lastSequence: 1, needsSnapshot: true });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   });
 
@@ -91,7 +91,7 @@ describe('Session projection consistency', () => {
     const transport = new MockControlTransport({ routes: { 'agent.session.snapshot': snapshot() } });
     const cursors: number[] = [];
     renderHook(() => useAgentLiveSession({ ...options, transport,
-      onEvent: () => { cursors.push(agentProjection(SESSION_ID).lastSequence); },
+      onEvent: () => { cursors.push(agentProjection(agentSessionAddress(transport, SESSION_ID)).lastSequence); },
     }));
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
     act(() => { transport.emit('agent.session.events', event(2, 'text_delta')); });
@@ -108,7 +108,7 @@ describe('Session projection consistency', () => {
       result = hook.result.current();
       await result;
     });
-    expect(agentProjection(SESSION_ID).lastSequence).toBe(2);
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID)).lastSequence).toBe(2);
     expect(await result).toBe(false);
   });
 
@@ -123,13 +123,13 @@ describe('Session projection consistency', () => {
     act(() => { result = hook.result.current(); });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     await act(async () => {
-      useAgentLiveStore.getState().hydrate(SESSION_ID, snapshot(3));
+      useAgentLiveStore.getState().hydrate(agentSessionAddress(transport, SESSION_ID), snapshot(3));
       later.resolve(snapshot(2));
       await result;
     });
     expect(await result).toBe(false);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(agentProjection(SESSION_ID).lastSequence).toBe(3);
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID)).lastSequence).toBe(3);
   });
 
   it('reports an unsuccessful snapshot read as false even if its stream can reopen', async () => {

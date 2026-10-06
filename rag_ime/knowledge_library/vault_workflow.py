@@ -26,6 +26,7 @@ from .models import (
 )
 from .store import now_ms
 from ..memory_lifecycle.daily import day_bounds
+from ..local_calendar import resolve_calendar_timezone
 
 
 def sha(value: str) -> str:
@@ -93,7 +94,7 @@ class VaultWorkflow:
                 "SELECT policy_json FROM knowledge_vault_policy WHERE vault_id=?",
                 (v["id"],),
             ).fetchone()
-        return {
+        policy = {
             "inbox": "",
             "remoteProcessing": False,
             "jevEnabled": False,
@@ -101,9 +102,17 @@ class VaultWorkflow:
             "captureFolder": "",
             "captureProject": "",
             "activityProject": "",
-            "activityTimezone": "Asia/Shanghai",
+            "activityTimezone": "",
             **(json.loads(row[0]) if row else {}),
         }
+        policy["activityTimezone"] = resolve_calendar_timezone(policy["activityTimezone"]).key
+        return policy
+
+    def calendar(self, v, p):
+        zone = resolve_calendar_timezone(text(p, "timezone", 80) or self.policy(v)["activityTimezone"])
+        day = text(p, "date", 10) or datetime.fromtimestamp(now_ms() / 1000, zone).date().isoformat()
+        day_bounds(day, zone.key)
+        return day, zone.key
 
     def dispatch(self, v, p):
         action = p["action"]
@@ -111,9 +120,10 @@ class VaultWorkflow:
             context = self.dispatch(v, {**p, "action": "organize_context"})
             target = context["target"]
             refs = sorted(p["sourceRefs"], key=lambda ref: json.dumps(ref, sort_keys=True))
+            day, zone = self.calendar(v, p)
             identity = sha(json.dumps([v["id"], refs,
                 [target["noteId"], target["revision"]] if target else None,
-                p.get("date") or datetime.now().date().isoformat(), p.get("timezone") or "Asia/Shanghai",
+                day, zone,
                 p.get("project", ""), "organizer-v1"], sort_keys=True))
             with self.store.connection() as db:
                 if action == "organize_receipt":
@@ -149,9 +159,7 @@ class VaultWorkflow:
                     "# "+draft["day"]+" 工作回顾草稿\n\n机器生成 · 仅覆盖所选材料\n\n"+draft["markdown"]))
         if action == "store_diary":
             self.dispatch(v, {**p, "action": "organize_context"})
-            day = text(p, "date", 10) or datetime.now().date().isoformat()
-            zone = text(p, "timezone", 80) or "Asia/Shanghai"
-            day_bounds(day, zone)
+            day, zone = self.calendar(v, p)
             project = text(p, "project", 240)
             body = text(p, "markdown", 16000)
             refs = json.dumps(p["sourceRefs"], sort_keys=True)
@@ -287,7 +295,7 @@ class VaultWorkflow:
                 policy["inbox"] = inbox
             if "activityProject" in p:
                 policy["activityProject"] = text(p,"activityProject",240).strip()
-                zone = text(p,"timezone",80) or "Asia/Shanghai"
+                zone = text(p,"timezone",80) or policy["activityTimezone"]
                 day_bounds("2026-01-01",zone)
                 policy["activityTimezone"] = zone
             if "captureFolder" in p:
@@ -738,8 +746,7 @@ class VaultWorkflow:
         }
 
     def day(self, v, p):
-        day = text(p, "date", 10) or datetime.now().date().isoformat()
-        timezone = text(p, "timezone", 80) or "Asia/Shanghai"
+        day, timezone = self.calendar(v, p)
         start, end = day_bounds(day, timezone)
         project = text(p, "project", 240)
         with self.store.connection() as db:

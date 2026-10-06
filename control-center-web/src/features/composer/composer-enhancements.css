@@ -6,14 +6,14 @@
 .agent-composer__editor > textarea { display: block; width: 100%; resize: none; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--color-text-primary); font: inherit; }
 .agent-composer__editor > textarea:focus-visible,
 .paw-desktop-root .paw-unified-composer > .agent-composer__editor > textarea:focus-visible { outline: 0; }
-.agent-composer.paw-unified-composer .agent-composer__editor > textarea,
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer .agent-composer__editor > textarea { min-height: 52px; max-height: 156px; padding: 11px 44px 5px 14px; line-height: 24px; }
-.agent-composer.paw-unified-composer[data-expanded] .agent-composer__editor > textarea,
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer[data-expanded] .agent-composer__editor > textarea { max-height: min(360px, 45vh); }
+.agent-composer.paw-unified-composer:not([data-composer-design='workbench']) .agent-composer__editor > textarea,
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer:not([data-composer-design='workbench']) .agent-composer__editor > textarea { min-height: 52px; max-height: 156px; padding: 11px 44px 5px 14px; line-height: 24px; }
+.agent-composer.paw-unified-composer:not([data-composer-design='workbench'])[data-expanded] .agent-composer__editor > textarea,
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer:not([data-composer-design='workbench'])[data-expanded] .agent-composer__editor > textarea { max-height: min(360px, 45vh); }
 .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer { border-radius: 14px; background: var(--color-surface); }
 .paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer { border-color: var(--paw-stellar-line); background: var(--paw-stellar-surface); }
 .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer .agent-composer__toolbar { margin: 0 8px 8px; }
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer .agent-composer__editor > textarea::placeholder { color: var(--paw-stellar-muted, var(--color-text-secondary)); opacity: 1; }
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer.paw-unified-composer:not([data-composer-design='workbench']) .agent-composer__editor > textarea::placeholder { color: var(--paw-stellar-muted, var(--color-text-secondary)); opacity: 1; }
 .agent-composer.paw-unified-composer .agent-composer__editor > textarea::selection { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
 .agent-composer__editor .composer-editor__expand,
 .paw-desktop-root .agent-composer__editor .composer-editor__expand { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; min-height: 28px; color: var(--paw-muted, var(--color-text-tertiary)); border-radius: 7px; background: transparent; }

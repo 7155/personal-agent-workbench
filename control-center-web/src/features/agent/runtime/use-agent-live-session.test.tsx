@@ -4,7 +4,7 @@ import { agentEventFixture } from '@/test/fixtures/events';
 import { MockControlTransport } from '@/test/mock-transport';
 import { HttpControlTransport } from '@/platform/http-transport';
 import type { ControlRequest } from '@/platform/transport';
-import { useAgentLiveStore } from '../state/live-store';
+import { useAgentLiveStore, agentProjection, agentSessionAddress } from '../state/live-store';
 import { recentAgentSnapshotIsPresentable, useAgentLiveSession } from './use-agent-live-session';
 import { preloadRecentConversations } from '@/features/conversation-ui/conversation-preload';
 
@@ -12,11 +12,27 @@ const SESSION_ID = 'session-shared';
 
 afterEach(() => {
   cleanup();
-  useAgentLiveStore.getState().clear(SESSION_ID);
+  useAgentLiveStore.setState({ projections: {} });
   vi.useRealTimers();
 });
 
 describe('useAgentLiveSession shared ownership', () => {
+  it('hydrates current compaction metadata at an equal recent cursor without reviving an old completed turn', async () => {
+    const target = { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] };
+    let compacting = false;
+    const transport = new MockControlTransport({ routes: {
+      'agent.session.snapshot': () => ({ sessionId: SESSION_ID, runtimeEngine: 'durable', projectionCurrent: true,
+        paused: compacting, recoverable: compacting, activeTurn: null, compactionTarget: compacting ? target : null,
+        messages: [], liveEvents: [], lastSequence: 1, resumeToken: `${SESSION_ID}:1`,
+        snapshotScope: 'recent', partial: true, status: compacting ? 'busy' : 'idle' }),
+    } });
+    const view = renderHook(() => useAgentLiveSession({ sessionId: SESSION_ID, transport }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    await act(async () => { compacting = true; await view.result.current({ preserveAfterSequence: 1 }); });
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID)).durableRecovery).toMatchObject({ paused: true, compactionTarget: target });
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID)).turnOrder).toEqual([]);
+  });
+
   it('uses a recent projection warmed before a cold open without issuing a duplicate read or SSE warmup', async () => {
     const recent = {
       lastSequence: 4,
@@ -167,7 +183,7 @@ describe('useAgentLiveSession shared ownership', () => {
     expect(healthyWindowEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventId: `${SESSION_ID}:1`,
     }));
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]).toMatchObject({
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))).toMatchObject({
       lastSequence: 1,
       resumeToken: `${SESSION_ID}:1`,
       status: 'idle',
@@ -356,7 +372,7 @@ describe('useAgentLiveSession shared ownership', () => {
     expect(new Set(recoveryTimes).size).toBe(2);
     first.unmount();
     second.unmount();
-    for (const ownerId of ownerIds) useAgentLiveStore.getState().clear(ownerId);
+    for (const ownerId of ownerIds) useAgentLiveStore.getState().clear(agentSessionAddress(transport, ownerId));
   });
 
   it('does not reset recovery backoff until the recovered stream delivers an event', async () => {
@@ -466,7 +482,7 @@ describe('useAgentLiveSession shared ownership', () => {
     await waitFor(() => expect(snapshotCalls).toBe(2));
     await waitFor(() => expect(transport.subscriptionCalls).toHaveLength(2));
 
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]).toMatchObject({
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))).toMatchObject({
       lastSequence: 41,
       resumeToken: `${SESSION_ID}:41`,
       needsSnapshot: false,
@@ -517,7 +533,7 @@ describe('useAgentLiveSession shared ownership', () => {
     await waitFor(() => expect(snapshotCalls).toBe(2));
     await waitFor(() => expect(transport.subscriptionCalls).toHaveLength(2));
 
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]).toMatchObject({
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))).toMatchObject({
       lastSequence: 1,
       resumeToken: `${SESSION_ID}:1`,
       needsSnapshot: false,
@@ -570,7 +586,7 @@ describe('useAgentLiveSession shared ownership', () => {
 
     await waitFor(() => expect(snapshotCalls).toBe(2));
     await waitFor(() => expect(transport.subscriptionCalls).toHaveLength(2));
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]).toMatchObject({
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))).toMatchObject({
       lastSequence: 2,
       resumeToken: `${SESSION_ID}:2`,
       needsSnapshot: false,
@@ -609,7 +625,7 @@ describe('useAgentLiveSession shared ownership', () => {
     });
     const window = renderHook(() => useAgentLiveSession({ sessionId: SESSION_ID, transport }));
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]?.status).toBe('idle');
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))?.status).toBe('idle');
 
     const gap = agentEventFixture(3, 'turn_started', {});
     const rawGap = Object.fromEntries(Object.entries({
@@ -624,7 +640,7 @@ describe('useAgentLiveSession shared ownership', () => {
 
     await waitFor(() => expect(snapshotCalls).toBe(2));
     await waitFor(() => expect(transport.subscriptionCalls).toHaveLength(2));
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]).toMatchObject({
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))).toMatchObject({
       lastSequence: 1,
       resumeToken: `${SESSION_ID}:1`,
       needsSnapshot: false,
@@ -679,7 +695,7 @@ describe('useAgentLiveSession shared ownership', () => {
       transport,
     }));
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]?.turnsById['turn-1']?.status)
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))?.turnsById['turn-1']?.status)
       .toBe('running');
     vi.useFakeTimers();
 
@@ -688,7 +704,7 @@ describe('useAgentLiveSession shared ownership', () => {
     await act(async () => Promise.resolve());
 
     expect(snapshotCalls).toBe(2);
-    expect(useAgentLiveStore.getState().projections[SESSION_ID]?.turnsById['turn-1']?.status)
+    expect(agentProjection(agentSessionAddress(transport, SESSION_ID))?.turnsById['turn-1']?.status)
       .toBe('completed');
     window.unmount();
   });

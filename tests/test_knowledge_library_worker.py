@@ -13,7 +13,10 @@ import unittest
 import urllib.request
 import uuid
 from pathlib import Path
+from contextlib import ExitStack
 from unittest import mock
+
+from tests.subprocess_startup import StartupCapture
 
 from rag_ime.knowledge_library import HttpKnowledgeClient, KnowledgeLibraryConfig, KnowledgeLibraryError, KnowledgeLibraryService
 from rag_ime.knowledge_library.identity import (
@@ -366,29 +369,36 @@ class KnowledgeWorkerSupervisorTests(unittest.TestCase):
 
     def test_lazily_starts_isolated_worker_on_configured_loopback_port(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-supervisor-") as tmp:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-                probe.bind(("127.0.0.1", 0))
-                port = int(probe.getsockname()[1])
-            supervisor = KnowledgeWorkerSupervisor(
-                settings_provider=lambda: {
-                    "knowledgeLibrary": {"parser": {"mineru": {"enabled": False, "port": 30_001}}}
-                },
-                root_dir=Path(tmp) / "Knowledge",
-                base_url=f"http://127.0.0.1:{port}",
-            )
-            self.addCleanup(supervisor.close)
+            with (
+                ExitStack() as resources,
+                StartupCapture(Path(tmp) / "startup-diagnostics", label="knowledge-worker") as capture,
+            ):
+                resources.callback(capture.close)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                    probe.bind(("127.0.0.1", 0))
+                    port = int(probe.getsockname()[1])
+                supervisor = KnowledgeWorkerSupervisor(
+                    settings_provider=lambda: {
+                        "knowledgeLibrary": {"parser": {"mineru": {"enabled": False, "port": 30_001}}}
+                    },
+                    root_dir=Path(tmp) / "Knowledge",
+                    base_url=f"http://127.0.0.1:{port}",
+                    popen=capture.popen,
+                )
+                resources.callback(supervisor.close)
 
-            created = supervisor.management_call(
-                "management_create_base",
-                {"name": "Supervisor documents", "agentEnabled": True},
-            )
-            listed = supervisor.management_call("management_list_bases")
+                created = supervisor.management_call(
+                    "management_create_base",
+                    {"name": "Supervisor documents", "agentEnabled": True},
+                )
+                capture.ready(supervisor._process)
+                listed = supervisor.management_call("management_list_bases")
 
-            self.assertEqual(created["id"], listed["bases"][0]["id"])
-            self.assertEqual("ready", supervisor.status({})["status"])
-            self.assertTrue((Path(tmp) / "Knowledge" / "knowledge.sqlite").is_file())
-            self.assertTrue(Path(supervisor.python_executable).is_absolute())
-            self.assertEqual(os.getpid(), supervisor._worker_health()["parentPid"])
+                self.assertEqual(created["id"], listed["bases"][0]["id"])
+                self.assertEqual("ready", supervisor.status({})["status"])
+                self.assertTrue((Path(tmp) / "Knowledge" / "knowledge.sqlite").is_file())
+                self.assertTrue(Path(supervisor.python_executable).is_absolute())
+                self.assertEqual(os.getpid(), supervisor._worker_health()["parentPid"])
 
     def test_worker_identity_changes_with_embedding_and_dense_runtime(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-runtime-") as tmp:
@@ -621,114 +631,147 @@ class KnowledgeWorkerSupervisorTests(unittest.TestCase):
 
     def test_worker_health_preserves_configured_python_identity(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rag-ime-worker-python-identity-") as tmp:
-            linked_python = Path(tmp) / "python"
-            linked_python.symlink_to(sys.executable)
-            port = _free_port()
-            with mock.patch.dict(
-                os.environ,
-                {"RAG_IME_KNOWLEDGE_PYTHON": str(linked_python)},
-                clear=False,
+            with (
+                ExitStack() as resources,
+                StartupCapture(Path(tmp) / "startup-diagnostics", label="knowledge-worker") as capture,
             ):
+                resources.callback(capture.close)
+                linked_python = Path(tmp) / "python"
+                linked_python.symlink_to(sys.executable)
+                port = _free_port()
+                with mock.patch.dict(
+                    os.environ,
+                    {"RAG_IME_KNOWLEDGE_PYTHON": str(linked_python)},
+                    clear=False,
+                ):
+                    supervisor = KnowledgeWorkerSupervisor(
+                        settings_provider=_disabled_mineru_settings,
+                        root_dir=Path(tmp) / "Knowledge",
+                        base_url=f"http://127.0.0.1:{port}",
+                        popen=capture.popen,
+                    )
+                    resources.callback(supervisor.close)
+                    supervisor.ensure_running()
+                    capture.ready(supervisor._process)
+                    self.assertEqual(
+                        supervisor._worker_settings()[0],
+                        supervisor._worker_health()["configFingerprint"],
+                    )
+
+    def test_close_reaps_the_worker_owned_by_the_supervisor(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-close-") as tmp:
+            with (
+                ExitStack() as resources,
+                StartupCapture(Path(tmp) / "startup-diagnostics", label="knowledge-worker") as capture,
+            ):
+                resources.callback(capture.close)
+                port = _free_port()
                 supervisor = KnowledgeWorkerSupervisor(
                     settings_provider=_disabled_mineru_settings,
                     root_dir=Path(tmp) / "Knowledge",
                     base_url=f"http://127.0.0.1:{port}",
+                    popen=capture.popen,
                 )
-                self.addCleanup(supervisor.close)
+                resources.callback(supervisor.close)
                 supervisor.ensure_running()
-                self.assertEqual(
-                    supervisor._worker_settings()[0],
-                    supervisor._worker_health()["configFingerprint"],
-                )
+                capture.ready(supervisor._process)
+                process = supervisor._process
+                self.assertIsNotNone(process)
 
-    def test_close_reaps_the_worker_owned_by_the_supervisor(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-close-") as tmp:
-            port = _free_port()
-            supervisor = KnowledgeWorkerSupervisor(
-                settings_provider=_disabled_mineru_settings,
-                root_dir=Path(tmp) / "Knowledge",
-                base_url=f"http://127.0.0.1:{port}",
-            )
-            supervisor.ensure_running()
-            process = supervisor._process
-            self.assertIsNotNone(process)
+                supervisor.close()
 
-            supervisor.close()
-
-            self.assertIsNotNone(process.poll())
+                self.assertIsNotNone(process.poll())
 
     def test_matching_worker_can_be_adopted_but_mismatched_root_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-identity-") as tmp:
-            port = _free_port()
-            first = KnowledgeWorkerSupervisor(
-                settings_provider=_disabled_mineru_settings,
-                root_dir=Path(tmp) / "Knowledge-A",
-                base_url=f"http://127.0.0.1:{port}",
-            )
-            first.ensure_running()
-            self.addCleanup(first.close)
+            with (
+                ExitStack() as resources,
+                StartupCapture(Path(tmp) / "startup-diagnostics", label="knowledge-worker") as capture,
+            ):
+                resources.callback(capture.close)
+                port = _free_port()
+                first = KnowledgeWorkerSupervisor(
+                    settings_provider=_disabled_mineru_settings,
+                    root_dir=Path(tmp) / "Knowledge-A",
+                    base_url=f"http://127.0.0.1:{port}",
+                    popen=capture.popen,
+                )
+                resources.callback(first.close)
+                first.ensure_running()
+                capture.ready(first._process)
 
-            matching = KnowledgeWorkerSupervisor(
-                settings_provider=_disabled_mineru_settings,
-                root_dir=Path(tmp) / "Knowledge-A",
-                base_url=f"http://127.0.0.1:{port}",
-            )
-            matching.ensure_running()
-            self.assertIsNone(matching._process)
-            self.assertEqual(first._owner, matching._adopted_owner)
+                matching = KnowledgeWorkerSupervisor(
+                    settings_provider=_disabled_mineru_settings,
+                    root_dir=Path(tmp) / "Knowledge-A",
+                    base_url=f"http://127.0.0.1:{port}",
+                    popen=capture.popen,
+                )
+                resources.callback(matching.close)
+                matching.ensure_running()
+                self.assertIsNone(matching._process)
+                self.assertEqual(first._owner, matching._adopted_owner)
 
-            mismatched = KnowledgeWorkerSupervisor(
-                settings_provider=_disabled_mineru_settings,
-                root_dir=Path(tmp) / "Knowledge-B",
-                base_url=f"http://127.0.0.1:{port}",
-            )
-            with self.assertRaises(KnowledgeLibraryError) as raised:
-                mismatched.ensure_running()
-            self.assertEqual("worker_identity_mismatch", raised.exception.code)
+                mismatched = KnowledgeWorkerSupervisor(
+                    settings_provider=_disabled_mineru_settings,
+                    root_dir=Path(tmp) / "Knowledge-B",
+                    base_url=f"http://127.0.0.1:{port}",
+                    popen=capture.popen,
+                )
+                resources.callback(mismatched.close)
+                with self.assertRaises(KnowledgeLibraryError) as raised:
+                    mismatched.ensure_running()
+                self.assertEqual("worker_identity_mismatch", raised.exception.code)
 
     def test_restart_does_not_adopt_worker_bound_to_a_dead_parent(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-stale-parent-") as tmp:
-            port = _free_port()
-            root = Path(tmp) / "Knowledge"
-            stale = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "rag_ime.knowledge_library.worker",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(port),
-                    "--root",
-                    str(root),
-                    "--owner",
-                    "sidecar:stale",
-                    "--parent-pid",
-                    "99999999",
-                ],
-                cwd=Path(__file__).resolve().parents[1],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self.addCleanup(_stop_process, stale)
-            time.sleep(0.3)
-            supervisor = KnowledgeWorkerSupervisor(
-                settings_provider=_disabled_mineru_settings,
-                root_dir=root,
-                base_url=f"http://127.0.0.1:{port}",
-            )
-            self.addCleanup(supervisor.close)
+            with (
+                ExitStack() as resources,
+                StartupCapture(Path(tmp) / "startup-diagnostics", label="knowledge-worker") as capture,
+            ):
+                resources.callback(capture.close)
+                port = _free_port()
+                root = Path(tmp) / "Knowledge"
+                stale = capture.popen_inherited(
+                    [
+                        sys.executable,
+                        "-m",
+                        "rag_ime.knowledge_library.worker",
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(port),
+                        "--root",
+                        str(root),
+                        "--owner",
+                        "sidecar:stale",
+                        "--parent-pid",
+                        "99999999",
+                    ],
+                    cwd=Path(__file__).resolve().parents[1],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                resources.callback(_stop_process, stale)
+                time.sleep(0.3)
+                supervisor = KnowledgeWorkerSupervisor(
+                    settings_provider=_disabled_mineru_settings,
+                    root_dir=root,
+                    base_url=f"http://127.0.0.1:{port}",
+                    popen=capture.popen,
+                )
+                resources.callback(supervisor.close)
 
-            created = supervisor.management_call(
-                "management_create_base",
-                {"name": "Restart-safe documents", "agentEnabled": False},
-            )
+                created = supervisor.management_call(
+                    "management_create_base",
+                    {"name": "Restart-safe documents", "agentEnabled": False},
+                )
+                capture.ready(supervisor._process)
 
-            self.assertEqual("Restart-safe documents", created["name"])
-            self.assertIsNotNone(supervisor._process)
-            self.assertEqual(os.getpid(), supervisor._worker_health()["parentPid"])
-            stale.wait(timeout=2.0)
+                self.assertEqual("Restart-safe documents", created["name"])
+                self.assertIsNotNone(supervisor._process)
+                self.assertEqual(os.getpid(), supervisor._worker_health()["parentPid"])
+                stale.wait(timeout=2.0)
 
 
 def _free_port() -> int:

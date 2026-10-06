@@ -1,5 +1,6 @@
 import {
   Bot,
+  BookOpen,
   Brain,
   BriefcaseBusiness,
   ChevronRight,
@@ -13,8 +14,8 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { useWorkDocumentWorkspace, type WorkDocumentScope } from '@/features/work-documents/api';
@@ -46,6 +47,7 @@ const pagesByApp: Record<PawFeatureAppId, readonly NativePage[]> = {
   ],
   memory: [
     { id: 'memory', label: '记忆库', icon: Brain, route: '/memory' },
+    { id: 'profile', label: '关于我', icon: BookOpen, route: '/memory?view=profile' },
     { id: 'roleBooks', label: '伙伴记忆', icon: Bot, route: '/memory?view=roleBooks' },
     { id: 'timeline', label: '时间线', icon: Clock3, route: '/memory?view=timeline' },
     { id: 'relations', label: '关系图', icon: Network, route: '/memory?view=relations' },
@@ -72,6 +74,7 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
   const desktop = usePawOsDesktop();
   const route = initialRoute || app.route;
   const pageId = pageForRoute(pages, route).id;
+  const preservePage = appId === 'memory' || appId === 'knowledge' || appId === 'project-workbench';
   return (
     <div className="paw-native-app" data-app-id={appId} data-page-id={pageId} data-sidebar-collapsed={sidebar.collapsed} data-owns-navigation={appId === 'knowledge' || appId === 'eval-lab' || undefined} data-single-page={pages.length === 1 || undefined}>
       {appId === 'knowledge' || appId === 'eval-lab' ? null : <aside className="paw-native-nav">
@@ -84,9 +87,9 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
         </nav>
       </aside>}
       <section className="paw-native-stage">
-        <MemoryRouter initialEntries={[route]} key={route}>
-          <NativeRouteReporter expectedRoute={route} />
-          <div className="paw-native-page" key={`${appId}:${pageId}`}>
+        <MemoryRouter initialEntries={[route]} key={preservePage ? appId : route}>
+          <NativeRouteReporter expectedRoute={route} preservePage={preservePage} />
+          <div className="paw-native-page" key={preservePage ? appId : `${appId}:${pageId}`}>
             <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {app.label}…</div>}>
               <NativeSurface appId={appId} pageId={pageId} route={route} />
             </Suspense>
@@ -97,13 +100,22 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
   );
 }
 
-function NativeRouteReporter({ expectedRoute }: { expectedRoute: string }) {
+function NativeRouteReporter({ expectedRoute, preservePage = false }: { expectedRoute: string; preservePage?: boolean }) {
   const desktop = usePawOsDesktop();
   const location = useLocation();
+  const navigate = useNavigate();
+  const previousExpectedRoute = useRef(expectedRoute);
   const route = `${location.pathname}${location.search}${location.hash}`;
   useEffect(() => {
+    // Library pages own their visited views and unsent drafts. A host rail change
+    // updates its router without replacing that owner or echoing the old route.
+    if (preservePage && previousExpectedRoute.current !== expectedRoute) {
+      previousExpectedRoute.current = expectedRoute;
+      if (route !== expectedRoute) navigate(expectedRoute, { replace: true });
+      return;
+    }
     if (route !== expectedRoute) openPawOsRoute(desktop, route);
-  }, [desktop, expectedRoute, route]);
+  }, [desktop, expectedRoute, navigate, preservePage, route]);
   return null;
 }
 

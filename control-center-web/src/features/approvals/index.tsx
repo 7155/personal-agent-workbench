@@ -21,6 +21,7 @@ import {
   publicErrorText,
 } from '@/features/overview/management-ui';
 import './approvals.css';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 
 type ApprovalFilter = 'pending' | 'all' | 'resolved';
 type RiskFilter = 'all' | AgentApprovalV1['riskLevel'];
@@ -34,6 +35,7 @@ type RiskFilter = 'all' | AgentApprovalV1['riskLevel'];
  */
 export function ApprovalsFeature() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ApprovalFilter>('pending');
   const [risk, setRisk] = useState<RiskFilter>('all');
@@ -43,16 +45,18 @@ export function ApprovalsFeature() {
   const [confirmingId, setConfirmingId] = useState('');
   const [actionError, setActionError] = useState<Record<string, string>>({});
   const approvalsQuery = useQuery({
+    enabled: active,
     queryKey: ['approvals', 'all'],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.approvals.list',
       query: { limit: 500 },
       signal,
     }),
-    refetchInterval: (queryState) => approvalItems(queryState.state.data).some((item) => item.state === 'pending') ? 5_000 : false,
+    refetchInterval: (queryState) => active && approvalItems(queryState.state.data).some((item) => item.state === 'pending') ? 5_000 : false,
     retry: false,
   });
   const sessionsQuery = useQuery({
+    enabled: active,
     queryKey: ['approvals', 'sessions'],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.sessions.list',

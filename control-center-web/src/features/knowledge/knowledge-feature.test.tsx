@@ -30,6 +30,26 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('retains unsaved library settings and the note connection draft across existing views', async () => {
+    const user = userEvent.setup();
+    renderKnowledge(createTransport(), '/knowledge?tab=settings');
+    const name = await screen.findByRole('textbox', { name: '名称' });
+    await user.clear(name);
+    await user.type(name, '保留未保存的名称');
+    await user.click(screen.getByRole('tab', { name: '搜索' }));
+    await openKnowledgeTool(user, '设置');
+    expect(screen.getByRole('textbox', { name: '名称' })).toBe(name);
+    expect(name).toHaveValue('保留未保存的名称');
+    await user.click(screen.getByRole('button', { name: '本地笔记' }));
+    const root = screen.getByRole('textbox', { name: '本地文件夹路径' });
+    await user.type(root, '/work/public-notes');
+    await user.click(screen.getByRole('button', { name: '资料知识库' }));
+    expect(screen.getByRole('textbox', { name: '名称' })).toHaveValue('保留未保存的名称');
+    await user.click(screen.getByRole('button', { name: '本地笔记' }));
+    expect(screen.getByRole('textbox', { name: '本地文件夹路径' })).toBe(root);
+    expect(root).toHaveValue('/work/public-notes');
+  });
+
   it('offers the paper profile and shows source geometry reported by the parser', async () => {
     const user = userEvent.setup();
     const transport = createTransport({ structuredSource: true });

@@ -42,6 +42,7 @@ import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import type { ControlRequest, PickedFile } from '@/platform/transport';
 import { GenericUserInputCard } from '@/features/agent/review/AgentReviewDialogs';
 import { QueueTray, useConversationQueue } from '@/features/conversation-ui';
+import { mergeQueueBackToDraft } from '@/features/conversation-ui/model/queue';
 import { usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { publicErrorText } from '@/features/overview/management-ui';
 import {
@@ -399,8 +400,25 @@ export function PawRoomWorkspace({
    * edited, or pulled back into the composer on stop. */
   const queue = useConversationQueue({
     busy: (jevEnabled ? jev.busy || jev.awaitingPlan || jev.loading || jev.creating || Boolean(jev.pendingInput || jev.pendingPlan || jev.planSending || jev.error) || Boolean(activeTurn && !jev.liveSnapshot) : Boolean(activeTurn)) || sending || Boolean(pendingSend),
-    conversationId: recordId,
-    send: (value) => { void send(value); },
+    conversationId: recovery.ownerId,
+    onDispose: items => recovery.recoverInput(current => ({ ...current, draft: mergeQueueBackToDraft(items, current.draft) })),
+    send: (value) => {
+      // The queue still owns input refused before admission. Read the journal
+      // synchronously, including before React renders a newly admitted send.
+      if (sending || sendJournal.getSnapshot()) return false;
+      // A queued message owns only its held text, never the next composer
+      // draft or attachments. The command journal owns it after handoff;
+      // a refused asynchronous delivery returns it to this original owner.
+      const admission = send(value, { preserveDraft: true });
+      if (admission === false) return false;
+      if (typeof admission !== 'boolean') {
+        const recover = () => recovery.recoverInput(current => ({
+          ...current,
+          draft: current.draft ? `${current.draft}\n\n${value}` : value,
+        }));
+        void admission.then(accepted => { if (!accepted) recover(); }, recover);
+      }
+    },
   });
   const queueFollowUp = useCallback((value: string) => queue.enqueue(value), [queue]);
 
@@ -429,10 +447,10 @@ export function PawRoomWorkspace({
     },
   });
 
-  async function send(
+  function send(
     rawValue: string,
     options: { question?: PendingRoomQuestion; retryOfRootId?: string; preserveDraft?: boolean } = {},
-  ): Promise<boolean> {
+  ): boolean | Promise<boolean> {
     if (!record || record.status !== 'active' || sending) return false;
     const pending = sendJournal.getSnapshot();
     if (pending) {
@@ -468,18 +486,20 @@ export function PawRoomWorkspace({
       }
       const selectedAttachments = composerAttachments;
       setSending(true); setError('');
-      try {
-        const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
-        if (!accepted) return false;
-        if (!options.preserveDraft) setDraft(current => current === rawValue ? '' : current);
-        setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
-        retrySnapshot();
-        followRoomTimelineIfReaderAtEnd(timelineRef.current);
-        return true;
-      } catch (reason) {
-        setError(roomErrorText(reason, 'Jev 发送尚未确认。重试将核实同一次请求。'));
-        return false;
-      } finally { setSending(false); }
+      return (async () => {
+        try {
+          const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
+          if (!accepted) return false;
+          if (!options.preserveDraft) setDraft(current => current === rawValue ? '' : current);
+          setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
+          retrySnapshot();
+          followRoomTimelineIfReaderAtEnd(timelineRef.current);
+          return true;
+        } catch (reason) {
+          setError(roomErrorText(reason, 'Jev 发送尚未确认。重试将核实同一次请求。'));
+          return false;
+        } finally { setSending(false); }
+      })();
     }
     const steering = Boolean(activeTurn && !answersQuestion);
     if (steering && composerAttachments.length) {

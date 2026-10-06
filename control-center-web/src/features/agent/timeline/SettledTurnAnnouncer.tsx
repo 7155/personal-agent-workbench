@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useOptionalControlTransport } from '@/app/control-transport';
 import type { AgentProjectionState } from '@/contracts/agent-reducer';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '../state/live-store';
 import { isRoomPublicPostMessage } from './AgentTimeline';
 
 const ACTIVE_TURN_STATUSES = new Set(['queued', 'running', 'waiting']);
@@ -57,17 +58,20 @@ export function settledTurnAnnouncement(
  * this element speaks exactly once per settled turn.
  */
 export function SettledTurnAnnouncer({ sessionId }: { sessionId: string }) {
+  const transport = useOptionalControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const [announcement, setAnnouncement] = useState('');
   useEffect(() => {
     setAnnouncement('');
-    let previousTurnId = latestTurnId(useAgentLiveStore.getState().projections[sessionId]);
+    const initialProjection = selectAgentProjection(useAgentLiveStore.getState(), address);
+    let previousTurnId = latestTurnId(initialProjection);
     let previousStatus = turnStatus(
-      useAgentLiveStore.getState().projections[sessionId],
+      initialProjection,
       previousTurnId,
     );
     return useAgentLiveStore.subscribe((state, previousState) => {
-      const projection = state.projections[sessionId];
-      if (projection === previousState.projections[sessionId]) return;
+      const projection = selectAgentProjection(state, address);
+      if (projection === selectAgentProjection(previousState, address)) return;
       const turnId = latestTurnId(projection);
       const status = turnStatus(projection, turnId);
       const settled = turnId === previousTurnId
@@ -81,7 +85,7 @@ export function SettledTurnAnnouncer({ sessionId }: { sessionId: string }) {
       // space makes two identical consecutive replies distinguishable.
       setAnnouncement((current) => (current === next ? `${next} ` : next));
     });
-  }, [sessionId]);
+  }, [address]);
   return (
     /* Its own live region: the enclosing log is explicitly `off`, and a
        descendant live root is not suppressed by a silent ancestor. No

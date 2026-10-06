@@ -41,6 +41,10 @@ export type SessionSummary = Pick<
   >> & {
     /** Optional until the Runtime session snapshot advertises Pi codemode mode. */
     codemodeMode?: CodemodeMode;
+    /** Primary assistant identity is projected from the ordinary Session owner. */
+    goal?: AgentSessionV1['goal'];
+    metadata?: { assistantId?: string; primaryAssistant?: boolean; primaryTask?: boolean;
+      sourceSessionId?: string; sourceMessageId?: string; clientRequestId?: string; [key: string]: unknown };
   };
 
 export interface AgentPermissionSelection {

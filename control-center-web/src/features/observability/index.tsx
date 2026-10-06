@@ -415,6 +415,7 @@ export function EvalSchedulesPanel({ initialScheduleId = '' }: { initialSchedule
   const createSchedule = useCreateEvalSchedule();
   const scheduleAction = useEvalScheduleAction();
   const [selectedScheduleId, setSelectedScheduleId] = useState(initialScheduleId);
+  useEffect(() => { if (initialScheduleId) setSelectedScheduleId(initialScheduleId); }, [initialScheduleId]);
   const [suiteId, setSuiteId] = useState('');
   const [recurrenceKind, setRecurrenceKind] = useState<'daily' | 'weekly'>('daily');
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);

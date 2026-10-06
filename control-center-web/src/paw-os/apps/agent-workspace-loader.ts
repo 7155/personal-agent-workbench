@@ -34,9 +34,12 @@ export function agentWorkspaceIntent({ appId, entityId, initialRoute = '', targe
   return selection.kind === 'new' ? undefined : selection.kind;
 }
 
+export type InitialSessionSubmission = { clientMessageId: string; message: string };
+export type PrimaryAssistantSource = { sessionId: string; workspaceRoots: string[]; messageId?: string; unsentDraft?: string };
+
 export type AgentSelection =
-  | { kind: 'new'; draft?: string }
-  | { kind: 'session'; id: string; draft?: string }
+  | { kind: 'new'; draft?: string; execute?: boolean; source?: PrimaryAssistantSource }
+  | { kind: 'session'; id: string; draft?: string; submission?: InitialSessionSubmission }
   | { kind: 'room'; id: string; draft?: string; error?: string };
 
 export function initialAgentSelection(

@@ -30,6 +30,31 @@
   "properties": {
     "schemaVersion": {"type": "string", "const": "rag-ime.agent-session.v1"},
     "id": {"type": "string", "minLength": 1},
+    "metadata": {
+      "type": "object",
+      "required": ["assistantId"],
+      "properties": {
+        "assistantId": {"type": "string", "minLength": 1},
+        "primaryAssistant": {"type": "boolean"},
+        "primaryTask": {"type": "boolean"},
+        "sourceSessionId": {"type": "string", "minLength": 1},
+        "sourceMessageId": {"type": "string", "minLength": 1},
+        "clientRequestId": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "goal": {
+      "type": "object",
+      "required": ["goalId", "revision", "status", "objective", "successCriteria"],
+      "properties": {
+        "goalId": {"type": "string"},
+        "revision": {"type": "integer", "minimum": 1},
+        "status": {"enum": ["active", "paused", "completed", "cancelled", "cleared"]},
+        "objective": {"type": "string"},
+        "successCriteria": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
     "piSessionId": {"type": "string"},
     "sessionFile": {"type": "string"},
     "runtimeBinding": {

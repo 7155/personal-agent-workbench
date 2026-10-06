@@ -22,7 +22,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { presentSkill } from './skill-presentation';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -40,7 +40,6 @@ import {
   InlineNotice,
   ManagementPage,
   ManagementSection,
-  MetricStrip,
   QueryState,
   StatusBadge,
   arrayRecords,
@@ -171,10 +170,14 @@ export function PluginsFeature() {
     if (requested) { setSelectedId(requested); setQuery(''); setAvailability('all'); setKind('all'); }
   }, [searchParams]);
   const selectedTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const selectedSkillTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const skillSearchRef = useRef<HTMLInputElement | null>(null);
   const [enableAfterInstall, setEnableAfterInstall] = useState(true);
   const [packageSource, setPackageSource] = useState('');
   const [validation, setValidation] = useState<Record<string, unknown>>({});
   const [pendingChange, setPendingChange] = useState<Record<string, unknown>>({});
+  const [studioPending, setStudioPending] = useState(false);
   const [lifecycleReceipt, setLifecycleReceipt] = useState<LifecycleReceipt>();
   const [lifecycleError, setLifecycleError] = useState('');
   const [defaultMutation, setDefaultMutation] = useState<DefaultMutationOutcome>();
@@ -211,18 +214,38 @@ export function PluginsFeature() {
   }, [availability, items, kind, query]);
   const selected = filtered.find((item) => itemKey(item) === selectedId);
   useEffect(() => {
-    if (!selectedId) return;
+    if (surfaceActive === false || !(skillsView ? selectedSkillId : selectedId)) return;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
-      setSelectedId('');
-      selectedTriggerRef.current?.focus();
+      event.preventDefault();
+      if (skillsView) {
+        setSelectedSkillId('');
+        selectedSkillTriggerRef.current?.focus();
+      } else {
+        setSelectedId('');
+        selectedTriggerRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [selectedId]);
+  }, [selectedId, selectedSkillId, skillsView, surfaceActive]);
   const installedSnapshot = asRecord(installed.data);
   const installedItems = arrayRecords(installedSnapshot.items);
   const pluginRuntimeAvailable = installedSnapshot.runtimeAvailable !== false;
+  const skillSnapshot = asRecord(skills.data);
+  const skillRuntimeAvailable = skillSnapshot.runtimeAvailable !== false;
+  const pluginActionBlockedReason = installed.error
+    ? '暂时无法确认插件状态，请刷新后再试。已填写的内容会保留。'
+    : installed.data === undefined
+      ? '正在读取插件状态，请稍后再试。'
+      : !pluginRuntimeAvailable || (skillsView && !skillRuntimeAvailable)
+        ? '插件服务暂未连接。恢复连接后刷新即可继续，已填写的内容会保留。'
+        : '';
+  const pluginOperationsAvailable = !pluginActionBlockedReason;
+  // Validation can span a refresh. Read current availability before dispatch,
+  // rather than letting an older render submit a preview after disconnection.
+  const pluginActionBlockedReasonRef = useRef(pluginActionBlockedReason);
+  pluginActionBlockedReasonRef.current = pluginActionBlockedReason;
   const proposalItems = arrayRecords(asRecord(proposals.data).items);
   const versionItems = arrayRecords(asRecord(versions.data).items);
   const lifecyclePolicies = arrayRecords(asRecord(lifecycle.data).policies);
@@ -248,7 +271,7 @@ export function PluginsFeature() {
     && pendingDisplayName !== pendingPluginId
     ? `标识：${pendingPluginId} · `
     : '';
-  const lifecyclePending = validate.isPending || preview.isPending || apply.isPending;
+  const lifecyclePending = studioPending || validate.isPending || preview.isPending || apply.isPending;
   // The native App Center scopes each console to its own resources; the web
   // maintenance section keeps folding proposals into the same read state.
   const packagesPending = nativeAppCenter
@@ -373,84 +396,86 @@ export function PluginsFeature() {
     }
     await updateProjectPreference(item, defaultMutation.preference, refreshed.data);
   };
-  const previewInstalledAction = async (action: 'enable' | 'disable' | 'uninstall' | 'rollback', pluginId: string) => {
+  // All entry points share the same approval lifecycle. Source preparation
+  // supplies only the reviewed request; this owner publishes its preview.
+  const prepareLifecyclePreview = async (
+    prepare: () => Promise<Parameters<typeof preview.mutateAsync>[0]>,
+  ) => {
+    if (pluginActionBlockedReasonRef.current) {
+      setLifecycleError(pluginActionBlockedReasonRef.current);
+      return;
+    }
     setLifecycleError('');
     setLifecycleReceipt(undefined);
+    setPendingChange({});
+    setValidation({});
     try {
-      setPendingChange(asRecord(await preview.mutateAsync({ action, pluginId })));
+      const request = await prepare();
+      if (pluginActionBlockedReasonRef.current) throw new Error(pluginActionBlockedReasonRef.current);
+      setPendingChange(asRecord(await preview.mutateAsync(request)));
     } catch (error) {
       setLifecycleError(errorMessage(error));
     }
   };
 
-  const previewCatalogAction = async (item: Record<string, unknown>) => {
-    setLifecycleError('');
-    setLifecycleReceipt(undefined);
-    try {
-      const validationResult = asRecord(await validate.mutateAsync({
-        catalogId: stringValue(item.id),
-        catalogVersion: stringValue(item.latestVersion),
-      }));
-      setValidation(validationResult);
-      setPendingChange(asRecord(await preview.mutateAsync({
+  const validatePreviewSource = async (source: Parameters<typeof validate.mutateAsync>[0]) => {
+    const result = asRecord(await validate.mutateAsync(source));
+    setValidation(result);
+    return result;
+  };
+
+  const previewInstalledAction = (action: 'enable' | 'disable' | 'uninstall' | 'rollback', pluginId: string) => (
+    prepareLifecyclePreview(async () => ({ action, pluginId }))
+  );
+
+  const previewCatalogAction = (item: Record<string, unknown>) => (
+    prepareLifecyclePreview(async () => {
+      const validationResult = await validatePreviewSource({
+        catalogId: stringValue(item.id), catalogVersion: stringValue(item.latestVersion),
+      });
+      return {
         action: item.updateAvailable === true ? 'update' : 'install',
         validationToken: stringValue(validationResult.validationToken),
         enable: item.installed === true ? item.enabled === true : enableAfterInstall,
-      })));
-    } catch (error) {
-      setLifecycleError(errorMessage(error));
-    }
-  };
+      };
+    })
+  );
 
-  const previewInstalledUpdate = async (
+  const previewInstalledUpdate = (
     plugin: Record<string, unknown>,
     catalogItem: Record<string, unknown>,
-  ) => {
-    setLifecycleError('');
-    setLifecycleReceipt(undefined);
-    try {
-      const validationResult = asRecord(await validate.mutateAsync({
-        catalogId: stringValue(catalogItem.id),
-        catalogVersion: stringValue(catalogItem.latestVersion),
-      }));
-      setValidation(validationResult);
-      setPendingChange(asRecord(await preview.mutateAsync({
-        action: 'update',
-        validationToken: stringValue(validationResult.validationToken),
-        enable: plugin.enabled === true,
-      })));
-    } catch (error) {
-      setLifecycleError(errorMessage(error));
-    }
-  };
+  ) => prepareLifecyclePreview(async () => {
+    const validationResult = await validatePreviewSource({
+      catalogId: stringValue(catalogItem.id), catalogVersion: stringValue(catalogItem.latestVersion),
+    });
+    return {
+      action: 'update',
+      validationToken: stringValue(validationResult.validationToken),
+      enable: plugin.enabled === true,
+    };
+  });
 
-  const previewPackageSource = async () => {
+  const previewPackageSource = () => prepareLifecyclePreview(async () => {
     const source = packageSource.trim();
-    setLifecycleError('');
-    setLifecycleReceipt(undefined);
-    setValidation({});
-    setPendingChange({});
     if (!source) {
-      setLifecycleError('请输入 npm 包、Git 地址或本地 Pi Package 目录。');
-      return;
+      throw new Error('请输入 npm 包、Git 地址或本地 Pi Package 目录。');
     }
-    try {
-      const validationResult = asRecord(await validate.mutateAsync({ packageSource: source }));
-      const extension = asRecord(validationResult.extension);
-      const pluginId = stringValue(extension.id);
-      const installedPackage = installedItems.find((item) => stringValue(item.id) === pluginId);
-      setValidation(validationResult);
-      setPendingChange(asRecord(await preview.mutateAsync({
-        action: installedPackage ? 'update' : 'install',
-        validationToken: stringValue(validationResult.validationToken),
-        enable: installedPackage ? installedPackage.enabled === true : enableAfterInstall,
-      })));
-    } catch (error) {
-      setLifecycleError(errorMessage(error));
-    }
-  };
+    const validationResult = await validatePreviewSource({ packageSource: source });
+    const extension = asRecord(validationResult.extension);
+    const pluginId = stringValue(extension.id);
+    const installedPackage = installedItems.find((item) => stringValue(item.id) === pluginId);
+    return {
+      action: installedPackage ? 'update' : 'install',
+      validationToken: stringValue(validationResult.validationToken),
+      enable: installedPackage ? installedPackage.enabled === true : enableAfterInstall,
+    };
+  });
 
   const applyPendingChange = async () => {
+    if (pluginActionBlockedReasonRef.current) {
+      setLifecycleError(pluginActionBlockedReasonRef.current);
+      return;
+    }
     setLifecycleError('');
     const confirmedSummary = `${pluginActionLabel(stringValue(pendingSummary.action))}：${publicPluginDisplayName(pendingDisplayName)}`;
     try {
@@ -462,12 +487,16 @@ export function PluginsFeature() {
       const receiptId = stringValue(asRecord(response.receipt).receiptId);
       setLifecycleReceipt({
         summary: confirmedSummary,
-        evidence: receiptId ? `回执 ${receiptId} · 安装状态已重新读取` : '安装状态已重新读取',
+        evidence: `回执 ${receiptId}`,
       });
       setPendingChange({});
       setValidation({});
     } catch (error) {
-      setLifecycleError(errorMessage(error));
+      // The backend consumes the token before dispatch. Never offer to replay
+      // an operation whose outcome may be unknown after a connection failure.
+      setPendingChange({});
+      setValidation({});
+      setLifecycleError(`${errorMessage(error)} 请先刷新安装状态；如仍需更改，重新预览后再确认。`);
     }
   };
 
@@ -483,7 +512,6 @@ export function PluginsFeature() {
   const availableUpdateFor = (pluginId: string) => versionItems.find(
     (item) => stringValue(item.id) === pluginId && item.updateAvailable === true,
   );
-  const skillSnapshot = asRecord(skills.data);
   const skillItems = arrayRecords(skillSnapshot.items);
   const filteredSkills = useMemo(() => {
     const needle = skillQuery.trim().toLocaleLowerCase('zh-CN');
@@ -522,7 +550,7 @@ export function PluginsFeature() {
   const selectedSkillUpdate = selectedSkillPackage
     ? availableUpdateFor(stringValue(selectedSkillPackage.id))
     : undefined;
-  const skillRuntimeAvailable = skillSnapshot.runtimeAvailable !== false;
+  const skillCountLabel = skills.error ? '暂时无法读取' : skills.data === undefined ? '读取中' : !skillRuntimeAvailable ? '状态未知' : `${filteredSkills.length} 项`;
 
   /* -- Shared building blocks. Web keeps the management-sheet sections; the
      native App Center composes the same blocks into purpose cards without
@@ -535,7 +563,7 @@ export function PluginsFeature() {
         <div><strong>{sessionContextId ? '正在查看当前对话的功能设置' : '正在设置所有对话的默认功能'}</strong>
           <p>对话单独设置优先，其次是项目设置，最后是所有对话默认。更改从下一轮生效。</p>
         </div>
-        {sessionContextId ? <Button onClick={() => openPawOsRoute(desktop, `/agent?session=${encodeURIComponent(sessionContextId)}&tools=open&toolsRequest=${Date.now()}`)} size="small" variant="quiet">调整本对话开关</Button> : null}
+        {sessionContextId ? <Button onClick={() => openPawOsRoute(desktop, `/agent?session=${encodeURIComponent(sessionContextId)}&tools=open&toolsRequest=${Date.now()}`)} size="small" variant="quiet">返回当前对话</Button> : null}
       </div>
       <div className="capability-policy-feedback">
         {defaults.error ? (
@@ -564,7 +592,7 @@ export function PluginsFeature() {
     <>
       <div className="plugins-filters">
         <Field className="plugins-search" htmlFor="plugin-search" label="搜索">
-          <Input id="plugin-search" onChange={(event) => setQuery(event.target.value)} placeholder="名称、用途、来源或权限" value={query} />
+          <Input id="plugin-search" ref={searchRef} onChange={(event) => setQuery(event.target.value)} placeholder="名称、用途、来源或权限" value={query} />
         </Field>
         <Field htmlFor="plugin-availability" label="状态">
           <Select
@@ -590,7 +618,11 @@ export function PluginsFeature() {
               const id = itemKey(item);
               const selectedItem = id === selectedId;
               return (
-                <button aria-pressed={selectedItem} className="plugins-list__item" data-selected={selectedItem || undefined} key={id} onClick={(event) => { selectedTriggerRef.current = event.currentTarget; setSelectedId(id); }} type="button">
+                <button aria-pressed={selectedItem} className="plugins-list__item" data-selected={selectedItem || undefined} key={id} onClick={(event) => {
+                  selectedTriggerRef.current = event.currentTarget;
+                  if (selectedItem) revealStackedPluginDetail(event.currentTarget.closest('.plugins-browser')?.querySelector<HTMLElement>('.plugins-detail') ?? null);
+                  setSelectedId(id);
+                }} type="button">
                   <span className="plugins-list__copy">
                     <small>{publicCapabilitySourceLabel(item.source.label)} · {capabilityKindLabel(item.kind)}</small>
                     <strong>{publicCapabilityDisplayName(item)}</strong>
@@ -637,19 +669,25 @@ export function PluginsFeature() {
             </aside>
           )}
         </div>
-      ) : <EmptyState description={items.length ? '换一个关键词或筛选条件试试。' : '当前没有可用的技能或工具。'} icon={Search} title="没有找到能力" />}
+      ) : <EmptyState
+        action={query || kind !== 'all' || availability !== 'all' ? <Button onClick={() => { setQuery(''); setKind('all'); setAvailability('all'); searchRef.current?.focus(); }} size="small" variant="quiet">清除筛选</Button> : undefined}
+        description={items.length ? '换一个关键词或清除筛选，查看全部能力。' : '当前没有可用的技能或工具。'}
+        icon={Search}
+        title="没有找到能力"
+      />}
     </>
   );
 
   const runtimeNotice = !pluginRuntimeAvailable ? (
-    <InlineNotice title="Pi Runtime 暂时未连接" tone="warning">
-      插件清单仍可浏览，但已安装状态和安装操作要等 Pi Runtime 恢复后才能继续；页面不会再把断连伪装成“0 个已安装”。
+    <InlineNotice title="插件服务暂未连接" tone="warning">
+      暂时无法确认已安装状态。恢复连接后刷新即可继续，填写的来源会保留。
+      <Button loading={installed.isFetching} onClick={retryPackages} size="small" variant="quiet">刷新状态</Button>
     </InlineNotice>
   ) : null;
 
   const packageStatusBadge = (
     <StatusBadge
-      label={packagesError ? '暂时无法读取' : installed.data === undefined ? (installed.isFetching ? '正在读取' : '等待读取') : !pluginRuntimeAvailable ? 'Pi 未连接' : `${installedItems.length} 个已安装`}
+      label={packagesError ? '暂时无法读取' : installed.data === undefined ? (installed.isFetching ? '正在读取' : '等待读取') : !pluginRuntimeAvailable ? '安装状态未知' : `${installedItems.length} 个已安装`}
       tone={packagesError || !pluginRuntimeAvailable ? 'warning' : 'neutral'}
     />
   );
@@ -666,7 +704,7 @@ export function PluginsFeature() {
       </Field>
       <Switch checked={enableAfterInstall} label="安装后立即启用" onCheckedChange={setEnableAfterInstall} />
       <Button
-        disabled={!packageSource.trim() || lifecyclePending}
+        disabled={!packageSource.trim() || lifecyclePending || !pluginOperationsAvailable}
         leadingIcon={<PackageCheck size={15} />}
         loading={validate.isPending || preview.isPending}
         onClick={() => void previewPackageSource()}
@@ -722,7 +760,7 @@ export function PluginsFeature() {
                   >打开 {extensionApp!.label}</Button>
                   {item.updateAvailable === true ? (
                     <Button
-                      disabled={lifecyclePending}
+                      disabled={lifecyclePending || !pluginOperationsAvailable}
                       leadingIcon={<PackageCheck size={15} />}
                       loading={validate.isPending || preview.isPending}
                       onClick={() => void previewCatalogAction(item)}
@@ -733,7 +771,7 @@ export function PluginsFeature() {
                 </>
               ) : (
                 <Button
-                  disabled={item.actionable !== true || (item.installed === true && item.updateAvailable !== true) || lifecyclePending}
+                  disabled={item.actionable !== true || (item.installed === true && item.updateAvailable !== true) || lifecyclePending || !pluginOperationsAvailable}
                   leadingIcon={<PackageCheck size={15} />}
                   loading={validate.isPending || preview.isPending}
                   onClick={() => void previewCatalogAction(item)}
@@ -766,7 +804,7 @@ export function PluginsFeature() {
         const proposalVersion = stringValue(summary.version);
         const proposalPermissions = stringArray(summary.permissions);
         return (
-          <button className="plugin-proposal" key={stringValue(proposal.proposalId)} onClick={() => setPendingChange(proposal)} type="button">
+          <button className="plugin-proposal" disabled={lifecyclePending} key={stringValue(proposal.proposalId)} onClick={() => { setPendingChange(proposal); setLifecycleError(''); setLifecycleReceipt(undefined); }} type="button">
             <span>
               <strong>{publicPluginDisplayName(stringValue(summary.displayName, stringValue(summary.pluginId)))}</strong>
               <small>
@@ -836,9 +874,10 @@ export function PluginsFeature() {
           ? <div><dt>保留的数据</dt><dd>只移除这个 Pi Package 的受管资源；不会删除项目文件、对话、WorkDocument 或个人数据。</dd></div>
           : null}
       </dl>
+      {!pluginOperationsAvailable ? <p>{pluginActionBlockedReason}</p> : null}
       <div className="plugin-lifecycle__approval-actions">
         <Button disabled={lifecyclePending} onClick={() => setPendingChange({})} size="small" variant="quiet">取消</Button>
-        <Button leadingIcon={<ShieldCheck size={16} />} loading={apply.isPending} onClick={() => void applyPendingChange()} size="small" variant="primary">确认更改</Button>
+        <Button disabled={lifecyclePending || !pluginOperationsAvailable} leadingIcon={<ShieldCheck size={16} />} loading={apply.isPending} onClick={() => void applyPendingChange()} size="small" variant="primary">确认更改</Button>
       </div>
     </section>
   ) : null;
@@ -861,19 +900,19 @@ export function PluginsFeature() {
   const skillsBrowseBlock = (
     <div className="skills-surface">
       {!skillRuntimeAvailable ? (
-        <InlineNotice title="Pi Runtime 暂时未连接" tone="warning">
-          Skill 清单暂时无法从 Pi Runtime 更新；页面不会把断连伪装成空清单。
+        <InlineNotice title="技能清单暂时无法更新" tone="warning">
+          技能服务暂未连接，数量和当前状态尚未确认。重新读取后可继续，搜索条件会保留。
+          <Button loading={skills.isFetching} onClick={() => void skills.refetch()} size="small" variant="quiet">重新读取技能</Button>
         </InlineNotice>
       ) : null}
-      <MetricStrip items={[
-        { label: '可查看', value: skillItems.length, detail: '当前可发现的 Skill', icon: Sparkles },
-        { label: '随插件管理', value: skillItems.filter((item) => stringValue(item.management) === 'package').length, detail: '按 Package 统一变更', icon: PackageCheck },
-        { label: '仅查看', value: skillItems.filter((item) => stringValue(item.management) === 'inspect_only').length, detail: '随产品提供或来自当前项目', icon: ShieldQuestion },
-      ]} />
+      {skillRuntimeAvailable ? <p className="plugins-capability-counts">
+        {skillItems.length} 项可查看 · {skillItems.filter((item) => stringValue(item.management) === 'package').length} 项随插件管理 · {skillItems.filter((item) => stringValue(item.management) === 'inspect_only').length} 项仅查看
+      </p> : null}
       <div className="skills-filters">
         <Field className="plugins-search" htmlFor="skill-search" label="搜索">
           <Input
             id="skill-search"
+            ref={skillSearchRef}
             onChange={(event) => setSkillQuery(event.target.value)}
             placeholder="名称、用途、Package 或路径"
             value={skillQuery}
@@ -920,7 +959,11 @@ export function PluginsFeature() {
                   className="plugins-list__item skills-list__item"
                   data-selected={isSelected || undefined}
                   key={id}
-                  onClick={() => setSelectedSkillId(id)}
+                  onClick={(event) => {
+                    selectedSkillTriggerRef.current = event.currentTarget;
+                    if (isSelected) revealStackedPluginDetail(event.currentTarget.closest('.plugins-browser')?.querySelector<HTMLElement>('.plugins-detail') ?? null);
+                    setSelectedSkillId(id);
+                  }}
                   type="button"
                 >
                   <span className="plugins-list__copy">
@@ -944,8 +987,9 @@ export function PluginsFeature() {
               installedPackage={selectedSkillPackage}
               item={selectedSkill}
               lifecyclePending={lifecyclePending}
+              lifecycleUnavailable={!pluginOperationsAvailable}
               onAction={(action) => void previewInstalledAction(action, stringValue(selectedSkill.packageId))}
-              onClose={() => setSelectedSkillId('')}
+              onClose={() => { setSelectedSkillId(''); selectedSkillTriggerRef.current?.focus(); }}
               onOpenScenes={() => desktop ? openPawOsRoute(desktop, '/plugins?view=scenes') : navigate('/plugins?view=scenes')}
               onRetry={() => void skill.refetch()}
               onUpdate={() => {
@@ -963,13 +1007,14 @@ export function PluginsFeature() {
             </aside>
           )}
         </div>
-      ) : (
+      ) : skillRuntimeAvailable ? (
         <EmptyState
-          description={skillItems.length ? '换一个关键词或筛选条件试试。' : '当前没有发现 Bundled、项目或已安装 Package Skill。'}
+          action={skillQuery || skillSource !== 'all' || skillStatus !== 'all' ? <Button onClick={() => { setSkillQuery(''); setSkillSource('all'); setSkillStatus('all'); skillSearchRef.current?.focus(); }} size="small" variant="quiet">清除筛选</Button> : undefined}
+          description={skillItems.length ? '换一个关键词或清除筛选，查看全部技能。' : '当前没有发现随产品提供、来自项目或已安装插件的技能。'}
           icon={Sparkles}
           title="没有找到 Skill"
         />
-      )}
+      ) : null}
     </div>
   );
 
@@ -1028,32 +1073,14 @@ export function PluginsFeature() {
             <span className="installed-plugin__state">
               {update ? <StatusBadge label="有更新" tone="warning" /> : null}
               <StatusBadge label={enabled ? '已启用' : '已停用'} tone={enabled ? 'success' : 'neutral'} />
-              {loadedSessionCount > 0 ? <StatusBadge label={`已加载 · ${loadedSessionCount} 个对话`} tone="success" /> : null}
-              {invoked ? <StatusBadge label={`已调用 · ${lastInvocationResource}`} tone="success" /> : null}
+              {loadedSessionCount > 0 ? <StatusBadge label={`历史加载 · ${loadedSessionCount} 个对话`} tone="neutral" /> : null}
+              {invoked ? <StatusBadge label={`最近调用 · ${lastInvocationResource}`} tone="neutral" /> : null}
             </span>
             <ul className="installed-plugin__facts">
               <li><ShieldCheck aria-hidden="true" size={13} />{permissions.length ? permissions.map(publicPluginPermissionLabel).join('、') : '无额外权限'}</li>
               <li><Boxes aria-hidden="true" size={13} />{resourceCount ? `${resourceCount} 项资源` : '无附带资源'}</li>
               {resourceSummary ? <li><Boxes aria-hidden="true" size={13} />{resourceSummary}</li> : null}
-              <li><History aria-hidden="true" size={13} />{rollbackReady ? (previousVersion ? `可恢复到 v${previousVersion}` : '可恢复上一版本，具体版本将在预览中显示') : '没有可恢复的历史版本'}</li>
             </ul>
-            {Object.keys(usageSummary).length ? (
-              <dl className="installed-plugin__usage">
-                <div><dt>最近加载</dt><dd>{loadedSessionCount > 0 ? `${lastLoadedAtMs ? formatPluginTime(lastLoadedAtMs) : '时间未提供'} · ${loadedSessionCount} 个对话` : '尚无加载证据'}</dd></div>
-                <div><dt>调用统计</dt><dd>{invocationCount > 0 ? `${invocationCount} 次调用 · 成功 ${succeededCount} · 失败 ${failedCount} · 取消 ${cancelledCount} · 平均 ${averageDurationMs} ms` : '尚无调用证据'}</dd></div>
-                {invoked ? <div><dt>最近调用</dt><dd>{pluginInvocationStatusLabel(stringValue(lastInvocation.status))} · {lastInvocationDurationMs} ms{lastInvocationAtMs ? ` · ${formatPluginTime(lastInvocationAtMs)}` : ''} · {publicPluginResourceKindLabel(stringValue(lastInvocation.resourceKind))} {lastInvocationResource}</dd></div> : null}
-              </dl>
-            ) : null}
-            <Disclosure className="installed-plugin__details" summary={<><ChevronRight aria-hidden="true" size={14} />包标识与原始信息</>}>
-              <pre>{JSON.stringify({
-                id: pluginId,
-                displayName: plugin.displayName,
-                description: plugin.description,
-                version: plugin.version,
-                source: { kind: source.kind, label: source.label, requested: source.requested },
-                permissions,
-              }, null, 2)}</pre>
-            </Disclosure>
             <div className="installed-plugin__actions">
               {canOpenExtensionApp ? (
                 <Button
@@ -1064,7 +1091,7 @@ export function PluginsFeature() {
               ) : null}
               {update ? (
                 <Button
-                  disabled={lifecyclePending}
+                  disabled={lifecyclePending || !pluginOperationsAvailable}
                   leadingIcon={<CircleArrowUp size={15} />}
                   loading={(validate.isPending || preview.isPending) && stringValue(validate.variables?.catalogId) === pluginId}
                   onClick={() => void previewInstalledUpdate(plugin, update)}
@@ -1072,30 +1099,53 @@ export function PluginsFeature() {
                 >更新到 v{stringValue(update.latestVersion)}</Button>
               ) : null}
               <Button
-                disabled={lifecyclePending}
+                disabled={lifecyclePending || !pluginOperationsAvailable}
                 leadingIcon={<Power size={15} />}
                 onClick={() => void previewInstalledAction(enabled ? 'disable' : 'enable', pluginId)}
                 size="small"
                 variant="quiet"
               >{enabled ? '停用' : '启用'}</Button>
-              <Button
-                disabled={!rollbackReady || lifecyclePending}
-                leadingIcon={<RotateCcw size={15} />}
-                onClick={() => void previewInstalledAction('rollback', pluginId)}
-                size="small"
-                variant="quiet"
-              >恢复上一版本</Button>
-              <Button
-                disabled={lifecyclePending}
-                leadingIcon={<PackageX size={15} />}
-                onClick={() => void previewInstalledAction('uninstall', pluginId)}
-                size="small"
-                variant="quiet"
-              >卸载</Button>
             </div>
+            <Disclosure className="installed-plugin__details installed-plugin__maintenance" summary={<><ChevronRight aria-hidden="true" size={14} />管理与使用记录</>}>
+              <p className="installed-plugin__rollback"><History aria-hidden="true" size={13} />{rollbackReady ? (previousVersion ? `可恢复到 v${previousVersion}` : '可恢复上一版本，具体版本将在预览中显示') : '没有可恢复的历史版本'}</p>
+              {Object.keys(usageSummary).length ? <>
+                <p className="installed-plugin__usage-note">这里显示历史加载和调用记录；当前对话是否使用，请查看该对话的调用回执。</p>
+                <dl className="installed-plugin__usage">
+                  <div><dt>最近加载</dt><dd>{loadedSessionCount > 0 ? `${lastLoadedAtMs ? formatPluginTime(lastLoadedAtMs) : '时间未提供'} · ${loadedSessionCount} 个对话` : '尚无加载证据'}</dd></div>
+                  <div><dt>调用统计</dt><dd>{invocationCount > 0 ? `${invocationCount} 次调用 · 成功 ${succeededCount} · 失败 ${failedCount} · 取消 ${cancelledCount} · 平均 ${averageDurationMs} ms` : '尚无调用证据'}</dd></div>
+                  {invoked ? <div><dt>最近调用</dt><dd>{pluginInvocationStatusLabel(stringValue(lastInvocation.status))} · {lastInvocationDurationMs} ms{lastInvocationAtMs ? ` · ${formatPluginTime(lastInvocationAtMs)}` : ''} · {publicPluginResourceKindLabel(stringValue(lastInvocation.resourceKind))} {lastInvocationResource}</dd></div> : null}
+                </dl>
+              </> : null}
+              <Disclosure className="installed-plugin__details" summary={<><ChevronRight aria-hidden="true" size={14} />包标识与原始信息</>}>
+                <pre>{JSON.stringify({
+                  id: pluginId,
+                  displayName: plugin.displayName,
+                  description: plugin.description,
+                  version: plugin.version,
+                  source: { kind: source.kind, label: source.label, requested: source.requested },
+                  permissions,
+                }, null, 2)}</pre>
+              </Disclosure>
+              <div className="installed-plugin__actions">
+                <Button
+                  disabled={!rollbackReady || lifecyclePending || !pluginOperationsAvailable}
+                  leadingIcon={<RotateCcw size={15} />}
+                  onClick={() => void previewInstalledAction('rollback', pluginId)}
+                  size="small"
+                  variant="quiet"
+                >恢复上一版本</Button>
+                <Button
+                  disabled={lifecyclePending || !pluginOperationsAvailable}
+                  leadingIcon={<PackageX size={15} />}
+                  onClick={() => void previewInstalledAction('uninstall', pluginId)}
+                  size="small"
+                  variant="quiet"
+                >卸载</Button>
+              </div>
+            </Disclosure>
           </article>
         );
-      }) : <EmptyState description="需要新能力时，可以先查看来源和权限，再决定是否安装。" icon={PackageCheck} title="还没有额外扩展" />}
+      }) : pluginRuntimeAvailable ? <EmptyState description="需要新能力时，可以先查看来源和权限，再决定是否安装。" icon={PackageCheck} title="还没有额外扩展" /> : null}
     </div>
   );
 
@@ -1168,7 +1218,7 @@ export function PluginsFeature() {
      and automatic curation remain below it, with their own recovery controls.
      目录 and 建议 stay on their own routes. ------------------------------- */
 
-  const studioBlock = <><PluginStudio onPreview={(value) => { setPendingChange(value); setLifecycleError(''); }} />{approvalBlock}{receiptBlock}{errorBlock}</>;
+  const studioBlock = <><PluginStudio disabled={lifecyclePending} onPendingChange={setStudioPending} onPrepare={() => { setPendingChange({}); setLifecycleReceipt(undefined); setLifecycleError(''); }} onPreview={(value) => { setPendingChange(value); setLifecycleError(''); }} />{approvalBlock}{receiptBlock}{errorBlock}</>;
   const nativeBody = nativePage === 'capabilities' ? (
       <NativeConsole
         icon={Wrench}
@@ -1184,7 +1234,7 @@ export function PluginsFeature() {
     <NativeConsole
       icon={Sparkles}
       title="Skills"
-      trailing={skills.data ? <span className="plugins-count">{filteredSkills.length} 项</span> : null}
+      trailing={skills.data ? <span className="plugins-count">{skillCountLabel}</span> : null}
     >
       <QueryState error={asError(skills.error)} isPending={skills.isPending} onRetry={() => void skills.refetch()}>
         <div className="plugin-lifecycle">
@@ -1226,8 +1276,6 @@ export function PluginsFeature() {
         </QueryState>
       </NativeConsole>
 
-      <Button onClick={() => openPawOsRoute(desktop, `/plugins?view=capabilities${sessionContextId ? `&sessionId=${encodeURIComponent(sessionContextId)}` : ''}`)} variant="quiet">管理 Agent 功能开关与默认设置</Button>
-
       <NativeConsole icon={Clock3} title="自动整理与提醒" trailing={hooksStatusBadge}>
         <QueryState error={asError(lifecycle.error)} isPending={lifecycle.isPending} onRetry={() => void lifecycle.refetch()}>
           {hooksBlock}
@@ -1241,7 +1289,7 @@ export function PluginsFeature() {
       <ManagementSection
         description="查看 Pi Runtime 当前发现的 Skill，按来源、状态和内容修订筛选。Package Skill 的变更始终作用于整个 Package；Bundled 与项目 Skill 仅提供正文查看。"
         title="Skills"
-        trailing={<span className="plugins-count">{skills.data ? `${filteredSkills.length} 项` : '读取中'}</span>}
+        trailing={<span className="plugins-count">{skillCountLabel}</span>}
       >
         <QueryState error={asError(skills.error)} isPending={skills.isPending} onRetry={() => void skills.refetch()}>
           {skillsBrowseBlock}
@@ -1379,6 +1427,17 @@ function NativeConsole({
     </section>
   );
 }
+// A stacked list/detail view needs an explicit arrival point. Read the actual
+// grid result so this follows the feature container, not an assumed viewport.
+function revealStackedPluginDetail(detail: HTMLElement | null) {
+  const browser = detail?.parentElement;
+  if (!detail || !browser) return;
+  const columns = window.getComputedStyle(browser).gridTemplateColumns.trim();
+  if (!/^\d+(?:\.\d+)?px$/.test(columns) || Number.parseFloat(columns) <= 0) return;
+  detail.focus({ preventScroll: true });
+  detail.scrollIntoView({ behavior: 'instant', block: 'start' });
+}
+
 function SkillDetail({
   detail,
   detailError,
@@ -1386,6 +1445,7 @@ function SkillDetail({
   installedPackage,
   item,
   lifecyclePending,
+  lifecycleUnavailable,
   onAction,
   onClose,
   onOpenScenes,
@@ -1399,6 +1459,7 @@ function SkillDetail({
   installedPackage?: Record<string, unknown>;
   item: Record<string, unknown>;
   lifecyclePending: boolean;
+  lifecycleUnavailable: boolean;
   onAction: (action: 'enable' | 'disable' | 'uninstall') => void;
   onClose: () => void;
   onOpenScenes: () => void;
@@ -1406,6 +1467,10 @@ function SkillDetail({
   onUpdate: () => void;
   update?: Record<string, unknown>;
 }) {
+  const detailRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    revealStackedPluginDetail(detailRef.current);
+  }, [item.skillId]);
   const sourceKind = stringValue(item.sourceKind);
   const packageId = stringValue(item.packageId);
   const actions = stringArray(item.actions);
@@ -1418,14 +1483,13 @@ function SkillDetail({
   const enabled = item.enabled === true;
 
   return (
-    <aside aria-label="Skill 详情" className="plugins-detail skills-detail">
+    <aside aria-label="Skill 详情" className="plugins-detail skills-detail" ref={detailRef} tabIndex={-1}>
       <div className="plugins-detail__toolbar">
         <span>Skill 详情</span>
         <IconButton
           icon={<PanelRightClose size={16} />}
           label="关闭 Skill 详情"
           onClick={onClose}
-          tooltip
         />
       </div>
       <div className="plugins-detail__heading">
@@ -1461,7 +1525,7 @@ function SkillDetail({
       <div className="skills-detail__actions">
         {canManagePackage && actions.includes(enabled ? 'disable' : 'enable') ? (
           <Button
-            disabled={lifecyclePending || !installedPackage}
+            disabled={lifecyclePending || lifecycleUnavailable || !installedPackage}
             leadingIcon={<Power size={15} />}
             onClick={() => onAction(enabled ? 'disable' : 'enable')}
             size="small"
@@ -1469,7 +1533,7 @@ function SkillDetail({
         ) : null}
         {canManagePackage && update && actions.includes('update') ? (
           <Button
-            disabled={lifecyclePending || !installedPackage}
+            disabled={lifecyclePending || lifecycleUnavailable || !installedPackage}
             leadingIcon={<CircleArrowUp size={15} />}
             loading={lifecyclePending}
             onClick={onUpdate}
@@ -1479,7 +1543,7 @@ function SkillDetail({
         ) : null}
         {canManagePackage && actions.includes('uninstall') ? (
           <Button
-            disabled={lifecyclePending || !installedPackage}
+            disabled={lifecyclePending || lifecycleUnavailable || !installedPackage}
             leadingIcon={<PackageX size={15} />}
             onClick={() => onAction('uninstall')}
             size="small"
@@ -1533,6 +1597,10 @@ function ToolDetail({
   sessionOwnerId?: string;
   sessionPreference: CapabilityPreference;
 }) {
+  const detailRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    revealStackedPluginDetail(detailRef.current);
+  }, [item.canonicalId]);
   const operations = operationLabelsFor(item);
   const unknownOperationCount = Math.max(
     0,
@@ -1544,14 +1612,13 @@ function ToolDetail({
   const requiresRoom = capabilityNeedsRoomContext(item);
 
   return (
-    <aside aria-label="能力详情" className="plugins-detail">
+    <aside aria-label="能力详情" className="plugins-detail" ref={detailRef} tabIndex={-1}>
       <div className="plugins-detail__toolbar">
         <span>能力详情</span>
         <IconButton
           icon={<PanelRightClose size={16} />}
           label="关闭能力详情"
           onClick={onClose}
-          tooltip
         />
       </div>
 

@@ -5,6 +5,7 @@ import {
   createConfiguredControlTransport,
   useControlTransport,
 } from '@/app/control-transport';
+import { createPreviewTransport } from '@/app/preview-control-transport';
 
 function Probe() {
   const transport = useControlTransport();
@@ -12,6 +13,17 @@ function Probe() {
 }
 
 describe('ControlTransportProvider', () => {
+  it('does not reuse primary demo identities or expose sample history after a renderer reload', async () => {
+    const first = createPreviewTransport();
+    const second = createPreviewTransport();
+    const before = await first.request<{ session: { id: string } }>({ pathId: 'agent.primary.ensure', body: {} });
+    const after = await second.request<{ session: { id: string } }>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(after.session.id).not.toBe(before.session.id);
+    const stale = await second.request<{ messages: unknown[]; liveEvents: unknown[] }>({ pathId: 'agent.session.snapshot', params: { sessionId: before.session.id } });
+    expect(stale.messages).toEqual([]);
+    expect(stale.liveEvents).toEqual([]);
+    await expect(second.request({ pathId: 'agent.session.prompt', params: { sessionId: before.session.id }, body: { message: 'stale', clientMessageId: 'stale' } })).rejects.toThrow('演示会话已重置');
+  });
   const originalUrl = window.location.href;
 
   beforeEach(() => {
@@ -68,6 +80,23 @@ describe('ControlTransportProvider', () => {
     vi.stubEnv('VITE_CONTROL_TRANSPORT', 'mock');
 
     expect(createConfiguredControlTransport().kind).toBe('mock');
+  });
+  it('keeps a built mock renderer synthetic even when a native bridge and Electron host query exist', async () => {
+    const previous = window.webkit;
+    const postMessage = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    window.history.replaceState({}, '', '/?pawHost=electron#/agent');
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('VITE_CONTROL_TRANSPORT', 'mock');
+    window.webkit = { messageHandlers: { ragImeNativeBridge: { postMessage } } };
+    try {
+      const transport = createConfiguredControlTransport();
+      expect(transport.kind).toBe('mock');
+      await transport.request({ pathId: 'agent.primary.ensure', body: {} });
+      await transport.request({ pathId: 'memory.profile' });
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally { window.webkit = previous; fetchSpy.mockRestore(); }
   });
 
   it('keeps the preview memory surface representative and contract-valid', async () => {

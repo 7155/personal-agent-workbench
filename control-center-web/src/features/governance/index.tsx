@@ -42,6 +42,7 @@ import {
   type KnowledgeGovernanceProjection,
 } from './model';
 import './governance.css';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 
 type ScopeFilters = { root: string; owner: string; room: string; session: string };
 type GovernanceLoadState = 'readonly' | 'loading' | 'ready' | 'error';
@@ -50,6 +51,7 @@ const emptyFilters: ScopeFilters = { root: '', owner: '', room: '', session: '' 
 
 export function GovernanceFeature() {
   const transport = useControlTransport();
+  const pageActive = usePawOsAppActive() ?? true;
   const [governance, setGovernance] = useState(emptyGovernanceProjection);
   const [knowledge, setKnowledge] = useState(emptyKnowledgeGovernanceProjection);
   const [live, setLive] = useState(false);
@@ -57,8 +59,9 @@ export function GovernanceFeature() {
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
+    if (!pageActive) return;
     let active = true;
-    setLoadState('loading');
+    setLoadState(current => current === 'ready' ? current : 'loading');
     void Promise.all([
       transport.request({ pathId: 'agent.governance.read' }),
       transport.request({ pathId: 'agent.knowledgeGovernance.read' }),
@@ -76,7 +79,7 @@ export function GovernanceFeature() {
       setLoadState('error');
     });
     return () => { active = false; };
-  }, [reloadToken, transport]);
+  }, [pageActive, reloadToken, transport]);
 
   return (
     <GovernanceCenter

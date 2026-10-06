@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from rag_ime.keychain_secrets import (
     MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT, read_keychain_secret, write_keychain_secret,
-    delete_keychain_secret,
+    delete_keychain_secret, keychain_storage_available,
 )
 from rag_ime.pi.config import PiRuntimeConfig
 
@@ -199,9 +199,18 @@ class PiProviderAuthService:
         }
 
     def _jev_provider(self) -> dict[str, object]:
-        configured = bool(str(os.environ.get("TYPESAFE_API_KEY") or read_keychain_secret(
+        environment_configured = bool(str(os.environ.get("TYPESAFE_API_KEY") or "").strip())
+        storage_available = keychain_storage_available()
+        storage_message = (
+            "当前由 TYPESAFE_API_KEY 环境变量配置；请在服务的秘密配置中管理，修改后重启服务。"
+            if environment_configured else
+            "密钥将保存到运行 PAW 服务的 Mac 钥匙串，仅用于 TypeSafe / Jev。"
+            if storage_available else
+            "当前 PAW 服务没有可用的 macOS 钥匙串，无法在此安全保存 Jev 密钥。请由你在服务部署的秘密配置中注入 TYPESAFE_API_KEY 后重启服务，或在 Mac 上运行 PAW 后使用钥匙串保存。不会降级写入明文文件。"
+        )
+        configured = bool(str(os.environ.get("TYPESAFE_API_KEY") or (storage_available and read_keychain_secret(
             MODEL_KEYCHAIN_SERVICE, TYPESAFE_ACCOUNT
-        ) or "").strip())
+        )) or "").strip())
         return {
             "id": "typesafe", "name": "TypeSafe / Jev",
             "scenarios": [
@@ -219,7 +228,10 @@ class PiProviderAuthService:
                  "description": "检查召回证据能否支持回答，决定是否继续检索。"},
             ],
             "auth": {"configured": configured, "type": "api_key" if configured else "",
-                     "oauthBrowserSupported": False, "oauthDeviceCodeSupported": False},
+                     "oauthBrowserSupported": False, "oauthDeviceCodeSupported": False,
+                     "credentialChangesSupported": storage_available and not environment_configured,
+                     "credentialStorage": "environment" if environment_configured else "macos_keychain" if storage_available else "unavailable",
+                     "credentialStorageMessage": storage_message},
             "models": [{"id": "jev-latest", "name": "Jev · 工具审批专用"}],
         }
 
@@ -230,6 +242,8 @@ class PiProviderAuthService:
             raise PiProviderAuthError("不支持这项凭据操作。")
         if provider == "typesafe" and str(os.environ.get("TYPESAFE_API_KEY") or "").strip():
             raise PiProviderAuthError("Jev 当前使用 TYPESAFE_API_KEY 环境变量；请先移除环境变量并重启服务，再在这里管理密钥。")
+        if provider == "typesafe" and not keychain_storage_available():
+            raise PiProviderAuthError("当前服务无法安全保存 Jev 密钥；请通过服务的秘密配置注入 TYPESAFE_API_KEY 后重启，或在 Mac 上使用钥匙串。")
         provider_item = self._provider(provider)
         auth = provider_item.get("auth") if isinstance(provider_item.get("auth"), Mapping) else {}
         if action == "oauth_browser" and not bool(auth.get("oauthBrowserSupported")):
@@ -314,6 +328,8 @@ class PiProviderAuthService:
         raise PiProviderAuthError("不支持这项凭据操作。")
 
     def _write_jev_key(self, value: str | None) -> None:
+        if not keychain_storage_available():
+            raise PiProviderAuthError("当前服务无法安全保存 Jev 密钥；请通过服务的秘密配置注入 TYPESAFE_API_KEY 后重启，或在 Mac 上使用钥匙串。")
         if str(os.environ.get("TYPESAFE_API_KEY") or "").strip():
             raise PiProviderAuthError("Jev 当前由环境变量配置，请先移除环境变量并重启服务。")
         try:

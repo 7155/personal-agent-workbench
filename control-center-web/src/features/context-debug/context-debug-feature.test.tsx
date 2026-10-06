@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -150,6 +150,26 @@ describe('ContextDebugFeature', () => {
     await user.click(within(dialog).getByRole('button', { name: '关闭' }));
     await waitFor(() => expect(screen.queryByTitle('逐次上下文报告')).not.toBeInTheDocument());
     expect(reportButton).toHaveFocus();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:context-debug');
+  });
+
+  it('accepts report close requests only from its own preview frame', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, sessions: [] },
+      'agent.session.debugContext.get': debugContextResponse(),
+    } });
+    renderFeature(transport, '/context-debug?sessionId=session-a');
+    const button = await screen.findByRole('button', { name: '生成 HTML 报告' });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+    const frame = screen.getByTitle('逐次上下文报告') as HTMLIFrameElement;
+    const data = { type: 'paw:context-report:close' };
+    act(() => window.dispatchEvent(new MessageEvent('message', { data, source: window })));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    act(() => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow })));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(button).toHaveFocus();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:context-debug');
   });
 
@@ -346,9 +366,11 @@ describe('ContextDebugFeature', () => {
     renderFeature(transport, '/context-debug?sessionId=session-a&turnId=turn-initial');
 
     expect(await screen.findByRole('heading', { name: '首轮装配' })).toBeInTheDocument();
+    await user.type(screen.getByRole('searchbox', { name: '搜索上下文条目' }), 'memory_search');
     const turnNavigation = screen.getByRole('navigation', { name: '对话轮次' });
     await user.click(within(turnNavigation).getByRole('button', { name: /压缩后恢复/ }));
     expect(await screen.findByRole('heading', { name: '压缩后恢复' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: '搜索上下文条目' })).toHaveValue('memory_search');
     expect(screen.getByText('旧消息已被低分辨率恢复材料替代', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('压缩恢复与运行时')).toBeInTheDocument();
     expect(screen.getByText('+2 / -12')).toBeInTheDocument();

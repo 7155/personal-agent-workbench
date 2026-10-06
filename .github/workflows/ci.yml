@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  python:
-    name: Python, schemas, and contracts
+  python-plan:
+    name: Python checks and full-suite plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -22,6 +22,13 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Install command harness prerequisite
+        # The real POSIX process lifecycle fixtures use the product's zsh
+        # launcher; managed sandbox execution remains macOS-only.
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zsh
+          test -x /bin/zsh
       - name: Sync locked Python dependencies
         run: |
           python -m pip install "uv==0.11.1"
@@ -55,19 +62,188 @@ jobs:
         # package exists. Secret shapes, machine paths, generated artifacts,
         # missing notices, and dirty state must still fail CI.
         run: python scripts/check_public_release.py --repository-only
-      - name: Run unit suite
-        env:
-          PYTHONWARNINGS: "error::ResourceWarning"
-        run: python -m unittest discover -s tests
       - name: Check shell syntax
         run: |
           find scripts -type f -name '*.sh' -print0 \
             | xargs -0 -n1 bash -n
 
+      - name: Plan the complete unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+        run: python scripts/run_unit_tests.py --pattern 'test*.py' --write-shard-plan "$RUNNER_TEMP/plan.json" --shard-count 12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unit-plan-python-${{ github.run_id }}
+          path: ${{ runner.temp }}/plan.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  python-unit:
+    name: python unit shard ${{ matrix.shard }}
+    needs: python-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install command harness prerequisite
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zsh
+          test -x /bin/zsh
+      - name: Sync locked Python dependencies
+        run: |
+          python -m pip install "uv==0.11.1"
+          uv sync --locked --python python
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-python-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - name: Run assigned unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/paw-unit-output"
+          python scripts/run_unit_tests.py --shard-plan "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-index "$SHARD_INDEX" --shard-receipt "$RUNNER_TEMP/paw-unit-output/shard-$SHARD_INDEX.json" --timing-jsonl "$RUNNER_TEMP/paw-unit-output/timing-$SHARD_INDEX.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-receipt-python-${{ github.run_id }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/paw-unit-output/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  python:
+    name: Python, schemas, and contracts
+    needs: [python-plan, python-unit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-python-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unit-receipt-python-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/paw-unit-receipts
+          merge-multiple: false
+      - name: Verify complete unit-suite receipts
+        env:
+          PLAN_RESULT: ${{ needs['python-plan'].result }}
+          UNIT_RESULT: ${{ needs['python-unit'].result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          python scripts/run_unit_tests.py --verify-shards "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-receipts "$RUNNER_TEMP/paw-unit-receipts" --workflow-result "$UNIT_RESULT"
+
+  macos-plan:
+    name: macOS full-suite plan
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Sync locked Python dependencies
+        run: |
+          python -m pip install "uv==0.11.1"
+          uv sync --locked --python python
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Enable pinned pnpm for unit-test subprocesses
+        run: corepack enable && corepack prepare pnpm@11.9.0 --activate
+      - name: Plan the complete unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+        run: python scripts/run_unit_tests.py --pattern 'test*.py' --write-shard-plan "$RUNNER_TEMP/plan.json" --shard-count 12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unit-plan-macos-${{ github.run_id }}
+          path: ${{ runner.temp }}/plan.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  macos-unit:
+    name: macos unit shard ${{ matrix.shard }}
+    needs: macos-plan
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Sync locked Python dependencies
+        run: |
+          python -m pip install "uv==0.11.1"
+          uv sync --locked --python python
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Enable pinned pnpm for unit-test subprocesses
+        run: corepack enable && corepack prepare pnpm@11.9.0 --activate
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-macos-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - name: Run assigned unit suite
+        env:
+          PYTHONWARNINGS: "error::ResourceWarning"
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/paw-unit-output"
+          python scripts/run_unit_tests.py --shard-plan "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-index "$SHARD_INDEX" --shard-receipt "$RUNNER_TEMP/paw-unit-output/shard-$SHARD_INDEX.json" --timing-jsonl "$RUNNER_TEMP/paw-unit-output/timing-$SHARD_INDEX.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-receipt-macos-${{ github.run_id }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/paw-unit-output/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
   web-architecture:
-    name: Web architecture and Lab host contracts
+    name: Web contracts (${{ matrix.suite }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ownership, conversation]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -78,17 +254,78 @@ jobs:
           corepack enable && corepack prepare pnpm@11.9.0 --activate
           pnpm --dir control-center-web install --frozen-lockfile
       - name: Type-check Web contracts
+        if: matrix.suite == 'ownership'
         run: pnpm --dir control-center-web typecheck
       - name: Check host registration and existing Lab delivery
+        if: matrix.suite == 'ownership'
         run: >-
           pnpm --dir control-center-web exec vitest run
           src/paw-os/extensions/host-registry.test.ts
           src/paw-os/extensions/registry-hosts.test.ts
           src/features/eval-lab/projects/LabAppDelivery.test.tsx
           --maxWorkers=1 --testTimeout=60000
+      - name: Check shared chat ownership
+        if: matrix.suite == 'ownership'
+        run: >-
+          pnpm --dir control-center-web exec vitest run
+          src/contracts/agent-reducer.test.ts
+          src/features/agent/state/live-store.test.ts
+          src/features/agent/state/live-store.transport.test.ts
+          src/features/agent/state/live-store.acknowledgement.test.ts
+          src/features/agent/runtime
+          src/features/conversation-ui/conversation-preload.test.ts
+          src/app/preview-control-transport.test.ts
+          --pool=threads --maxWorkers=1 --testTimeout=60000
+      - name: Check conversation interaction and vertical App compatibility
+        if: matrix.suite == 'conversation'
+        # Synthetic protocol/UI regressions. Native foreground and live Provider
+        # acceptance remain separate from these tests.
+        run: >-
+          pnpm --dir control-center-web exec vitest run
+          src/features/agent/timeline/conversation-status-polish.test.tsx
+          src/features/agent/timeline/chat-rendering.test.tsx
+          src/features/agent/composer/AgentComposer.test.tsx
+          src/features/agent/workspace/AgentFilesPanel.test.tsx
+          src/features/composer/ComposerInteraction.test.tsx
+          src/paw-os/apps/PawSessionWorkspace.test.tsx
+          src/paw-os/apps/PawSessionWorkspace.performance.test.tsx
+          src/paw-os/apps/PawSessionWorkspace.input-ownership.test.tsx
+          src/paw-os/apps/PawAgentApp.test.tsx
+          src/paw-os/apps/PawPrimaryAssistantHome.test.tsx
+          src/paw-os/apps/PawPrimaryDirectoryPicker.test.tsx
+          src/paw-os/apps/PawPrimaryAssistantFlow.test.tsx
+          src/paw-os/extensions/ChatSurface.test.tsx
+          extension-apps/earth-research/App.test.tsx
+          extension-apps/earth-research/App.layout.test.tsx
+          extension-apps/zhanggui-wenshu/App.test.tsx
+          --pool=threads --maxWorkers=1 --testTimeout=60000
+      - name: Check scoped catalog refresh and plugin lifecycle
+        if: matrix.suite == 'ownership'
+        run: >-
+          pnpm --dir control-center-web exec vitest run
+          src/features/plugins
+          src/paw-os/extensions/installation.test.tsx
+          src/paw-os/apps/PawSystemApps.test.tsx
+          --pool=threads --maxWorkers=1 --testTimeout=60000
+      - name: Check desktop companion state and cleanup
+        if: matrix.suite == 'ownership'
+        run: |
+          pnpm --dir control-center-web test:electron
+          pnpm --dir control-center-web exec vitest run \
+            src/features/agent/desktop-pet-interaction.test.ts \
+            src/features/agent/desktop-pet-snapshot.test.ts \
+            src/features/agent/desktop-pet-publisher.test.ts \
+            src/features/agent/desktop-pet-surface.test.tsx \
+            src/paw-os/shell/desktop-pet-directory-projection.test.ts \
+            src/paw-os/shell/PawDesktopPetPublisher.test.tsx \
+            src/paw-os/shell/PawWorkDirectory.test.tsx \
+            src/app/standalone-surface.test.ts \
+            --pool=threads --maxWorkers=1 --testTimeout=60000
 
   macos:
     name: Native control and Squirrel release
+    needs: [macos-plan, macos-unit]
+    if: always()
     # The pinned Squirrel source uses typed throws, which requires the Swift 6
     # compiler shipped with Xcode 16 rather than macOS 14's Xcode 15.4.
     runs-on: macos-15
@@ -110,10 +347,22 @@ jobs:
           node-version: "22"
       - name: Enable pinned pnpm for the Web control build
         run: corepack enable && corepack prepare pnpm@11.9.0 --activate
-      - name: Run full macOS unit suite
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit-plan-macos-${{ github.run_id }}
+          path: ${{ runner.temp }}/paw-unit-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unit-receipt-macos-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/paw-unit-receipts
+          merge-multiple: false
+      - name: Verify complete unit-suite receipts
         env:
-          PYTHONWARNINGS: "error::ResourceWarning"
-        run: python -m unittest discover -s tests
+          PLAN_RESULT: ${{ needs['macos-plan'].result }}
+          UNIT_RESULT: ${{ needs['macos-unit'].result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          python scripts/run_unit_tests.py --verify-shards "$RUNNER_TEMP/paw-unit-plan/plan.json" --shard-receipts "$RUNNER_TEMP/paw-unit-receipts" --workflow-result "$UNIT_RESULT"
       - name: Build native control center
         run: scripts/build_control_center.sh
       - name: Build headless voice agent

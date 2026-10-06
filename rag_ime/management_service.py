@@ -39,6 +39,11 @@ from .daily_planner import (
 )
 from .deployment_status import assistant_overlay_sha256
 from .memory_actions import execute_memory_action
+from .memory_card_mutations import (
+    atomic_memory_write, card_revision, card_source_refs, correct_memory_card,
+    merge_memory_cards, replay_receipt, save_receipt,
+)
+from .personal_profile import read_personal_profile, save_personal_profile as save_profile_cards
 from .memory_book_lifecycle import archive_inactive_memory_books, set_memory_book_archive_status
 from .memory_graph_read import read_memory_entity, read_memory_graph
 from .memory_ingest import looks_sensitive, normalize_text
@@ -2186,6 +2191,72 @@ class ManagementService:
             "action": action,
         }
 
+    def personal_profile(self) -> dict[str, object]:
+        with self._connect() as conn:
+            return read_personal_profile(conn)
+
+    def save_personal_profile(self, payload: Mapping[str, object]) -> dict[str, object]:
+        with self._connect() as conn, atomic_memory_write(conn):
+            replay = replay_receipt(conn, payload.get("clientRequestId"), dict(payload))
+            if replay is not None:
+                return replay
+            result = save_profile_cards(conn, payload, timestamp=_now_ms())
+            if result["changes"]:
+                rebuild_retrieval_docs(conn, project="")
+        if self.cache_invalidator is not None:
+            self.cache_invalidator()
+        self.events.publish("memory_changed", {"kind": "profile", "revision": result["profile"]["revision"]})
+        return result
+
+    def _edit_memory_card(self, payload: Mapping[str, object], *, item_id: str) -> dict[str, object]:
+        timestamp = _now_ms()
+        request_id = payload.get("clientRequestId")
+        with self._connect() as conn, atomic_memory_write(conn):
+            replay = replay_receipt(conn, request_id, dict(payload))
+            if replay is not None:
+                return replay
+            merge_into_id = str(payload.get("mergeIntoId") or "")
+            if merge_into_id:
+                changes = merge_memory_cards(conn, item_id, merge_into_id,
+                    expected_revision=payload.get("expectedRevision"),
+                    expected_target_revision=payload.get("expectedMergeRevision"),
+                    timestamp=timestamp, mutation_id=str(request_id))
+            else:
+                text = compact_whitespace(str(payload.get("text") or payload.get("summary") or ""))
+                changes = correct_memory_card(conn, item_id, text=text,
+                    expected_revision=payload.get("expectedRevision"), timestamp=timestamp,
+                    mutation_id=str(request_id), reason="native_control_center_edit", user_edit=True)
+                if "tags" in payload:
+                    tags = _string_list_value(payload.get("tags"))
+                    new_id = str(changes["memoryId"])
+                    conn.execute("DELETE FROM memory_atom_tags WHERE memory_atom_id=?", (new_id,))
+                    for tag in tags:
+                        row = conn.execute("SELECT id FROM memory_tags WHERE tag=?", (tag,)).fetchone()
+                        if row is None:
+                            cursor = conn.execute("""INSERT INTO memory_tags(
+                                tag,normalized_tag,tag_type,quality_score,created_at_ms,updated_at_ms,
+                                description,source,status,metadata_json)
+                                VALUES (?,?,'concept',0.9,?,?,'','user','active','{}')""",
+                                (tag, normalize_text(tag), timestamp, timestamp))
+                            tag_id = int(cursor.lastrowid)
+                        else:
+                            tag_id = int(row[0])
+                        conn.execute("INSERT INTO memory_atom_tags VALUES (?,?,1,'user_edit')", (new_id,str(tag_id)))
+                    changes["tags"] = tags
+                changes["text"] = text
+            result = {"schemaVersion": "rag-ime.memory-edit.v2", "ok": True,
+                      "kind": "atom", "id": changes["memoryId"],
+                      "previousMemoryId": changes["previousMemoryId"], "revision": changes["revision"],
+                      "changes": changes, "retrievalDocs": rebuild_retrieval_docs(conn, project="")}
+            record_management_audit(conn, action="memory_edit", target_type="atom", target_id=item_id,
+                                    payload=dict(payload), result=result)
+            save_receipt(conn, str(request_id), dict(payload), result, timestamp)
+        if self.cache_invalidator is not None:
+            self.cache_invalidator()
+        self._bump_runtime_revision()
+        self.events.publish("memory_changed", {"kind": "atom", "id": result["id"], "changes": changes})
+        return result
+
     def memory_edit(self, payload: Mapping[str, object]) -> dict[str, object]:
         kind = str(payload.get("kind") or payload.get("itemType") or "").strip().lower()
         item_id = str(payload.get("id") or payload.get("memoryId") or "").strip()
@@ -2204,6 +2275,9 @@ class ManagementService:
                 }
             )
 
+        if kind in {"atom", "atoms"}:
+            return self._edit_memory_card(payload, item_id=item_id)
+
         timestamp = _now_ms()
         changes: dict[str, object] = {}
         with self._connect() as conn:
@@ -2220,53 +2294,6 @@ class ManagementService:
                 if cursor.rowcount != 1:
                     raise ValueError(f"memory book not found: {item_id}")
                 changes = {"title": title, "summary": summary, "tags": tags}
-            elif kind in {"atom", "atoms"}:
-                if merge_into_id:
-                    changes = _merge_memory_atoms(
-                        conn,
-                        source_id=item_id,
-                        target_id=merge_into_id,
-                        changed_at_ms=timestamp,
-                    )
-                else:
-                    text = " ".join(str(payload.get("text") or payload.get("summary") or "").split())
-                    tags = _string_list_value(payload.get("tags"))
-                    if not text:
-                        raise ValueError("memory atom text is required")
-                    row = conn.execute(
-                        "SELECT privacy_level FROM memory_atoms WHERE id = ?",
-                        (item_id,),
-                    ).fetchone()
-                    if row is None:
-                        raise ValueError(f"memory atom not found: {item_id}")
-                    if str(row[0] or "") == "sensitive":
-                        raise ValueError("sensitive memory cannot be edited in the control center")
-                    conn.execute(
-                        "UPDATE memory_atoms SET text = ?, canonical_text = ?, updated_at_ms = ? WHERE id = ?",
-                        (text, text, timestamp, item_id),
-                    )
-                    conn.execute("DELETE FROM memory_atom_tags WHERE memory_atom_id = ?", (item_id,))
-                    for position, tag in enumerate(tags):
-                        row = conn.execute("SELECT id FROM memory_tags WHERE tag = ?", (tag,)).fetchone()
-                        if row is None:
-                            cursor = conn.execute(
-                                """
-                                INSERT INTO memory_tags(
-                                    tag, normalized_tag, tag_type, quality_score,
-                                    created_at_ms, updated_at_ms, description,
-                                    source, status, metadata_json
-                                ) VALUES (?, ?, 'concept', 0.9, ?, ?, '', 'user', 'active', '{}')
-                                """,
-                                (tag, normalize_text(tag), timestamp, timestamp),
-                            )
-                            tag_id = int(cursor.lastrowid)
-                        else:
-                            tag_id = int(row[0])
-                        conn.execute(
-                            "INSERT INTO memory_atom_tags(memory_atom_id, tag_id, weight, source) VALUES (?, ?, ?, 'user_edit')",
-                            (item_id, str(tag_id), max(0.5, 1.0 - position * 0.05)),
-                        )
-                    changes = {"text": text, "tags": tags}
             elif kind in {"tag", "tags"}:
                 tag = " ".join(str(payload.get("title") or payload.get("tag") or "").split())
                 description = " ".join(
@@ -3120,6 +3147,7 @@ class ManagementService:
         like = f"%{request.query}%"
         owner_clause, owner_params = _page_owner_filter(request, table_alias="memory_atoms")
         evidence_refs_by_atom: dict[str, list[dict[str, object]]] = {}
+        card_versions: dict[str, dict[str, object]] = {}
         admitted_evidence = admitted_personal_evidence_sql("evidence")
         with self._connect() as conn:
             rows = conn.execute(
@@ -3164,6 +3192,9 @@ class ManagementService:
             ).fetchall()
             for row in rows:
                 atom_id = str(row["id"])
+                raw = dict(conn.execute("SELECT * FROM memory_atoms WHERE id=?", (atom_id,)).fetchone())
+                card_versions[atom_id] = {"revision": card_revision(raw), "lineageId": raw["lineage_id"],
+                    "supersedesId": raw["supersedes_id"], "claimState": raw["claim_state"]}
                 event_ids = _positive_ints(_json_list(row["source_event_ids_json"]))
                 evidence_refs_by_atom[atom_id] = _admitted_event_reference_refs(
                     conn,
@@ -3191,6 +3222,10 @@ class ManagementService:
                     )
                     for evidence in linked_evidence
                 )
+                evidence_refs_by_atom[atom_id] = _deduplicate_references([
+                    *evidence_refs_by_atom[atom_id],
+                    *(_canonical_reference(ref["kind"], ref["id"]) for ref in card_source_refs(conn, atom_id, include_context=True)),
+                ])
         tags_by_atom: dict[str, list[str]] = {}
         for atom_id, tag in tag_rows:
             tags_by_atom.setdefault(str(atom_id), []).append(str(tag))
@@ -3217,6 +3252,8 @@ class ManagementService:
             item["source"] = {"kind": "memory_atom", "id": atom_id}
             item["ref"] = _canonical_reference("atom", atom_id)
             item["evidenceRefs"] = evidence_refs_by_atom.get(atom_id, [])[:80]
+            item.update(card_versions[atom_id])
+            item["sourceCount"] = len(item["evidenceRefs"])
             items.append(item)
         next_cursor = str(rows[-1]["row_cursor"]) if has_more and rows else ""
         return items, next_cursor
@@ -3997,9 +4034,12 @@ class ManagementService:
             )
             for evidence in linked
         )
+        evidence_refs.extend(_canonical_reference(ref["kind"], ref["id"])
+                             for ref in card_source_refs(conn, reference_id, include_context=True))
         return {
             "item": {
                 "id": reference_id,
+                "revision": card_revision(dict(row)),
                 "title": _safe_reference_preview(raw_text)[:160] or "记忆 Atom",
                 "text": "" if sensitive else raw_text,
                 "textPreview": _safe_reference_preview(raw_text),
@@ -6051,115 +6091,6 @@ def _string_list_value(value: object) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result[:24]
-
-
-def _merge_memory_atoms(
-    conn: sqlite3.Connection,
-    *,
-    source_id: str,
-    target_id: str,
-    changed_at_ms: int,
-) -> dict[str, object]:
-    if source_id == target_id:
-        raise ValueError("memory atom cannot merge into itself")
-    rows = conn.execute(
-        """
-        SELECT id, text, source_event_ids_json, source_memory_ids_json,
-               privacy_level, confidence, quality_score
-        FROM memory_atoms WHERE id IN (?, ?)
-        """,
-        (source_id, target_id),
-    ).fetchall()
-    by_id = {str(row["id"]): row for row in rows}
-    source = by_id.get(source_id)
-    target = by_id.get(target_id)
-    if source is None or target is None:
-        raise ValueError("source or target memory atom was not found")
-    if "sensitive" in {str(source["privacy_level"] or ""), str(target["privacy_level"] or "")}:
-        raise ValueError("sensitive memory cannot be merged in the control center")
-
-    source_events = _deduplicated_values(
-        [*_json_list(target["source_event_ids_json"]), *_json_list(source["source_event_ids_json"])]
-    )
-    source_memories = _deduplicated_values(
-        [
-            *_json_list(target["source_memory_ids_json"]),
-            *_json_list(source["source_memory_ids_json"]),
-            source_id,
-        ]
-    )
-    conn.execute(
-        """
-        UPDATE memory_atoms
-        SET source_event_ids_json = ?, source_memory_ids_json = ?,
-            confidence = MAX(confidence, ?), quality_score = MAX(quality_score, ?),
-            updated_at_ms = ?
-        WHERE id = ?
-        """,
-        (
-            json.dumps(source_events, ensure_ascii=False),
-            json.dumps(source_memories, ensure_ascii=False),
-            float(source["confidence"] or 0),
-            float(source["quality_score"] or 0),
-            changed_at_ms,
-            target_id,
-        ),
-    )
-    for tag_id, weight, tag_source in conn.execute(
-        "SELECT tag_id, weight, source FROM memory_atom_tags WHERE memory_atom_id = ?",
-        (source_id,),
-    ).fetchall():
-        existing = conn.execute(
-            "SELECT weight FROM memory_atom_tags WHERE memory_atom_id = ? AND tag_id = ?",
-            (target_id, tag_id),
-        ).fetchone()
-        if existing is None:
-            conn.execute(
-                "INSERT INTO memory_atom_tags(memory_atom_id, tag_id, weight, source) VALUES (?, ?, ?, ?)",
-                (target_id, tag_id, weight, tag_source),
-            )
-        else:
-            conn.execute(
-                "UPDATE memory_atom_tags SET weight = MAX(weight, ?), source = 'user_merge' "
-                "WHERE memory_atom_id = ? AND tag_id = ?",
-                (weight, target_id, tag_id),
-            )
-    conn.execute("DELETE FROM memory_atom_tags WHERE memory_atom_id = ?", (source_id,))
-    conn.execute("UPDATE memory_aliases SET memory_atom_id = ? WHERE memory_atom_id = ?", (target_id, source_id))
-
-    for book_id, raw_ids in conn.execute("SELECT book_id, memory_atom_ids_json FROM memory_books").fetchall():
-        atom_ids = [str(value) for value in _json_list(raw_ids)]
-        if source_id not in atom_ids:
-            continue
-        replaced = _deduplicated_values(target_id if value == source_id else value for value in atom_ids)
-        conn.execute(
-            "UPDATE memory_books SET memory_atom_ids_json = ?, updated_at_ms = ? WHERE book_id = ?",
-            (json.dumps(replaced, ensure_ascii=False), changed_at_ms, book_id),
-        )
-
-    conn.execute(
-        "UPDATE memory_atoms SET status = 'tombstoned', updated_at_ms = ? WHERE id = ?",
-        (changed_at_ms, source_id),
-    )
-    conn.execute(
-        """
-        INSERT INTO memory_tombstones(
-            created_at_ms, target_type, target_value, reason, active, metadata_json
-        ) VALUES (?, 'memory_id', ?, ?, 1, ?)
-        """,
-        (
-            changed_at_ms,
-            source_id,
-            f"merged_into:{target_id}",
-            json.dumps({"source": "native_control_center_merge", "targetId": target_id}, sort_keys=True),
-        ),
-    )
-    return {
-        "merged": True,
-        "mergedIntoId": target_id,
-        "sourceStatus": "tombstoned",
-        "sourceEventCount": len(source_events),
-    }
 
 
 def _merge_memory_tags(

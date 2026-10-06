@@ -9,6 +9,7 @@ import type {
   ControlRequest,
   ControlSubscription,
   ControlTransport,
+  FilePickOptions,
   PickedFile,
 } from '@/platform/transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
@@ -30,6 +31,11 @@ import {
   parseRoomPermissionPolicy,
 } from '@/features/rooms/room-types';
 import { createPreviewHistoryRoutes } from './preview-history-routes';
+import { installPrimaryAssistantPreview } from './preview-primary-assistant';
+import { createPreviewLabProjectRoutes } from './preview-lab-projects';
+import type { SpaceFacts } from '@/features/semantic-workspace/continuity-model';
+import { pawExtensionApps } from '@/paw-os/extensions/registry';
+import { pawBrowserHost } from '@/paw-os/apps/paw-browser-host';
 import { createPreviewWorkDocumentRoutes } from './preview-work-document-routes';
 import {
   previewActivityTimeline,
@@ -58,6 +64,11 @@ import {
 import { previewEvalLabEvidence, previewEvalLabRuns } from './preview-eval-lab-data';
 import { PREVIEW_PDF_BASE, previewKnowledgeAsset, previewKnowledgeDetail, previewKnowledgePdfHit, previewKnowledgeSource, previewReadableDocument, previewStructuredPdfDocument } from './preview-knowledge-data';
 
+const PREVIEW_PROMPT_DEFAULTS = {
+  systemInstructions: '',
+  compactionInstructions: '公开模拟：保留目标、文档引用、未落盘进度与下一步；不执行原任务。',
+};
+
 /**
  * The mock transport has one broadcast event bus for convenience. Preview
  * sessions still need the production ownership boundary: an event emitted by
@@ -66,6 +77,22 @@ import { PREVIEW_PDF_BASE, previewKnowledgeAsset, previewKnowledgeDetail, previe
  * the native transport.
  */
 class PreviewControlTransport extends MockControlTransport {
+  override async pickFiles(options: FilePickOptions): Promise<PickedFile[]> {
+    if (options.purpose !== 'workspace-root') return super.pickFiles(options);
+    this.filePickCalls.push({ ...options });
+    options.signal?.throwIfAborted();
+    const host = typeof window === 'undefined' ? null : pawBrowserHost();
+    if (!host?.pickWorkspaceDirectory) {
+      throw new Error('当前网页演示不能选择本机目录。请手动填写工作目录，或使用桌面版选择。');
+    }
+    // A chosen folder is only input to the synthetic workflow. It does not
+    // upload files, start a backend or authorize a real model/tool action.
+    const directory = await host.pickWorkspaceDirectory();
+    options.signal?.throwIfAborted();
+    return directory ? [{ id: `workspace:${directory.path}`, name: directory.name, path: directory.path,
+      mimeType: 'inode/directory', byteSize: 0 }] : [];
+  }
+
   override subscribe<Event = unknown>(
     request: ControlSubscription,
     observer: ControlEventObserver<Event>,
@@ -212,8 +239,12 @@ export function createPreviewTransport(): MockControlTransport {
     runtimeCharacteristics: { ...persona.runtimeCharacteristics },
   }));
   let companionConfigurationRevision = 1;
+  let prompts = { ...PREVIEW_PROMPT_DEFAULTS };
   let modelRouting = previewDefaultModelRouting();
   let skillRouting = previewDefaultSkillRouting();
+  let scenarioPolicies: Record<string, { promptInstructions: string; toolAllowlist: string[] }> = Object.fromEntries(['ordinary', 'room', 'trace', 'agentLab'].map((id) => [id, {
+    promptInstructions: '演示策略：保留来源，在授权范围内执行。', toolAllowlist: [],
+  }]));
   let capabilityGlobalPreferences: Record<string, string> = {};
   let capabilityProjectPreferences: Record<string, Record<string, string>> = {};
   const capabilitySessionPreferences = new Map<string, Record<string, string>>();
@@ -356,6 +387,25 @@ export function createPreviewTransport(): MockControlTransport {
       schedule,
     };
   };
+  let nextBrowserTabId = 24;
+  let browserTabs = [{ deviceId: 'paw-browser', tabId: 23, title: '浏览器协作指南', url: 'https://docs.example.com/browser-guide', active: true }];
+  routes['browser.tabs'] = () => ({ ok: true, items: browserTabs.map(tab => ({ ...tab })) });
+  routes['browser.command'] = (request: ControlRequest) => {
+    const body = record(request.body);
+    if (body.action === 'new_tab' && body.url === 'about:blank') {
+      const tab = { deviceId: 'paw-browser', tabId: nextBrowserTabId++, title: '新标签页', url: 'about:blank', active: true };
+      browserTabs = [...browserTabs.map(tab => ({ ...tab, active: false })), tab];
+      return { ok: true, preview: true, result: { tabId: tab.tabId, url: tab.url } };
+    }
+    if (body.action === 'close_tab') {
+      const tabId = Number(body.tabId);
+      if (!browserTabs.some(tab => tab.tabId === tabId)) return { ok: false, summary: '演示标签页已经不存在。' };
+      browserTabs = browserTabs.filter(tab => tab.tabId !== tabId);
+      if (!browserTabs.some(tab => tab.active) && browserTabs[0]) browserTabs[0].active = true;
+      return { ok: true, preview: true, result: { tabId: browserTabs.find(tab => tab.active)?.tabId ?? 0 } };
+    }
+    return { ok: false, summary: '演示模式不访问或捕获真实网页；请在 PAW 桌面应用中使用完整浏览器。' };
+  };
   routes['terminal.sessions.list'] = () => ({ schemaVersion: 'rag-ime.system-terminal.v1', ok: true, items: previewTerminals });
   routes['terminal.session.create'] = (request: ControlRequest) => {
     const body = record(request.body);
@@ -494,18 +544,23 @@ export function createPreviewTransport(): MockControlTransport {
     ok: true,
     items: [previewExtensionProposal()],
   });
+  routes['agent.extensions.create'] = () => {
+    throw new Error('演示模式不写入本机插件草稿。内容已保留；请连接真实服务后继续安装检查。');
+  };
   routes['agent.extensions.validate'] = (request: ControlRequest) => {
     const body = record(request.body);
     const packageSource = stringValue(body.packageSource);
     const packageIdentity = previewPiPackageIdentity(packageSource);
     const pluginId = stringValue(body.catalogId) || packageIdentity.id || 'session-review';
+    const catalogItem = previewExtensionCatalogItems(previewInstalledExtensions)
+      .find((item) => stringValue(item.id) === stringValue(body.catalogId));
     previewValidatedExtension = {
       id: pluginId,
       displayName: packageIdentity.displayName
         || (pluginId === 'session-review' ? 'Session Review' : pluginId),
       version: stringValue(body.catalogVersion) || packageIdentity.version || '1.1.0',
       totalBytes: 18_432,
-      permissions: [],
+      permissions: catalogItem?.permissions ?? [],
       resources: packageSource
         ? { extensions: [], skills: [`skills/${pluginId}/SKILL.md`], prompts: [], themes: [] }
         : { extensions: [], skills: ['skills/session-review/SKILL.md'], prompts: [], themes: [] },
@@ -529,6 +584,8 @@ export function createPreviewTransport(): MockControlTransport {
     const installedExtension = previewInstalledExtensions.find(
       (item) => stringValue(item.id) === pluginId,
     );
+    const inspectedExtension = stringValue(previewValidatedExtension.id) === pluginId
+      ? previewValidatedExtension : installedExtension;
     if (action === 'rollback' && installedExtension?.rollbackAvailable !== true) {
       throw new Error('这个扩展当前没有可恢复的上一版本。');
     }
@@ -542,13 +599,13 @@ export function createPreviewTransport(): MockControlTransport {
       action,
       pluginId,
       displayName: stringValue(installedExtension?.displayName)
-        || stringValue(previewValidatedExtension.displayName)
+        || stringValue(inspectedExtension?.displayName)
         || (pluginId === 'session-review' ? 'Session Review' : pluginId),
       enable: body.enable !== false,
-      version: stringValue(previewValidatedExtension.version) || stringValue(installedExtension?.version),
-      permissions: previewValidatedExtension.permissions ?? installedExtension?.permissions ?? [],
-      resources: previewValidatedExtension.resources ?? installedExtension?.resources ?? {},
-      source: previewValidatedExtension.source ?? installedExtension?.source ?? {},
+      version: stringValue(inspectedExtension?.version) || stringValue(installedExtension?.version),
+      permissions: inspectedExtension?.permissions ?? [],
+      resources: inspectedExtension?.resources ?? {},
+      source: inspectedExtension?.source ?? {},
       ...(rollbackVersion ? { version: rollbackVersion } : {}),
     };
     return {
@@ -687,7 +744,7 @@ export function createPreviewTransport(): MockControlTransport {
     };
   };
   routes['memory.graph.get'] = (request: ControlRequest) =>
-    previewMemoryGraph(stringValue(record(request.query).plane) === 'tags' ? 'tags' : 'groups');
+    previewMemoryGraph(stringValue(record(request.query).plane) === 'tags' ? 'tags' : 'groups', stringValue(record(request.query).query));
   routes['memory.entity.get'] = (request: ControlRequest) => previewMemoryEntity(
     stringValue(record(request.params).kind),
     stringValue(record(request.params).entityId),
@@ -749,15 +806,36 @@ export function createPreviewTransport(): MockControlTransport {
     previewMemoryRunStatus = 'rolled_back';
     return previewMemoryWorkReceipt('knowledge.database.rollback', false);
   };
-  routes['agent.sessions.list'] = (request: ControlRequest) => ({
-    ok: true,
-    sessions: [
+  routes['agent.sessions.list'] = (request: ControlRequest) => {
+    const items = [
       ...sessions,
       ...roomSessions,
     ].filter((session) => (
       record(request.query).includeArchived === true || stringValue(session.status) !== 'archived'
-    )),
-  });
+    ));
+    return { ok: true, items, sessions: items, hasMore: false };
+  };
+  routes['agent.continuity.read'] = (request: ControlRequest) => {
+    const available = new Map<string, Record<string, unknown>>([
+      ...sessions.map(item => [`session:${item.id}`, item] as const),
+      ...[...previewRoomSnapshots.values()].map(snapshot => {
+        const item = record(snapshot.room); return [`room:${item.id}`, item] as const;
+      }),
+    ]);
+    const keys = record(request.body).keys;
+    const requested = Array.isArray(keys) ? [...new Set(keys.filter((key): key is string => typeof key === 'string'))].slice(0, 100) : [];
+    const items: SpaceFacts[] = requested.filter(key => available.has(key)).map(key => ({
+      key, title: stringValue(available.get(key)?.title), revision: `preview:${key}:${available.get(key)?.updatedAtMs ?? 0}`,
+      observedAtMs: Date.now(), running: null, goal: null,
+      candidates: [], requests: [], decisions: [], blockers: [], sources: [], pendingDecisions: [], deliveries: [],
+      missing: ['公开演示仅提供工作空间入口；真实目标、运行状态与成果需要连接本机服务核实。'],
+      organization: { pinned: false, placement: 'desk' }, executionAllowed: false, contextPack: {},
+    }));
+    return { ok: true, items, failures: requested.filter(key => !available.has(key)).map(key => ({ key, error: '演示工作空间不存在。' })) };
+  };
+  routes['agent.continuity.analyze'] = routes['agent.continuity.suggest'] = routes['agent.continuity.decision'] = routes['agent.continuity.resume'] = () => {
+    throw Object.assign(new Error('公开演示不能分析或执行复工操作；请连接本机服务后重试。'), { status: 422 });
+  };
   // Explicit read-only preview. Never fabricate a Jev decision or a persisted receipt.
   routes['agent.organization.read'] = (request: ControlRequest) => {
     const keys = record(request.body).keys;
@@ -830,6 +908,8 @@ export function createPreviewTransport(): MockControlTransport {
     skillRouting,
     capabilityGlobalPreferences,
     capabilityProjectPreferences,
+    scenarioPolicies,
+    prompts,
   );
   routes['agent.configuration.update'] = (request: ControlRequest) => {
     const body = record(request.body);
@@ -837,7 +917,18 @@ export function createPreviewTransport(): MockControlTransport {
     const changes = record(body.changes);
     const modelRouteChange = Object.entries(changes).find(([key]) => key.startsWith('modelRouting.'));
     const skillRouteChange = Object.entries(changes).find(([key]) => key.startsWith('skillRouting.'));
-    if (modelRouteChange) {
+    const policyChange = Object.entries(changes).find(([key]) => key.startsWith('scenarioPolicies.'));
+    if (Object.keys(changes).some(key => key.startsWith('prompts.'))) {
+      const next = { ...prompts };
+      for (const [key, value] of Object.entries(changes)) {
+        if (!['prompts.systemInstructions', 'prompts.compactionInstructions'].includes(key)
+          || typeof value !== 'string' || Array.from(value).length > 8000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value)) {
+          throw new Error('演示提示词字段或内容无效。');
+        }
+        next[key.slice('prompts.'.length) as keyof typeof next] = value;
+      }
+      prompts = next;
+    } else if (modelRouteChange) {
       const routeId = modelRouteChange[0].slice('modelRouting.'.length);
       if (!Object.hasOwn(modelRouting, routeId)) throw new Error('Preview model route is invalid.');
       const route = record(modelRouteChange[1]);
@@ -872,6 +963,14 @@ export function createPreviewTransport(): MockControlTransport {
         ...skillRouting,
         [scenario]: [...names].sort(),
       };
+    } else if (policyChange) {
+      const scenario = policyChange[0].slice('scenarioPolicies.'.length);
+      const policy = record(policyChange[1]);
+      if (!Object.hasOwn(scenarioPolicies, scenario) || typeof policy.promptInstructions !== 'string'
+        || !Array.isArray(policy.toolAllowlist) || policy.toolAllowlist.some((tool) => typeof tool !== 'string')) {
+        throw new Error('演示场景策略格式无效。');
+      }
+      scenarioPolicies = { ...scenarioPolicies, [scenario]: { promptInstructions: policy.promptInstructions, toolAllowlist: policy.toolAllowlist } };
     } else if (Object.hasOwn(changes, 'sessionDefaults.capabilityDisclosurePreferences')) {
       capabilityGlobalPreferences = previewCapabilityPreferences(changes['sessionDefaults.capabilityDisclosurePreferences']);
     } else if (Object.hasOwn(changes, 'capabilityDisclosure.projectPreferences')) {
@@ -893,6 +992,8 @@ export function createPreviewTransport(): MockControlTransport {
       skillRouting,
       capabilityGlobalPreferences,
       capabilityProjectPreferences,
+      scenarioPolicies,
+      prompts,
     );
   };
   routes['agent.sessions.create'] = (request: ControlRequest) => {
@@ -1591,6 +1692,8 @@ export function createPreviewTransport(): MockControlTransport {
         .map((job) => ({ ...job })),
     };
   };
+  installPrimaryAssistantPreview(routes, sessions, event => previewTransport?.emit('agent.session.events', event));
+  Object.assign(routes, createPreviewLabProjectRoutes());
   const routeIds = Array.from(new Set<ControlPathId>(
     Object.keys(routes) as ControlPathId[],
   ));
@@ -1599,7 +1702,9 @@ export function createPreviewTransport(): MockControlTransport {
     knowledgeDocumentSource: (input) => previewKnowledgeSource(input, previewKnowledgeDocuments),
     knowledgeAsset: (input) => previewKnowledgeAsset(input, previewKnowledgeDocuments),
     capabilities: {
-      routeIds,
+      // This preview has no versioned Book archive/rollback receipts. Let the
+      // existing Memory availability boundary show that before a write.
+      routeIds: routeIds.filter((id) => !id.startsWith('memory.book.archive.')),
       features: {
         configurationSettingsWorkContract: true,
         historyWorkContract: true,
@@ -1759,6 +1864,25 @@ function previewManagedFile(request: ControlRequest): Record<string, unknown> {
 
 function previewResponse(pathId: ControlPathId): unknown {
   switch (pathId) {
+    case 'knowledgeVault.manage':
+      return (request: ControlRequest) => {
+        if (record(request.body).action === 'list') return { spaces: [] };
+        throw new Error('演示模式不连接本机笔记文件夹；请连接真实服务后再试。');
+      };
+    case 'observability.traceDiagnosticReports.list':
+      return { schemaVersion: 'rag-ime.trace-diagnostic-report-list.v1', items: [], total: 0, truncated: false, nextCursor: null };
+    case 'files.list':
+      return (request: ControlRequest) => {
+        const path = stringValue(record(request.query).path) || '/Users/example/Projects/personal-agent-workbench';
+        const selectedPath = /\/(?:README\.md|package\.json)$/.test(path) ? path : '';
+        const directory = selectedPath ? path.slice(0, path.lastIndexOf('/')) || '/' : path;
+        return { ...previewWorkspaceList(directory), scope: 'local', requestedPath: path, selectedPath, homePath: '/Users/example/Projects/personal-agent-workbench' };
+      };
+    case 'files.read':
+      return (request: ControlRequest) => {
+        const path = stringValue(record(request.query).path);
+        return { ...previewWorkspaceRead(path), scope: 'local', requestedPath: path };
+      };
     case 'agent.eval-lab.runs':
       return () => previewEvalLabRuns();
     case 'agent.eval-lab.evidence':
@@ -3098,25 +3222,14 @@ function previewInstalledExtensionItems(): Record<string, unknown>[] {
     rollbackAvailable: true,
     resources: { extensions: ['extensions/timeline-inspector.ts'], skills: [], prompts: [], themes: [] },
     source: { kind: 'bundled', requested: 'timeline-inspector', resolved: 'timeline-inspector@1.0.0' },
-  }, {
-    // The source-isolated Extension App is present in the checkout and its
-    // Pi package is bundled by the managed-runtime builder. Keep the preview
-    // activation inventory in sync so Launchpad/App Center can discover it.
-    id: '@paw/zhanggui-wenshu',
-    displayName: '掌柜问数',
-    description: '对经营数据提问、对账并解释差异',
-    version: '0.2.0',
-    enabled: true,
-    installed: true,
-    rollbackAvailable: false,
-    resources: {
-      extensions: [],
-      skills: ['skills/zhanggui-wenshu/SKILL.md'],
-      prompts: [],
-      themes: [],
-    },
-    source: { kind: 'bundled', requested: '@paw/zhanggui-wenshu', resolved: '@paw/zhanggui-wenshu@0.2.0' },
-  }];
+  }, ...pawExtensionApps.filter((app) => app.packageId === '@paw/zhanggui-wenshu').map((app) => ({
+    id: app.packageId, displayName: app.label, description: app.tagline,
+    version: app.version, enabled: true, installed: true, rollbackAvailable: false,
+    capabilities: [`pawos.extension.binding.${app.bindingSha256.slice(0, 40)}`],
+    extensionApp: { ...app, bindingCapability: `pawos.extension.binding.${app.bindingSha256.slice(0, 40)}` },
+    resources: { extensions: [], skills: ['skills/zhanggui-wenshu/SKILL.md'], prompts: [], themes: [] },
+    source: { kind: 'bundled', requested: app.packageId, resolved: `${app.packageId}@${app.version}` },
+  }))];
 }
 
 function previewPiPackageIdentity(source: string): {
@@ -3184,6 +3297,7 @@ function previewExtensionProposal(): Record<string, unknown> {
       action: 'install',
       pluginId: 'session-review',
       displayName: 'Session Review',
+      permissions: previewExtensionCatalogItems([])[0].permissions,
     },
   };
 }
@@ -4368,6 +4482,8 @@ function previewCompanionConfiguration(
   skillRouting: Record<PreviewSkillScenario, string[]>,
   capabilityGlobalPreferences: Record<string, string>,
   capabilityProjectPreferences: Record<string, Record<string, string>>,
+  scenarioPolicies: Record<string, { promptInstructions: string; toolAllowlist: string[] }>,
+  prompts: { systemInstructions: string; compactionInstructions: string },
 ): Record<string, unknown> {
   return {
     ok: true,
@@ -4381,10 +4497,29 @@ function previewCompanionConfiguration(
         },
         modelRouting,
         skillRouting,
+        scenarioPolicies,
+        prompts: { ...prompts },
         capabilityDisclosure: {
           projectPreferences: capabilityProjectPreferences,
         },
       },
+    },
+    promptPolicy: {
+      schemaVersion: 'rag-ime.agent-prompt-policy.v1',
+      appliesTo: 'new_sessions',
+      maxCharacters: 8000,
+      defaults: { ...PREVIEW_PROMPT_DEFAULTS },
+      builtInSystemPrompt: '公开模拟：依据来源核验结果；这段示例不代表当前会话的真实内置规则。',
+      compactionOwner: 'pi',
+    },
+    scenarioPolicyCatalog: {
+      schemaVersion: 'rag-ime.agent-scenario-policy-catalog.v1',
+      policyRevision: 'rag-ime.agent-scenario-policy.v1',
+      scenarios: [['ordinary', '普通 Agent', ['Agent']], ['room', 'Room 协作', ['Room']],
+        ['trace', 'Trace 诊断评测', ['Trace Agent']], ['agentLab', 'Agent Lab', ['Agent Lab', 'Lab App']]].map(([id, label, appIds]) => ({
+        id, label, appIds, description: `${label}的演示策略`, variantModes: ['assistant'], builtInToolIds: ['overview', 'workspace_read'],
+        ...scenarioPolicies[String(id)],
+      })),
     },
   };
 }
@@ -4543,12 +4678,12 @@ function previewWorkspaceList(path: string): Record<string, unknown> {
   const items = path.endsWith('/control-center-web')
     ? [
         { path: `${path}/src`, name: 'src', kind: 'directory' },
-        { path: `${path}/package.json`, name: 'package.json', kind: 'file', byteSize: 3_842 },
+        { path: `${path}/package.json`, name: 'package.json', kind: 'file', byteSize: previewWorkspaceRead(`${path}/package.json`).byteSize },
       ]
     : [
         { path: `${path}/control-center-web`, name: 'control-center-web', kind: 'directory' },
         { path: `${path}/rag_ime`, name: 'rag_ime', kind: 'directory' },
-        { path: `${path}/README.md`, name: 'README.md', kind: 'file', byteSize: 12_480 },
+        { path: `${path}/README.md`, name: 'README.md', kind: 'file', byteSize: previewWorkspaceRead(`${path}/README.md`).byteSize },
       ];
   return {
     schemaVersion: 'rag-ime.agent-workspace-list.v1',
@@ -4564,6 +4699,8 @@ function previewWorkspaceList(path: string): Record<string, unknown> {
 function previewWorkspaceRead(path: string): Record<string, unknown> {
   const content = path.endsWith('.md')
     ? '# Personal Agent Workbench\n\n这是工作区文件预览。\n'
+    : path.endsWith('.json')
+    ? `${JSON.stringify({ name: 'paw-preview-workspace', private: true, preview: true }, null, 2)}\n`
     : 'export function previewWorkspace() {\n  return "ready";\n}\n';
   return {
     schemaVersion: 'rag-ime.agent-workspace-read.v1',

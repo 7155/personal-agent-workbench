@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ControlTransportProvider } from '@/app/control-transport';
+import { ControlTransportProvider, useControlTransport } from '@/app/control-transport';
 import type { AgentBackgroundJobV1 } from '@/contracts/generated/agent-background-job.v1';
 import { MockControlTransport } from '@/test/mock-transport';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '../state/live-store';
 import { AgentBackgroundJobsView } from './AgentBackgroundJobsView';
 
 const sessionId = 'session-background-job';
@@ -13,13 +13,6 @@ const runningJob = backgroundJob('running', { label: '构建项目' });
 
 beforeEach(() => {
   useAgentLiveStore.setState({ projections: {} });
-  useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
-    messages: [],
-    liveEvents: [],
-    lastSequence: 4,
-    resumeToken: `${sessionId}:4`,
-    backgroundJobs: [runningJob],
-  });
 });
 
 afterEach(() => {
@@ -28,6 +21,79 @@ afterEach(() => {
 });
 
 describe('AgentBackgroundJobsView', () => {
+  it('keeps lists and log caches separate for same-ID jobs on two transports', async () => {
+    const jobA = backgroundJob('running', { label: '甲的构建' });
+    const jobB = backgroundJob('running', { label: '乙的构建' });
+    const a = new MockControlTransport({ routes: {
+      'agent.session.backgroundJobs.list': jobList([jobA]),
+      'agent.session.backgroundJob.logs': logResponse(jobA, '甲的输出'),
+    } });
+    const b = new MockControlTransport({ routes: {
+      'agent.session.backgroundJobs.list': jobList([jobB]),
+      'agent.session.backgroundJob.logs': logResponse(jobB, '乙的输出'),
+    } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    render(<QueryClientProvider client={client}>
+      <ControlTransportProvider transport={a}><section aria-label="任务甲"><LiveJobs /></section></ControlTransportProvider>
+      <ControlTransportProvider transport={b}><section aria-label="任务乙"><LiveJobs /></section></ControlTransportProvider>
+    </QueryClientProvider>);
+    const regionA = within(screen.getByRole('region', { name: '任务甲' }));
+    const regionB = within(screen.getByRole('region', { name: '任务乙' }));
+    const user = userEvent.setup();
+    await user.click(await regionA.findByRole('button', { name: /甲的构建/ }));
+    await user.click(await regionB.findByRole('button', { name: /乙的构建/ }));
+    expect(await regionA.findByText('甲的输出')).toBeVisible();
+    expect(await regionB.findByText('乙的输出')).toBeVisible();
+    expect(regionA.queryByText('乙的输出')).not.toBeInTheDocument();
+    expect(regionB.queryByText('甲的输出')).not.toBeInTheDocument();
+  });
+
+  it('applies a delayed cancel to its original transport after the provider switches', async () => {
+    const jobA = backgroundJob('running', { label: '甲的构建' });
+    const jobB = backgroundJob('running', { label: '乙的构建' });
+    const cancelled = { ...jobA, status: 'cancelling' as const, updatedAtMs: 200, cancelRequestedAtMs: 200 };
+    let finishCancel!: (receipt: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => { finishCancel = resolve; });
+    const a = new MockControlTransport({ routes: {
+      'agent.session.backgroundJobs.list': jobList([jobA]),
+      'agent.session.backgroundJob.logs': logResponse(jobA),
+      'agent.session.backgroundJob.cancel': () => pending,
+    } });
+    const b = new MockControlTransport({ routes: {
+      'agent.session.backgroundJobs.list': jobList([jobB]),
+      'agent.session.backgroundJob.logs': logResponse(jobB),
+    } });
+    const addressA = agentSessionAddress(a, sessionId);
+    const addressB = agentSessionAddress(b, sessionId);
+    for (const [address, job] of [[addressA, jobA], [addressB, jobB]] as const) {
+      useAgentLiveStore.getState().hydrateSnapshot(address, {
+        messages: [], liveEvents: [], lastSequence: 4, resumeToken: `${sessionId}:4`, backgroundJobs: [job],
+      });
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const element = (transport: MockControlTransport) => (
+      <QueryClientProvider client={client}><ControlTransportProvider transport={transport}><LiveJobs /></ControlTransportProvider></QueryClientProvider>
+    );
+    const view = render(element(a));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /甲的构建/ }));
+    await user.click(screen.getByRole('button', { name: '停止任务' }));
+    await user.click(screen.getByRole('button', { name: '确认停止' }));
+    view.rerender(element(b));
+    expect(await screen.findByRole('button', { name: /乙的构建/ })).toBeVisible();
+    await act(async () => finishCancel({
+      schemaVersion: 'rag-ime.agent-background-job-cancel-receipt.v1', ok: true,
+      summary: '已请求停止甲任务', alreadyTerminal: false, job: cancelled,
+      cancelReceipt: { jobId: jobA.jobId, requestedAtMs: 200, status: 'cancelling' },
+    }));
+    await waitFor(() => expect(selectAgentProjection(useAgentLiveStore.getState(), addressA)?.backgroundJobsById[jobA.jobId]?.status).toBe('cancelling'));
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressB)?.backgroundJobsById[jobB.jobId]?.status).toBe('running');
+    expect(client.getQueryData(['agent', 'background-jobs', agentProjectionKey(addressA)])).toMatchObject({ items: [{ status: 'cancelling' }] });
+    expect(client.getQueryData(['agent', 'background-jobs', agentProjectionKey(addressB)])).toMatchObject({ items: [{ label: '乙的构建', status: 'running' }] });
+    expect(screen.queryByText('已请求停止甲任务')).not.toBeInTheDocument();
+    expect(b.requests.some(({ request }) => request.pathId === 'agent.session.backgroundJob.cancel')).toBe(false);
+  });
+
   it('renders every server-owned lifecycle state and refreshes the list', async () => {
     const statuses: AgentBackgroundJobV1['status'][] = [
       'queued',
@@ -72,24 +138,23 @@ describe('AgentBackgroundJobsView', () => {
   });
 
   it('projects a newly started live job before the next list poll', async () => {
-    useAgentLiveStore.setState({ projections: {} });
-    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+    const transport = new MockControlTransport({
+      routes: {
+        'agent.session.backgroundJobs.list': jobList([]),
+      },
+    });
+    useAgentLiveStore.getState().hydrateSnapshot(agentSessionAddress(transport, sessionId), {
       messages: [],
       liveEvents: [],
       lastSequence: 4,
       resumeToken: `${sessionId}:4`,
       backgroundJobs: [],
     });
-    const transport = new MockControlTransport({
-      routes: {
-        'agent.session.backgroundJobs.list': jobList([]),
-      },
-    });
     renderJobs(transport);
     expect(await screen.findByText(/后台运行命令后会显示在这里/)).toBeVisible();
 
     act(() => {
-      useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      useAgentLiveStore.getState().hydrateSnapshot(agentSessionAddress(transport, sessionId), {
         messages: [],
         liveEvents: [],
         lastSequence: 5,
@@ -211,7 +276,7 @@ describe('AgentBackgroundJobsView', () => {
     await user.click(screen.getByRole('button', { name: '确认停止' }));
 
     await waitFor(() => {
-      expect(useAgentLiveStore.getState().projections[sessionId]?.backgroundJobsById[runningJob.jobId])
+      expect(selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, sessionId))?.backgroundJobsById[runningJob.jobId])
         .toMatchObject({ status: 'cancelling', cancelRequestedAtMs: 200 });
     });
     expect(screen.getByText(/正在停止 ·/)).toBeVisible();
@@ -359,7 +424,9 @@ function LiveJobs({
   fallbackJobs?: AgentBackgroundJobV1[];
   onOpenJob?: (job: AgentBackgroundJobV1) => void;
 }) {
-  const projection = useAgentLiveStore((state) => state.projections[sessionId]);
+  const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
+  const projection = useAgentLiveStore((state) => selectAgentProjection(state, address));
   const jobs = fallbackJobs ?? (projection
     ? projection.backgroundJobOrder
       .map((jobId) => projection.backgroundJobsById[jobId])
@@ -374,6 +441,16 @@ function renderJobs(
   onOpenJob?: (job: AgentBackgroundJobV1) => void,
   active = true,
 ): void {
+  const address = agentSessionAddress(transport, sessionId);
+  if (!selectAgentProjection(useAgentLiveStore.getState(), address)) {
+    useAgentLiveStore.getState().hydrateSnapshot(address, {
+      messages: [],
+      liveEvents: [],
+      lastSequence: 4,
+      resumeToken: `${sessionId}:4`,
+      backgroundJobs: fallbackJobs ?? [runningJob],
+    });
+  }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <ControlTransportProvider transport={transport}>

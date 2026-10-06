@@ -53,8 +53,8 @@ describe('Agent traditional / Jev modes', () => {
     expect(lifetime.mounts).toBe(1); expect(lifetime.unmounts).toBe(0);
     expect(transport.requests.some(({ request }) => /command|prompt|create|abort/.test(request.pathId))).toBe(false);
   });
-  it('opens a new Agent in Jev by default while keeping an ordinary Session selectable', async () => {
-    const { transport } = mount('/agent');
+  it('retains the Jev preference in the explicitly selected advanced creator', async () => {
+    const { transport } = mount('/agent?new=advanced');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Jev' })).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.getByRole('radio', { name: 'Room' })).toBeChecked();
     await userEvent.setup().click(screen.getByRole('radio', { name: 'Session' }));
@@ -64,7 +64,7 @@ describe('Agent traditional / Jev modes', () => {
   });
   it('respects an explicit traditional preference for a new Agent', () => {
     agentModeStore.select('traditional');
-    mount('/agent');
+    mount('/agent?new=advanced');
     expect(screen.getByRole('button', { name: '传统' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('radio', { name: 'Session' })).toBeChecked();
   });
@@ -114,7 +114,7 @@ describe('Agent traditional / Jev modes', () => {
   });
 
   it('preserves the real home composer text and remembers the mode on reopening', async () => {
-    const user = userEvent.setup(); const view = mount('/agent');
+    const user = userEvent.setup(); const view = mount('/agent?new=advanced');
     const input = screen.getAllByRole('textbox').find(node => node.tagName === 'TEXTAREA')!;
     await user.type(input, '先不要开始，保留草稿');
     await user.click(screen.getByRole('button', { name: 'Jev' }));
@@ -122,7 +122,7 @@ describe('Agent traditional / Jev modes', () => {
     expect(screen.getByRole('heading', { name: '继续工作' })).toBeInTheDocument();
     expect(input.compareDocumentPosition(screen.getByRole('region', { name: '项目复工' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(input).toHaveValue('先不要开始，保留草稿'); expect(input.isConnected).toBe(true);
-    view.unmount(); mount('/agent');
+    view.unmount(); mount('/agent?new=advanced');
     await waitFor(() => expect(within(screen.getByRole('group', { name: 'Agent 界面模式' })).getByRole('button', { name: 'Jev' })).toHaveAttribute('aria-pressed', 'true'));
   });
 });

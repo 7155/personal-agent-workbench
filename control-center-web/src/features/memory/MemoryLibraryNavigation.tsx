@@ -26,6 +26,7 @@ export function MemoryLibraryNavigation({
   onRetry,
   summary,
   summaryState,
+  showOrganizeAction = true,
 }: {
   activeLayer: MemoryLayer;
   onOpenLayer: (layer: MemoryLayer) => void;
@@ -33,6 +34,7 @@ export function MemoryLibraryNavigation({
   onRetry: () => void;
   summary: Record<string, unknown>;
   summaryState: MemorySummaryState;
+  showOrganizeAction?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const counts = memoryLibraryCounts(summary);
@@ -45,7 +47,7 @@ export function MemoryLibraryNavigation({
   const ready = summaryState === 'ready';
 
   return (
-    <section aria-label="记忆库分类与状态" className="memory-library" data-state={summaryState}>
+    <section aria-label="记忆库分类与状态" className="memory-library" data-state={summaryState} data-organize-action={showOrganizeAction}>
       <div className="memory-library__navigation">
         <ul aria-label="记忆内容分类" className="memory-library__layers">
           {([
@@ -66,7 +68,7 @@ export function MemoryLibraryNavigation({
           ))}
         </ul>
         <div className="memory-library__actions">
-        <Button leadingIcon={<RefreshCw size={14} />} onClick={onOpenOrganize} size="small" variant="quiet">整理记忆</Button>
+        {showOrganizeAction ? <Button leadingIcon={<RefreshCw size={14} />} onClick={onOpenOrganize} size="small" variant="quiet">整理记忆</Button> : null}
         <button
           aria-controls="memory-library-status"
           aria-expanded={expanded}
@@ -79,11 +81,7 @@ export function MemoryLibraryNavigation({
         </button>
         </div>
       </div>
-      <p className="memory-library__layer-note">{activeLayer === 'evidence'
-        ? '来源是原始记录，不代表已经保存为记忆。'
-        : activeLayer === 'atoms'
-          ? '这里是整理后的记忆；打开详情可核对来源、修正或查看历史。'
-          : '主题把相关记忆放在一起，方便继续查找和使用。'}</p>
+
       {summaryState === 'error' && !expanded ? (
         <div className="memory-library__pending" role="status">
           <span>整理状态读取失败，计数暂不可用。</span>
@@ -98,6 +96,11 @@ export function MemoryLibraryNavigation({
       ) : null}
       {expanded ? (
         <div className="memory-library__status" id="memory-library-status">
+      <p className="memory-library__layer-note">{activeLayer === 'evidence'
+        ? '来源是原始记录，不代表已经保存为记忆。'
+        : activeLayer === 'atoms'
+          ? '这里是整理后的记忆；打开详情可核对来源、修正或查看历史。'
+          : '主题把相关记忆放在一起，方便继续查找和使用。'}</p>
           {!ready ? (
             <div role="status">
               <span>{summaryState === 'error' ? '记忆状态读取失败，计数暂不可用。' : '正在读取整理状态…'}</span>

@@ -48,6 +48,9 @@ class AgentPromptDeliveryService:
         ) = None,
         memory_enabled_provider: Callable[[], bool] | None = None,
         session_memory_enabled_provider: Callable[[str], bool] | None = None,
+        personal_profile_context: Callable[[str], str] | None = None,
+        primary_task_results_context: Callable[[str], str] | None = None,
+        memory_items_filter: Callable[[str, list[Mapping[str, object]]], list[Mapping[str, object]]] | None = None,
     ) -> None:
         self.sessions = sessions
         self.context_runtime = context_runtime
@@ -55,6 +58,9 @@ class AgentPromptDeliveryService:
         self.runtime_tool_manifest = runtime_tool_manifest
         self.room_admission_gate = room_admission_gate
         self._session_memory_enabled_provider = session_memory_enabled_provider
+        self._personal_profile_context = personal_profile_context
+        self._primary_task_results_context = primary_task_results_context
+        self._memory_items_filter = memory_items_filter
         self.room_public_recovery_context = (
             room_public_recovery_context
         )
@@ -148,6 +154,10 @@ class AgentPromptDeliveryService:
         memory_items, async_items = _partition_items(
             materialized["items"]
         )
+        task_brief_items = [item for item in async_items if item.get("sourceKind") == "primary_task_brief"]
+        async_items = [item for item in async_items if item.get("sourceKind") != "primary_task_brief"]
+        if self._memory_items_filter is not None:
+            memory_items = self._memory_items_filter(session_id, memory_items)
         memory_context = render_provider_context_items(memory_items)
         memory_node = self._trace_memory(
             trace_id,
@@ -178,6 +188,9 @@ class AgentPromptDeliveryService:
                 value
                 for value in (
                     self.execution_policy_context(session),
+                    self._profile_context(session_id, delivery=delivery),
+                    self._primary_results_context(session_id, delivery=delivery),
+                    render_provider_context_items(task_brief_items),
                     memory_context,
                     (
                         self.room_public_recovery_context(session_id)
@@ -284,7 +297,12 @@ class AgentPromptDeliveryService:
             session_id,
             delivery_id=delivery_id,
         )
-        if self._memory_enabled(session_id):
+        memory_enabled = self._memory_enabled(session_id)
+        if memory_enabled and not any(
+            isinstance(item, Mapping)
+            and item.get("sourceKind") == "personal_profile"
+            for item in materialized.get("items") or []
+        ):
             return materialized
         # Do not inject a previously materialized memory pack after the
         # master or conversation switch is off. The durable rows are retained
@@ -294,7 +312,10 @@ class AgentPromptDeliveryService:
             item
             for item in materialized.get("items") or []
             if isinstance(item, Mapping)
-            and item.get("sourceKind") != "memory_bootstrap"
+            # Profiles are always fresh card projections. Never replay an
+            # earlier materialized copy, including after an ON/OFF cycle.
+            and item.get("sourceKind") != "personal_profile"
+            and (memory_enabled or item.get("sourceKind") != "memory_bootstrap")
         ]
         item_ids = [
             str(item.get("itemId") or "")
@@ -308,6 +329,27 @@ class AgentPromptDeliveryService:
             "prompt": prompt,
             "charCount": len(prompt),
         }
+
+    def _primary_results_context(self, session_id: str, *, delivery: str) -> str:
+        if delivery != "prompt" or self._primary_task_results_context is None:
+            return ""
+        try:
+            return self._primary_task_results_context(session_id)
+        except Exception:
+            return ""
+
+    def _profile_context(self, session_id: str, *, delivery: str) -> str:
+        # Steer/follow-up belong to the already active turn. The Host queues
+        # their message verbatim instead of decoding the provider envelope,
+        # so personal data must never be added to that transcript path.
+        if delivery != "prompt" or not self._memory_enabled(session_id):
+            return ""
+        if self._personal_profile_context is None:
+            return ""
+        try:
+            return self._personal_profile_context(session_id)
+        except Exception:
+            return ""
 
     def _memory_enabled(self, session_id: str) -> bool:
         try:

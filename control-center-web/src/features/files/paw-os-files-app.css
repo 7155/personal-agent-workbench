@@ -148,7 +148,7 @@
   --paw-files-tint: color-mix(in srgb, var(--color-accent) 8%, transparent);
   --paw-files-tint-strong: color-mix(in srgb, var(--color-accent) 14%, transparent);
   --paw-files-ease: var(--paw-ease-out, cubic-bezier(.23, 1, .32, 1));
-  grid-template-columns: 76px minmax(44px, 74px) minmax(0, 1fr);
+  grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(44px, 74px) minmax(0, 1fr);
   gap: 8px;
   padding-right: 8px;
   border-bottom: 1px solid rgb(29 29 31 / 9%);
@@ -1735,7 +1735,7 @@ i.paw-files-tree__disclosure {
 
 @container paw-window (max-width: 620px) {
   .paw-window-titlebar[data-window-chrome='files-tools'] {
-    grid-template-columns: 76px 20px minmax(0, 1fr);
+    grid-template-columns: var(--paw-titlebar-lead, max-content) 20px minmax(0, 1fr);
     gap: 6px;
   }
 
@@ -1890,4 +1890,40 @@ i.paw-files-tree__disclosure {
 @container paw-files (max-width: 620px) {
   .paw-files-location { height: 46px; }
   .paw-files-location button { min-width: 44px; }
+}
+
+.paw-window-shell[data-app='files'] :is(.paw-files-app, .paw-files-app__toolbar) {
+  --paw-files-control-h: var(--paw-window-control-size, 32px);
+}
+.paw-window-shell[data-app='files'] :is(.paw-files-scope, .paw-files-filter) {
+  height: calc(var(--paw-files-control-h) + 2px);
+}
+.paw-window-shell[data-app='files'] .paw-files-filter input {
+  height: 100%;
+}
+.paw-window-shell[data-app='files'] .paw-files-location {
+  height: max(36px, calc(var(--paw-files-control-h) + 2px));
+}
+.paw-window-shell[data-app='files'] .paw-files-location button {
+  min-width: var(--paw-files-control-h);
+}
+
+/* Give the existing scope and filter a full row before their fields become
+   too narrow to read. Window controls keep the first row and the same scale. */
+@container paw-window (max-width: 520px) {
+  .paw-window-shell[data-app='files'] .paw-window {
+    --paw-titlebar-h: calc(var(--paw-window-control-size) * 2 + 16px);
+  }
+  .paw-window-titlebar[data-window-chrome='files-tools'] {
+    grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    row-gap: 0;
+  }
+  .paw-window-titlebar[data-window-chrome='files-tools'] > .paw-traffic-lights { grid-column: 1; grid-row: 1; }
+  .paw-window-titlebar[data-window-chrome='files-tools'] > .paw-window-title { grid-column: 2; grid-row: 1; }
+  .paw-window-shell[data-app='files']:not([data-interaction='resizing']) .paw-window-titlebar[data-window-chrome='files-tools'] > .paw-window-title { visibility: visible; opacity: 1; }
+  .paw-window-titlebar[data-window-chrome='files-tools'] .paw-window-title strong { display: inline; }
+  .paw-window-titlebar[data-window-chrome='files-tools'] > .paw-window-chrome-slot { grid-column: 1 / -1; grid-row: 2; }
+  .paw-window-titlebar[data-window-chrome='files-tools'] .paw-files-app__toolbar :is(input, select),
+  .paw-files-app .paw-files-location input { font-size: 16px; }
 }

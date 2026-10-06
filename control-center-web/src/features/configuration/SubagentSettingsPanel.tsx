@@ -7,22 +7,24 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { Button } from '@/components/primitives';
 import type { AgentTemplateV1 } from '@/contracts/generated/agent-template.v1';
 import { ManagementSection, StatusBadge } from '@/features/overview/management-ui';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
+import { useConfigurationSectionAnchor } from './useConfigurationSectionAnchor';
 
 export function SubagentSettingsPanel({ highlighted = false }: { highlighted?: boolean }) {
   const navigate = useNavigate();
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (highlighted) panelRef.current?.scrollIntoView({ block: 'start' });
-  }, [highlighted]);
+  useConfigurationSectionAnchor(panelRef, highlighted);
   const templatesQuery = useQuery({
+    enabled: active,
     queryKey: ['configuration', 'subagents', 'templates'],
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.subagents.templates',

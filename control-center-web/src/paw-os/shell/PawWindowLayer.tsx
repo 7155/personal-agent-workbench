@@ -211,7 +211,7 @@ export function PawWindowLayer() {
     windowId: string,
     target?: Extract<PawOsWindowRequest['target'], { kind: 'session' | 'room' }>,
   ) => {
-    api.getState().bindAgentMain(windowId, target);
+    bindAgentMainRoute(api, windowId, target);
   }, [api]);
   const commitFocusFrame = useCallback((windowId: string, bounds: PawWindowBounds) => {
     setFocusFrameOverrides((current) => ({
@@ -951,6 +951,23 @@ const PawWindow = memo(function PawWindow({ collaborationFocusGroup, flowState, 
   );
 });
 
+/** Keep reload aligned with the active main conversation without hashchange re-entry. */
+export function bindAgentMainRoute(
+  api: ReturnType<typeof usePawDesktopApi>,
+  windowId: string,
+  target?: Extract<PawOsWindowRequest['target'], { kind: 'session' | 'room' }>,
+): void {
+  api.getState().bindAgentMain(windowId, target);
+  const state = api.getState();
+  const node = state.windows[windowId];
+  if (state.activeWindowId !== windowId || node?.appId !== 'agent') return;
+  if (node.target?.kind !== target?.kind || node.target?.id !== target?.id) return;
+  const route = node.initialRoute;
+  if (route && window.location.hash !== `#${route}`) {
+    window.history.replaceState(window.history.state, '', `${window.location.search}#${route}`);
+  }
+}
+
 export function openDesktopRoute(api: ReturnType<typeof usePawDesktopApi>, route: string): void {
   const normalized = route.replace(/^#/, '');
   if (normalized.split(/[?#]/, 1)[0] === '/project-field') {
@@ -964,6 +981,12 @@ export function openDesktopRoute(api: ReturnType<typeof usePawDesktopApi>, route
   if (app.id === 'agent') {
     const sessionId = params.get('session') || params.get('sessionId');
     if (sessionId) {
+      const existing = [...api.getState().stack].reverse().map(id => api.getState().windows[id])
+        .find(node => node?.appId === 'agent' && node.target?.kind === 'session' && node.target.id === sessionId);
+      if (existing) {
+        api.getState().openApp('agent', { entityId: existing.entityId, initialRoute: normalized });
+        return;
+      }
       api.getState().openApp('agent', {
         entityId: sessionId,
         initialRoute: normalized,

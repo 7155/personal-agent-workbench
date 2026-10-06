@@ -30,6 +30,7 @@
   --an-mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
   --an-ease-out: cubic-bezier(.16, 1, .3, 1);
   --an-spring: cubic-bezier(.22, 1, .36, 1);
+  --an-control-size: max(36px, var(--paw-window-control-size, 32px));
   color: var(--an-ink);
   font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif);
   font-size: 14px;
@@ -50,14 +51,19 @@
 .paw-agent-next .mono { font-family: var(--an-mono); }
 .paw-agent-next .ui-spin { animation: an-spin .8s linear infinite; }
 
-/* New work — 固定桌面表面（首屏合同）：新建 Composer 与「继续工作」在同一屏内
-   完成。页面本身绝不滚动；只有继续工作列表在自身内部滚动。高度不足时收紧留白，低于紧凑档的 420px 时才通过 an-home-root 整体滚动。 */
+/* New work fits the desktop surface, with continuation records scrolling in
+   their own list. When the window cannot fit one record and the footer below
+   the composer, the root scrolls instead of letting those regions overlap. */
 .an-home-root { container: an-home-surface / size; width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: auto; background: var(--an-paper); }
-.an-home { position: relative; width: 100%; height: 100%; min-height: 520px; flex: 1; overflow: hidden; }
-.an-home-wrap { position: relative; display: flex; width: min(780px, 100%); height: 100%; min-height: 0; margin: 0 auto; flex-direction: column; padding: 26px 32px 14px; }
+.an-home { position: relative; width: 100%; height: 100%; min-height: 520px; flex: 1; }
+.an-home-wrap { position: relative; display: flex; width: min(1040px, 100%); height: 100%; min-height: min-content; margin: 0 auto; flex-direction: column; padding: 26px 32px 14px; }
 .an-home-title { margin: 8px 0 18px; flex: none; font-size: clamp(24px, 3.4cqw, 30px); font-weight: 720; letter-spacing: -.03em; line-height: 1.16; animation: an-rise 440ms var(--an-ease-out) 45ms both; }
 .an-composer { position: relative; z-index: 4; flex: none; background: var(--an-paper-bright); border: 1px solid var(--an-rule); border-radius: 14px; box-shadow: 0 1px 2px rgba(24, 32, 43, .04), 0 12px 30px rgba(24, 32, 43, .07); transition: border-color 160ms ease, box-shadow 180ms ease, transform 220ms var(--an-ease-out); animation: an-rise 480ms var(--an-ease-out) 90ms both; }
 .an-composer:focus-within { border-color: color-mix(in srgb, var(--an-cobalt) 64%, var(--an-rule)); box-shadow: 0 1px 2px rgba(24, 32, 43, .04), 0 14px 34px rgba(24, 32, 43, .09); }
+/* The text field shares the rounded composer focus ring. Toolbar controls
+   retain their own focus-visible outline so keyboard location stays clear. */
+.an-composer:has(textarea:focus-visible) { outline: 2px solid var(--an-cobalt); outline-offset: 2px; }
+.an-composer textarea:focus-visible { outline: none; }
 .an-composer textarea { display: block; width: 100%; min-height: 64px; max-height: 148px; padding: 13px 17px 9px; overflow-y: auto; field-sizing: content; resize: none; border: 0; outline: 0; background: transparent; color: var(--an-ink); font-size: 15px; line-height: 1.6; }
 .an-composer textarea::placeholder { color: var(--an-ink-3); opacity: 1; }
 /* Home composer toolbar is its own container so a dragged-narrow Agent window
@@ -65,17 +71,25 @@
 .an-composer-foot {
   container: an-home-composer / inline-size;
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1.5fr) minmax(0, 1fr) 32px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) var(--an-control-size);
+  align-items: end;
   gap: 8px;
-  min-height: 49px;
-  padding: 8px 10px;
+  min-height: 52px;
+  padding: 8px 12px 12px;
   border-top: 0;
 }
+.an-composer-controls { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px; }
+.an-composer-controls > .an-mode-seg { flex: none; }
+.an-composer-controls > .an-anchor { width: auto; max-width: 100%; flex: 0 1 auto; }
+.an-composer-controls > .an-model-anchor { flex: 1 1 160px; min-width: min(160px, 100%); }
+.an-composer-controls .an-chip { width: auto; min-height: var(--an-control-size); }
+.an-composer-controls .an-model-chip { width: 100%; justify-content: flex-start; }
+.an-composer-controls .an-project-chip { max-width: 180px; }
 .an-mode-seg,
 .an-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--an-hairline); border-radius: 8px; background: var(--an-paper-soft); }
+.an-mode-seg button { min-width: var(--an-control-size); }
 .an-mode-seg button,
-.an-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 3px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--an-ink-2); font-size: 12.5px; font-weight: 650; transition: background 140ms ease, color 140ms ease, transform 160ms var(--an-spring); }
+.an-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--an-control-size); padding: 3px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--an-ink-2); font-size: 12.5px; font-weight: 650; transition: background 140ms ease, color 140ms ease, transform 160ms var(--an-spring); }
 .an-mode-seg button:hover,
 .an-seg button:hover { color: var(--an-ink); }
 .an-mode-seg button[aria-checked="true"] { background: var(--an-paper-bright); color: var(--an-ink); box-shadow: 0 1px 3px rgba(24, 32, 43, .12); }
@@ -106,8 +120,8 @@
 .an-chip .paw-mark,
 .an-mode-seg .paw-app-icon { flex: none; }
 .an-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.an-send { display: grid; width: 32px; height: 32px; margin-left: 0; justify-self: end; place-items: center; border: 0; border-radius: 8px; background: var(--an-ink); color: var(--an-paper-bright); transition: transform 180ms var(--an-spring), opacity 140ms ease, background 140ms ease; }
-.an-send:hover:not(:disabled) { background: var(--an-cobalt); transform: translateY(-2px); }
+.an-send { display: grid; width: var(--an-control-size); height: var(--an-control-size); margin-left: 0; justify-self: end; place-items: center; border: 0; border-radius: 10px; background: var(--an-ink); color: var(--an-paper-bright); transition: transform 140ms var(--an-spring), opacity 140ms ease, background 140ms ease; }
+.an-send:hover:not(:disabled) { background: var(--an-cobalt); }
 .an-send:active:not(:disabled) { transform: translateY(0) scale(.96); }
 .an-send:disabled { opacity: .34; }
 /* Shared Radix portals escape the fixed Home surface. Collision-aware available
@@ -162,7 +176,7 @@
 .an-home-section h2 { display: flex; flex: none; align-items: center; gap: 10px; margin: 0 0 10px; color: var(--an-ink-3); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
 .an-home-section h2::after { height: 1px; flex: 1; background: var(--an-hairline); content: ""; }
 /* 继续工作是首屏内唯一的弹性区：吃掉剩余高度，条目多时在列表内部滚动。 */
-.an-home-recents { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.an-home-recents { display: flex; min-height: 123px; flex: 1 1 auto; flex-direction: column; }
 .an-recent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
 .an-home-recents .an-recent-list { min-height: 88px; flex: 1 1 auto; margin: -3px; padding: 3px; overflow: hidden auto; overscroll-behavior: contain; }
 /* 状态色左轨：进行中钴蓝、正常青绿、Room 紫；扫一眼即知每条工作的状态。 */
@@ -437,31 +451,21 @@
   .an-recent-list { grid-template-columns: 1fr; }
 }
 
-/* Home composer logo ladder — same order as Session pickers: drop detail,
-   then labels, keep the semantic mark + aria-label/title. */
+/* Configuration wraps independently; the send column never participates in
+   chip placement. Keep model/loading labels readable at narrow App widths. */
 @container an-home-composer (max-width: 560px) {
-  .an-chip { max-width: 148px; }
+  .an-composer-controls .an-project-chip { width: var(--an-control-size); min-width: var(--an-control-size); padding: 0; justify-content: center; }
+  .an-project-chip :is(.an-chip-text, .caret) { display: none; }
 }
 
 @container an-home-composer (max-width: 420px) {
   .an-mode-seg button {
-    width: 30px;
-    min-width: 30px;
+    width: var(--an-control-size);
+    min-width: var(--an-control-size);
     padding-inline: 0;
   }
 
-  .an-chip {
-    width: 32px;
-    min-width: 32px;
-    max-width: 32px;
-    justify-content: center;
-    padding-inline: 0;
-    gap: 0;
-  }
-
-  .an-chip .caret,
-.an-chip-text,
-.an-mode-seg .an-chip-text {
+  .an-mode-seg .an-chip-text {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -506,9 +510,6 @@
   .an-model-chip { max-width: none; }
   .an-model-chip .agent-composer__picker-thinking { display: none; }
 }
-@container an-home-composer (max-width: 420px) {
-  .an-model-chip .agent-composer__picker-text { display: none; }
-}
 
 .an-model-chip .ui-button__label { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .an-composer textarea { font-size: 15px; }
@@ -535,3 +536,7 @@
 .an-turn-context__disclosure > summary h2 { flex: 1; }
 .an-turn-context__disclosure > summary > span { color: var(--an-ink-3); font-size: 12px; }
 .an-turn-context__disclosure[data-expanded="true"] > summary .an-disclosure-caret { transform: rotate(90deg); }
+
+@container paw-agent-shell (max-width: 480px) {
+  .an-composer textarea { font-size: 16px; }
+}

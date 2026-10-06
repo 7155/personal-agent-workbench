@@ -7,9 +7,9 @@ import { TooltipProvider } from '@/components/primitives';
 import type { SessionSummary } from '@/features/agent/types';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import type { PiModelOption } from '@/features/agent/model-catalog-options';
-import type { AgentImagePasteOptions, ControlRequest, PickedFile } from '@/platform/transport';
+import type { AgentImagePasteOptions, ControlRequest, ControlTransport, PickedFile } from '@/platform/transport';
 import type { RoomSummary } from '@/features/rooms/room-types';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { ControlTransportHttpError } from '@/platform/http-transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import agentNextCss from '../styles/paw-os-agent-next.css?raw';
@@ -24,13 +24,18 @@ vi.mock('./agent-workspace-loader', async importOriginal => ({
 import { readRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { createAgentModeStore } from '@/features/semantic-workspace/agent-mode-store';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useAgentLiveStore.setState({ projections: {} });
+});
 
 describe('PAWOS Agent Home 首屏合同', () => {
-  it('keeps Durable unavailable until the owned Host advertises it', () => {
+  it('keeps Durable unavailable in settings until the owned Host advertises it', async () => {
     renderHome();
-    expect(screen.getByRole('option', { name: 'Pi Durable（实验）' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: '会话执行方式' })).toHaveValue('classic');
+    expect(screen.queryByRole('combobox', { name: '会话执行方式' })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: /^权限 ·/ }));
+    expect(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitemradio', { name: '标准会话' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('creates an explicitly selected Durable Session and retains the server engine in admission', async () => {
@@ -41,7 +46,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
         id: 'session-durable', title: '持续工作', runtimeEngine: (request.body as Record<string, unknown>).runtimeEngine,
       } }),
     });
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '继续完善这个项目');
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(true));
@@ -56,7 +62,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
     const input = screen.getByRole('textbox', { name: '描述你想完成的工作' });
     await user.type(input, '查看这个图片');
     fireEvent.paste(input, { clipboardData: { files: [new File(['image'], 'diagram.png', { type: 'image/png' })], items: [] } });
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
     expect(await screen.findByText(/Pi Durable 暂不支持附件/)).toBeVisible();
     expect(input).toHaveValue('查看这个图片');
@@ -68,7 +75,8 @@ describe('PAWOS Agent Home 首屏合同', () => {
   it('does not transfer a Durable selection into Room creation', async () => {
     const user = userEvent.setup();
     const { transport } = renderHome({ durableAvailable: true, personas: [persona('planner', '规划者'), persona('builder', '执行者')] });
-    await user.selectOptions(screen.getByRole('combobox', { name: '会话执行方式' }), 'durable');
+    await user.click(screen.getByRole('button', { name: /^权限 ·/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Pi Durable（实验）' }));
     await user.click(screen.getByRole('radio', { name: 'Room' }));
     expect(screen.queryByRole('combobox', { name: '会话执行方式' })).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '描述你想完成的工作' }), '协作检查项目');
@@ -185,10 +193,11 @@ describe('PAWOS Agent Home 首屏合同', () => {
     expect(transport.subscriptionCalls).toHaveLength(0);
   });
 
-  it('owns its viewport like a desktop app: the page never scrolls, only the recent list does', () => {
-    // 表面本身钉死在窗口高度上，禁止整页往下翻。
-    expect(agentNextCss).toMatch(/\.an-home\s*\{[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/s);
-    // 继续工作列表是唯一的内部滚动区。
+  it('fits the desktop viewport and keeps a scroll fallback for short windows', () => {
+    // Short windows must expose overflow rather than cover the continuation cards.
+    expect(agentNextCss).toMatch(/\.an-home-root\s*\{[^}]*overflow:\s*auto;/s);
+    expect(agentNextCss).toMatch(/\.an-home-wrap\s*\{[^}]*min-height:\s*min-content;/s);
+    // The continuation list still owns its normal-height scrolling.
     expect(agentNextCss).toMatch(/\.an-home-recents \.an-recent-list\s*\{[^}]*overflow:\s*hidden auto;/s);
     // 页脚是钉在底部的状态条，不是文章末尾。
     expect(agentNextCss).toMatch(/\.an-home-foot\s*\{[^}]*margin-top:\s*auto;/s);
@@ -223,7 +232,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
     const permissions = await screen.findByRole('menu');
     expect(permissions.closest('.an-home')).toBeNull();
     await user.keyboard('{End}');
-    expect(within(permissions).getByRole('menuitemradio', { name: /^全自动/ })).toHaveFocus();
+    expect(within(permissions).getByRole('menuitemradio', { name: '标准会话' })).toHaveFocus();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(permission).toHaveFocus());
 
@@ -286,7 +295,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
 
     await user.click(await screen.findByRole('button', { name: /权限 · 完全访问/ }));
     const menu = screen.getByRole('menu');
-    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(4);
+    expect(within(within(menu).getByRole('group', { name: '权限模式' })).getAllByRole('menuitemradio')).toHaveLength(4);
     expect(within(menu).getByRole('menuitemradio', { name: /^只读/ })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: /^完全访问/ })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: /^工作区托管/ })).toBeInTheDocument();
@@ -352,13 +361,12 @@ describe('PAWOS Agent Home 首屏合同', () => {
   });
 
   it('hands off one optimistic first message before admission using the same client identity', async () => {
-    useAgentLiveStore.getState().clear('session-created');
     let resolveAdmission!: (value: unknown) => void;
     const admission = new Promise<unknown>((resolve) => { resolveAdmission = resolve; });
     let projectionAtHandoff: ReturnType<typeof useAgentLiveStore.getState>['projections'][string] | undefined;
     const onCreated = vi.fn((selection: { kind: string; id?: string }) => {
       if (selection.kind === 'session' && selection.id) {
-        projectionAtHandoff = useAgentLiveStore.getState().projections[selection.id];
+        projectionAtHandoff = homeProjection(transport, selection.id);
       }
     });
     const { transport } = renderHome({
@@ -389,13 +397,11 @@ describe('PAWOS Agent Home 首屏合同', () => {
 
     resolveAdmission({ ok: true });
     await waitFor(() => expect(
-      useAgentLiveStore.getState().projections['session-created']?.messagesById[messageId]?.status,
+      homeProjection(transport)?.messagesById[messageId]?.status,
     ).toBe('queued'));
-    useAgentLiveStore.getState().clear('session-created');
   });
 
   it('discards the first optimistic message when admission was synchronously cancelled', async () => {
-    useAgentLiveStore.getState().clear('session-created');
     const { transport } = renderHome({
       promptRoute: {
         ok: true,
@@ -415,24 +421,22 @@ describe('PAWOS Agent Home 首屏合同', () => {
       transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt'),
     ).toHaveLength(1));
     await waitFor(() => {
-      const projection = useAgentLiveStore.getState().projections['session-created'];
+      const projection = homeProjection(transport);
       expect(projection?.optimisticByClientMessageId).toEqual({});
       expect(projection?.messageOrder).toEqual([]);
       expect(projection?.turnOrder).toEqual([]);
       expect(projection?.status).toBe('idle');
     });
-    useAgentLiveStore.getState().clear('session-created');
   });
 
   it('hands off the first attachment message before import resolves and later sends exact receipts', async () => {
-    useAgentLiveStore.getState().clear('session-created');
     const file = new File(['preview'], 'slow.png', { type: 'image/png' });
     let resolveImport!: (value: PickedFile[]) => void;
     const imported = new Promise<PickedFile[]>((resolve) => { resolveImport = resolve; });
     let projectionAtHandoff: ReturnType<typeof useAgentLiveStore.getState>['projections'][string] | undefined;
     const onCreated = vi.fn((selection: { kind: string; id?: string }) => {
       if (selection.kind === 'session' && selection.id) {
-        projectionAtHandoff = useAgentLiveStore.getState().projections[selection.id];
+        projectionAtHandoff = homeProjection(transport, selection.id);
       }
     });
     const { transport } = renderHome({
@@ -476,13 +480,43 @@ describe('PAWOS Agent Home 首屏合同', () => {
       clientMessageId,
     });
     expect(
-      useAgentLiveStore.getState().projections['session-created']?.messagesById[messageId]?.attachments,
+      homeProjection(transport)?.messagesById[messageId]?.attachments,
     ).toEqual(['media-slow']);
-    useAgentLiveStore.getState().clear('session-created');
+  });
+
+  it('keeps a late attachment import and admission failure in their original transport projection', async () => {
+    let resolveImport!: (value: PickedFile[]) => void;
+    let rejectAdmission!: (reason: unknown) => void;
+    const imported = new Promise<PickedFile[]>((resolve) => { resolveImport = resolve; });
+    const admission = new Promise<unknown>((_resolve, reject) => { rejectAdmission = reject; });
+    const { transport } = renderHome({ imagePaste: () => imported, promptRoute: () => admission });
+    const user = userEvent.setup();
+    const file = new File(['image'], 'late.png', { type: 'image/png' });
+    const composer = screen.getByRole('textbox', { name: '描述你想完成的工作' });
+    fireEvent.paste(composer, { clipboardData: { files: [file], items: [], getData: () => '' } });
+    await user.type(composer, '原连接的附件');
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+    const [clientMessageId, messageId] = Object.entries(homeProjection(transport)!.optimisticByClientMessageId)[0];
+    const transportB = new MockControlTransport();
+    const addressB = agentSessionAddress(transportB, 'session-created');
+    useAgentLiveStore.getState().appendOptimistic(addressB, {
+      clientMessageId, text: '另一个连接的消息', attachments: ['media-b'], nowMs: 1,
+    });
+    const beforeB = homeProjection(transportB);
+
+    resolveImport([{ id: 'media-a', name: 'late.png', mimeType: 'image/png', byteSize: file.size, sessionId: 'session-created' }]);
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(1));
+    expect(homeProjection(transport)?.messagesById[messageId].attachments).toEqual(['media-a']);
+    expect(homeProjection(transportB)).toBe(beforeB);
+    rejectAdmission(new TypeError('fetch failed'));
+    await waitFor(() => expect(homeProjection(transport)?.messagesById[messageId])
+      .toMatchObject({ status: 'failed', admissionState: 'ambiguous' }));
+    expect(homeProjection(transportB)).toBe(beforeB);
+    expect(useAgentLiveStore.getState().projections['session-created']).toBeUndefined();
+    expect(transportB.requests).toHaveLength(0);
   });
 
   it('reports an attachment import failure before admission without calling it a network-ambiguous prompt', async () => {
-    useAgentLiveStore.getState().clear('session-created');
     const file = new File(['preview'], 'broken.png', { type: 'image/png' });
     const onCreated = vi.fn();
     const { transport } = renderHome({
@@ -500,24 +534,22 @@ describe('PAWOS Agent Home 首屏合同', () => {
     expect(onCreated).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       const message = Object.values(
-        useAgentLiveStore.getState().projections['session-created']?.messagesById ?? {},
+        homeProjection(transport)?.messagesById ?? {},
       )[0];
       expect(message).toMatchObject({ status: 'failed' });
       expect(message).not.toHaveProperty('admissionState');
       expect(
-        useAgentLiveStore.getState().projections['session-created']
+        homeProjection(transport)
           ?.turnsById[message.turnId]?.failure,
       ).toContain('重新上传');
     });
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
-    useAgentLiveStore.getState().clear('session-created');
   });
 
   it.each([
     ['pending', 'in_flight'],
     ['unresolved', 'unresolved'],
   ] as const)('keeps a first prompt with %s admission state for durable reconciliation', async (expectedState, recoveryState) => {
-    useAgentLiveStore.getState().clear('session-created');
     const { transport } = renderHome({
       promptRoute: (request: ControlRequest) => {
         const clientMessageId = String((request.body as Record<string, unknown>).clientMessageId);
@@ -542,7 +574,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
 
     await waitFor(() => {
-      const projection = useAgentLiveStore.getState().projections['session-created'];
+      const projection = homeProjection(transport);
       const message = Object.values(projection?.messagesById ?? {}).find(
         (item) => item.clientMessageId === String(
           (transport.requests.find(({ request }) => request.pathId === 'agent.session.prompt')?.request.body as Record<string, unknown>)?.clientMessageId,
@@ -551,11 +583,9 @@ describe('PAWOS Agent Home 首屏合同', () => {
       expect(message).toMatchObject({ status: 'queued', admissionState: expectedState });
     });
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(1);
-    useAgentLiveStore.getState().clear('session-created');
   });
 
   it('marks an ambiguous first-prompt transport loss for verification without resending', async () => {
-    useAgentLiveStore.getState().clear('session-created');
     const { transport } = renderHome({
       promptRoute: () => { throw new TypeError('fetch failed'); },
     });
@@ -564,14 +594,12 @@ describe('PAWOS Agent Home 首屏合同', () => {
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
 
     await waitFor(() => expect(
-      Object.values(useAgentLiveStore.getState().projections['session-created']?.messagesById ?? {})[0],
+      Object.values(homeProjection(transport)?.messagesById ?? {})[0],
     ).toMatchObject({ status: 'failed', admissionState: 'ambiguous' }));
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(1);
-    useAgentLiveStore.getState().clear('session-created');
   });
 
   it('keeps a definitive first-prompt rejection as one retryable failed turn', async () => {
-    useAgentLiveStore.getState().clear('session-created');
     const { transport } = renderHome({
       promptRoute: () => { throw new Error('provider rejected this prompt'); },
     });
@@ -580,7 +608,7 @@ describe('PAWOS Agent Home 首屏合同', () => {
     await user.click(screen.getByRole('button', { name: '开始 Session' }));
 
     await waitFor(() => {
-      const projection = useAgentLiveStore.getState().projections['session-created'];
+      const projection = homeProjection(transport);
       const messages = Object.values(projection?.messagesById ?? {});
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({ status: 'failed' });
@@ -589,7 +617,6 @@ describe('PAWOS Agent Home 首屏合同', () => {
       expect(Object.values(projection?.turnsById ?? {})[0]?.failure).toBe('provider rejected this prompt');
     });
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(1);
-    useAgentLiveStore.getState().clear('session-created');
   });
 
   it('recomputes the visible Room team from a task suggestion and sends the adjusted participants', async () => {
@@ -730,6 +757,10 @@ describe('PAWOS Agent Home 首屏合同', () => {
     expect(create?.body).not.toHaveProperty('executionMode');
   });
 });
+
+function homeProjection(transport: ControlTransport, sessionId = 'session-created') {
+  return selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, sessionId));
+}
 
 function renderHome({
   interfaceMode = 'traditional',

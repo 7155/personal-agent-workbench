@@ -113,6 +113,7 @@ export function AgentComposer({
   draft,
   attachments,
   session,
+  inputOwnerId = session?.id ?? '',
   sessionMetadataKnown = Boolean(session),
   persona,
   catalog,
@@ -125,8 +126,10 @@ export function AgentComposer({
   codemodeModePending = false,
   busy,
   stopping = false,
+  showStop = true,
   sending,
   submissionBlocked = false,
+  submissionBlockedReason = '',
   modelChanging = false,
   onDraftChange,
   onAttachmentsChange,
@@ -148,6 +151,7 @@ export function AgentComposer({
   modelPickerRequest = 0,
   thinkingPickerRequest = 0,
   permissionPickerRequest = 0,
+  permissionLocked = false,
   toolPickerRequest = 0,
   toolPickerQuery = '',
   helpRequest = 0,
@@ -165,6 +169,8 @@ export function AgentComposer({
   draft: string;
   attachments: ComposerAttachment[];
   session?: SessionSummary;
+  /** Mounted transport+Session identity; session.id remains the legacy default. */
+  inputOwnerId?: string;
   sessionMetadataKnown?: boolean;
   persona?: AgentPersonaV1;
   catalog?: ModelCatalog;
@@ -178,8 +184,12 @@ export function AgentComposer({
   codemodeModePending?: boolean;
   busy: boolean;
   stopping?: boolean;
+  /** Hosts with a separate exact-target control can hide this generic Stop. */
+  showStop?: boolean;
   sending: boolean;
   submissionBlocked?: boolean;
+  /** Owner-specific admission reason, shared by the button and Enter gate. */
+  submissionBlockedReason?: string;
   modelChanging?: boolean;
   onDraftChange: (value: string) => void;
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
@@ -201,6 +211,7 @@ export function AgentComposer({
   modelPickerRequest?: number;
   thinkingPickerRequest?: number;
   permissionPickerRequest?: number;
+  permissionLocked?: boolean;
   toolPickerRequest?: number;
   toolPickerQuery?: string;
   helpRequest?: number;
@@ -232,7 +243,7 @@ export function AgentComposer({
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   const canAttach = Boolean(attachmentsAvailable && session && !sending && !busy && attachments.length < 8);
-  const pastedText = usePastedTextAttachments({ ownerId: session?.id ?? '', canImport: canAttach, onImport: onPasteImages });
+  const pastedText = usePastedTextAttachments({ ownerId: inputOwnerId, canImport: canAttach, onImport: onPasteImages });
   useComposerEditor(textareaRef, composerDraft, expanded);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
@@ -248,8 +259,8 @@ export function AgentComposer({
   const commandCatalog = useMemo(
     () => minimal
       ? []
-      : buildCommandCatalog({ session, catalog, piCommands, tools, toolCatalogStatus, busy, sending }),
-    [busy, catalog, minimal, piCommands, sending, session, toolCatalogStatus, tools],
+      : buildCommandCatalog({ session, catalog, piCommands, tools, toolCatalogStatus, busy, sending, permissionLocked }),
+    [busy, catalog, minimal, permissionLocked, piCommands, sending, session, toolCatalogStatus, tools],
   );
   const commands = useMemo(() => commandCatalog.filter((command) => {
     const value = composerDraft.toLowerCase();
@@ -321,7 +332,8 @@ export function AgentComposer({
     capabilities: { queue: Boolean(onQueue) },
   });
   const sendActionLabel = composerActionLabel(actionModel.primary);
-  const sendBlockedReason = composerBlockedReasonLabel(actionModel.blockedReason);
+  const ownerSubmissionBlocked = submissionBlocked || Boolean(submissionBlockedReason);
+  const sendBlockedReason = submissionBlockedReason || composerBlockedReasonLabel(actionModel.blockedReason);
   function publishDraft(value: string): void {
     // The textarea owns keystroke latency; the parent only needs a deferred
     // projection for navigation and recovery. Send receives the local snapshot.
@@ -386,7 +398,7 @@ export function AgentComposer({
     publishDraft(nextDraft);
   }
   function submit(delivery: ComposerSubmitMode | null): void {
-    if (!delivery || pastedText.blocked || submissionBlocked) return;
+    if (!delivery || pastedText.blocked || ownerSubmissionBlocked) return;
     const value = composerDraft;
     /* A refused queue never reaches Runtime, so the draft has to stay exactly
        where the writer left it rather than vanish into a full queue. */
@@ -568,7 +580,7 @@ export function AgentComposer({
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder={placeholder ?? (attachmentsAvailable ? composerPlaceholder(imageSupport) : '给当前 Session 发消息…')}
+            placeholder={placeholder ?? (attachmentsAvailable ? composerPlaceholder(imageSupport) : '继续这段对话…')}
             aria-label="消息"
             role={commandPanelVisible ? 'combobox' : undefined}
             aria-autocomplete={commandPanelVisible ? 'list' : undefined}
@@ -585,7 +597,7 @@ export function AgentComposer({
             <ComposerAddMenu canAttach={canAttach} disabled={!session} onPickAttachments={onPickAttachments} />
             {minimal ? null : (
               <>
-                <PermissionPicker session={session} metadataKnown={sessionMetadataKnown} persona={persona} tools={tools} disabled={busy || sending} requestOpen={permissionPickerRequest} onChange={onPermissionChange} onWorkspaceRootsChange={onWorkspaceRootsChange} />
+                {permissionLocked ? <span className="paw-primary-authority"><ShieldCheck size={13} />{session?.metadata?.primaryTask ? '本次工作区已授权' : '讨论 · 只读'}</span> : <PermissionPicker session={session} metadataKnown={sessionMetadataKnown} persona={persona} tools={tools} disabled={busy || sending} requestOpen={permissionPickerRequest} onChange={onPermissionChange} onWorkspaceRootsChange={onWorkspaceRootsChange} />}
                 <ToolPicker
                   adjustmentDisabled={busy || sending}
                   capabilityCatalog={capabilityCatalog}
@@ -623,7 +635,7 @@ export function AgentComposer({
         )}
         actions={(
           <>
-            {busy ? (
+            {busy && showStop ? (
               <IconButton
                 className="agent-composer__stop"
                 label={stopping || stopRequested ? '正在停止本轮' : '停止本轮'}
@@ -642,7 +654,7 @@ export function AgentComposer({
               label={sendBlockedReason ? `${sendActionLabel}（${sendBlockedReason}）` : sendActionLabel}
               icon={<Send size={16} />}
               onClick={() => submit(composerSubmitMode(actionModel))}
-              disabled={actionModel.primaryDisabled || submissionBlocked}
+              disabled={actionModel.primaryDisabled || ownerSubmissionBlocked}
               tooltip
             />
           </>
@@ -664,10 +676,9 @@ function isCommandLookupDraft(value: string): boolean {
 }
 
 function composerPlaceholder(support: 'supported' | 'unsupported' | 'unknown'): string {
-  const target = '当前 Session';
-  if (support === 'supported') return `给${target}发消息，输入 / 查看命令，或粘贴图片、文件…`;
-  if (support === 'unsupported') return `给${target}发消息，输入 / 查看命令，或粘贴文件；当前模型不识别图片…`;
-  return `给${target}发消息，输入 / 查看命令，或粘贴文件；当前模型图片能力未知…`;
+  if (support === 'supported') return '继续对话，输入 / 查看命令…';
+  if (support === 'unsupported') return '继续这段对话，输入 / 查看命令，或粘贴文件；当前模型不识别图片…';
+  return '继续这段对话，输入 / 查看命令，或粘贴文件；当前模型图片能力未知…';
 }
 
 /**

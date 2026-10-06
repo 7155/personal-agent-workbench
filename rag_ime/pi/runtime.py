@@ -94,6 +94,7 @@ from rag_ime.pi.values import (
     redact_runtime_text,
 )
 from rag_ime.room_runtime_host_kill_gate import RuntimeHostKillGate
+from rag_ime.contracts.compaction_target import CompactionTarget, validate_compaction_target
 
 
 __all__ = [
@@ -195,6 +196,7 @@ def _record_plugin_usage_notice(
 class _HostedSessionState:
     runtime_engine: str = "classic"
     recoverable: bool = False
+    compaction_target: CompactionTarget | None = None
     turn_id: str = ""
     client_message_id: str = ""
     prompt_admission_in_flight: bool = False
@@ -389,7 +391,7 @@ class PiRuntimeHostManager:
             busy = sorted(
                 session_id
                 for session_id, state in self._states.items()
-                if state.turn_id
+                if state.turn_id or state.compaction_target
                 or (
                     state.prompt_admission_in_flight
                     and not state.abort_pending_admission
@@ -451,6 +453,7 @@ class PiRuntimeHostManager:
                     capabilities.get("sessionControlState")
                 ),
                 "sessionBoundAbort": capabilities.get("sessionBoundAbort") is True,
+                "sessionCompactionRecovery": capabilities.get("sessionCompactionRecovery") is True,
                 "sessionSnapshot": True,
                 "settledEvents": True,
                 "statelessCompletion": (
@@ -1214,35 +1217,106 @@ class PiRuntimeHostManager:
         active = as_mapping(state.get("activeTurn"))
         if active and (not str(active.get("turnId") or "") or not str(active.get("clientMessageId") or "")):
             raise PiRuntimeError("Pi Durable active input has no exact identity")
-        if state["recoverable"] and (not state["paused"] or state["isIdle"] or not active):
+        target = None
+        if state.get("compactionTarget") is not None:
+            try:
+                target = validate_compaction_target(state["compactionTarget"])
+            except ValueError as exc:
+                raise PiRuntimeError("Pi returned an invalid Durable compaction target") from exc
+            if state.get("activeTurn") is not None or state["isIdle"] or target["runtimeSessionId"] != state["piSessionId"]:
+                raise PiRuntimeError("Pi Durable compaction state is inconsistent")
+        if state["recoverable"] and (not state["paused"] or state["isIdle"] or not (active or target)):
             raise PiRuntimeError("Pi Durable recovery state is inconsistent")
         capabilities = as_mapping(state.get("engineCapabilities"))
-        if (set(capabilities) != _DURABLE_ENGINE_CAPABILITIES
+        if (set(capabilities) - {"compactionRecovery"} != _DURABLE_ENGINE_CAPABILITIES
+            or (target is not None and capabilities.get("compactionRecovery") is not True)
             or any(not isinstance(value, bool) for value in capabilities.values())
             or any(capabilities[key] for key in _DURABLE_UNSUPPORTED_CAPABILITIES)):
             raise PiRuntimeError("Pi returned incompatible Durable engine capabilities")
 
     def _observe_durable_state(self, session_id: str, snapshot: Mapping[str, object]) -> None:
-        active = as_mapping(snapshot.get("activeTurn"))
-        with self._lock:
-            state = self._states.setdefault(session_id, _HostedSessionState())
-            state.runtime_engine = "durable"
-            state.recoverable = snapshot.get("recoverable") is True
-            if active:
-                if state.turn_id and (state.turn_id != active["turnId"] or state.client_message_id != active["clientMessageId"]):
-                    raise PiRuntimeTurnConflict("Durable observation belongs to a different input")
-                state.turn_id = str(active["turnId"])
-                state.client_message_id = str(active["clientMessageId"])
-                self._status = "busy"
-                self._cancel_idle_locked()
-                self.sessions.set_status(session_id, "busy")
-            elif not state.turn_id and not state.prompt_admission_in_flight and snapshot.get("isIdle") is True:
-                self.sessions.set_status(session_id, "idle")
+        # A previous input's receipt does not own a subsequent standalone task.
         settlement = as_mapping(snapshot.get("turnSettlement"))
         if settlement and as_mapping(settlement.get("receipt")).get("disposition") != "suspended":
             validated = self._validate_turn_settlement(settlement, session_id=session_id,
                 turn_id=str(settlement.get("turnId") or ""), client_message_id=str(settlement.get("clientMessageId") or ""))
             self._reconcile_turn_settlement(validated)
+        active = as_mapping(snapshot.get("activeTurn"))
+        target = validate_compaction_target(snapshot["compactionTarget"]) if snapshot.get("compactionTarget") is not None else None
+        with self._lock:
+            state = self._states.setdefault(session_id, _HostedSessionState())
+            state.runtime_engine = "durable"
+            state.recoverable = snapshot.get("recoverable") is True
+            state.compaction_target = target
+            if active:
+                if state.turn_id and (state.turn_id != active["turnId"] or state.client_message_id != active["clientMessageId"]):
+                    raise PiRuntimeTurnConflict("Durable observation belongs to a different input")
+                state.turn_id = str(active["turnId"])
+                state.client_message_id = str(active["clientMessageId"])
+            elif target:
+                # No fabricated turn or old input may act as cancellation authority.
+                state.turn_id = ""
+                state.client_message_id = ""
+            if active or target:
+                self._status = "busy"
+                self._cancel_idle_locked()
+                self.sessions.set_status(session_id, "busy")
+            elif not state.turn_id and not state.prompt_admission_in_flight and snapshot.get("isIdle") is True:
+                self.sessions.set_status(session_id, "idle")
+                if not any(item.turn_id or item.compaction_target or item.prompt_admission_in_flight
+                           for item in self._states.values()):
+                    self._status = "ready"
+                self._schedule_idle_locked()
+
+    def resume_compaction(self, session_id: str, target: object) -> dict[str, object]:
+        """Resume the named original native task set without admitting input."""
+        return self._control_compaction(session_id, target, action="resume")
+
+    def abort_compaction(self, session_id: str, target: object) -> dict[str, object]:
+        """Stop only named compaction tasks, without turn/job cancellation authority."""
+        return self._control_compaction(session_id, target, action="abort")
+
+    def _control_compaction(self, session_id: str, target: object, *, action: str) -> dict[str, object]:
+        with self._lifecycle_lock:
+            identity = validate_compaction_target(target)
+            if not self._is_durable(session_id):
+                raise PiRuntimeError("Compaction recovery requires a Durable Session")
+            self.require_session_engine("durable")
+            if self._host_capabilities.get("sessionCompactionRecovery") is not True:
+                raise PiRuntimeError("Pi Runtime Host does not support compaction recovery")
+            prepared = self.ensure(session_id, retire_recovered_turn=False)
+            before = as_mapping(prepared.get("state"))
+            if (as_mapping(before.get("engineCapabilities")).get("compactionRecovery") is not True
+                or before.get("piSessionId") != identity["runtimeSessionId"]):
+                raise PiRuntimeError("Durable compaction target has an incompatible native binding")
+            client = self._require_client()
+            def require_original_host() -> None:
+                with self._lock:
+                    if self._client is not client or session_id not in self._open_sessions:
+                        raise PiRuntimeTurnConflict("Durable compaction control lost its native Host binding")
+            # Terminal retries can coexist with newer work. Only Pi's native task
+            # ledger may decide the original outcome; never retarget to current work.
+            result = client.send(f"session.{action}", {"sessionId": session_id, "compactionTarget": identity},
+                                 before_write=require_original_host)
+            if (result.get("schemaVersion") != f"rag-ime.pi-compaction-{action}.v1"
+                or result.get("accepted") is not True or result.get("runtimeEngine") != "durable"
+                or result.get("compactionTarget") != identity):
+                raise PiRuntimeError("Pi returned an invalid Durable compaction receipt")
+            if action == "resume":
+                if not isinstance(result.get("resumed"), bool):
+                    raise PiRuntimeError("Pi returned an invalid compaction resume outcome")
+            else:
+                outcomes = result.get("outcomes")
+                if (result.get("drained") is not True or not isinstance(outcomes, list)
+                    or any(not isinstance(outcome, Mapping) or set(outcome) != {"taskId", "status"}
+                           or outcome.get("status") not in {"completed", "aborted", "failed"} for outcome in outcomes)
+                    or [outcome["taskId"] for outcome in outcomes] != identity["taskIds"]):
+                    raise PiRuntimeError("Pi returned an unsettled or invalid compaction abort outcome")
+            snapshot = as_mapping(result.get("state"))
+            self._validate_durable_state(session_id, snapshot, control=True)
+            self._validate_durable_binding(snapshot, self.sessions.runtime_binding(session_id) or {})
+            self._observe_durable_state(session_id, snapshot)
+            return dict(result)
 
     def resume_session(self, session_id: str, *, turn_id: str, client_message_id: str) -> dict[str, object]:
         """Resume one admitted native input; never submit it again."""
@@ -1444,7 +1518,7 @@ class PiRuntimeHostManager:
                 and state.admission_client_message_id
                 == normalized_client_message_id
             )
-            if state.turn_id or (
+            if state.turn_id or state.compaction_target or (
                 state.prompt_admission_in_flight
                 and not same_reservation
             ):
@@ -1517,7 +1591,7 @@ class PiRuntimeHostManager:
             # Persist under the same identity fence. If persistence fails the
             # exact reservation remains retryable; an old release must not mark
             # a newly reserved or already dispatched Session idle.
-            self.sessions.set_status(session_id, "idle")
+            self.sessions.set_status(session_id, "busy" if state.compaction_target else "idle")
             state.prompt_admission_in_flight = False
             state.admission_client_message_id = ""
             state.abort_pending_admission = False
@@ -1736,7 +1810,7 @@ class PiRuntimeHostManager:
                 raise PiRuntimeCommandAcceptanceUnknown(
                     "Pi prompt acceptance is unresolved; inspect the exact command before retrying"
                 )
-            if state.turn_id or (
+            if state.turn_id or state.compaction_target or (
                 state.prompt_admission_in_flight and not pre_reserved
             ):
                 raise PiRuntimeTurnConflict(
@@ -1831,7 +1905,7 @@ class PiRuntimeHostManager:
                 if (not acceptance_unknown and not state.turn_id
                     and state.prompt_admission_in_flight
                     and state.admission_client_message_id == normalized_client_message_id):
-                    self.sessions.set_status(session_id, "idle", **(
+                    self.sessions.set_status(session_id, "busy" if state.compaction_target else "idle", **(
                         {"last_message_preview": "已停止。"} if isinstance(exc, PiRuntimeCommandRejected)
                         and exc.host_error_code == "PROMPT_ADMISSION_CANCELLED" else {}))
                     state.prompt_admission_in_flight = False
@@ -2858,6 +2932,8 @@ class PiRuntimeHostManager:
             **({"runtimeEngine": "durable", "recoverable": snapshot.get("recoverable") is True,
                 "paused": snapshot.get("paused") is True,
                 "activeTurn": dict(as_mapping(snapshot.get("activeTurn"))) or None,
+                "compactionTarget": (validate_compaction_target(snapshot["compactionTarget"])
+                                     if snapshot.get("compactionTarget") is not None else None),
                 "engineCapabilities": dict(as_mapping(snapshot.get("engineCapabilities"))),
                 "partial": snapshot.get("partial") is True,
                 "historyCursor": snapshot.get("historyCursor"),
@@ -4219,12 +4295,12 @@ class PiRuntimeHostManager:
         }
         if max_tokens is not None:
             params["maxTokens"] = int(max_tokens)
-        selected = public_pi_model(
-            self._require_client().send(
-                "session.model.set",
-                params,
-            )
-        )
+        result = self._require_client().send("session.model.set", params)
+        # Durable returns its updated Session snapshot, while Classic returns
+        # the selected model directly. Keep the engine-specific wire shapes
+        # explicit rather than treating malformed responses as a fallback.
+        model = as_mapping(result.get("model")) if self._is_durable(session_id) else result
+        selected = public_pi_model(model)
         if not selected:
             raise PiRuntimeError("Pi did not return the selected model")
         session = self.sessions.set_model_profile(session_id, f"{selected['provider']}/{selected['id']}")
@@ -4571,6 +4647,20 @@ class PiRuntimeHostManager:
                         value["projectionSync"] = {"state": "pending", "failedOperations": ["status_changed"]}
         return value
 
+    def require_turn_abort_target(self, session_id: str) -> None:
+        """Reject compaction before the application captures turn/job cancellation."""
+        if not self._is_durable(session_id):
+            return
+        with self._lock:
+            state = self._states.get(session_id)
+            if state is not None and state.compaction_target:
+                raise PiRuntimeTurnConflict("Stop requires the exact compactionTarget")
+            local_unsent = state is not None and state.prompt_admission_in_flight and not state.prompt_dispatched
+        if not local_unsent:
+            prepared = self.ensure(session_id, retire_recovered_turn=False)
+            if as_mapping(prepared.get("state")).get("compactionTarget") is not None:
+                raise PiRuntimeTurnConflict("Stop requires the exact compactionTarget")
+
     def abort_with_approval_fence(
         self,
         session_id: str,
@@ -4598,6 +4688,8 @@ class PiRuntimeHostManager:
         abort_projection_failed = False
         with self._lock:
             state = self._states.setdefault(session_id, _HostedSessionState())
+            if state.compaction_target:
+                raise PiRuntimeTurnConflict("Stop requires the exact compactionTarget")
             turn_id = state.turn_id
             client_message_id = state.client_message_id
             if _expected_identity is not None and (
@@ -5183,7 +5275,7 @@ class PiRuntimeHostManager:
                 self._classifications.clear()
                 self._completion_sinks.clear()
                 self._states = {session_id: state for session_id, state in self._states.items()
-                    if state.runtime_engine == "durable" and (state.turn_id or state.prompt_admission_in_flight)}
+                    if state.runtime_engine == "durable" and (state.turn_id or state.compaction_target or state.prompt_admission_in_flight)}
                 for state in self._states.values():
                     state.recoverable = True
                 self._status = "stopped" if self.config.enabled else "disabled"
@@ -5212,7 +5304,7 @@ class PiRuntimeHostManager:
         with self._lifecycle_lock:
             with self._lock:
                 state = self._states.get(normalized)
-                if state is not None and state.turn_id:
+                if state is not None and (state.turn_id or state.compaction_target):
                     raise PiRuntimeError(
                         "Session must settle before its runtime policy changes"
                     )
@@ -5328,6 +5420,31 @@ class PiRuntimeHostManager:
         client_message_id = str(envelope.get("clientMessageId") or "")
         event_type = str(raw.get("type") or "")
         durable_engine = self._is_durable(session_id)
+        if (durable_engine and not turn_id and (event_type == "compaction_settled"
+            or (event_type == "compaction_start" and self._host_capabilities.get("sessionCompactionRecovery") is True))):
+            if event_type == "compaction_settled":
+                target = validate_compaction_target(raw.get("compactionTarget"))
+                observed = as_mapping(raw.get("state"))
+                self._validate_durable_state(session_id, observed, control=True)
+                self._validate_durable_binding(observed, self.sessions.runtime_binding(session_id) or {})
+                if observed.get("piSessionId") != target["runtimeSessionId"]:
+                    raise PiRuntimeError("Pi compaction settlement belongs to another native Session")
+            # The ordered event lane may lag an explicit control response or
+            # successor admission. Read current authority under the same lock
+            # as snapshots/controls; a delayed old event must never restore it.
+            with self._lifecycle_lock:
+                snapshot = dict(self._require_client().send("session.control_state", {"sessionId": session_id}))
+                self._validate_durable_state(session_id, snapshot, control=True)
+                self._validate_durable_binding(snapshot, self.sessions.runtime_binding(session_id) or {})
+                self._observe_durable_state(session_id, snapshot)
+                self.events.publish(session_id, "status_changed", {
+                    "status": "idle" if snapshot["isIdle"] else "busy", "runtimeEngine": "durable",
+                    "paused": snapshot["paused"], "recoverable": snapshot["recoverable"],
+                    "activeTurn": dict(as_mapping(snapshot.get("activeTurn"))) or None,
+                    "compactionTarget": snapshot.get("compactionTarget"), "projectionCurrent": True,
+                })
+            if event_type == "compaction_settled":
+                return
         with self._lock:
             if (
                 turn_id
@@ -5343,6 +5460,8 @@ class PiRuntimeHostManager:
                 and turn_id in state.retired_turn_ids
             ):
                 return
+            if state is not None and state.compaction_target and turn_id:
+                return
             # Queue notifications are observations, including after opening a
             # historical Session. Their correlation ids cannot admit a prompt
             # or reopen/replace a live turn; terminal fences still apply.
@@ -5350,7 +5469,8 @@ class PiRuntimeHostManager:
                 state = self._states.setdefault(session_id, _HostedSessionState())
                 if durable_engine:
                     state.runtime_engine = "durable"
-                    state.recoverable = False
+                    if not state.compaction_target:
+                        state.recoverable = False
                 if turn_id:
                     state.turn_id = turn_id
                     if state.abort_pending_admission:
@@ -6355,7 +6475,7 @@ class PiRuntimeHostManager:
             self._client = None
             self._open_sessions.clear()
             self._states = {session_id: state for session_id, state in self._states.items()
-                if state.runtime_engine == "durable" and (state.turn_id or state.prompt_admission_in_flight)}
+                if state.runtime_engine == "durable" and (state.turn_id or state.compaction_target or state.prompt_admission_in_flight)}
             for state in self._states.values():
                 state.recoverable = True
             self._status = "faulted"
@@ -6526,7 +6646,7 @@ class PiRuntimeHostManager:
             or self._active_completion_ids
             or self._classifications
             or any(
-                state.turn_id or state.prompt_admission_in_flight
+                state.turn_id or state.compaction_target or state.prompt_admission_in_flight
                 for state in self._states.values()
             )
         ):

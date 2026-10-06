@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
 import {
   parseCapabilityDefaults,
-  requireCapabilityCatalog,
-  requireSessionCapabilityCatalog,
   type CapabilityPreference,
 } from './capability-policy';
-import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT } from '@/paw-os/extensions/installation';
+import { notifyPawExtensionInstallationChanged } from '@/paw-os/extensions/installation';
+import { capabilityCatalogQueryOptions, extensionInventoryQueryOptions, pluginQueryKeys, prepareCatalogRefresh } from './catalog-queries';
+export { pluginQueryKeys } from './catalog-queries';
+import { asRecord, stringValue } from '@/features/overview/management-ui';
 
 export type SkillSourceKind = 'package' | 'bundled' | 'project';
 
@@ -51,18 +52,6 @@ export type SkillDetailResponse = {
   item: SkillDetailItem;
 };
 
-export const pluginQueryKeys = {
-  root: ['plugins'] as const,
-  catalog: (sessionId = '') => [...pluginQueryKeys.root, 'catalog', sessionId] as const,
-  skills: () => [...pluginQueryKeys.root, 'skills'] as const,
-  skill: (skillId: string) => [...pluginQueryKeys.root, 'skills', skillId] as const,
-  defaults: () => [...pluginQueryKeys.root, 'defaults'] as const,
-  installed: () => [...pluginQueryKeys.root, 'installed'] as const,
-  versions: () => [...pluginQueryKeys.root, 'versions'] as const,
-  proposals: () => [...pluginQueryKeys.root, 'proposals'] as const,
-  lifecycle: () => [...pluginQueryKeys.root, 'lifecycle'] as const,
-};
-
 export function usePluginCatalog(
   sessionId = '',
   enabled = true,
@@ -70,24 +59,9 @@ export function usePluginCatalog(
   skillId = '',
 ) {
   const transport = useControlTransport();
-  const catalog = useQuery({
-    queryKey: pluginQueryKeys.catalog(sessionId),
-    queryFn: async ({ signal }) => {
-      const response = await transport.request({
-        pathId: 'agent.tools.list',
-        ...(sessionId ? { query: { sessionId } } : {}),
-        signal,
-      });
-      return sessionId
-        ? requireSessionCapabilityCatalog(response, sessionId)
-        : requireCapabilityCatalog(response);
-    },
-    staleTime: 30_000,
-    enabled,
-    refetchOnReconnect: 'always',
-  });
+  const catalog = useQuery({ ...capabilityCatalogQueryOptions(transport, sessionId), enabled });
   const defaults = useQuery({
-    queryKey: pluginQueryKeys.defaults(),
+    queryKey: pluginQueryKeys.defaults(transport),
     queryFn: async ({ signal }) => {
       const response = await transport.request({ pathId: 'agent.configuration.get', signal });
       const parsed = parseCapabilityDefaults(response);
@@ -98,21 +72,16 @@ export function usePluginCatalog(
     enabled,
     refetchOnReconnect: 'always',
   });
-  const installed = useQuery({
-    queryKey: pluginQueryKeys.installed(),
-    queryFn: ({ signal }) => transport.request({ pathId: 'agent.extensions.list', signal }),
-    enabled,
-    staleTime: 5_000,
-  });
+  const installed = useQuery({ ...extensionInventoryQueryOptions(transport), enabled });
   const skills = useQuery({
-    queryKey: pluginQueryKeys.skills(),
+    queryKey: pluginQueryKeys.skills(transport),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.extensions.skills.list', signal }),
     enabled: enabled && skillsEnabled,
     staleTime: 5_000,
     refetchOnReconnect: 'always',
   });
   const skill = useQuery({
-    queryKey: pluginQueryKeys.skill(skillId),
+    queryKey: pluginQueryKeys.skill(transport, skillId),
     queryFn: ({ signal }) => transport.request({
       pathId: 'agent.extensions.skills.get',
       query: { skillId },
@@ -123,42 +92,51 @@ export function usePluginCatalog(
     refetchOnReconnect: 'always',
   });
   const versions = useQuery({
-    queryKey: pluginQueryKeys.versions(),
+    queryKey: pluginQueryKeys.versions(transport),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.extensions.catalog', signal }),
     enabled,
     staleTime: 30_000,
   });
   const proposals = useQuery({
-    queryKey: pluginQueryKeys.proposals(),
+    queryKey: pluginQueryKeys.proposals(transport),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.extensions.proposals', signal }),
     enabled,
     refetchInterval: enabled ? 5_000 : false,
   });
   const queryClient = useQueryClient();
   const validate = useMutation({
+    mutationKey: [...pluginQueryKeys.root(transport), 'validate'],
     mutationFn: (body: { sourcePath?: string; packageSource?: string; catalogId?: string; catalogVersion?: string }) => transport.request({ pathId: 'agent.extensions.validate', body }),
   });
   const preview = useMutation({
+    mutationKey: [...pluginQueryKeys.root(transport), 'preview'],
     mutationFn: (body: { action: string; validationToken?: string; pluginId?: string; enable?: boolean }) => (
       transport.request({ pathId: 'agent.extensions.preview', body })
     ),
   });
   const apply = useMutation({
-    mutationFn: (body: { previewToken: string; payloadSha256: string; confirmText: string }) => (
-      transport.request({ pathId: 'agent.extensions.apply', body })
-    ),
+    mutationKey: [...pluginQueryKeys.root(transport), 'apply'],
+    mutationFn: async (body: { previewToken: string; payloadSha256: string; confirmText: string }) => {
+      const response = asRecord(await transport.request({ pathId: 'agent.extensions.apply', body }));
+      if (response.ok !== true || !stringValue(asRecord(response.receipt).receiptId)) {
+        throw new Error('未收到有效的更改回执，结果尚未确认。');
+      }
+      return response;
+    },
+    retry: false,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.installed() }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.skills() }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.proposals() }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalog() }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalog(sessionId) }),
+      // A confirmed change must reach other surfaces even while this page's
+      // inventory refresh is slow. This event never represents an attempt.
+      const refresh = prepareCatalogRefresh(queryClient, [
+        pluginQueryKeys.installed(transport), pluginQueryKeys.skills(transport),
+        pluginQueryKeys.proposals(transport), pluginQueryKeys.catalogs(transport),
       ]);
-      window.dispatchEvent(new Event(PAW_EXTENSION_INSTALLATION_CHANGED_EVENT));
+      notifyPawExtensionInstallationChanged(transport);
+      await refresh();
     },
   });
   const updateDefaults = useMutation({
+    mutationKey: [...pluginQueryKeys.root(transport), 'update-defaults', sessionId],
     mutationFn: (input: {
       expectedRevision: number;
       preferences: Record<string, CapabilityPreference>;
@@ -173,13 +151,11 @@ export function usePluginCatalog(
       },
     }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalog(sessionId) }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.defaults() }),
-      ]);
+      await prepareCatalogRefresh(queryClient, [pluginQueryKeys.catalog(transport, sessionId), pluginQueryKeys.defaults(transport)])();
     },
   });
   const updateProjectDefaults = useMutation({
+    mutationKey: [...pluginQueryKeys.root(transport), 'update-project-defaults', sessionId],
     mutationFn: (input: {
       expectedRevision: number;
       projectPreferences: Record<string, Record<string, CapabilityPreference>>;
@@ -194,24 +170,22 @@ export function usePluginCatalog(
       },
     }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.catalog(sessionId) }),
-        queryClient.invalidateQueries({ queryKey: pluginQueryKeys.defaults() }),
-      ]);
+      await prepareCatalogRefresh(queryClient, [pluginQueryKeys.catalog(transport, sessionId), pluginQueryKeys.defaults(transport)])();
     },
   });
   const lifecycle = useQuery({
-    queryKey: pluginQueryKeys.lifecycle(),
+    queryKey: pluginQueryKeys.lifecycle(transport),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.lifecycleHooks.get', query: { limit: 20 }, signal }),
     enabled,
     staleTime: 5_000,
   });
   const updateLifecycle = useMutation({
+    mutationKey: [...pluginQueryKeys.root(transport), 'update-lifecycle'],
     mutationFn: (body: { eventType: string; enabled?: boolean; tokenLimit?: number; cooldownSeconds?: number }) => (
       transport.request({ pathId: 'agent.lifecycleHooks.update', body })
     ),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: pluginQueryKeys.lifecycle() });
+      await prepareCatalogRefresh(queryClient, [pluginQueryKeys.lifecycle(transport)])();
     },
   });
   const refreshAll = async () => {

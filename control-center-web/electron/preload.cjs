@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// First-party view summaries only; main verifies the exact source window/frame.
+contextBridge.exposeInMainWorld('pawDesktopPetState', Object.freeze({
+  begin: (identity) => ipcRenderer.invoke('paw-pet-state:begin', identity),
+  publish: (snapshot) => ipcRenderer.invoke('paw-pet-state:publish', snapshot),
+  release: (lease) => ipcRenderer.invoke('paw-pet-state:release', lease),
+}));
+
 ipcRenderer.on('paw-host:navigate', (_event, route) => {
   if (typeof route === 'string' && /^\/agent(?:\?session=[^\s#]*)?$/.test(route)) window.location.hash = route;
 });

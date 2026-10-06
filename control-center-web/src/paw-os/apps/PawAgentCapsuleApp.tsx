@@ -72,12 +72,13 @@ export function PawAgentCapsuleApp() {
             <p>在任何界面框选内容，马上翻译、解释、做笔记或继续操作。</p>
           </div>
         </div>
-        <button aria-keyshortcuts="Meta+Shift+Space Control+Shift+Space" className="paw-agent-capsule__capture" data-loading={busy || undefined} disabled={!host || busy} onClick={() => void capture()} type="button">
+        <button aria-describedby={notice ? 'capsule-capture-status' : undefined} aria-keyshortcuts="Meta+Shift+Space Control+Shift+Space" className="paw-agent-capsule__capture" data-loading={busy || undefined} disabled={!host || busy} onClick={() => void capture()} type="button">
           <Scan aria-hidden="true" size={18} />
           {busy ? '正在准备…' : '框选屏幕'}
           <kbd aria-hidden="true">⌘ ⇧ Space</kbd>
         </button>
       </header>
+      {notice ? <p className="paw-agent-capsule__notice" data-status={captureState} id="capsule-capture-status" role="status">{notice}</p> : null}
 
       <section aria-labelledby="capsule-actions" className="paw-agent-capsule__section">
         <div className="paw-agent-capsule__section-heading">
@@ -116,7 +117,6 @@ export function PawAgentCapsuleApp() {
         <button onClick={() => openPawOsRoute(desktop, '/agent')} type="button"><ExternalLink aria-hidden="true" size={15} />打开完整 Agent</button>
       </section>
 
-      {notice ? <p className="paw-agent-capsule__notice" data-status={captureState} role="status">{notice}</p> : null}
     </main>
   );
 }

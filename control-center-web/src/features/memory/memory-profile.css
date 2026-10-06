@@ -1,0 +1,35 @@
+.memory-profile { max-width: 790px; margin: 0 auto; padding: 25px 28px 30px; color: var(--color-text-primary); }
+.memory-profile__eyebrow { font-size: 10px; font-weight: 650; letter-spacing: .12em; color: var(--color-text-secondary); }
+.memory-profile h2 { margin: 9px 0 7px; font-size: 27px; font-weight: 620; letter-spacing: -.04em; }
+.memory-profile header > p { margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.7; }
+.memory-profile__intro { display: flex; gap: 10px; padding: 13px 15px; margin: 23px 0; background: var(--color-surface-subtle); color: var(--color-text-secondary); border-radius: 9px; font-size: 13px; line-height: 1.65; }
+.memory-profile__intro svg { flex: none; margin-top: 2px; }
+.memory-profile__paragraphs { display: grid; gap: 14px; }
+.memory-profile__paragraph { border: 1px solid #e0e6d8; border-radius: 11px; background: var(--color-surface); padding: 14px 16px 10px; }
+.memory-profile__paragraph label { display: flex; justify-content: space-between; gap: 10px; color: #63785b; font-size: 11px; }
+.memory-profile__paragraph label small { font-size: 12px; color: var(--color-text-secondary); }
+.memory-profile__paragraph textarea { width: 100%; min-height: 77px; display: block; resize: vertical; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; line-height: 1.85; padding: 11px 0; }
+.memory-profile__paragraph textarea::placeholder { color: var(--color-text-secondary); }
+.memory-profile__paragraph:has(textarea:focus-visible) { outline: 2px solid var(--color-focus, #537c66); outline-offset: 2px; }
+.paw-desktop-root[data-paw-visual] .memory-profile .memory-profile__paragraph textarea:focus-visible { outline: 0; }
+.memory-profile .memory-profile__invalid-count, .memory-profile__field-error { color: var(--color-danger, #a03c35); }
+.memory-profile__field-error { margin: 6px 0; font-size: 12px; line-height: 1.6; }
+.memory-profile__paragraph footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px solid #edf0e7; font-size: 12px; color: var(--color-text-secondary); }
+.memory-profile__paragraph footer div { display: flex; flex-wrap: wrap; gap: 10px; }
+.memory-profile__more-sources { flex-basis: 100%; }
+.memory-profile__more-sources summary { min-height: 32px; align-content: center; cursor: pointer; color: #587446; }
+.memory-profile__paragraph footer button { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; border: 0; padding: 0 6px; background: none; color: #587446; font: inherit; font-size: 10px; cursor: pointer; }
+.memory-profile__actions { display: flex; align-items: center; gap: 12px; padding-top: 18px; }
+.memory-profile__actions > span { flex: 1; text-align: right; font-size: 12px; color: var(--color-text-secondary); }
+.memory-profile__footnote { font-size: 12px; color: var(--color-text-secondary); line-height: 1.7; margin-top: 20px; }
+.memory-profile__notice { background: #fff9ec; border: 1px solid #e9d9b5; padding: 11px 13px; border-radius: 8px; color: #8b6a31; font-size: 12px; line-height: 1.6; }
+.memory-profile__notice p { margin: 0 0 8px; }
+.memory-profile__comparison { padding: 15px; margin: 15px 0; border: 1px solid #ccd9c4; border-radius: 9px; background: #f4f8ef; }
+.memory-profile__comparison h3 { margin: 0; font-size: 12px; }
+.memory-profile__comparison p { white-space: pre-wrap; font-size: 12px; line-height: 1.8; }
+.memory-profile__comparison > small { display: block; color: var(--color-text-secondary); font-size: 12px; margin-bottom: 10px; }
+.memory-profile__retract { display: block; margin-top: 9px; color: #9c773f; font-size: 10px; }
+@media (max-width: 600px) { .memory-profile { padding: 17px 12px; } .memory-profile__actions { flex-wrap: wrap; gap: 8px; } .memory-profile__paragraph footer button { min-width: 40px; min-height: 40px; } .memory-profile__more-sources summary { min-height: 40px; } }
+
+@container memory-app (max-width: 600px) { .paw-desktop-root .memory-profile .memory-profile__paragraph textarea { font-size: 16px; } }
+@media (pointer: coarse) { .memory-profile__paragraph footer button, .memory-profile__more-sources summary { min-height: 44px; } }

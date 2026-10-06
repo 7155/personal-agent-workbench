@@ -7,7 +7,12 @@ import { asRecord, publicErrorText, stringValue } from '@/features/overview/mana
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import './plugin-studio.css';
 
-export function PluginStudio({ onPreview }: { onPreview(preview: Record<string, unknown>): void }) {
+export function PluginStudio({ onPreview, onPrepare, onPendingChange, disabled = false }: {
+  onPreview(preview: Record<string, unknown>): void;
+  onPrepare?(): void;
+  onPendingChange?(pending: boolean): void;
+  disabled?: boolean;
+}) {
   const transport = useControlTransport();
   const navigate = useNavigate();
   const desktop = usePawOsDesktop();
@@ -40,11 +45,13 @@ export function PluginStudio({ onPreview }: { onPreview(preview: Record<string, 
     if (desktop) openPawOsRoute(desktop, route); else navigate(route);
   };
   const prepare = async () => {
-    if (inFlight.current) return;
+    if (inFlight.current || disabled) return;
+    onPrepare?.();
     if (!/^[a-z][a-z0-9-]{1,63}$/.test(name.trim()) || !/^\d+\.\d+\.\d+$/.test(version.trim())) {
       setError('插件标识使用小写字母、数字和连字符；版本填写如 0.1.0。'); return;
     }
     inFlight.current = true; setPending(true); setError('');
+    onPendingChange?.(true);
     const id = name.trim();
     const fingerprint = JSON.stringify([id, version.trim(), resource, purpose.trim(), body]);
     try {
@@ -72,7 +79,7 @@ export function PluginStudio({ onPreview }: { onPreview(preview: Record<string, 
       onPreview(preview);
     } catch (reason) {
       setError(publicErrorText(reason, '草稿尚未完成安装检查，内容已保留，请重试。'));
-    } finally { inFlight.current = false; setPending(false); }
+    } finally { inFlight.current = false; setPending(false); onPendingChange?.(false); }
   };
   return <section aria-label="制作 App 与插件" className="plugin-studio">
     <header className="plugin-studio__intro"><Sparkles size={24} /><span><h2>把需要的能力，做进 OS</h2><p>让 Agent 制作完整应用，或自己编写可重复使用的技能和提示词。</p></span></header>
@@ -90,7 +97,7 @@ export function PluginStudio({ onPreview }: { onPreview(preview: Record<string, 
       {error ? <p role="alert" className="plugin-studio__error">{error}</p> : null}
       {method === 'manual' && draftPath ? <p role="status" className="plugin-studio__draft"><Code2 size={14} />草稿已保存 <code>{draftPath}</code></p> : null}
       <footer><span>{method === 'agent' ? '打开制作对话，发送需求后开始。' : '先保存并校验，随后在这里查看安装内容。'}</span>
-        <Button type="submit" loading={pending} leadingIcon={method === 'agent' ? <MessageCircle size={16} /> : <PackageCheck size={16} />}>{method === 'agent' ? '在 Agent 中制作' : '保存草稿并检查安装'}</Button>
+        <Button type="submit" disabled={disabled} loading={pending} leadingIcon={method === 'agent' ? <MessageCircle size={16} /> : <PackageCheck size={16} />}>{method === 'agent' ? '在 Agent 中制作' : '保存草稿并检查安装'}</Button>
       </footer>
     </form>
   </section>;

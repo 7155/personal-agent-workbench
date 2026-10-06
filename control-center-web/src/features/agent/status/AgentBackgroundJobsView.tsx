@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button } from '@/components/primitives';
 import type { AgentBackgroundJobV1 } from '@/contracts/generated/agent-background-job.v1';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore, type AgentSessionTarget } from '../state/live-store';
 
 const BACKGROUND_JOB_LIST_LIMIT = 100;
 const BACKGROUND_JOB_LOG_LIMIT_BYTES = 131_072;
@@ -99,8 +99,9 @@ export function AgentBackgroundJobsView({
   onOpenJob?: (job: AgentBackgroundJobV1) => void;
 }) {
   const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const listing = useQuery({
-    queryKey: backgroundJobListQueryKey(sessionId),
+    queryKey: backgroundJobListQueryKey(address),
     queryFn: async ({ signal }) => {
       const response = await transport.request<BackgroundJobListResponse>({
         pathId: 'agent.session.backgroundJobs.list',
@@ -199,7 +200,7 @@ export function AgentBackgroundJobsView({
           {jobs.map((job) => (
             <BackgroundJobRow
               surfaceActive={active}
-              key={job.jobId}
+              key={`${agentProjectionKey(address)}:${job.jobId}`}
               job={job}
               sessionId={sessionId}
               onOpenJob={onOpenJob}
@@ -225,6 +226,7 @@ function BackgroundJobRow({
   onOpenJob?: (job: AgentBackgroundJobV1) => void;
 }) {
   const transport = useControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -243,7 +245,7 @@ function BackgroundJobRow({
     job.outputBytes - BACKGROUND_JOB_LOG_LIMIT_BYTES,
   );
   const logs = useQuery({
-    queryKey: ['agent', 'background-job-logs', sessionId, job.jobId, logCursor],
+    queryKey: ['agent', 'background-job-logs', agentProjectionKey(address), job.jobId, logCursor],
     queryFn: ({ signal }) => transport.request<BackgroundJobLogResponse>({
       pathId: 'agent.session.backgroundJob.logs',
       params: { sessionId, jobId: job.jobId },
@@ -272,6 +274,7 @@ function BackgroundJobRow({
     setCancelling(true);
     setCancelError('');
     setCancelNotice('');
+    const requestAddress = address;
     try {
       const receipt = await transport.request<unknown>({
         pathId: 'agent.session.backgroundJob.cancel',
@@ -282,15 +285,15 @@ function BackgroundJobRow({
       if (!metadata) throw new Error('后台任务停止回执无效，请重新读取会话状态');
 
       const store = useAgentLiveStore.getState();
-      store.applyBackgroundJobReceipt(sessionId, receipt);
-      const authoritativeJob = useAgentLiveStore.getState()
-        .projections[sessionId]?.backgroundJobsById[job.jobId];
+      store.applyBackgroundJobReceipt(requestAddress, receipt);
+      const authoritativeJob = selectAgentProjection(useAgentLiveStore.getState(), requestAddress)
+        ?.backgroundJobsById[job.jobId];
       if (!authoritativeJob || authoritativeJob.updatedAtMs < metadata.updatedAtMs) {
         throw new Error('后台任务停止回执未能更新会话状态，请重新读取');
       }
 
       queryClient.setQueryData<BackgroundJobListResponse>(
-        backgroundJobListQueryKey(sessionId),
+        backgroundJobListQueryKey(requestAddress),
         (current) => current ? upsertListedJob(current, authoritativeJob) : current,
       );
       setCancelNotice(metadata.summary);
@@ -446,8 +449,8 @@ function useJobElapsed(job: AgentBackgroundJobV1, surfaceActive: boolean): strin
   return minutes ? `${minutes}分${String(seconds % 60).padStart(2, '0')}秒` : `${seconds}秒`;
 }
 
-function backgroundJobListQueryKey(sessionId: string) {
-  return ['agent', 'background-jobs', sessionId] as const;
+function backgroundJobListQueryKey(address: AgentSessionTarget) {
+  return ['agent', 'background-jobs', agentProjectionKey(address)] as const;
 }
 
 function mergeBackgroundJobItems(

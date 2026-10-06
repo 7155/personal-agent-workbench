@@ -469,7 +469,16 @@ def _active_docs(
     query: HybridRagQuery,
     timeline_intent: TimelineIntent | None = None,
     now_ms: int | None = None,
+    source_ids: tuple[str, ...] | None = None,
 ) -> list[dict[str, object]]:
+    # The primary Session boundary revalidates a bounded existing pack with
+    # the same source/scope owner, without searching or loading the corpus.
+    if source_ids is not None and not source_ids:
+        return []
+    source_clause = (
+        " AND source_id IN (" + ",".join("?" for _ in source_ids) + ")"
+        if source_ids is not None else ""
+    )
     visible_owners = resolve_visible_memory_owners(query.visible_owners, project=query.project)
     owner_clause, owner_params = sql_memory_owner_predicate(
         visible_owners,
@@ -493,8 +502,10 @@ def _active_docs(
           AND (? = '' OR app = ? OR app = '')
           AND {owner_clause}
           AND {scope_clause}
+          {source_clause}
         """,
-        (query.project, query.project, query.app, query.app, *owner_params, *scope_params),
+        (query.project, query.project, query.app, query.app, *owner_params, *scope_params,
+         *(source_ids or ())),
     ).fetchall()
     current_group = ContextGroup(
         context_group_id=compact_whitespace(query.context_group_id),

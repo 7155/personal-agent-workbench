@@ -3,16 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
+import { agentProjection, agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { MockControlTransport } from '@/test/mock-transport';
 import type { PawExtensionAppManifest } from '@/paw-os/extensions/types';
 import type { ControlRequest } from '@/platform/transport';
 import App, { GIS_ACCEPTANCE_TASK } from './App';
 import manifest from './pawos-app.json';
 const { seen, seenMap } = vi.hoisted(() => ({ seen: vi.fn(), seenMap: vi.fn() }));
-vi.mock('@/paw-os/apps/PawSessionWorkspace', () => ({ sessionWorkspaceProjectionSlice: () => ({ activeTurnId: '' }), PawSessionWorkspace: (props: { recordId: string }) => { seen(props); return <div data-testid="original-agent">{props.recordId}</div>; } }));
+vi.mock('@/paw-os/apps/PawSessionWorkspace', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/paw-os/apps/PawSessionWorkspace')>(),
+  PawSessionWorkspace: (props: { recordId: string }) => { seen(props); return <div data-testid="original-agent">{props.recordId}</div>; },
+}));
 vi.mock('./EarthMap', () => ({ EarthMap: (props: {onSelect:(feature: unknown)=>void; onOpenFile?: (file: { path: string; name: string; kind: 'file' }) => void}) => { seenMap(props); return <><button onClick={()=>props.onSelect({type:'Feature',geometry:{type:'Point',coordinates:[120.1,30.2]},properties:{source:'user_selection'}})}>选择地图地点</button>{props.onOpenFile ? <button onClick={() => props.onOpenFile?.({ path: '/work/report.html', name: 'report.html', kind: 'file' })}>打开 HTML 报告</button> : null}</>; } }));
 vi.mock('@/features/agent/file-preview/CodePreview', () => ({ CodePreview: ({ content }: { content: string }) => <pre>{content}</pre> }));
-afterEach(() => { cleanup(); seen.mockClear(); seenMap.mockClear(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); seen.mockClear(); seenMap.mockClear(); vi.unstubAllGlobals(); useAgentLiveStore.setState({ projections: {} }); });
 function show(transport: MockControlTransport) { render(<ControlTransportProvider transport={transport}><TooltipProvider><App manifest={manifest as PawExtensionAppManifest} /></TooltipProvider></ControlTransportProvider>); }
 it('restores only the owning App Session and reuses the original full conversation', async () => {
   const transport = new MockControlTransport({ routes: {
@@ -91,6 +95,36 @@ it('disables script execution while a non-script workspace artifact is open', as
   await user.click(screen.getByRole('button', { name: '代码' }));
   const runButton = await screen.findByRole('button', { name: '运行已保存代码' });
   await waitFor(() => expect(runButton).not.toBeDisabled());
+  const otherTransport = new MockControlTransport();
+  act(() => {
+    useAgentLiveStore.getState().appendOptimistic(agentSessionAddress(otherTransport, 'ours'), {
+      clientMessageId: 'other-runtime-busy', text: '另一个连接正在运行', nowMs: 1,
+    });
+    useAgentLiveStore.getState().appendOptimistic(agentSessionAddress(null, 'ours'), {
+      clientMessageId: 'legacy-busy', text: '无 Provider fixture', nowMs: 1,
+    });
+  });
+  expect(runButton).toBeEnabled();
+  const compaction = { sessionId: 'ours', runtimeEngine: 'durable', projectionCurrent: true, activeTurn: null,
+    compactionTarget: { kind: 'compaction', runtimeSessionId: 'runtime-earth', taskIds: ['durable:task:7'] },
+    messages: [], liveEvents: [], lastSequence: 1, resumeToken: 'ours:1', status: 'idle' };
+  for (const paused of [false, true]) {
+    act(() => useAgentLiveStore.getState().hydrate(agentSessionAddress(transport, 'ours'), { ...compaction, paused, recoverable: paused }));
+    expect(agentProjection(agentSessionAddress(transport, 'ours')).durableRecovery?.compactionTarget).toEqual(compaction.compactionTarget);
+    expect(runButton).toBeDisabled();
+    await user.click(runButton);
+    expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+  }
+  act(() => useAgentLiveStore.getState().hydrate(agentSessionAddress(transport, 'ours'), {
+    ...compaction, paused: false, recoverable: false, compactionTarget: null, lastSequence: 2, resumeToken: 'ours:2',
+  }));
+  expect(runButton).toBeEnabled();
+  act(() => useAgentLiveStore.getState().appendOptimistic(agentSessionAddress(transport, 'ours'), {
+    clientMessageId: 'current-runtime-busy', text: '当前项目正在运行', nowMs: 2,
+  }));
+  expect(runButton).toBeDisabled();
+  act(() => useAgentLiveStore.getState().discardOptimistic(agentSessionAddress(transport, 'ours'), 'current-runtime-busy'));
+  expect(runButton).toBeEnabled();
   await user.click(screen.getByRole('button', { name: '地图' }));
   await user.click(screen.getByRole('button', { name: '打开 HTML 报告' }));
   expect(runButton).toBeDisabled();

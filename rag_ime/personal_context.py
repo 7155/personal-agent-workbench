@@ -18,6 +18,7 @@ from .agent_role_book import (
 from .contracts.json_schema import validate_contract
 from .daily_planner import planning_context
 from .db import apply_database_migrations
+from .local_calendar import resolve_calendar_timezone
 from .memory_ingest import normalize_text
 from .knowledge_scope import (
     quarantine_scope_issue,
@@ -112,14 +113,14 @@ class RoleBookOrganizer(Protocol):
 
 
 def local_date_for_timestamp(timestamp_ms: int) -> str:
-    """Return the machine-local calendar date used by the timeline builder."""
+    """Return the configured calendar date shared with the timeline builder."""
 
-    return datetime.fromtimestamp(max(0, int(timestamp_ms)) / 1_000).astimezone().date().isoformat()
+    return datetime.fromtimestamp(max(0, int(timestamp_ms)) / 1_000, resolve_calendar_timezone()).date().isoformat()
 
 
 def local_day_bounds_ms(timeline_date: str) -> tuple[int, int]:
     day = date.fromisoformat(compact_whitespace(timeline_date))
-    local_zone = datetime.now().astimezone().tzinfo
+    local_zone = resolve_calendar_timezone()
     start = datetime.combine(day, datetime_time.min, tzinfo=local_zone)
     end = datetime.combine(day + timedelta(days=1), datetime_time.min, tzinfo=local_zone)
     return int(start.timestamp() * 1_000), int(end.timestamp() * 1_000)

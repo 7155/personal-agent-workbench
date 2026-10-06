@@ -266,6 +266,11 @@ describe('PAW Browser App', () => {
     expect(alert).toHaveTextContent('页面没有打开');
     expect(alert).toHaveTextContent('浏览器网关超时');
     expect(within(alert).getByRole('button', { name: '重试' })).toBeInTheDocument();
+    expect(screen.queryByText('还没有这一页的画面')).not.toBeInTheDocument();
+    const screenshots = transport.requests.filter(({ request }) => record(request.body).action === 'screenshot').length;
+    await user.click(within(alert).getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(transport.requests.filter(({ request }) => record(request.body).action === 'screenshot').length).toBeGreaterThan(screenshots));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 
   it('selects the exact Agent target without creating another Browser tab', async () => {

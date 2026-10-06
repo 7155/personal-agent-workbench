@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 
 import type { PawOsWindowTarget } from '@/features/paw-os/model/desktop';
+import type { ChatSurfaceRequirement } from './chat-surface-contract';
 
 export type PawExtensionAppId = `extension:${string}`;
 
@@ -69,4 +70,7 @@ export type PawExtensionAppProps = {
 
 export type PawExtensionAppModule = {
   default: ComponentType<PawExtensionAppProps>;
+  /** Optional for existing non-chat Apps. Checked before React mounts a chat
+   * App; this does not change package activation, tool permissions or hashes. */
+  chatSurface?: ChatSurfaceRequirement;
 };

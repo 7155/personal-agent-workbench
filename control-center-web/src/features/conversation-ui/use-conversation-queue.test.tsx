@@ -5,6 +5,49 @@ import { describe, expect, it, vi } from 'vitest';
 import { useConversationQueue } from './use-conversation-queue';
 
 describe('useConversationQueue', () => {
+  it('recovers held input once even if pagehide is repeated during recovery and then unmounts', () => {
+    const send = vi.fn();
+    const onDispose = vi.fn(() => {
+      if (onDispose.mock.calls.length === 1) window.dispatchEvent(new PageTransitionEvent('pagehide'));
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;
+    const { result, unmount } = renderHook(() => useConversationQueue({
+      busy: true, conversationId: 'session-pagehide-once', send, onDispose,
+    }), { wrapper });
+    act(() => { result.current.enqueue('尚未发送的消息'); });
+    const held = result.current.queue;
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      result.current.sendNow(held[0]!.id);
+    });
+    expect(result.current.queue).toHaveLength(0);
+    expect(onDispose).toHaveBeenCalledExactlyOnceWith(held);
+    expect(send).not.toHaveBeenCalled();
+    unmount();
+    expect(onDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a queue without a recovery callback during pagehide and sends it once after returning', () => {
+    const send = vi.fn();
+    const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;
+    const { result, rerender, unmount } = renderHook(({ busy }) => useConversationQueue({
+      busy, conversationId: 'room-pagehide-queue', send,
+    }), { wrapper, initialProps: { busy: true } });
+    act(() => { result.current.enqueue('Room 中尚未发送的消息'); });
+    const held = result.current.queue;
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    expect(result.current.queue).toEqual(held);
+    expect(send).not.toHaveBeenCalled();
+    rerender({ busy: false });
+    expect(send).toHaveBeenCalledExactlyOnceWith('Room 中尚未发送的消息');
+    expect(result.current.queue).toHaveLength(0);
+    unmount();
+  });
+
   it.each(['drain', 'sendNow'] as const)('retains a rejected edited draft without retrying on render in StrictMode (%s)', mode => {
     const send = vi.fn(() => false);
     const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;

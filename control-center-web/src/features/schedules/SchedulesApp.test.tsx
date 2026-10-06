@@ -59,6 +59,22 @@ it('manages persisted memory schedules through the settings owner', async () => 
   expect(screen.getByRole('spinbutton', { name: '记忆目录整理频率' })).toHaveValue(14);
 });
 
+it('retains unsaved maintenance and evaluation drafts when switching task groups', async () => {
+  setup(); const user = userEvent.setup();
+  const nav = within(screen.getByRole('navigation', { name: '任务类型' }));
+  await user.click(nav.getByRole('button', { name: /后台维护/ }));
+  fireEvent.change(await screen.findByRole('spinbutton', { name: '自动整理记忆频率' }), { target: { value: '4' } });
+  await user.click(nav.getByRole('button', { name: /全部任务/ }));
+  await user.click(nav.getByRole('button', { name: /后台维护/ }));
+  expect(await screen.findByRole('spinbutton', { name: '自动整理记忆频率' })).toHaveValue(4);
+  await user.click(nav.getByRole('button', { name: /周期评测/ }));
+  await user.click(await screen.findByText('新建周期 Eval'));
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Eval 周期间隔' }), { target: { value: '3' } });
+  await user.click(nav.getByRole('button', { name: /全部任务/ }));
+  await user.click(nav.getByRole('button', { name: /周期评测/ }));
+  expect(screen.getByRole('spinbutton', { name: 'Eval 周期间隔' })).toHaveValue(3);
+});
+
 it('controls the selected periodic evaluation and reflects its returned state', async () => {
   setup(); const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: /周期评测/ }));

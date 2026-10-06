@@ -98,6 +98,7 @@
 .paw-background-activity > p { margin: 0; padding: 9px 14px 11px; border-top: 1px solid rgb(29 38 48 / .1); color: #68727d; font-size: 10px; }
 
 .paw-notification-center {
+  --paw-shell-control-size: var(--paw-menu-control-size, 32px);
   position: fixed;
   z-index: 1210;
   top: var(--paw-menu-h, 34px);
@@ -118,19 +119,23 @@
   overflow: hidden;
 }
 .paw-notification-center[data-open] { opacity: 1; pointer-events: auto; transform: translate3d(0, 0, 0); }
+.paw-notification-center button {
+  min-width: var(--paw-shell-control-size);
+  min-height: var(--paw-shell-control-size);
+}
 .paw-notification-center > header { min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 15px 0 18px; border-bottom: 1px solid rgb(29 38 48 / .13); }
 .paw-notification-center > header > span { display: inline-flex; align-items: baseline; gap: 9px; }
 .paw-notification-center > header strong { font-size: 16px; }
 .paw-notification-center > header small { color: #68727d; font-size: 11px; }
 .paw-notification-center > header > div { display: inline-flex; align-items: center; gap: 4px; }
-.paw-notification-center > header button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 8px; color: #52606c; background: transparent; cursor: pointer; font: inherit; font-size: 11px; }
+.paw-notification-center > header button { min-height: var(--paw-shell-control-size); padding: 0 9px; border: 0; border-radius: 8px; color: #52606c; background: transparent; cursor: pointer; font: inherit; font-size: 11px; }
 .paw-notification-center > header button:hover:not(:disabled),
 .paw-notification-center > header button:focus-visible { color: #25303b; background: #e2e6e2; outline: 0; }
 .paw-notification-center > header button:disabled { opacity: .42; cursor: default; }
 .paw-notification-center__body { min-height: 0; overflow: auto; padding: 16px; }
 .paw-notification-center__body h2 { margin: 0 0 9px; color: #68727d; font-size: 10px; font-weight: 680; letter-spacing: .08em; text-transform: uppercase; }
 .paw-notification-center__body section > div { display: grid; gap: 8px; }
-.paw-notification-center__notice { --paw-notice-accent: #668c79; position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) 28px; gap: 8px; padding: 12px 9px; border: 1px solid color-mix(in srgb, var(--paw-notice-accent) 25%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--paw-notice-accent) 8%, #f2f3f0); }
+.paw-notification-center__notice { --paw-notice-accent: #668c79; position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) var(--paw-shell-control-size); gap: 8px; padding: 12px 9px; border: 1px solid color-mix(in srgb, var(--paw-notice-accent) 25%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--paw-notice-accent) 8%, #f2f3f0); }
 .paw-notification-center__notice[data-tone='warning'] { --paw-notice-accent: #bd7a31; }
 .paw-notification-center__notice[data-tone='danger'] { --paw-notice-accent: #b54f43; }
 .paw-notification-center__notice > svg { margin-top: 1px; color: #526c60; }
@@ -143,9 +148,9 @@
 .paw-notification-center__notice > button { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 7px; color: #68727d; background: transparent; cursor: pointer; }
 .paw-notification-center__notice > button:hover,
 .paw-notification-center__notice > button:focus-visible { color: #25303b; background: rgb(255 255 255 / .58); outline: 0; }
-.paw-notification-center__empty { min-height: 260px; display: grid; place-content: center; justify-items: center; gap: 8px; color: #7a858e; text-align: center; }
+.paw-notification-center__empty { min-height: 260px; display: grid; place-content: center; justify-items: center; gap: 8px; color: #52606c; text-align: center; }
 .paw-notification-center__empty strong { color: #3c4853; font-size: 13px; }
-.paw-notification-center__empty span { max-width: 240px; font-size: 11px; line-height: 1.5; }
+.paw-notification-center__empty span { max-width: 240px; font-size: 13px; line-height: 1.5; }
 
 @media (max-width: 820px) {
   .paw-background-activity__trigger-copy { display: none; }

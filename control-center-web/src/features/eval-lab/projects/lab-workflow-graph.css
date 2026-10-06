@@ -39,8 +39,9 @@
 .lab-flow-status--completed { color: var(--flow-success); }
 .lab-flow-status--failed, .lab-flow-status--interrupted { color: var(--flow-danger); }
 .lab-flow-node__children { display: flex; gap: 6px; align-items: center; color: var(--lab-muted); border-top: 1px solid var(--lab-line); padding-top: 7px; font-size: 11px; }
-.lab-flow__canvas-tools { position: absolute; left: 16px; bottom: 14px; display: flex; align-items: center; gap: 3px; padding: 4px; background: var(--lab-surface); border: 1px solid var(--lab-line); border-radius: 10px; }
-.lab-flow__canvas-tools > button:not(.ui-button):not(.ui-icon-button) { background: transparent; color: var(--lab-muted); border: 0; font: inherit; font-size: 12px; padding: 7px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.lab-flow__canvas-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; width: fit-content; max-width: calc(100% - 32px); margin: 12px 16px; padding: 4px; background: var(--lab-surface); border: 1px solid var(--lab-line); border-radius: 10px; }
+.lab-flow__canvas-tools > button { flex: none; min-height: 32px; white-space: nowrap; }
+.lab-flow__canvas-tools > button:not(.ui-button):not(.ui-icon-button) { background: transparent; color: var(--lab-muted); border: 0; font: inherit; font-size: 12px; min-width: 48px; padding: 7px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .lab-flow__canvas-tools > span { width: 1px; height: 20px; background: var(--lab-line); margin: 0 5px; }
 .lab-flow__empty { position: absolute; left: 28px; top: 120px; max-width: 560px; padding: 24px; background: var(--lab-surface); border: 1px dashed var(--lab-line-strong); border-radius: 12px; }
 .lab-flow__empty > svg { color: var(--lab-muted); }
@@ -89,13 +90,14 @@
 .lab-flow__running-icon { animation: lab-flow-rotate 1.8s linear infinite; }
 @keyframes lab-flow-rotate { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .lab-flow__running-icon { animation: none; } .lab-flow-node { transition: none; } }
-/* Main canvas keeps its place when the project chat opens in a narrow PAW window. */
+/* Narrow windows use the existing chat toggle to switch surfaces. The mounted
+   canvas keeps its selection and reading position while chat is shown. */
 .lab-project-body[data-workflow='true'] { position: relative; grid-template-columns: minmax(0, 1fr) minmax(320px, .45fr); }
 .lab-project-body[data-workflow='true'][data-guide-open='false'] { grid-template-columns: minmax(0, 1fr); }
 @container lab-project (max-width: 980px) {
   .lab-project-body[data-workflow='true'] { grid-template-columns: minmax(0, 1fr); }
-  .lab-project-body[data-workflow='true'][data-guide-open='true'] .lab-project-results { display: flex; }
-  .lab-project-body[data-workflow='true'] .lab-project-guide { position: absolute; z-index: 5; right: 0; top: 0; bottom: 0; width: min(400px, 92%); background: var(--lab-surface); border-left: 1px solid var(--lab-line-strong); box-shadow: -12px 0 35px rgb(0 0 0 / .13); }
+  .lab-project-body[data-workflow='true'][data-guide-open='true'] .lab-project-results { display: none; }
+  .lab-project-body[data-workflow='true'] .lab-project-guide { position: static; width: auto; background: var(--lab-surface); border-left: 0; box-shadow: none; }
 }
 @container lab-project (max-width: 680px) {
   .lab-flow__header { padding: 18px 16px 12px; gap: 12px; }
@@ -107,4 +109,8 @@
   .lab-flow-detail__body { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .lab-flow-detail > header { align-items: start; }
   .lab-flow__canvas { height: 360px; }
+  .lab-flow__canvas-tools > button { min-height: 40px; min-width: 40px; }
+  .lab-flow__canvas:has(.lab-flow__empty) { height: auto; min-height: 280px; }
+  .lab-flow__canvas:has(.lab-flow__empty) :is(.lab-flow__scaled, .lab-flow__plane) { width: 100% !important; height: auto !important; transform: none !important; }
+  .lab-flow__empty { position: relative; inset: auto; max-width: none; margin: 24px 16px; padding: 20px; }
 }

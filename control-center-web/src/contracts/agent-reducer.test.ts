@@ -16,6 +16,7 @@ import {
   resolveAgentTurnUserMessage,
   reduceAgentEvents,
   mergeAgentSnapshotHistory,
+  type AgentSnapshot,
   type AgentTodoProjection,
 } from './agent-reducer';
 import { parseAgentEvent } from './validators';
@@ -24,6 +25,25 @@ import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
 import type { AgentLifecycleCancellationAuditV1 } from './generated/agent-lifecycle-cancellation-audit.v1';
 
 describe('AgentEventReducer', () => {
+  it.each([
+    { kind: 'turn', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:0'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:9007199254740992'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:01'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'], turnId: 'injected' },
+    { kind: 'compaction', runtimeSessionId: '', taskIds: ['durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: [] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1', 'durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:2', 'durable:task:1'] },
+    { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['other:task:1'] },
+  ])('rejects malformed standalone compaction authority %j', compactionTarget => {
+    const state = applyAgentSnapshot(createAgentProjection('session-1'), agentSnapshotFromResponse({
+      sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true, paused: true, recoverable: true,
+      compactionTarget, items: [], liveEvents: [], lastSequence: 0,
+    }));
+    expect(state.durableRecovery).toBeUndefined();
+  });
+
   it('retains exact Durable paused input and tool receipts without settling the turn', () => {
     const snapshot = agentSnapshotFromResponse({
       sessionId: 'session-1', runtimeEngine: 'durable', projectionCurrent: true,
@@ -1205,6 +1225,147 @@ describe('AgentEventReducer', () => {
     expect(restored.messageOrder).toEqual(['pi-progress']);
     expect(restored.messagesById['pi-progress'].status).toBe('completed');
     expect(restored.turnsById[turnId].status).toBe('running');
+  });
+
+  it.each([false, true])('retires a cached streaming prefix after a quiescent recent snapshot imports its complete native-turn answer (terminal replay: %s)', (terminalReplay) => {
+    const answer = Array.from({ length: 400 }, (_, index) => `Line ${String(index + 1).padStart(3, '0')}: complete reply`).join('\n');
+    const prefix = answer.split('\n').slice(0, 5).join('\n');
+    const live = reduceAgentEvent(createAgentProjection('session-1'), {
+      ...agentEvent(100, 'text_delta', { delta: prefix }),
+      createdAtMs: 1_000,
+    }).state;
+    const canonical = {
+      ...serverMessage('pi-complete-native-answer', 'assistant', 'turn-1', answer),
+      createdAtMs: 80_000,
+      completedAtMs: 80_000,
+      timelineSequence: 3.9,
+      usage: { input: 30, output: 6200, cacheRead: 0, cacheWrite: 0, totalTokens: 6230 },
+      provider: 'openai', model: 'gpt-6.1-sol',
+      attachments: ['complete-file'], citations: ['complete-source'],
+      blocks: [
+        ...serverMessage('pi-complete-native-answer', 'assistant', 'turn-1', answer).blocks,
+        { id: 'complete-file', type: 'file', status: 'completed', presentationKind: 'file', data: { fileName: 'answer.txt' } },
+      ],
+    };
+
+    const restored = applyAgentSnapshot(live, {
+      messages: [canonical],
+      liveEvents: terminalReplay ? [{ ...agentEvent(120, 'turn_completed', { status: 'completed' }), createdAtMs: 80_000 }] : [],
+      lastSequence: 120, resumeToken: 'session-1:120',
+      status: 'idle', snapshotScope: 'recent', partial: true, runtimeQuiescent: true,
+    });
+
+    expect(restored.messageOrder).toEqual([canonical.id]);
+    expect(restored.messagesById['turn-1:assistant']).toBeUndefined();
+    expect(textOf(restored.messagesById[canonical.id])).toBe(answer);
+    expect(restored.messagesById[canonical.id].usage).toEqual(canonical.usage);
+    expect(restored.messagesById[canonical.id].blocks).toEqual(canonical.blocks);
+    expect(restored.messagesById[canonical.id].attachments).toEqual(canonical.attachments);
+    expect(restored.messagesById[canonical.id].citations).toEqual(canonical.citations);
+    expect(restored.turnsById['turn-1'].status).toBe('completed');
+    expect(live.messagesById['turn-1:assistant'].status).toBe('streaming');
+  });
+
+  it.each([
+    'different native turn', 'active partial snapshot', 'unproven partial quiescence',
+    'unrecognized alias', 'segmented process alias', 'completed cached process message',
+    'explicit completed process receipt', 'new process segment receipt',
+    'ambiguous completed replacements', 'multiple canonical process messages', 'non-prefix text', 'normalized-only prefix',
+    'cached attachment', 'cached citation', 'cached rich block', 'cached source metadata',
+    'cached generation metadata', 'cached extra text data', 'missing live sequence',
+    'missing terminal timestamp', 'truncated canonical text',
+    'streaming canonical with terminal replay', 'untimestamped canonical with terminal replay',
+    'canonical failed during replay', 'canonical changed during replay',
+  ])('keeps a cached prefix without safe replacement proof: %s', (boundary) => {
+    const prefix = 'Line 001: original\nLine 002: original';
+    const answer = `${prefix}\nLine 003: finished`;
+    let live = reduceAgentEvent(createAgentProjection('session-1'), {
+      ...agentEvent(100, 'text_delta', { delta: prefix }), createdAtMs: 1_000,
+    }).state;
+    const aliasId = boundary === 'unrecognized alias'
+      ? 'actual-process-message'
+      : boundary === 'segmented process alias' ? 'turn-1:assistant:segment:100' : 'turn-1:assistant';
+    if (aliasId !== 'turn-1:assistant') {
+      live = reduceAgentEvent(createAgentProjection('session-1'), {
+        ...agentEvent(100, 'text_delta', { messageId: aliasId, blockId: `${aliasId}:text`, delta: prefix }),
+        createdAtMs: 1_000,
+      }).state;
+    }
+    const alias = live.messagesById[aliasId];
+    const canonical = {
+      ...serverMessage('pi-complete-answer', 'assistant', 'turn-1', answer),
+      createdAtMs: 80_000, completedAtMs: 80_000, timelineSequence: 3.9,
+    };
+    const snapshot: AgentSnapshot = {
+      messages: [canonical], liveEvents: [], lastSequence: 120, resumeToken: 'session-1:120',
+      status: 'idle', snapshotScope: 'recent', partial: true, runtimeQuiescent: true,
+    };
+    switch (boundary) {
+      case 'different native turn': canonical.turnId = 'another-native-turn'; break;
+      case 'active partial snapshot': snapshot.status = 'busy'; snapshot.runtimeQuiescent = false; break;
+      case 'unproven partial quiescence': delete snapshot.runtimeQuiescent; break;
+      case 'completed cached process message':
+        live = reduceAgentEvent(live, {
+          ...agentEvent(101, 'message_completed', { message: {
+            ...serverMessage(aliasId, 'assistant', 'turn-1', prefix), createdAtMs: 1_000, completedAtMs: 2_000,
+          } }), createdAtMs: 2_000,
+        }).state;
+        break;
+      case 'explicit completed process receipt':
+        snapshot.liveEvents = [{
+          ...agentEvent(110, 'message_completed', { message: {
+            ...serverMessage(aliasId, 'assistant', 'turn-1', prefix), createdAtMs: 1_000, completedAtMs: 2_000,
+          } }), createdAtMs: 2_000,
+        }, { ...agentEvent(120, 'turn_completed', { status: 'completed' }), createdAtMs: 80_000 }];
+        break;
+      case 'new process segment receipt':
+        snapshot.liveEvents = [agentEvent(110, 'text_delta', { delta: 'Another process message', replaceBlock: true })];
+        break;
+      case 'canonical failed during replay':
+        snapshot.liveEvents = [agentEvent(110, 'turn_failed', { error: 'The turn failed during replay' })];
+        break;
+      case 'canonical changed during replay':
+        snapshot.liveEvents = [agentEvent(110, 'text_delta', {
+          messageId: canonical.id, blockId: `${canonical.id}:text`, delta: 'New stream content', replaceContent: true,
+        }), { ...agentEvent(120, 'turn_completed', { status: 'completed' }), createdAtMs: 80_000 }];
+        break;
+      case 'ambiguous completed replacements':
+        snapshot.messages.push({ ...canonical, id: 'pi-another-answer' }); break;
+      case 'multiple canonical process messages':
+        snapshot.messages.push({
+          ...serverMessage('pi-process-message', 'assistant', 'turn-1', 'Earlier distinct process output'),
+          createdAtMs: 70_000, completedAtMs: 70_000,
+        }); break;
+      case 'non-prefix text': canonical.blocks[0].data.text = `Different opening\n${answer}`; break;
+      case 'normalized-only prefix': canonical.blocks[0].data.text = answer.replaceAll('\n', ' '); break;
+      case 'cached attachment': alias.attachments = ['unique-file']; break;
+      case 'cached citation': alias.citations = ['unique-source']; break;
+      case 'cached rich block': alias.blocks.push({
+        id: 'unique-card', type: 'card', status: 'completed', presentationKind: 'card', data: { title: 'Keep this' },
+      }); break;
+      case 'cached source metadata': alias.blocks[0].source = { kind: 'room_event', ref: 'distinct-message' }; break;
+      case 'cached generation metadata': alias.blocks[0].generation = 2; break;
+      case 'cached extra text data': alias.blocks[0].data.additionalEvidence = 'Keep this'; break;
+      case 'missing live sequence': delete alias.timelineSequence; break;
+      case 'missing terminal timestamp': snapshot.messages = [{ ...canonical, completedAtMs: null }]; break;
+      case 'streaming canonical with terminal replay':
+      case 'untimestamped canonical with terminal replay':
+        snapshot.messages = [{
+          ...canonical, completedAtMs: null,
+          ...(boundary === 'streaming canonical with terminal replay' ? { status: 'streaming' } : {}),
+        }];
+        snapshot.liveEvents = [{ ...agentEvent(120, 'turn_completed', { status: 'completed' }), createdAtMs: 80_000 }];
+        break;
+      case 'truncated canonical text': snapshot.messages = [{
+        ...canonical, blocks: [{ ...canonical.blocks[0], data: { text: answer, truncated: true } }],
+      }]; break;
+    }
+
+    const restored = applyAgentSnapshot(live, snapshot);
+
+    expect(restored.messagesById[aliasId], boundary).toBeDefined();
+    expect(textOf(restored.messagesById[aliasId]), boundary).toBe(prefix);
+    expect(restored.messageOrder, boundary).toContain(canonical.id);
   });
 
   it('keeps an equal answer in a different turn outside the short replay window', () => {

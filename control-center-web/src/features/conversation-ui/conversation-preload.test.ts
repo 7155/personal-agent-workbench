@@ -1,22 +1,55 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { useRoomLiveStore } from '@/features/rooms/state/live-store';
 import { preloadRecentConversations } from './conversation-preload';
 
 afterEach(() => {
   vi.useRealTimers();
-  useAgentLiveStore.getState().clear('preload-a');
-  useAgentLiveStore.getState().clear('preload-b');
-  useAgentLiveStore.getState().clear('preload-c');
-  for (let index = 0; index < 25; index += 1) {
-    useAgentLiveStore.getState().clear(`bounded-${index}`);
-  }
+  useAgentLiveStore.setState({ projections: {} });
   useRoomLiveStore.getState().reset();
 });
 
 describe('conversation preload', () => {
+  it('hydrates separate transport projections for the same protocol Session without raw-key fallback', async () => {
+    const sessionId = 'shared-preload-session';
+    const snapshot = (label: string) => ({
+      sessionId,
+      lastSequence: 1,
+      resumeToken: `${sessionId}:1`,
+      status: 'idle',
+      messages: [{
+        schemaVersion: 'rag-ime.agent-message.v1', id: 'same-message', sessionId, turnId: 'same-turn',
+        role: 'assistant', status: 'completed', createdAtMs: 1, completedAtMs: 2, attachments: [], citations: [],
+        blocks: [{ id: 'same-block', type: 'text', status: 'completed', presentationKind: 'markdown', data: { text: label } }],
+      }],
+      liveEvents: [],
+    });
+    const transportA = new MockControlTransport({ routes: { 'agent.session.snapshot': snapshot('Transport A answer') } });
+    const transportB = new MockControlTransport({ routes: { 'agent.session.snapshot': snapshot('Transport B answer') } });
+    const addressA = agentSessionAddress(transportA, sessionId);
+    const addressB = agentSessionAddress(transportB, sessionId);
+    const target = [{ kind: 'session' as const, id: sessionId }];
+
+    await preloadRecentConversations(transportA, target).promise;
+    const projectionA = selectAgentProjection(useAgentLiveStore.getState(), addressA);
+    expect(projectionA?.messagesById['same-message'].blocks[0].data.text).toBe('Transport A answer');
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressB)).toBeUndefined();
+
+    await preloadRecentConversations(transportB, target).promise;
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressA)).toBe(projectionA);
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressB)?.messagesById['same-message'].blocks[0].data.text).toBe('Transport B answer');
+    expect(useAgentLiveStore.getState().projections[sessionId]).toBeUndefined();
+
+    await expect(preloadRecentConversations(transportA, target).promise).resolves.toEqual([
+      { kind: 'session', id: sessionId, status: 'cached' },
+    ]);
+    expect(selectAgentProjection(useAgentLiveStore.getState(), addressA)?.messagesById['same-message'].blocks[0].data.text).toBe('Transport A answer');
+    expect(transportA.requests).toHaveLength(1);
+    expect(transportB.requests).toHaveLength(1);
+  });
+
   it('keeps recent reads bounded and never opens an event stream', async () => {
     let active = 0;
     let maximumActive = 0;
@@ -83,7 +116,7 @@ describe('conversation preload', () => {
     expect(requestSignal?.aborted).toBe(true);
   });
 
-  it('bounds each projection cache and expires entries without clearing live projections', async () => {
+  it('bounds request caches and keeps recently used projections after request-cache expiry', async () => {
     vi.useFakeTimers({ now: 1_000 });
     let sessionRequestCount = 0;
     let roomRequestCount = 0;
@@ -169,13 +202,16 @@ describe('conversation preload', () => {
     }
 
     expect(sessionRequestCount).toBe(25);
-    // Cache eviction is scoped to the preload Map; all hydrated live
-    // projections remain available for switchback/open flows.
-    expect(useAgentLiveStore.getState().projections['bounded-0']).toBeDefined();
+    // Request caching and inactive settled projection retention have separate
+    // bounds. Recent history stays warm; an evicted projection can be re-read.
+    expect(Object.keys(useAgentLiveStore.getState().projections)).toHaveLength(24);
+    expect(selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, 'bounded-0'))).toBeUndefined();
+    expect(selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, 'bounded-24'))).toBeDefined();
     await preloadRecentConversations(transport, [{ kind: 'session', id: 'bounded-24' }]).promise;
     expect(sessionRequestCount).toBe(25);
     await preloadRecentConversations(transport, [{ kind: 'session', id: 'bounded-0' }]).promise;
     expect(sessionRequestCount).toBe(26);
+    expect(selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, 'bounded-0'))).toBeDefined();
 
     for (let index = 0; index < 25; index += 1) {
       const result = await preloadRecentConversations(transport, [{ kind: 'room', id: `bounded-room-${index}` }]).promise;
@@ -197,7 +233,7 @@ describe('conversation preload', () => {
     expect(roomRequestCount).toBe(27);
     await preloadRecentConversations(transport, [{ kind: 'room', id: 'bounded-room-24' }]).promise;
     expect(roomRequestCount).toBe(27);
-    expect(useAgentLiveStore.getState().projections['bounded-0']).toBeDefined();
+    expect(selectAgentProjection(useAgentLiveStore.getState(), agentSessionAddress(transport, 'bounded-0'))).toBeDefined();
     expect(useRoomLiveStore.getState().projections['bounded-room-0']).toBeDefined();
   });
 });

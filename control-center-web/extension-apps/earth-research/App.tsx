@@ -3,8 +3,7 @@ import type {MapOptions} from './GISDeliveryPanel';
 import { ChevronDown, Rows2, Map as MapIcon, Code2, Maximize2, Minimize2, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
-import { PawSessionWorkspace, sessionWorkspaceProjectionSlice } from '@/paw-os/apps/PawSessionWorkspace';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { PawChatSurface, useChatSurfaceBusy, chatMessageWithContextV1 } from '@/paw-os/extensions/ChatSurface';
 import { PawWindowChromeProvider } from '@/paw-os/shell/PawWindowChrome';
 import { pawBrowserHost } from '@/paw-os/apps/paw-browser-host';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
@@ -23,7 +22,6 @@ import { ProjectWorkspacePicker, normalizeWorkspaceRoot } from './ProjectWorkspa
 import { CloudTasksPanel, type CloudTaskSnapshot } from './CloudTasksPanel';
 import { EarthResults } from './EarthResults';
 import { selectionDetail, selectionKey, updateSelection, type MapSelection, type SelectionMode } from './map-selection';
-import { messageWithWorkspaceContext } from '@/paw-os/apps/workspace-draft';
 import { geoJsonOutputs, parseRun, runStatus, type EarthRun } from './workspace';
 import { parseMapState, parseViewCommand, type EarthMapState, type EarthViewCommand } from './pi-package/view-contract';
 import { bindLayerFeatures, selectedLayerFeatures, parseGeoJsonFeatures, parseProjectLayerCatalog, parseSpatialCatalog, type ProjectLayer, type SpatialSourceDraft, type SpatialSourceSummary, type WorkspaceFileSummary } from './layer-catalog';
@@ -40,6 +38,7 @@ const SOURCES = [
   ['累计代价计算', 'https://developers.google.com/earth-engine/guides/image_cumulative_cost'],
 ];
 const SURFACE = 'analysis';
+export const chatSurface = { major: 1, features: ['composer-context'] } as const;
 type WorkspacePreviewKind = 'script' | 'html' | 'markdown' | 'json' | 'text' | 'binary';
 type View = 'split' | 'map' | 'code';
 type AnalysisMode = 'site' | 'route' | 'change' | 'classification' | 'batch' | 'custom';
@@ -106,7 +105,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   workspaceBinding.current = `${session?.id ?? ''}\0${workspaceRoot}`;
   const activeSession = useRef(session);
   activeSession.current = session;
-  const busy = useAgentLiveStore(state => Boolean(sessionWorkspaceProjectionSlice(state, session?.id ?? '').activeTurnId));
+  const busy = useChatSurfaceBusy(session?.id ?? '');
 
   const newSession = useCallback((created: SessionSummary) => {
     const nextRoot = created.workspaceRoots?.[0] ?? '';
@@ -567,7 +566,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
       if (!value.session?.id) throw new Error('Runtime 未返回会话，原输入已保留。');
       const created = { ...value.session, workspaceRoots: value.session.workspaceRoots?.length ? value.session.workspaceRoots : [root.trim()] };
       newSession(created); setAgentVisible(true);
-      await send(createPendingAppMessage({ sessionId: created.id, ownerAppId: manifest.id, surfaceKey: SURFACE, message: firstTurn(manifest.skillRef, project.trim(), analysisMode, messageWithWorkspaceContext(draft.trim(),mapContext)) }));
+      await send(createPendingAppMessage({ sessionId: created.id, ownerAppId: manifest.id, surfaceKey: SURFACE, message: firstTurn(manifest.skillRef, project.trim(), analysisMode, chatMessageWithContextV1(draft.trim(),mapContext)) }));
     } catch (reason) { setError(message(reason)); }
     finally { sendingRef.current = false; setSending(false); }
   }
@@ -578,7 +577,7 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
   async function requestSpatialPlan(question:string) {
     if(!session)throw new Error('请先打开本地 GIS 项目。');
     setAgentVisible(true);
-    await send(createPendingAppMessage({sessionId:session.id,ownerAppId:manifest.id,surfaceKey:SURFACE,message:messageWithWorkspaceContext(`请基于本项目已有图层与实际数据，整理并执行可验证的空间分析方案。先区分必须满足的条件、比较偏好和缺失资料；没有路网、容量或高程数据时明确标记未判断，不把简单缓冲当通行时间。不要覆盖已有版本。用户目标：${question}`,mapContext)}));
+    await send(createPendingAppMessage({sessionId:session.id,ownerAppId:manifest.id,surfaceKey:SURFACE,message:chatMessageWithContextV1(`请基于本项目已有图层与实际数据，整理并执行可验证的空间分析方案。先区分必须满足的条件、比较偏好和缺失资料；没有路网、容量或高程数据时明确标记未判断，不把简单缓冲当通行时间。不要覆盖已有版本。用户目标：${question}`,mapContext)}));
     setDrawer(null);
   }
   function chooseMapTask(action:MapTaskAction) {
@@ -620,11 +619,11 @@ export default function EarthResearchApp({ manifest }: PawExtensionAppProps) {
 
         {error ? <div className="earth-error" role="alert"><p>{error}</p>{!session ? <button onClick={() => setHistoryRevision(x => x + 1)}>重新读取</button> : null}</div> : null}
         {pending ? <div className="earth-error" role="status"><p>这条请求尚未确认接纳，已保留原消息标识。</p><button disabled={sending} onClick={() => void retry()}>核对并重试原请求</button></div> : null}
-        {loading ? <p className="earth-empty" role="status">正在恢复 App 对话…</p> : session ? <PawWindowChromeProvider><PawSessionWorkspace
-          key={session.id} active record={session} recordId={session.id} composerContext={mapContext}
-          composerPlaceholder="描述分析目标，或继续调整当前方案…"
-          onNewWork={startAnother}
-          onSessionCreated={newSession} onSessionUpdated={updated => { setSession(updated); setSessions(current => current.map(item => item.id === updated.id ? updated : item)); }} onSessionActivity={() => setRefresh(x => x + 1)}
+        {loading ? <p className="earth-empty" role="status">正在恢复 App 对话…</p> : session ? <PawWindowChromeProvider><PawChatSurface
+          api={chatSurface} key={session.id} active session={session}
+          composer={{ context: mapContext, placeholder: '描述分析目标，或继续调整当前方案…' }}
+          onNewConversation={startAnother}
+          onSessionCreated={newSession} onSessionUpdated={updated => { setSession(updated); setSessions(current => current.map(item => item.id === updated.id ? updated : item)); }} onActivity={() => setRefresh(x => x + 1)}
         /></PawWindowChromeProvider> : <form className="earth-start earth-start--home" onSubmit={event => { event.preventDefault(); if (root.startsWith('/') && project.trim() && draft.trim()) setPlanOpen(true); }}>
           <div className="earth-start__hero"><h1>把地理问题<br /><em>变成可验证的方案</em></h1><p>导入图层、编辑地块，或圈选范围开始分析。</p></div>
           <div className="earth-start__fields"><p>从顶部选择项目文件夹，可直接打开本地 GIS 工作区。需要云端分析时，再填写下方内容。</p><label>Google Cloud 项目<input value={project} onChange={event => setProject(event.target.value)} placeholder="已开通 Earth Engine 的项目 ID" required /></label></div>

@@ -36,12 +36,13 @@
 
 
 /* The catalog has three content classes. Status stays behind a disclosure. */
-.memory-library { flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--memory-line); background: #fff; }
+.memory-library { container: memory-library / inline-size; flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--memory-line); background: #fff; }
 .memory-library__navigation { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 16px; }
 .memory-library__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
 .memory-library__layer-note { margin: 0; padding: 2px 20px 12px; color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .memory-library__layers { display: flex; min-width: 0; margin: 0; padding: 0; list-style: none; gap: 4px; }
-.memory-library__layers button { display: flex; min-height: 40px; align-items: center; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--color-text-secondary); cursor: pointer; font: inherit; gap: 8px; }
+.memory-library__layers li { flex: 0 0 auto; }
+.memory-library__layers button { white-space: nowrap; display: flex; min-height: 40px; align-items: center; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--color-text-secondary); cursor: pointer; font: inherit; gap: 8px; }
 .memory-library__layers small { color: var(--color-text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .memory-library__layers button[aria-current='page'] { background: var(--memory-signal-soft); color: var(--memory-signal-strong); font-weight: 600; }
 .memory-library__toggle { display: flex; min-height: 40px; flex: 0 0 auto; align-items: center; padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 13px; cursor: pointer; gap: 5px; }
@@ -58,9 +59,9 @@
   .memory-library__layers button:hover { background: var(--color-surface-hover); }
   .memory-library__toggle:hover, .memory-library__pending button:hover { color: var(--memory-signal-strong); text-decoration: underline; text-underline-offset: 3px; }
 }
-@container memory-second-brain (max-width: 480px) {
+@container memory-library (max-width: 480px) {
   .memory-library__navigation { flex-wrap: wrap; gap: 0; padding-inline: 10px; }
-  .memory-library__layers { flex: 1; }
+  .memory-library__layers { flex: 0 0 100%; }
   .memory-library__layers button { min-height: 44px; padding-inline: 10px; }
   .memory-library__actions { width: 100%; justify-content: space-between; }
   .memory-library__actions .ui-button, .memory-library__toggle { min-height: 44px; }
@@ -179,10 +180,10 @@
   font-size: 12px;
 }
 
-/* Book rows use one quiet indigo outline and a larger title to mark the
-   settled, long-term register without adding a decorative side stripe. */
+/* Neutral book boundaries identify clickable items; only selection and focus
+   use the memory accent. Titles retain the settled, long-term hierarchy. */
 .memory-second-brain[data-view='catalog'][data-layer='books'] .memory-layer-list .mgmt-list__row {
-  border-color: color-mix(in srgb, var(--memory-signal) 38%, var(--color-border));
+  border-color: var(--color-border);
   border-radius: 9px;
 }
 
@@ -522,7 +523,7 @@
   gap: 10px;
 }
 
-.memory-reference-view__identity > span {
+.memory-reference-view__identity > span:first-child {
   display: grid;
   width: 32px;
   height: 32px;
@@ -2073,7 +2074,7 @@
   padding-inline: max(var(--memory-page-gutter), (100% - var(--memory-page-measure)) / 2);
   border-bottom: 1px solid var(--memory-line);
   /* Opaque: a PAWOS page heading never blurs the content scrolling under it. */
-  background: var(--memory-surface);
+  background: var(--color-surface);
 }
 
 :is(main, section)[data-route-id='memory'][data-paw-os-app='memory'] .memory-second-brain .memory-preferences > .mgmt-section { padding: 0 0 36px; }
@@ -2352,3 +2353,22 @@
   :is(main, section)[data-route-id='memory'] .memory-graph__scope code { max-width: 100%; }
   :is(main, section)[data-route-id='memory'] .memory-relations__filters > .memory-relations__source { width: 100%; flex-basis: 100%; }
 }
+
+/* Content and search lead the catalog; secondary filters retain their state in
+   the disclosure label and remain available to keyboard users. */
+.memory-second-brain[data-view='catalog'] .memory-layer-list__heading,
+.memory-second-brain[data-view='catalog'] .memory-catalog-filters__query > .ui-field__label {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.memory-second-brain[data-view='catalog'] .memory-catalog-filters__secondary { grid-column: 1 / -1; }
+.memory-catalog-filters__secondary > summary {
+  display: flex; align-items: center; min-height: 40px; padding: 6px 2px;
+  color: var(--color-text-secondary); font-size: 13px; cursor: pointer;
+}
+.memory-catalog-filters__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-block: 8px; }
+.memory-catalog-filters__secondary > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.memory-library[data-organize-action='false'] .memory-library__navigation { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.memory-library[data-organize-action='false'] .memory-library__actions { width: auto; margin-left: auto; }
+.memory-library[data-organize-action='false'] .memory-library__layers { width: auto; flex: 0 1 auto; }

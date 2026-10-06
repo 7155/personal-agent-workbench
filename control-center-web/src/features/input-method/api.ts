@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import {
   configurationMutationPathIds,
   requestConfigurationMutation,
@@ -93,12 +94,13 @@ export type InputMethodQueryScope = 'input' | 'lexicon';
 
 export function useInputMethodQueries(scope: InputMethodQueryScope = 'input') {
   const transport = useControlTransport();
-  const inputEnabled = scope === 'input';
+  const active = usePawOsAppActive() ?? true;
+  const inputEnabled = scope === 'input' && active;
   const source = useQuery({
     enabled: inputEnabled,
     queryKey: inputMethodQueryKeys.source(),
     queryFn: ({ signal }) => transport.request({ pathId: 'input.source.get', signal }),
-    refetchInterval: 10_000,
+    refetchInterval: inputEnabled ? 10_000 : false,
   });
   const overview = useQuery({
     enabled: inputEnabled,
@@ -132,6 +134,7 @@ export function useInputMethodQueries(scope: InputMethodQueryScope = 'input') {
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.schema', signal }),
   });
   const capabilities = useQuery({
+    enabled: active,
     queryKey: inputMethodQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: Infinity,
@@ -144,14 +147,14 @@ export function useInputMethodQueries(scope: InputMethodQueryScope = 'input') {
       query: { limit: 5 },
       signal,
     }),
-    refetchInterval: 5_000,
+    refetchInterval: inputEnabled ? 5_000 : false,
   });
   const lexiconAvailable = Boolean(
     capabilities.data
       && lexiconPathIds.every((pathId) => capabilities.data.routeIds.includes(pathId)),
   );
   const lexiconReview = useQuery({
-    enabled: scope === 'lexicon' && lexiconAvailable,
+    enabled: active && scope === 'lexicon' && lexiconAvailable,
     queryKey: inputMethodQueryKeys.lexiconReview(),
     queryFn: async ({ signal }) => parseLexiconReview(await transport.request({
       pathId: 'input.lexicon.review',

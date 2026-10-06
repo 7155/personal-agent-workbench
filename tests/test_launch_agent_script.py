@@ -5,11 +5,13 @@ import os
 import plistlib
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 class AgentLabInstallReceiptManifestTests(unittest.TestCase):
@@ -100,8 +102,89 @@ class AgentLabInstallReceiptManifestTests(unittest.TestCase):
 
 
 class LaunchAgentScriptTests(unittest.TestCase):
+    def _sidecar_checkout(self) -> Path:
+        """Keep real installer behavior independent of checkout build products."""
+        source_root = Path(__file__).resolve().parents[1]
+        temporary = tempfile.TemporaryDirectory(prefix="rag-ime-sidecar-checkout-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name) / "checkout"
+        scripts = root / "scripts"
+        (scripts / "support").mkdir(parents=True)
+        shutil.copy2(
+            source_root / "scripts" / "support" / "prebuilt_product.sh",
+            scripts / "support" / "prebuilt_product.sh",
+        )
+        for relative in ("rag_ime", "integrations/pi", "examples/vertical_agents"):
+            shutil.copytree(
+                source_root / relative,
+                root / relative,
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
+        for name in (
+            "install_sidecar_launch_agent.sh",
+            "sidecar_launch.py",
+            "portable_restore_supervisor.py",
+            "import_agent_lab_experiments.py",
+            "list_agent_lab_install_receipts.py",
+        ):
+            shutil.copy2(source_root / "scripts" / name, scripts / name)
+        from scripts.list_agent_lab_install_receipts import required_receipts
+
+        ledger = source_root / "eval" / "interview-metrics" / "agent-experiments.v1.json"
+        metrics = root / "eval" / "interview-metrics"
+        (metrics / "runs").mkdir(parents=True)
+        shutil.copy2(ledger, metrics / ledger.name)
+        for receipt in required_receipts(ledger):
+            shutil.copy2(receipt, metrics / "runs" / receipt.name)
+        # UI and Browser compilation have their own build/runtime tests. These
+        # tests exercise the real installer against bounded prebuilt inputs.
+        portable_ui = root / "control-center-web" / ".generated" / "portable-agent-ui"
+        portable_ui.mkdir(parents=True)
+        (portable_ui / "agent-ui.js").write_text("export {};\n", encoding="utf-8")
+        (portable_ui / "agent-ui.css").write_text(":root {}\n", encoding="utf-8")
+        (scripts / "build_ego_browser_runtime.py").write_text(
+            "raise SystemExit('installer tests must not build Browser runtime')\n",
+            encoding="utf-8",
+        )
+        tools = root / "test-tools"
+        tools.mkdir()
+        for name in ("pnpm", "npm"):
+            executable = tools / name
+            executable.write_text(
+                "#!/bin/sh\n"
+                "echo 'installer tests must not build frontend assets' >&2\n"
+                "exit 97\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("RAG_IME_", "DEEPSEEK_")) and key != "PAW_BINARY_PAYLOAD"
+        }
+        environment["PATH"] = f"{tools}:{environment.get('PATH', '')}"
+        self.enterContext(patch.dict(os.environ, environment, clear=True))
+        return root
+
+    def test_sidecar_fixture_rejects_unexpected_frontend_compilation(self) -> None:
+        root = self._sidecar_checkout()
+        (root / "control-center-web" / ".generated" / "portable-agent-ui" / "agent-ui.js").unlink()
+        with tempfile.TemporaryDirectory(prefix="rag-ime-sidecar-no-build-") as tmp:
+            result = subprocess.run(
+                ["bash", str(root / "scripts" / "install_sidecar_launch_agent.sh")],
+                cwd=root,
+                env={**os.environ, "HOME": tmp, "RAG_IME_PYTHON": sys.executable,
+                     "RAG_IME_LAUNCH_AGENT_DRY_RUN": "1"},
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 97, result.stderr)
+            self.assertIn("installer tests must not build frontend assets", result.stderr)
+            self.assertFalse((Path(tmp) / "Library" / "LaunchAgents" / "com.rag-ime.sidecar.plist").exists())
+
     def test_sidecar_installer_manifest_failure_preserves_existing_app_tree(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-manifest-failure-") as tmp:
             home = Path(tmp) / "home"
             app_dir = home / "Library" / "Application Support" / "RagIme" / "app"
@@ -190,7 +273,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
             self.assertIn(process_name, source)
 
     def test_sidecar_installer_auto_wires_stable_deepseek_env(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-dsv4-") as tmp:
             home = Path(tmp)
             app_support = home / "Library" / "Application Support" / "RagIme"
@@ -227,7 +310,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertEqual(launch_env["RAG_IME_DEEPSEEK_ACTIVE_RAG"], "1")
 
     def test_sidecar_installer_copies_pi_provider_catalog_with_owner_only_permissions(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-pi-provider-") as tmp:
             home = Path(tmp) / "home"
             source = Path(tmp) / "pikey.md"
@@ -299,7 +382,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertTrue(payload["StandardErrorPath"].endswith("Logs/RagIme/frontend.err.log"))
 
     def test_install_sidecar_launch_agent_dry_run_writes_plist(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-test-") as tmp:
             env = {
                 **os.environ,
@@ -345,6 +428,9 @@ class LaunchAgentScriptTests(unittest.TestCase):
             self.assertIn("dry-run", result.stdout)
             self.assertTrue((app_dir / "rag_ime").is_dir())
             self.assertTrue((app_dir / "sidecar_launch.py").is_file())
+            portable_ui = Path("control-center-web/.generated/portable-agent-ui")
+            for name in ("agent-ui.js", "agent-ui.css"):
+                self.assertEqual((app_dir / portable_ui / name).read_bytes(), (root / portable_ui / name).read_bytes())
             eval_lab_dir = app_dir / "eval" / "interview-metrics"
             self.assertTrue((eval_lab_dir / "agent-experiments.v1.json").is_file())
             self.assertTrue(
@@ -516,7 +602,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertNotIn('launchctl kickstart -k "$DOMAIN/$LABEL"', script_source)
 
     def test_sidecar_installer_resolves_active_hot_model_without_previous_plist(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-sidecar-model-registry-") as tmp:
             home = Path(tmp)
             app_support = home / "Library" / "Application Support" / "RagIme"
@@ -582,7 +668,19 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertEqual(launch_env["RAG_IME_MODEL_REGISTRY"], str(registry))
 
     def test_sidecar_install_does_not_publish_marker_before_health(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
+        reserved_port = self.enterContext(socket.socket())
+        reserved_port.bind(("127.0.0.1", 0))
+        browser_builder = root / "scripts" / "build_ego_browser_runtime.py"
+        browser_builder.write_text(
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "assert len(sys.argv) == 4 and sys.argv[1] == '--output' and sys.argv[3] == '--replace'\n"
+            "output = Path(sys.argv[2])\n"
+            "output.mkdir(parents=True)\n"
+            "(output / 'test-browser-stage.json').write_text(json.dumps(sys.argv[1:]))\n",
+            encoding="utf-8",
+        )
         with tempfile.TemporaryDirectory(prefix="rag-ime-sidecar-marker-test-") as tmp:
             home = Path(tmp) / "home"
             fake_bin = Path(tmp) / "bin"
@@ -593,7 +691,11 @@ class LaunchAgentScriptTests(unittest.TestCase):
             for module in ("pypdf", "yaml"):
                 (stubs / f"{module}.py").write_text("", encoding="utf-8")
             launchctl = fake_bin / "launchctl"
-            launchctl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            launchctl_log = Path(tmp) / "launchctl.log"
+            launchctl.write_text(
+                f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {shlex.quote(str(launchctl_log))}\nexit 0\n",
+                encoding="utf-8",
+            )
             launchctl.chmod(0o755)
             env = {
                 **os.environ,
@@ -601,7 +703,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
                 "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
                 "PYTHONPATH": str(stubs),
                 "RAG_IME_PYTHON": sys.executable,
-                "RAG_IME_SIDECAR_PORT": "19876",
+                "RAG_IME_SIDECAR_PORT": str(reserved_port.getsockname()[1]),
                 "RAG_IME_SIDECAR_HEALTH_TIMEOUT_SECONDS": "1",
                 "RAG_IME_INSTALL_AGENT_GATEWAY": "0",
                 "RAG_IME_KILL_STALE_SIDECAR_ON_INSTALL": "0",
@@ -624,6 +726,14 @@ class LaunchAgentScriptTests(unittest.TestCase):
                 / "rag-ime-install-marker.json"
             )
             marker_exists = marker.exists()
+            browser_output = marker.parent / "integrations" / "ego-browser" / "upstream"
+            self.assertEqual(
+                json.loads((browser_output / "test-browser-stage.json").read_text(encoding="utf-8")),
+                ["--output", str(browser_output), "--replace"],
+            )
+            calls = launchctl_log.read_text(encoding="utf-8")
+            self.assertIn("bootstrap", calls)
+            self.assertIn("kickstart", calls)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("health: not ready", result.stderr)
@@ -887,7 +997,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertIn('MLX BGE model directory does not exist:', script_text)
 
     def test_install_sidecar_launch_agent_can_explicitly_disable_keepalive(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-keepalive-test-") as tmp:
             env = {
                 **os.environ,
@@ -911,7 +1021,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertFalse(payload["KeepAlive"])
 
     def test_install_sidecar_launch_agent_dry_run_rejects_broken_python(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-bad-python-test-") as tmp:
             fake_python = Path(tmp) / "python3"
             fake_python.write_text("#!/usr/bin/env bash\nexit 42\n", encoding="utf-8")
@@ -935,7 +1045,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertIn("sqlite3/hashlib/ssl", result.stderr)
 
     def test_install_sidecar_launch_agent_real_install_requires_project_modules(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-missing-modules-test-") as tmp:
             blockers = Path(tmp) / "blockers"
             blockers.mkdir()
@@ -979,7 +1089,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         )
 
     def test_install_sidecar_launch_agent_uses_mlx_capable_knowledge_python(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-mlx-python-test-") as tmp:
             home = Path(tmp) / "home"
             plist_path = home / "Library" / "LaunchAgents" / "com.rag-ime.sidecar.plist"
@@ -1031,7 +1141,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertEqual(str(knowledge_python), payload["ProgramArguments"][0])
 
     def test_install_sidecar_launch_agent_rejects_relative_sidecar_python(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-relative-python-") as tmp:
             env = {
                 **os.environ,
@@ -1052,7 +1162,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertNotIn("pypdf/yaml", result.stderr)
 
     def test_install_sidecar_launch_agent_rejects_relative_knowledge_python(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-knowledge-python-") as tmp:
             env = {
                 **os.environ,
@@ -1074,7 +1184,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertNotIn("pypdf/yaml", result.stderr)
 
     def test_install_sidecar_launch_agent_preserves_existing_knowledge_python(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-preserve-knowledge-python-") as tmp:
             home = Path(tmp) / "home"
             plist_path = home / "Library" / "LaunchAgents" / "com.rag-ime.sidecar.plist"
@@ -1111,7 +1221,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertEqual(sys.executable, payload["EnvironmentVariables"]["RAG_IME_KNOWLEDGE_PYTHON"])
 
     def test_install_sidecar_launch_agent_allows_explicit_v1_budget_and_warmup_delay_overrides(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-v1-budget-test-") as tmp:
             env = {
                 **os.environ,
@@ -1137,7 +1247,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertEqual(payload["EnvironmentVariables"]["RAG_IME_EMBEDDING_WARMUP_DELAY_SECONDS"], "17")
 
     def test_install_sidecar_launch_agent_preserves_predictor_config_but_resets_product_defaults(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-preserve-test-") as tmp:
             home = Path(tmp)
             legacy_extension = home / "legacy-rag-ime-control.ts"
@@ -1298,7 +1408,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertEqual(env_vars["RAG_IME_RAG_DIRECT_DISPLAY"], "1")
 
     def test_install_sidecar_launch_agent_does_not_shadow_managed_pi_without_executable(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-managed-pi-test-") as tmp:
             home = Path(tmp)
             stale_extension = home / "stale-rag-ime-control.ts"
@@ -1343,7 +1453,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
             self.assertNotIn(str(stale_extension), plistlib.dumps(payload).decode("utf-8"))
 
     def test_install_sidecar_launch_agent_can_enable_local_vector_baseline(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = self._sidecar_checkout()
         with tempfile.TemporaryDirectory(prefix="rag-ime-launchd-vector-test-") as tmp:
             env = {
                 **os.environ,

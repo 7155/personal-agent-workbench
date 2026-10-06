@@ -95,7 +95,7 @@ export function PermissionPicker({
             <span className="agent-composer__picker-text">{metadataKnown ? current.label : '权限待同步'}</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="agent-picker-popover">
+        <PopoverContent align="start" side="top" className="agent-picker-popover" aria-label="选择对话权限">
           <header>
             <LockKeyhole size={16} />
             <span><strong>对话权限</strong><small>模式、工具范围与审批共同生效</small></span>

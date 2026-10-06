@@ -36,6 +36,89 @@ afterEach(() => {
 });
 
 describe('PAWOS Room collaboration tools', () => {
+  it('recovers a queued follow-up rejected asynchronously alongside the newer composer draft', async () => {
+    const source = previewRoomSnapshot('room-queued-refusal');
+    const room = { ...source.room, workItems: [], lastEventSequence: 4 };
+    const snapshot = { ...source, room, events: source.events.slice(0, 4), lastSequence: 4, resumeToken: `${room.id}:4` };
+    const mounted = renderRoom(900, vi.fn(), room as unknown as RoomSummary, snapshot,
+      undefined, undefined, vi.fn(), request => {
+        if (request.pathId === 'agent.room.message') throw Object.assign(new Error('synthetic pre-admission rejection'), { status: 422 });
+        return undefined;
+      });
+    const editor = await screen.findByRole('textbox', { name: '协作消息' });
+    await screen.findByText('当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。');
+    fireEvent.change(editor, { target: { value: '不能丢失的排队补充' } });
+    fireEvent.click(screen.getByRole('button', { name: '排到当前回合之后' }));
+    fireEvent.change(editor, { target: { value: '下一项任务的新草稿' } });
+    act(() => useRoomLiveStore.setState(state => {
+      const projection = state.projections[room.id]!;
+      const rootId = `${room.id}:turn-1`;
+      return { projections: { ...state.projections, [room.id]: { ...projection, turnsById: {
+        ...projection.turnsById, [rootId]: { ...projection.turnsById[rootId]!, status: 'completed' as const },
+      } } } };
+    }));
+    await waitFor(() => expect(mounted.transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1));
+    await waitFor(() => expect(editor).toHaveValue('下一项任务的新草稿\n\n不能丢失的排队补充'));
+    expect(mounted.transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
+  });
+
+  it.each(['accepted', 'rejected'] as const)('keeps newer draft attachments separate from a queued %s delivery across remount', async outcome => {
+    const source = previewRoomSnapshot(`room-queued-${outcome}-remount`);
+    const room = { ...source.room, workItems: [], lastEventSequence: 4 };
+    const snapshot = { ...source, room, events: source.events.slice(0, 4), lastSequence: 4, resumeToken: `${room.id}:4` };
+    let release: (() => void) | undefined;
+    const mounted = renderRoom(900, vi.fn(), room as unknown as RoomSummary, snapshot,
+      undefined, undefined, vi.fn(), request => request.pathId !== 'agent.room.message' ? undefined : new Promise<Record<string, unknown>>((resolve, reject) => {
+        release = () => outcome === 'accepted' ? resolve({ ok: true, accepted: true }) : reject(Object.assign(new Error('synthetic refusal'), { status: 422 }));
+      }));
+    const editor = await screen.findByRole('textbox', { name: '协作消息' });
+    await screen.findByText('当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。');
+    fireEvent.change(editor, { target: { value: '排队文字' } });
+    fireEvent.click(screen.getByRole('button', { name: '排到当前回合之后' }));
+    fireEvent.change(editor, { target: { value: '新草稿' } });
+    fireEvent.paste(editor, { clipboardData: { files: [new File(['png'], 'next.png', { type: 'image/png' })], items: [], getData: () => '' } });
+    await screen.findByLabelText('移除 next.png');
+    act(() => useRoomLiveStore.setState(state => {
+      const projection = state.projections[room.id]!; const rootId = `${room.id}:turn-1`;
+      return { projections: { ...state.projections, [room.id]: { ...projection, turnsById: {
+        ...projection.turnsById, [rootId]: { ...projection.turnsById[rootId]!, status: 'completed' as const },
+      } } } };
+    }));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    expect(mounted.transport.requests.find(({ request }) => request.pathId === 'agent.room.message')?.request.body).toMatchObject({ message: '排队文字', attachmentIds: [] });
+    expect(editor).toHaveValue('新草稿');
+    mounted.remount();
+    const reopened = await screen.findByRole('textbox', { name: '协作消息' });
+    await act(async () => release!());
+    await waitFor(() => expect(reopened).toHaveValue(outcome === 'accepted' ? '新草稿' : '新草稿\n\n排队文字'));
+    expect(screen.getByLabelText('移除 next.png')).toBeInTheDocument();
+    expect(mounted.transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(1);
+  });
+
+  it('retains an unsent follow-up when the Room is archived before its turn settles', async () => {
+    const source = previewRoomSnapshot('room-queued-archive');
+    const room = { ...source.room, workItems: [], lastEventSequence: 4 };
+    const snapshot = { ...source, room, events: source.events.slice(0, 4), lastSequence: 4, resumeToken: `${room.id}:4` };
+    const mounted = renderRoom(900, vi.fn(), room as unknown as RoomSummary, snapshot);
+    const editor = await screen.findByRole('textbox', { name: '协作消息' });
+    await screen.findByText('当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。');
+    fireEvent.change(editor, { target: { value: '请保留这条未发送的补充' } });
+    fireEvent.click(screen.getByRole('button', { name: '排到当前回合之后' }));
+    expect(screen.getByRole('status', { name: '等待当前执行完成后发送的消息' })).toHaveTextContent('请保留这条未发送的补充');
+    mounted.room.status = 'archived';
+    mounted.setDesktopFocusGroup(undefined);
+    act(() => useRoomLiveStore.setState(state => {
+      const projection = state.projections[room.id]!;
+      const rootId = `${room.id}:turn-1`;
+      return { projections: { ...state.projections, [room.id]: { ...projection, turnsById: {
+        ...projection.turnsById, [rootId]: { ...projection.turnsById[rootId]!, status: 'completed' as const },
+      } } } };
+    }));
+    await waitFor(() => expect(screen.queryByText('当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。')).not.toBeInTheDocument());
+    expect(screen.getByRole('status', { name: '等待当前执行完成后发送的消息' })).toHaveTextContent('请保留这条未发送的补充');
+    expect(mounted.transport.requests.some(({ request }) => request.pathId === 'agent.room.message')).toBe(false);
+  });
+
   it('reads completed requests and follow-ups as one continuous Room conversation by default', async () => {
     const first = previewRoomSnapshot('room-continuous-default');
     const rootId = `${first.room.id}:turn-2`;
@@ -1430,7 +1513,7 @@ function renderRoom(
   initialDraft?: string,
   resumeResponse?: Record<string, unknown>,
   setCollaborationFocusGroup = vi.fn(),
-  messageResponse?: Record<string, unknown> | ((request: ControlRequest) => Record<string, unknown> | undefined),
+  messageResponse?: Record<string, unknown> | ((request: ControlRequest) => Record<string, unknown> | undefined | Promise<Record<string, unknown> | undefined>),
   initialError?: string,
   active = true,
   snapshotFailure = false,
@@ -1462,7 +1545,7 @@ function renderRoom(
       return { ok: true, workItem: resumeResponse } as Response;
     }
     if (typeof messageResponse === 'function') {
-      const response = messageResponse(request);
+      const response = await messageResponse(request);
       if (response !== undefined) return response as Response;
     }
     if (messageResponse && request.pathId === 'agent.room.message') {

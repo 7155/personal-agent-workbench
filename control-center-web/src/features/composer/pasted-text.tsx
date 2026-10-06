@@ -13,19 +13,20 @@ export function usePastedTextAttachments({ ownerId, canImport, onImport }: {
 }) {
   const [pending, setPending] = useState<TextImport[]>([]);
   const [previews, setPreviews] = useState<Record<string, string>>({});
-  const currentOwner = useRef(ownerId);
-  const importing = useRef(false);
-  currentOwner.current = ownerId;
-  useEffect(() => { setPending([]); setPreviews({}); }, [ownerId]);
+  const currentOwner = useRef<{ id: string; importing?: symbol }>({ id: ownerId });
+  // A reopened owner gets a new lifetime too. Comparing only its string ID
+  // would let an earlier A import affect the later A after A -> B -> A.
+  if (currentOwner.current.id !== ownerId) currentOwner.current = { id: ownerId };
+  const owner = currentOwner.current;
+  useEffect(() => { setPending([]); setPreviews({}); }, [owner]);
 
   async function importText(item: TextImport) {
-    const owner = ownerId;
+    if (currentOwner.current !== owner) return;
     setPending((items) => [...items.filter((candidate) => candidate.id !== item.id), { ...item, error: undefined }]);
-    let ownsImport = false;
+    const token = Symbol('text-import');
     try {
-      if (!canImport || importing.current) throw new Error('暂时不能添加附件，内容已保留。');
-      importing.current = true;
-      ownsImport = true;
+      if (!canImport || owner.importing) throw new Error('暂时不能添加附件，内容已保留。');
+      owner.importing = token;
       if (await onImport([item.file]) === false) throw new Error('文本附件未导入，内容已保留。');
       if (currentOwner.current !== owner) return;
       setPreviews((values) => ({ ...values, [item.file.name]: `${item.text.length.toLocaleString()} 字符 · ${item.text.replace(/\s+/gu, ' ').slice(0, 64)}` }));
@@ -36,7 +37,9 @@ export function usePastedTextAttachments({ ownerId, canImport, onImport }: {
         ? { ...candidate, error: canImport ? '文本附件未导入，内容已保留。' : '暂时不能添加附件，内容已保留。' }
         : candidate));
     } finally {
-      if (ownsImport) importing.current = false;
+      // A stale completion may release only the exact import it acquired;
+      // another connection's pending input must keep its own admission gate.
+      if (owner.importing === token) owner.importing = undefined;
     }
   }
 

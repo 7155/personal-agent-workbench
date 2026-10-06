@@ -17,6 +17,20 @@ afterEach(() => {
 });
 
 describe('Agent tool activity details', () => {
+  it.each(['PAW_GUARD_MODEL_REJECTED', 'PAW_PROVIDER_CALL_LIMIT'])('shows a safe concrete reason for %s', (code) => {
+    const activity: AgentActivityProjection = {
+      id: 'guard-failure', turnId: 'guard-turn', kind: 'turn_failed', status: 'failed',
+      summary: '模型服务请求失败',
+      payload: { error: `${code} Authorization: Bearer secret-material` },
+      createdAtMs: 1, updatedAtMs: 2,
+    };
+    const { container } = render(<ActivitySummary activities={[activity]} />);
+    expect(container).toHaveTextContent('模型请求被运行约束拦截');
+    expect(container).not.toHaveTextContent('secret-material');
+    openActivity(container);
+    expect(screen.getByRole('dialog')).toHaveTextContent(code);
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('secret-material');
+  });
   it('keeps an already visible stack open as real tool calls arrive', () => {
     const activities = Array.from({ length: 6 }, (_, index) => toolActivity('tool_finished', 'completed', {
       toolCallId: `stream-growth-${index}`,

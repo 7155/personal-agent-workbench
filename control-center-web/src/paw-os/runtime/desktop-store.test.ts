@@ -4,6 +4,31 @@ import { pawExtensionApps } from '../extensions/registry';
 import { createPawDesktopStore, pawFocusWindowLayerSize, pawWindowArea, pawWindowLayerSize } from './desktop-store';
 
 describe('PAWOS desktop store', () => {
+  it('reserves the actual responsive menu-bar height for ordinary and focused windows', () => {
+    const root = document.createElement('div');
+    root.className = 'paw-desktop-root';
+    root.style.setProperty('--paw-menu-h', '48px');
+    document.body.append(root);
+    try {
+      expect(pawWindowLayerSize().height).toBe(window.innerHeight - 48);
+      expect(pawFocusWindowLayerSize().height).toBe(window.innerHeight - 48);
+    } finally {
+      root.remove();
+    }
+  });
+  it('starts the main Agent expanded, restores its desktop bounds, and preserves that choice on reopen', () => {
+    const store = createPawDesktopStore('agent', '/agent');
+    const node = store.getState().windows.agent;
+    expect(node.placement).toBe('maximized');
+    expect(node.restoreBounds).toBeDefined();
+    store.getState().toggleMaximize('agent');
+    expect(store.getState().windows.agent.bounds).toEqual(node.restoreBounds);
+    expect(store.getState().windows.agent.placement).toBeUndefined();
+    store.getState().openApp('agent');
+    expect(store.getState().windows.agent.placement).toBeUndefined();
+    expect(store.getState().windows.agent.bounds).toEqual(node.restoreBounds);
+  });
+
   it('focuses the next visible window on minimize and restores the same window without duplicating it', () => {
     const store = createPawDesktopStore();
     const agent = store.getState().openApp('agent');
@@ -247,6 +272,18 @@ describe('PAWOS desktop store', () => {
     expect(store.getState().windows.agent?.initialRoute).toBe('/agent?subagents=open');
     expect(store.getState().windows.agent?.title).toBe('Agent');
   });
+
+  it.each(['/agent?session=session-8&tools=open&toolsRequest=100', '/agent?sessionId=session-8&tools=memory'])(
+    'retains the same-owner deep-link intent when Session metadata is bound: %s', route => {
+      const store = createPawDesktopStore('agent', route);
+      store.getState().bindAgentMain('agent', {kind:'session',id:'session-8',title:'原任务'});
+      expect(store.getState().windows.agent.initialRoute).toBe(route);
+      store.getState().bindAgentMain('agent', {kind:'session',id:'session-8',title:'更新后的任务标题'});
+      expect(store.getState().windows.agent.initialRoute).toBe(route);
+      store.getState().bindAgentMain('agent', {kind:'session',id:'session-other',title:'另一项任务'});
+      expect(store.getState().windows.agent.initialRoute).toBe('/agent?session=session-other');
+    },
+  );
 
   it('does not publish a new window snapshot when bounds are unchanged', () => {
     const store = createPawDesktopStore('agent');

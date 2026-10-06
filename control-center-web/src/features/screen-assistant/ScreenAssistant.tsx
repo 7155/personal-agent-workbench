@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, Languages, Lightbulb, MousePointer2, Notebook, Scan, Save } from 'lucide-react';
 import { useControlTransport } from '@/app/control-transport';
 import { publicAgentErrorText } from '@/features/agent/public-error';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { PawSessionWorkspace } from '@/paw-os/apps/PawSessionWorkspace';
 import '@/paw-os/styles/paw-os.css';
 import '@/paw-os/apps/paw-apps.css';
@@ -23,7 +23,9 @@ export function ScreenAssistant() {
   const [draftRequest, setDraftRequest] = useState<{ id: number; text: string }>();
   const [saved, setSaved] = useState('');
   const [saving, setSaving] = useState(false);
-  const answer = useAgentLiveStore((store) => latestCompletedScreenAnswer(ready ? store.projections[ready.session.id] : undefined));
+  const answer = useAgentLiveStore((store) => latestCompletedScreenAnswer(
+    ready ? selectAgentProjection(store, agentSessionAddress(transport, ready.session.id)) : undefined,
+  ));
   const actionIcons = { translate: Languages, explain: Lightbulb, note: Notebook, act: MousePointer2 } as const;
   useEffect(() => {
     let current = true;
@@ -49,9 +51,9 @@ export function ScreenAssistant() {
 
   return <main className="screen-assistant paw-desktop-root" data-app="agent-capsule" data-capsule-surface="capture">
     <header className="screen-assistant__header">
-      <div><strong>Agent Capsule · 选区对话</strong><span>已把当前选区交给同一个 Session，可继续翻译、解释、做笔记或操作。</span></div>
+      <div><strong>Agent Capsule · 选区对话</strong><span>{ready ? '已把当前选区交给同一个 Session，可继续翻译、解释、做笔记或操作。' : '围绕屏幕选区继续对话，完成翻译、解释或笔记。'}</span></div>
       <div className="screen-assistant__tools">
-        <button aria-label="重新框选" title="重新框选，打开另一段对话" onClick={() => { void window.pawScreenAssistant?.capture().catch((reason) => setError(publicAgentErrorText(reason))); }} type="button"><Scan aria-hidden="true" size={17} /></button>
+        <button aria-label="重新框选" disabled={!window.pawScreenAssistant} title="重新框选，打开另一段对话" onClick={() => { void window.pawScreenAssistant?.capture().catch((reason) => setError(publicAgentErrorText(reason))); }} type="button"><Scan aria-hidden="true" size={17} /></button>
         {ready && <button aria-label="在 PAW 中打开此会话" title="在 PAW 中打开此会话" onClick={() => { void window.pawScreenAssistant?.openSession(ready.session.id).catch((reason) => setError(publicAgentErrorText(reason))); }} type="button"><ExternalLink aria-hidden="true" size={17} /></button>}
       </div>
     </header>

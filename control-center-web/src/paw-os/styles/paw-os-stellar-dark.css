@@ -183,7 +183,7 @@
 /* Wayfinder is the desktop's transparent interaction plane. Its project
  * labels and nested sheets own their own surfaces; filling this parent would
  * paint over the authored sky and hide live particles. */
-:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-wayfinder-work {
+:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-wayfinder-work[data-work-layout='icons'] {
   background: transparent;
   border: 0;
   box-shadow: none;

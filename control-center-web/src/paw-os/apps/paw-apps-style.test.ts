@@ -16,6 +16,7 @@ import satelliteCss from '../../features/paw-os/paw-os-satellite.css?raw';
 import terminalCss from '../../features/terminal/paw-os-terminal-app.css?raw';
 import appCss from './paw-apps.css?raw';
 import roundSheetCss from './paw-room-round-sheet.css?raw';
+import chatPriorityCss from './paw-chat-priority.css?raw';
 import roomConversationCss from './paw-room-conversation-navigation.css?raw';
 import pawOsAppSource from '../PawOsApp.tsx?raw';
 import primitiveCss from '../../components/primitives/primitives.css?raw';
@@ -186,7 +187,7 @@ describe('PAWOS semantic type roles', () => {
     expect(webmodelCss).not.toMatch(/\.paw-desktop-root \.paw-window-shell(?:\[[^\]]+\])? \.paw-window\s*\{/);
     expect(webmodelCss).not.toMatch(/\.paw-desktop-root \.paw-window-titlebar\s*\{/);
     expect(webmodelCss).not.toMatch(/\.paw-desktop-root \.paw-menu-bar\s*\{/);
-    expect(pawOsCss).toMatch(/\.paw-window-titlebar\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, 76px\) minmax\(0, 1fr\) minmax\(0, auto\);/s);
+    expect(pawOsCss).toMatch(/\.paw-window-titlebar\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, max-content\) minmax\(0, 1fr\) minmax\(0, auto\);/s);
     expect(shellMigratedCss).toMatch(/\.paw-desktop-root \.paw-window-titlebar\s*\{[^}]*background:\s*#fff;/s);
     expect(shellMigratedCss).toMatch(/\.paw-desktop-root \.paw-window-shell\[data-app\] \.paw-window-titlebar\s*\{[^}]*background:\s*var\(--paw-app-nav,/s);
     expect(shellMigratedCss).toMatch(/\.paw-desktop-root \.paw-traffic-lights > button\s*\{[^}]*background:\s*transparent;/s);
@@ -268,7 +269,7 @@ describe('PAWOS semantic type roles', () => {
     expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
     expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools__date,[\s\S]*?\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(narrowProjectCss).toMatch(/\.paw-wb-documents\[data-reader-open='true'\] \.paw-wb-document-index\s*\{\s*display:\s*none;/s);
-    expect(narrowProjectCss).toMatch(/\.paw-wb-schedules-dialog \.planning-wake-form,\s*\.paw-wb-schedules-dialog \.planning-wake-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    expect(narrowProjectCss).not.toContain('paw-wb-schedules-dialog');
   });
 
   it('keeps generic paper polish retired and removes retired native owners', () => {
@@ -833,11 +834,13 @@ describe('PAWOS semantic type roles', () => {
   });
 
   it('reserves an in-bounds final column for the Agent Home send button', () => {
+    expect(agentNextCss).toContain('--an-control-size: max(36px, var(--paw-window-control-size, 32px))');
     expect(agentNextCss).toMatch(
-      /\.an-composer-foot\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*max-content max-content minmax\(0, 1\.5fr\) minmax\(0, 1fr\) 32px;/s,
+      /\.an-composer-foot\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) var\(--an-control-size\);/s,
     );
+    expect(agentNextCss).toMatch(/\.an-composer-controls\s*\{[^}]*min-width:\s*0;[^}]*flex-wrap:\s*wrap;/s);
     expect(agentNextCss).toMatch(/\.an-anchor\s*\{[^}]*min-width:\s*0;/s);
-    expect(agentNextCss).toMatch(/\.an-send\s*\{[^}]*margin-left:\s*0;[^}]*justify-self:\s*end;/s);
+    expect(agentNextCss).toMatch(/\.an-send\s*\{[^}]*width:\s*var\(--an-control-size\);[^}]*height:\s*var\(--an-control-size\);[^}]*margin-left:\s*0;[^}]*justify-self:\s*end;/s);
   });
 
   it('keeps the Room task-sheet readable, scrollable, and collaboration reachable in narrow windows', () => {
@@ -930,23 +933,22 @@ describe('PAWOS semantic type roles', () => {
     );
   });
 
-  it('keeps one 24px traffic-light target on every window that docks App chrome', () => {
+  it('keeps one shared traffic-light target scale on every window that docks App chrome', () => {
     // A light never flex-shrinks, so the main Room's close target measures the
     // same as a satellite's even when the cluster outgrows its column.
-    expect(pawOsCss).toMatch(/\.paw-traffic-lights > button\s*\{[^}]*flex:\s*0 0 24px;/s);
+    expect(pawOsCss).toMatch(/\.paw-traffic-lights > button\s*\{[^}]*flex:\s*0 0 var\(--paw-window-control-size\);/s);
     // Only the column gives ground, through one token every titlebar reads.
     expect(pawOsCss).toMatch(
       /\.paw-window-titlebar:has\(\.paw-window-leading-slot:not\(:empty\)\)\s*\{[^}]*--paw-titlebar-lead:\s*auto;/s,
     );
-    for (const css of [pawOsCss, roomMigratedCss, agentMigratedCss]) {
+    for (const css of [pawOsCss, roomMigratedCss, agentMigratedCss, filesCss, terminalCss, toolsMigratedCss]) {
       // No titlebar may pin its leading track past the shared token, or its
       // lights start shrinking again the moment an App docks a control.
       expect(css).not.toMatch(/\.paw-window-titlebar[^{]*\{[^}]*grid-template-columns:\s*\d+px/s);
     }
-    // Browser's approved single titlebar is the deliberate exception: the
-    // 76px light column sits beside its compact title and live tab deck.
+    // Browser's live tab deck uses the same content-sized leading track.
     expect(toolsMigratedCss).toMatch(
-      /\.paw-window-titlebar\[data-window-chrome='browser-tabs'\]\s*\{[^}]*grid-template-columns:\s*76px minmax\(54px, 86px\) minmax\(0, 1fr\);/s,
+      /\.paw-window-titlebar\[data-window-chrome='browser-tabs'\]\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, max-content\) minmax\(54px, 86px\) minmax\(0, 1fr\);/s,
     );
   });
 
@@ -975,17 +977,21 @@ describe('PAWOS semantic type roles', () => {
     expect(knowledgeCss).toMatch(/:is\(main, section\)\.knowledge-feature--migrated-v1\[data-paw-os-app='knowledge'\] \.knowledge-markdown-body\s*\{[^}]*font-size:\s*15px;/s);
   });
 
-  it('keeps narrow Agent chrome on one row and the shared tool surface inside the window', () => {
+  it('keeps narrow Agent actions and the shared tool surface inside the window', () => {
     expect(agentMigratedCss).not.toContain('height: 72px');
     expect(agentMigratedCss).not.toContain('.paw-session-workspace__actions');
     expect(agentMigratedCss).toMatch(
-      /@container paw-window \(max-width: 760px\)[\s\S]*?\.paw-window-titlebar\[data-window-chrome='agent-session'\] \.paw-session-workspace__view-switch button[\s\S]*?width:\s*28px;[\s\S]*?\.paw-session-workspace__view-switch button > span\s*\{[^}]*display:\s*none;/,
+      /@container paw-window \(max-width: 760px\)[\s\S]*?\.paw-window-titlebar\[data-window-chrome='agent-session'\] \.paw-session-workspace__view-switch button[\s\S]*?width:\s*var\(--paw-window-control-size, 32px\);[\s\S]*?min-height:\s*var\(--paw-window-control-size, 32px\);[\s\S]*?\.paw-session-workspace__view-switch button > span\s*\{[^}]*display:\s*none;/,
     );
     expect(agentMigratedCss).toMatch(/@container paw-window \(max-width: 420px\)[\s\S]*?\.paw-session-workspace__runtime[\s\S]*?display:\s*none;/);
     expect(agentMigratedCss).toMatch(
       /@container paw-window \(max-width: 420px\)[\s\S]*?\.paw-window-titlebar\[data-window-chrome='agent-session'\]:has\(\.paw-session-workspace__header\)\s*\{[^}]*grid-template-columns:\s*var\(--paw-titlebar-lead, 68px\) 0 minmax\(0, 1fr\);/,
     );
-    expect(agentMigratedCss).toMatch(/@container paw-session-workspace \(max-width: 520px\)[\s\S]*?\.paw-session-workspace__side[\s\S]*?width:\s*100%;[\s\S]*?height:\s*min\(52%, 340px\);/);
+    expect(agentMigratedCss).toMatch(/@container paw-session-workspace \(max-width: 520px\)[\s\S]*?\.paw-session-workspace__side[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?height:\s*calc\(100% - 12px\);/);
+    // The live view menu replaced the inline view-switch in window chrome.
+    // Its trigger, history loader and tool trigger inherit the window scale.
+    expect(chatPriorityCss).toMatch(/\.paw-window-titlebar\[data-window-chrome='agent-session'\] :is\(\.paw-chat-controls-toggle, \.paw-session-history-load, \.paw-session-workspace__tools > button\)\s*\{[^}]*min-width:\s*var\(--paw-window-control-size, 32px\);[^}]*min-height:\s*var\(--paw-window-control-size, 32px\);/s);
+    expect(chatPriorityCss).toMatch(/\.paw-session-view-popover \.paw-session-workspace__view-switch button\[type='button'\]\s*\{[^}]*min-height:\s*max\(40px, var\(--paw-menu-control-size, 32px\)\);/s);
   });
 
   it('keeps diagonal resize controls at a 24px keyboard and pointer target', () => {

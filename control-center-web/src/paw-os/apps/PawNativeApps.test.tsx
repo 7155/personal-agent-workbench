@@ -22,6 +22,59 @@ afterEach(() => {
 const NATIVE_DOCUMENT_ID = `workdoc_${'a'.repeat(32)}`;
 
 describe('PAWOS native Apps', () => {
+  it('retains Workbench history filters and the planning date across host navigation', async () => {
+    const user = userEvent.setup();
+    renderNative('project-workbench', nativeTransport(), { initialRoute: '/work-documents' });
+    await user.click(await screen.findByRole('button', { name: '历史' }));
+    const search = await screen.findByRole('searchbox', { name: '筛选历史' });
+    await user.type(search, '尚未提交的历史筛选');
+    await user.click(screen.getByRole('button', { name: '任务' }));
+    const date = await screen.findByLabelText('规划日期');
+    await user.clear(date);
+    await user.type(date, '2026-10-01');
+    await user.click(screen.getByRole('button', { name: '工作文档' }));
+    expect(screen.getByRole('searchbox', { name: '筛选历史' })).toHaveValue('尚未提交的历史筛选');
+    await user.click(screen.getByRole('button', { name: '任务' }));
+    expect(screen.getByLabelText('规划日期')).toHaveValue('2026-10-01');
+  });
+  it('retains Knowledge drafts through the native route reporter without replacing the input owner', async () => {
+    const user = userEvent.setup();
+    renderNative('knowledge', nativeTransport(), { initialRoute: '/knowledge?tab=settings' });
+    const name = await screen.findByRole('textbox', { name: '名称' }, { timeout: 5_000 });
+    await user.clear(name);
+    await user.type(name, '未保存的知识库名称');
+    await user.click(screen.getByRole('tab', { name: '搜索' }));
+    await user.click(screen.getByRole('button', { name: '更多知识库工具' }));
+    await user.click(screen.getByRole('menuitem', { name: '设置' }));
+    expect(screen.getByRole('textbox', { name: '名称' })).toBe(name);
+    expect(name).toHaveValue('未保存的知识库名称');
+  });
+
+  it('retains the owned personal background draft through host rail navigation and source links', async () => {
+    const user = userEvent.setup();
+    const profile = { schemaVersion: 'paw.personal-profile.v1', revision: 'profile-1', text: '原来的背景', truncated: false,
+      paragraphs: [{ id: 'card-1', memoryIds: ['card-1'], text: '原来的背景', revision: 'card-1-r1', sourceCount: 0, sourceRefs: [] }] };
+    const transport = new MockControlTransport({ routes: {
+      'memory.profile': profile,
+      'memory.summary': { memoryBookCount: 1 },
+      'memory.pages': { items: [{ id: 'book-1', title: '已有主题', status: 'active' }] },
+    } });
+    const view = renderNative('memory', transport, { initialRoute: '/memory?view=profile' });
+    const background = await screen.findByRole('textbox', { name: '个人背景 1' }, { timeout: 5_000 });
+    await user.clear(background);
+    await user.type(background, '尚未保存的背景');
+    const page = view.container.querySelector('.paw-native-page');
+    await user.click(screen.getByRole('button', { name: '记忆库' }));
+    await user.click(await screen.findByRole('button', { name: /已有主题/ }));
+    expect(view.container.querySelector('.paw-native-page')).toBe(page);
+    await user.click(screen.getByRole('button', { name: '关于我' }));
+    expect(await screen.findByRole('textbox', { name: '个人背景 1' })).toBe(background);
+    expect(background).toHaveValue('尚未保存的背景');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+    expect(transport.requests.filter(({ request }) => request.pathId === 'memory.profile')).toHaveLength(1);
+    expect(transport.requests.some(({ request }) => request.pathId === 'memory.profile.save')).toBe(false);
+  });
+
   it('leaves App identity to the host window and keeps only page navigation in the native rail', async () => {
     const view = renderNative('project-workbench', nativeTransport());
 

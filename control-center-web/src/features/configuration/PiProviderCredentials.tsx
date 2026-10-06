@@ -15,6 +15,7 @@ import {
 } from '@/components/primitives';
 import { InlineNotice, ManagementSection, StatusBadge, arrayRecords, asRecord, stringValue } from '@/features/overview/management-ui';
 import { usePiProviderCatalog } from './api';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 
 type ProviderAction = 'set_api_key' | 'logout' | 'oauth_browser' | 'oauth_device_code';
 
@@ -28,6 +29,7 @@ function RoutedProviderCredentials() {
 }
 
 function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string; navigate?: (path: string) => void }) {
+  const pageActive = usePawOsAppActive() ?? true;
   const {
     authChangesSupported,
     capabilities,
@@ -51,6 +53,14 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   const [statusChecking, setStatusChecking] = useState(false);
   const [modelsExpanded, setModelsExpanded] = useState(false);
   const loginEpochRef = useRef(0);
+  const credentialEpochRef = useRef(0);
+  useEffect(() => () => { credentialEpochRef.current += 1; }, []);
+  useEffect(() => {
+    if (pageActive) return;
+    credentialEpochRef.current += 1;
+    setApiKey('');
+    setPreview(null);
+  }, [pageActive]);
   const modelListId = useId();
   const loginId = stringValue(login?.loginId);
   const loginState = stringValue(login?.state);
@@ -60,6 +70,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   useEffect(() => {
     if (!providers.length || providers.some((item) => stringValue(item.id) === providerId)) return;
     loginEpochRef.current += 1;
+    credentialEpochRef.current += 1;
     setProviderId(stringValue(providers.find((item) => asRecord(item.auth).configured === true)?.id, stringValue(providers[0]?.id)));
     setApiKey('');
     setPreview(null);
@@ -70,7 +81,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   }, [providerId, providers]);
 
   useEffect(() => {
-    if (!oauthStatusSupported || !loginId || !loginWaiting || loginStatusError) return;
+    if (!pageActive || !oauthStatusSupported || !loginId || !loginWaiting || loginStatusError) return;
     let active = true;
     let inFlight = false;
     const epoch = loginEpochRef.current;
@@ -91,10 +102,13 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
         .finally(() => { inFlight = false; });
     }, 1_500);
     return () => { active = false; window.clearInterval(timer); };
-  }, [loginId, loginStatusError, loginWaiting, oauthStatusSupported, refetchCatalog, transport]);
+  }, [pageActive, loginId, loginStatusError, loginWaiting, oauthStatusSupported, refetchCatalog, transport]);
 
   const selected = providers.find((item) => stringValue(item.id) === providerId) ?? providers[0] ?? {};
   const auth = asRecord(selected.auth);
+  const credentialChangesSupported = authChangesSupported && auth.credentialChangesSupported !== false;
+  const credentialStorageMessage = stringValue(auth.credentialStorageMessage);
+  const selectedProviderName = providerDisplayName(selected);
   const models = arrayRecords(selected.availableModels);
   const modelPreviewLimit = 8;
   const declaredModelCount = finiteNonNegativeNumber(selected.availableModelCount);
@@ -114,6 +128,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   function selectProvider(nextProviderId: string): void {
     if (nextProviderId === providerId) return;
     loginEpochRef.current += 1;
+    credentialEpochRef.current += 1;
     setProviderId(nextProviderId);
     setApiKey('');
     setPreview(null);
@@ -125,7 +140,8 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   }
 
   async function openPreview(action: ProviderAction): Promise<void> {
-    if (!providerId || !authChangesSupported || loginWaiting) return;
+    if (!providerId || !credentialChangesSupported || loginWaiting || working) return;
+    const epoch = credentialEpochRef.current;
     setWorking(true);
     setError('');
     try {
@@ -133,6 +149,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
         pathId: 'agent.provider.auth.preview',
         body: { provider: providerId, action },
       });
+      if (epoch !== credentialEpochRef.current) return;
       const nextPreview = parseProviderPreview(value, providerId, action);
       setPreviewAction(action);
       if (action !== 'logout') {
@@ -151,7 +168,8 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
     pendingPreview: Record<string, unknown> | null = preview,
     action: ProviderAction = previewAction,
   ): Promise<void> {
-    if (!pendingPreview) return;
+    if (!pendingPreview || stringValue(pendingPreview.provider) !== providerId || !credentialChangesSupported) return;
+    const epoch = credentialEpochRef.current;
     setWorking(true);
     setError('');
     try {
@@ -163,6 +181,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
           ...(action === 'set_api_key' ? { apiKey: apiKey.trim() } : {}),
         },
       }), providerId, action);
+      if (epoch !== credentialEpochRef.current) return;
       setReceipt(value);
       setPreview(null);
       const nextLogin = asRecord(value.login);
@@ -299,15 +318,17 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
             <StatusBadge label={providerId === 'typesafe' ? (auth.configured === true ? '已配置' : '未配置') : (auth.configured === true ? '已连接' : '未连接')} tone={auth.configured === true ? 'success' : 'neutral'} />
             {stringValue(auth.type) ? <StatusBadge label={stringValue(auth.type) === 'oauth' ? 'ChatGPT 登录' : 'API 密钥'} tone="info" /> : null}
           </div>
-          {providerId === 'typesafe' ? <InlineNotice title="Jev 工具审批" tone="info">配置密钥后，需要模型判断的工具审批优先使用 Jev；服务失败回退 Luna Max。当前权限模式仍决定是否需要审批。密钥保存在 macOS 钥匙串中，全局生效。</InlineNotice> : null}
-          <Field description="输入内容只会在保存时交给本机安全存储；页面不会读回现有密钥。" htmlFor="pi-api-key" label="API 密钥">
-            <Input autoComplete="new-password" disabled={!authChangesSupported || loginWaiting} id="pi-api-key" onChange={(event) => setApiKey(event.target.value)} placeholder={authChangesSupported ? '输入新的 API 密钥' : '当前版本仅支持查看状态'} type="password" value={apiKey} />
+          {providerId === 'typesafe' ? <InlineNotice title="Jev 工具审批" tone="info">配置密钥后，需要模型判断的工具审批优先使用 Jev；服务失败回退 Luna Max。当前权限模式仍决定是否需要审批。</InlineNotice> : null}
+          <p className="mgmt-muted">当前保存目标：{selectedProviderName}。请只填写该服务的密钥；切换服务会清空未保存内容。</p>
+          {credentialStorageMessage ? <InlineNotice title={credentialChangesSupported ? '凭据存储' : '此处无法修改密钥'} tone={credentialChangesSupported ? 'info' : 'warning'}>{credentialStorageMessage}</InlineNotice> : null}
+          <Field description="输入内容只在保存时交给当前选定服务的凭据管理；页面不会读回现有密钥。" htmlFor="pi-api-key" label="API 密钥">
+            <Input autoComplete="new-password" disabled={!credentialChangesSupported || loginWaiting || working} id="pi-api-key" onChange={(event) => setApiKey(event.target.value)} placeholder={credentialChangesSupported ? `输入 ${selectedProviderName} 的 API 密钥` : '此处仅支持查看状态'} type="password" value={apiKey} />
           </Field>
           <div className="mgmt-toolbar">
-            <Button disabled={!authChangesSupported || !apiKey.trim() || loginWaiting} leadingIcon={<KeyRound size={15} />} loading={working} onClick={() => void openPreview('set_api_key')} size="small" variant="primary">{auth.configured === true ? '替换密钥' : '保存密钥'}</Button>
+            <Button disabled={!credentialChangesSupported || !apiKey.trim() || loginWaiting} leadingIcon={<KeyRound size={15} />} loading={working} onClick={() => void openPreview('set_api_key')} size="small" variant="primary">{auth.configured === true ? '替换密钥' : '保存密钥'}</Button>
             {canUseBrowserOAuth ? <Button disabled={loginWaiting} leadingIcon={<UserRoundCheck size={15} />} loading={working} onClick={() => void openPreview('oauth_browser')} size="small">{auth.configured === true && stringValue(auth.type) === 'oauth' ? '重新连接 ChatGPT' : '连接 ChatGPT'}</Button> : null}
             {canUseDeviceOAuth ? <Button disabled={loginWaiting} loading={working} onClick={() => void openPreview('oauth_device_code')} size="small" variant="quiet">使用设备码</Button> : null}
-            {auth.configured === true ? <Button disabled={!authChangesSupported || loginWaiting} leadingIcon={<LogOut size={15} />} loading={working} onClick={() => void openPreview('logout')} size="small" variant="quiet">断开账号</Button> : null}
+            {auth.configured === true ? <Button disabled={!credentialChangesSupported || loginWaiting} leadingIcon={<LogOut size={15} />} loading={working} onClick={() => void openPreview('logout')} size="small" variant="quiet">断开账号</Button> : null}
             <Button leadingIcon={<RefreshCw size={15} />} loading={catalog.isFetching} onClick={refresh} size="small" variant="quiet">刷新</Button>
           </div>
           {!authChangesSupported ? <InlineNotice title="当前仅能查看" tone="warning">安全保存与退出功能尚未接入，所以不会发送凭据。</InlineNotice> : null}
@@ -475,7 +496,7 @@ function providerReceiptNotice(
   }
   return {
     title: 'API 密钥已保存',
-    body: '密钥没有回显。结束当前回复后重新打开对话，新凭据会统一生效。',
+    body: `${stringValue(receipt.providerName, stringValue(receipt.provider))}：密钥没有回显。结束当前回复后重新打开对话，新凭据会统一生效。`,
     tone: 'success',
   };
 }

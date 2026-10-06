@@ -131,7 +131,7 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
     {workflow ? <div className="lab-flow__activity" aria-label="后台任务状态"><span><LoaderCircle size={14} />运行中 <b>{workflow.counts.running}</b></span><span><Clock3 size={14} />排队中 <b>{workflow.counts.queued}</b></span><span><CheckCircle2 size={14} />已完成 <b>{workflow.counts.completed}</b></span><span><CircleAlert size={14} />失败 <b>{workflow.counts.failed}</b></span><small>后台任务 · 子验证展开在实验下方</small></div> : null}
     {workflow && workflow.complete === false ? <p className="lab-flow__incomplete" role="status">部分执行记录暂不可读取{workflow.unavailableOwners?.length ? `：${workflow.unavailableOwners.join('、')}` : ''}。已返回的节点仍可查看。</p> : null}
     <div className="lab-flow__canvas-shell">
-      <p className="lab-flow__canvas-caption">左→右是依赖顺序；点击节点查看改动、指标、验证任务和来源。流程较长时可横向滚动，定位当前会自动居中。</p>
+      {nodes.length ? <p className="lab-flow__canvas-caption">左→右是依赖顺序；点击节点查看改动、指标、验证任务和来源。流程较长时可横向滚动，定位当前会自动居中。</p> : null}
       <div className="lab-flow__canvas" ref={viewport} role="region" aria-label="实验节点画布" tabIndex={0}>
         <div className="lab-flow__scaled" style={{ width: layout.width * zoom, height: layout.height * zoom }}><div className="lab-flow__plane" style={{ width: layout.width, height: layout.height, transform: `scale(${zoom})` }}>
 
@@ -153,7 +153,7 @@ export function LabWorkflowGraph({ projectId, connection, workflow, onOpenNode, 
           })}
         </div></div>
       </div>
-      <div className="lab-flow__canvas-tools" aria-label="画布工具"><Button size="small" onClick={fitCanvas}>适应窗口</Button><Button size="small" onClick={() => { positionedProject.current = storageKey; viewport.current?.scrollTo({ left: 0, top: 0, behavior: 'instant' }); }}>回到起点</Button><span /><IconButton icon={<Minus size={16} />} label="缩小画布" disabled={zoom <= 0.7} onClick={() => setZoom((value) => Math.max(0.7, value - 0.15))} /><button onClick={() => setZoom(1)} aria-label="恢复默认缩放">{Math.round(zoom * 100)}%</button><IconButton icon={<Plus size={16} />} label="放大画布" disabled={zoom >= 1.4} onClick={() => setZoom((value) => Math.min(1.4, value + 0.15))} /><span /><Button size="small" disabled={!current && !selected} onClick={() => focusNode(current ?? selected)}><Focus size={15} />定位当前</Button></div>
+      {nodes.length ? <div className="lab-flow__canvas-tools" aria-label="画布工具"><Button size="small" onClick={fitCanvas}>适应窗口</Button><Button size="small" onClick={() => { positionedProject.current = storageKey; viewport.current?.scrollTo({ left: 0, top: 0, behavior: 'instant' }); }}>回到起点</Button><span /><IconButton icon={<Minus size={16} />} label="缩小画布" disabled={zoom <= 0.7} onClick={() => setZoom((value) => Math.max(0.7, value - 0.15))} /><button onClick={() => setZoom(1)} aria-label="恢复默认缩放">{Math.round(zoom * 100)}%</button><IconButton icon={<Plus size={16} />} label="放大画布" disabled={zoom >= 1.4} onClick={() => setZoom((value) => Math.min(1.4, value + 0.15))} /><span /><Button size="small" disabled={!current && !selected} onClick={() => focusNode(current ?? selected)}><Focus size={15} />定位当前</Button></div> : null}
     </div>
     {selected ? <LabWorkflowNodeDetail selected={selected} nodes={nodes} onOpenNode={onOpenNode} onSelect={(node) => focusNode(node)} /> : null}
   </section>;

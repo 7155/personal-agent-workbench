@@ -16,7 +16,7 @@ import sqlite3
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -25,6 +25,15 @@ from urllib.parse import parse_qs, urlparse
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+
+_STARTED = time.monotonic()
+
+
+def _startup_phase(phase: str) -> None:
+    print(f"startup +{time.monotonic() - _STARTED:.3f}s: {phase}", file=sys.stderr, flush=True)
+
+
+_startup_phase("loading runtime modules")
 
 from rag_ime.agent_lab.trial_execution import (
     AgentLabTrialExecutionInterrupted,
@@ -35,8 +44,10 @@ from rag_ime.agent_lab.trials import (
     AgentLabTrialConflict,
     AgentLabTrialStore,
 )
+from rag_ime.http_server import LoopbackThreadingHTTPServer
 
 
+_startup_phase("runtime modules ready")
 _MAX_BODY_BYTES = 64 * 1024
 
 
@@ -260,12 +271,18 @@ def main() -> None:
     parser.add_argument("--hold-terminal", action="store_true")
     args = parser.parse_args()
 
+    _startup_phase("initializing trial database")
     store = AgentLabTrialStore(Path(args.db))
+    _startup_phase("trial database ready")
     adapter = EffectAdapter(Path(args.effects_db), hold_terminal=args.hold_terminal)
+    _startup_phase("effect journal ready")
     app = AgentLabTrialApplication(store, {"effect": adapter}, max_workers=4)
+    _startup_phase("application ready")
     state = FaultHostState(app, adapter.effects_path)
     FaultHostHandler.state = state
-    server = ThreadingHTTPServer(("127.0.0.1", 0), FaultHostHandler)
+    _startup_phase("binding HTTP server")
+    server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), FaultHostHandler)
+    _startup_phase("HTTP server ready")
 
     def stop(_signum: int, _frame: object) -> None:
         # ``shutdown`` must run away from the thread currently in

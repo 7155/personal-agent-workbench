@@ -62,6 +62,7 @@ export function ContextDebugFeature() {
   const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'succeeded' | 'failed'>('idle');
   const htmlReportButtonRef = useRef<HTMLButtonElement>(null);
   const htmlReportDialogRef = useRef<HTMLDivElement>(null);
+  const htmlReportFrameRef = useRef<HTMLIFrameElement>(null);
   const sessionsQuery = useQuery({
     queryKey: ['context-debug', 'sessions'],
     queryFn: ({ signal }) => transport.request({
@@ -111,6 +112,18 @@ export function ContextDebugFeature() {
     if (!htmlPreviewUrls) return;
     URL.revokeObjectURL(htmlPreviewUrls.preview);
     URL.revokeObjectURL(htmlPreviewUrls.download);
+  }, [htmlPreviewUrls]);
+
+  useEffect(() => {
+    if (!htmlPreviewUrls) return;
+    function closeFromReport(event: MessageEvent): void {
+      if (event.source !== htmlReportFrameRef.current?.contentWindow
+        || !event.data || typeof event.data !== 'object'
+        || event.data.type !== 'paw:context-report:close') return;
+      setHtmlPreviewUrls(null);
+    }
+    window.addEventListener('message', closeFromReport);
+    return () => window.removeEventListener('message', closeFromReport);
   }, [htmlPreviewUrls]);
 
   const selectedSessionTitle = sessions.find((session) => session.id === sessionId)?.title ?? '';
@@ -272,6 +285,7 @@ export function ContextDebugFeature() {
         </DialogHeader>
         {htmlPreviewUrls ? (
           <iframe
+            ref={htmlReportFrameRef}
             sandbox="allow-scripts"
             src={htmlPreviewUrls.preview}
             title="逐次上下文报告"
@@ -366,7 +380,6 @@ function ContextDebugDocument({
 
   useEffect(() => {
     setActiveEntryId('');
-    setTreeQuery('');
   }, [context?.turnId]);
 
   if (!context?.modelCalls.length) {
@@ -388,9 +401,9 @@ function ContextDebugDocument({
     setActiveEntryId(id);
     const target = document.getElementById(id);
     if (!target) return;
-    const reduceMotion = typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    target.scrollIntoView?.({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    // Directory entries can jump across nested scroll regions. Complete the
+    // jump before moving focus so a second selection cannot strand focus offscreen.
+    target.scrollIntoView?.({ behavior: 'auto', block: 'start' });
     target.focus({ preventScroll: true });
   }
 

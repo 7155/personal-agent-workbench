@@ -54,6 +54,9 @@ it('shows scenario policy state and saves a scoped Lab prompt/tool change', asyn
   render(<QueryClientProvider client={client}><ScenarioAgentPolicySettings routeIds={['agent.configuration.get', 'agent.configuration.update']} transport={transport} /></QueryClientProvider>);
 
   const tablist = await screen.findByRole('tablist', { name: 'App 和场景策略' });
+  const ordinary = screen.getByRole('tabpanel', { name: /普通 Agent/ });
+  await user.type(within(ordinary).getByLabelText('App/场景系统提示词补充'), '保留普通场景的未保存草稿。');
+  await user.click(within(ordinary).getByRole('switch', { name: /^工作区读取/ }));
   await user.click(within(tablist).getByRole('tab', { name: /Agent Lab/ }));
   const panel = screen.getByRole('tabpanel', { name: /Agent Lab/ });
   expect(within(panel).getByText(/Agent Lab、Lab App/)).toBeInTheDocument();
@@ -62,4 +65,10 @@ it('shows scenario policy state and saves a scoped Lab prompt/tool change', asyn
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(writes[0]?.body).toMatchObject({ expectedRevision: 4, changes: { 'scenarioPolicies.agentLab': { promptInstructions: '输出来源和验证状态。', toolAllowlist: ['overview', 'workspace_read'] } } });
   expect(await within(panel).findByText('场景策略已保存')).toBeInTheDocument();
+  await user.click(within(tablist).getByRole('tab', { name: /普通 Agent/ }));
+  const returned = screen.getByRole('tabpanel', { name: /普通 Agent/ });
+  expect(within(returned).getByLabelText('App/场景系统提示词补充')).toHaveValue('保留普通场景的未保存草稿。');
+  expect(within(returned).getByRole('switch', { name: /^工作区读取/ })).not.toBeChecked();
+  expect(within(returned).getByRole('button', { name: '保存 普通 Agent' })).toBeEnabled();
+  expect(writes).toHaveLength(1);
 });

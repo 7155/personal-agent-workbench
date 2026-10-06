@@ -307,6 +307,18 @@ describe('BrowserOmnibox', () => {
     );
     expect(field).toHaveFocus();
   });
+
+  it('keeps focus on a selected blank tab so keyboard navigation and Delete remain available', () => {
+    const content = (tabKey: string, committedUrl: string) => <>
+      <button role="tab" aria-selected="true">新标签页</button>
+      <BrowserOmnibox committedUrl={committedUrl} onNavigate={() => undefined} tabKey={tabKey} />
+    </>;
+    const view = render(content('tab-1', 'https://example.com/'));
+    const tab = screen.getByRole('tab', { name: '新标签页' });
+    tab.focus();
+    view.rerender(content('tab-2', 'about:blank'));
+    expect(tab).toHaveFocus();
+  });
 });
 
 describe('BrowserPageStatus', () => {

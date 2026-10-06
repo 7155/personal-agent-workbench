@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
 import manifest from './pawos-app.json';
@@ -59,6 +59,39 @@ afterEach(() => {
 });
 
 describe('掌柜问数 Extension App', () => {
+  it.each(['accepted', 'cancelled', 'ambiguous'] as const)('settles a late %s first prompt only in its original transport projection', async (outcome) => {
+    const user = userEvent.setup();
+    const sessionId = 'shared-zhanggui-session';
+    const receipt = deferred<unknown>();
+    const transport = firstPromptTransport(sessionId, () => receipt.promise);
+    const otherTransport = new MockControlTransport();
+    renderApp(transport);
+    await user.type(await screen.findByRole('textbox', { name: '问数问题' }), '原连接的经营问题');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(promptRequests(transport)).toHaveLength(1));
+    const clientMessageId = String((promptRequests(transport)[0].body as Record<string, unknown>).clientMessageId);
+    const address = agentSessionAddress(transport, sessionId);
+    const otherAddress = agentSessionAddress(otherTransport, sessionId);
+    useAgentLiveStore.getState().appendOptimistic(otherAddress, { clientMessageId, text: '另一连接的经营问题', nowMs: 1 });
+    const otherProjection = selectAgentProjection(useAgentLiveStore.getState(), otherAddress);
+
+    await act(async () => receipt.resolve(outcome === 'ambiguous'
+      ? Promise.reject(new TypeError('fetch failed'))
+      : outcome === 'cancelled'
+        ? { accepted: false, cancelled: true, admissionCancelled: true }
+        : { accepted: true }));
+
+    const projection = selectAgentProjection(useAgentLiveStore.getState(), address)!;
+    if (outcome === 'cancelled') expect(projection.messageOrder).toEqual([]);
+    else expect(Object.values(projection.messagesById)[0]).toMatchObject(outcome === 'ambiguous'
+      ? { clientMessageId, status: 'failed', admissionState: 'ambiguous' }
+      : { clientMessageId, status: 'queued' });
+    expect(selectAgentProjection(useAgentLiveStore.getState(), otherAddress)).toBe(otherProjection);
+    expect(useAgentLiveStore.getState().projections[sessionId]).toBeUndefined();
+    expect(promptRequests(transport)).toHaveLength(1);
+    expect(otherTransport.requests).toHaveLength(0);
+  });
+
   it('preserves each unsent mode draft while tabs support keyboard navigation', async () => {
     const user = userEvent.setup();
     const transport = new MockControlTransport({ routes: { 'agent.sessions.list': { ok: true, items: [] } } });
@@ -423,8 +456,9 @@ describe('掌柜问数 Extension App', () => {
     expect(promptRequests(transport)[1].body).toMatchObject({ message: body.message, clientMessageId: body.clientMessageId });
     expect(promptRequests(transport)[1].body).not.toHaveProperty('retryOfClientMessageId');
     expect(await screen.findByText(/暂时无法确认是否已接收/)).toBeVisible();
-    const local = Object.values(useAgentLiveStore.getState().projections[sessionId].messagesById)[0];
-    act(() => useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+    const address = agentSessionAddress(transport, sessionId);
+    const local = Object.values(selectAgentProjection(useAgentLiveStore.getState(), address)!.messagesById)[0];
+    act(() => useAgentLiveStore.getState().hydrateSnapshot(address, {
       messages: [{ ...local, id: 'durable-first-question', status: 'completed', admissionState: undefined, clientMessageId: body.clientMessageId }],
       liveEvents: [], lastSequence: 1, resumeToken: `${sessionId}:1`, status: 'idle',
     }));

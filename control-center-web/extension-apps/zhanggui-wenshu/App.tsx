@@ -4,12 +4,14 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { agentCommandReceiptFailure, isAgentCommandPending, isAmbiguousAgentPromptFailure, isUnresolvedAgentCommandPending, publicAgentErrorText } from '@/features/agent/public-error';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore, type AgentSessionTarget } from '@/features/agent/state/live-store';
 import { sessionItems, type SessionSummary } from '@/features/agent/types';
-import { PawSessionWorkspace } from '@/paw-os/apps/PawSessionWorkspace';
+import { PawChatSurface } from '@/paw-os/extensions/ChatSurface';
 import { PawAppIcon } from '@/paw-os/shell/PawAppIcon';
 import type { PawExtensionAppProps } from '@/paw-os/extensions/types';
 import './app.css';
+
+export const chatSurface = { major: 1, features: ['embedded'] } as const;
 
 const MODES = [
   {
@@ -195,6 +197,7 @@ export default function ZhangguiWenshuApp({ manifest }: PawExtensionAppProps) {
       }
       const session = preparation.session;
       const sessionId = session.id;
+      const address = agentSessionAddress(transport, sessionId);
       if (!preparation.modeReady) {
         await transport.request({
           pathId: 'agent.session.mode.update',
@@ -247,7 +250,7 @@ export default function ZhangguiWenshuApp({ manifest }: PawExtensionAppProps) {
       // Keep the exact App context with the user's question: the existing
       // Session retry must recover this command, not silently omit the Skill
       // or source boundaries on its second attempt.
-      store.appendOptimistic(sessionId, { clientMessageId, text: message, nowMs: Date.now() });
+      store.appendOptimistic(address, { clientMessageId, text: message, nowMs: Date.now() });
       try {
         const response = record(await transport.request({
           pathId: 'agent.session.prompt',
@@ -255,19 +258,19 @@ export default function ZhangguiWenshuApp({ manifest }: PawExtensionAppProps) {
           body: { message, clientMessageId, delivery: 'prompt' },
         }));
         if (response.accepted === false && response.cancelled === true && response.admissionCancelled === true) {
-          store.discardOptimistic(sessionId, clientMessageId);
+          store.discardOptimistic(address, clientMessageId);
           setError('这条消息已取消，原问题已保留；可在同一对话中重新发送。');
           return;
         }
-        store.acknowledgeOptimistic(sessionId, clientMessageId, Date.now());
+        store.acknowledgeOptimistic(address, clientMessageId, Date.now());
         setDraft('');
       } catch (reason) {
         if (agentCommandReceiptFailure(reason)?.code === 'AGENT_COMMAND_CONFLICT') {
-          store.discardOptimistic(sessionId, clientMessageId);
+          store.discardOptimistic(address, clientMessageId);
           setError(publicAgentErrorText(reason));
           return;
         }
-        settleFirstPromptFailure(sessionId, clientMessageId, reason);
+        settleFirstPromptFailure(address, clientMessageId, reason);
       }
       // The first composer owns the draft until admission settles. Afterwards
       // the same Session owns its visible pending/failed turn and recovery.
@@ -390,11 +393,12 @@ export default function ZhangguiWenshuApp({ manifest }: PawExtensionAppProps) {
             <span><strong>{activeMode.label}</strong><span>{activeMode.description}</span></span>
             <button onClick={resetMode} type="button">新对话</button>
           </div>
-          <PawSessionWorkspace
+          <PawChatSurface
+            api={chatSurface}
             active
-            appearance="embedded"
-            composerPlaceholder={`${activeMode.placeholder.replace('例如：', '')}，或继续追问…`}
-            onNewWork={resetMode}
+            view="embedded"
+            composer={{ placeholder: `${activeMode.placeholder.replace('例如：', '')}，或继续追问…` }}
+            onNewConversation={resetMode}
             onSessionCreated={(session) => {
               const next = { ...sessions, [modeId]: session };
               setSessions(next);
@@ -404,8 +408,7 @@ export default function ZhangguiWenshuApp({ manifest }: PawExtensionAppProps) {
                 return { ...current, [modeId]: session };
               });
             }}
-            record={activeSession}
-            recordId={activeSession.id}
+            session={activeSession}
           />
         </section>
       ) : (
@@ -459,12 +462,12 @@ export default function ZhangguiWenshuApp({ manifest }: PawExtensionAppProps) {
   );
 }
 
-function settleFirstPromptFailure(sessionId: string, clientMessageId: string, reason: unknown): void {
+function settleFirstPromptFailure(address: AgentSessionTarget, clientMessageId: string, reason: unknown): void {
   const admissionState = isAgentCommandPending(reason)
     ? isUnresolvedAgentCommandPending(reason) ? 'unresolved' : 'pending'
     : isAmbiguousAgentPromptFailure(reason) ? 'ambiguous' : undefined;
   useAgentLiveStore.getState().failOptimistic(
-    sessionId,
+    address,
     clientMessageId,
     admissionState === 'ambiguous'
       ? '暂时无法确认是否已接收。系统不会自动重试；手动重试会核对同一条消息。'

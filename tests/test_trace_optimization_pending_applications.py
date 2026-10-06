@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from rag_ime.trace_optimization_versions import digest
 from tests import test_trace_optimization_application as fixture_module
+from tests import test_trace_optimization as comparison_fixture
 
 
 class PendingApplicationProjectionTests(unittest.TestCase):
@@ -15,14 +16,44 @@ class PendingApplicationProjectionTests(unittest.TestCase):
         self.addCleanup(self.fixture.doCleanups)
         self.candidate = self.fixture.prepare()
         self.report_id = self.fixture.report["reportId"]
-        self.fixture.app.command(self.report_id, {"operation": "run_candidate", "candidateId": self.candidate["candidateId"],
-            "clientRequestId": "run-before-adoption"})
-        pair = self.fixture.app.jobs(self.report_id)[0]
-        for role in ("baseline", "candidate"):
-            self.fixture.runner.run_job(pair[role]["jobId"])
-        self.fixture.app.reconcile(self.report_id)
+        # Projection/receipt tests consume synthetic Host evidence. Actual
+        # managed command execution is covered by the separate native test.
+        comparison = self.record_fixture_validation()
+        self.assertTrue(comparison["comparable"], comparison)
+        self.assertEqual(comparison["decision"], "kept", comparison)
         self.action = {"operation": "candidate_action", "candidateId": self.candidate["candidateId"],
             "clientRequestId": "apply-once", "action": "apply"}
+
+    def record_fixture_validation(self, scores=(1, 1), suffix="", candidate_version=None):
+        helper = comparison_fixture.TraceOptimizationComparisonTests()
+        helper.path = self.fixture.db
+        helper.trials = self.fixture.trials
+        versions = {kind: "not-used:local-command" for kind in ("tool", "skill", "prompt", "workflow", "model")}
+        before_versions = {**versions, "tool": self.candidate["parentVersionRef"]}
+        after_versions = {**versions, "tool": candidate_version or self.candidate["candidateVersionRef"]}
+        with patch("rag_ime.agent_workspace.subprocess.Popen",
+                   side_effect=AssertionError("projection fixture must not execute a command")) as process:
+            before = helper.trial(self.candidate, "baseline", scores=(0, 0), cost=None,
+                                  suffix=suffix, loaded_versions=before_versions)
+            after = helper.trial(self.candidate, "candidate", scores=scores, cost=None,
+                                 suffix=suffix, loaded_versions=after_versions)
+            result = self.fixture.candidates.record_validation(self.candidate["candidateId"],
+                client_request_id="projection-validation" + suffix,
+                baseline_trial_id=before, candidate_trial_id=after)
+            process.assert_not_called()
+        return result
+
+    def test_failed_quality_fixture_does_not_enable_application(self):
+        result = self.record_fixture_validation(scores=(0, 0), suffix="-failed-quality")
+        self.assertEqual(result["decision"], "rejected", result)
+        with self.assertRaisesRegex(ValueError, "no validated owning action"):
+            self.fixture.app.command(self.report_id, self.action)
+
+    def test_wrong_loaded_version_fixture_does_not_enable_application(self):
+        result = self.record_fixture_validation(suffix="-wrong-version", candidate_version="tool:unregistered")
+        self.assertFalse(result["comparable"], result)
+        with self.assertRaisesRegex(ValueError, "no validated owning action"):
+            self.fixture.app.command(self.report_id, self.action)
 
     def test_lost_settlement_projects_original_reservation_and_disables_repeat_actions(self):
         with patch.object(self.fixture.versions, "finish_application", side_effect=sqlite3.OperationalError("lost settlement")):

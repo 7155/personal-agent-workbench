@@ -9,6 +9,17 @@ import {
 } from './public-error';
 
 describe('Agent command receipt public recovery', () => {
+  it('explains guarded model mismatch and request exhaustion without leaking diagnostics', () => {
+    const rejected = publicAgentErrorText(new Error('PAW_GUARD_MODEL_REJECTED Authorization: Bearer private-token https://private.example'));
+    expect(rejected).toContain('模型或推理强度与本次运行约束不一致');
+    expect(rejected).toContain('PAW_GUARD_MODEL_REJECTED');
+    expect(rejected).not.toMatch(/private-token|private\.example|Bearer/u);
+    const capped = publicAgentErrorText({ payload: { error: 'PAW_PROVIDER_CALL_LIMIT' } });
+    expect(capped).toContain('已达到模型请求次数上限');
+    expect(capped).not.toContain('重试');
+    expect(publicAgentErrorText('UNRECOGNIZED_PRIVATE_ERROR', '安全兜底')).toBe('安全兜底');
+    expect(publicAgentErrorText('UNRECOGNIZED_PRIVATE_PROVIDER_ERROR')).not.toContain('UNRECOGNIZED');
+  });
   it('explains provider overload and active-turn conflicts', () => {
     expect(publicAgentErrorText(new Error('Codex error: Our servers are currently overloaded. Please try again later.')))
       .toContain('模型服务当前繁忙');

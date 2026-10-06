@@ -1,9 +1,9 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-03T06:49:52.253329+00:00",
+  "generatedAt": "2026-10-05T23:46:59.020711+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "codex/paw-main-integration-20261003",
+    "branch": "feat/primary-assistant-final-20261004",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
     "candidateCommitPolicy": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance."
   },
@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 111
+      "pathCount": 114
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -115,7 +115,7 @@
     },
     "room_frontend": {
       "description": "Room partner windows, readable replies, sidebars and responsive layout.",
-      "pathCount": 20
+      "pathCount": 21
     },
     "agent_capsule": {
       "description": "Unified Agent Capsule app entry, global screen capture and same-Session recovery.",
@@ -171,14 +171,34 @@
     },
     "durable_desktop_iteration": {
       "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
-      "pathCount": 26
+      "pathCount": 28
+    },
+    "temporal_query_preservation": {
+      "description": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim.",
+      "pathCount": 3
+    },
+    "primary_assistant_iteration": {
+      "description": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions.",
+      "pathCount": 84
+    },
+    "portable_guarded_acceptance": {
+      "description": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately.",
+      "pathCount": 14
+    },
+    "primary_assistant_followup": {
+      "description": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval.",
+      "pathCount": 30
+    },
+    "startup_failure_diagnostics": {
+      "description": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause.",
+      "pathCount": 2
     }
   },
   "summary": {
-    "pathCount": 1896,
+    "pathCount": 2035,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1580
+      "keep_release": 1719
     },
     "groupCounts": {
       "agent_capsule": 3,
@@ -187,7 +207,7 @@
       "composition_refactor": 32,
       "conversation_controls": 61,
       "conversation_v2_integration": 49,
-      "durable_desktop_iteration": 26,
+      "durable_desktop_iteration": 28,
       "earth_research": 113,
       "jev_integration": 10,
       "knowledge_runtime": 12,
@@ -203,6 +223,9 @@
       "pi_content_studio_v5_v6": 41,
       "pi_runtime_refactor": 23,
       "portable_agent_ui": 8,
+      "portable_guarded_acceptance": 14,
+      "primary_assistant_followup": 30,
+      "primary_assistant_iteration": 84,
       "product_integration": 57,
       "public_showcase": 30,
       "react_os_docs": 3,
@@ -211,14 +234,16 @@
       "refactor_verification": 66,
       "references_history": 8,
       "release_scope": 1,
-      "room_frontend": 20,
+      "room_frontend": 21,
       "room_history_codemode": 59,
       "room_service_refactor": 43,
       "scheduled_tasks": 25,
       "second_brain": 24,
       "session_full_access": 8,
+      "startup_failure_diagnostics": 2,
+      "temporal_query_preservation": 3,
       "trace_optimization": 61,
-      "verification": 111,
+      "verification": 114,
       "voice_desktop": 19,
       "workspace_completion": 315
     },
@@ -533,6 +558,13 @@
       "group": "public_showcase",
       "reason": "Keep README tutorials and screenshots aligned with current product behavior.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/AGENTS.md",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "control-center-web/CLOUD_MODEL.md",
@@ -1655,6 +1687,20 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/e2e/plugin-settings-layout.e2e.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/e2e/primary-assistant.e2e.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/e2e/product-scenes.e2e.ts",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -1744,6 +1790,41 @@
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation V2-V4, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/electron/desktop-pet-preload.cjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/electron/desktop-pet-state.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/electron/desktop-pet-state.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/electron/desktop-pet.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/electron/desktop-pet.test.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/electron/host-config.test.mjs",
@@ -2558,6 +2639,20 @@
       "reason": "Google Earth Agent extension App, Pi package, examples and regression coverage."
     },
     {
+      "path": "control-center-web/extension-apps/zhanggui-wenshu/App.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/extension-apps/zhanggui-wenshu/App.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/index.html",
       "status": "modified",
       "disposition": "keep_release",
@@ -2670,6 +2765,13 @@
       "reason": "Shared Agent controls and their standalone bundle entry."
     },
     {
+      "path": "control-center-web/scripts/contract-validator-asset.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "control-center-web/scripts/export_minecraft_harness_fixture.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -2726,6 +2828,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/app/control-transport.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/app/frontend-product.test.ts",
       "status": "deleted",
       "group": "pi1_final_integration",
@@ -2780,6 +2889,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/app/preview-primary-assistant.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/app/register-extension-hosts.ts",
@@ -2983,6 +3099,13 @@
       "group": "pi1_final_integration",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/contracts/agent-compaction-target.ts",
+      "group": "durable_desktop_iteration",
+      "reason": "Retain the public TypeScript contract for exact native Durable Session compaction identity. Source-only inventory repair; installed and native foreground acceptance remain separate.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/contracts/agent-reducer.test.ts",
@@ -3195,6 +3318,27 @@
       "reason": "Trace diagnosis and bounded optimization source, contracts and executable regressions."
     },
     {
+      "path": "control-center-web/src/contracts/text-budget.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/contracts/text-budget.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/contracts/validator-asset-build.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "control-center-web/src/contracts/validators.test.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -3356,6 +3500,83 @@
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
+      "path": "control-center-web/src/features/agent/desktop-pet-interaction.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-interaction.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-publisher.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-publisher.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-snapshot.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-snapshot.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-status.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-status.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-surface.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet-surface.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/desktop-pet.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/agent/file-preview/AgentFileBlock.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -3475,6 +3696,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/agent/runtime/transport-projection-isolation.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.consistency.test.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -3494,6 +3722,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.retention.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/features/agent/runtime/use-agent-live-session.test.tsx",
@@ -3566,6 +3801,13 @@
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
+      "path": "control-center-web/src/features/agent/state/live-store.transport.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/agent/state/live-store.ts",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -3585,6 +3827,48 @@
       "group": "pi1_final_integration",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/AgentBackgroundJobsView.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/AgentBackgroundJobsView.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/AgentStatusPanel.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/AgentStatusPanel.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/AgentWorkflowPanel.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/AgentWorkflowPanel.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/features/agent/surface-layout.test.ts",
@@ -3671,6 +3955,13 @@
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
+      "path": "control-center-web/src/features/agent/timeline/SettledTurnAnnouncer.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/StructuredRenderers.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -3718,6 +4009,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/delegation-progress.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Bounded per-child delegation progress and task-title regressions; synthetic UI and native preview evidence, not production or live-model acceptance."
     },
     {
       "path": "control-center-web/src/features/agent/timeline/progressive-markdown/ATTRIBUTION.md",
@@ -3832,11 +4130,25 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/agent/timeline/structured-tool-state.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/agent/timeline/tool-cancellation.test.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/transcript-follow.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/features/agent/tool-presentation.ts",
@@ -3851,6 +4163,20 @@
       "disposition": "keep_release",
       "group": "session_full_access",
       "reason": "Full Access applies unrestricted paths and direct tool execution consistently for existing and new Sessions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/workspace/AgentFilesPanel.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/workspace/AgentFilesPanel.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/features/browser/browser-chrome.css",
@@ -4707,6 +5033,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/features/eval-lab/projects/ProjectGuide.transport-isolation.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/eval-lab/projects/ProjectGuide.tsx",
       "status": "modified",
       "group": "lab_frontend",
@@ -5162,6 +5495,34 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/memory/MemoryProfile.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/memory/MemoryProfile.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/memory/MemorySteward.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/memory/MemorySteward.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/memory/activity-timeline.css",
       "status": "modified",
       "disposition": "keep_release",
@@ -5190,6 +5551,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/memory/memory-composition.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/memory/memory-feature.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -5202,6 +5570,13 @@
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/memory/memory-profile.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/features/memory/memory.css",
@@ -5386,6 +5761,41 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/features/plugins/PluginStudio.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/PluginStudio.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/api.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/api.transport.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/api.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/plugins/capability-policy.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -5393,11 +5803,46 @@
       "reason": "Retain the committed workspace project context, session catalog and capability-policy product integration."
     },
     {
+      "path": "control-center-web/src/features/plugins/catalog-consumers.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/catalog-queries.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/catalog-queries.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/plugins/index.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/features/plugins/plugins-feature.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/plugins/plugins.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "control-center-web/src/features/project-field/index.tsx",
@@ -5580,6 +6025,20 @@
       "group": "pi1_final_integration",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomStatusPanel.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/RoomStatusPanel.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/features/rooms/RoomTaskGraph.markers.test.tsx",
@@ -6674,6 +7133,34 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawPrimaryAssistantFlow.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawPrimaryAssistantHome.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawPrimaryAssistantHome.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawPrimaryDirectoryPicker.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomAssignmentMap.tsx",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -6849,6 +7336,13 @@
       "status": "added"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/PawRoomWorkspace.recovery.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_frontend",
+      "reason": "Verify held Room input recovery across pagehide, unmount and connection changes without replaying accepted or uncertain commands."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawRoomWorkspace.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -6875,6 +7369,13 @@
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.input-ownership.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.test.tsx",
@@ -6959,6 +7460,13 @@
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PrimaryAssistantComposerHeader.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/paw-os/apps/WorkspaceProjectContext.test.tsx",
@@ -7155,6 +7663,13 @@
       "group": "conversation_v2_integration",
       "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/primary-assistant.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/paw-os/apps/room-focus-projection.test.ts",
@@ -7528,6 +8043,27 @@
       "reason": "User-selected branding and bounded stellar visual behavior."
     },
     {
+      "path": "control-center-web/src/paw-os/extensions/ChatSurface.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/extensions/ChatSurface.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/extensions/chat-surface-contract.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/paw-os/extensions/host-registry.test.ts",
       "status": "added",
       "disposition": "keep_release",
@@ -7568,6 +8104,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/paw-os/extensions/types.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/paw-os/paw-os-landmarks.test.ts",
@@ -7724,6 +8267,20 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawDesktopPetPublisher.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawDesktopPetPublisher.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/PawFieldLede.test.tsx",
       "group": "durable_desktop_iteration",
       "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
@@ -7787,11 +8344,32 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawWorkDirectory.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/collaboration-focus.test.ts",
       "status": "modified",
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/desktop-pet-directory-projection.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/desktop-pet-directory-projection.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "control-center-web/src/paw-os/shell/paw-app-icon.css",
@@ -8158,6 +8736,13 @@
       "reason": "Integrate current product source and public contribution guidance."
     },
     {
+      "path": "control-center-web/src/platform/transport-scope.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "control-center-web/src/platform/transport.ts",
       "status": "modified",
       "group": "voice_desktop",
@@ -8212,6 +8797,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "eval/execution-reliability/paw-acceptance.v1.json",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
     },
     {
       "path": "eval/interview-metrics/AGENT_LAB_INTERVIEW_DATA_20260901.md",
@@ -8634,6 +9226,13 @@
       "reason": "Earth GIS runtime, dependencies or released-change guidance committed for this task."
     },
     {
+      "path": "licenses/Vercel-Web-Interface-Guidelines-LICENSE",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "macos/PAWInstaller/main.swift",
       "status": "added",
       "disposition": "keep_release",
@@ -8753,6 +9352,13 @@
       "reason": "Typed application dependencies and construction using existing Runtime and store owners."
     },
     {
+      "path": "rag_ime/agent_context_runtime.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "rag_ime/agent_delegation.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -8802,6 +9408,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/agent_governed_memory_tools.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "rag_ime/agent_lab/README.md",
       "status": "added",
       "disposition": "keep_release",
@@ -8814,6 +9427,34 @@
       "disposition": "keep_release",
       "group": "lab_backend",
       "reason": "Agent Lab package, resource resolution and service consumers."
+    },
+    {
+      "path": "rag_ime/agent_lab/acceptance.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "rag_ime/agent_lab/acceptance_budget.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "rag_ime/agent_lab/acceptance_fixtures.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "rag_ime/agent_lab/acceptance_trace.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
     },
     {
       "path": "rag_ime/agent_lab/app_assets.py",
@@ -9292,6 +9933,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/agent_memory_context.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "rag_ime/agent_memory_sources.py",
       "disposition": "keep_release",
       "group": "composition_refactor",
@@ -9626,6 +10274,13 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/contracts/compaction_target.py",
+      "group": "durable_desktop_iteration",
+      "reason": "Retain the public Python contract for exact native Durable Session compaction identity. Source-only inventory repair; installed and native foreground acceptance remain separate.",
+      "disposition": "keep_release",
+      "status": "added"
     },
     {
       "path": "rag_ime/contracts/json/agent-approval-model-decision.v1.json",
@@ -9971,6 +10626,20 @@
       "status": "added"
     },
     {
+      "path": "rag_ime/db/migrations/0219_memory_card_mutations.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "rag_ime/db/migrations/0220_primary_assistant_sessions.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "rag_ime/debug_server.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -10020,11 +10689,25 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/http_server.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "rag_ime/hybrid_rag_explain.py",
       "status": "deleted",
       "group": "product_integration",
       "reason": "Integrate shared routes, dependencies and supporting product owners.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "rag_ime/hybrid_rag_retriever.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "rag_ime/jev.py",
@@ -10405,6 +11088,13 @@
       "reason": "Knowledge runtime parsing, MinerU lifecycle configuration and focused regressions for long local document ingestion."
     },
     {
+      "path": "rag_ime/local_calendar.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "rag_ime/local_sqlite_core.py",
       "disposition": "keep_release",
       "group": "composition_refactor",
@@ -10433,11 +11123,32 @@
       "reason": "Native Pi codemode, Session and Room history recovery, truthful collaboration state, and related regression checks."
     },
     {
+      "path": "rag_ime/management_service.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "rag_ime/memory_book_compiler.py",
       "disposition": "keep_release",
       "group": "composition_refactor",
       "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
       "status": "modified"
+    },
+    {
+      "path": "rag_ime/memory_card_mutations.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "rag_ime/memory_evidence_ledger.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "rag_ime/memory_lifecycle/README.md",
@@ -10552,6 +11263,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "rag_ime/node/pi_provider_bridge_bundled.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
       "path": "rag_ime/observability.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -10606,6 +11324,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/personal_profile.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "rag_ime/pi/README.md",
@@ -10972,6 +11697,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/session_memory_recall.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
       "path": "rag_ime/settings_schema.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -11012,6 +11744,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "rag_ime/temporal_query.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "temporal_query_preservation",
+      "reason": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim."
     },
     {
       "path": "rag_ime/trace_diagnostics.py",
@@ -11152,6 +11891,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "scripts/build_patched_squirrel.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "scripts/build_paw_backend_model_bundle.py",
@@ -11399,6 +12145,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "scripts/paw_acceptance_provider_guard.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
       "path": "scripts/prepare_managed_pi_runtime.py",
       "status": "modified",
       "group": "pi_runtime_refactor",
@@ -11420,6 +12173,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "scripts/run_control_center_web_qa.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Run the source Web unit gate once per aggregate while preserving standalone QA, prebuilt payload checks, and first-failure propagation."
+    },
+    {
       "path": "scripts/run_earth_gis_acceptance.mjs",
       "status": "added",
       "disposition": "keep_release",
@@ -11432,6 +12192,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "scripts/run_paw_acceptance.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
     },
     {
       "path": "scripts/run_paw_medium_eval.py",
@@ -11511,6 +12278,27 @@
       "reason": "Offline preview installer, bundled runtime validation and the existing stack installation path."
     },
     {
+      "path": "scripts/test_control_center_web.sh",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Run the source Web unit gate once per aggregate while preserving standalone QA, prebuilt payload checks, and first-failure propagation."
+    },
+    {
+      "path": "scripts/test_paw_acceptance_provider_guard.mjs",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "scripts/unit_test_shards.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "squirrel-patches/GENERATION_EXPERIENCE.md",
       "status": "deleted",
       "disposition": "delete_old_implementation",
@@ -11558,6 +12346,20 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/squirrel_system_tools.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/subprocess_startup.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_active_rag_debug_server.py",
@@ -11623,6 +12425,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_agent_background_job_exit_observation.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_agent_background_job_idempotency.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_agent_background_jobs.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_agent_background_launch_recovery.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -11679,6 +12502,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_agent_execution_network_faults.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_agent_execution_policy.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -11698,6 +12528,34 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_lab_acceptance.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "tests/test_agent_lab_acceptance_fixtures.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "tests/test_agent_lab_acceptance_storage.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
+    },
+    {
+      "path": "tests/test_agent_lab_acceptance_trace.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
     },
     {
       "path": "tests/test_agent_lab_agent_review.py",
@@ -11973,6 +12831,13 @@
       "reason": "Existing executable regressions updated for the owning package."
     },
     {
+      "path": "tests/test_agent_lifecycle_cancellation.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_agent_list_pagination.py",
       "status": "modified",
       "group": "refactor_verification",
@@ -12246,6 +13111,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_assistant_generation_behavior.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
       "path": "tests/test_binary_installer.py",
       "status": "added",
       "disposition": "keep_release",
@@ -12279,6 +13151,13 @@
       "disposition": "keep_release",
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring."
+    },
+    {
+      "path": "tests/test_build_patched_squirrel.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_build_paw_backend_web_model_package.py",
@@ -12327,7 +13206,7 @@
       "status": "modified",
       "group": "voice_desktop",
       "disposition": "keep_release",
-      "reason": "Installed app naming and Electron voice control integration."
+      "reason": "Installed app naming, Electron voice integration, and bounded Web gate orchestration coverage."
     },
     {
       "path": "tests/test_database_migrations.py",
@@ -12827,6 +13706,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_knowledge_workbench.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "temporal_query_preservation",
+      "reason": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim."
+    },
+    {
       "path": "tests/test_lab_extension_example.py",
       "status": "added",
       "group": "refactor_verification",
@@ -12848,11 +13734,32 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_launch_agent_script.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Regression checks for the included product changes."
+    },
+    {
       "path": "tests/test_license_decision.py",
       "group": "verification",
       "disposition": "keep_release",
       "reason": "Keep Trace contracts synchronized and public source checks independent of local documents.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_local_calendar.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_loopback_http_server.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_macos_uninstall.py",
@@ -13030,11 +13937,25 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_paw_app_export_acceptance.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "startup_failure_diagnostics",
+      "reason": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause."
+    },
+    {
       "path": "tests/test_paw_browser_runtime.py",
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Regression checks for the included product changes.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_paw_policy_app_export.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "startup_failure_diagnostics",
+      "reason": "Test-only bounded subprocess startup evidence for isolated export fixtures; preserve readiness deadlines and interpreter isolation. Diagnostics do not establish a root cause."
     },
     {
       "path": "tests/test_pawos_frontend_source_map.py",
@@ -13070,6 +13991,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_personal_profile.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "tests/test_pi_durable_runtime.py",
@@ -13133,6 +14061,13 @@
       "group": "refactor_verification",
       "reason": "Regression and architecture checks for the Runtime and application dependency refactoring.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_pi_provider_auth_bridge.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "portable_guarded_acceptance",
+      "reason": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately."
     },
     {
       "path": "tests/test_pi_provider_auth_http.py",
@@ -13210,6 +14145,34 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_primary_assistant_context.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "tests/test_primary_assistant_routes.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "tests/test_primary_assistant_sessions.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "tests/test_primary_recall_revalidation.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_iteration",
+      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
       "path": "tests/test_public_release.py",
@@ -13380,6 +14343,27 @@
       "disposition": "keep_release"
     },
     {
+      "path": "tests/test_squirrel_system_tools.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_subprocess_startup.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
+    },
+    {
+      "path": "tests/test_temporal_query.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "temporal_query_preservation",
+      "reason": "Preserve rejected explicit date text and atomic ranges through existing temporal parsing, semantic retrieval and Knowledge prompt owners; source-only correction with deterministic regressions, no installed or foreground acceptance claim."
+    },
+    {
       "path": "tests/test_trace_diagnostic_http.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -13427,6 +14411,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_unit_test_shards.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Included source follow-up: primary assistant UI and memory correctness, native lifecycle fixes, validator build assets, attribution, and explicit cross-platform CI coverage. Inclusion is not release or acceptance approval."
     },
     {
       "path": "tests/test_vault_organizer.py",
@@ -13497,6 +14488,13 @@
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Inventory the Python dependency lockfile already committed in 0e128f50; the Earth inventory repair adds no unrelated dependency changes."
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/harness-conversation-depth.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "primary_assistant_followup",
+      "reason": "Verify bounded delegated progress and task-title display against synthetic fixtures; no live-model or production acceptance claim."
     }
   ]
 }

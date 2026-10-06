@@ -37,6 +37,11 @@ export const PAW_WINDOW_MIN_HEIGHT = 210;
    offset and 4px air gap. Maximized and collaboration-focus layouts hide the
    Dock and deliberately keep the complete menu-below plane. */
 const PAW_MENU_BAR_HEIGHT = 34;
+function pawMenuBarHeight(): number {
+  const root = typeof document === 'undefined' ? null : document.querySelector('.paw-desktop-root');
+  const height = root ? Number.parseFloat(getComputedStyle(root).getPropertyValue('--paw-menu-h')) : NaN;
+  return Number.isFinite(height) && height > 0 ? height : PAW_MENU_BAR_HEIGHT;
+}
 const PAW_WINDOW_AREA_INSET = 8;
 const PAW_DOCK_HEIGHT = 62;
 const PAW_DOCK_BOTTOM = 12;
@@ -51,7 +56,7 @@ export function pawWindowLayerSize(): { width: number; height: number } {
   const height = typeof window === 'undefined' ? 800 : window.innerHeight;
   return {
     width: Math.max(PAW_WINDOW_MIN_WIDTH, width),
-    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - PAW_MENU_BAR_HEIGHT),
+    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - pawMenuBarHeight()),
   };
 }
 
@@ -64,7 +69,7 @@ export function pawFocusWindowLayerSize(): { width: number; height: number } {
   const height = typeof window === 'undefined' ? 800 : window.innerHeight;
   return {
     width: Math.max(PAW_WINDOW_MIN_WIDTH, width),
-    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - PAW_MENU_BAR_HEIGHT),
+    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - pawMenuBarHeight()),
   };
 }
 
@@ -256,6 +261,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       const bounds = satelliteTarget
         ? roomParticipantWindowBounds(satelliteIndex)
         : initialWindowBounds(currentState.stack.length);
+      const startExpanded = appId === 'agent' && !options.entityId && !options.background && !satelliteTarget;
       const node: PawWindowNode = {
         id: windowId,
         appId,
@@ -263,7 +269,8 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
         entityId: options.entityId,
         initialRoute: options.initialRoute,
         target: options.target,
-        bounds,
+        bounds: startExpanded ? placementBounds('maximized') : bounds,
+        ...(startExpanded ? { placement: 'maximized' as const, restoreBounds: bounds } : {}),
         minimized: false,
       };
       set((state) => {
@@ -324,7 +331,14 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
         const mainWindow = state.windows[windowId];
         if (!mainWindow || mainWindow.appId !== 'agent' || isAgentSatellite(mainWindow.target)) return state;
         const title = target?.title ?? pawApp('agent').label;
-        const initialRoute = target
+        const params = new URLSearchParams(mainWindow.initialRoute?.split('?', 2)[1] ?? '');
+        const routeSessionId = params.get('session') || params.get('sessionId');
+        const routeKind = routeSessionId ? 'session' : 'room';
+        const routeOwner = routeSessionId || params.get('room');
+        // Metadata refresh must not erase an intent addressed to this owner.
+        const preservesRoute = target && routeKind === target.kind
+          && mainWindow.initialRoute?.split('?', 1)[0] === '/agent' && routeOwner === target.id;
+        const initialRoute = preservesRoute ? mainWindow.initialRoute : target
           ? `/agent?${target.kind === 'room' ? 'room' : 'session'}=${encodeURIComponent(target.id)}`
           : '/agent';
         if (mainWindow.target?.kind === target?.kind

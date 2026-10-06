@@ -1,22 +1,22 @@
-.eval-lab {
+:is(.eval-lab, .lab-project-modal) {
   /* Pair each opaque reading surface with ink from the selected desktop theme. */
-  --lab-surface: var(--paw-panel, #fff);
-  --lab-surface-raised: var(--paw-panel-strong, #fff);
-  --lab-surface-subtle: var(--paw-panel-soft, #f4f6f9);
-  --lab-ink: var(--paw-ink, #172033);
-  --lab-muted: var(--paw-muted, #536075);
-  --lab-line: var(--paw-line, #dce3eb);
-  --lab-line-strong: color-mix(in srgb, var(--lab-muted) 40%, var(--lab-surface));
-  --lab-accent: var(--paw-accent, #3567b7);
-  --lab-accent-soft: color-mix(in srgb, var(--lab-accent) 10%, var(--lab-surface));
-  --lab-action: var(--paw-button-primary-bg, #3567b7);
-  --lab-on-action: var(--paw-button-primary-ink, #fff);
-  --lab-success: #267366;
-  --lab-warning: #8a611d;
-  --lab-danger: #9b382d;
-  --lab-success-soft: color-mix(in srgb, var(--lab-success) 8%, var(--lab-surface));
-  --lab-warning-soft: color-mix(in srgb, var(--lab-warning) 8%, var(--lab-surface));
-  --lab-danger-soft: color-mix(in srgb, var(--lab-danger) 8%, var(--lab-surface));
+  --lab-surface: var(--color-workspace-paper);
+  --lab-surface-raised: var(--color-workspace-surface);
+  --lab-surface-subtle: var(--color-surface-subtle);
+  --lab-ink: var(--color-workspace-ink);
+  --lab-muted: var(--color-workspace-secondary);
+  --lab-line: var(--color-workspace-border-soft);
+  --lab-line-strong: var(--color-workspace-border);
+  --lab-accent: var(--color-workspace-accent);
+  --lab-accent-soft: color-mix(in srgb, var(--lab-accent) 10%, transparent);
+  --lab-action: var(--color-workspace-accent);
+  --lab-on-action: var(--color-workspace-on-accent);
+  --lab-success: var(--color-success);
+  --lab-warning: var(--color-warning);
+  --lab-danger: var(--color-danger);
+  --lab-success-soft: var(--color-success-soft);
+  --lab-warning-soft: var(--color-warning-soft);
+  --lab-danger-soft: var(--color-danger-soft);
   --color-canvas: var(--lab-surface);
   --color-paper: var(--lab-surface);
   --color-surface: var(--lab-surface);
@@ -32,12 +32,15 @@
   --color-border-soft: var(--lab-line);
   --color-border-strong: var(--lab-line-strong);
   --color-accent: var(--lab-action);
-  --color-accent-hover: color-mix(in srgb, var(--lab-action) 88%, #000);
-  --color-accent-pressed: color-mix(in srgb, var(--lab-action) 80%, #000);
+  --color-accent-hover: var(--color-workspace-accent-hover);
+  --color-accent-pressed: var(--color-workspace-accent-hover);
   --color-accent-text: var(--lab-on-action);
   --color-accent-soft: var(--lab-accent-soft);
   --color-focus: var(--lab-accent);
   color-scheme: inherit;
+}
+
+.eval-lab {
   align-content: start;
   background: var(--lab-surface);
   box-sizing: border-box;
@@ -50,11 +53,7 @@
   width: 100%;
 }
 
-:root[data-theme='dark'] .eval-lab {
-  --lab-success: #67e7b7;
-  --lab-warning: #f6c76f;
-  --lab-danger: #ff819d;
-}
+
 
 .eval-lab__header,
 .eval-lab__run-header,

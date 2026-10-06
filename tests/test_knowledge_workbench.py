@@ -121,6 +121,30 @@ class _NotionClient:
 
 
 class KnowledgeWorkbenchTests(unittest.TestCase):
+    def test_rejected_explicit_dates_do_not_become_prompt_time_filters(self) -> None:
+        for question in (
+            "查找 2026年2月30日前的记录",
+            "查找 2026年7月9999999999日前 的记录",
+            "比较 2026-02-30 到 2026-03-02 的记录",
+            "查找 9999-12-31 的记录",
+        ):
+            with self.subTest(question=question):
+                messages = build_knowledge_workbench_messages(
+                    KnowledgeWorkbenchRequest(question=question, mode="recall"), evidence=(),
+                )
+                payload = json.loads(messages[1]["content"])
+                self.assertEqual(payload["question"], question)
+                self.assertEqual(payload["requestedTimeRanges"], [])
+
+    def test_rejected_range_does_not_hide_independent_prompt_time_filter(self) -> None:
+        question = "比较 2026-02-30 到 2026-03-02 和 2026-07-13 的记录"
+        messages = build_knowledge_workbench_messages(
+            KnowledgeWorkbenchRequest(question=question, mode="recall"), evidence=(),
+        )
+        payload = json.loads(messages[1]["content"])
+        self.assertEqual(payload["question"], question)
+        self.assertEqual([item["label"] for item in payload["requestedTimeRanges"]], ["2026-07-13"])
+
     def test_prompt_has_distinct_long_form_recall_and_knowledge_contracts(self) -> None:
         evidence = (
             {

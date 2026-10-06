@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
-import { useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { MockControlTransport } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
 import { LabSessionRecord } from './LabSessionRecord';
 
 const clients: QueryClient[] = [];
-afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); useAgentLiveStore.getState().clear('guide-session'); });
+afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); useAgentLiveStore.setState({ projections: {} }); });
 const message = (id: string, turnId: string, text: string) => ({ schemaVersion: 'rag-ime.agent-message.v1', id, sessionId: 'source-session', turnId, role: 'assistant', status: 'completed',
   blocks: [{ id: `${id}:text`, type: 'text', status: 'completed', presentationKind: 'markdown', data: { text } }], attachments: [], citations: [], createdAtMs: 1, completedAtMs: 2 });
 function snapshot() { return { schemaVersion: 'rag-ime.agent-message-list.v1', ok: true, sessionId: 'source-session', status: 'idle', items: [message('one', 'turn-one', '第一轮完整回答'), message('two', 'turn-two', '第二轮完整回答')], liveEvents: [], lastSequence: 0 }; }
@@ -24,7 +24,8 @@ function mount(raw: Record<string, unknown> = snapshot(), turnId?: string) {
   return { transport, close };
 }
 it('renders the exact Session with shared message blocks without touching the Guide live store', async () => {
-  useAgentLiveStore.getState().ensure('guide-session');
+  const guideTransport = new MockControlTransport();
+  useAgentLiveStore.getState().ensure(agentSessionAddress(guideTransport, 'guide-session'));
   const before = useAgentLiveStore.getState().projections;
   const { transport, close } = mount();
   expect(await screen.findByText('第一轮完整回答')).toBeVisible();

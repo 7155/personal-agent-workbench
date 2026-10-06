@@ -120,10 +120,15 @@
 }
 
 .ui-button__icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
+
+.ui-button__icon-content { display: inline-flex; }
+.ui-button__icon[data-loading] > .ui-button__icon-content { visibility: hidden; }
+.ui-button__icon > .ui-button__spinner { position: absolute; inset: 0; margin: auto; }
 
 .ui-button__icon:empty {
   display: none;
@@ -990,3 +995,9 @@ input[type='radio']:focus-visible {
 :root[data-reduce-motion='true'] .ui-tabs__content,
 :root[data-reduce-motion='true'] .ui-skeleton::after,
 :root[data-reduce-motion='true'] .ui-button__progress::before { animation: none !important; }
+
+/* Radix owns these coordinates. Interpolating them makes a popover travel
+   from its initial offscreen measurement and lag behind a resized window. */
+[data-radix-popper-content-wrapper] { transition-property: none !important; }
+@media (prefers-reduced-motion: reduce) { .ui-popover[data-state='open'], .ui-menu[data-state='open'] { animation: none !important; } }
+:root[data-reduce-motion='true'] :is(.ui-popover, .ui-menu)[data-state='open'] { animation: none !important; }

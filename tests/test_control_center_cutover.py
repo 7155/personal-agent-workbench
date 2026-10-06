@@ -527,6 +527,147 @@ class ControlCenterCutoverTests(unittest.TestCase):
         self.assertIn('expected_dirty = allow_dirty == "1"', footprint)
 
 
+class WebGateOrchestrationTests(unittest.TestCase):
+    """Run the real gate, QA and web-build shells without external workloads."""
+
+    def run_gate(self, entry, *, prebuilt=False, **overrides):
+        with tempfile.TemporaryDirectory(prefix="paw-web-gate-") as tmp:
+            root = Path(tmp) / "source"
+            scripts = root / "scripts"
+            (scripts / "support").mkdir(parents=True)
+            (root / "control-center-web").mkdir()
+            bins = root / "bin"
+            bins.mkdir()
+            for name in (
+                "test_control_center_web.sh",
+                "run_control_center_web_qa.sh",
+                "build_control_center_web.sh",
+                "support/prebuilt_product.sh",
+            ):
+                shutil.copy2(ROOT / "scripts" / name, scripts / name)
+            # The host double preserves its nested web-build invocation; native
+            # packaging and footprint verification are outside this gate test.
+            doubles = {
+                scripts / "build_paw_os_electron_host.sh":
+                    'printf "host\\n" >> "$PAW_TEST_GATE_LOG"\n'
+                    '"$(dirname "$0")/build_control_center_web.sh"\n',
+                scripts / "check_control_center_footprint.sh":
+                    'printf "footprint\\n" >> "$PAW_TEST_GATE_LOG"\n',
+                scripts / "check_control_center_web_dist.sh": "exit 0\n",
+                bins / "node": "exit 0\n",
+                bins / "python3":
+                    'if [[ "$1" == "-m" ]]; then\n'
+                    '  printf "backend-test\\n" >> "$PAW_TEST_GATE_LOG"\n'
+                    'else\n'
+                    '  exec "$PAW_TEST_PYTHON" "$@"\n'
+                    'fi\n',
+                bins / "pnpm":
+                    'while [[ "${1:-}" == --* ]]; do\n'
+                    '  if [[ "$1" == "--dir" ]]; then shift; fi\n'
+                    '  shift\n'
+                    'done\n'
+                    'printf "%s\\n" "$*" >> "$PAW_TEST_GATE_LOG"\n'
+                    '[[ "$1" != "${PAW_TEST_FAIL_COMMAND:-}" ]] || exit 73\n'
+                    'case "$1" in\n'
+                    '  build) mkdir -p dist; touch dist/index.html dist/manifest.webmanifest\n'
+                    '    printf \'{"schemaVersion":"rag-ime.control-web-build.v1"}\\n\' > dist/rag-ime-control-web-build.json ;;\n'
+                    '  typecheck|test|test:e2e|exec) ;;\n'
+                    '  *) exit 74 ;;\n'
+                    'esac\n',
+            }
+            for path, body in doubles.items():
+                path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + body)
+                path.chmod(0o755)
+            log = root / "calls.txt"
+            env = {
+                key: value for key, value in os.environ.items()
+                if not key.startswith(("RAG_IME_", "PAW_TEST_", "PAW_BINARY_"))
+            }
+            env.update({
+                "PATH": str(bins) + os.pathsep + env["PATH"],
+                "PAW_TEST_GATE_LOG": str(log),
+                "PAW_TEST_PYTHON": sys.executable,
+                "RAG_IME_SKIP_WEB_INSTALL": "1",
+                "RAG_IME_PRODUCT_VERSION": "1.0.0",
+                "RAG_IME_BUILD_COMMIT": "0" * 40,
+                "RAG_IME_BUILD_NUMBER": "1",
+                **overrides,
+            })
+            if prebuilt:
+                (root.parent / "installer-manifest.json").write_text(json.dumps({
+                    "schemaVersion": "paw.binary-installer.v1",
+                    "productSourceCommit": "0" * 40,
+                }))
+                env["PAW_BINARY_PAYLOAD"] = str(root.parent)
+            result = subprocess.run(
+                ["bash", str(scripts / entry)], cwd=root, env=env,
+                text=True, capture_output=True, timeout=10,
+            )
+            return result, log.read_text().splitlines()
+
+    def test_aggregate_runs_web_units_once_with_or_without_e2e(self):
+        for skip_e2e in (None, "1"):
+            with self.subTest(skip_e2e=skip_e2e):
+                result, calls = self.run_gate(
+                    "test_control_center_web.sh",
+                    **({"RAG_IME_SKIP_WEB_E2E": skip_e2e} if skip_e2e else {}),
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls.count("test"), 1, calls)
+                self.assertEqual(calls.count("build"), 2, calls)
+                self.assertEqual(calls.count("backend-test"), 1, calls)
+                self.assertEqual(calls.count("host"), 1, calls)
+                self.assertEqual(calls.count("footprint"), 1, calls)
+                self.assertLess(calls.index("test"), calls.index("build"))
+                qa_count = int(skip_e2e is None)
+                self.assertEqual(calls.count("typecheck"), 2 + qa_count, calls)
+                self.assertEqual(calls.count("exec tsc -p e2e/tsconfig.json --pretty false"), qa_count, calls)
+                self.assertEqual(calls.count("test:e2e"), qa_count, calls)
+
+    def test_aggregate_stops_when_the_first_web_gate_fails(self):
+        for command in ("test", "build"):
+            with self.subTest(command=command):
+                result, calls = self.run_gate(
+                    "test_control_center_web.sh", PAW_TEST_FAIL_COMMAND=command,
+                )
+                self.assertEqual(result.returncode, 73, result.stderr)
+                expected = ["typecheck", "test"]
+                if command == "build":
+                    expected.append("build")
+                self.assertEqual(calls, expected)
+
+    def test_prebuilt_aggregate_keeps_qa_units_unless_explicitly_skipped(self):
+        for skip_units in (None, "1"):
+            with self.subTest(skip_units=skip_units):
+                result, calls = self.run_gate(
+                    "test_control_center_web.sh", prebuilt=True,
+                    **({"RAG_IME_SKIP_WEB_TESTS": skip_units} if skip_units else {}),
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls.count("test"), int(skip_units is None), calls)
+                self.assertEqual(calls.count("typecheck"), 1, calls)
+                self.assertEqual(calls.count("exec tsc -p e2e/tsconfig.json --pretty false"), 1, calls)
+                self.assertEqual(calls.count("test:e2e"), 1, calls)
+                self.assertEqual(calls.count("build"), 0, calls)
+
+    def test_standalone_qa_runs_units_and_e2e_by_default(self):
+        result, calls = self.run_gate("run_control_center_web_qa.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [
+            "typecheck", "exec tsc -p e2e/tsconfig.json --pretty false",
+            "test", "test:e2e",
+        ])
+
+    def test_standalone_qa_explicit_skip_only_omits_units(self):
+        result, calls = self.run_gate(
+            "run_control_center_web_qa.sh", RAG_IME_SKIP_WEB_TESTS="1",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [
+            "typecheck", "exec tsc -p e2e/tsconfig.json --pretty false", "test:e2e",
+        ])
+
+
 class ElectronDevelopmentInstallTests(unittest.TestCase):
     """Run the real shell admission path, stopping at a harmless build double."""
 

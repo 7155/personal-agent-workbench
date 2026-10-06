@@ -53,7 +53,8 @@ class WorkspaceCommandCancellationTests(unittest.TestCase):
         self.assertEqual(_session_abort_surfaces(receipt)['shell']['state'], 'requested')
 
     def test_session_stop_drains_the_gateway_command_process(self):
-        with tempfile.TemporaryDirectory(prefix='paw-command-cancel-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='paw-command-cancel-') as temporary, \
+                patch.dict(os.environ, {'RAG_IME_APP_SUPPORT_DIR': str(Path(temporary) / 'support')}):
             root = Path(temporary)
             service = AgentService(db_path=root / 'state.sqlite', runtime_config=PiRuntimeConfig(enabled=False,
                                    executable=None, agent_dir=root / 'config', session_dir=root / 'sessions', logs_dir=root / 'logs'),

@@ -46,6 +46,7 @@ describe('Memory topic reading', () => {
     const list = await screen.findByRole('complementary', { name: '长期主题目录' });
     expect(within(list).getByRole('heading', { name: '长期主题 目录' })).toBeInTheDocument();
     expect(within(list).getByRole('textbox', { name: '搜索' })).toBeInTheDocument();
+    await user.click(screen.getByText(/^筛选 ·/));
     expect(within(list).getByRole('combobox', { name: '状态' })).toBeInTheDocument();
     expect(within(list).getByRole('combobox', { name: '归属' })).toBeInTheDocument();
     await user.click(await within(list).findByRole('button', { name: /输入辅助/ }));
@@ -62,6 +63,7 @@ describe('Memory topic reading', () => {
     const search = await screen.findByRole('textbox', { name: '搜索' });
     await user.type(search, '输入');
     await waitFor(() => expect(transport.requests.filter((item) => item.request.pathId === 'memory.pages').at(-1)?.request.query?.query).toBe('输入'));
+    await user.click(screen.getByText(/^筛选 ·/));
     await user.click(await screen.findByRole('combobox', { name: '状态' }));
     await user.click(await screen.findByRole('option', { name: '使用中' }));
     await user.click(await screen.findByRole('combobox', { name: '归属' }));

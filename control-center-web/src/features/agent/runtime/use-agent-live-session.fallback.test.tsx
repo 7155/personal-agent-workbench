@@ -2,7 +2,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
-import { agentProjection, useAgentLiveStore } from '../state/live-store';
+import { agentProjection, useAgentLiveStore, agentSessionAddress } from '../state/live-store';
 import { useAgentLiveSession } from './use-agent-live-session';
 
 const sessionId = 'session-recent-fallback';
@@ -18,7 +18,7 @@ const full = { ...recent, partial: false, snapshotScope: 'full',
 
 afterEach(() => {
   cleanup();
-  useAgentLiveStore.getState().clear(sessionId);
+  useAgentLiveStore.setState({ projections: {} });
 });
 
 it('automatically loads complete history when an idle recent snapshot omits the answer, including reopening', async () => {
@@ -33,11 +33,11 @@ it('automatically loads complete history when an idle recent snapshot omits the 
     await waitFor(() => expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ view: 'full', hydrated: true })));
     expect(onSnapshotError).not.toHaveBeenCalled();
     expect(onRecoveryState).toHaveBeenLastCalledWith('synced');
-    expect(agentProjection(sessionId).status).toBe('idle');
-    expect(agentProjection(sessionId).messagesById['message-assistant']).toBeDefined();
+    expect(agentProjection(agentSessionAddress(transport, sessionId)).status).toBe('idle');
+    expect(agentProjection(agentSessionAddress(transport, sessionId)).messagesById['message-assistant']).toBeDefined();
     expect(transport.activeSubscriptionCount()).toBe(1);
     hook.unmount();
-    useAgentLiveStore.getState().clear(sessionId);
+    useAgentLiveStore.getState().clear(agentSessionAddress(transport, sessionId));
   }
   expect(read.mock.calls.map(([request]) => request.query?.view ?? 'full')).toEqual(['recent', 'full', 'recent', 'full']);
 });

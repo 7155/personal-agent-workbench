@@ -48,6 +48,7 @@ from .contracts.json_schema import validate_contract, validate_json_schema
 from .db import apply_database_migrations
 from rag_ime.pi.config import PiRuntimeConfig
 from rag_ime.pi.factory import PiRuntimeDriverFactory
+from rag_ime.pi.public import public_file_name
 
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "aborted", "timed_out"})
@@ -190,6 +191,7 @@ class AgentDelegationStore:
         runs: Sequence[Mapping[str, object]],
         result_delivery_mode: str = "inline",
         causal_metadata: Mapping[str, object] | None = None,
+        parent_tool_scope: tuple[str, str] | None = None,
         created_at_ms: int | None = None,
     ) -> dict[str, object]:
         values = [dict(item) for item in runs]
@@ -205,6 +207,11 @@ class AgentDelegationStore:
         batch_id = f"subagent-batch:{uuid.uuid4()}"
         run_ids: list[str] = []
         causal = _delegation_causal_metadata(causal_metadata)
+        parent_call_id, parent_turn_id = parent_tool_scope or ('', '')
+        parent_call_id = _bounded_text(parent_call_id, maximum=512)
+        parent_turn_id = _bounded_text(parent_turn_id, maximum=512)
+        if bool(parent_call_id) != bool(parent_turn_id):
+            raise ValueError('delegation parent Tool identity must include both call and turn')
         with self._connect() as conn:
             conn.execute(
                 """
@@ -213,14 +220,15 @@ class AgentDelegationStore:
                     result_delivery_mode, depth, max_depth, causal_todo_id,
                     causal_todo_revision, causal_goal_id, causal_goal_revision,
                     room_bound, causal_room_id, causal_root_id, causal_task_id,
-                    causal_dispatch_id, causal_generation, created_at_ms, updated_at_ms
+                    causal_dispatch_id, causal_generation, created_at_ms, updated_at_ms,
+                    parent_tool_call_id, parent_turn_id
                 ) VALUES (
                     ?, ?, ?, ?,
                     'queued',
                     ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
-                    ?, ?
+                    ?, ?, ?, ?
                 )
                 """,
                 (
@@ -243,6 +251,8 @@ class AgentDelegationStore:
                     causal["generation"],
                     now,
                     now,
+                    parent_call_id,
+                    parent_turn_id,
                 ),
             )
             for ordinal, value in enumerate(values):
@@ -377,6 +387,13 @@ class AgentDelegationStore:
         # artifacts are advisory and are materialized by the worker so a
         # contended artifact lock cannot delay wait=false acknowledgement.
         return self.get_batch(batch_id, hydrate_artifacts=False)
+
+    def parent_tool_scope(self, batch_id: str) -> tuple[str, str] | None:
+        with self._connect() as conn:
+            row = conn.execute('SELECT parent_tool_call_id,parent_turn_id FROM agent_subagent_batches WHERE id=?', (batch_id,)).fetchone()
+        if row is None:
+            raise KeyError(batch_id)
+        return (str(row[0]), str(row[1])) if row[0] and row[1] else None
 
     def get_batch(
         self,
@@ -2495,6 +2512,7 @@ class AgentDelegationCoordinator:
                             "maxOutputChars": budget.max_output_chars,
                         }
                     )
+                parent_tool_scope = self._parent_progress_scope(parent_session_id, payload)
                 batch = self.store.create_batch(
                     parent_session_id=parent_session_id,
                     parent_run_id=parent_run_id,
@@ -2504,6 +2522,7 @@ class AgentDelegationCoordinator:
                     result_delivery_mode="inline" if wait else "next_turn",
                     runs=run_specs,
                     causal_metadata=causal_metadata,
+                    parent_tool_scope=parent_tool_scope,
                 )
             except Exception:
                 for child in reversed(created_sessions):
@@ -2526,7 +2545,9 @@ class AgentDelegationCoordinator:
                 raise
 
             for run in batch["runs"]:
-                self._start_run_thread(str(run["id"]))
+                self._start_run_thread(
+                    str(run["id"]), parent_tool_scope=parent_tool_scope,
+                )
         if wait:
             batch = self.wait(str(batch["id"]))
         return {
@@ -3374,20 +3395,45 @@ class AgentDelegationCoordinator:
             "toolProfileVersion": session["toolProfileVersion"],
         }
 
-    def _start_run_thread(self, run_id: str) -> None:
+    def _parent_progress_scope(
+        self, parent_session_id: str, payload: Mapping[str, object],
+    ) -> tuple[str, str] | None:
+        # The gateway supplies this id. Bind it to a real event in this Session,
+        # never to the current turn or a task/template guess. Missing replay
+        # evidence leaves the existing detached receipt unchanged.
+        call_id = str(payload.get("_toolCallId") or "")
+        if not call_id:
+            return None
+        events, _ = self.events.replay(parent_session_id)
+        for event in reversed(events):
+            if (
+                event.event_type == "tool_started"
+                and event.turn_id
+                and event.payload.get("toolName") == "agents"
+                and event.payload.get("toolCallId") == call_id
+            ):
+                return call_id, event.turn_id
+        return None
+
+    def _start_run_thread(
+        self, run_id: str, *, parent_tool_scope: tuple[str, str] | None = None,
+    ) -> None:
         with self._lock:
             if self._closed or run_id in self._threads:
                 return
             thread = threading.Thread(
                 target=self._run_task,
                 args=(run_id,),
+                kwargs={"parent_tool_scope": parent_tool_scope},
                 name=f"rag-ime-{run_id[-8:]}",
                 daemon=True,
             )
             self._threads[run_id] = thread
             thread.start()
 
-    def _run_task(self, run_id: str) -> None:
+    def _run_task(
+        self, run_id: str, *, parent_tool_scope: tuple[str, str] | None = None,
+    ) -> None:
         try:
             run = self.store.start_run(run_id)
         except ValueError:
@@ -3397,6 +3443,8 @@ class AgentDelegationCoordinator:
         batch = self.store.get_batch(str(run["batchId"]))
         child_session_id = str(run["childSessionId"])
         parent_session_id = str(batch["parentSessionId"])
+        if parent_tool_scope is None:
+            parent_tool_scope = self.store.parent_tool_scope(str(batch['id']))
         terminal = threading.Event()
         forced = threading.Event()
         terminal_error = ""
@@ -3553,6 +3601,10 @@ class AgentDelegationCoordinator:
                         tool_count=base_tool_count + len(tool_ids),
                         total_tokens=total_tokens,
                     )
+                elif event.event_type == "tool_finished":
+                    # A successful start is not a completed read. Retain the
+                    # bounded finish receipt before mirroring it to the parent.
+                    persist_runtime_event(event)
                 elif event.event_type == "tool_progress":
                     summary = _bounded_text(
                         event.payload.get("summary")
@@ -3664,6 +3716,14 @@ class AgentDelegationCoordinator:
                     )
                 if not terminal.is_set():
                     check_usage_budget(event)
+                    if parent_tool_scope is not None and event.event_type in {
+                        "tool_started", "tool_finished", "user_input_required",
+                    }:
+                        self._publish_parent_progress(
+                            parent_session_id, batch, run, "子 Agent 进度已更新",
+                            parent_tool_scope=parent_tool_scope,
+                            source_event=event,
+                        )
 
         remove_observer = self.events.add_observer(observe)
         context = dict(
@@ -3706,7 +3766,10 @@ class AgentDelegationCoordinator:
         )
         with self._lock:
             self._active_runs[run_id] = active_run
-        self._publish_parent_progress(parent_session_id, batch, run, "子 Agent 已开始")
+        self._publish_parent_progress(
+            parent_session_id, batch, run, "子 Agent 已开始",
+            parent_tool_scope=parent_tool_scope,
+        )
         state = "failed"
         error = ""
         result: dict[str, object] = {}
@@ -3946,6 +4009,7 @@ class AgentDelegationCoordinator:
                         else "子 Agent 未完成；失败报告已返回，等待上级继续决策或恢复"
                     )
                 ),
+                parent_tool_scope=parent_tool_scope,
             )
             self._record_retained_child_session(run_id, child_session_id)
             if auto_retry:
@@ -4182,6 +4246,9 @@ class AgentDelegationCoordinator:
         batch: Mapping[str, object],
         run: Mapping[str, object],
         summary: str,
+        *,
+        parent_tool_scope: tuple[str, str] | None = None,
+        source_event: AgentEventEnvelope | None = None,
     ) -> None:
         causal = batch.get("causalMetadata")
         if isinstance(causal, Mapping) and bool(causal.get("roomBound")):
@@ -4217,6 +4284,11 @@ class AgentDelegationCoordinator:
                 "todoTask": run["todoTask"],
                 "todoPhase": run["todoPhase"],
                 "requiresParentTodoUpdate": run["state"] not in {"queued", "running"},
+                **({
+                    "parentToolCallId": parent_tool_scope[0],
+                    "parentTurnId": parent_tool_scope[1],
+                    "childProgress": _subagent_progress_payload(run, source_event),
+                } if parent_tool_scope is not None else {}),
                 **(
                     {
                         "parentDecisionRequired": bool(parent_decision.get("required")),
@@ -4844,11 +4916,59 @@ def _run_contract_invalid(run: Mapping[str, object]) -> bool:
     )
 
 
+def _subagent_progress_payload(
+    run: Mapping[str, object], event: AgentEventEnvelope | None,
+) -> dict[str, object]:
+    """Operational nouns only; never copy a child message, args or output."""
+    state = str(run["state"])
+    first_line = next((line.strip() for line in str(run.get("task") or "").splitlines() if line.strip()), "")
+    task_label = " ".join(first_line.split())
+    if len(task_label) > 80:
+        task_label = task_label[:79].rstrip() + "…"
+    source = event.payload if event is not None else {}
+    public = source.get("publicResult")
+    public = public if isinstance(public, Mapping) else {}
+    result = run.get("result")
+    result = result if isinstance(result, Mapping) else {}
+    contract = run.get("contract")
+    contract = contract if isinstance(contract, Mapping) else {}
+    phase = "terminal" if state in _TERMINAL_STATES else "running"
+    if event is not None:
+        if event.event_type in {"tool_started", "tool_finished"}:
+            phase = event.event_type
+        elif event.event_type == "user_input_required":
+            phase = "running" if source.get("resolutionState") in {"resolved", "cancelled"} else "waiting"
+    return {
+        "runId": str(run["id"]),
+        "childSessionId": str(run["childSessionId"]),
+        "ordinal": int(run["ordinal"]),
+        "templateId": str(run["templateId"]),
+        "taskLabel": task_label,
+        "state": state,
+        "phase": phase,
+        "sourceEventId": event.event_id if event is not None else "",
+        "sourceEventType": event.event_type if event is not None else state,
+        "updatedAtMs": event.created_at_ms if event is not None else int(run["updatedAtMs"]),
+        "toolName": _bounded_text(source.get("toolName"), maximum=120),
+        "toolCallId": _bounded_text(source.get("toolCallId"), maximum=512),
+        "fileName": public_file_name(str(public.get("fileName") or "")),
+        "isError": source.get("isError") is True,
+        "contractStatus": str(contract.get("status") or ""),
+        "deliveryStatus": str(result.get("deliveryStatus") or ""),
+        "verificationStatus": str(result.get("verificationStatus") or ""),
+        "failureReason": "output_budget" if run.get("error") == "output budget exceeded" else "",
+    }
+
+
 def _safe_runtime_artifact_payload(event: AgentEventEnvelope) -> dict[str, object]:
     if event.event_type == "text_delta":
         return {"characterCount": len(str(event.payload.get("delta") or ""))}
-    if event.event_type == "tool_started":
+    if event.event_type in {"tool_started", "tool_finished"}:
+        public = event.payload.get("publicResult")
+        public = public if isinstance(public, Mapping) else {}
         return {
+            "fileName": public_file_name(str(public.get("fileName") or "")),
+            "isError": event.payload.get("isError") is True,
             "toolName": str(event.payload.get("toolName") or "")[:120],
             "toolCallId": str(
                 event.payload.get("toolCallId") or event.payload.get("callId") or ""

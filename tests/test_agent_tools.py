@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from rag_ime.agent_background_jobs import AgentBackgroundJobService
+from rag_ime.agent_background_jobs import AgentBackgroundJobError, AgentBackgroundJobService
 from rag_ime.agent_context_runtime import AgentContextRuntime
 from rag_ime.agent_execution_policy import ROOM_UNRESTRICTED_EXECUTION_MODE
 from rag_ime.agent_media import AgentMediaStore
@@ -3256,6 +3256,19 @@ class ControlToolGatewayTests(unittest.TestCase):
                 approved=True,
                 payload_sha256=approval["payloadSha256"],
             )
+            if not os.access(background_jobs.workspace_harness.sandbox_executable, os.X_OK):
+                # Approval does not manufacture a managed execution capability.
+                with patch("rag_ime.agent_workspace.subprocess.Popen",
+                           side_effect=AssertionError("managed launch must fail before spawn")) as popen:
+                    with self.assertRaisesRegex(AgentBackgroundJobError, "macOS command harness is unavailable"):
+                        gateway.apply_approval(decided)
+                popen.assert_not_called()
+                failed = background_jobs.list(str(coordinator["id"]))["items"]
+                self.assertEqual(len(failed), 1)
+                self.assertEqual(failed[0]["status"], "failed")
+                self.assertIn("macOS command harness is unavailable", failed[0]["error"])
+                self.assertTrue(any(args[1] == "background_job_failed" for args, _ in events))
+                return
             receipt = gateway.apply_approval(decided)
             job_id = receipt["job"]["jobId"]
             deadline = time.monotonic() + 5

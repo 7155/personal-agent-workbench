@@ -3250,6 +3250,7 @@ class ControlToolGateway:
             and item["disclosure"].get("effective") == "enabled"
         }
         active_room_facilitator = self._is_active_room_facilitator(session)
+        primary_task = _is_primary_task_session(session)
         manifests: list[Mapping[str, object]] = []
         for manifest in manifest_items:
             tool_id = str(manifest["id"])
@@ -3258,17 +3259,17 @@ class ControlToolGateway:
                 tool_id == "sandbox"
                 and self._managed_extension_enabled("vertical-agent-sandbox")
             )
-            audited_goal_for_facilitator = (
-                tool_id == "agent_goal" and active_room_facilitator
+            audited_product_goal = (
+                tool_id == "agent_goal" and (active_room_facilitator or primary_task)
             )
             if (
                 tool_id in PI_PACKAGE_OWNED_CONTROL_TOOL_IDS
-                and not audited_goal_for_facilitator
+                and not audited_product_goal
             ):
                 # Migration storage remains readable through the legacy
                 # management APIs.  The native Package owns transcript-local
-                # workflow state; only a real Room Facilitator also receives
-                # the distinct evidence-audited Product Goal capability.
+                # workflow state. Room Facilitators and explicitly delegated
+                # primary tasks receive the existing audited Product Goal.
                 continue
             if (
                 spec.get("runtimeProjected") is False
@@ -3322,7 +3323,7 @@ class ControlToolGateway:
             }
             if (
                 spec.get("modelVisible") is False
-                and not audited_goal_for_facilitator
+                and not audited_product_goal
                 and not package_owned_connector
                 and not direct_workspace
             ):
@@ -3495,6 +3496,10 @@ class ControlToolGateway:
         )
         for spec in _TOOL_SPECS:
             operations = list(spec["operations"])
+            if session is not None and str(spec["id"]) == "agent_goal" and _is_primary_task_session(session):
+                # The user already fixed this task's goal and scope. The model
+                # may inspect or settle it, not rewrite its authorization.
+                operations = [operation for operation in operations if operation in {"list", "complete"}]
             operation_risks = {
                 operation: str(dict(spec.get("operationRisks") or {}).get(operation) or "R0")
                 for operation in operations
@@ -4619,6 +4624,8 @@ class ControlToolGateway:
         session_id = _bounded_text(args.get("_sessionId"), maximum=240)
         if not session_id:
             raise ValueError("agent goal session is missing")
+        if _is_primary_task_session(self.sessions.get(session_id)) and operation not in {"list", "complete"}:
+            raise ValueError("primary task goal is user-owned; only read and evidence-backed completion are available")
         current = self.sessions.agent_goal(session_id)
         if operation == "list":
             configured = current.get("configured") is True
@@ -11534,3 +11541,11 @@ def _model_status_summary(payload: Mapping[str, object]) -> str:
     if predictor_ready:
         return "本地预测已就绪，深度知识模型当前不可用"
     return "模型运行链路当前未就绪"
+
+
+def _is_primary_task_session(session: Mapping[str, object]) -> bool:
+    metadata = session.get("metadata")
+    return (isinstance(metadata, Mapping) and metadata.get("primaryTask") is True
+            and bool(str(metadata.get("assistantId") or "").strip())
+            and session.get("sessionKind") == "conversation"
+            and session.get("runtimeEngine") == "classic")

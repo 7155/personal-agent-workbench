@@ -112,6 +112,7 @@ export function BrowserOmnibox({
       const activeShell = active.closest('.paw-window-shell');
       if (activeShell && activeShell !== ownShell) return;
       if (active.matches('input, textarea, select, [contenteditable="true"]')) return;
+      if (active.matches('[role="tab"]')) return;
     }
     input.focus();
   }, [committed, tabKey]);

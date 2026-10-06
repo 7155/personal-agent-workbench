@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   WorkDocumentCommandV1,
@@ -20,6 +21,14 @@ const DOCUMENT_ID = `workdoc_${'a'.repeat(32)}`;
 const AUTHORITY_ID = 'session-authority-1';
 
 describe('PawWorkbenchDocumentLifecycle', () => {
+  it('accepts an approval-session read after effects reconnect', async () => {
+    const transport = lifecycleTransport({ 'agent.sessions.list': { ok: true, items: [{ id: 'approval-session', title: '审批对话', status: 'active', updatedAtMs: 2 }] } });
+    render(<StrictMode><PawWorkbenchDocumentLifecycle {...baseProps({ current: workDocument(), transport })} /></StrictMode>);
+    await userEvent.click(screen.getByRole('button', { name: '永久清除…' }));
+    expect(await screen.findByRole('combobox', { name: '接收审批的对话' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '永久清除，不是归档' })).toBeDisabled();
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.sessions.list')).toBe(true);
+  });
   it('retries the approval-session read in place without preparing or applying erase', async () => {
     let attempts = 0;
     const transport = lifecycleTransport({ 'agent.sessions.list': () => {

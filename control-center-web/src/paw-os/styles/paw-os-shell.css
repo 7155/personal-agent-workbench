@@ -103,6 +103,19 @@
   -webkit-backdrop-filter: var(--paw-chrome-blur);
   backdrop-filter: var(--paw-chrome-blur);
 }
+
+.paw-desktop-root .paw-menu-bar :is(button, .paw-background-activity__trigger, .paw-notification-center__trigger) {
+  min-height: var(--paw-menu-control-size, 32px);
+  min-width: var(--paw-menu-control-size, 32px);
+}
+
+@media (max-width: 820px) {
+  :root, .paw-desktop-root { --paw-menu-h: 44px; --paw-menu-control-size: 40px; }
+}
+
+@media (max-width: 480px) {
+  :root, .paw-desktop-root { --paw-menu-h: 48px; --paw-menu-control-size: 44px; }
+}
 /* Legibility scrim: one static gradient layered over the shared veil, densest
  * at the top edge where the wallpaper's bright sky sits, easing to nothing
  * before the hairline. The bar keeps its material translucency — no solid
@@ -667,7 +680,7 @@
 }
 .paw-desktop-root .paw-traffic-lights > button::before {
   position: absolute;
-  inset: 6px;
+  inset: calc((var(--paw-window-control-size) - 12px) / 2);
   border: 1.5px solid rgb(23 26 33 / .28);
   border-radius: 50%;
   background: transparent;

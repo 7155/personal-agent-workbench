@@ -86,6 +86,10 @@ class AgentBackgroundJobIdempotencyTests(unittest.TestCase):
                 "cancelled",
                 "orphaned",
             }:
+                # Initial commands must succeed before replay/conflict checks;
+                # a failed launcher must never count as successful execution.
+                self.assertEqual(job["status"], "completed", job)
+                self.assertEqual(job["exitCode"], 0, job)
                 return job
             time.sleep(0.02)
         self.fail(f"background job {job_id} did not become terminal")

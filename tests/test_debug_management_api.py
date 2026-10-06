@@ -177,6 +177,9 @@ class DebugManagementApiTests(unittest.TestCase):
         )
         self._pinyin_env = {key: os.environ.get(key) for key in self._pinyin_env_keys}
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-ime-debug-management-")
+        self._app_support_env = patch.dict(os.environ, {"RAG_IME_APP_SUPPORT_DIR": str(Path(self.tmp.name) / "support")})
+        self._app_support_env.start()
+        self.addCleanup(self._app_support_env.stop)
         self.db_path = Path(self.tmp.name) / "rag-ime.sqlite"
         self.core = LocalSqliteCoreClient(self.db_path)
         self.core.initialize()
@@ -1350,6 +1353,41 @@ class DebugManagementApiTests(unittest.TestCase):
             )
 
         self.assertEqual(evidence, ())
+
+    def test_knowledge_workbench_rejected_dates_keep_semantic_retrieval(self) -> None:
+        for question in (
+            "查找 2026年2月30日前的记录",
+            "查找 2026年7月9999999999日前 的记录",
+            "比较 2026-07-130 至 2026-03-02 的记录",
+        ):
+            with self.subTest(question=question), patch(
+                "rag_ime.debug_server.retrieve_hybrid_rag_candidates",
+                return_value={"candidates": [], "hits": []},
+            ) as retrieve, patch.object(self.service, "_temporal_knowledge_evidence") as temporal:
+                evidence = self.service._knowledge_workbench_evidence(
+                    KnowledgeWorkbenchRequest(question=question, mode="recall"),
+                )
+
+                self.assertEqual(evidence, ())
+                temporal.assert_not_called()
+                retrieve.assert_called_once()
+                self.assertEqual(retrieve.call_args.args[1].query_text, question)
+
+    def test_knowledge_workbench_rejected_range_keeps_independent_date(self) -> None:
+        question = "比较 2026-02-30 到 2026-03-02 和 2026-07-13 的记录"
+        with patch("rag_ime.debug_server.retrieve_hybrid_rag_candidates") as retrieve, patch.object(
+            self.service, "_temporal_knowledge_evidence", return_value=(),
+        ) as temporal:
+            evidence = self.service._knowledge_workbench_evidence(
+                KnowledgeWorkbenchRequest(question=question, mode="recall"),
+            )
+
+        self.assertEqual(evidence, ())
+        retrieve.assert_not_called()
+        temporal.assert_called_once()
+        parsed = temporal.call_args.args[1]
+        self.assertEqual([item.label for item in parsed.ranges], ["2026-07-13"])
+        self.assertEqual(parsed.cleaned_query, "比较 2026-02-30 到 2026-03-02 和 的记录")
 
     def test_knowledge_workbench_today_query_reads_today_timeline_without_keyword_match(self) -> None:
         event_token = self.core.record_event(

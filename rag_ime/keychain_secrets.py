@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 import subprocess
 
 
@@ -8,6 +9,11 @@ MODEL_KEYCHAIN_SERVICE = "com.rag-ime.model-provider"
 MODEL_KNOWLEDGE_ACCOUNT = "knowledge-api-key"
 MODEL_INSTANT_ACCOUNT = "instant-api-key"
 TYPESAFE_ACCOUNT = "typesafe-api-key"
+
+
+def keychain_storage_available() -> bool:
+    """Report backend capability without reading any credential."""
+    return sys.platform == "darwin" and bool(shutil.which("security"))
 
 
 def read_keychain_secret(service: str, account: str) -> str:

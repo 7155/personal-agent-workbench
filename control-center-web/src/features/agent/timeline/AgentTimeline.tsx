@@ -46,7 +46,7 @@ import {
   buildAgentTurnWorkModel,
   type AgentTurnSequenceEntry,
 } from './agent-turn-work-model';
-import { useAgentLiveStore } from '../state/live-store';
+import { agentProjectionKey, agentSessionAddress, selectAgentProjection, useAgentLiveStore } from '../state/live-store';
 import { MotionActivityBoundary } from '@/design/motion';
 import { isAgentNetworkInterruption, publicAgentErrorText } from '../public-error';
 import { hasUndurableAgentAttachments } from '../optimistic-attachments';
@@ -402,25 +402,25 @@ function fxClock(atMs: number): string {
 /* Where each Session was last read. `transcript-follow.ts` owns whether the
    reader is following the end; this owns where they were when they were not.
    Switching to another Session and back landed on the newest turn regardless,
-   because Virtuoso remounts on `key={sessionId}` and opened at `LAST`. */
+   because Virtuoso remounts per scoped Session and opened at `LAST`. */
 class TimelineAnchorMemory extends Map<string, TranscriptAnchor> {
-  override get(key: string) {
+  override get(key: string, recoveryKey = '') {
     const cached = super.get(key);
-    if (cached || !key.startsWith('paw.workspace.')) return cached;
+    if (cached || !recoveryKey) return cached;
     try {
-      const value = JSON.parse(localStorage.getItem(key + ':anchor') || 'null');
+      const value = JSON.parse(localStorage.getItem(recoveryKey + ':anchor') || 'null');
       if (value && typeof value.rowKey === 'string' && typeof value.conversationId === 'string'
         && Number.isInteger(value.rowIndex) && Number.isFinite(value.offsetFromViewportTopPx)
         && Number.isFinite(value.fallbackScrollTop)) { super.set(key, value); return value as TranscriptAnchor; }
     } catch { /* Keep normal latest-message fallback. */ }
     return undefined;
   }
-  override set(key: string, value: TranscriptAnchor) {
-    if (key.startsWith('paw.workspace.')) try { localStorage.setItem(key + ':anchor', JSON.stringify(value)); } catch { /* Session remains readable. */ }
+  override set(key: string, value: TranscriptAnchor, recoveryKey = '') {
+    if (recoveryKey) try { localStorage.setItem(recoveryKey + ':anchor', JSON.stringify(value)); } catch { /* Session remains readable. */ }
     return super.set(key, value);
   }
-  override delete(key: string) {
-    if (key.startsWith('paw.workspace.')) try { localStorage.removeItem(key + ':anchor'); } catch { /* Session remains readable. */ }
+  override delete(key: string, recoveryKey = '') {
+    if (recoveryKey) try { localStorage.removeItem(recoveryKey + ':anchor'); } catch { /* Session remains readable. */ }
     return super.delete(key);
   }
 }
@@ -550,7 +550,12 @@ export function AgentTimeline({
   leadingContent?: ReactNode;
 }) {
   const anchorTransport = useOptionalControlTransport();
-  const anchorKey = anchorTransport ? recoveryScope(anchorTransport, `session:${sessionId}`) || sessionId : sessionId;
+  const address = agentSessionAddress(anchorTransport, sessionId);
+  const projectionKey = agentProjectionKey(address);
+  const anchorKey = projectionKey;
+  // Durable recovery retains its existing connection identity across reloads;
+  // live anchor memory follows the transport object's projection lifetime.
+  const anchorRecoveryKey = anchorTransport ? recoveryScope(anchorTransport, `session:${sessionId}`) : '';
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const followStateRef = useRef<TranscriptFollowState>(FOLLOWING_TRANSCRIPT);
   const publishedFollowRef = useRef<TranscriptFollowState>(FOLLOWING_TRANSCRIPT);
@@ -573,7 +578,7 @@ export function AgentTimeline({
       following: next.mode === 'following',
       unseenUpdates: next.unseenUpdates,
     });
-  }, []);
+  }, [followStateRef, publishedFollowRef]);
   const [timelineScroller, setTimelineScroller] = useState<HTMLElement | null>(null);
   const [activeTargetId, setActiveTargetId] = useState('');
   const [scrolling, setScrolling] = useState(false);
@@ -593,12 +598,12 @@ export function AgentTimeline({
      to wherever the keyboard user last was. */
   const [navFocusIndex, setNavFocusIndex] = useState(-1);
   const turnOrder = useAgentLiveStore(useShallow((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     if (!projection) return emptyIds;
     return visibleAgentTurnIds(projection, includeRoomPublicPosts);
   }));
   const hasActiveTurn = useAgentLiveStore((state) => turnOrder.some((turnId) => {
-    const status = state.projections[sessionId]?.turnsById[turnId]?.status;
+    const status = selectAgentProjection(state, address)?.turnsById[turnId]?.status;
     return status === 'queued' || status === 'running' || status === 'waiting';
   }));
   const memoryRecallReceipts = useMemoryRecallReceipts(sessionId, turnOrder, hasActiveTurn, active);
@@ -606,7 +611,7 @@ export function AgentTimeline({
     (visibleRange.startIndex + visibleRange.endIndex) / 2,
   );
   const turnCreatedAtList = useAgentLiveStore(useShallow((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     if (!projection) return emptyTurnTimes;
     return turnOrder.map((turnId) => projection.turnsById[turnId]?.createdAtMs ?? 0);
   }));
@@ -619,12 +624,12 @@ export function AgentTimeline({
     [activeTurnIndex, showConversationNavigation, turnOrder.length],
   );
   const markerKinds = useAgentLiveStore(useShallow((state) => markerIndexes.map((index) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     const turnId = turnOrder[index];
     return agentTurnMarkerKind(projection, turnId);
   })));
   const markerUserPreviews = useAgentLiveStore(useShallow((state) => markerIndexes.map((index) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     const turnId = turnOrder[index];
     const message = logicalRetryRootUserIds(projection, turnId ?? '')
       .map((messageId) => projection?.messagesById[messageId])
@@ -632,13 +637,13 @@ export function AgentTimeline({
     return messagePreview(message);
   })));
   const markerAssistantPreviews = useAgentLiveStore(useShallow((state) => markerIndexes.map((index) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     const turnId = turnOrder[index];
     const turn = projection?.turnsById[turnId];
     const messages = turn?.messageIds
       .map((messageId) => projection?.messagesById[messageId])
       .filter((item): item is AgentMessageProjection => (
-        Boolean(item)
+        item !== undefined
         && item.status !== 'streaming'
         && isRenderableAssistantMessage(item)
       )) ?? [];
@@ -655,9 +660,9 @@ export function AgentTimeline({
     () => ({ leadingContent }),
     [leadingContent],
   );
-  const turnOrderRef = useRef(turnOrder);
+  const turnOrderRef = useMemo(() => ({ address, current: [] as string[] }), [address]);
   turnOrderRef.current = turnOrder;
-  const scrollerRef = useRef<HTMLElement | null>(null);
+  const scrollerRef = useMemo(() => ({ address, current: null as HTMLElement | null }), [address]);
   scrollerRef.current = timelineScroller;
 
   /** Remember the topmost turn the reader can see, by turn id and offset. */
@@ -669,19 +674,19 @@ export function AgentTimeline({
       rows: renderedTurnGeometry(scroller, turnOrderRef.current),
       scrollTop: scroller.scrollTop,
     });
-    if (anchor) timelineAnchorMemory.set(anchorKey, anchor);
-  }, [sessionId, anchorKey]);
+    if (anchor) timelineAnchorMemory.set(anchorKey, anchor, anchorRecoveryKey);
+  }, [sessionId, anchorKey, anchorRecoveryKey, scrollerRef, turnOrderRef]);
 
   /* Where this Session was last read. Resolved once per Session: Virtuoso
      reads initialTopMostItemIndex at mount only, and the component renders no
      Virtuoso until there is at least one turn. */
   const restoredStart = useMemo(() => {
-    const anchor = turnOrder.length > 0 ? timelineAnchorMemory.get(anchorKey) : undefined;
+    const anchor = turnOrder.length > 0 ? timelineAnchorMemory.get(anchorKey, anchorRecoveryKey) : undefined;
     return anchor ? resolveAnchorRowIndex({ anchor, rowKeys: turnOrder }) : null;
   // Deliberately not recomputed per append: this is a mount-time seed, not
   // live state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, anchorKey, turnOrder.length > 0]);
+  }, [address, anchorKey, anchorRecoveryKey, turnOrder.length > 0]);
   const initialTopMostItemIndex = useMemo(
     () => (restoredStart
       ? { index: restoredStart.index, align: 'start' as const, offset: restoredStart.offsetPx }
@@ -698,25 +703,26 @@ export function AgentTimeline({
       : { type: 'conversation-switched' });
     const lastIndex = Math.max(0, turnOrder.length - 1);
     setVisibleRange({ startIndex: lastIndex, endIndex: lastIndex });
-  }, [dispatchFollow, restoredStart, sessionId]);
+    setActiveTargetId('');
+  }, [address, dispatchFollow, restoredStart]);
 
   useEffect(() => () => {
     // Leaving this Session: remember the reading position unless the reader
     // was at the end, where "latest" is the position worth restoring. Keyed on
-    // the Session alone so a mid-Session re-render never discards the memory.
+    // the scoped Session so a mid-Session re-render never discards the memory.
     if (!turnOrderRef.current.length || !scrollerRef.current) return;
-    if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(anchorKey);
+    if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(anchorKey, anchorRecoveryKey);
     else captureAnchor();
-  }, [captureAnchor, anchorKey]);
+  }, [captureAnchor, anchorKey, anchorRecoveryKey, followStateRef, scrollerRef, turnOrderRef]);
   useEffect(() => {
-    const save = () => { if (!turnOrderRef.current.length || !scrollerRef.current) return; if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(anchorKey); else captureAnchor(); };
+    const save = () => { if (!turnOrderRef.current.length || !scrollerRef.current) return; if (followStateRef.current.mode === 'following') timelineAnchorMemory.delete(anchorKey, anchorRecoveryKey); else captureAnchor(); };
     window.addEventListener('pagehide', save);
     return () => window.removeEventListener('pagehide', save);
-  }, [anchorKey, captureAnchor]);
+  }, [anchorKey, anchorRecoveryKey, captureAnchor, followStateRef, scrollerRef, turnOrderRef]);
   const restoredGeometryRef = useRef('');
   useEffect(() => {
     if (!timelineScroller || restoredGeometryRef.current === anchorKey) return;
-    const saved = timelineAnchorMemory.get(anchorKey);
+    const saved = timelineAnchorMemory.get(anchorKey, anchorRecoveryKey);
     if (!saved) return;
     const index = turnOrder.indexOf(saved.rowKey);
     if (index < 0) return; // The recent snapshot may arrive in several batches.
@@ -744,7 +750,7 @@ export function AgentTimeline({
       window.cancelAnimationFrame(frame);
       for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown']) timelineScroller.removeEventListener(event, stop);
     };
-  }, [anchorKey, dispatchFollow, timelineScroller, turnOrder]);
+  }, [anchorKey, anchorRecoveryKey, dispatchFollow, timelineScroller, turnOrder]);
   const handleScrollerRef = useCallback((scroller: HTMLElement | Window | null) => {
     setTimelineScroller(scroller instanceof HTMLElement ? scroller : null);
   }, []);
@@ -833,7 +839,7 @@ export function AgentTimeline({
       window.clearTimeout(userScrollEndTimer);
       window.cancelAnimationFrame(anchorFrame);
     };
-  }, [captureAnchor, dispatchFollow, timelineScroller]);
+  }, [captureAnchor, dispatchFollow, followStateRef, timelineScroller]);
   useEffect(() => {
     if (!timelineScroller) return;
     let pendingFrame = 0;
@@ -855,10 +861,10 @@ export function AgentTimeline({
     const contentCount = (projection: AgentProjectionState | undefined) => (
       projection ? projection.messageOrder.length + projection.activityOrder.length : 0
     );
-    let previousCount = contentCount(useAgentLiveStore.getState().projections[sessionId]);
+    let previousCount = contentCount(selectAgentProjection(useAgentLiveStore.getState(), address));
     const unsubscribe = useAgentLiveStore.subscribe((state, previousState) => {
-      const projection = state.projections[sessionId];
-      if (projection === previousState.projections[sessionId]) return;
+      const projection = selectAgentProjection(state, address);
+      if (projection === selectAgentProjection(previousState, address)) return;
       const count = contentCount(projection);
       const appended = count - previousCount;
       previousCount = count;
@@ -869,7 +875,7 @@ export function AgentTimeline({
       unsubscribe();
       window.cancelAnimationFrame(pendingFrame);
     };
-  }, [dispatchFollow, sessionId, timelineScroller]);
+  }, [address, dispatchFollow, followStateRef, timelineScroller]);
   const handleAtBottomChange = useCallback((atBottom: boolean) => {
     // Virtuoso also emits this while a streaming row is being measured or
     // reconciled. That passive layout signal cannot prove the reader returned
@@ -877,7 +883,7 @@ export function AgentTimeline({
     if (atBottom && followStateRef.current.mode === 'following') {
       dispatchFollow({ type: 'reached-end' });
     }
-  }, [dispatchFollow]);
+  }, [dispatchFollow, followStateRef]);
   useEffect(() => {
     if (scrollToLatestRequest <= 0 || turnOrder.length === 0) return;
     /* A live selection in the transcript is a claim on the current viewport.
@@ -894,10 +900,10 @@ export function AgentTimeline({
       align: 'end',
       behavior: 'smooth',
     });
-  }, [dispatchFollow, scrollToLatestRequest, timelineScroller, turnOrder.length]);
+  }, [address, dispatchFollow, scrollToLatestRequest, timelineScroller, turnOrder.length]);
   useEffect(() => {
     if (!jumpRequest?.messageId) return;
-    const projection = useAgentLiveStore.getState().projections[sessionId];
+    const projection = selectAgentProjection(useAgentLiveStore.getState(), address);
     const sourceTurnId = projection?.turnOrder.find(
       (turnId) => projection.turnsById[turnId]?.messageIds.includes(jumpRequest.messageId),
     );
@@ -913,7 +919,7 @@ export function AgentTimeline({
     let focusTimer = 0;
     let clearTimer = 0;
     const focusWhenMounted = () => {
-      const target = document.querySelector<HTMLElement>(`[data-agent-message-id="${cssEscape(jumpRequest.messageId)}"]`);
+      const target = timelineScroller?.querySelector<HTMLElement>(`[data-agent-message-id="${cssEscape(jumpRequest.messageId)}"]`);
       if (target) {
         target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
         target.focus({ preventScroll: true });
@@ -929,7 +935,7 @@ export function AgentTimeline({
       window.clearTimeout(focusTimer);
       window.clearTimeout(clearTimer);
     };
-  }, [dispatchFollow, jumpRequest?.messageId, jumpRequest?.requestId, sessionId]);
+  }, [address, dispatchFollow, jumpRequest?.messageId, jumpRequest?.requestId, timelineScroller]);
   if (turnOrder.length === 0) {
     if (loading) {
       return (
@@ -966,7 +972,7 @@ export function AgentTimeline({
       <SettledTurnAnnouncer sessionId={sessionId} />
       <Virtuoso
         ref={virtuosoRef}
-        key={sessionId}
+        key={projectionKey}
         data={turnOrder}
         computeItemKey={(_index, turnId) => turnId}
         // Open the latest turn below the workspace header, not against the
@@ -1171,22 +1177,25 @@ export const AgentTurn = memo(function AgentTurn({
   memoryRecallReceipt?: MemoryRecallReceiptView;
   showWorkingIndicator?: boolean;
 }) {
-  const turn = useAgentLiveStore((state) => state.projections[sessionId]?.turnsById[turnId]);
+  const transport = useOptionalControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
+  const projectionKey = agentProjectionKey(address);
+  const turn = useAgentLiveStore((state) => selectAgentProjection(state, address)?.turnsById[turnId]);
   const paused = useAgentLiveStore((state) => {
-    const recovery = state.projections[sessionId]?.durableRecovery;
+    const recovery = selectAgentProjection(state, address)?.durableRecovery;
     return recovery?.paused === true && recovery.activeTurn?.turnId === turnId;
   });
   const stopping = useAgentLiveStore((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     return projection?.status === 'aborting'
       && projection.turnOrder.at(-1) === turnId;
   });
   const userIds = useAgentLiveStore(useShallow((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     return logicalRetryRootUserIds(projection, turnId);
   }));
   const assistantMessages = useAgentLiveStore(useShallow((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     return visibleAssistantMessages((projection?.turnsById[turnId]?.messageIds ?? [])
       .map((id) => projection?.messagesById[id])
       .filter((message): message is AgentMessageProjection => (
@@ -1194,22 +1203,24 @@ export const AgentTurn = memo(function AgentTurn({
       )), includeRoomPublicPosts);
   }));
   const inlineUserMessages = useAgentLiveStore(useShallow((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     return logicalRetryRootUserIds(projection, turnId)
       .slice(1)
       .map((id) => projection?.messagesById[id])
       .filter((message): message is AgentMessageProjection => Boolean(message));
   }));
   const projectedActivities = useAgentLiveStore(useShallow((state) => {
-    const projection = state.projections[sessionId];
-    return (projection?.turnsById[turnId]?.activityIds ?? []).map((id) => projection?.activitiesById[id]).filter(Boolean);
+    const projection = selectAgentProjection(state, address);
+    return (projection?.turnsById[turnId]?.activityIds ?? [])
+      .map((id) => projection?.activitiesById[id])
+      .filter((activity): activity is AgentActivityProjection => activity !== undefined);
   }));
   // Preserve native evidence in the store. Only the presentation of unfinished
   // work waits while the owning Durable input is explicitly paused.
   const activities = useMemo(() => paused ? projectedActivities.map(activity => activity.status === 'running'
     ? { ...activity, status: 'waiting' as const } : activity) : projectedActivities, [paused, projectedActivities]);
   const admissionConfirmationState = useAgentLiveStore((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     for (const messageId of projection?.turnsById[turnId]?.messageIds ?? []) {
       const message = projection?.messagesById[messageId];
       if (
@@ -1224,7 +1235,7 @@ export const AgentTurn = memo(function AgentTurn({
   });
   const nonRetryableAdmission = Boolean(admissionConfirmationState);
   const hasUndurableAttachments = useAgentLiveStore((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     return (projection?.turnsById[turnId]?.messageIds ?? []).some((messageId) => {
       const message = projection?.messagesById[messageId];
       return message?.role === 'user'
@@ -1233,7 +1244,7 @@ export const AgentTurn = memo(function AgentTurn({
   });
   const retryUnsafe = nonRetryableAdmission || hasUndurableAttachments;
   const hasUnacceptedUserMessage = useAgentLiveStore((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     return (projection?.turnsById[turnId]?.messageIds ?? []).some((messageId) => {
       const message = projection?.messagesById[messageId];
       return message?.role === 'user' && (
@@ -1243,15 +1254,15 @@ export const AgentTurn = memo(function AgentTurn({
     });
   });
   const latestTurnId = useAgentLiveStore((state) => (
-    state.projections[sessionId]?.turnOrder.at(-1) ?? ''
+    selectAgentProjection(state, address)?.turnOrder.at(-1) ?? ''
   ));
-  const workingTurnId = useAgentLiveStore((state) => workingAgentTurnId(state.projections[sessionId]));
+  const workingTurnId = useAgentLiveStore((state) => workingAgentTurnId(selectAgentProjection(state, address)));
   /* A terminal retry creates a linked attempt; an ambiguous admission reuses
      the same operation and optimistic turn. The control acknowledges only
      local submission, never a successful outcome. */
   const [retryRequestedFor, setRetryRequestedFor] = useState('');
   const blockFailure = useAgentLiveStore((state) => {
-    const projection = state.projections[sessionId];
+    const projection = selectAgentProjection(state, address);
     const messageIds = projection?.turnsById[turnId]?.messageIds ?? [];
     for (const messageId of messageIds) {
       const message = projection?.messagesById[messageId];
@@ -1313,7 +1324,7 @@ export const AgentTurn = memo(function AgentTurn({
         ? '连接在最终回复生成前中断；已完成的工具与文件结果已保留。继续会基于当前 Session 接续，不重放原请求。'
         : '连接在最终回复生成前中断；请继续当前对话，或切换模型后继续。'
       : failure;
-  const retryRequested = retryRequestedFor === `${turnId}:${turn.status}`;
+  const retryRequested = retryRequestedFor === `${projectionKey}:${turnId}:${turn.status}`;
   const showWorking = !paused && showWorkingIndicator && workingTurnId === turnId
     && (turn.status === 'queued' || turn.status === 'running');
   const turnSettled = turn.status === 'completed' || turn.status === 'failed' || turn.status === 'aborted';
@@ -1324,6 +1335,11 @@ export const AgentTurn = memo(function AgentTurn({
   );
   const turnWorkModel = buildAgentTurnWorkModel(paused ? 'waiting' : turn.status, timelineEntries);
   const streamingMessageId = paused ? '' : activeStreamingMessageId(turn.status, assistantMessages);
+  const replyMessages = assistantMessages.filter(message => message.blocks.some(block => (
+    block.type === 'text' && Boolean(text(block.data.text).trim())
+  )));
+  const replyState = !replyMessages.length ? 'none'
+    : replyMessages.some(message => message.status === 'streaming') ? 'started' : 'received';
   const renderTimelineEntry = (entry: AgentTurnSequenceEntry) => entry.kind === 'message' ? (
     <div
       data-timeline-kind={entry.message.role === 'user' ? 'user-message' : 'message'}
@@ -1398,7 +1414,7 @@ export const AgentTurn = memo(function AgentTurn({
             {/* The live marker is the current cursor, so it follows the newest
                 visible work instead of staying pinned above completed steps.
                 New entries inserted above naturally carry it to the tail. */}
-            {showWorking ? <AssistantWorkingState activities={activities} startedAtMs={turn.createdAtMs} stopping={stopping} /> : null}
+            {showWorking ? <AssistantWorkingState activities={activities} replyState={replyState} startedAtMs={turn.createdAtMs} stopping={stopping} /> : null}
             {paused ? <div className="agent-assistant-pending" role="status" aria-live="polite">
               <ConversationPlanetMark size="lg" state="waiting" motionActive={false} />
               <span><strong>任务已暂停，进度已保存</strong><small>已保留本轮消息与工具记录，继续后接着执行原任务。</small></span>
@@ -1438,9 +1454,9 @@ export const AgentTurn = memo(function AgentTurn({
                       label={safeContinuation && failurePresentation === 'compact' ? '继续问数' : undefined}
                       onSwitchModel={failurePresentation === 'default' ? onSwitchModel : undefined}
                       onRetry={safeContinuation ? onContinueTurn ? () => {
-                        if (onContinueTurn(turnId)) setRetryRequestedFor(`${turnId}:${turn.status}`);
+                        if (onContinueTurn(turnId)) setRetryRequestedFor(`${projectionKey}:${turnId}:${turn.status}`);
                       } : undefined : onRetryTurn ? () => {
-                        const retryKey = `${turn.id}:${turn.status}`;
+                        const retryKey = `${projectionKey}:${turn.id}:${turn.status}`;
                         const rollback = () => setRetryRequestedFor((current) => current === retryKey ? '' : current);
                         setRetryRequestedFor(retryKey);
                         if (!onRetryTurn(turn.id, rollback)) rollback();
@@ -1577,10 +1593,12 @@ function compareTimelineItems(left: TurnTimelineItem, right: TurnTimelineItem): 
 
 function AssistantWorkingState({
   activities,
+  replyState,
   startedAtMs,
   stopping = false,
 }: {
   activities: AgentActivityProjection[];
+  replyState: 'none' | 'started' | 'received';
   startedAtMs: number;
   stopping?: boolean;
 }) {
@@ -1589,13 +1607,15 @@ function AssistantWorkingState({
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
-  const detail = useMemo(() => workingDetail(activities), [activities]);
+  const detail = useMemo(() => workingDetail(activities, replyState), [activities, replyState]);
   const latest = [...activities].reverse().find((activity) => activity.status === 'running');
   const phase = latest?.payload.phase === 'provider_retry' ? '正在重试连接'
     : latest?.kind === 'context_compaction' ? '正在整理上下文'
     : latest?.kind === 'reasoning_summary' ? '正在分析'
     : latest?.kind.startsWith('tool_') ? '正在执行'
-    : latest ? '正在处理' : '等待后续响应';
+    : latest ? '正在处理'
+    : replyState === 'started' ? '回复已开始'
+    : replyState === 'received' ? '等待本轮结束' : '等待后续响应';
   return (
     <div className="agent-assistant-pending" role="status" aria-live="polite">
       <ConversationPlanetMark size="lg" state={stopping ? 'waiting' : 'thinking'} />
@@ -1660,7 +1680,9 @@ function MessageView({
   userMessagePresentation?: AgentUserMessagePresentation;
   presentation?: 'default' | 'fx';
 }) {
-  const message = useAgentLiveStore((state) => state.projections[sessionId]?.messagesById[messageId]);
+  const transport = useOptionalControlTransport();
+  const address = agentSessionAddress(transport, sessionId);
+  const message = useAgentLiveStore((state) => selectAgentProjection(state, address)?.messagesById[messageId]);
   if (!message) return null;
   const visibleBlocks = user
     ? projectUserMessageBlocks(message.blocks, userMessagePresentation)
@@ -2058,7 +2080,7 @@ function cssEscape(value: string): string {
     : value.replace(/["\\]/gu, '\\$&');
 }
 
-function workingDetail(activities: AgentActivityProjection[]): string {
+function workingDetail(activities: AgentActivityProjection[], replyState: 'none' | 'started' | 'received'): string {
   const latest = [...activities].reverse().find((activity) => activity.status === 'running');
   if (text(latest?.payload.phase) === 'provider_retry') {
     return latest?.summary || '模型连接暂时不可用，正在自动重试。';
@@ -2073,6 +2095,10 @@ function workingDetail(activities: AgentActivityProjection[]): string {
   if (tool.includes('planning')) return '正在整理计划与下一步。';
   if (latest?.kind.startsWith('tool_')) return '正在执行工具，进度和结果会实时显示在下方。';
   if (latest) return '正在处理本轮请求，后续进展会显示在对话中。';
+  // These are retained response facts, not a claim that a possibly frozen
+  // stream is still connected. Message completion is not the turn receipt.
+  if (replyState === 'started') return '已收到部分回复，尚未收到本轮结束回执。';
+  if (replyState === 'received') return '已收到回复，尚未收到本轮结束回执。';
   return activities.length ? '已有步骤已结束，尚未收到本轮结束回执。' : '本轮尚未收到响应进展。';
 }
 

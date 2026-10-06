@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from rag_ime.agent_background_jobs import AgentBackgroundJobService
 from rag_ime.agent_gateway_requests import GatewayRequestConflict, GatewayRequestUnresolved
 from rag_ime.agent_service import AgentService
 from rag_ime.agent_session_application import AgentSessionApplicationService
@@ -64,6 +65,10 @@ class GatewayExecutionIdentityTests(unittest.TestCase):
         self.service = object.__new__(AgentService)
         self.service._require_mutable_session = lambda session_id: self.store.get(session_id)
         self.service._workspace_command_cancellation = self.gateway.workspace_commands.request_cancel
+        self.service.background_jobs = AgentBackgroundJobService(
+            db, events=lambda *args, **kwargs: None, sessions=self.store)
+        self.service.background_jobs.initialize()
+        self.addCleanup(self.service.background_jobs.close)
         app = object.__new__(AgentSessionApplicationService)
         app.sessions = self.store
         app._runtime_provider = lambda: self.runtime

@@ -514,6 +514,7 @@ export function ModelRoutingPanel({
   const [drafts, setDrafts] = useState<Record<ModelRouteId, AgentModelRoute>>(
     () => cloneModelRoutes(routing?.routes ?? emptyModelRoutes()),
   );
+  const previousSavedRoutes = useRef(cloneModelRoutes(routing?.routes ?? emptyModelRoutes()));
   const models = useMemo(
     () => catalog.providers
       .flatMap((provider) => provider.models)
@@ -525,7 +526,14 @@ export function ModelRoutingPanel({
     [catalog.providers],
   );
   useEffect(() => {
-    setDrafts(cloneModelRoutes(routing?.routes ?? emptyModelRoutes()));
+    const saved = cloneModelRoutes(routing?.routes ?? emptyModelRoutes());
+    const previous = previousSavedRoutes.current;
+    setDrafts(current => Object.fromEntries(modelRouteDefinitions.map(({ id }) => {
+      const dirty = current[id].modelProfile !== previous[id].modelProfile
+        || current[id].thinkingLevel !== previous[id].thinkingLevel;
+      return [id, dirty ? current[id] : saved[id]];
+    })) as Record<ModelRouteId, AgentModelRoute>);
+    previousSavedRoutes.current = saved;
   }, [routing]);
   return <section className="model-routing" aria-labelledby="model-routing-title">
     <header className="model-routing__header">
