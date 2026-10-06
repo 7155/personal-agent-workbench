@@ -193,6 +193,18 @@ function PawDesktopSurface() {
   const menuAppRef = useRef<HTMLButtonElement>(null);
   const menuWindowRef = useRef<HTMLButtonElement>(null);
   const contextMenuOpenerRef = useRef<HTMLElement | null>(null);
+  const closeContextMenu = useCallback((reason: PawContextMenuCloseReason) => {
+    setContextMenu(null);
+    if (reason !== 'keyboard' && reason !== 'action') return;
+    const opener = contextMenuOpenerRef.current;
+    /* Item actions may archive their opener. Wait until React and the external
+       desktop store have committed, then return to the exact opener when it
+       still exists; otherwise leave a stable keyboard landing on the desktop. */
+    window.setTimeout(() => {
+      if (opener?.isConnected) opener.focus();
+      else viewportRef.current?.focus();
+    }, 0);
+  }, []);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
@@ -224,6 +236,11 @@ function PawDesktopSurface() {
         setContextMenu(null);
         api.getState().setOverviewOpen(!api.getState().overviewOpen);
       } else if (event.key === 'Escape') {
+        if (contextMenu) {
+          event.preventDefault();
+          closeContextMenu('keyboard');
+          return;
+        }
         setContextMenu(null);
         if (api.getState().launchpadOpen) api.getState().setLaunchpadOpen(false);
         else if (api.getState().overviewOpen) api.getState().setOverviewOpen(false);
@@ -233,7 +250,7 @@ function PawDesktopSurface() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [api, archiveReceipt, undoArchive]);
+  }, [api, archiveReceipt, closeContextMenu, contextMenu, undoArchive]);
   useEffect(() => {
     const host = pawBrowserHost();
     if (!host) return undefined;
@@ -684,18 +701,6 @@ function PawDesktopSurface() {
       if (contextMenu?.kind === 'menubar' && contextMenu.menu !== menu) openMenuBarMenu(menu);
     },
   });
-  const closeContextMenu = useCallback((reason: PawContextMenuCloseReason) => {
-    setContextMenu(null);
-    if (reason !== 'keyboard' && reason !== 'action') return;
-    const opener = contextMenuOpenerRef.current;
-    /* Item actions may archive their opener. Wait until React and the external
-       desktop store have committed, then return to the exact opener when it
-       still exists; otherwise leave a stable keyboard landing on the desktop. */
-    window.setTimeout(() => {
-      if (opener?.isConnected) opener.focus();
-      else viewportRef.current?.focus();
-    }, 0);
-  }, []);
   return (
     <div
       className="paw-desktop"

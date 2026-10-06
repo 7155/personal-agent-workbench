@@ -8,6 +8,14 @@ import { pawExtensionApps } from '@/paw-os/extensions/registry';
 import { projectPawExtensionInstallation } from '@/paw-os/extensions/installation';
 
 describe('preview page contracts', () => {
+  it('filters public WorkDocument history by title, authority and path', async () => {
+    const transport = createPreviewTransport();
+    for (const query of [' 输入法 ', 'GOAL-PREVIEW', 'archive/session-preview']) {
+      expect(await transport.request({ pathId: 'workDocuments.history.search', query: { query } })).toMatchObject({ total: 1 });
+    }
+    expect(await transport.request({ pathId: 'workDocuments.history.search', query: { query: '没有这样的公开文档' } })).toMatchObject({ items: [], total: 0 });
+    expect(await transport.request({ pathId: 'workDocuments.history.search', query: { query: '' } })).toMatchObject({ total: 1 });
+  });
   it('creates and closes the exact public Browser tab without claiming a real screenshot', async () => {
     const transport = createPreviewTransport();
     const created = await transport.request<{ result: { tabId: number } }>({ pathId: 'browser.command', body: { action: 'new_tab', url: 'about:blank' } });

@@ -4,6 +4,18 @@ import { pawExtensionApps } from '../extensions/registry';
 import { createPawDesktopStore, pawFocusWindowLayerSize, pawWindowArea, pawWindowLayerSize } from './desktop-store';
 
 describe('PAWOS desktop store', () => {
+  it('reserves the actual responsive menu-bar height for ordinary and focused windows', () => {
+    const root = document.createElement('div');
+    root.className = 'paw-desktop-root';
+    root.style.setProperty('--paw-menu-h', '48px');
+    document.body.append(root);
+    try {
+      expect(pawWindowLayerSize().height).toBe(window.innerHeight - 48);
+      expect(pawFocusWindowLayerSize().height).toBe(window.innerHeight - 48);
+    } finally {
+      root.remove();
+    }
+  });
   it('starts the main Agent expanded, restores its desktop bounds, and preserves that choice on reopen', () => {
     const store = createPawDesktopStore('agent', '/agent');
     const node = store.getState().windows.agent;

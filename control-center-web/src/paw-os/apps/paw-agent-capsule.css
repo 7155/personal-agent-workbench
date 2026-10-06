@@ -63,3 +63,13 @@
   .paw-agent-capsule__capture { transition: none; }
   .paw-agent-capsule__capture:hover:not(:disabled) { transform: none; }
 }
+
+@container paw-window (max-width: 700px) {
+  .paw-agent-capsule__hero { flex-direction: column; }
+  .paw-agent-capsule__protocol ol { grid-template-columns: minmax(0, 1fr); }
+  .paw-agent-capsule__section-heading { display: grid; gap: 6px; }
+  .paw-agent-capsule__section-heading > div { min-width: 0; }
+  .paw-agent-capsule__section-heading > div > svg { flex: 0 0 auto; }
+  .paw-agent-capsule__details { align-items: flex-start; flex-direction: column; }
+  .paw-agent-capsule__details button { margin-left: 0; }
+}

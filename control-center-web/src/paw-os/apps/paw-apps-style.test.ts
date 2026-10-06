@@ -268,7 +268,7 @@ describe('PAWOS semantic type roles', () => {
     expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
     expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools__date,[\s\S]*?\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(narrowProjectCss).toMatch(/\.paw-wb-documents\[data-reader-open='true'\] \.paw-wb-document-index\s*\{\s*display:\s*none;/s);
-    expect(narrowProjectCss).toMatch(/\.paw-wb-schedules-dialog \.planning-wake-form,\s*\.paw-wb-schedules-dialog \.planning-wake-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    expect(narrowProjectCss).not.toContain('paw-wb-schedules-dialog');
   });
 
   it('keeps generic paper polish retired and removes retired native owners', () => {

@@ -238,6 +238,18 @@ describe('PAWOS desktop', () => {
     expect(current.querySelector('[data-paw-app-icon]')).toBeNull();
   });
 
+  it('returns keyboard focus to the new anchor after switching menu-bar menus', async () => {
+    renderDesktop();
+    fireEvent.click(screen.getByRole('button', { name: '桌面 菜单' }));
+    const appMenu = screen.getByRole('menu', { name: '桌面菜单' });
+    fireEvent.keyDown(within(appMenu).getAllByRole('menuitem')[0], { key: 'ArrowRight' });
+    const windowMenu = screen.getByRole('menu', { name: '窗口菜单' });
+    expect(windowMenu).toBeInTheDocument();
+    // Escape can reach the shell before the newly mounted menu takes focus.
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '窗口菜单' })).toHaveFocus());
+  });
+
   it('opens hide and overview commands from the menu bar App name', () => {
     renderDesktop('agent');
     fireEvent.click(screen.getByRole('button', { name: 'Agent 菜单' }));

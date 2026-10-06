@@ -99,6 +99,7 @@ export function PawWorkbenchDocumentLifecycle({
   const [eraseConfirmation, setEraseConfirmation] = useState('');
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };

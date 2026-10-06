@@ -37,6 +37,11 @@ export const PAW_WINDOW_MIN_HEIGHT = 210;
    offset and 4px air gap. Maximized and collaboration-focus layouts hide the
    Dock and deliberately keep the complete menu-below plane. */
 const PAW_MENU_BAR_HEIGHT = 34;
+function pawMenuBarHeight(): number {
+  const root = typeof document === 'undefined' ? null : document.querySelector('.paw-desktop-root');
+  const height = root ? Number.parseFloat(getComputedStyle(root).getPropertyValue('--paw-menu-h')) : NaN;
+  return Number.isFinite(height) && height > 0 ? height : PAW_MENU_BAR_HEIGHT;
+}
 const PAW_WINDOW_AREA_INSET = 8;
 const PAW_DOCK_HEIGHT = 62;
 const PAW_DOCK_BOTTOM = 12;
@@ -51,7 +56,7 @@ export function pawWindowLayerSize(): { width: number; height: number } {
   const height = typeof window === 'undefined' ? 800 : window.innerHeight;
   return {
     width: Math.max(PAW_WINDOW_MIN_WIDTH, width),
-    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - PAW_MENU_BAR_HEIGHT),
+    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - pawMenuBarHeight()),
   };
 }
 
@@ -64,7 +69,7 @@ export function pawFocusWindowLayerSize(): { width: number; height: number } {
   const height = typeof window === 'undefined' ? 800 : window.innerHeight;
   return {
     width: Math.max(PAW_WINDOW_MIN_WIDTH, width),
-    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - PAW_MENU_BAR_HEIGHT),
+    height: Math.max(PAW_WINDOW_MIN_HEIGHT, height - pawMenuBarHeight()),
   };
 }
 

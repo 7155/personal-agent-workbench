@@ -22,6 +22,21 @@ afterEach(() => {
 const NATIVE_DOCUMENT_ID = `workdoc_${'a'.repeat(32)}`;
 
 describe('PAWOS native Apps', () => {
+  it('retains Workbench history filters and the planning date across host navigation', async () => {
+    const user = userEvent.setup();
+    renderNative('project-workbench', nativeTransport(), { initialRoute: '/work-documents' });
+    await user.click(await screen.findByRole('button', { name: '历史' }));
+    const search = await screen.findByRole('searchbox', { name: '筛选历史' });
+    await user.type(search, '尚未提交的历史筛选');
+    await user.click(screen.getByRole('button', { name: '任务' }));
+    const date = await screen.findByLabelText('规划日期');
+    await user.clear(date);
+    await user.type(date, '2026-10-01');
+    await user.click(screen.getByRole('button', { name: '工作文档' }));
+    expect(screen.getByRole('searchbox', { name: '筛选历史' })).toHaveValue('尚未提交的历史筛选');
+    await user.click(screen.getByRole('button', { name: '任务' }));
+    expect(screen.getByLabelText('规划日期')).toHaveValue('2026-10-01');
+  });
   it('retains Knowledge drafts through the native route reporter without replacing the input owner', async () => {
     const user = userEvent.setup();
     renderNative('knowledge', nativeTransport(), { initialRoute: '/knowledge?tab=settings' });

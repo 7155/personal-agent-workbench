@@ -284,7 +284,7 @@ function WorkbenchChrome({
       <span aria-hidden className="paw-wb-chrome__spacer" />
       {primaryAction ? (
         <button aria-label={primaryAction.label} className="paw-wb-primary" onClick={primaryAction.onClick} type="button">
-          <Plus aria-hidden size={15} />
+          {pageId === 'overview' ? <ArrowRight aria-hidden size={15} /> : <Plus aria-hidden size={15} />}
           <span>{primaryAction.label}</span>
         </button>
       ) : null}
@@ -361,30 +361,32 @@ function ProjectOverview({
 
       {/* The working panes are the window's flexible band: each owns its own
           scroll so the first viewport always holds real tasks and documents. */}
-      <div className="paw-wb-overview__workspace">
-        <section className="paw-wb-pane" data-pane="tasks">
-          <header>
-            <div><GitBranch aria-hidden size={16} /><h2>当前工作</h2></div>
-            <div className="paw-wb-pane__scope">
-              <span>{resourceCountLabel(planningState, tasks.length > 8 ? `当前 ${displayedTasks.length} / 共 ${tasks.length}` : `${tasks.length} 项`)}</span>
-            </div>
-          </header>
-          <ResourceNotice label="任务" onRefresh={onRefresh ? () => onRefresh('planning') : undefined} state={planningState} />
-          {tasks.length ? (
-            <ol className="paw-wb-pane__list" data-scrollable={displayedTasks.length > 8 || undefined}>
-              {displayedTasks.map((task, index) => (
-                <li key={taskId(task, index)}>
-                  <button onClick={() => onOpenTask(task, index)} title={`${taskTitle(task)} · ${taskMeta(task)}`} type="button">
-                    <StatusMark lane={taskLane(task)} />
-                    <span><strong>{taskTitle(task)}</strong><small>{taskMeta(task)}</small></span>
-                    <em>{taskStateLabel(task)}</em>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          ) : resourceSettled(planningState) ? <EmptyState icon={<CircleDashed size={22} />} title="暂无真实任务" copy="任务会在规划数据可用后出现在这里。" /> : null}
+      <div className="paw-wb-overview__workspace" data-tasks-empty={resourceSettled(planningState) && !tasks.length || undefined}>
+        {!resourceSettled(planningState) || tasks.length ? (
+          <section className="paw-wb-pane" data-pane="tasks">
+            <header>
+              <div><GitBranch aria-hidden size={16} /><h2>当前工作</h2></div>
+              <div className="paw-wb-pane__scope">
+                <span>{resourceCountLabel(planningState, tasks.length > 8 ? `当前 ${displayedTasks.length} / 共 ${tasks.length}` : `${tasks.length} 项`)}</span>
+              </div>
+            </header>
+            <ResourceNotice label="任务" onRefresh={onRefresh ? () => onRefresh('planning') : undefined} state={planningState} />
+            {tasks.length ? (
+              <ol className="paw-wb-pane__list" data-scrollable={displayedTasks.length > 8 || undefined}>
+                {displayedTasks.map((task, index) => (
+                  <li key={taskId(task, index)}>
+                    <button onClick={() => onOpenTask(task, index)} title={`${taskTitle(task)} · ${taskMeta(task)}`} type="button">
+                      <StatusMark lane={taskLane(task)} />
+                      <span><strong>{taskTitle(task)}</strong><small>{taskMeta(task)}</small></span>
+                      <em>{taskStateLabel(task)}</em>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+          ) : null}
           {remainingTasks ? <button className="paw-wb-pane__more" aria-label={`显示更多任务：${remainingTasks} 项`} onClick={() => setVisibleTaskCount((value) => value + 8)} type="button">显示更多 {Math.min(8, remainingTasks)} 项</button> : null}
         </section>
+        ) : null}
 
         <div className="paw-wb-overview__side">
           <section className="paw-wb-pane" data-pane="documents">
@@ -647,7 +649,7 @@ function TaskOrchestration({
               ))}
             </div>
           </div>
-        ) : resourceSettled(resourceState) ? <EmptyState icon={<GitBranch size={24} />} title="没有可编排的真实任务" copy="Workbench 不会为了填满画布创建演示节点。" /> : null}
+        ) : resourceSettled(resourceState) ? <EmptyState icon={<GitBranch size={24} />} title="还没有可编排的任务" copy="添加任务后，这里会显示任务之间的依赖关系。" /> : null}
       </section>
 
       <TaskDetail onEditTask={onEditTask} onOpenTask={onOpenTask} onSelectTask={onSelectTask} task={selectedTask} tasks={tasks} />
@@ -671,7 +673,7 @@ function TaskDetail({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const selectedTaskKey = task ? taskId(task, tasks.indexOf(task)) : '';
   useEffect(() => setDetailsExpanded(false), [selectedTaskKey]);
-  if (!task) return <aside className="paw-wb-detail"><EmptyState icon={<CircleDashed size={23} />} title="未选择任务" copy="选择一个真实任务以查看它的状态与依赖。" /></aside>;
+  if (!task) return <aside className="paw-wb-detail"><EmptyState icon={<CircleDashed size={23} />} title="未选择任务" copy="选择任务，查看状态与依赖。" /></aside>;
   const dependencies = taskDependencyIds(task);
   const progress = taskProgress(task);
   const detail = text(task.detail) || text(task.description);

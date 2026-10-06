@@ -74,7 +74,7 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
   const desktop = usePawOsDesktop();
   const route = initialRoute || app.route;
   const pageId = pageForRoute(pages, route).id;
-  const preservePage = appId === 'memory' || appId === 'knowledge';
+  const preservePage = appId === 'memory' || appId === 'knowledge' || appId === 'project-workbench';
   return (
     <div className="paw-native-app" data-app-id={appId} data-page-id={pageId} data-sidebar-collapsed={sidebar.collapsed} data-owns-navigation={appId === 'knowledge' || appId === 'eval-lab' || undefined} data-single-page={pages.length === 1 || undefined}>
       {appId === 'knowledge' || appId === 'eval-lab' ? null : <aside className="paw-native-nav">
