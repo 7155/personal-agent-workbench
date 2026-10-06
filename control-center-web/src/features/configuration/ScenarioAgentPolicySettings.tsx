@@ -64,10 +64,14 @@ export function ScenarioAgentPolicySettings({ routeIds, transport, active = true
       });
       return parseCatalog(response);
     },
-    onSuccess: (catalog) => {
+    onSuccess: (catalog, { scenario }) => {
       queryClient.setQueryData(['configuration', 'scenario-agent-policy'], catalog);
-      setDrafts({});
-      setSaved(activeScenario);
+      setDrafts((currentDrafts) => {
+        const next = { ...currentDrafts };
+        delete next[scenario.id];
+        return next;
+      });
+      setSaved(scenario.id);
     },
   });
 

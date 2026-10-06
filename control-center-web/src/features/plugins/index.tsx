@@ -40,7 +40,6 @@ import {
   InlineNotice,
   ManagementPage,
   ManagementSection,
-  MetricStrip,
   QueryState,
   StatusBadge,
   arrayRecords,
@@ -906,11 +905,9 @@ export function PluginsFeature() {
           <Button loading={skills.isFetching} onClick={() => void skills.refetch()} size="small" variant="quiet">重新读取技能</Button>
         </InlineNotice>
       ) : null}
-      <MetricStrip items={[
-        { label: '可查看', value: skillRuntimeAvailable ? skillItems.length : '—', detail: '当前可发现的 Skill', icon: Sparkles },
-        { label: '随插件管理', value: skillRuntimeAvailable ? skillItems.filter((item) => stringValue(item.management) === 'package').length : '—', detail: '按 Package 统一变更', icon: PackageCheck },
-        { label: '仅查看', value: skillRuntimeAvailable ? skillItems.filter((item) => stringValue(item.management) === 'inspect_only').length : '—', detail: '随产品提供或来自当前项目', icon: ShieldQuestion },
-      ]} />
+      {skillRuntimeAvailable ? <p className="plugins-capability-counts">
+        {skillItems.length} 项可查看 · {skillItems.filter((item) => stringValue(item.management) === 'package').length} 项随插件管理 · {skillItems.filter((item) => stringValue(item.management) === 'inspect_only').length} 项仅查看
+      </p> : null}
       <div className="skills-filters">
         <Field className="plugins-search" htmlFor="skill-search" label="搜索">
           <Input
@@ -1076,32 +1073,14 @@ export function PluginsFeature() {
             <span className="installed-plugin__state">
               {update ? <StatusBadge label="有更新" tone="warning" /> : null}
               <StatusBadge label={enabled ? '已启用' : '已停用'} tone={enabled ? 'success' : 'neutral'} />
-              {loadedSessionCount > 0 ? <StatusBadge label={`已加载 · ${loadedSessionCount} 个对话`} tone="success" /> : null}
-              {invoked ? <StatusBadge label={`已调用 · ${lastInvocationResource}`} tone="success" /> : null}
+              {loadedSessionCount > 0 ? <StatusBadge label={`历史加载 · ${loadedSessionCount} 个对话`} tone="neutral" /> : null}
+              {invoked ? <StatusBadge label={`最近调用 · ${lastInvocationResource}`} tone="neutral" /> : null}
             </span>
             <ul className="installed-plugin__facts">
               <li><ShieldCheck aria-hidden="true" size={13} />{permissions.length ? permissions.map(publicPluginPermissionLabel).join('、') : '无额外权限'}</li>
               <li><Boxes aria-hidden="true" size={13} />{resourceCount ? `${resourceCount} 项资源` : '无附带资源'}</li>
               {resourceSummary ? <li><Boxes aria-hidden="true" size={13} />{resourceSummary}</li> : null}
-              <li><History aria-hidden="true" size={13} />{rollbackReady ? (previousVersion ? `可恢复到 v${previousVersion}` : '可恢复上一版本，具体版本将在预览中显示') : '没有可恢复的历史版本'}</li>
             </ul>
-            {Object.keys(usageSummary).length ? (
-              <dl className="installed-plugin__usage">
-                <div><dt>最近加载</dt><dd>{loadedSessionCount > 0 ? `${lastLoadedAtMs ? formatPluginTime(lastLoadedAtMs) : '时间未提供'} · ${loadedSessionCount} 个对话` : '尚无加载证据'}</dd></div>
-                <div><dt>调用统计</dt><dd>{invocationCount > 0 ? `${invocationCount} 次调用 · 成功 ${succeededCount} · 失败 ${failedCount} · 取消 ${cancelledCount} · 平均 ${averageDurationMs} ms` : '尚无调用证据'}</dd></div>
-                {invoked ? <div><dt>最近调用</dt><dd>{pluginInvocationStatusLabel(stringValue(lastInvocation.status))} · {lastInvocationDurationMs} ms{lastInvocationAtMs ? ` · ${formatPluginTime(lastInvocationAtMs)}` : ''} · {publicPluginResourceKindLabel(stringValue(lastInvocation.resourceKind))} {lastInvocationResource}</dd></div> : null}
-              </dl>
-            ) : null}
-            <Disclosure className="installed-plugin__details" summary={<><ChevronRight aria-hidden="true" size={14} />包标识与原始信息</>}>
-              <pre>{JSON.stringify({
-                id: pluginId,
-                displayName: plugin.displayName,
-                description: plugin.description,
-                version: plugin.version,
-                source: { kind: source.kind, label: source.label, requested: source.requested },
-                permissions,
-              }, null, 2)}</pre>
-            </Disclosure>
             <div className="installed-plugin__actions">
               {canOpenExtensionApp ? (
                 <Button
@@ -1126,21 +1105,44 @@ export function PluginsFeature() {
                 size="small"
                 variant="quiet"
               >{enabled ? '停用' : '启用'}</Button>
-              <Button
-                disabled={!rollbackReady || lifecyclePending || !pluginOperationsAvailable}
-                leadingIcon={<RotateCcw size={15} />}
-                onClick={() => void previewInstalledAction('rollback', pluginId)}
-                size="small"
-                variant="quiet"
-              >恢复上一版本</Button>
-              <Button
-                disabled={lifecyclePending || !pluginOperationsAvailable}
-                leadingIcon={<PackageX size={15} />}
-                onClick={() => void previewInstalledAction('uninstall', pluginId)}
-                size="small"
-                variant="quiet"
-              >卸载</Button>
             </div>
+            <Disclosure className="installed-plugin__details installed-plugin__maintenance" summary={<><ChevronRight aria-hidden="true" size={14} />管理与使用记录</>}>
+              <p className="installed-plugin__rollback"><History aria-hidden="true" size={13} />{rollbackReady ? (previousVersion ? `可恢复到 v${previousVersion}` : '可恢复上一版本，具体版本将在预览中显示') : '没有可恢复的历史版本'}</p>
+              {Object.keys(usageSummary).length ? <>
+                <p className="installed-plugin__usage-note">这里显示历史加载和调用记录；当前对话是否使用，请查看该对话的调用回执。</p>
+                <dl className="installed-plugin__usage">
+                  <div><dt>最近加载</dt><dd>{loadedSessionCount > 0 ? `${lastLoadedAtMs ? formatPluginTime(lastLoadedAtMs) : '时间未提供'} · ${loadedSessionCount} 个对话` : '尚无加载证据'}</dd></div>
+                  <div><dt>调用统计</dt><dd>{invocationCount > 0 ? `${invocationCount} 次调用 · 成功 ${succeededCount} · 失败 ${failedCount} · 取消 ${cancelledCount} · 平均 ${averageDurationMs} ms` : '尚无调用证据'}</dd></div>
+                  {invoked ? <div><dt>最近调用</dt><dd>{pluginInvocationStatusLabel(stringValue(lastInvocation.status))} · {lastInvocationDurationMs} ms{lastInvocationAtMs ? ` · ${formatPluginTime(lastInvocationAtMs)}` : ''} · {publicPluginResourceKindLabel(stringValue(lastInvocation.resourceKind))} {lastInvocationResource}</dd></div> : null}
+                </dl>
+              </> : null}
+              <Disclosure className="installed-plugin__details" summary={<><ChevronRight aria-hidden="true" size={14} />包标识与原始信息</>}>
+                <pre>{JSON.stringify({
+                  id: pluginId,
+                  displayName: plugin.displayName,
+                  description: plugin.description,
+                  version: plugin.version,
+                  source: { kind: source.kind, label: source.label, requested: source.requested },
+                  permissions,
+                }, null, 2)}</pre>
+              </Disclosure>
+              <div className="installed-plugin__actions">
+                <Button
+                  disabled={!rollbackReady || lifecyclePending || !pluginOperationsAvailable}
+                  leadingIcon={<RotateCcw size={15} />}
+                  onClick={() => void previewInstalledAction('rollback', pluginId)}
+                  size="small"
+                  variant="quiet"
+                >恢复上一版本</Button>
+                <Button
+                  disabled={lifecyclePending || !pluginOperationsAvailable}
+                  leadingIcon={<PackageX size={15} />}
+                  onClick={() => void previewInstalledAction('uninstall', pluginId)}
+                  size="small"
+                  variant="quiet"
+                >卸载</Button>
+              </div>
+            </Disclosure>
           </article>
         );
       }) : pluginRuntimeAvailable ? <EmptyState description="需要新能力时，可以先查看来源和权限，再决定是否安装。" icon={PackageCheck} title="还没有额外扩展" /> : null}
@@ -1273,8 +1275,6 @@ export function PluginsFeature() {
           </div>
         </QueryState>
       </NativeConsole>
-
-      <Button onClick={() => openPawOsRoute(desktop, `/plugins?view=capabilities${sessionContextId ? `&sessionId=${encodeURIComponent(sessionContextId)}` : ''}`)} variant="quiet">管理 Agent 功能开关与默认设置</Button>
 
       <NativeConsole icon={Clock3} title="自动整理与提醒" trailing={hooksStatusBadge}>
         <QueryState error={asError(lifecycle.error)} isPending={lifecycle.isPending} onRetry={() => void lifecycle.refetch()}>

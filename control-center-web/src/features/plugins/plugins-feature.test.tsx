@@ -119,10 +119,12 @@ describe('PluginsFeature', () => {
       }] },
     }, '/plugins', true);
     const card = await screen.findByRole('article', { name: '掌柜问数 Package' });
+    await user.click(within(card).getByText('管理与使用记录'));
     expect(card).toHaveTextContent('可恢复到 v0.1.1');
     expect(card).not.toHaveTextContent('没有可恢复的历史版本');
     expect(card).not.toHaveTextContent('v0.0.1');
     const unknown = screen.getByRole('article', { name: 'Unknown target Package' });
+    await user.click(within(unknown).getByText('管理与使用记录'));
     expect(unknown).toHaveTextContent('可恢复上一版本，具体版本将在预览中显示');
     await user.click(within(card).getByRole('button', { name: '恢复上一版本' }));
     await waitFor(() => expect(transport.requests.find(({ request }) =>
@@ -149,6 +151,7 @@ describe('PluginsFeature', () => {
     expect(card).toHaveTextContent('扩展 1 · 技能 1');
     expect(card).not.toHaveTextContent('@paw/pi-session-workflow');
     expect(card).not.toHaveTextContent('Session-local');
+    await user.click(within(card).getByText('管理与使用记录'));
     await user.click(within(card).getByText('包标识与原始信息'));
     expect(card).toHaveTextContent('@paw/pi-session-workflow');
     expect(card).toHaveTextContent('Session-local');
@@ -373,16 +376,20 @@ describe('PluginsFeature', () => {
       },
     }, '/plugins', true);
 
-    // The capability browser and the curation hooks are now reachable in the
-    // native App Center instead of remaining web-only functions.
+    // The owning App navigation provides capability settings; the installed
+    // page does not repeat that navigation as another button.
     expect(screen.queryByRole('group', { name: '能力列表' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '管理 Agent 功能开关与默认设置' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '管理 Agent 功能开关与默认设置' })).not.toBeInTheDocument();
 
     const packages = await screen.findByRole('region', { name: '插件安装与更新' });
     const packageCard = await within(packages).findByRole('article', { name: 'Session Workflow Package' });
     expect(packageCard).toHaveTextContent('读取对话内容');
     expect(packageCard).toHaveTextContent('2 项资源');
     expect(packageCard).toHaveTextContent('npm 包');
+    expect(within(packageCard).queryByRole('button', { name: '卸载' })).not.toBeInTheDocument();
+    expect(within(packageCard).queryByRole('button', { name: '恢复上一版本' })).not.toBeInTheDocument();
+    expect(within(packageCard).getByRole('button', { name: '停用' })).toBeVisible();
+    await userEvent.click(within(packageCard).getByText('管理与使用记录'));
     expect(packageCard).toHaveTextContent('没有可恢复的历史版本');
     expect(within(packages).getByRole('textbox', { name: 'Pi Package 来源' })).toBeInTheDocument();
 
@@ -440,8 +447,11 @@ describe('PluginsFeature', () => {
 
     const packageCard = await screen.findByRole('article', { name: 'Pi Lens Package' });
     expect(packageCard).toHaveTextContent('已启用');
-    expect(packageCard).toHaveTextContent('已加载 · 3 个对话');
-    expect(packageCard).toHaveTextContent('已调用 · lens_diagnostics');
+    expect(packageCard).toHaveTextContent('历史加载 · 3 个对话');
+    expect(packageCard).toHaveTextContent('最近调用 · lens_diagnostics');
+    expect(packageCard).not.toHaveTextContent('18 次调用');
+    await userEvent.click(within(packageCard).getByText('管理与使用记录'));
+    expect(packageCard).toHaveTextContent('当前对话是否使用，请查看该对话的调用回执');
     expect(packageCard).toHaveTextContent('18 次调用');
     expect(packageCard).toHaveTextContent('成功 17 · 失败 1 · 取消 0');
     expect(packageCard).toHaveTextContent('平均 240 ms');
@@ -1043,6 +1053,7 @@ describe('PluginsFeature', () => {
     await user.click(within(card).getByRole('button', { name: /打开\s*掌柜问数/ }));
     expect(window.location.hash).toBe('#/extensions/zhanggui-wenshu');
     expect(within(card).getByRole('button', { name: '停用' })).toBeInTheDocument();
+    await user.click(within(card).getByText('管理与使用记录'));
     expect(within(card).getByRole('button', { name: '卸载' })).toBeInTheDocument();
   });
 
@@ -1131,6 +1142,7 @@ describe('PluginsFeature', () => {
     const card = await screen.findByRole('article', { name: '对话复盘 Package' });
     await user.click(within(card).getByRole('button', { name: '停用' }));
     expect(await screen.findByRole('button', { name: '确认更改' })).toBeEnabled();
+    await user.click(within(card).getByText('管理与使用记录'));
     await user.click(within(card).getByRole('button', { name: '卸载' }));
     expect(await screen.findByText('卸载预览失败')).toBeVisible();
     expect(screen.queryByRole('region', { name: '待确认的插件更改' })).not.toBeInTheDocument();
@@ -1216,8 +1228,9 @@ describe('PluginsFeature', () => {
 
     await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
     await screen.findByText('时间线检查');
-    expect(screen.getByText('可恢复到 v0.9.0')).toBeInTheDocument();
     const installedPackage = screen.getByRole('article', { name: '时间线检查 Package' });
+    await user.click(within(installedPackage).getByText('管理与使用记录'));
+    expect(screen.getByText('可恢复到 v0.9.0')).toBeInTheDocument();
     expect(within(installedPackage).getByText('1 项资源')).toBeInTheDocument();
 
     await user.click(within(installedPackage).getByRole('button', { name: '停用' }));
@@ -1247,8 +1260,9 @@ describe('PluginsFeature', () => {
 
     await user.click(await screen.findByRole('button', { name: '管理扩展与自动整理' }));
     await screen.findByText('时间线检查');
-
-    await user.click(within(screen.getByRole('article', { name: '时间线检查 Package' })).getByRole('button', { name: '卸载' }));
+    const installedPackage = screen.getByRole('article', { name: '时间线检查 Package' });
+    await user.click(within(installedPackage).getByText('管理与使用记录'));
+    await user.click(within(installedPackage).getByRole('button', { name: '卸载' }));
 
     expect(await screen.findByText('等待你的批准')).toBeVisible();
     expect(screen.getByText(/不会删除项目文件、对话、WorkDocument 或个人数据/)).toBeVisible();
@@ -1326,14 +1340,13 @@ describe('PluginsFeature', () => {
     await screen.findByText('技能清单暂时无法更新');
     expect(screen.queryByText('没有找到 Skill')).not.toBeInTheDocument();
     expect(screen.queryByText('0 项')).not.toBeInTheDocument();
-    const values = document.querySelectorAll('.skills-surface .mgmt-metric dd:not(.mgmt-metric__detail)');
-    expect(values).toHaveLength(3);
-    for (const value of values) expect(value).toHaveTextContent('—');
+    expect(document.querySelector('.skills-surface .plugins-capability-counts')).not.toBeInTheDocument();
     const search = screen.getByRole('textbox', { name: '搜索' });
     await user.type(search, 'my draft search');
     connected = true;
     await user.click(screen.getByRole('button', { name: '重新读取技能' }));
     expect(await screen.findByText('没有找到 Skill')).toBeVisible();
+    expect(document.querySelector('.skills-surface .plugins-capability-counts')).toHaveTextContent('0 项可查看');
     expect(screen.getByRole('textbox', { name: '搜索' })).toHaveValue('my draft search');
   });
 

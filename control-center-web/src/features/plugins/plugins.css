@@ -679,6 +679,11 @@
 .installed-plugin__usage dt { color: var(--color-text-tertiary); }
 .installed-plugin__usage dd { color: var(--color-text-secondary); overflow-wrap: anywhere; }
 
+.installed-plugin__maintenance > .ui-disclosure__reveal > div { display: grid; gap: var(--space-3); }
+.installed-plugin__rollback { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; }
+.installed-plugin__rollback svg { flex: none; }
+.installed-plugin__usage-note { margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.5; }
+
 .installed-plugin[data-selected] {
   border-color: color-mix(in srgb, var(--color-accent) 62%, var(--color-border));
   background: var(--color-accent-subtle);
@@ -1059,11 +1064,6 @@
 .capability-disclosure pre { max-height: 240px; overflow: auto; margin: 0; padding: 9px; border: 1px solid var(--color-border); border-radius: var(--radius-2); font-size: 12px; white-space: pre-wrap; }
 .capability-disclosure > p { color: var(--color-text-tertiary); font-size: 12px; }
 
-/* The usage ledger speaks once: per-column boilerplate repeated five times is
-   noise, not information — the section description already carries it. */
-:is(main, section)[data-route-id='plugins'] .mgmt-metrics .mgmt-metric__detail { display: none; }
-:is(main, section)[data-route-id='plugins'] .mgmt-metrics { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
-
 @media (prefers-reduced-motion: reduce) {
   .plugins-list__item,
   .lifecycle-audit-more > summary svg { transition: none; }
@@ -1071,16 +1071,6 @@
 }
 
 @container plugins-content (max-width: 760px) {
-  :is(main, section)[data-route-id='plugins'] .mgmt-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    column-gap: var(--space-2);
-  }
-
-  :is(main, section)[data-route-id='plugins'] .mgmt-metric {
-    grid-template-columns: 14px minmax(0, 1fr);
-    column-gap: 5px;
-  }
-
   :is(main, section)[data-route-id='plugins'] .ui-button,
   :is(main, section)[data-route-id='plugins'] .ui-icon-button,
   :is(main, section)[data-route-id='plugins'] .ui-input,
@@ -1273,10 +1263,6 @@
   border: 0;
   border-radius: 11px;
   background: var(--paw-system-fill, var(--color-surface-subtle));
-}
-
-:is(main, section)[data-route-id='plugins'][data-paw-os-app] .mgmt-metrics {
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
 }
 
 @container plugins-content (max-width: 680px) {
