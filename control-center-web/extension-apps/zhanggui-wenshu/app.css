@@ -223,7 +223,7 @@
   color: var(--zhanggui-accent-foreground);
   background: var(--zhanggui-accent-soft);
 }
-.zhanggui-app__source span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zhanggui-app__source span { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .zhanggui-app__sandbox-choice {
   display: grid;
   width: min(720px, 100%);

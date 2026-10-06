@@ -82,9 +82,8 @@
 
 /* ---------- shared chrome: the project command deck ---------- */
 
-/* Purpose first: the deck opens with what the current page answers, then the
-   cross-page commands with truthful counts, and keeps project identity as a
-   quiet anchor on the right instead of leading the bar. */
+/* The host provides page navigation; this strip keeps purpose, the primary
+   action and project identity without repeating the same destinations. */
 .paw-workbench .paw-wb-chrome {
   min-width: 0;
   display: flex;
@@ -122,54 +121,6 @@
   font-size: 13px;
   line-height: 1.4;
   text-overflow: ellipsis;
-}
-
-.paw-workbench .paw-wb-chrome__commands {
-  min-width: 0;
-  display: flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.paw-workbench .paw-wb-chrome__commands::-webkit-scrollbar { display: none; }
-
-.paw-workbench .paw-wb-chrome__commands button {
-  min-height: 30px;
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--paw-wb-line-strong);
-  border-radius: 9px;
-  background: var(--paw-wb-surface);
-  color: var(--paw-wb-muted);
-  font-size: 13px;
-  line-height: 1.4;
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out;
-}
-
-.paw-workbench .paw-wb-chrome__commands button:hover { background: var(--paw-wb-fill); color: var(--paw-wb-ink); }
-.paw-workbench .paw-wb-chrome__commands button > svg { color: var(--paw-wb-accent); }
-
-.paw-workbench .paw-wb-chrome__commands em {
-  min-width: 20px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--paw-wb-accent-soft);
-  color: var(--paw-wb-accent);
-  font-size: 12px;
-  line-height: 1.4;
-  font-style: normal;
-  font-weight: 700;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
 }
 
 .paw-workbench .paw-wb-chrome__spacer { flex: 1 1 0; min-width: 8px; }
@@ -1277,6 +1228,8 @@
 
 @container paw-native-stage (max-width: 760px) {
   .paw-workbench .paw-wb-chrome { gap: 9px; }
+  .paw-workbench .paw-wb-chrome__purpose { flex: 0 0 auto; }
+  .paw-workbench .paw-wb-chrome__purpose h1 { white-space: nowrap; }
   .paw-workbench .paw-wb-chrome__purpose p { display: none; }
   .paw-workbench .paw-wb-planning-tools {
     min-height: 82px;
@@ -1321,8 +1274,6 @@
 @container paw-native-stage (max-width: 520px) {
   .paw-workbench .paw-wb-chrome { padding-inline: 10px; }
   .paw-workbench .paw-wb-chrome__identity small { display: none; }
-  /* Commands keep their labels and scroll within their available strip. */
-  .paw-workbench .paw-wb-chrome__commands button { padding: 0 8px; }
   .paw-workbench .paw-wb-chrome__identity { display: none; }
   .paw-workbench .paw-wb-primary { flex: 0 0 auto; min-height: 30px; padding: 0 9px; justify-content: center; }
   .paw-workbench .paw-wb-planning-tools {

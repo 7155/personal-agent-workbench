@@ -115,3 +115,29 @@ async function receivesPointer(target: Locator) {
     return Boolean(hit && (hit === node || node.contains(hit)));
   });
 }
+
+test('settings deep links reveal the requested section through initial read failures', async ({ page }, testInfo) => {
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    for (const section of ['prompts', 'subagents']) {
+      await page.goto('/?controlTransport=mock#/project-field');
+      await page.evaluate(() => localStorage.clear());
+      await page.goto(`/?controlTransport=mock#/configuration?section=${section}`);
+      const shell = page.locator('.paw-window-shell[data-app="system-settings"]');
+      const panel = shell.locator(`#configuration-${section}`);
+      const heading = panel.getByRole('heading').first();
+      await expect(heading).toBeInViewport({ ratio: 1 });
+      // A later preceding-section layout must not undo the destination.
+      await expect(shell.locator('.configuration-editor__fields')).toBeAttached();
+      await expect(heading).toBeInViewport({ ratio: 1 });
+      const scroll = shell.locator('.mgmt-page');
+      const beforeScroll = await scroll.evaluate(node => node.scrollTop);
+      await scroll.hover();
+      await page.mouse.wheel(0, -600);
+      await expect.poll(() => scroll.evaluate(node => node.scrollTop)).toBeLessThan(beforeScroll - 300);
+      await testInfo.attach(`settings-deep-link-${section}-${width}.png`, {
+        body: await shell.screenshot(), contentType: 'image/png',
+      });
+    }
+  }
+});

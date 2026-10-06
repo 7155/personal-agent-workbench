@@ -183,26 +183,15 @@ export function PawWorkbench({
   const activeDocument = openedOverviewDocument
     ? (selectedDocument && sameDocument(selectedDocument, openedOverviewDocument) ? selectedDocument : openedOverviewDocument)
     : selectedDocument;
-  // Deck counts are shown only once their backing resource has settled; an
-  // unresolved read must never masquerade as a truthful zero.
-  const unresolvedTaskCount = resourceSettled(resourceStates.planning)
-    ? tasks.filter((task) => taskLane(task) !== 'done').length
-    : null;
-  const documentCount = resourceSettled(resourceStates.documents)
-    ? Math.max(documents.length, documentTotal ?? 0)
-    : null;
 
   return (
     <section className="paw-workbench" data-page-id={activePageId}>
       <span aria-hidden data-paw-workbench-direction="pawos-workbench-v1" hidden />
       <WorkbenchChrome
-        documentCount={documentCount}
-        onNavigate={onNavigate}
         pageId={activePageId}
         primaryAction={primaryAction}
         projectName={projectName}
         projectPath={projectPath}
-        unresolvedTaskCount={unresolvedTaskCount}
       />
       {activePageId === 'overview' ? (
         <ProjectOverview
@@ -273,35 +262,17 @@ const WORKBENCH_PAGES: Record<PawWorkbenchPageId, { label: string; intent: strin
   documents: { label: '工作文档', intent: '打开权威 WorkDocument' },
 };
 
-const DECK_COMMANDS: readonly { icon: typeof GitBranch; label: string; page: PawWorkbenchPageId }[] = [
-  { icon: PanelsTopLeft, label: '项目概览', page: 'overview' },
-  { icon: GitBranch, label: '任务编排', page: 'planning' },
-  { icon: FileText, label: '工作文档', page: 'documents' },
-];
-
-/**
- * The project command deck is purpose-first: it opens with what the current
- * page answers, then the cross-page commands with truthful counts, and keeps
- * project identity as a quiet anchor on the right. Counts come from real
- * planning tasks and registered WorkDocuments; while a resource is unsettled
- * the command stays but its number is withheld.
- */
+/** The host owns page navigation; this strip keeps purpose and the primary action. */
 function WorkbenchChrome({
-  documentCount,
-  onNavigate,
   pageId,
   projectName,
   projectPath,
   primaryAction,
-  unresolvedTaskCount,
 }: {
-  documentCount: number | null;
-  onNavigate?: PawWorkbenchProps['onNavigate'];
   pageId: PawWorkbenchPageId;
   projectName: string;
   projectPath: string;
   primaryAction?: PawWorkbenchProps['primaryAction'];
-  unresolvedTaskCount: number | null;
 }) {
   const page = WORKBENCH_PAGES[pageId];
   return (
@@ -310,25 +281,6 @@ function WorkbenchChrome({
         <h1>{page.label}</h1>
         <p>{page.intent}</p>
       </div>
-      {onNavigate ? (
-        // A group, not a second <nav>: the host shell owns the App's only
-        // navigation landmark and queries it by bare role.
-        <div aria-label="项目命令台" className="paw-wb-chrome__commands" role="group">
-          {DECK_COMMANDS.filter((command) => command.page !== pageId).map((command) => {
-            const count = command.page === 'planning' ? unresolvedTaskCount : command.page === 'documents' ? documentCount : null;
-            const countText = count === null ? '' : command.page === 'planning' ? `${count} 项未完成` : `共 ${count} 份`;
-            const commandName = countText ? `前往${command.label}：${countText}` : `前往${command.label}`;
-            const Icon = command.icon;
-            return (
-              <button aria-label={commandName} key={command.page} onClick={() => onNavigate(command.page)} title={commandName} type="button">
-                <Icon aria-hidden size={14} />
-                <span>{command.label}</span>
-                {count === null ? null : <em>{count}</em>}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
       <span aria-hidden className="paw-wb-chrome__spacer" />
       {primaryAction ? (
         <button aria-label={primaryAction.label} className="paw-wb-primary" onClick={primaryAction.onClick} type="button">

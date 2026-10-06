@@ -113,46 +113,18 @@ describe('PawWorkbench', () => {
     expect(within(disclosure as HTMLElement).getByText('abc1234')).toBeInTheDocument();
   });
 
-  it('leads the deck with page purpose and cross-page commands carrying truthful counts', async () => {
-    const onNavigate = vi.fn();
+  it('keeps purpose and the primary action without duplicating host navigation', async () => {
+    const onClick = vi.fn();
     renderWorkbench({
       pageId: 'overview',
-      planning: { tasks: [
-        { id: 'active-task', title: '推进重构', status: 'active' },
-        { id: 'done-task', title: '完成迁移', status: 'done' },
-      ] },
-      documents: [workDocument()],
-      documentTotal: 5,
-      onNavigate,
-    });
-
-    // Purpose leads; the current page never offers a self-command.
-    expect(screen.getByText('先处理最需要处理的事')).toBeInTheDocument();
-    const deck = screen.getByRole('group', { name: '项目命令台' });
-    expect(within(deck).queryByRole('button', { name: /前往项目概览/ })).not.toBeInTheDocument();
-    // Cross-page navigation lives in the deck, not in the now-band.
-    expect(within(screen.getByLabelText('当前最需要处理的工作')).queryByRole('button', { name: '任务编排' })).not.toBeInTheDocument();
-
-    await userEvent.click(within(deck).getByRole('button', { name: '前往任务编排：1 项未完成' }));
-    expect(onNavigate).toHaveBeenCalledWith('planning');
-    await userEvent.click(within(deck).getByRole('button', { name: '前往工作文档：共 5 份' }));
-    expect(onNavigate).toHaveBeenCalledWith('documents');
-  });
-
-  it('withholds deck counts while resources are unsettled and drops commands without a navigator', () => {
-    const { rerender } = renderWorkbench({
-      pageId: 'documents',
       onNavigate: vi.fn(),
-      resourceStates: { planning: { loading: true }, documents: { loading: true } },
+      primaryAction: { label: '查看任务', onClick },
     });
 
-    const deck = screen.getByRole('group', { name: '项目命令台' });
-    expect(within(deck).getByRole('button', { name: '前往任务编排' })).toBeInTheDocument();
-    expect(within(deck).getByRole('button', { name: '前往项目概览' })).toBeInTheDocument();
-    expect(within(deck).queryByRole('button', { name: /前往工作文档/ })).not.toBeInTheDocument();
-
-    rerender(<PawWorkbench {...baseProps({ pageId: 'documents' })} />);
+    expect(screen.getByText('先处理最需要处理的事')).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: '项目命令台' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '查看任务' }));
+    expect(onClick).toHaveBeenCalledOnce();
   });
 
   it('derives project identity from real planning or WorkDocument fields when overview lacks it', () => {

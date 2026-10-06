@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/primitives';
 import { InlineNotice, ManagementSection, asRecord, publicErrorText } from '@/features/overview/management-ui';
 import type { ControlTransport } from '@/platform/transport';
 import './prompt-settings.css';
+import { useConfigurationSectionAnchor } from './useConfigurationSectionAnchor';
 
 type PromptValues = { systemInstructions: string; compactionInstructions: string };
 type PromptPolicy = { maxCharacters: number; defaults: PromptValues; builtInSystemPrompt: string };
@@ -30,9 +31,7 @@ export function PromptSettingsPanel({ routeIds, transport, highlighted = false }
     retry: false,
     refetchOnWindowFocus: false,
   });
-  useEffect(() => {
-    if (highlighted && query.data) panel.current?.scrollIntoView?.({ block: 'start' });
-  }, [highlighted, query.data]);
+  useConfigurationSectionAnchor(panel, highlighted);
   const mutation = useMutation({
     mutationFn: async ({ changes, revision }: { changes: Record<string, string>; revision: number }) => {
       if (!writable) throw new Error('当前版本不支持保存提示词');
