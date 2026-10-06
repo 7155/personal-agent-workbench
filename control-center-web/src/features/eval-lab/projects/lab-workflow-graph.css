@@ -89,13 +89,14 @@
 .lab-flow__running-icon { animation: lab-flow-rotate 1.8s linear infinite; }
 @keyframes lab-flow-rotate { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .lab-flow__running-icon { animation: none; } .lab-flow-node { transition: none; } }
-/* Main canvas keeps its place when the project chat opens in a narrow PAW window. */
+/* Narrow windows use the existing chat toggle to switch surfaces. The mounted
+   canvas keeps its selection and reading position while chat is shown. */
 .lab-project-body[data-workflow='true'] { position: relative; grid-template-columns: minmax(0, 1fr) minmax(320px, .45fr); }
 .lab-project-body[data-workflow='true'][data-guide-open='false'] { grid-template-columns: minmax(0, 1fr); }
 @container lab-project (max-width: 980px) {
   .lab-project-body[data-workflow='true'] { grid-template-columns: minmax(0, 1fr); }
-  .lab-project-body[data-workflow='true'][data-guide-open='true'] .lab-project-results { display: flex; }
-  .lab-project-body[data-workflow='true'] .lab-project-guide { position: absolute; z-index: 5; right: 0; top: 0; bottom: 0; width: min(400px, 92%); background: var(--lab-surface); border-left: 1px solid var(--lab-line-strong); box-shadow: -12px 0 35px rgb(0 0 0 / .13); }
+  .lab-project-body[data-workflow='true'][data-guide-open='true'] .lab-project-results { display: none; }
+  .lab-project-body[data-workflow='true'] .lab-project-guide { position: static; width: auto; background: var(--lab-surface); border-left: 0; box-shadow: none; }
 }
 @container lab-project (max-width: 680px) {
   .lab-flow__header { padding: 18px 16px 12px; gap: 12px; }

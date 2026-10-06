@@ -18,7 +18,7 @@
 .memory-profile__paragraph footer div { display: flex; flex-wrap: wrap; gap: 10px; }
 .memory-profile__more-sources { flex-basis: 100%; }
 .memory-profile__more-sources summary { min-height: 32px; align-content: center; cursor: pointer; color: #587446; }
-.memory-profile__paragraph footer button { border: 0; padding: 0; background: none; color: #587446; font: inherit; font-size: 10px; cursor: pointer; }
+.memory-profile__paragraph footer button { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; border: 0; padding: 0 6px; background: none; color: #587446; font: inherit; font-size: 10px; cursor: pointer; }
 .memory-profile__actions { display: flex; align-items: center; gap: 12px; padding-top: 18px; }
 .memory-profile__actions > span { flex: 1; text-align: right; font-size: 10px; color: #95a18e; }
 .memory-profile__footnote { font-size: 10px; color: #8b9985; line-height: 1.7; margin-top: 20px; }
@@ -29,4 +29,4 @@
 .memory-profile__comparison p { white-space: pre-wrap; font-size: 12px; line-height: 1.8; }
 .memory-profile__comparison > small { display: block; color: #85947c; font-size: 10px; margin-bottom: 10px; }
 .memory-profile__retract { display: block; margin-top: 9px; color: #9c773f; font-size: 10px; }
-@media (max-width: 600px) { .memory-profile { padding: 17px 12px; } .memory-profile__actions { flex-wrap: wrap; gap: 8px; } }
+@media (max-width: 600px) { .memory-profile { padding: 17px 12px; } .memory-profile__actions { flex-wrap: wrap; gap: 8px; } .memory-profile__paragraph footer button { min-width: 40px; min-height: 40px; } .memory-profile__more-sources summary { min-height: 40px; } }

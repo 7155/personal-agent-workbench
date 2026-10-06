@@ -5,6 +5,7 @@ test('primary assistant discusses, delegates, stops, returns to work and edits t
   test.setTimeout(90_000);
   await page.goto('/?controlTransport=mock#/agent');
   const agent = page.locator('.paw-window-shell[data-app="agent"]');
+  await expect(agent).toBeVisible({ timeout: 30_000 });
   await expect(agent.locator('.paw-app-boot, .paw-app-loading')).toHaveCount(0, { timeout: 30_000 });
   await expect(agent.getByRole('button', { name: /打开对话/ })).toBeEnabled();
   await expectNoHorizontalPageOverflow(page);

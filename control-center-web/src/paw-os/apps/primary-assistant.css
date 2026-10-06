@@ -11,7 +11,7 @@
 .paw-primary-home h1 { margin: 9px 0 6px; font-size: clamp(25px, 4cqw, 31px); font-weight: 620; letter-spacing: -.055em; line-height: 1.2; }
 .paw-primary-home__heading p { margin: 0; color: #708076; font-size: 13px; line-height: 1.8; }
 .paw-primary-home button, .paw-primary-home input, .paw-primary-home textarea { font: inherit; }
-.paw-primary-home button { cursor: pointer; }
+.paw-primary-home button { cursor: pointer; min-width: 32px; min-height: 32px; }
 .paw-primary-home button:disabled { cursor: default; opacity: .5; }
 .paw-primary-home :focus-visible, .memory-profile :focus-visible { outline: 2px solid #537c66; outline-offset: 3px; }
 .paw-primary-home__composer { background: #fff; border: 1px solid #dce3dc; border-radius: 16px; box-shadow: 0 8px 28px #20382a07, 0 1px 2px #20382a05; overflow: hidden; }
@@ -68,7 +68,7 @@
 .paw-primary-authority { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; font-size: 11px; color: #65806b; }
 .paw-session-workspace__runtime > button.paw-session-history-load { width: auto; display: inline-flex; gap: 5px; padding: 0 8px; white-space: nowrap; color: var(--paw-muted); }
 .paw-session-workspace__runtime > button.paw-session-history-load:hover { background: var(--paw-panel-soft); }
-@container primary-home (max-width: 500px) { .paw-primary-home__body { padding: 18px 16px 20px; } .paw-primary-home__identity { padding: 15px 15px 4px; } .paw-primary-home__hint { flex-wrap: wrap; gap: 5px; } }
+@container primary-home (max-width: 500px) { .paw-primary-home__body { padding: 18px 16px 20px; } .paw-primary-home__identity { padding: 15px 15px 4px; } .paw-primary-home__hint { flex-wrap: wrap; gap: 5px; } .paw-primary-home button { min-width: 40px; min-height: 40px; } .paw-primary-home__send { min-height: 44px; } }
 @container primary-home (max-width: 360px) { .paw-primary-home__composer footer { flex-wrap: wrap; gap: 8px; } .paw-primary-home__send { margin-left: auto; } .paw-primary-home__identity { flex-wrap: wrap; } .paw-primary-home__identity button { margin-left: auto; } }
 :root[data-theme='dark'] .paw-primary-home { background: #18231d; color: #dfebe1; --primary-ink: #dfebe1; }
 :root[data-theme='dark'] .paw-primary-home__composer { background: #202e25; border-color: #425848; }
