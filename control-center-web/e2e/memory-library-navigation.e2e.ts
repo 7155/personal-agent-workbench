@@ -9,6 +9,13 @@ test('memory content classes remain clickable beside curation controls in narrow
     const button = layers.getByRole('button', { name });
     await button.click();
     await expect(button).toHaveAttribute('aria-current', 'page');
+    const geometry = await button.evaluate(e => {
+      const label = e.querySelector('span')!.getBoundingClientRect();
+      const count = e.querySelector('small')!.getBoundingClientRect();
+      return { labelHeight: label.height, countHeight: count.height, countLeft: count.left, labelRight: label.right };
+    });
+    expect(geometry.labelHeight).toBeLessThan(geometry.countHeight * 1.6);
+    expect(geometry.countLeft).toBeGreaterThan(geometry.labelRight);
   }
   await page.getByRole('button', { name: '整理状态摘要', exact: true }).click();
   await expect(page.locator('#memory-library-status')).toBeVisible();

@@ -36,13 +36,13 @@
 
 
 /* The catalog has three content classes. Status stays behind a disclosure. */
-.memory-library { flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--memory-line); background: #fff; }
+.memory-library { container: memory-library / inline-size; flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--memory-line); background: #fff; }
 .memory-library__navigation { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 16px; }
 .memory-library__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
 .memory-library__layer-note { margin: 0; padding: 2px 20px 12px; color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .memory-library__layers { display: flex; min-width: 0; margin: 0; padding: 0; list-style: none; gap: 4px; }
 .memory-library__layers li { flex: 0 0 auto; }
-.memory-library__layers button { display: flex; min-height: 40px; align-items: center; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--color-text-secondary); cursor: pointer; font: inherit; gap: 8px; }
+.memory-library__layers button { white-space: nowrap; display: flex; min-height: 40px; align-items: center; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--color-text-secondary); cursor: pointer; font: inherit; gap: 8px; }
 .memory-library__layers small { color: var(--color-text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .memory-library__layers button[aria-current='page'] { background: var(--memory-signal-soft); color: var(--memory-signal-strong); font-weight: 600; }
 .memory-library__toggle { display: flex; min-height: 40px; flex: 0 0 auto; align-items: center; padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 13px; cursor: pointer; gap: 5px; }
@@ -59,7 +59,7 @@
   .memory-library__layers button:hover { background: var(--color-surface-hover); }
   .memory-library__toggle:hover, .memory-library__pending button:hover { color: var(--memory-signal-strong); text-decoration: underline; text-underline-offset: 3px; }
 }
-@container memory-second-brain (max-width: 480px) {
+@container memory-library (max-width: 480px) {
   .memory-library__navigation { flex-wrap: wrap; gap: 0; padding-inline: 10px; }
   .memory-library__layers { flex: 0 0 100%; }
   .memory-library__layers button { min-height: 44px; padding-inline: 10px; }
