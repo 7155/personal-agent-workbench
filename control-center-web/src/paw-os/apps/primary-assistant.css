@@ -76,7 +76,7 @@
 .paw-primary-home__tasks small { color: var(--color-text-secondary); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .paw-primary-home__advanced { display: inline-flex; align-items: center; gap: 4px; margin-top: 16px; padding: 4px 8px; border: 0; background: transparent; color: var(--color-text-secondary); }
 .paw-primary-home__field-counter { display: block; margin: 0 16px 4px; color: var(--color-text-secondary); font-size: 12px; text-align: right; }
-.paw-primary-home__field-error { margin: 4px 16px; color: var(--color-danger); font-size: 13px; line-height: 1.6; }
+.paw-primary-home__field-error { overflow-wrap: anywhere; margin: 4px 16px; color: var(--color-danger); font-size: 13px; line-height: 1.6; }
 .paw-primary-home__scope > .paw-primary-home__field-error { margin-inline: 0; }
 .paw-primary-session-context { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; padding: 4px 8px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.5; }
 .paw-primary-session-context > span { display: grid; gap: 2px; min-width: 0; }

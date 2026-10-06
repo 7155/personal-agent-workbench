@@ -28,6 +28,7 @@ test('project chat and results switch without covering keyboard or pointer targe
   await dialog.getByRole('textbox', { name: '材料正文', exact: true }).fill('这次演示不写入本机文件。');
   await dialog.getByRole('button', { name: '保存文本材料', exact: true }).click();
   await expect(dialog.getByText('此操作需要真实 Lab 服务；演示模式没有执行模型、评测或文件写入。')).toBeVisible();
+  await expect(dialog.getByRole('alert')).toBeInViewport();
   await expect(page.getByRole('button', { name: '核对原操作', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('textbox', { name: '材料正文', exact: true })).toHaveValue('这次演示不写入本机文件。');
   await dialog.getByRole('button', { name: '关闭', exact: true }).click();

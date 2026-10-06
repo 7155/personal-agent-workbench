@@ -329,10 +329,14 @@ function NewProject({ connection, busy, onCreate }: { connection: string; busy: 
 function MaterialIntake({ busy, onAdd, saveError }: { saveError?: unknown; busy: boolean; onAdd: (input: Record<string, JsonValue>, resume?: boolean) => Promise<void> }) {
   const [path, setPath] = useState(''); const [title, setTitle] = useState(''); const [text, setText] = useState(''); const [error, setError] = useState('');
   const [resume, setResume] = useState(true);
+  const errorNotice = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error || saveError) errorNotice.current?.scrollIntoView({ block: 'nearest' });
+  }, [error, saveError]);
   return <div className="lab-project-intake"><p>选择文件、输入路径或粘贴正文。材料保存后可以直接继续评测准备。</p><label className="lab-project-intake__resume"><input type="checkbox" checked={resume} disabled={busy} onChange={(event) => setResume(event.target.checked)} />材料接入后，让 Agent 继续推进</label><label className="lab-project-file-picker"><Upload size={16} />上传文本或源码文件<input type="file" multiple disabled={busy} onChange={(event) => { const files = event.target.files; if (!files?.length) return; void loadFiles(files).then((materials) => onAdd({ materials }, resume)).catch((reason) => setError(projectError(reason))); }} /></label>
     <label>已连接执行器上的路径<input value={path} placeholder="绝对路径" onChange={(event) => setPath(event.target.value)} disabled={busy} /></label><Button disabled={busy || !path.trim()} onClick={() => void onAdd({ path: path.trim() }, resume)}>读取路径</Button>
     <hr /><label>粘贴材料标题<input value={title} onChange={(event) => setTitle(event.target.value)} disabled={busy} /></label><label>材料正文<textarea rows={7} value={text} onChange={(event) => setText(event.target.value)} disabled={busy} /></label>
-    <Button disabled={busy || !title.trim() || !text.trim()} onClick={() => void onAdd({ materials: [{ title: title.trim(), text }] }, resume)}>保存文本材料</Button>{error || saveError ? <p role="alert" className="lab-project-error">{error || projectError(saveError)}</p> : null}</div>;
+    <Button disabled={busy || !title.trim() || !text.trim()} onClick={() => void onAdd({ materials: [{ title: title.trim(), text }] }, resume)}>保存文本材料</Button>{error || saveError ? <p ref={errorNotice} role="alert" className="lab-project-error">{error || projectError(saveError)}</p> : null}</div>;
 }
 function Materials({ project, onAdd }: { project: LabProject; onAdd: () => void }) {
   const [selectedId, setSelectedId] = useState(''); const selected = project.materialSet.materials.find((item) => item.sourceId === selectedId) ?? project.materialSet.materials[0];
