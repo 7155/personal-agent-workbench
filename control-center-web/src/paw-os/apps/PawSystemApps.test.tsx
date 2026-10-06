@@ -14,6 +14,7 @@ import { MockControlTransport } from '@/test/mock-transport';
 
 vi.mock('@/features/approvals', () => ({ ApprovalsFeature: () => <h1>审批真实界面</h1> }));
 const configurationLoad = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
+const monitorActivity = vi.hoisted(() => ({ states: [] as (boolean | null)[] }));
 vi.mock('@/features/configuration', () => ({ ConfigurationFeature: () => {
   const [draft, setDraft] = useState('');
   const active = usePawOsAppActive();
@@ -29,6 +30,7 @@ vi.mock('@/features/input-method', () => ({
   InputMethodFeature: () => <h1>输入法真实界面</h1>,
 }));
 vi.mock('@/features/observability', () => ({ ObservabilityFeature: () => {
+  monitorActivity.states.push(usePawOsAppActive());
   const [draft, setDraft] = useState('');
   const [params, setParams] = useSearchParams();
   return <><h1>活动真实界面</h1><input aria-label="监控草稿" value={draft} onChange={event => setDraft(event.target.value)} />
@@ -43,6 +45,7 @@ import {
 } from './PawSystemApps';
 
 afterEach(() => {
+  monitorActivity.states = [];
   configurationLoad.pending = null;
   cleanup();
   window.localStorage.clear();
@@ -308,6 +311,7 @@ describe('PawSystemApps', () => {
     await screen.findByText('分类：tool');
     expect(screen.getByRole('textbox', { name: '监控草稿' })).toBe(input);
     expect(input).toHaveValue('等待检查');
+    expect(monitorActivity.states).not.toContain(false);
   });
 
   it('moves between Input Studio pages while retaining the real feature owners', async () => {

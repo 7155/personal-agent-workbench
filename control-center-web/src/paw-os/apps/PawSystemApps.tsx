@@ -168,7 +168,9 @@ export function PawSystemApps({
   const page = systemPageForRoute(pages, route);
   const visibleRoute = useDeferredValue(route);
   const visiblePage = systemPageForRoute(pages, visibleRoute);
-  const switchingPage = visibleRoute !== route;
+  // Updating the current page's filters/default Session is not a page handoff.
+  // Making that live owner inert drops focus and can reject its first input.
+  const switchingPage = visiblePage.id !== page.id;
   const preservePages = appId === 'input-studio' || appId === 'system-settings';
   const [visitedPages, setVisitedPages] = useState<string[]>([]);
   useEffect(() => {

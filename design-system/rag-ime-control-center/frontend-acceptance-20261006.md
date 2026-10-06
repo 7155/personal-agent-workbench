@@ -492,3 +492,13 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 修复前真实记录：日程草稿两宽度丢失、浏览器新标签两宽度无新 tab；行为检查的日程频率、preview tab 回执、空标签键盘焦点、终端搜索 Escape 均先失败再修复。早期 JSON 的错误路由、重复隐藏按钮定位器、把两个可见标签误当必须有 overflow 菜单等脚本失败保留，未计产品通过。
 - 本地检查：Schedules/Preview pages/Preview transport/Observability 四完整文件 87 项通过；Window layer/Browser chrome/Terminal 三文件首批 123 项通过；补键盘后 Browser chrome/Terminal 两文件 60 项通过；Browser App 完整文件 33 项通过；Golden 完整文件 44 项通过。CSS 与 Terminal 最终共 105 项通过、3 项失败：三个 CSS 静态断言在固定已推送 c2058493 源码上同样失败，证据 `/tmp/paw-css-baseline-c2058493-result-v2.txt`；没有称全套 CSS 通过，也没有扩展到 CI 修复。两项因本批目标/leading 正当变化的断言已同步。正式 `pnpm typecheck` 修正一个遗漏的 ControlRequest 注解后 exit=0；owner/import/route/diff 检查通过。
 - Library 原 15 项、清单 SHA 与未知费用保留不变，不再重试前置 403，不启动付费模型。工作台、规划、文档、Capsule 与桌面已经逐页拍到新首图，主要操作继续验收，尚不称全部功能块完成。
+
+## 上下文首次进入：区分输入未接收与草稿覆盖
+
+基于远端 `f3dd1018e163edafa1d786d86d8152191a819469`，优先收敛前批保留的快速首次进入失败。实际应用入口加只读输入/DOM/路由时序采集，保持同一环境和公开 preview，不修改数据、代理或后端。
+
+- `context-fresh-instrumented.json`：390/1440 × 立即输入/出现输入框后等待 700ms × 各六次，共 24 次。立即输入 12 次中 7 次失败，等待组 12 次均通过。7 次失败的 `afterFill` 当场为空，捕获不到原生 input 事件；0 次出现“已接受正确值，后来被覆盖”。因此前批笼统的 draft-lost 不能当作草稿状态覆盖证据。
+- 原因实际可复现：默认 Session 写入同页 query 时，`visibleRoute !== route` 将同页标成正在换页，原内容 `inert`，搜索框可见但失去可交互性。既有本地模拟活动页查询切换补查也实际记录 active=false；新断言先失败。仅将换页判断收敛到 page identity，仍保留跨页懒加载时的 inert/旧内容保护，不重建请求或状态所有者。
+- `context-fresh-final.json` 相同 24 次全部当场接收输入并在切首轮后保留，立即组也 12/12；没有依靠等待增加来掩盖问题。修复前手机图、修复后手机/桌面首开图已人工查看。页面及数据始终为真实 Chromium 中的公开模拟 UI，不称原生/真实模型通过。
+- System Apps、Context Debug 两完整文件 49 项通过，原跨页加载保护仍通过。正式 `pnpm typecheck` 的测试采集类型补上 hook 允许的 null 后重新验证；owner/import/route/diff 检查通过。历史失败文件不覆盖；本段替代前批“成因尚未定位”的当前结论，保留其发生经过。
+- Library CONNECT 403 不重试、账本不变、没有 CI 或付费模型。工作台历史筛选及规划日期两宽度也已复现切页重置，下一批继续修复和实际点击。
