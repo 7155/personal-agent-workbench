@@ -47,6 +47,7 @@
   --paw-system-radius-lg: var(--paw-panel-radius, 12px);
   /* Stage pacing defaults; `data-stage` below tunes them per purpose. */
   --paw-stage-chrome-h: 38px;
+  --paw-stage-control-h: 32px;
   --paw-stage-gutter: 20px;
   --paw-stage-rhythm: 13px;
   --paw-stage-lead: 14px;
@@ -499,12 +500,10 @@
   font-family: inherit;
 }
 
-/* Native <select> now inherits the shared control language
-   (paw-os-controls.css); only the ui-* primitives keep the compact height —
-   the same --paw-control-h-sm every other PAWOS surface uses, not an
-   invented 30px. */
+/* Shared controls retain the desktop minimum and grow with the App's
+   compact frame; chrome and forms use the same reachable target size. */
 .paw-desktop-root .paw-system-app :is(.ui-button, .ui-input, .ui-select__trigger) {
-  min-height: var(--paw-control-h-sm, 28px);
+  min-height: max(var(--paw-stage-control-h), var(--paw-control-h-sm, 28px));
   border-radius: var(--paw-system-radius-sm);
 }
 
@@ -1227,6 +1226,7 @@
    (approvals) already keys its own collapse to the window. */
 
 @container paw-sysapp (max-width: 880px) {
+  .paw-desktop-root .paw-system-app__frame { --paw-stage-control-h: 40px; --paw-stage-chrome-h: 48px; }
   .paw-desktop-root .paw-system-app .mgmt-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -1283,6 +1283,8 @@
 }
 
 @container paw-sysapp (max-width: 420px) {
+  .paw-desktop-root .paw-system-app__frame { --paw-stage-control-h: 44px; --paw-stage-chrome-h: 52px; }
+  .paw-desktop-root .paw-system-app :is(.ui-input, .ui-select__trigger) { font-size: 16px; }
   /* At phone-sized windows, labeled destinations above the page give the
      working form its full width instead of reserving an opaque icon rail. */
   .paw-desktop-root .paw-system-app__frame {
@@ -1327,7 +1329,7 @@
    first control below the fold. */
 @container paw-sysapp (max-height: 420px) {
   .paw-desktop-root .paw-system-app__frame {
-    --paw-stage-chrome-h: 32px;
+    --paw-stage-chrome-h: max(38px, calc(var(--paw-stage-control-h) + 8px));
     --paw-stage-lead: 10px;
     --paw-stage-rhythm: 10px;
   }

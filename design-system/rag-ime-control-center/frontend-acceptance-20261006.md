@@ -421,3 +421,14 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 失败/恢复补查实际发现输入设置 QueryState 在缓存仍在时卸载已打开分组。新增交互先失败；保留已有表单与草稿，显示刷新失败，恢复读取前不提供保存入口。完整输入法测试文件新增后 49 项通过，历史完整文件 8 项通过。input-studio-faults-final.json 八组延迟→失败→刷新恢复均保留原草稿/选择，零 pageerror/页面横向溢出；原故障注入只拒绝一次被重试恢复、以及错误测试字段名的首轮失败均保留，未列为真实缺陷。
 - 上述加载测量另发现公共刷新按钮原高 28px，loading 将 15px 图标替为 16px 导致宽度变化；八组 sameButtonSize 均为 false，不能记为加载尺寸通过。这项公共控件修复继续单独处理，不被本批的草稿通过数覆盖。
 - Library 原 15 项原图/原包未改、无新 file_id；403 前置阻塞不再机械重试。费用未知保留不变。本批不把 49 路由基线称为 49 个 Apps，也不宣称全部功能块重设计完成。
+
+## 公共控件：加载尺寸与四个系统 App 的点击高度
+
+基于远端 `1b17cdbba2de6e36aa6d41fc00360f83c66708f2`。对上一批明确未通过的加载尺寸继续复现并修复；没有新增按钮或第二套组件。
+
+- 真实 Input Studio 刷新按钮此前高 28px，loading 时图标 15→16px 导致宽度变化。生产共享 Button 的浏览器组件夹具另证明：无图标 82→106px、14px 图标 95.70→97.70px、15px 图标 96.70→97.70px、18px 图标 99.70→97.70px，normal/reduce 八组都变。保留原图标槽和原图标尺寸，加载指示叠在槽内；无图标按钮使用原有 indeterminate rail，文字、禁用和 busy 语义保持稳定。
+- button-size-after.json 八组宽高、文字均一致；其截图清楚标识“公开模拟：公共 Button 的加载尺寸验收”，属于生产组件浏览器夹具，不冒充页面或后端截图。首次 Vite CJS 导出读取错误的脚本日志保留，纠正默认导出后才得到修复前测量。
+- 系统 App 沿用同一套 primitives 和 frame：桌面至少 32px、紧凑窗口 40px、手机宽度 44px；chrome 同步留出控件和焦点空间，短窗不会把高度重新降成 32px 并裁切手机按钮。手机文本框/Select 提升到 16px。
+- input-controls-final.json 真实四页×390/1440 八组 loading 按钮尺寸不变、label 不变、disabled=true；44/32px 高度通过，延迟→失败→恢复仍保留原值，pageerror=0、无页面横向溢出。system-controls-final-v2.json 四个系统 App×390/768/1440 共 12 组全部符合 44/40/32px，页首动作完整处于 chrome 内且无页面横向溢出。已查看各手机页和按钮焦点截图；首次脚本等了旧 App Center 的分区类名，定位失败独立保留，改等真实“打开 掌柜问数”后复查。
+- InteractionMotion/Dialog 两完整文件 8 项通过，正式 pnpm typecheck exit=0，owner/import/route/diff 检查通过。继续对 Monitor 三页及 Trace 四视图实点，当前仅新拍了 14 组页面/分区图，不用这些打开截图代替主要按钮验收。
+- Library、原生 IPC、真实后端/模型和费用账本边界与前批一致；未重试 Library 403，未启动付费模型。

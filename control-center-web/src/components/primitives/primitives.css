@@ -120,10 +120,15 @@
 }
 
 .ui-button__icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
+
+.ui-button__icon-content { display: inline-flex; }
+.ui-button__icon[data-loading] > .ui-button__icon-content { visibility: hidden; }
+.ui-button__icon > .ui-button__spinner { position: absolute; inset: 0; margin: auto; }
 
 .ui-button__icon:empty {
   display: none;
