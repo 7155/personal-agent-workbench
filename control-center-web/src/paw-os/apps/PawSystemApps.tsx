@@ -56,7 +56,7 @@ import {
   publicErrorText,
   stringValue,
 } from '@/features/overview/management-ui';
-import { openPawOsRoute, PawOsAppActivityProvider, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import { openPawOsRoute, PawOsAppActivityProvider, usePawOsAppActive, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { pluginQueryKeys, usePluginCatalog } from '@/features/plugins/api';
 import {
   agentModelRouting,
@@ -169,13 +169,13 @@ export function PawSystemApps({
   const visibleRoute = useDeferredValue(route);
   const visiblePage = systemPageForRoute(pages, visibleRoute);
   const switchingPage = visibleRoute !== route;
-  const preserveInputPages = appId === 'input-studio';
-  const [visitedInputPages, setVisitedInputPages] = useState<string[]>([]);
+  const preservePages = appId === 'input-studio' || appId === 'system-settings';
+  const [visitedPages, setVisitedPages] = useState<string[]>([]);
   useEffect(() => {
-    if (preserveInputPages) setVisitedInputPages(current => current.includes(visiblePage.id) ? current : [...current, visiblePage.id]);
-  }, [preserveInputPages, visiblePage.id]);
-  const renderedPages = preserveInputPages
-    ? pages.filter(candidate => candidate.id === visiblePage.id || visitedInputPages.includes(candidate.id))
+    if (preservePages) setVisitedPages(current => current.includes(visiblePage.id) ? current : [...current, visiblePage.id]);
+  }, [preservePages, visiblePage.id]);
+  const renderedPages = preservePages
+    ? pages.filter(candidate => candidate.id === visiblePage.id || visitedPages.includes(candidate.id))
     : [visiblePage];
   // Each system rail reports one honest number from its own Runtime evidence:
   // Settings queues human approvals, App Center queues install proposals, and
@@ -247,7 +247,7 @@ export function PawSystemApps({
           </header>
           <div className="paw-system-app__workspace" aria-busy={switchingPage}>
             <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {page.label}…</div>}>
-              <MemoryRouter initialEntries={[visibleRoute]} key={preserveInputPages ? appId : `${appId}:${visiblePage.id}`}>
+              <MemoryRouter initialEntries={[visibleRoute]} key={preservePages ? appId : `${appId}:${visiblePage.id}`}>
                 <PawSystemRouteReporter expectedRoute={visibleRoute} preservePage />
                 {renderedPages.map(candidate => <div className="paw-system-app__page" key={`${appId}:${candidate.id}`} hidden={candidate.id !== visiblePage.id} inert={switchingPage || candidate.id !== visiblePage.id}>
                   <PawOsAppActivityProvider active={!switchingPage && candidate.id === visiblePage.id}>
@@ -415,7 +415,7 @@ function PawAgentSettings() {
           <button onClick={authority.reload} type="button">重新读取</button>
         </div>
       ) : null}
-      {resource.loading || authority.isPending ? (
+      {(resource.loading && !Object.keys(resource.data).length) || authority.isPending ? (
         <div className="paw-system-resource-state" data-state="loading" role="status"><LoaderCircle aria-hidden="true" size={17} />正在读取 Agent 默认设置</div>
       ) : (
         <>
@@ -736,6 +736,7 @@ function PawPackageCatalog() {
 
 function useAgentModelResource() {
   const transport = useControlTransport();
+  const pageActive = usePawOsAppActive() ?? true;
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -743,6 +744,7 @@ function useAgentModelResource() {
   const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
+    if (!pageActive) return;
     let active = true;
     setLoading(true);
     void transport.request({ pathId: 'agent.role.models' }).then((response) => {
@@ -755,13 +757,14 @@ function useAgentModelResource() {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [revision, transport]);
+  }, [pageActive, revision, transport]);
 
   return { data, error, loading, reload };
 }
 
 function useAgentModelRoutingAuthority() {
   const transport = useControlTransport();
+  const pageActive = usePawOsAppActive() ?? true;
   const [routing, setRouting] = useState<AgentModelRouting | null>(null);
   const [readError, setReadError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -771,6 +774,7 @@ function useAgentModelRoutingAuthority() {
   const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
+    if (!pageActive) return;
     let active = true;
     setIsPending(true);
     void transport.request({ pathId: 'agent.configuration.get' }).then((response) => {
@@ -785,7 +789,7 @@ function useAgentModelRoutingAuthority() {
       if (active) setIsPending(false);
     });
     return () => { active = false; };
-  }, [revision, transport]);
+  }, [pageActive, revision, transport]);
 
   const save = useCallback(async (routeId: ModelRouteId, route: AgentModelRoute) => {
     if (!routing || saving) return;

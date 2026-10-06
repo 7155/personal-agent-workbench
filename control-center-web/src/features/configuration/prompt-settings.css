@@ -1,4 +1,4 @@
-.configuration-prompts { min-width: 0; scroll-margin-top: var(--space-4); }
+.configuration-prompts { min-width: 0; container: prompt-settings / inline-size; scroll-margin-top: var(--space-4); }
 .configuration-prompts__scope { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; }
 .configuration-prompts__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); margin-block: var(--space-4); }
 .configuration-prompts__fields > div { min-width: 0; }
@@ -12,3 +12,4 @@
 .configuration-prompts__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .configuration-prompts__actions > span { color: var(--color-text-secondary); font-size: 12px; }
 @media (max-width: 760px) { .configuration-prompts__fields { grid-template-columns: minmax(0, 1fr); } }
+@container prompt-settings (max-width: 660px) { .configuration-prompts__fields { grid-template-columns: minmax(0, 1fr); } }

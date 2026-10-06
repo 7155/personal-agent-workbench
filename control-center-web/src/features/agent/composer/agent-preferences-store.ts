@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import { useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import {
@@ -70,9 +71,11 @@ export function useAgentPreferencesRead(): AgentPreferencesRead {
 
 export function useAgentPreferencesAuthority(): AgentPreferencesAuthority {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const queryClient = useQueryClient();
   const settingsQuery = useAgentPreferencesQuery();
   const capabilitiesQuery = useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: 30_000,
@@ -167,7 +170,9 @@ export function useAgentPreferencesAuthority(): AgentPreferencesAuthority {
 
 function useAgentPreferencesQuery() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   return useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.settings(),
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.settings', signal }),
     staleTime: 0,

@@ -63,6 +63,11 @@ import {
 import { previewEvalLabEvidence, previewEvalLabRuns } from './preview-eval-lab-data';
 import { PREVIEW_PDF_BASE, previewKnowledgeAsset, previewKnowledgeDetail, previewKnowledgePdfHit, previewKnowledgeSource, previewReadableDocument, previewStructuredPdfDocument } from './preview-knowledge-data';
 
+const PREVIEW_PROMPT_DEFAULTS = {
+  systemInstructions: '',
+  compactionInstructions: '公开模拟：保留目标、文档引用、未落盘进度与下一步；不执行原任务。',
+};
+
 /**
  * The mock transport has one broadcast event bus for convenience. Preview
  * sessions still need the production ownership boundary: an event emitted by
@@ -233,6 +238,7 @@ export function createPreviewTransport(): MockControlTransport {
     runtimeCharacteristics: { ...persona.runtimeCharacteristics },
   }));
   let companionConfigurationRevision = 1;
+  let prompts = { ...PREVIEW_PROMPT_DEFAULTS };
   let modelRouting = previewDefaultModelRouting();
   let skillRouting = previewDefaultSkillRouting();
   let scenarioPolicies: Record<string, { promptInstructions: string; toolAllowlist: string[] }> = Object.fromEntries(['ordinary', 'room', 'trace', 'agentLab'].map((id) => [id, {
@@ -862,6 +868,7 @@ export function createPreviewTransport(): MockControlTransport {
     capabilityGlobalPreferences,
     capabilityProjectPreferences,
     scenarioPolicies,
+    prompts,
   );
   routes['agent.configuration.update'] = (request: ControlRequest) => {
     const body = record(request.body);
@@ -870,7 +877,17 @@ export function createPreviewTransport(): MockControlTransport {
     const modelRouteChange = Object.entries(changes).find(([key]) => key.startsWith('modelRouting.'));
     const skillRouteChange = Object.entries(changes).find(([key]) => key.startsWith('skillRouting.'));
     const policyChange = Object.entries(changes).find(([key]) => key.startsWith('scenarioPolicies.'));
-    if (modelRouteChange) {
+    if (Object.keys(changes).some(key => key.startsWith('prompts.'))) {
+      const next = { ...prompts };
+      for (const [key, value] of Object.entries(changes)) {
+        if (!['prompts.systemInstructions', 'prompts.compactionInstructions'].includes(key)
+          || typeof value !== 'string' || Array.from(value).length > 8000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value)) {
+          throw new Error('演示提示词字段或内容无效。');
+        }
+        next[key.slice('prompts.'.length) as keyof typeof next] = value;
+      }
+      prompts = next;
+    } else if (modelRouteChange) {
       const routeId = modelRouteChange[0].slice('modelRouting.'.length);
       if (!Object.hasOwn(modelRouting, routeId)) throw new Error('Preview model route is invalid.');
       const route = record(modelRouteChange[1]);
@@ -935,6 +952,7 @@ export function createPreviewTransport(): MockControlTransport {
       capabilityGlobalPreferences,
       capabilityProjectPreferences,
       scenarioPolicies,
+      prompts,
     );
   };
   routes['agent.sessions.create'] = (request: ControlRequest) => {
@@ -4422,6 +4440,7 @@ function previewCompanionConfiguration(
   capabilityGlobalPreferences: Record<string, string>,
   capabilityProjectPreferences: Record<string, Record<string, string>>,
   scenarioPolicies: Record<string, { promptInstructions: string; toolAllowlist: string[] }>,
+  prompts: { systemInstructions: string; compactionInstructions: string },
 ): Record<string, unknown> {
   return {
     ok: true,
@@ -4436,10 +4455,19 @@ function previewCompanionConfiguration(
         modelRouting,
         skillRouting,
         scenarioPolicies,
+        prompts: { ...prompts },
         capabilityDisclosure: {
           projectPreferences: capabilityProjectPreferences,
         },
       },
+    },
+    promptPolicy: {
+      schemaVersion: 'rag-ime.agent-prompt-policy.v1',
+      appliesTo: 'new_sessions',
+      maxCharacters: 8000,
+      defaults: { ...PREVIEW_PROMPT_DEFAULTS },
+      builtInSystemPrompt: '公开模拟：依据来源核验结果；这段示例不代表当前会话的真实内置规则。',
+      compactionOwner: 'pi',
     },
     scenarioPolicyCatalog: {
       schemaVersion: 'rag-ime.agent-scenario-policy-catalog.v1',

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useControlTransport } from '@/app/control-transport';
 import type { MutationAvailability } from '@/features/overview/management-mutation';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import type { ControlTransport, JsonValue } from '@/platform/transport';
 
 export const configurationQueryKeys = {
@@ -29,16 +30,20 @@ export type ConfigurationMutationRequest = {
 
 export function useConfigurationQueries() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const settings = useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.settings(),
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.settings', signal }),
   });
   const schema = useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.schema(),
     queryFn: ({ signal }) => transport.request({ pathId: 'configuration.schema', signal }),
     staleTime: 60_000,
   });
   const capabilities = useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: Infinity,
@@ -49,7 +54,7 @@ export function useConfigurationQueries() {
   const modelCatalog = useQuery({
     queryKey: configurationQueryKeys.models(),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.role.models', signal }),
-    enabled: modelCatalogSupported,
+    enabled: active && modelCatalogSupported,
     staleTime: 0,
   });
   return {
@@ -65,7 +70,9 @@ export function useConfigurationQueries() {
 
 export function usePiProviderCatalog() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const capabilities = useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: 30_000,
@@ -85,7 +92,7 @@ export function usePiProviderCatalog() {
   const catalog = useQuery({
     queryKey: configurationQueryKeys.providers(),
     queryFn: ({ signal }) => transport.request({ pathId: 'agent.providers.get', signal }),
-    enabled: supported,
+    enabled: active && supported,
   });
   return {
     authChangesSupported,
@@ -100,7 +107,9 @@ export function usePiProviderCatalog() {
 
 export function useConfigurationMutationBoundary() {
   const transport = useControlTransport();
+  const active = usePawOsAppActive() ?? true;
   const capabilities = useQuery({
+    enabled: active,
     queryKey: configurationQueryKeys.capabilities(),
     queryFn: () => transport.capabilities(),
     staleTime: 30_000,

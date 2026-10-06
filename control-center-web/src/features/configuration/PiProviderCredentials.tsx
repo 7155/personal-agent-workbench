@@ -15,6 +15,7 @@ import {
 } from '@/components/primitives';
 import { InlineNotice, ManagementSection, StatusBadge, arrayRecords, asRecord, stringValue } from '@/features/overview/management-ui';
 import { usePiProviderCatalog } from './api';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 
 type ProviderAction = 'set_api_key' | 'logout' | 'oauth_browser' | 'oauth_device_code';
 
@@ -28,6 +29,7 @@ function RoutedProviderCredentials() {
 }
 
 function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string; navigate?: (path: string) => void }) {
+  const pageActive = usePawOsAppActive() ?? true;
   const {
     authChangesSupported,
     capabilities,
@@ -53,6 +55,12 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   const loginEpochRef = useRef(0);
   const credentialEpochRef = useRef(0);
   useEffect(() => () => { credentialEpochRef.current += 1; }, []);
+  useEffect(() => {
+    if (pageActive) return;
+    credentialEpochRef.current += 1;
+    setApiKey('');
+    setPreview(null);
+  }, [pageActive]);
   const modelListId = useId();
   const loginId = stringValue(login?.loginId);
   const loginState = stringValue(login?.state);
@@ -73,7 +81,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
   }, [providerId, providers]);
 
   useEffect(() => {
-    if (!oauthStatusSupported || !loginId || !loginWaiting || loginStatusError) return;
+    if (!pageActive || !oauthStatusSupported || !loginId || !loginWaiting || loginStatusError) return;
     let active = true;
     let inFlight = false;
     const epoch = loginEpochRef.current;
@@ -94,7 +102,7 @@ function ProviderCredentials({ onlyProvider, navigate }: { onlyProvider?: string
         .finally(() => { inFlight = false; });
     }, 1_500);
     return () => { active = false; window.clearInterval(timer); };
-  }, [loginId, loginStatusError, loginWaiting, oauthStatusSupported, refetchCatalog, transport]);
+  }, [pageActive, loginId, loginStatusError, loginWaiting, oauthStatusSupported, refetchCatalog, transport]);
 
   const selected = providers.find((item) => stringValue(item.id) === providerId) ?? providers[0] ?? {};
   const auth = asRecord(selected.auth);

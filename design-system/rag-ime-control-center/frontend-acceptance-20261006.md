@@ -453,3 +453,23 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 本地行为检查：系统 App 完整文件 39 项、Trace 两完整文件 54 项、上下文完整文件 9 项，共 102 项通过。新增系统所有者、Trace 库切页、上下文搜索检查均先记录实际失败再修复。正式 `pnpm typecheck` exit=0，owner/import/route 检查通过；之后仅改两处 CSS，最终 diff check 通过。
 - Trace 控件沿同一套 32/40/44px 高度与手机输入 16px；首轮 trace-controls-final.json 的 768 三页 Select 仅 32px，真实失败保留，修正后 trace-controls-final-v2.json 四视图×三宽度共 12 组全部通过，无页面横向溢出。四张手机和一张紧凑页原图已人工查看；monitor-trace-actions-final-v2.json 最终 14 组主要操作均通过。恢复连接后取回 monitor-trace-drafts-post-settled.json，10 组全部保留；此前快速进入的偶发丢失成因仍未定位，真实宿主首开需补查，不删除原失败。
 - Library 原 15 项原图/原包与清单 SHA 未变，无新 ID；费用账本与未知保留未变。Settings 五页及其他剩余功能块仍需继续逐项审查，49 路由打开基线不等于全 App 重设计完成。未合并 main、未追 CI。
+
+## Settings 七入口：草稿、公开演示提示词和真实窗口宽度
+
+基于远端 `b8a9eab56d297b53a62df6b4c4743ff299e5bb2b`。下列操作来自 Chromium 中真实运行的生产页面和公开 in-memory preview，不是本机磁盘配置、Electron IPC 或模型结果。没有使用真实凭证或启动模型。
+
+| 页面 / 分区 | 实际复现、修改和两个宽度的点击结果 | 尚未覆盖 |
+| --- | --- | --- |
+| 配置 `/configuration` | 修改应用名称后切外观返回，草稿原先变回 PAW；保留已访问 Settings 页的既有所有者。搜索空结果/清除、高级设置开关、九个运行分组、放弃修改、公开模拟保存、原回执撤销、刷新均通过 | 真实磁盘写入、重启恢复、部署；部分功能分区只阅读，没有改真实账号设置 |
+| 外观 `/appearance` | 深色/浅色/跟随系统依次选择；三种动效、系统 reduced motion 优先、恢复原设置和身份色阅读通过 | 原生系统外观桥接 |
+| Agent `?view=agent` | 模型分工未保存选择原先在切页刷新后丢失；读取新版本时保留相对上次已保存值仍有修改的行，未修改行接受新值。默认模型与推理强度、四种执行模式、五种职责分别保存并恢复继承、刷新通过 | 没有启动模型；实际新会话使用新默认未验 |
+| 治理 `/governance` | 精确范围筛选切外观返回丢失；页保留并在刷新时维持已经读取的内容和展开状态。三个治理视图、四个范围输入、清除、Enter 关闭通过 | 真实安全记录和规则写入；当前页面只读 |
+| 审批 `/approvals` | 未提交搜索切页丢失；保留其原所有者，隐藏时暂停查询和 5 秒轮询。三种状态、四种风险、空搜索恢复、哈希预览展开/关闭、高风险确认/取消、公开模拟批准/拒绝后已处理队列、刷新通过 | preview 决策只改内存状态，不执行真实操作；真实幂等/超时未验 |
+| 提示词 `?section=prompts` | preview 宣称支持配置却没有 prompts/promptPolicy，原页面不可用；补齐明确公开示例、版本冲突、字符边界、原子更新契约。两类提示词编辑、切外观返回、保存、内置示例展开/关闭、恢复默认草稿并保存通过 | 不证明实际 Pi 启动/压缩策略生效；示例明确不是当前会话规则 |
+| 子 Agent `?section=subagents` | 1440px 桌面里的 374px 应用窗口仍按宽屏排版，说明竖排；按 paw-window 容器切换摘要/规则布局。模板和权限边界阅读、点击进入 Agent 工作台通过 | 没有启动子 Agent 或实际执行 |
+
+- Settings 仅保留访问过的五个路由页，配置里的提示词和子 Agent 是其分区。隐藏页暂停配置/模型/提示词/模板/治理/审批读取及 OAuth 轮询；私密 API-key 输入和预览在隐藏时清空，迟到预览不再出现。使用合成凭证字符串的本地行为检查证明这个边界，不读取或记录真实凭证。
+- `settings-drafts-corrected-before.json` 六组草稿丢失；模型行另外两组实际复现见 `settings-drafts-routing-corrected-before.json`，其余六组在当时已保留。最终 `settings-drafts-routing-final.json` 八组全部保留。初轮错误使用治理 Button 而其真实语义是 Radio、重复切页后错误关闭已展开 details 的失败保留，不改成产品通过。
+- `settings-major-actions-final.json` 七入口 × 390/1440 共 14 组全部通过，零 pageerror/页面横向溢出。截图 `settings-actions-final-*` 保存动作和宽度；设置首图与关键保存/撤销、深色主题、治理、审批、提示词、子 Agent 原图已人工查看。通用 `settings-remaining-before.json` 的宽屏 last-window 定位器和旧掌柜/笔记路由错误，不能作对应页面通过证据；最终 corrected 路由记录保留。
+- 提示词按其内容容器宽度切成单列；子 Agent 按实际窗口宽度排列。`settings-window-final-v2.json` 两分区 × 手机/374px 窄桌面窗口/最大化 × normal/reduce 共 12 组无正文或页面横向溢出；窄窗提示词列宽 314px、子 Agent 说明宽 157px。原 `settings-window-final.json` 把上次最大化布局误作窄窗，并将 frame 外 resize handles 的 scrollWidth 误作正文溢出，原失败不覆盖；v2 在公开 preview 首开重置布局、使用真实最大化按钮并分别记录 shell/body 几何。修复前 `remaining-final-prompts-1440.png` / `remaining-final-subagents-1440.png`，修复后 `settings-window-final-v2-*`；四张手机/窄窗/最大化图人工查看。
+- 本地完整文件检查：Preview transport 41 项；System Apps/roles/Agent preferences 三文件 67 项；Provider/configuration-management/scenario-skill 三文件 31 项；提示词/审批/治理最终三文件 17 项，共 156 项通过。正式 `pnpm typecheck` exit=0，owner/import/route 和 diff 检查通过；没有追 CI。Library 403、原生宿主、真实后端和费用账本边界未变。共享窗口信号灯实际命中区仅 24px，后续仍需按既有 32/40/44px 标准核实与修正，未将其称为通过。

@@ -3,6 +3,39 @@ import { applyAgentSnapshot, createAgentProjection } from '@/contracts/agent-red
 import { createPreviewTransport } from './preview-control-transport';
 import { previewAgentSnapshot } from '@/features/agent/preview-data';
 
+describe('preview Agent prompt settings', () => {
+  it('round trips public prompt settings without replacing other Agent configuration', async () => {
+    const transport = createPreviewTransport();
+    const before = record(await transport.request({ pathId: 'agent.configuration.get' }));
+    expect(before.promptPolicy).toMatchObject({ schemaVersion: 'rag-ime.agent-prompt-policy.v1', maxCharacters: 8000 });
+    const current = record(before.configuration);
+    const configuration = record(current.configuration);
+    expect(configuration.prompts).toMatchObject({ systemInstructions: expect.any(String), compactionInstructions: expect.any(String) });
+    const updated = record(await transport.request({ pathId: 'agent.configuration.update', body: {
+      expectedRevision: current.revision as number,
+      changes: { 'prompts.systemInstructions': '公开模拟：核对来源。', 'prompts.compactionInstructions': '公开模拟：保留下一步。' },
+    } }));
+    expect(record(record(updated.configuration).configuration)).toMatchObject({
+      prompts: { systemInstructions: '公开模拟：核对来源。', compactionInstructions: '公开模拟：保留下一步。' },
+      sessionDefaults: configuration.sessionDefaults,
+      modelRouting: configuration.modelRouting,
+    });
+    await expect(transport.request({ pathId: 'agent.configuration.update', body: {
+      expectedRevision: current.revision as number, changes: { 'prompts.systemInstructions': '过期草稿' },
+    } })).rejects.toThrow('changed');
+  });
+  it('rejects invalid prompt changes atomically in the preview', async () => {
+    const transport = createPreviewTransport();
+    const before = await transport.request({ pathId: 'agent.configuration.get' });
+    for (const value of [42, 'x'.repeat(8001), '公开\u0000文本']) {
+      await expect(transport.request({ pathId: 'agent.configuration.update', body: {
+        expectedRevision: 1, changes: { 'prompts.systemInstructions': '不能部分应用', 'prompts.compactionInstructions': value },
+      } })).rejects.toThrow('提示词');
+      expect(await transport.request({ pathId: 'agent.configuration.get' })).toEqual(before);
+    }
+  });
+});
+
 describe('preview primary task directory', () => {
   type Reply = { session: { id: string }; tasks: { id: string }[] };
   it('rotates archived primary discussions and rejects new tasks from the retired source', async () => {

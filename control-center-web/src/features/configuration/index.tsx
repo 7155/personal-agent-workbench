@@ -61,6 +61,7 @@ import {
 } from '@/features/agent/model-catalog-options';
 import { useProductIdentity } from '@/features/identity/product-identity';
 import { SubagentSettingsPanel } from './SubagentSettingsPanel';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import type { ControlTransport } from '@/platform/transport';
 import { ScenarioSkillSettings } from './ScenarioSkillSettings';
 import { PromptSettingsPanel } from './PromptSettingsPanel';
@@ -69,6 +70,7 @@ import './configuration.css';
 type DraftValue = string | number | boolean;
 
 export function ConfigurationFeature() {
+  const active = usePawOsAppActive() ?? true;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const identity = useProductIdentity();
@@ -421,6 +423,7 @@ export function ConfigurationFeature() {
           highlighted={searchParams.get('section') === 'prompts'}
         />
         <ScenarioSkillSettings
+          active={active}
           routeIds={queries.capabilities.data?.routeIds ?? []}
           transport={queries.transport}
         />

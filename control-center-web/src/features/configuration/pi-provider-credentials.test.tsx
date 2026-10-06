@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { PermissionPicker } from '@/features/agent/composer/PermissionPicker';
 import { previewSessions } from '@/features/agent/preview-data';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -10,10 +10,33 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { MockControlTransport } from '@/test/mock-transport';
 import { PiProviderCredentials } from './PiProviderCredentials';
+import { PawOsAppActivityProvider } from '@/features/paw-os/surface-context';
 
 afterEach(cleanup);
 
 describe('Pi provider credential UI', () => {
+  it('clears transient credential input and ignores a late preview when its retained page becomes inactive', async () => {
+    const user = userEvent.setup();
+    const pending = deferred<unknown>();
+    const transport = new MockControlTransport({
+      capabilities: { features: { piProviderCredentials: true } },
+      routes: { 'agent.providers.get': providerCatalog(), 'agent.provider.auth.preview': () => pending.promise },
+    });
+    function Harness() {
+      const [active, setActive] = useState(true);
+      return <><button onClick={() => setActive(value => !value)}>切换保留页</button><PawOsAppActivityProvider active={active}><PiProviderCredentials /></PawOsAppActivityProvider></>;
+    }
+    renderProvider(transport, <Harness />);
+    const field = await screen.findByLabelText('API 密钥');
+    await user.type(field, 'synthetic-placeholder-only');
+    await user.click(screen.getByRole('button', { name: '保存密钥' }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.provider.auth.preview')).toBe(true));
+    await user.click(screen.getByRole('button', { name: '切换保留页' }));
+    expect(field).toHaveValue('');
+    await act(async () => pending.resolve({ ok: true, previewToken: 'late-synthetic-preview', provider: 'gpt', providerName: 'GPT', action: 'set_api_key', requiredConfirm: 'replace', expiresAtMs: Date.now() + 60_000 }));
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.provider.auth.apply')).toBe(false);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
   it('blocks Jev secret entry when the service has no secure backend', async () => {
     const transport = new MockControlTransport({
       capabilities: { features: { piProviderCredentials: true } },

@@ -15,8 +15,10 @@ import { MockControlTransport } from '@/test/mock-transport';
 vi.mock('@/features/approvals', () => ({ ApprovalsFeature: () => <h1>审批真实界面</h1> }));
 const configurationLoad = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
 vi.mock('@/features/configuration', () => ({ ConfigurationFeature: () => {
+  const [draft, setDraft] = useState('');
+  const active = usePawOsAppActive();
   if (configurationLoad.pending) throw configurationLoad.pending;
-  return <h1>配置真实界面</h1>;
+  return <><h1>配置真实界面</h1><input aria-label="配置草稿" value={draft} onChange={event => setDraft(event.target.value)} /><span data-testid="configuration-page-active">{String(active)}</span></>;
 } }));
 vi.mock('@/features/context-debug', () => ({ ContextDebugFeature: () => <h1>上下文真实界面</h1> }));
 vi.mock('@/features/diagnostics', () => ({ DiagnosticsFeature: () => <h1>诊断真实界面</h1> }));
@@ -49,6 +51,20 @@ afterEach(() => {
 });
 
 describe('PawSystemApps', () => {
+  it('retains a visited Settings draft owner and pauses the hidden page', async () => {
+    const user = userEvent.setup();
+    renderSystemApp('system-settings', '/configuration');
+    const field = await screen.findByRole('textbox', { name: '配置草稿' });
+    await user.type(field, '公开未保存草稿');
+    await user.click(screen.getByRole('button', { name: '治理' }));
+    await screen.findByRole('heading', { name: '治理真实界面' });
+    expect(field).not.toBeVisible();
+    expect(screen.getByTestId('configuration-page-active')).toHaveTextContent('false');
+    await user.click(screen.getByRole('button', { name: '配置' }));
+    expect(await screen.findByRole('textbox', { name: '配置草稿' })).toBe(field);
+    expect(field).toHaveValue('公开未保存草稿');
+    expect(screen.getByTestId('configuration-page-active')).toHaveTextContent('true');
+  });
   it('keeps the current settings content while a newer page loads and lets newer navigation win', async () => {
     const user = userEvent.setup();
     renderSystemApp('system-settings', '/approvals');

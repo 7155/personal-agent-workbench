@@ -8,10 +8,24 @@ import { TooltipProvider } from '@/components/primitives';
 import { MockControlTransport } from '@/test/mock-transport';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { previewPersonas, previewTemplates } from '@/features/agent/preview-data';
-import { RolesFeature } from './index';
+import { ModelRoutingPanel, RolesFeature } from './index';
+import { agentModelRouting, roleModelCatalog } from './role-model';
 
 describe('Roles experience', () => {
   afterEach(cleanup);
+  it('preserves a dirty model route while refreshing clean routes from a newer revision', async () => {
+    const user = userEvent.setup();
+    const catalog = roleModelCatalog({ providers: [{ id: 'gpt', displayName: 'GPT', models: [{ provider: 'gpt', id: 'ui-model', name: '公开模型夹具', reasoning: true, thinkingLevels: ['high'] }] }] });
+    const content = (revision: number, toolModel = 'inherit') => <TooltipProvider><ModelRoutingPanel catalog={catalog} routing={agentModelRouting(modelRoutingConfiguration(revision, { modelProfile: toolModel, thinkingLevel: toolModel === 'inherit' ? 'inherit' : 'high' }))} saving="" onSave={async () => {}} onOpenSettings={() => {}} /></TooltipProvider>;
+    const view = render(content(1));
+    await user.click(screen.getByRole('combobox', { name: '默认主 Agent默认模型' }));
+    await user.click(screen.getByRole('option', { name: '公开模型夹具 · GPT' }));
+    view.rerender(content(1));
+    expect(screen.getByRole('combobox', { name: '默认主 Agent默认模型' })).toHaveTextContent('公开模型夹具');
+    view.rerender(content(2, 'gpt/ui-model'));
+    expect(screen.getByRole('combobox', { name: '默认主 Agent默认模型' })).toHaveTextContent('公开模型夹具');
+    expect(screen.getByRole('combobox', { name: '私有 Tool Agent默认模型' })).toHaveTextContent('公开模型夹具');
+  });
   it('makes model routing primary while keeping companion identity as migration compatibility', async () => {
     const transport = new MockControlTransport({ routes: {
       'agent.roles.list': { ok: true, items: previewPersonas },
