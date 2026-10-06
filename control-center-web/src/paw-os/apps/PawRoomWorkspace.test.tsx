@@ -36,6 +36,30 @@ afterEach(() => {
 });
 
 describe('PAWOS Room collaboration tools', () => {
+  it('retains an unsent follow-up when the Room is archived before its turn settles', async () => {
+    const source = previewRoomSnapshot('room-queued-archive');
+    const room = { ...source.room, workItems: [], lastEventSequence: 4 };
+    const snapshot = { ...source, room, events: source.events.slice(0, 4), lastSequence: 4, resumeToken: `${room.id}:4` };
+    const mounted = renderRoom(900, vi.fn(), room as unknown as RoomSummary, snapshot);
+    const editor = await screen.findByRole('textbox', { name: '协作消息' });
+    await screen.findByText('当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。');
+    fireEvent.change(editor, { target: { value: '请保留这条未发送的补充' } });
+    fireEvent.click(screen.getByRole('button', { name: '排到当前回合之后' }));
+    expect(screen.getByRole('status', { name: '等待当前执行完成后发送的消息' })).toHaveTextContent('请保留这条未发送的补充');
+    mounted.room.status = 'archived';
+    mounted.setDesktopFocusGroup(undefined);
+    act(() => useRoomLiveStore.setState(state => {
+      const projection = state.projections[room.id]!;
+      const rootId = `${room.id}:turn-1`;
+      return { projections: { ...state.projections, [room.id]: { ...projection, turnsById: {
+        ...projection.turnsById, [rootId]: { ...projection.turnsById[rootId]!, status: 'completed' as const },
+      } } } };
+    }));
+    await waitFor(() => expect(screen.queryByText('当前任务仍在执行。现在发送文字会立即干预主持伙伴的当前回合。')).not.toBeInTheDocument());
+    expect(screen.getByRole('status', { name: '等待当前执行完成后发送的消息' })).toHaveTextContent('请保留这条未发送的补充');
+    expect(mounted.transport.requests.some(({ request }) => request.pathId === 'agent.room.message')).toBe(false);
+  });
+
   it('reads completed requests and follow-ups as one continuous Room conversation by default', async () => {
     const first = previewRoomSnapshot('room-continuous-default');
     const rootId = `${first.room.id}:turn-2`;

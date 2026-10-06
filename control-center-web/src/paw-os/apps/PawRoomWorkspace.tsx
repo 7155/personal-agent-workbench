@@ -406,7 +406,9 @@ export function PawRoomWorkspace({
       // The queue still owns input refused before admission. Read the journal
       // synchronously, including before React renders a newly admitted send.
       if (sending || sendJournal.getSnapshot()) return false;
-      void send(value);
+      const admission = send(value);
+      if (admission === false) return false;
+      void admission;
     },
   });
   const queueFollowUp = useCallback((value: string) => queue.enqueue(value), [queue]);
@@ -436,10 +438,10 @@ export function PawRoomWorkspace({
     },
   });
 
-  async function send(
+  function send(
     rawValue: string,
     options: { question?: PendingRoomQuestion; retryOfRootId?: string; preserveDraft?: boolean } = {},
-  ): Promise<boolean> {
+  ): boolean | Promise<boolean> {
     if (!record || record.status !== 'active' || sending) return false;
     const pending = sendJournal.getSnapshot();
     if (pending) {
@@ -475,18 +477,20 @@ export function PawRoomWorkspace({
       }
       const selectedAttachments = composerAttachments;
       setSending(true); setError('');
-      try {
-        const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
-        if (!accepted) return false;
-        if (!options.preserveDraft) setDraft(current => current === rawValue ? '' : current);
-        setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
-        retrySnapshot();
-        followRoomTimelineIfReaderAtEnd(timelineRef.current);
-        return true;
-      } catch (reason) {
-        setError(roomErrorText(reason, 'Jev 发送尚未确认。重试将核实同一次请求。'));
-        return false;
-      } finally { setSending(false); }
+      return (async () => {
+        try {
+          const accepted = await jev.send(message, selectedAttachments.map(item => item.mediaId));
+          if (!accepted) return false;
+          if (!options.preserveDraft) setDraft(current => current === rawValue ? '' : current);
+          setAttachments(current => current.filter(item => !selectedAttachments.some(sent => sent.mediaId === item.mediaId)));
+          retrySnapshot();
+          followRoomTimelineIfReaderAtEnd(timelineRef.current);
+          return true;
+        } catch (reason) {
+          setError(roomErrorText(reason, 'Jev 发送尚未确认。重试将核实同一次请求。'));
+          return false;
+        } finally { setSending(false); }
+      })();
     }
     const steering = Boolean(activeTurn && !answersQuestion);
     if (steering && composerAttachments.length) {
