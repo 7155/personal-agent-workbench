@@ -33,6 +33,7 @@ import {
 import { createPreviewHistoryRoutes } from './preview-history-routes';
 import { installPrimaryAssistantPreview } from './preview-primary-assistant';
 import { createPreviewLabProjectRoutes } from './preview-lab-projects';
+import type { SpaceFacts } from '@/features/semantic-workspace/continuity-model';
 import { pawExtensionApps } from '@/paw-os/extensions/registry';
 import { pawBrowserHost } from '@/paw-os/apps/paw-browser-host';
 import { createPreviewWorkDocumentRoutes } from './preview-work-document-routes';
@@ -805,15 +806,36 @@ export function createPreviewTransport(): MockControlTransport {
     previewMemoryRunStatus = 'rolled_back';
     return previewMemoryWorkReceipt('knowledge.database.rollback', false);
   };
-  routes['agent.sessions.list'] = (request: ControlRequest) => ({
-    ok: true,
-    sessions: [
+  routes['agent.sessions.list'] = (request: ControlRequest) => {
+    const items = [
       ...sessions,
       ...roomSessions,
     ].filter((session) => (
       record(request.query).includeArchived === true || stringValue(session.status) !== 'archived'
-    )),
-  });
+    ));
+    return { ok: true, items, sessions: items, hasMore: false };
+  };
+  routes['agent.continuity.read'] = (request: ControlRequest) => {
+    const available = new Map<string, Record<string, unknown>>([
+      ...sessions.map(item => [`session:${item.id}`, item] as const),
+      ...[...previewRoomSnapshots.values()].map(snapshot => {
+        const item = record(snapshot.room); return [`room:${item.id}`, item] as const;
+      }),
+    ]);
+    const keys = record(request.body).keys;
+    const requested = Array.isArray(keys) ? [...new Set(keys.filter((key): key is string => typeof key === 'string'))].slice(0, 100) : [];
+    const items: SpaceFacts[] = requested.filter(key => available.has(key)).map(key => ({
+      key, title: stringValue(available.get(key)?.title), revision: `preview:${key}:${available.get(key)?.updatedAtMs ?? 0}`,
+      observedAtMs: Date.now(), running: null, goal: null,
+      candidates: [], requests: [], decisions: [], blockers: [], sources: [], pendingDecisions: [], deliveries: [],
+      missing: ['公开演示仅提供工作空间入口；真实目标、运行状态与成果需要连接本机服务核实。'],
+      organization: { pinned: false, placement: 'desk' }, executionAllowed: false, contextPack: {},
+    }));
+    return { ok: true, items, failures: requested.filter(key => !available.has(key)).map(key => ({ key, error: '演示工作空间不存在。' })) };
+  };
+  routes['agent.continuity.analyze'] = routes['agent.continuity.suggest'] = routes['agent.continuity.decision'] = routes['agent.continuity.resume'] = () => {
+    throw Object.assign(new Error('公开演示不能分析或执行复工操作；请连接本机服务后重试。'), { status: 422 });
+  };
   // Explicit read-only preview. Never fabricate a Jev decision or a persisted receipt.
   routes['agent.organization.read'] = (request: ControlRequest) => {
     const keys = record(request.body).keys;

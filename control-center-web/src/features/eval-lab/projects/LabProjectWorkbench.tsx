@@ -183,6 +183,10 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
     const receipt = await workflow.submit('ensure_guide', {}, project);
     if (receipt) await start(receipt.project);
   };
+  const reconcileProjectCommand = () => void workflow.reconcile().then((receipt) => {
+    if (receipt && workflow.pending?.command.action === 'create') void created(receipt);
+    else if (receipt && workflow.pending?.command.action === 'import_history') { setHistoryImportOpen(false); openProject(receipt.project.projectId); }
+  });
   const continueProject = async (mode: ProjectGuidanceMode, current = project, request = '') => {
     if (!current || sending || guidancePending.current) return;
     guidancePending.current = true; setSending(true); setNotice(''); setGuideOpen(true);
@@ -256,7 +260,7 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
         </Menu>
       </div>
     </header>
-    {workflow.pending?.outcome === 'unknown' ? <div className="lab-project-notice" role="status"><p>上次操作的回执尚未确认，原请求和输入已保留。</p><Button disabled={workflow.mutation.isPending} onClick={() => void workflow.reconcile().then((receipt) => { if (receipt && workflow.pending?.command.action === 'create') void created(receipt); else if (receipt && workflow.pending?.command.action === 'import_history') { setHistoryImportOpen(false); openProject(receipt.project.projectId); } })}>核对原操作</Button></div> : null}
+    {workflow.pending?.outcome === 'unknown' && !newProjectOpen ? <div className="lab-project-notice" role="status"><p>上次操作的回执尚未确认，原请求和输入已保留。</p><Button disabled={workflow.mutation.isPending} onClick={reconcileProjectCommand}>核对原操作</Button></div> : null}
     {activeError ? <p className="lab-project-error" role="alert">{projectError(activeError)}</p> : null}
     {notice && !pendingMessages.length ? <p className="lab-project-notice" role="status">{notice}</p> : null}
     {pendingMessages.map((message) => <div className="lab-project-notice" role="status" key={message.clientMessageId}><p>{message.error || '项目消息的接纳结果尚未确认，原输入已保留。'}</p><Button disabled={sending} onClick={() => void recoverMessage(message)}>{message.outcome === 'unknown' ? '核对原消息' : '重新发送项目消息'}</Button></div>)}
@@ -292,7 +296,7 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
         </div>
       </div></>}
     <Dialog.Root open={intakeOpen && Boolean(project)} onOpenChange={setIntakeOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby={undefined}><header><Dialog.Title asChild><h2>添加项目材料</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body">{project ? <MaterialIntake saveError={workflow.mutation.variables?.action === 'import_materials' ? workflow.mutation.error : undefined} busy={busy || sending} onAdd={async (input, resume) => { const receipt = await workflow.submit('import_materials', input, project); if (receipt) { setIntakeOpen(false); setPage('materials'); if (resume) await continueProject('guided', receipt.project); } }} /> : null}</div></Dialog.Content></Dialog.Root>
-    <Dialog.Root open={newProjectOpen && !projectId} onOpenChange={setNewProjectOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-new-project-description"><header><Dialog.Title asChild><h2>新建项目</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body"><p id="lab-new-project-description">先保存项目和材料，再由 Agent 在同一个项目里继续组织计划、实验与交付。创建不会伪造评测结果。</p><NewProject key={`dialog:${workflow.connection}`} connection={workflow.connection} busy={busy || sending} onCreate={async (input) => created(await workflow.submit('create', input))} /></div></Dialog.Content></Dialog.Root>
+    <Dialog.Root open={newProjectOpen && !projectId} onOpenChange={setNewProjectOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-new-project-description"><header><Dialog.Title asChild><h2>新建项目</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body"><p id="lab-new-project-description">先保存项目和材料，再由 Agent 在同一个项目里继续组织计划、实验与交付。创建不会伪造评测结果。</p><NewProject key={`dialog:${workflow.connection}`} connection={workflow.connection} busy={busy || sending} unknown={workflow.pending?.outcome === 'unknown'} onReconcile={reconcileProjectCommand} onCreate={async (input) => created(await workflow.submit('create', input))} /></div></Dialog.Content></Dialog.Root>
     <Dialog.Root open={historyImportOpen} onOpenChange={setHistoryImportOpen}><Dialog.Overlay className="lab-project-modal-backdrop" /><Dialog.Content className="lab-project-modal" aria-describedby="lab-history-import-description"><header><Dialog.Title asChild><h2>导入已有实验</h2></Dialog.Title><Dialog.Close asChild><Button size="small">关闭</Button></Dialog.Close></header><div className="lab-project-modal__body"><p id="lab-history-import-description">把已有基线、候选、失败记录和原始指标保留为项目成果。导入不会运行模型或重新评分。</p>
       {workflow.catalog.data?.historyUnavailable ? <p role="alert">已有实验来源暂时不可读取，请重新读取后再试。</p> : null}
       {workflow.catalog.data?.historyCollections?.map((source) => { const imported = workflow.catalog.data?.items.find((item) => item.historyOrigin?.sceneId === source.sceneId); return <section key={source.sceneId} className="lab-project-bindings" aria-label={source.title}><h3>{source.title}</h3><p>{source.experimentCount} 条实验记录 · {source.datasetIds.length} 个数据集版本</p><Button disabled={busy} onClick={() => { if (imported) { setHistoryImportOpen(false); openProject(imported.projectId); } else void workflow.submit('import_history', { sceneId: source.sceneId, sourceHash: source.sourceHash }).then((receipt) => { if (receipt) { setHistoryImportOpen(false); openProject(receipt.project.projectId); } }); }}>{imported ? '打开已导入项目' : '导入为项目'}</Button></section>; })}
@@ -301,7 +305,7 @@ export function LabProjectWorkbench({ initialProjectId = '', onOpenHistory, onPr
   </main>;
 }
 
-function NewProject({ connection, busy, onCreate }: { connection: string; busy: boolean; onCreate: (input: Record<string, JsonValue>) => Promise<void> }) {
+function NewProject({ connection, busy, unknown = false, onCreate, onReconcile }: { connection: string; busy: boolean; unknown?: boolean; onCreate: (input: Record<string, JsonValue>) => Promise<void>; onReconcile?: () => void }) {
   const key = `paw.lab.new-project.v1:${connection}`;
   const [saved] = useState(() => { try { return object(JSON.parse(sessionStorage.getItem(key) ?? '{}')); } catch { return {}; } });
   const [description, setDescription] = useState(typeof saved.description === 'string' ? saved.description : '');
@@ -319,11 +323,11 @@ function NewProject({ connection, busy, onCreate }: { connection: string; busy: 
     catch (reason) { setError(projectError(reason)); }
     finally { setReading(false); }
   };
-  const submit = async (event: FormEvent) => { event.preventDefault(); if (!description.trim() || busy || reading) return; await onCreate({ description: description.trim(), ...(materials.length ? { materials } : path.trim() ? { path: path.trim() } : {}) }); };
+  const submit = async (event: FormEvent) => { event.preventDefault(); if (unknown) { onReconcile?.(); return; } if (!description.trim() || busy || reading) return; await onCreate({ description: description.trim(), ...(materials.length ? { materials } : path.trim() ? { path: path.trim() } : {}) }); };
   return <form className="lab-project-compose" onSubmit={(event) => void submit(event)}><textarea aria-label="描述你的项目" placeholder="例如：我有一个处理售后问题的 Agent，希望它依据规则完成操作。也可以从一个新的业务想法开始。" rows={5} value={description} onChange={(event) => setDescription(event.target.value)} disabled={busy} />
     <div className="lab-project-compose__materials"><label className="lab-project-file-picker"><Upload size={15} />{reading ? '正在读取文件…' : '添加文件'}<input type="file" multiple disabled={busy || reading} onChange={(event) => { void chooseFiles(event.target.files); event.target.value = ''; }} /></label>
       {materials.length ? <><span>{materials.length} 份文件已选，创建时上传</span><Button type="button" size="small" disabled={busy || reading} onClick={() => setMaterials([])}>移除已选文件</Button></> : <input aria-label="连接执行器上的材料路径" value={path} placeholder="或填写已连接执行器上的绝对路径" disabled={busy || reading} onChange={(event) => setPath(event.target.value)} />}</div>
-    {error ? <p role="alert" className="lab-project-error">{error}</p> : null}<footer><span>项目内容由 Agent 按实际任务组织。</span><Button type="submit" variant="primary" disabled={busy || reading || !description.trim()}>{busy ? '正在建立项目…' : reading ? '正在读取材料…' : '创建并开始'}<ArrowUpRight size={16} /></Button></footer>
+    {error ? <p role="alert" className="lab-project-error">{error}</p> : null}{unknown ? <p role="status">本次操作的回执尚未确认，原输入已保留。请核对原操作。</p> : null}<footer><span>项目内容由 Agent 按实际任务组织。</span><Button type="submit" variant="primary" disabled={(!unknown && busy) || reading || !description.trim()}>{unknown ? '核对原操作' : busy ? '正在等待回执…' : reading ? '正在读取材料…' : '创建并开始'}<ArrowUpRight size={16} /></Button></footer>
   </form>;
 }
 function MaterialIntake({ busy, onAdd, saveError }: { saveError?: unknown; busy: boolean; onAdd: (input: Record<string, JsonValue>, resume?: boolean) => Promise<void> }) {

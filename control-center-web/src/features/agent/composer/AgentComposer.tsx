@@ -259,8 +259,8 @@ export function AgentComposer({
   const commandCatalog = useMemo(
     () => minimal
       ? []
-      : buildCommandCatalog({ session, catalog, piCommands, tools, toolCatalogStatus, busy, sending }),
-    [busy, catalog, minimal, piCommands, sending, session, toolCatalogStatus, tools],
+      : buildCommandCatalog({ session, catalog, piCommands, tools, toolCatalogStatus, busy, sending, permissionLocked }),
+    [busy, catalog, minimal, permissionLocked, piCommands, sending, session, toolCatalogStatus, tools],
   );
   const commands = useMemo(() => commandCatalog.filter((command) => {
     const value = composerDraft.toLowerCase();

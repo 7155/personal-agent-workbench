@@ -7,7 +7,8 @@
 .an-home-root[data-interface-mode='jev'] .an-composer:focus-within { border-color: var(--paw-accent); }
 .an-home-root[data-interface-mode='jev'] .continuity-home { margin-top: 24px; }
 .continuity-home { container: continuity / inline-size; flex: none; color: var(--paw-ink); font-size: 14px; line-height: 1.55; }
-.continuity-home button { border: 1px solid var(--paw-line); border-radius: 6px; background: var(--paw-panel-strong); color: var(--paw-ink); padding: 7px 10px; cursor: pointer; font: inherit; }
+.continuity-home button { min-height: var(--paw-window-control-size, 32px); min-width: var(--paw-window-control-size, 32px); border: 1px solid var(--paw-line); border-radius: 6px; background: var(--paw-panel-strong); color: var(--paw-ink); padding: 7px 10px; cursor: pointer; font: inherit; }
+.continuity-home summary { min-height: var(--paw-window-control-size, 32px); padding-block: 6px; box-sizing: border-box; cursor: pointer; }
 .continuity-home button:disabled { opacity: .5; cursor: default; }
 .continuity-home :is(button,textarea):focus-visible { outline: 2px solid var(--paw-accent); outline-offset: 2px; }
 .continuity-home h2,.continuity-new-work { font-size: 17px; margin: 0; font-weight: 650; }

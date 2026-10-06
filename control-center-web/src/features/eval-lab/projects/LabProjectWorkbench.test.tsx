@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
@@ -469,7 +469,9 @@ describe('Agent-led Lab project container', () => {
     fireEvent.click(await screen.findByRole('button', { name: '新建项目' }));
     fireEvent.change(await screen.findByRole('textbox', { name: '描述你的项目' }), { target: { value: '业务任务' } });
     fireEvent.click(screen.getByRole('button', { name: '创建并开始' }));
-    fireEvent.click(await screen.findByRole('button', { name: '核对原操作' }));
+    const recoveryDialog = await screen.findByRole('dialog', { name: '新建项目' });
+    expect(within(recoveryDialog).queryByRole('button', { name: '正在建立项目…' })).not.toBeInTheDocument();
+    fireEvent.click(await within(recoveryDialog).findByRole('button', { name: '核对原操作' }));
     await screen.findByRole('heading', { name: '售后助手' });
     expect(commands).toHaveLength(2); expect(commands[1]).toEqual(commands[0]);
     expect(screen.queryByRole('button', { name: '核对原操作' })).not.toBeInTheDocument();

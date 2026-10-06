@@ -7,6 +7,7 @@ import type { LabProject } from '@/features/eval-lab/projects/types';
 export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, MockRouteHandler>> {
   let nextId = 1;
   const projects = new Map<string, LabProject>();
+  const receipts = new Map<string, { signature: string; receipt: { ok: true; project: LabProject; clientRequestId: string; replayed: false } }>();
   const makeProject = (projectId: string, description: string): LabProject => ({
     schemaVersion: 'rag-ime.agent-lab-project.v1', projectId, revision: 1,
     title: description.slice(0, 32), description, briefVersion: 1,
@@ -30,6 +31,15 @@ export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, M
     },
     'agent.eval-lab.projects.command': (request: ControlRequest) => {
       const body = request.body as Record<string, unknown>;
+      const clientRequestId = String(body.clientRequestId ?? '');
+      if (!clientRequestId || clientRequestId.length > 240) throw Object.assign(new Error('请保留有效的原请求标识。'), { status: 422 });
+      const signature = JSON.stringify(body, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : value);
+      const previous = receipts.get(clientRequestId);
+      if (previous) {
+        if (previous.signature !== signature) throw Object.assign(new Error('此请求标识已用于不同内容，请保留修改后重新操作。'), { status: 409 });
+        return { ...structuredClone(previous.receipt), replayed: true };
+      }
       const input = (body.input ?? {}) as Record<string, unknown>;
       let project = projects.get(String(body.projectId ?? ''));
       if (body.action === 'create') {
@@ -49,7 +59,9 @@ export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, M
         project = { ...project, revision: project.revision + 1, updatedAtMs: Date.now() };
       }
       projects.set(project.projectId, project);
-      return { ok: true, project, clientRequestId: body.clientRequestId, replayed: false };
+      const receipt = { ok: true as const, project, clientRequestId, replayed: false as const };
+      receipts.set(clientRequestId, { signature, receipt: structuredClone(receipt) });
+      return receipt;
     },
   };
 }

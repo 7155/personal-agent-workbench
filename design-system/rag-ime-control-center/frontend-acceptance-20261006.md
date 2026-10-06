@@ -602,3 +602,19 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 - 本地完整 CSS/Home 两文件 106 项通过（75+31）；最后 System Apps/CSS 两文件 115 项通过（40+75，CSS 重复不重复累计）；原 Session 工具菜单/侧栏/键盘焦点选中五项通过、125 未选。第一次命令中的不存在的 paw-session-tools 文件没有运行，报告按实际两个文件计数；后续使用真正的 PawSessionWorkspace 文件补验。正式 `pnpm typecheck`、owner/import/route 和 diff 检查通过。
 - 新建独立页的“复工服务尚未提供有效状态”“部分 Agent 目录暂时不可用”仍需核查公开演示读契约。晚于预热的 prototype 探针没有截获失败，不能据 reads=[] 把界面错误称为已恢复；下一批继续从首次加载与契约位置核对。本批先交付已验证的 CSS/目标/切页修复。
 - Library STOP、原 15 文件清单/ZIP/SHA、七个旧 ID 与费用未知保留均不变；没有付费请求、CI、宿主或模型通过声明。
+
+
+## 继续打磨：公开演示目录、固定权限与 Lab 原回执恢复
+
+从已核实远端 `c39d8da3ef5213d158569dec21ea5285e9f1e272` 接续。GitHub 连接器只读调用已成功取得 PR #135 原始 37 个 thread（33 未标记 resolved、4 已 resolved），保存原文于 `github-review-threads-c39d8da3.json`。此前 GH CLI Forbidden 是历史事实，不能再称原评论无法读取；尚未向评论区回复或改变 thread 状态。
+
+| 页面 / 原始问题 | 发现与修复 | 实际点击与证据 | 未覆盖范围 |
+| --- | --- | --- | --- |
+| 新建独立对话 / Jev 复工 | `agent.sessions.list` 只有 sessions，真实分页读取器需要 items，首次加载因此显示目录异常；continuity.read 落到通用空响应。公开演示 now returns items + 同一 sessions 数组、hasMore=false；复工只按已有 Session/Room 给只读入口，running=null、goal=null、executionAllowed=false、没有编造请求、决定、成果或执行回执；未知 key 明确失败。分析/复工写入明确 422 提示连接本机服务。复工刷新/摘要控件继承原 32/40/44 token | 首次 before `advanced-first-read-probe.json/png`；最终 `preview-review-major-actions-final-v7.json` 四组 390/1440 × normal/reduce：目录错误消失、分页前后、Room/Session 草稿保留、展开进度、演示限制、禁用执行、Jev 分析明确不可用；手机实际滚动后的限制另存 `preview-home-readonly-scroll-390.png` | 无真实后端目标、成果或 Jev 分析验收；预览数据为公开内存示例 |
+| 我的助手 / 独立 Session | 原 review 4190728952 成立：permissionLocked 只隐藏 PermissionPicker，命令目录仍启用 /permissions。将同一锁状态交给原 command availability，保留原命令执行与 IME 所有者 | 四组主助手 /permissions 原按钮 disabled=true，实际鼠标点击拒绝、草稿保留；独立普通 Session 原命令仍启用，实点打开权限弹层、Escape 关闭；locked/unlocked-command 截图 | 没有真实权限变更、宿主或模型调用 |
+| Agent Lab 新建弹窗 / 原操作恢复 | 原 review 4190488811 成立：相同 clientRequestId 重复 create 会多建项目，重复 brief/workspace 遭旧 revision 拒绝。公开预览按原 ID 缓存不可变回执，规范化 JSON 指纹，异内容复用 ID 返回 409；原回执重放 replayed=true。浏览器另复现未知结果仍显示“正在建立项目”且恢复入口在弹窗背后：复用弹窗原主按钮显示“核对原操作”，原输入和 request ID 保留，等待使用“正在等待回执”；关闭弹窗后原入口仍可用，没有叠加重复按钮 | `preview-review-major-actions-final-v6.json` 四组验证旧位置关闭后恢复；final-v7 四组在原弹窗内直接恢复。注入发生在公开 create 已保存、首次响应丢失之后，实点原 ID 第二次返回同一 projectId/replayed=true，目录 count=1、pending storage cleared。lost-receipt/recovered 前后图已查看 | 内存 transport 的当前生命周期内重放；不声称浏览器完整重启仍保留演示项目，也不等于生产持久化或模型通过 |
+
+- 目录/Lab/锁定回归先红：五项失败中一项是测试遗漏必需 expectedRevision 的规格错误，已纠正；真正行为失败包括目录 items、continuity items、重复创建回执、锁定命令。最终五文件 61 项通过；恢复补验三文件 9 项通过（含四个重复的演示测试）及实际 Lab 弹窗原操作用例 1 项通过、28 未选。Lab 弹窗的新断言也先实际失败，再修复通过。
+- 尝试完整 LabWorkbench 29 项与恢复文件时，fork worker 持续高 CPU、未返回用例结果；停止该次进程，日志 `/tmp/paw-lab-dialog-recovery-final.txt` 保留，不能称完整 LabWorkbench 文件通过。随后 45 秒边界内的对应恢复用例与 API 恢复检查完成通过。正式 typecheck 的测试请求 union 曾导致 undefined 不符合 JsonValue，已按 ControlRequest[] 修正；最后正式 `pnpm typecheck` exit=0。
+- 浏览器 v1-v5 定位失败与 JSON 保留，不覆盖为通过；v6 四组通过后发现弹窗恢复体验缺陷，修复后 v7 四组再次通过。v7 图在动效稳定后保存；raw screenshot、JSON 仍是 ignored 本地证据。手机复工摘要/按钮 >=44px、桌面 >=32px 的边界由实测记录；尚未覆盖本批 768px 和 200% zoom。
+- owner/import/route 与 diff 检查通过；初次 uv 默认只读 cache 未启动检查，随后指定可写 `/tmp/paw-uv-cache` 完成，未改系统权限。没有 CI 请求、付费调用、凭证访问、Library 重试、归零账本、强推、admin 或重复 PR。Library STOP、原清单 SHA、15 项 pending 和旧七个 ID 保持原状。
