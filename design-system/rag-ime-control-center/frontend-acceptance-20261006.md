@@ -365,3 +365,23 @@ Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项
 ### Memory 时间线窄屏发布按钮补修
 
 `72c592ad` 主批推送后复看驳回弹窗背景截图，发现 390px 决策区把说明与按钮并排挤压，“立即发布”仅露一个字。680px 内改为说明在上、两按钮在下一行，保留宽屏布局。390/1440 在正常动效和 reduced motion 各实际完成日期/详情、驳回→Escape 取消、发布→已发布、重整→草稿。390 两按钮各 170×44、左右边界 21..369，1440 分别 69×32 / 97×32，无按钮内部或页面横向溢出。截图 memory-seven-actions-buttons-final-v2 / buttons-normal-timeline-decision-controls-*；实际数据 memory-seven-actions-buttons-final-v2.json、buttons-normal.json。首轮脚本末尾错误引用浏览器中不存在的 width（动作已成功），失败保留，修正检测后完整复跑。此次仅 CSS 与记录，本地 diff 检查通过；未改执行协议，未调用真实模型。
+
+## Knowledge 七视图：切页草稿与图谱按钮排布
+
+基于已推送 `0b1da7546a2a622c73f49e5dd5d5abe424f9ae85`。本批是 Chromium 中真实运行的浏览器交互，使用明确标识的 preview 合成数据；不是 Electron IPC、真实文件索引或模型验收。七视图各在 390/1440 打开，保存并人工查看稳定截图。
+
+| 视图 | 实际点击与修复后结果 | 未覆盖状态 |
+| --- | --- | --- |
+| 搜索 | 输入 Tool、Enter 搜索、选择结果、查看片段；390 返回结果后关键词保留。新建对话框输入后取消，焦点回原按钮 | 未提交创建；未将合成结果称为真实检索；本轮没有点击搜索结果的打开来源 |
+| 资料 | 文件筛选无结果→清空恢复；打开 PDF 阅读；重新解析取消、删除 Escape 关闭，两触发器恢复焦点 | 不提交删除/重新解析；不导入真实文件 |
+| 阅读 | Markdown 目录逐项可滚动，点击阅读检查 32 后实际到末尾；返回资料→重新阅读；PDF 正文明确标注 Synthetic preview | 非真实 PDF 解析结果；源文件下载与产物下载未验 |
+| 图谱 | 修复普通桌面窗口中视图切换与操作按钮重叠、重建按钮裁切。沿原控件改为自然换行，设置行也换行，删除失效的旧固定列规则；四宽度 × 两 motion，共 8 组均无控件交叠/越界。每组实际点击节点/关系详情及关闭、构建状态、专注查看、Escape 返回；原放大/缩小/适应画布和设置展开/收起保留 | 未提交重建，不调用模型；未点击图谱来源；未选节点时定位按钮禁用未算功能通过 |
+| 处理记录 | 刷新后空状态清楚显示 0 进行中 / 0 条记录 | 没有伪造运行中真实索引作业 |
+| 设置 | 实际复现：修改名称→搜索→设置后名称被还原。修复原生窗口路由所有者重挂载，并只保留已访问的设置内容；两宽度回到同一未保存草稿，保存未自动触发 | 本批没有提交真实设置；旧 preview 的索引设置应用提示仍须另核实 |
+| 本地笔记 | 实际复现：填写文件夹→资料知识库→本地笔记后路径清空。两个知识来源保持各自已访问的原所有者；隐藏来源暂停查询和轮询。连接操作返回明确演示限制，路径保留；往返也保留 | 无真实本机文件夹服务，连接/查询/编辑真实笔记未验 |
+
+- 前后证据：reports/frontend-audit-20261006/knowledge-seven-before.json、knowledge-seven-actions-before.json、knowledge-seven-actions-after-v2.json、knowledge-seven-after-settled.json；原图 knowledge-seven-before-* / knowledge-seven-after-settled-* / knowledge-actions-after-v2-*。图谱补查 knowledge-graph-wrap-final.json 及 knowledge-graph-wrap-*，保留修复前 1440 重叠图。
+- 14 个页面/宽度组合、20 组主要交互修复后通过，零 pageerror/页面横向溢出；该数字不代替所有按钮和真实服务覆盖。第一轮脚本误把 PDF 文案与 Markdown 文案等同、点击未选中节点时禁用的定位按钮，失败保留。开发中 active 名称碰撞造成 Vite 解析错误，原失败/覆盖层图保留，修正后补拍；未把这些首轮记录标成通过。
+- Knowledge/Vault 两文件 48 项通过；原生 Memory/Knowledge 路由所有者两项通过（另 30 项未在这次选中）；Memory 已访问偏好草稿补查 1 项通过。owner/import/route 检查及 diff check 通过，路由统计 94 dispatched / 280 declared / 29 of 40 undeclared 为既有检查输出。
+- 类型检查口径纠正：根 tsconfig 的 files=[] 和 references 导致先前 tsc --noEmit 未检查应用源文件，不能当作完整类型验证。改用仓库正式 pnpm typecheck（tsc -b --pretty false），发现并移除三个 RTL 测试文件误用的 Playwright exact 选项；运行结果 exit=0，日志 /tmp/paw-knowledge-typecheck-verified.txt。运行期查询仍使用原精确字符串。
+- Library 仍被 tools/list 前置代理 CONNECT 403 阻塞，15 项清单及原图原包未改、无新 file_id；按最新指示不再机械重试。无付费模型调用，无预算账本变更。本批不宣称全部 Apps/功能块重设计完成。

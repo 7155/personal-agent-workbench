@@ -74,6 +74,7 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
   const desktop = usePawOsDesktop();
   const route = initialRoute || app.route;
   const pageId = pageForRoute(pages, route).id;
+  const preservePage = appId === 'memory' || appId === 'knowledge';
   return (
     <div className="paw-native-app" data-app-id={appId} data-page-id={pageId} data-sidebar-collapsed={sidebar.collapsed} data-owns-navigation={appId === 'knowledge' || appId === 'eval-lab' || undefined} data-single-page={pages.length === 1 || undefined}>
       {appId === 'knowledge' || appId === 'eval-lab' ? null : <aside className="paw-native-nav">
@@ -86,9 +87,9 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
         </nav>
       </aside>}
       <section className="paw-native-stage">
-        <MemoryRouter initialEntries={[route]} key={appId === 'memory' ? appId : route}>
-          <NativeRouteReporter expectedRoute={route} preservePage={appId === 'memory'} />
-          <div className="paw-native-page" key={appId === 'memory' ? appId : `${appId}:${pageId}`}>
+        <MemoryRouter initialEntries={[route]} key={preservePage ? appId : route}>
+          <NativeRouteReporter expectedRoute={route} preservePage={preservePage} />
+          <div className="paw-native-page" key={preservePage ? appId : `${appId}:${pageId}`}>
             <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {app.label}…</div>}>
               <NativeSurface appId={appId} pageId={pageId} route={route} />
             </Suspense>
@@ -106,7 +107,7 @@ function NativeRouteReporter({ expectedRoute, preservePage = false }: { expected
   const previousExpectedRoute = useRef(expectedRoute);
   const route = `${location.pathname}${location.search}${location.hash}`;
   useEffect(() => {
-    // Memory owns its visited profile and unsent draft. A host rail change
+    // Library pages own their visited views and unsent drafts. A host rail change
     // updates its router without replacing that owner or echoing the old route.
     if (preservePage && previousExpectedRoute.current !== expectedRoute) {
       previousExpectedRoute.current = expectedRoute;

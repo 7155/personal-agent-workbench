@@ -118,19 +118,27 @@ const KNOWLEDGE_SEARCH_TIMEOUT_MS = 20_000;
 export function KnowledgeFeature() {
   const [params,setParams]=useSearchParams();
   const notes=params.get('space')==='notes';
-  return <div className="knowledge-source-workspace"><nav className="knowledge-source-nav" aria-label="知识来源"><button aria-pressed={!notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.delete('space');return next;})}>资料知识库</button><button aria-pressed={notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.set('space','notes');return next;})}>本地笔记</button></nav>{notes?<VaultWorkspace/>:<DocumentKnowledgeFeature/>}</div>;
+  const [documentsVisited, setDocumentsVisited] = useState(!notes);
+  const [notesVisited, setNotesVisited] = useState(notes);
+  useEffect(() => { if (notes) setNotesVisited(true); else setDocumentsVisited(true); }, [notes]);
+  return <div className="knowledge-source-workspace"><nav className="knowledge-source-nav" aria-label="知识来源"><button aria-pressed={!notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.delete('space');return next;})}>资料知识库</button><button aria-pressed={notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.set('space','notes');return next;})}>本地笔记</button></nav>
+    {(!notes || documentsVisited) ? <div className="knowledge-source-pane" hidden={notes}><DocumentKnowledgeFeature active={!notes} /></div> : null}
+    {(notes || notesVisited) ? <div className="knowledge-source-pane" hidden={!notes}><VaultWorkspace active={notes} /></div> : null}
+  </div>;
 }
 
-function DocumentKnowledgeFeature() {
+function DocumentKnowledgeFeature({ active }: { active: boolean }) {
   const appSurface = usePawOsAppIdentity();
   const sidebar = useAppSidebar('knowledge');
   const surfaceActive = usePawOsAppActive();
   const compact = usePawOsAppCompact();
   const pageVisible = usePageVisibility();
-  const queriesEnabled = (surfaceActive ?? true) && pageVisible;
+  const queriesEnabled = active && (surfaceActive ?? true) && pageVisible;
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedBaseId, setSelectedBaseId] = useState(searchParams.get('base') ?? '');
   const tab = asDetailTab(searchParams.get('tab') ?? 'search');
+  const [settingsVisited, setSettingsVisited] = useState(tab === 'settings');
+  useEffect(() => { if (tab === 'settings') setSettingsVisited(true); }, [tab]);
   // 从别处深链进来的一条资料：只在还没有有效选择时决定落点，之后由人自己开。
   const routeBaseId = searchParams.get('base') ?? '';
   const routeDocumentId = searchParams.get('document') ?? '';
@@ -608,7 +616,7 @@ function DocumentKnowledgeFeature() {
                       onRefresh={() => void queries.jobs.refetch()}
                     />
                   </TabsContent>
-                  <TabsContent aria-label="知识库设置" aria-labelledby={undefined} value="settings">
+                  {(tab === 'settings' || settingsVisited) ? <TabsContent aria-label="知识库设置" aria-labelledby={undefined} value="settings" forceMount hidden={tab !== 'settings'}>
                     <KnowledgeSettingsPanel
                       key={selectedBase.id}
                       base={selectedBase}
@@ -635,7 +643,7 @@ function DocumentKnowledgeFeature() {
                       settingsEnvelope={queries.settings.data}
                       worker={worker}
                     />
-                  </TabsContent>
+                  </TabsContent> : null}
                 </Tabs>
               </>
             ) : (

@@ -1985,8 +1985,8 @@ describe('MemoryFeature preferences', () => {
     const toggle = await screen.findByRole('switch', { name: '启用记忆增强' });
     await waitFor(() => expect(toggle).toBeEnabled());
     await user.click(toggle);
-    await user.click(screen.getByRole('tab', { name: '记忆', exact: true }));
-    await user.click(screen.getByRole('tab', { name: '记忆偏好', exact: true }));
+    await user.click(screen.getByRole('tab', { name: '记忆' }));
+    await user.click(screen.getByRole('tab', { name: '记忆偏好' }));
     expect(screen.getByRole('switch', { name: '启用记忆增强' })).toBe(toggle);
     expect(toggle).toBeChecked();
     expect(screen.getByRole('button', { name: '保存记忆偏好' })).toBeEnabled();
