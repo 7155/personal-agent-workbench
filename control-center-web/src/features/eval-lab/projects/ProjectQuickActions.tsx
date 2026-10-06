@@ -286,7 +286,7 @@ export function ProjectQuickActions({ project, context, compact = false, active 
         <span aria-live="polite" data-active={hasActive || undefined}>{hasActive ? '后台任务运行中' : latest ? `最近：${latest.label}` : '使用成果声明的项目脚本'}</span>
       </div> : null}
       <div className="project-quick-actions__buttons">
-        <Button aria-label="运行预览" disabled={!cwd || Boolean(busy)} loading={busy === 'preview'} onClick={() => void start('preview')} size="small" variant="primary"><Play size={14} />运行预览</Button>
+        <Button aria-label="运行预览" disabled={!cwd || Boolean(busy)} loading={busy === 'preview'} onClick={() => void start('preview')} size="small" variant={compact ? 'secondary' : 'primary'}><Play size={14} />运行预览</Button>
         <Button aria-label="运行检核" disabled={!cwd || Boolean(busy)} loading={busy === 'checks'} onClick={() => void start('checks')} size="small"><ShieldCheck size={14} />运行检核</Button>
         <Button aria-label="日志" disabled={!latest} onClick={() => latest && openJob(latest)} size="small" variant="quiet"><FileTerminal size={14} />日志</Button>
         <Button aria-label="打开预览页面" disabled={!previewUrl} onClick={() => openPreview()} size="small" variant="quiet"><ExternalLink size={14} />打开预览页面</Button>

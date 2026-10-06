@@ -128,3 +128,13 @@ HTTP transport 两个 Blob.arrayBuffer 单测失败在起始 `9b2771` 与同一�
 本批本地检查：TypeScript 通过；首页/模型 31 项通过；文件/工具/视图相关 17 项通过（星空菜单关闭后需要先重新展开，旧测试已按新交互更新）；真实 Chromium 的桌面与 390 窄屏共 6 项交互通过（讨论、授权任务、停止、返回继续、资料保存、视图菜单、文件关闭与焦点、模型/权限锚点随窗口调整）。使用演示 transport 与合成数据，未调用付费模型。截图视觉复核与其余应用的设计验收仍待完成；这些测试数不代表设计通过。
 
 第二轮截图复查发现并继续修正：文件面板新增工具行后旧网格把工具区撑高，现改成“标题 / 工具 / 可滚动文件树”三行；短视口下已聚焦的完成标准被滚动区遮住，现随表单可用高度调整现有滚动区。新增实际浏览器断言，桌面与 390 窄屏共 6 项通过，包含两种关闭路径、浮层窗口调整及 390×480 的聚焦字段可编辑。此短视口检查不等于原生软键盘验收。
+
+第二轮样式归属收尾：旧 Agent/Stellar 皮肤的发送与焦点规则仅继续覆盖旧 composer，workbench 输入区由现有共享组件管理；文件工具内“运行预览”使用次级按钮，保留原处理器；窄窗口的视图与工具触发范围达到 40px。额外运行的两份 CSS 静态套件有 3 项既有失败，在起始 `9b277155` 的隔离源码与同一依赖环境复现同样 3 项（小字规则、旧首页列定义、旧项目浮层选择器）；本批未为此扩张修复范围。项目快速动作 7 项通过。
+
+新增参考已收到并读取：Joye 页面正文经其公开仓库对应 MDX 读取（网站浏览工具未能访问），落实“用字号/留白表达层级、必要状态仍配文字”；未复制其组件或图案。NN/g 的 skeleton 指导用于后续检查加载反馈，尚未新增或宣称全站采用 skeleton。VCPChat 固定提交的会话管理入口已读取，确认其引用外部 messageRenderer；尚未完成这些具体 UI 组件阅读，不能作为视觉实现依据。参考链接：
+- https://www.joyehuang.me/lab/info-hierarchy
+- https://www.joyehuang.me/lab/status-shapes
+- https://github.com/joyehuang/blog
+- https://vercel.com/design/guidelines
+- https://www.nngroup.com/articles/skeleton-screens/
+- https://github.com/lioensky/VCPChat/blob/f06ca2f27fe721d9c2a44e30d6f413187f5282af/modules/chatManager.js

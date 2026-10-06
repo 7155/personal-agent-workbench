@@ -802,12 +802,12 @@
   box-shadow: none;
 }
 
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:focus-within {
+.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']):focus-within {
   border-color: var(--paw-stellar-accent);
   box-shadow: none;
 }
 
-.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:not(:disabled) {
+.paw-desktop-root[data-paw-visual='stellar'] :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:not(:disabled) {
   color: #ffffff;
   background: var(--paw-stellar-accent);
 }

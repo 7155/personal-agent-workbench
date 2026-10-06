@@ -783,7 +783,7 @@
 /* Send is the composer's one primary action: a filled accent circle
    (baseline .send-btn), so it never competes with the quiet pickers on the
    same row. Disabled keeps the quiet outline so an empty draft doesn't shout. */
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:not(:disabled) {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:not(:disabled) {
   border-radius: 50%;
   background: var(--paw-chat-accent);
   color: #fff;
@@ -793,12 +793,12 @@
     color 120ms ease;
 }
 
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:hover:not(:disabled) {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:hover:not(:disabled) {
   background: color-mix(in srgb, var(--paw-chat-accent) 88%, #18202b);
   transform: translateY(-1px);
 }
 
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:active:not(:disabled) {
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:active:not(:disabled) {
   background: color-mix(in srgb, var(--paw-chat-accent) 80%, #18202b);
   transform: scale(.94);
 }
@@ -811,7 +811,7 @@
   background: color-mix(in srgb, var(--paw-chat-success, #36b37e) 86%, #18202b);
 }
 
-:root[data-reduce-motion='true'] .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer__send:not(:disabled) {
+:root[data-reduce-motion='true'] .paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer:not([data-composer-design='workbench']) .agent-composer__send:not(:disabled) {
   transition: none;
   transform: none;
 }
@@ -1529,8 +1529,8 @@
 
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__view-switch button,
   .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button {
-    width: 28px;
-    min-height: 28px;
+    width: 32px;
+    min-height: 32px;
     justify-content: center;
     padding-inline: 0;
   }
@@ -1849,4 +1849,8 @@
   .paw-desktop-root .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline {
     padding-inline: 24px;
   }
+}
+
+@container paw-window (max-width: 500px) {
+  .paw-desktop-root .paw-window-titlebar[data-window-chrome='agent-session'] .paw-session-workspace__tools > button { width: 40px; min-height: 40px; }
 }

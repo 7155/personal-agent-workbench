@@ -24,12 +24,13 @@ test('conversation keeps project actions in files and returns keyboard focus fro
   await expect(panel).toBeVisible();
   await expect(panel.getByRole('region', { name: '项目快速动作' })).toBeVisible();
   await expect(panel.getByRole('button', { name: '运行预览', exact: true })).toBeVisible();
-  const actions = await panel.locator('.project-quick-actions').boundingBox();
-  const files = await panel.locator('.agent-files-panel__body').boundingBox();
-  expect(actions).not.toBeNull();
-  expect(files).not.toBeNull();
-  expect(actions!.height).toBeLessThan(160);
-  expect(actions!.y + actions!.height).toBeLessThanOrEqual(files!.y + 1);
+  // Read both boxes in one frame while the drawer can still be entering.
+  const geometry = await panel.evaluate(element => ({
+    actions: element.querySelector('.project-quick-actions')!.getBoundingClientRect().toJSON(),
+    files: element.querySelector('.agent-files-panel__body')!.getBoundingClientRect().toJSON(),
+  }));
+  expect(geometry.actions.height).toBeLessThan(160);
+  expect(geometry.actions.y + geometry.actions.height).toBeLessThanOrEqual(geometry.files.y + 1);
   await panel.getByRole('button', { name: '运行预览', exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
