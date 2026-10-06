@@ -361,3 +361,7 @@ Agent 任务依据与恢复批（基于 5ea79b99）：
 - 本批最终 preview transport / MemoryProfile / management-mutation 三文件 54 项通过；Native Apps 31 项通过；Memory 相关 source/reference/archive/restore/主题筛选 18 项通过、37 项未选；新偏好草稿与演示语义/搜索检查 3 项通过、92 项未选。类型检查、owner/import/route 边界及 diff 检查通过。首次新的 Native 测试在默认 1 秒内仍加载 lazy 页面，保留失败后使用现有页面检查惯例的 5 秒读取等待，不改变产品期限。
 
 Library 独立截图审查仍阻塞：未修改官方 helper/config，原 15 项清单 SHA256 `d2dcb49ae714ab3e11259a41da3345279e3d758d1ae61bf921ad5ba4ab1f09f2` 保留。tools/list 目录预检目标 chatgpt.com 经现有 proxy CONNECT 被拒绝 HTTP 403；URLError 的 cause 为 OSError，尚未到目标 TLS/工具目录响应，未进入 prepare/upload/finalize。无新 ID，既有 7 个 ID 保留且不重复上传；按指示停止同路径机械重试，等待访问政策合法恢复。不更改代理/网络安全/凭证、不绕行上传。无需付费的页面工作继续，原费用与未知保留不变。
+
+### Memory 时间线窄屏发布按钮补修
+
+`72c592ad` 主批推送后复看驳回弹窗背景截图，发现 390px 决策区把说明与按钮并排挤压，“立即发布”仅露一个字。680px 内改为说明在上、两按钮在下一行，保留宽屏布局。390/1440 在正常动效和 reduced motion 各实际完成日期/详情、驳回→Escape 取消、发布→已发布、重整→草稿。390 两按钮各 170×44、左右边界 21..369，1440 分别 69×32 / 97×32，无按钮内部或页面横向溢出。截图 memory-seven-actions-buttons-final-v2 / buttons-normal-timeline-decision-controls-*；实际数据 memory-seven-actions-buttons-final-v2.json、buttons-normal.json。首轮脚本末尾错误引用浏览器中不存在的 width（动作已成功），失败保留，修正检测后完整复跑。此次仅 CSS 与记录，本地 diff 检查通过；未改执行协议，未调用真实模型。
