@@ -10,6 +10,7 @@
 .paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] { grid-template-rows: minmax(0, 1fr); grid-template-areas: 'room-main'; }
 .paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-rail='open'] { grid-template-areas: 'room-main jev-rail'; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] { --wb-read: 760px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation { container: workbench-conversation / inline-size; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 4px 12px 6px; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn { max-width: min(var(--wb-read), 100%); }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-user-message { max-width: 94%; }
@@ -18,6 +19,7 @@
 .paw-desktop-root .paw-room-workspace__composer { padding: 4px 12px 6px; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { width: 100%; max-width: calc(var(--wb-read) + 104px); margin-inline: auto; padding: 8px 52px 0; box-sizing: border-box; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-conversation-nav > button { width: 32px; height: 32px; left: 1px; top: clamp(16px, var(--agent-nav-position), calc(100% - 16px)); }
+@container workbench-conversation (min-width: 621px) and (max-width: 880px) { .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { max-width: none; padding-inline: 12px 52px; } }
 @media (max-width: 620px) { .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation[data-message-flow='separated'] .agent-timeline { padding-inline: 12px; } }
 
 .agent-first-response { display: flex; align-items: center; gap: 8px; width: min(var(--wb-read, 960px), 100%); margin: 0 auto 6px; padding-inline: 8px; box-sizing: border-box; color: var(--paw-muted); font-size: 13px; }

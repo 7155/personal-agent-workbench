@@ -17,11 +17,13 @@ for (const width of [768,1440]) test(`citation actions and conversation navigati
     const fileTail=element.querySelector('.agent-file-block__open')!.getBoundingClientRect();
     const code=element.querySelector('.paw-rich-code')!.getBoundingClientRect();
     const nav=element.querySelector('.agent-conversation-nav')!.getBoundingClientRect();
-    return {cardWidth:card.width,linkWidth:link.width,citationInset:card.right-icon.right,fileInset:file.right-fileTail.right,navGap:nav.left-code.right};
+    const composer=element.querySelector('.paw-unified-composer')!.getBoundingClientRect();
+    return {cardWidth:card.width,linkWidth:link.width,citationInset:card.right-icon.right,fileInset:file.right-fileTail.right,navGap:nav.left-code.right,leftAlignment:card.left-composer.left};
   });
   expect(geometry.cardWidth-geometry.linkWidth).toBeLessThanOrEqual(2);
   expect(Math.abs(geometry.citationInset-geometry.fileInset)).toBeLessThanOrEqual(2);
   expect(geometry.navGap).toBeGreaterThanOrEqual(12);
+  if (width === 768) expect(Math.abs(geometry.leftAlignment)).toBeLessThanOrEqual(4);
   expect(await save.evaluate(element=>{
     const rect=element.getBoundingClientRect();
     return element.contains(document.elementFromPoint(rect.right-2,rect.top+2));
