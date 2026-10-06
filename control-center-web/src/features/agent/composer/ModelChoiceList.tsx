@@ -42,10 +42,11 @@ export function ModelChoiceList({
   selectedKey: string;
 }) {
   const firstKey = leadingOptions[0]?.key ?? firstModelChoiceKey(groups);
-  const anySelected = [
+  const options = [
     ...leadingOptions,
     ...groups.flatMap((group) => group.options),
-  ].some((option) => option.key === selectedKey);
+  ];
+  const anySelected = options.some((option) => option.key === selectedKey);
 
   function optionRow(option: ModelChoiceOption, marked: boolean) {
     const selected = option.key === selectedKey;
@@ -101,7 +102,7 @@ export function ModelChoiceList({
           {group.options.map((option) => optionRow(option, true))}
         </div>
       ))}
-      {firstKey ? null : <p className="agent-model-picker__empty">{emptyLabel}</p>}
+      {options.length ? null : <p className="agent-model-picker__empty">{emptyLabel}</p>}
     </div>
   );
 }
