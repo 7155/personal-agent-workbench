@@ -5,6 +5,44 @@ import { previewAgentSnapshot } from '@/features/agent/preview-data';
 
 describe('preview primary task directory', () => {
   type Reply = { session: { id: string }; tasks: { id: string }[] };
+  it('rotates archived primary discussions and rejects new tasks from the retired source', async () => {
+    const transport = createPreviewTransport();
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    await transport.request({ pathId: 'agent.session.archive', params: { sessionId: first.session.id }, body: { archived: true } });
+    const replacement = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(replacement.session.id).not.toBe(first.session.id);
+    await expect(transport.request({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: first.session.id, clientRequestId: 'retired-source', objective: 'Check',
+      workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } })).rejects.toThrow('归档');
+    const task = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: replacement.session.id, clientRequestId: 'replacement-task', objective: 'Check',
+      workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } });
+    expect((await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} })).tasks.map(item=>item.id)).toEqual([task.session.id]);
+  });
+  it('keeps exact task replay after source archive without creating another task', async () => {
+    const transport = createPreviewTransport();
+    const source = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    const body = { sourceSessionId: source.session.id, clientRequestId: 'replay-retired', objective: 'Check', workspaceRoots: ['/work/task'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE' };
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.tasks.create', body });
+    await transport.request({ pathId: 'agent.session.archive', params: { sessionId: source.session.id }, body: { archived: true } });
+    const replay = await transport.request<Reply & { created: boolean }>({ pathId: 'agent.primary.tasks.create', body });
+    expect(replay.session.id).toBe(first.session.id);
+    expect(replay.created).toBe(false);
+    const replacement = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: {} });
+    expect(replacement.tasks).toEqual([]);
+  });
+  it('replaces deleted cached discussions and checks the source project', async () => {
+    const transport = createPreviewTransport();
+    const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    await expect(transport.request({ pathId: 'agent.primary.tasks.create', body: {
+      sourceSessionId: first.session.id, clientRequestId: 'wrong-project', objective: 'Check', workspaceRoots: ['/work/second'], workspaceScopeConfirmation: 'APPROVE_WORKSPACE_SCOPE',
+    } })).rejects.toThrow('目录');
+    await transport.request({ pathId: 'agent.session.delete', params: { sessionId: first.session.id } });
+    const next = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });
+    expect(next.session.id).not.toBe(first.session.id);
+  });
   it('returns only tasks belonging to the ensured source discussion', async () => {
     const transport = createPreviewTransport();
     const first = await transport.request<Reply>({ pathId: 'agent.primary.ensure', body: { workspaceRoots: ['/work/first'] } });

@@ -57,6 +57,7 @@ export function useChatSurfaceBusy(sessionId: string): boolean {
   const address = agentSessionAddress(transport, sessionId);
   return useAgentLiveStore(state => {
     const projection = selectAgentProjection(state, address);
-    return Boolean(projection?.durableRecovery?.activeTurn?.turnId ?? latestActiveAgentTurnId(projection));
+    return Boolean(projection?.durableRecovery?.compactionTarget
+      || projection?.durableRecovery?.activeTurn?.turnId || latestActiveAgentTurnId(projection));
   });
 }

@@ -47,7 +47,12 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
   }
   routes['agent.primary.ensure'] = (request: ControlRequest) => {
     const roots = strings(record(request.body).workspaceRoots); const key = JSON.stringify([...roots].sort());
-    let session = primaryByRoots.get(key); const created = !session;
+    const cached = primaryByRoots.get(key);
+    // Archive replaces a directory entry; cached objects are not authority.
+    let session = cached && sessions.find(item => item.id === cached.id && item.status !== 'archived'
+      && record(item.metadata).primaryAssistant === true
+      && JSON.stringify([...strings(item.workspaceRoots)].sort()) === key);
+    const created = !session;
     if (!session) { session = makeSession('我的助手', roots, { assistantId: 'primary:preview', primaryAssistant: true }, false); primaryByRoots.set(key, session); }
     const sourceSessionId = session.id;
     const tasks = sessions.filter(item => {
@@ -61,10 +66,22 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
     const body = record(request.body); const id = String(body.clientRequestId); const signature = JSON.stringify(body);
     const existing = tasksByRequest.get(id);
     if (existing && existing.signature !== signature) throw new Error('primary_task_request_conflict');
-    if (!sessions.some(item => item.id === body.sourceSessionId && record(item.metadata).primaryAssistant === true)) throw new Error('primary_source_session_required');
+    // Like the live contract, an exact admitted request can be replayed after
+    // its discussion retires. Fresh requests must validate the current source.
+    const source = sessions.find(item => item.id === body.sourceSessionId && record(item.metadata).primaryAssistant === true);
+    if (!existing) {
+      if (!source) throw new Error('primary_source_session_required');
+      if (source.status === 'archived') throw new Error('这段讨论已归档，请返回我的助手再交办。');
+      const sourceRoots = strings(source.workspaceRoots);
+      if (sourceRoots.length && JSON.stringify(sourceRoots) !== JSON.stringify(strings(body.workspaceRoots))) {
+        throw new Error('本次工作目录需要与讨论项目一致。');
+      }
+    }
     const roots = strings(body.workspaceRoots);
     if (body.workspaceScopeConfirmation !== 'APPROVE_WORKSPACE_SCOPE' || !roots.length) throw new Error('workspace_scope_confirmation_required');
-    const session = existing?.session ?? makeSession(String(body.objective).slice(0, 80), roots,
+    const replaySession = existing && sessions.find(item => item.id === existing.session.id);
+    if (existing && !replaySession) throw new Error('这项演示任务已删除，无法恢复原请求。');
+    const session = replaySession ?? makeSession(String(body.objective).slice(0, 80), roots,
       { assistantId: 'primary:preview', primaryTask: true, sourceSessionId: body.sourceSessionId, clientRequestId: id }, true);
     if (!existing) {
       session.goal = { ...record(session.goal), objective: String(body.objective), successCriteria: strings(body.acceptanceCriteria).join('\n') };

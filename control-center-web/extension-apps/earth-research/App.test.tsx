@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
-import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
+import { agentProjection, agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { MockControlTransport } from '@/test/mock-transport';
 import type { PawExtensionAppManifest } from '@/paw-os/extensions/types';
 import type { ControlRequest } from '@/platform/transport';
@@ -104,6 +104,20 @@ it('disables script execution while a non-script workspace artifact is open', as
       clientMessageId: 'legacy-busy', text: '无 Provider fixture', nowMs: 1,
     });
   });
+  expect(runButton).toBeEnabled();
+  const compaction = { sessionId: 'ours', runtimeEngine: 'durable', projectionCurrent: true, activeTurn: null,
+    compactionTarget: { kind: 'compaction', runtimeSessionId: 'runtime-earth', taskIds: ['durable:task:7'] },
+    messages: [], liveEvents: [], lastSequence: 1, resumeToken: 'ours:1', status: 'idle' };
+  for (const paused of [false, true]) {
+    act(() => useAgentLiveStore.getState().hydrate(agentSessionAddress(transport, 'ours'), { ...compaction, paused, recoverable: paused }));
+    expect(agentProjection(agentSessionAddress(transport, 'ours')).durableRecovery?.compactionTarget).toEqual(compaction.compactionTarget);
+    expect(runButton).toBeDisabled();
+    await user.click(runButton);
+    expect(transport.requests.some(item=>item.request.pathId==='agent.session.prompt')).toBe(false);
+  }
+  act(() => useAgentLiveStore.getState().hydrate(agentSessionAddress(transport, 'ours'), {
+    ...compaction, paused: false, recoverable: false, compactionTarget: null, lastSequence: 2, resumeToken: 'ours:2',
+  }));
   expect(runButton).toBeEnabled();
   act(() => useAgentLiveStore.getState().appendOptimistic(agentSessionAddress(transport, 'ours'), {
     clientMessageId: 'current-runtime-busy', text: '当前项目正在运行', nowMs: 2,
