@@ -113,6 +113,8 @@ export function MemoryFeature() {
   );
   const [profileVisited, setProfileVisited] = useState(view === 'profile');
   useEffect(() => { if (view === 'profile') setProfileVisited(true); }, [view]);
+  const [preferencesVisited, setPreferencesVisited] = useState(view === 'preferences');
+  useEffect(() => { if (view === 'preferences') setPreferencesVisited(true); }, [view]);
   const [layer, setLayer] = useState<MemoryLayer>(routeSelection.layer);
   const kind: MemoryKind = layer;
   const [draftQuery, setDraftQuery] = useState('');
@@ -465,9 +467,9 @@ export function MemoryFeature() {
               onOpenTimeline={openTimeline}
             />
           </TabsContent>
-          <TabsContent value="preferences">
-            {view === 'preferences' ? <MemoryPreferences /> : null}
-          </TabsContent>
+          {(view === 'preferences' || preferencesVisited) ? <TabsContent value="preferences" forceMount hidden={view !== 'preferences'}>
+            <MemoryPreferences />
+          </TabsContent> : null}
         </ViewTabs>
         <MemoryEditDialog
           kind={kind}

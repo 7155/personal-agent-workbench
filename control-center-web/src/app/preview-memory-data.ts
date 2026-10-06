@@ -5,6 +5,12 @@ import type {
   ReferenceKind,
 } from '@/contracts/generated/memory-reference.v1';
 
+const previewGovernanceTopic = {
+  id: 'book:preview-memory-governance',
+  title: '记忆治理与桌面上下文',
+  summary: '按用户、角色和项目隔离证据；每日整理先生成可审阅草案。',
+};
+
 export function previewMemoryPage(
   request: ControlRequest,
   _evidenceDisposition: string,
@@ -74,9 +80,7 @@ export function previewMemoryPage(
       ok: true,
       items: [
         {
-          id: 'book:preview-memory-governance',
-          title: '记忆治理与桌面上下文',
-          summary: '按用户、角色和项目隔离证据；每日整理先生成可审阅草案。',
+          ...previewGovernanceTopic,
           status: 'active',
           source: { type: 'memory_book', id: 'book:preview-memory-governance' },
           ref: { type: 'book', id: 'book:preview-memory-governance' },
@@ -218,7 +222,8 @@ export function previewMemoryReference(kind: string, referenceId: string): Memor
       ref: makeReference('book', referenceId),
       item: {
         id: referenceId,
-        title: referenceId.includes('agent-runtime') ? '伙伴运行' : '输入法记忆与上下文',
+        title: referenceId === previewGovernanceTopic.id ? previewGovernanceTopic.title
+          : referenceId.includes('agent-runtime') ? '伙伴运行' : '输入法记忆与上下文',
         summary: '聚合当前 Atom 和来源证据，作为主题检索入口。',
         status: 'active',
         type: 'topic',
@@ -435,6 +440,7 @@ export function previewActivityTimelineCalendar(
       date,
       status: item.status,
       organized,
+      modelOrganized: organized,
       needsRefresh: item.needsRefresh,
       sourceEventCount: item.sourceEventCount,
       timelineId: item.status === 'none' ? '' : `timeline:${date}`,
@@ -648,7 +654,7 @@ function previewAppMemory(
   };
 }
 
-export function previewMemoryGraph(plane: 'groups' | 'tags'): Record<string, unknown> {
+export function previewMemoryGraph(plane: 'groups' | 'tags', query = ''): Record<string, unknown> {
   const runtime = previewMemoryGraphNode('tag:agent-runtime', 'tag', '伙伴运行', '会话、工具与执行边界', 18, 'teal');
   const quality = previewMemoryGraphNode('tag:memory-quality', 'tag', '记忆质量', '去噪、合并与来源约束', 14, 'green');
   const boundary = previewMemoryGraphNode('tag:input-boundary', 'tag', '输入封口', 'Backspace 编辑，Enter 后持久化', 9, 'orange');
@@ -658,7 +664,7 @@ export function previewMemoryGraph(plane: 'groups' | 'tags'): Record<string, unk
       previewMemoryGraphEdge('tag-edge:runtime-quality', 'tagRelation', 'tag:agent-runtime', 'tag:memory-quality', 'related_to', 0.92, 8),
       previewMemoryGraphEdge('tag-edge:quality-boundary', 'tagRelation', 'tag:memory-quality', 'tag:input-boundary', 'depends_on', 0.88, 6),
       previewMemoryGraphEdge('tag-edge:boundary-runtime', 'tagRelation', 'tag:input-boundary', 'tag:agent-runtime', 'feeds', 0.74, 4),
-    ]);
+    ], query);
   }
   const inputGroup = previewMemoryGraphNode('group:input-method', 'group', '输入法', '输入质量、候选与上下文注入', 34, 'teal');
   const agentGroup = previewMemoryGraphNode('group:agent', 'group', '伙伴运行资料', '会话、工具和长期记忆', 27, 'blue');
@@ -669,14 +675,28 @@ export function previewMemoryGraph(plane: 'groups' | 'tags'): Record<string, unk
     previewMemoryGraphEdge('member:input-book', 'groupMember', 'group:input-method', 'book:input-memory', 'contains', 0.9, 1),
     previewMemoryGraphEdge('member:agent-runtime', 'groupMember', 'group:agent', 'tag:agent-runtime', 'contains', 1, 1),
     previewMemoryGraphEdge('member:agent-quality', 'groupMember', 'group:agent', 'tag:memory-quality', 'contains', 0.85, 1),
-  ]);
+  ], query);
 }
 
 function previewMemoryGraphEnvelope(
   plane: 'groups' | 'tags',
   nodes: Record<string, unknown>[],
   edges: Record<string, unknown>[],
+  query: string,
 ): Record<string, unknown> {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle) {
+    const matches = new Set(nodes.filter(node => `${node.label} ${node.description}`.toLocaleLowerCase().includes(needle)).map(node => node.id));
+    const visible = new Set(matches);
+    for (const edge of edges) {
+      if (matches.has(edge.sourceId) || matches.has(edge.targetId)) {
+        visible.add(edge.sourceId);
+        visible.add(edge.targetId);
+      }
+    }
+    nodes = nodes.filter(node => visible.has(node.id));
+    edges = edges.filter(edge => visible.has(edge.sourceId) && visible.has(edge.targetId));
+  }
   return {
     schemaVersion: 'rag-ime.memory-graph.v1',
     ok: true,
@@ -685,7 +705,7 @@ function previewMemoryGraphEnvelope(
     graphRevision: `sha256:${'a'.repeat(64)}`,
     plane,
     project: 'wisdom-weasel-rag-ime',
-    filters: { status: 'active', query: '', focusId: '', minWeight: 0 },
+    filters: { status: 'active', query: query.trim(), focusId: '', minWeight: 0 },
     nodes,
     edges,
     truncated: { nodes: false, edges: false },
@@ -754,10 +774,10 @@ export function previewMemoryEntity(kindValue: string, entityId: string): Record
     'input-memory': previewMemoryGraphNode('book:input-memory', 'book', '输入法记忆与上下文', '完整输入段、App 来源和闪电联想边界', 12, 'green'),
   } as const;
   const fallback = previewMemoryGraphNode(
-    `${kind}:${entityId || 'preview'}`,
+    entityId === previewGovernanceTopic.id ? entityId : `${kind}:${entityId || 'preview'}`,
     kind,
-    entityId || '预览记忆',
-    '本地记忆关系',
+    entityId === previewGovernanceTopic.id ? previewGovernanceTopic.title : entityId || '预览记忆',
+    entityId === previewGovernanceTopic.id ? previewGovernanceTopic.summary : '本地记忆关系',
     0,
     'gray',
   );

@@ -14,8 +14,8 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useControlTransport } from '@/app/control-transport';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { useWorkDocumentWorkspace, type WorkDocumentScope } from '@/features/work-documents/api';
@@ -86,9 +86,9 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
         </nav>
       </aside>}
       <section className="paw-native-stage">
-        <MemoryRouter initialEntries={[route]} key={route}>
-          <NativeRouteReporter expectedRoute={route} />
-          <div className="paw-native-page" key={`${appId}:${pageId}`}>
+        <MemoryRouter initialEntries={[route]} key={appId === 'memory' ? appId : route}>
+          <NativeRouteReporter expectedRoute={route} preservePage={appId === 'memory'} />
+          <div className="paw-native-page" key={appId === 'memory' ? appId : `${appId}:${pageId}`}>
             <Suspense fallback={<div className="paw-app-loading" role="status">正在打开 {app.label}…</div>}>
               <NativeSurface appId={appId} pageId={pageId} route={route} />
             </Suspense>
@@ -99,13 +99,22 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
   );
 }
 
-function NativeRouteReporter({ expectedRoute }: { expectedRoute: string }) {
+function NativeRouteReporter({ expectedRoute, preservePage = false }: { expectedRoute: string; preservePage?: boolean }) {
   const desktop = usePawOsDesktop();
   const location = useLocation();
+  const navigate = useNavigate();
+  const previousExpectedRoute = useRef(expectedRoute);
   const route = `${location.pathname}${location.search}${location.hash}`;
   useEffect(() => {
+    // Memory owns its visited profile and unsent draft. A host rail change
+    // updates its router without replacing that owner or echoing the old route.
+    if (preservePage && previousExpectedRoute.current !== expectedRoute) {
+      previousExpectedRoute.current = expectedRoute;
+      if (route !== expectedRoute) navigate(expectedRoute, { replace: true });
+      return;
+    }
     if (route !== expectedRoute) openPawOsRoute(desktop, route);
-  }, [desktop, expectedRoute, route]);
+  }, [desktop, expectedRoute, navigate, preservePage, route]);
   return null;
 }
 

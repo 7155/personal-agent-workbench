@@ -235,8 +235,8 @@ export function ManagementMutationWorkflow<Context>({
 
       {previewMutation.error ? (
         <div ref={previewErrorRef} className="mgmt-workflow__feedback" tabIndex={-1}>
-          <InlineNotice title={declaredDangerous ? '暂时无法查看影响' : '保存失败'} tone="danger">
-            {publicErrorText(previewMutation.error, declaredDangerous ? '暂时无法查看影响，请稍后重试。' : '暂时无法保存，请稍后重试。')}
+          <InlineNotice title={declaredDangerous ? '暂时无法查看影响' : '预览失败'} tone="danger">
+            {publicErrorText(previewMutation.error, declaredDangerous ? '暂时无法查看影响，请稍后重试。' : '暂时无法预览，请稍后重试。')}
             <TraceAgentHandoffButton handoff={{
               kind: 'runtime',
               entityId: `${draftKey}:preview`,

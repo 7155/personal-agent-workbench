@@ -523,7 +523,7 @@
   gap: 10px;
 }
 
-.memory-reference-view__identity > span {
+.memory-reference-view__identity > span:first-child {
   display: grid;
   width: 32px;
   height: 32px;
@@ -2074,7 +2074,7 @@
   padding-inline: max(var(--memory-page-gutter), (100% - var(--memory-page-measure)) / 2);
   border-bottom: 1px solid var(--memory-line);
   /* Opaque: a PAWOS page heading never blurs the content scrolling under it. */
-  background: var(--memory-surface);
+  background: var(--color-surface);
 }
 
 :is(main, section)[data-route-id='memory'][data-paw-os-app='memory'] .memory-second-brain .memory-preferences > .mgmt-section { padding: 0 0 36px; }

@@ -1971,6 +1971,28 @@ describe('MemoryFeature relations', () => {
 });
 
 describe('MemoryFeature preferences', () => {
+  it('keeps unsaved preferences when leaving and returning through the existing views', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({
+      capabilities: { features: { managementWorkContract: true, configurationSettingsWorkContract: true } },
+      routes: {
+        'memory.summary': { ok: true, total: 0 },
+        'memory.pages': { ok: true, items: [] },
+        'configuration.settings': { settings: { memory: { enabled: false } }, runtimeRevision: 4 },
+      },
+    });
+    renderMemory(transport, '/memory?view=preferences');
+    const toggle = await screen.findByRole('switch', { name: '启用记忆增强' });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    await user.click(screen.getByRole('tab', { name: '记忆', exact: true }));
+    await user.click(screen.getByRole('tab', { name: '记忆偏好', exact: true }));
+    expect(screen.getByRole('switch', { name: '启用记忆增强' })).toBe(toggle);
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole('button', { name: '保存记忆偏好' })).toBeEnabled();
+    expect(transport.requests.some(({ request }) => request.pathId === 'configuration.settings.apply')).toBe(false);
+  });
+
   it('lets PAWOS own Memory navigation without repeating the legacy view tabs', async () => {
     const transport = new MockControlTransport({
       capabilities: { features: { managementWorkContract: true, configurationSettingsWorkContract: true } },

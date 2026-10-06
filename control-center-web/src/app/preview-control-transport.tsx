@@ -718,7 +718,7 @@ export function createPreviewTransport(): MockControlTransport {
     };
   };
   routes['memory.graph.get'] = (request: ControlRequest) =>
-    previewMemoryGraph(stringValue(record(request.query).plane) === 'tags' ? 'tags' : 'groups');
+    previewMemoryGraph(stringValue(record(request.query).plane) === 'tags' ? 'tags' : 'groups', stringValue(record(request.query).query));
   routes['memory.entity.get'] = (request: ControlRequest) => previewMemoryEntity(
     stringValue(record(request.params).kind),
     stringValue(record(request.params).entityId),
@@ -1643,7 +1643,9 @@ export function createPreviewTransport(): MockControlTransport {
     knowledgeDocumentSource: (input) => previewKnowledgeSource(input, previewKnowledgeDocuments),
     knowledgeAsset: (input) => previewKnowledgeAsset(input, previewKnowledgeDocuments),
     capabilities: {
-      routeIds,
+      // This preview has no versioned Book archive/rollback receipts. Let the
+      // existing Memory availability boundary show that before a write.
+      routeIds: routeIds.filter((id) => !id.startsWith('memory.book.archive.')),
       features: {
         configurationSettingsWorkContract: true,
         historyWorkContract: true,

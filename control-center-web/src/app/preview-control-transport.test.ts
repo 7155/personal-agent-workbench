@@ -470,6 +470,36 @@ describe('preview control transport', () => {
     }
   });
 
+  it('keeps the known Memory topic label consistent and does not advertise unavailable archive receipts', async () => {
+    const transport = createPreviewTransport();
+    const page = record(await transport.request({ pathId: 'memory.pages', params: { kind: 'books' } }));
+    const topic = arrayRecords(page.items)[0];
+    const entity = record(await transport.request({ pathId: 'memory.entity.get', params: { kind: 'book', entityId: String(topic.id) } }));
+    const reference = record(await transport.request({ pathId: 'memory.reference.get', params: { kind: 'book', referenceId: String(topic.id) } }));
+    expect(record(entity.entity).label).toBe(topic.title);
+    expect(record(reference.item).title).toBe(topic.title);
+    expect((await transport.capabilities()).routeIds.some(id => id.startsWith('memory.book.archive.'))).toBe(false);
+  });
+
+  it('discloses semantic organization only for organized preview calendar days', async () => {
+    const transport = createPreviewTransport();
+    const calendar = record(await transport.request({ pathId: 'memory.activityTimeline.calendar', query: { month: '2026-09' } }));
+    const days = arrayRecords(calendar.days);
+    expect(days.some(day => day.organized === true && day.modelOrganized === true)).toBe(true);
+    expect(days.some(day => day.status === 'none' && day.modelOrganized === false)).toBe(true);
+    expect(days.every(day => day.modelOrganized === day.organized)).toBe(true);
+  });
+
+  it('searches preview relations while retaining the direct neighborhood of a matching label', async () => {
+    const transport = createPreviewTransport();
+    const empty = record(await transport.request({ pathId: 'memory.graph.get', query: { plane: 'tags', query: '没有这种关系_验收' } }));
+    expect(empty.nodes).toEqual([]);
+    expect(empty.edges).toEqual([]);
+    const matching = record(await transport.request({ pathId: 'memory.graph.get', query: { plane: 'groups', query: 'Backspace' } }));
+    expect(arrayRecords(matching.nodes).map(node => node.id)).toEqual(['group:input-method', 'tag:input-boundary']);
+    expect(arrayRecords(matching.edges)).toHaveLength(1);
+  });
+
   it('keeps the Preview Trace, Eval, suite, and schedule chain coherent', async () => {
     const transport = createPreviewTransport();
     const traceId = 'trace:turn:preview';

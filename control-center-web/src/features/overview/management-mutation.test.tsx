@@ -118,7 +118,8 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     await user.click(screen.getByRole('button', { name: '保存设置' }));
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('暂时无法保存，请稍后重试。');
+    expect(alert).toHaveTextContent('预览失败');
+    expect(alert).toHaveTextContent('暂时无法预览，请稍后重试。');
     expect(alert).not.toHaveTextContent('/api/internal');
     expect(within(alert).getByRole('button', { name: '交给 Trace Agent' })).toBeInTheDocument();
     expect(alert.parentElement).toHaveFocus();
