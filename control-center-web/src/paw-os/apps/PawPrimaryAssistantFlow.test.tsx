@@ -62,6 +62,7 @@ it('completes the integrated primary conversation, explicit task, Stop, return a
   const summary = await transport.request<{ tasks: unknown[] }>({ pathId: 'agent.primary.ensure', body: {} });
   expect(summary.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ title: '检查主助手入口', goal: expect.objectContaining({ status: 'active' }) })]));
   const taskList = await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('region', { name: '助手的任务' });
+  fireEvent.click(within(taskList).getByRole('button', { name: /任务记录/ }));
   fireEvent.click(await within(taskList).findByRole('button', { name: /检查主助手入口.*任务未完成/ }, { timeout: 5000 }));
   fireEvent.change(await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('textbox', { name: '消息' }), { target: { value: '继续检查，给我结果' } });
   const send = composer().getByRole('button', { name: '发送' });

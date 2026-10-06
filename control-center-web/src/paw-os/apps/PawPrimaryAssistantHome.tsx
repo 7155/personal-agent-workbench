@@ -15,7 +15,7 @@ import '@/features/composer/composer-workbench.css';
 import './primary-assistant.css';
 
 export type PrimaryAssistantHomeDraft = { draft: string; execute: boolean; workspace: string; contextWorkspace: string;
-  acceptance: string; scopeConfirmed: boolean; source?: PrimaryAssistantSource; attempt?: { signature: string; id: string } };
+  acceptance: string; scopeConfirmed: boolean; tasksExpanded?: boolean; source?: PrimaryAssistantSource; attempt?: { signature: string; id: string } };
 
 /** A small entry into ordinary Sessions. Pi still owns every turn and Stop. */
 export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = false, initialSource, initialForm, projectRoots = [], onOpen, onAdvanced, onRememberDraft }: {
@@ -30,7 +30,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const pageVisible = usePageVisibility();
   const [session, setSession] = useState<SessionSummary>();
   const [tasks, setTasks] = useState<SessionSummary[]>([]);
-  const [allTasks, setAllTasks] = useState(false);
+  const [tasksExpanded, setTasksExpanded] = useState(initialForm?.tasksExpanded ?? false);
   const [draft, setDraft] = useState(initialForm?.draft ?? initialDraft);
   const [intent, setIntent] = useState<'discuss' | 'execute'>((initialForm?.execute ?? initialExecute) ? 'execute' : 'discuss');
   const [workspace, setWorkspace] = useState(initialForm?.workspace ?? initialSource?.workspaceRoots[0] ?? '');
@@ -62,6 +62,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const objectiveErrorId = useId();
   const acceptanceErrorId = useId();
   const workspaceErrorId = useId();
+  const taskRecordsId = useId();
   const message = trimContractText(draft);
   const criteria = acceptance.split('\n').map(trimContractText).filter(Boolean);
   const objectiveLength = textCodePointCount(message);
@@ -95,7 +96,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     // Keep the last confirmed view during a same-context refresh. Admission
     // remains gated by loading; project/transport changes clear identity first.
     setLoading(true); setError('');
-    if (refreshSource.current !== initialSource) { setSession(undefined); setTasks([]); setAllTasks(false); refreshSource.current = initialSource; }
+    if (refreshSource.current !== initialSource) { setSession(undefined); setTasks([]); setTasksExpanded(false); refreshSource.current = initialSource; }
     const workspaceRoots = contextWorkspace === initialSource?.workspaceRoots[0]
       ? initialSource.workspaceRoots : contextWorkspace ? [contextWorkspace] : [];
     void transport.request<Record<string, unknown>>({ pathId: 'agent.primary.ensure', body: { workspaceRoots }, signal: controller.signal }).then(result => {
@@ -117,7 +118,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   }, []);
 
   function rememberDraft() {
-    onRememberDraft?.({ draft, execute: intent === 'execute', workspace, contextWorkspace, acceptance, scopeConfirmed, source: initialSource, attempt: attempt.current });
+    onRememberDraft?.({ draft, execute: intent === 'execute', workspace, contextWorkspace, acceptance, scopeConfirmed, tasksExpanded, source: initialSource, attempt: attempt.current });
   }
   function openSession(target: SessionSummary, submission?: InitialSessionSubmission, text?: string) {
     if (submission) { draftConsumed.current = true; onRememberDraft?.(); } else rememberDraft();
@@ -184,7 +185,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   function selectDiscussionProject(path: string) {
     // Retire admission synchronously with the user's selection. Do not leave
     // one render where the new project can submit into the old discussion.
-    if (path !== contextWorkspace) { setLoading(true); setSession(undefined); setTasks([]); setAllTasks(false); setContextWorkspace(path); }
+    if (path !== contextWorkspace) { setLoading(true); setSession(undefined); setTasks([]); setTasksExpanded(false); setContextWorkspace(path); }
     setWorkspace(path); setScopeConfirmed(false); setPickerNotice('');
   }
 
@@ -255,7 +256,10 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       </div>
       {transport.kind === 'mock' ? <p className="paw-primary-home__demo">演示模式 · 合成数据，不调用真实模型</p> : null}
       {error ? <div className="paw-primary-home__error" role="alert">{error}{!session && !loading ? <button onClick={() => setRevision(value => value + 1)} type="button">重新连接</button> : null}</div> : null}
-      <section className="paw-primary-home__tasks" data-empty={!tasks.length || undefined} aria-label="助手的任务"><header><h2>接着做</h2><span>{tasks.length ? `${tasks.length} 个任务` : '一件事，一段清楚的记录'}</span></header>{tasks.length ? <ul>{tasks.map((task, index) => <PrimaryTaskRow key={task.id} task={task} initiallyVisible={index < 4} hidden={!allTasks && index >= 4} pageVisible={pageVisible} disabled={submitting || pickingWorkspace} onOpen={target => openSession(target)} />)}</ul> : <p>{loading ? '正在读取任务记录…' : !session ? '连接恢复后会显示任务记录。' : '交给助手的工作会出现在这里，过程、结果和停止入口都在任务里。'}</p>}{tasks.length > 4 ? <button className="paw-primary-home__advanced" onClick={() => setAllTasks(value => !value)} type="button">{allTasks ? '收起任务' : `查看全部 ${tasks.length} 个任务`}</button> : null}</section>
+      {tasks.length ? <section className="paw-primary-home__tasks" aria-label="助手的任务">
+        <button className="paw-primary-home__records-toggle" aria-expanded={tasksExpanded} aria-controls={taskRecordsId} onClick={() => setTasksExpanded(value => !value)} type="button"><ChevronRight aria-hidden="true" size={16} /><span>任务记录</span><small>{tasks.length} 个任务</small></button>
+        <ul id={taskRecordsId} hidden={!tasksExpanded}>{tasks.map((task, index) => <PrimaryTaskRow key={task.id} task={task} initiallyVisible={index < 4} hidden={!tasksExpanded} pageVisible={pageVisible} disabled={submitting || pickingWorkspace} onOpen={target => openSession(target)} />)}</ul>
+      </section> : null}
       <button className="paw-primary-home__advanced" onClick={() => { rememberDraft(); onAdvanced(draft); }} disabled={submitting || pickingWorkspace} type="button">新建独立对话或多人协作 <ChevronRight size={13} /></button>
     </div>
   </div>;
@@ -316,7 +320,7 @@ function PrimaryTaskRow({ task, hidden, initiallyVisible, pageVisible, disabled,
   const recoveryState = recovery?.scope === scope ? recovery.state : undefined;
   const progress = recoveryState === 'failed' ? `暂时无法同步 · 上次状态：${status}`
     : recoveryState === 'recovering' ? `正在重新同步 · 上次状态：${status}` : status;
-  return <li ref={row} hidden={hidden}><button disabled={disabled} onClick={() => onOpen(displayed)} onFocus={() => setVisible(true)} onPointerEnter={() => { setVisible(true); warmAgentWorkspace('session'); }} type="button"><span><strong>{task.title}</strong><small>{progress}{displayed.lastMessagePreview ? ` · ${displayed.lastMessagePreview}` : ''}</small></span><ChevronRight size={16} /></button></li>;
+  return <li ref={row} hidden={hidden}><button disabled={disabled} onClick={() => onOpen(displayed)} onFocus={() => setVisible(true)} onPointerEnter={() => { setVisible(true); warmAgentWorkspace('session'); }} type="button"><span><strong>{task.title}</strong><small>{progress}</small></span><ChevronRight aria-hidden="true" size={16} /></button></li>;
 }
 
 function taskStatus(task: SessionSummary): string {

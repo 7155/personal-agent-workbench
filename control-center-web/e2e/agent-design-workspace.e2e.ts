@@ -1,6 +1,42 @@
 import { expect, test } from '@playwright/test';
 import { expectNoHorizontalPageOverflow } from './helpers';
 
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`task records retain the home draft and old task access (${reducedMotion})`, async ({page}) => {
+    await page.setViewportSize({width:390,height:900});
+    await page.emulateMedia({reducedMotion});
+    await page.goto('/?controlTransport=mock#/agent');
+    await expect(page.getByRole('button', {name:/进入对话/})).toBeEnabled({timeout:30_000});
+    await page.getByRole('button', {name:'交给助手做',exact:true}).click();
+    await page.getByRole('textbox', {name:'和我的助手聊聊'}).fill('检查任务记录的恢复');
+    await page.getByRole('textbox', {name:'本次工作目录'}).fill('/work/demo');
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', {name:'授权并开始任务',exact:true}).click();
+    await expect(page.locator('[data-agent-message-id]').filter({hasText:'检查任务记录的恢复'})).toBeVisible();
+    await page.getByRole('button', {name:'停止本轮',exact:true}).click();
+    await expect(page.getByRole('region', {name:'当前工作',exact:true}).getByRole('status')).toContainText('本轮已停止');
+    await page.getByRole('button', {name:'返回我的助手',exact:true}).click();
+    const input=page.getByRole('textbox', {name:'和我的助手聊聊'});
+    await input.fill('不要丢失这份草稿');
+    const records=page.getByRole('region', {name:'助手的任务',exact:true});
+    const toggle=records.getByRole('button', {name:/^任务记录/});
+    await expect(toggle).toHaveAttribute('aria-expanded','false');
+    await expect(records.getByRole('button', {name:/检查任务记录的恢复/})).toHaveCount(0);
+    await toggle.focus();await page.keyboard.press('Enter');
+    const oldTask=records.getByRole('button', {name:/检查任务记录的恢复/});
+    await expect(oldTask).toContainText('任务未完成');
+    await oldTask.click();
+    await expect(page.getByRole('textbox', {name:'消息',exact:true})).toBeVisible();
+    await page.getByRole('button', {name:'返回我的助手',exact:true}).click();
+    await expect(input).toHaveValue('不要丢失这份草稿');
+    await expect(toggle).toHaveAttribute('aria-expanded','true');
+    await toggle.focus();await page.keyboard.press('Enter');
+    await expect(oldTask).toHaveCount(0);
+    await expect(toggle).toBeFocused();
+    await expectNoHorizontalPageOverflow(page);
+  });
+}
+
 for (const width of [390,1440]) {
   test(`goal cancellation keeps the desktop viewport and window fixed at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:900});

@@ -24,6 +24,9 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   const tree = <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ControlTransportProvider transport={transport}><PawPrimaryAssistantHome onOpen={onOpen} onAdvanced={vi.fn()} projectRoots={['/work/project']} initialSource={initialSource} /></ControlTransportProvider></QueryClientProvider>;
   return { transport, onOpen, ...render(tree) };
 }
+async function openTaskRecords() {
+  fireEvent.click(await screen.findByRole('button', { name: /^任务记录/ }));
+}
 describe('primary assistant home', () => {
   it('blocks a different execution directory for a project-bound discussion without changing the draft or project', async () => {
     const bound = { ...primary, workspaceRoots: ['/work/project'] };
@@ -124,6 +127,7 @@ describe('primary assistant home', () => {
       (request.body as { workspaceRoots?: string[] }).workspaceRoots?.length
         ? nextProject.promise
         : { ok: true, session: primary, tasks: [task] } });
+    await openTaskRecords();
     await screen.findByRole('button', { name: /检查项目/ });
     await waitFor(() => expect(screen.getByRole('combobox', { name: '讨论项目' })).toBeEnabled());
     fireEvent.change(screen.getByRole('combobox', { name: '讨论项目' }), { target: { value: '/work/project' } });
@@ -171,6 +175,7 @@ describe('primary assistant home', () => {
     const response = deferred<unknown>();
     const { onOpen } = setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks: [task] }, 'agent.primary.tasks.create': () => response.promise });
     await screen.findByRole('button', { name: /进入对话/ });
+    await openTaskRecords();
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     expect(screen.getByRole('status')).toHaveTextContent('先选择本次工作目录');
@@ -278,11 +283,16 @@ describe('primary assistant home', () => {
   it('keeps older tasks reachable and reads completion only from goal state', async () => {
     const tasks = Array.from({ length: 5 }, (_, index) => ({ ...task, id: `task-${index}`, title: `任务 ${index}`, lastTerminalTurnId: 'last-turn', goal: { goalId: 'goal', revision: 1, status: index === 4 ? 'completed' : 'active', objective: 'work', successCriteria: '' } }));
     setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks } });
-    await screen.findByRole('button', { name: '查看全部 5 个任务' });
+    const records = await screen.findByRole('button', { name: /任务记录.*5 个任务/ });
+    expect(records).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /任务 0/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /任务 4/ })).not.toBeInTheDocument();
+    fireEvent.click(records);
+    expect(records).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('button', { name: /任务 0/ })).toHaveTextContent('任务未完成');
-    fireEvent.click(screen.getByRole('button', { name: '查看全部 5 个任务' }));
     expect(screen.getByRole('button', { name: /任务 4/ })).toHaveTextContent('已完成');
+    fireEvent.click(records);
+    expect(screen.queryByRole('button', { name: /任务 4/ })).not.toBeInTheDocument();
   });
   it('does not send into the previous project when the newly selected project is disconnected', async () => {
     const { onOpen } = setup({ 'agent.primary.ensure': (request: ControlRequest) => {
@@ -302,6 +312,7 @@ describe('primary assistant home', () => {
       'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, goal: taskGoal('active') }] },
       'agent.session.snapshot': taskSnapshot('task', 'active'),
     });
+    await openTaskRecords();
     await screen.findByRole('button', { name: /检查项目.*任务未完成/ });
     await waitFor(() => expect(transport.subscriptionCalls.filter(call => call.request.pathId === 'agent.session.events')).toHaveLength(1));
     act(() => { transport.emit('agent.session.events', taskEvent('workflow_changed', { goal: taskGoal('completed', 2) })); });
@@ -319,6 +330,7 @@ describe('primary assistant home', () => {
       <PawPrimaryAssistantHome onOpen={vi.fn()} onAdvanced={vi.fn()} />
       <TaskDetailProjection transport={transport} />
     </ControlTransportProvider></QueryClientProvider>);
+    await openTaskRecords();
     await screen.findByRole('button', { name: /检查项目.*任务未完成/ });
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(1);
@@ -340,6 +352,7 @@ describe('primary assistant home', () => {
           runtimeQuiescent: initialStatus !== 'busy', lastSequence: 1, resumeToken: 'task:1' }
         : recovered.promise,
     });
+    await openTaskRecords();
     await screen.findByRole('button', { name: new RegExp(`检查项目.*${statusLabel}`) });
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
     act(() => { transport.fail('agent.session.events', new Error('connection lost')); });
@@ -375,6 +388,7 @@ describe('primary assistant home', () => {
       'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, goal: taskGoal('completed') }] },
       'agent.session.snapshot': taskSnapshot('task', 'completed'),
     });
+    await openTaskRecords();
     await waitFor(() => expect(next.transport.activeSubscriptionCount()).toBe(1));
     expect(lateFailure).toBeTypeOf('function');
     act(() => { lateFailure?.(); });
@@ -390,6 +404,7 @@ describe('primary assistant home', () => {
       'agent.primary.ensure': { ok: true, session: primary, tasks: [{ ...task, goal: taskGoal('active') }] },
       'agent.session.snapshot': () => ({ ...taskSnapshot('task', 'active'), lastSequence: sequence }),
     });
+    await openTaskRecords();
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
     act(() => { sequence = 1; transport.emit('agent.session.events', taskEvent('turn_completed', { status: 'aborted', aborted: true })); });
     await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.snapshot')).toHaveLength(2));
@@ -406,12 +421,14 @@ describe('primary assistant home', () => {
         ...taskSnapshot(String(request.params?.sessionId), 'active'), status: request.params?.sessionId === 'bounded-10' ? 'busy' : 'idle',
       }),
     });
-    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(5));
-    fireEvent.click(screen.getByRole('button', { name: '查看全部 12 个任务' }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: /任务记录.*12 个任务/ }));
     expect(screen.getByRole('button', { name: /任务 11/ })).toBeVisible();
-    expect(transport.activeSubscriptionCount()).toBe(5);
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(5));
     fireEvent.focus(screen.getByRole('button', { name: /任务 6/ }));
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(6));
+    fireEvent.click(screen.getByRole('button', { name: /任务记录.*12 个任务/ }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
   });
 });
 
