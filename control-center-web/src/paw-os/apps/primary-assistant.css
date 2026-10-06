@@ -84,7 +84,7 @@
 .paw-session-workspace__runtime > button.paw-session-history-load { width: auto; display: inline-flex; gap: 4px; padding: 0 8px; white-space: nowrap; color: var(--paw-muted); }
 .paw-session-workspace__runtime > button.paw-session-history-load:hover { background: var(--paw-panel-soft); }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__heading p { display: none; }
-.paw-primary-home[data-intent='execute'] .paw-primary-home__entry { display: grid; grid-template-rows: auto minmax(0, 1fr); height: min(720px, calc(100cqh - 80px)); min-height: 0; }
+.paw-primary-home[data-intent='execute'] .paw-primary-home__entry { display: grid; grid-template-rows: auto minmax(0, 1fr); height: auto; max-height: min(720px, calc(100cqh - 80px)); min-height: 0; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__composer { min-height: 0; max-height: none; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__fields { flex: 1 1 auto; }
 .paw-primary-home[data-intent='execute'] .paw-primary-home__fields > textarea { min-height: 88px; }
@@ -99,7 +99,7 @@
   .paw-primary-home__composer footer { gap: 8px; padding-inline: 8px; }
   .paw-primary-home .paw-primary-home__send { min-width: 44px; min-height: 44px; }
   .paw-primary-home__intent button { padding-inline: 6px; }
-  .paw-primary-home[data-intent='execute'] .paw-primary-home__entry { height: calc(100cqh - 48px); }
+  .paw-primary-home[data-intent='execute'] .paw-primary-home__entry { max-height: calc(100cqh - 48px); }
 }
 @container primary-home (max-width: 360px) {
   .paw-primary-home__composer footer { flex-wrap: wrap; }
@@ -109,7 +109,7 @@
   .paw-primary-home__body { padding-block: 12px; }
   .paw-primary-home__heading { margin-bottom: 12px; }
   .paw-primary-home__heading p { display: none; }
-  .paw-primary-home[data-intent='execute'] .paw-primary-home__entry { height: calc(100cqh - 24px); }
+  .paw-primary-home[data-intent='execute'] .paw-primary-home__entry { max-height: calc(100cqh - 24px); }
 }
 @media (prefers-reduced-motion: reduce) { .paw-primary-home button { transition: none; } }
 [data-reduce-motion='true'] .paw-primary-home button { transition: none; }
