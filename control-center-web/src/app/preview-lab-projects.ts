@@ -25,6 +25,7 @@ export function createPreviewLabProjectRoutes(): Partial<Record<ControlPathId, M
       const id = String(request.query?.projectId ?? '');
       if (id && !projects.has(id)) throw new Error('演示项目不存在，请返回工作台新建项目。');
       return { ok: true, items: [...projects.values()], project: projects.get(id) ?? null,
+        knowledge: { schemaVersion: 'paw.lab-knowledge-resource.v1', corpora: [], indexes: [], datasets: [], evaluations: [], jobs: [], embedding: { provider: 'none', model: '' } },
         supportedViews: ['markdown', 'table', 'form', 'code', 'html', 'json'], availableAdapters: [], historyCollections: [], historyUnavailable: true };
     },
     'agent.eval-lab.projects.command': (request: ControlRequest) => {

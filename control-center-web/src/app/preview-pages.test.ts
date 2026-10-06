@@ -3,6 +3,7 @@ import { createPreviewTransport } from './preview-control-transport';
 import { parseProjectRead } from '@/features/eval-lab/projects/types';
 import { parseGoldenRead } from '@/features/eval-lab/golden/types';
 import { parseLabAppRead } from '@/features/eval-lab/projects/apps';
+import { parseKnowledgeState } from '@/features/eval-lab/projects/knowledge-types';
 import { pawExtensionApps } from '@/paw-os/extensions/registry';
 import { projectPawExtensionInstallation } from '@/paw-os/extensions/installation';
 
@@ -27,6 +28,7 @@ describe('preview page contracts', () => {
     const read = parseProjectRead(await transport.request({ pathId: 'agent.eval-lab.projects.get', query: { projectId: id } }), id);
     expect(read.project?.description).toBe('演示项目：逐页检查');
     expect(read.project?.bindings).toEqual([]);
+    expect(parseKnowledgeState(read.knowledge)).toMatchObject({ corpora: [], indexes: [], datasets: [], jobs: [], embedding: { provider: 'none', model: '' } });
     expect(parseGoldenRead(await transport.request({ pathId: 'agent.eval-lab.golden.get' })).items).toEqual([]);
     await expect(transport.request({ pathId: 'agent.eval-lab.projects.command', body: {
       action: 'bind_execution', projectId: id, expectedRevision: 1, clientRequestId: 'no-execution', input: {},
