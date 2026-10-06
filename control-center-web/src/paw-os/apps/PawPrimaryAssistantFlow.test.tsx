@@ -24,7 +24,7 @@ it('completes the integrated primary conversation, explicit task, Stop, return a
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <ControlTransportProvider transport={transport}><TooltipProvider><PawAgentApp initialRoute="/agent" /></TooltipProvider></ControlTransportProvider>
   </QueryClientProvider>);
-  await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
   fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '先说清楚目标' } });
   fireEvent.click(screen.getByRole('button', { name: '发送给我的助手' }));
   await screen.findByText(/我们可以先把目标和顾虑说清楚/, {}, { timeout: 10000 });

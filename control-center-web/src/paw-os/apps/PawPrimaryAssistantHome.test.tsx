@@ -27,7 +27,7 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
 describe('primary assistant home', () => {
   it('keeps scope consent beside the fixed action instead of inside scrolling fields', async () => {
     setup();
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox.closest('.paw-primary-home__fields')).toBeNull();
@@ -45,7 +45,7 @@ describe('primary assistant home', () => {
     { name: 'criteria rendered length', objective: '检查项目', criteria: `${'x'.repeat(1000)}\n${'y'.repeat(1000)}`, field: '完成标准' },
   ])('blocks invalid $name without losing text or sending authorization', async ({ objective, criteria, field }) => {
     const { transport, onOpen } = setup({ 'agent.primary.tasks.create': { ok: true, session: task } });
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     const input = screen.getByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(input, { target: { value: objective } });
@@ -63,7 +63,7 @@ describe('primary assistant home', () => {
   });
   it('admits exact code-point and rendered-criteria boundaries', async () => {
     const { transport } = setup({ 'agent.primary.tasks.create': { ok: true, session: task } });
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     const objective = '🙂'.repeat(4000);
     const criteria = [...Array(19).fill('x'), 'y'.repeat(1962)];
@@ -78,7 +78,7 @@ describe('primary assistant home', () => {
   });
   it('does not apply task-objective limits to ordinary discussion', async () => {
     const { onOpen } = setup();
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     const message = 'x'.repeat(4001);
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: message } });
     fireEvent.click(screen.getByRole('button', { name: '发送给我的助手' }));
@@ -86,7 +86,7 @@ describe('primary assistant home', () => {
   });
   it('keeps IME confirmation Enter and legacy keyCode 229 out of submission', async () => {
     const { onOpen } = setup();
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     const input = screen.getByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(input, { target: { value: '输入中文' } });
     fireEvent.compositionStart(input);
@@ -118,11 +118,11 @@ describe('primary assistant home', () => {
     setup({ 'agent.primary.ensure': () => ++reads === 1
       ? { ok: true, session: primary, tasks: [] }
       : refresh.promise });
-    const open = await screen.findByRole('button', { name: /打开对话/ });
+    const open = await screen.findByRole('button', { name: /进入对话/ });
     expect(open).toBeEnabled();
     fireEvent(window, new Event('focus'));
     await waitFor(() => expect(open).toBeDisabled());
-    expect(screen.getByRole('button', { name: /打开对话/ })).toBe(open);
+    expect(screen.getByRole('button', { name: /进入对话/ })).toBe(open);
     await act(async () => refresh.resolve({ ok: true, session: primary, tasks: [] }));
     await waitFor(() => expect(open).toBeEnabled());
   });
@@ -133,12 +133,12 @@ describe('primary assistant home', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const tree = (transport: MockControlTransport) => <QueryClientProvider client={client}><ControlTransportProvider transport={transport}><PawPrimaryAssistantHome initialSource={source} onOpen={vi.fn()} onAdvanced={vi.fn()} /></ControlTransportProvider></QueryClientProvider>;
     const view = render(tree(original));
-    await screen.findByRole('button', { name: /打开对话/ });
+    await screen.findByRole('button', { name: /进入对话/ });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查目标' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     fireEvent.click(screen.getByRole('checkbox'));
     view.rerender(tree(next));
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('检查目标');
     expect(screen.getByRole('checkbox')).not.toBeChecked();
     expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeDisabled();
@@ -150,7 +150,7 @@ describe('primary assistant home', () => {
   it('explains disabled execution and holds navigation until the task receipt arrives', async () => {
     const response = deferred<unknown>();
     const { onOpen } = setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks: [task] }, 'agent.primary.tasks.create': () => response.promise });
-    await screen.findByRole('button', { name: /打开对话/ });
+    await screen.findByRole('button', { name: /进入对话/ });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     expect(screen.getByRole('status')).toHaveTextContent('先选择本次工作目录');
@@ -168,7 +168,7 @@ describe('primary assistant home', () => {
   });
   it('keeps composing and Shift-Enter local instead of dispatching', async () => {
     const { onOpen } = setup();
-    await screen.findByRole('button', { name: /打开对话/ });
+    await screen.findByRole('button', { name: /进入对话/ });
     const input = screen.getByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(input, { target: { value: '还在输入' } });
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
@@ -182,7 +182,7 @@ describe('primary assistant home', () => {
       'agent.primary.ensure': { ok: true, session: { ...primary, id: 'project-primary', workspaceRoots: ['/work/project', '/work/shared'] }, tasks: [] },
       'agent.primary.tasks.create': { ok: true, session: task },
     }, { sessionId: 'project-primary', workspaceRoots: ['/work/project', '/work/shared'], messageId: 'public-plan-message' });
-    await screen.findByRole('button', { name: /打开对话/ });
+    await screen.findByRole('button', { name: /进入对话/ });
     expect(transport.requests.find(({ request }) => request.pathId === 'agent.primary.ensure')?.request.body).toEqual({ workspaceRoots: ['/work/project', '/work/shared'] });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '按这个设计检查项目入口' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
@@ -196,7 +196,7 @@ describe('primary assistant home', () => {
   });
   it('opens one stable read-only discussion without a Room or provider call', async () => {
     const { transport, onOpen } = setup();
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     expect(screen.getByRole('button', { name: '聊一聊' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '先聊聊设计' } });
     fireEvent.click(screen.getByRole('button', { name: '发送给我的助手' }));
@@ -207,7 +207,7 @@ describe('primary assistant home', () => {
   it('requires a concrete execution scope, deduplicates clicks, and preserves the request identity at handoff', async () => {
     const response = deferred<unknown>();
     const { transport, onOpen } = setup({ 'agent.primary.tasks.create': () => response.promise });
-    await screen.findByRole('button', { name: /打开对话/ });
+    await screen.findByRole('button', { name: /进入对话/ });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     const start = screen.getByRole('button', { name: '授权并开始任务' });
@@ -224,7 +224,7 @@ describe('primary assistant home', () => {
   it('keeps an uncertain task draft and retries the exact client request', async () => {
     let count = 0;
     const { transport } = setup({ 'agent.primary.tasks.create': () => { if (!count++) throw new Error('connection lost'); return { ok: true, session: task }; } });
-    await screen.findByRole('button', { name: /打开对话/ });
+    await screen.findByRole('button', { name: /进入对话/ });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
@@ -274,7 +274,7 @@ describe('primary assistant home', () => {
     fireEvent.change(screen.getByRole('combobox', { name: '讨论项目' }), { target: { value: '/work/project' } });
     await screen.findByRole('alert');
     expect(screen.getByRole('button', { name: '发送给我的助手' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: /打开对话/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /进入对话/ })).not.toBeInTheDocument();
     expect(onOpen).not.toHaveBeenCalled();
   });
   it('projects authoritative goal changes immediately without refetching the task directory', async () => {

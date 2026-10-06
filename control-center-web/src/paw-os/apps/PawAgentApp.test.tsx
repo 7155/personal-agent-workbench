@@ -104,8 +104,8 @@ describe('PAWOS Agent App', () => {
     const oldTask = { id: 'task-existing', title: '已有任务', mode: 'assistant', status: 'idle', updatedAtMs: 2, workspaceRoots: ['/work/demo'], metadata: { primaryTask: true } };
     const transport = createTransport({ primaryTasks: [oldTask] });
     const view = renderAgent(transport, { initialRoute: '/agent' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /打开对话/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /进入对话/ }));
     fireEvent.click(await screen.findByRole('button', { name: '交给助手做' }));
     const message = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(message, { target: { value: '待确认的新目标' } });
@@ -167,9 +167,9 @@ describe('PAWOS Agent App', () => {
   it('carries unsent home text into the discussion without submitting it', async () => {
     const transport = createTransport();
     const view = renderAgent(transport, { initialRoute: '/agent' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '先保留，不发送' } });
-    fireEvent.click(screen.getByRole('button', { name: /打开对话/ }));
+    fireEvent.click(screen.getByRole('button', { name: /进入对话/ }));
     expect(await screen.findByTestId('session-initial-draft')).toHaveTextContent('先保留，不发送');
     view.rerender(agentTree(transport, { initialRoute: '/agent?session=primary' }));
     expect(screen.getByTestId('session-initial-draft')).toHaveTextContent('先保留，不发送');
@@ -179,7 +179,7 @@ describe('PAWOS Agent App', () => {
   it('preserves first submission and discussion handoff across desktop route acknowledgements', async () => {
     const transport = createTransport();
     const view = renderAgent(transport, { initialRoute: '/agent' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '第一条消息' } });
     fireEvent.click(screen.getByRole('button', { name: '发送给我的助手' }));
     const pending = await screen.findByTestId('session-initial-submission');
@@ -205,7 +205,7 @@ describe('PAWOS Agent App', () => {
     expect(await screen.findByRole('heading', { name: '有事，接着聊。' })).toBeVisible();
     expect(screen.getByRole('region', { name: 'Agent 工作台' })).toHaveAttribute('data-compact-work');
     expect(screen.queryByRole('group', { name: 'Agent 界面模式' })).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: /新建独立对话或多人协作/ }));
     expect(await screen.findByRole('heading', { name: '今天想完成什么？' })).toBeVisible();

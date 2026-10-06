@@ -48,7 +48,7 @@ function setup(transport: ControlTransport, form = initialForm) {
   return { onOpen, ...view, replaceTransport: (owner: ControlTransport) => view.rerender(tree(owner)) };
 }
 async function ready() {
-  await waitFor(() => expect(screen.getByRole('button', { name: /打开对话/ })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
 }
 function expectExecutionDraft(path = initialForm.workspace) {
   expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue(initialForm.draft);

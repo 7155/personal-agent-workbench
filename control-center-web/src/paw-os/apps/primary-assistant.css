@@ -48,8 +48,11 @@
 .paw-primary-home__scope label { display: grid; gap: 8px; font-size: 13px; color: var(--color-text-primary); }
 .paw-primary-home__scope-note { margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
 .paw-primary-home__scope label > span { color: var(--color-text-secondary); font-size: 12px; }
+.paw-primary-home__criteria-help { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; line-height: 1.6; }
+.paw-primary-home__criteria-help > span:last-child { font-variant-numeric: tabular-nums; }
 .paw-primary-home__scope textarea, .paw-primary-home__folder { box-sizing: border-box; border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-paper); }
 .paw-primary-home__scope textarea { display: block; width: 100%; max-height: 140px; padding: 8px 12px; resize: vertical; color: var(--color-text-primary); font-size: 16px; line-height: 1.6; }
+.paw-desktop-root .paw-primary-home__composer[data-composer-design='workbench'] .paw-primary-home__scope textarea { border: 1px solid var(--color-border); border-radius: var(--radius-2); background: var(--color-paper); padding: 8px 12px; }
 .paw-primary-home__folder { display: flex; gap: 8px; align-items: center; padding: 4px 8px; }
 .paw-primary-home__folder input { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--color-text-primary); font-size: 16px; }
 .paw-primary-home__folder button { border: 0; background: transparent; color: var(--color-text-secondary); flex: none; padding-inline: 8px; }

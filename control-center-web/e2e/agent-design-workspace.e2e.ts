@@ -71,7 +71,7 @@ test('model and permission popovers track their trigger through viewport changes
 
 test('focused task criteria remains visible when the window becomes short', async ({ page }) => {
   await page.goto('/?controlTransport=mock#/agent');
-  await expect(page.getByRole('button', {name: /打开对话/})).toBeEnabled({timeout:30_000});
+  await expect(page.getByRole('button', {name: /进入对话/})).toBeEnabled({timeout:30_000});
   await page.getByRole('button', {name: '交给助手做', exact: true}).click();
   const criteria = page.getByRole('textbox', {name:'完成标准'});
   await criteria.fill('说明修改和验证结果');

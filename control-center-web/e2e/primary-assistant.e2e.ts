@@ -1,13 +1,23 @@
 import { expect, test } from '@playwright/test';
 import { expectNoHorizontalPageOverflow } from './helpers';
 
+test('entering the primary conversation carries the draft without sending it', async ({ page }) => {
+  await page.goto('/?controlTransport=mock#/agent');
+  const agent = page.locator('.paw-window-shell[data-app="agent"]');
+  const draft = '先带入草稿，确认后再发送';
+  await agent.getByRole('textbox', { name: '和我的助手聊聊' }).fill(draft);
+  await agent.getByRole('button', { name: '进入对话', exact: true }).click();
+  await expect(agent.getByRole('textbox', { name: '消息', exact: true })).toHaveValue(draft);
+  await expect(agent.locator('.paw-user-message', { hasText: draft })).toHaveCount(0);
+});
+
 test('primary assistant discusses, delegates, stops, returns to work and edits the sourced profile', async ({ page }, info) => {
   test.setTimeout(90_000);
   await page.goto('/?controlTransport=mock#/agent');
   const agent = page.locator('.paw-window-shell[data-app="agent"]');
   await expect(agent).toBeVisible({ timeout: 30_000 });
   await expect(agent.locator('.paw-app-boot, .paw-app-loading')).toHaveCount(0, { timeout: 30_000 });
-  await expect(agent.getByRole('button', { name: /打开对话/ })).toBeEnabled();
+  await expect(agent.getByRole('button', { name: /进入对话/ })).toBeEnabled();
   await expectNoHorizontalPageOverflow(page);
   await info.attach('primary-assistant-home.png', { body: await page.screenshot(), contentType: 'image/png' });
   await agent.getByRole('textbox', { name: '和我的助手聊聊' }).fill('先帮我想清楚这个项目的目标');
