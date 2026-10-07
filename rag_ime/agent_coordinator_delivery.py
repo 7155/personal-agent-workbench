@@ -53,7 +53,7 @@ class AgentCoordinatorDelivery:
             try:
                 response = self.submit(source_id=str(row['source_session_id']),
                     client=str(row['source_client_message_id']), item_id=str(row['context_item_id']),
-                    message=f"原工作结果已返回（{row['attempt_id']}）。请核对所附原 Session 证据并继续当前任务。返回不是验收或 ACK；不要重发原任务。",
+                    message="原工作结果已返回。请核对所附原对话证据，报告结果和仍不确定的部分，并按原授权继续当前工作。返回不是验收或 ACK；不要重发原任务，也不要把未知状态写成成功。",
                     on_prepared=lambda envelope, occurrence=row: self._freeze(occurrence, envelope),
                     before_native_write=lambda occurrence=row: self._guard_native_write(occurrence))
             except (AgentSessionModeConflict, PiRuntimeTurnConflict) as exc:
