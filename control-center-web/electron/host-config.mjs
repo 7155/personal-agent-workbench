@@ -100,6 +100,10 @@ export function computeFrontendDistDigest(frontendRoot) {
         continue;
       }
       if (!entry.isFile()) continue;
+      // Match the build/install digest owner: Finder may update this regular
+      // metadata file after installation. Symlinks and directories were checked
+      // above, so this exception cannot hide frontend code under the same name.
+      if (entry.name === '.DS_Store') continue;
       digest.update(relative);
       digest.update('\0');
       digest.update(fs.readFileSync(target));
