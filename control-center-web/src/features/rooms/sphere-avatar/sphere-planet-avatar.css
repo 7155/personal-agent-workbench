@@ -12,7 +12,7 @@
 .sphere-planet-avatar[data-pulse="true"][data-signal="done"] .sphere-halo { animation: sphere-halo var(--sphere-normal) cubic-bezier(.22,1,.36,1) 1; }
 .sphere-planet-avatar[data-pulse="true"][data-signal="error"] .sphere-badge { animation: sphere-error var(--sphere-slow) ease-in-out 1; }
 @keyframes sphere-progress { to { transform: rotate(360deg); } }
-@keyframes sphere-pop { from { transform: scale(.93); opacity: .6; } to { transform: scale(1); opacity: 1; } }
+@keyframes sphere-pop { 0% { transform: translateY(1.5px) scale(.86); opacity: .6; } 70% { transform: scale(1.035); opacity: 1; } 100% { transform: none; opacity: 1; } }
 @keyframes sphere-check { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes sphere-halo { from { opacity: .1; transform: scale(.94); } to { opacity: .3; transform: scale(1); } }
 @keyframes sphere-error { 0%,100% { transform: translateX(0); } 12.5%,50% { transform: translateX(-2px); } 25%,62.5% { transform: translateX(2px); } 37.5%,75% { transform: translateX(0); } }
@@ -42,4 +42,13 @@
     animation: sphere-surface-travel 48s linear infinite !important;
     animation-play-state: paused !important;
   }
+}
+
+/* Idle feedback is tied to the actual one-shot click blink, not a timer loop. */
+.sphere-planet-avatar[data-motion="full"][data-signal="idle"][data-interacting="true"] .sphere-badge {
+  animation: sphere-idle-response var(--sphere-fast) cubic-bezier(.22,1,.36,1) 1;
+}
+@keyframes sphere-idle-response {
+  0%,100% { transform: none; }
+  45% { transform: translateY(-2px) rotate(5deg); }
 }

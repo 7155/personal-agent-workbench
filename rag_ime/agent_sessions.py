@@ -287,8 +287,8 @@ class AgentSessionStore:
         elif unrestricted_profile:
             roots = list(system_wide_workspace_roots(roots))
             project_context_enabled = True
-            pi_skills_enabled = True
-            codex_skills_enabled = True
+            pi_skills_enabled = runtime_engine == "classic"
+            codex_skills_enabled = runtime_engine == "classic"
         if normalized_tool_profile not in SUPPORTED_AGENT_TOOL_PROFILES:
             raise ValueError("unsupported Agent tool profile")
         read_only_subagent = (
@@ -1707,8 +1707,8 @@ class AgentSessionStore:
         elif unrestricted_profile:
             roots = list(system_wide_workspace_roots(roots))
             project_context_enabled = True
-            pi_skills_enabled = True
-            codex_skills_enabled = True
+            pi_skills_enabled = current.get("runtimeEngine") == "classic"
+            codex_skills_enabled = current.get("runtimeEngine") == "classic"
         read_only_subagent = (
             str(current.get("sessionKind") or "conversation") == "subagent_runtime"
             and normalized_mode == "assistant"

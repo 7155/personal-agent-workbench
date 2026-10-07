@@ -92,8 +92,8 @@ def coordinator_identity(sessions: AgentSessionStore, session_id: str) -> str:
     return str(row[0])
 
 
-def _session_payload(title: str) -> dict[str, object]:
-    return {"title": title, "runtimeEngine": "classic", "mode": "coordinator",
+def _session_payload(title: str, *, runtime_engine: str = "classic") -> dict[str, object]:
+    return {"title": title, "runtimeEngine": runtime_engine, "mode": "coordinator",
             "executionMode": "full_trust", "toolProfileVersion": DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
             "workspaceRoots": [], "projectContextEnabled": False}
 
@@ -105,7 +105,7 @@ def ensure_coordinator(ports: CoordinatorPorts, payload: Mapping[str, object]) -
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM agent_coordinators WHERE singleton = 1").fetchone()
         if row is None:
-            session = ports.session_application._create_session_record(_session_payload("Agent"), connection=conn)
+            session = ports.session_application._create_session_record(_session_payload("星伴", runtime_engine="durable"), connection=conn)
             identity = f"coordinator:{uuid.uuid4()}"
             conn.execute("INSERT INTO agent_coordinators VALUES (1, ?, ?, ?)", (identity, session["id"], int(time.time()*1000)))
             created = True
@@ -117,7 +117,7 @@ def ensure_coordinator(ports: CoordinatorPorts, payload: Mapping[str, object]) -
                 session = {"status": "archived"}
             if session["status"] == "archived":
                 # An explicit archive retires the old coordinator and its scope.
-                session = ports.session_application._create_session_record(_session_payload("Agent"), connection=conn)
+                session = ports.session_application._create_session_record(_session_payload("星伴", runtime_engine="durable"), connection=conn)
                 identity = f"coordinator:{uuid.uuid4()}"
                 conn.execute("UPDATE agent_coordinators SET coordinator_id=?, session_id=?, created_at_ms=? WHERE singleton=1", (identity, session["id"], int(time.time()*1000)))
                 created = True
@@ -181,10 +181,16 @@ def coordinator_command(ports: CoordinatorPorts, payload: Mapping[str, object], 
     if action in {"create_session", "create_room"}:
         request_id = _text(payload.get("clientRequestId"), "clientRequestId")
         task = _text(input_value.get("task"), "task", 4000)
-        if set(input_value) - {"title", "task", "participants", "routingPolicy"}:
-            raise ValueError("creation input contains unsupported fields")
-        title = _text(input_value.get("title", task[:120]), "title", 120)
         kind = "session" if action == "create_session" else "room"
+        allowed_creation = {"title", "task", "participants", "routingPolicy"}
+        if kind == "session":
+            allowed_creation.add("purpose")
+        if set(input_value) - allowed_creation:
+            raise ValueError("creation input contains unsupported fields")
+        capture = "purpose" in input_value
+        if capture and input_value["purpose"] != "screen_capture":
+            raise ValueError("Session purpose must be screen_capture when provided")
+        title = _text(input_value.get("title", task[:120]), "title", 120)
         if kind == "session" and set(input_value) & {"participants", "routingPolicy"}:
             raise ValueError("Session creation does not accept Room fields")
         fingerprint = hashlib.sha256(json.dumps({"sourceSessionId": source_id, "action": action, "input": dict(input_value)}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -213,11 +219,17 @@ def coordinator_command(ports: CoordinatorPorts, payload: Mapping[str, object], 
                             raise ValueError("clientRequestId is bound to a different Agent creation")
                         return {"schemaVersion": "rag-ime.agent-coordinator-create.v1", "ok": True, "created": False, "kind": kind, "target": ports.sessions._get(conn, str(repeated["target_id"])), "sourceSessionId": source_id, "coordinatorId": identity, "clientRequestId": request_id}
                     source = ports.sessions._get(conn, source_id)
-                    session = ports.session_application._create_session_record(_session_payload(title), connection=conn,
+                    target_payload = (
+                        {"title": title, "runtimeEngine": "classic", "mode": "assistant",
+                         "executionMode": "per_action", "workspaceRoots": [], "projectContextEnabled": False}
+                        if capture else _session_payload(title)
+                    )
+                    session = ports.session_application._create_session_record(target_payload, connection=conn,
                         inherited_model_selection={"modelProfile": source["modelProfile"], "thinkingLevel": source.get("thinkingLevel", "")})
                     insert_binding(conn, str(session["id"]), "session", binding)
-                    ports.sessions.mutate_agent_goal(str(session["id"]), {"action": "confirm_setup", "confirmed": True,
-                        "expectedRevision": 0, "objective": task, "successCriteria": ""}, _connection=conn)
+                    if not capture:
+                        ports.sessions.mutate_agent_goal(str(session["id"]), {"action": "confirm_setup", "confirmed": True,
+                            "expectedRevision": 0, "objective": task, "successCriteria": ""}, _connection=conn)
                 target = ports.sessions.get(str(session["id"]))
             else:
                 participants = input_value.get("participants")

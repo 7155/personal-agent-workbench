@@ -2439,7 +2439,7 @@ _RUNTIME_TOOL_ARGUMENT_SCHEMAS: dict[str, dict[str, object]] = {
 }
 
 _RUNTIME_TOOL_ARGUMENT_SCHEMA_OVERRIDES: dict[tuple[str, str], dict[str, object]] = {
-    ("agents", "input"): {"type": "object", "description": "coordinator: read; create_session(task,title optional); create_room(task,2-8 configured participants,routingPolicy optional); prompt(message,clientMessageId); stop exact Session turnId+clientMessageId or Room roomTurnId+clientRequestId; resume original Durable identity. Creation never dispatches. Only exact owned targets."},
+    ("agents", "input"): {"type": "object", "description": "coordinator: read; create_session(task,title optional,purpose optional screen_capture creates a Classic image conversation with per-action permissions and no Goal); create_room(task,2-8 configured participants,routingPolicy optional); prompt(message,clientMessageId); stop exact Session turnId+clientMessageId or Room roomTurnId+clientRequestId; resume original Durable identity. Creation never dispatches. Only exact owned targets."},
     ("agents", "clientRequestId"): {"type": "string", "minLength": 1, "maxLength": 240},
     ("agents", "action"): {"type": "string", "enum": ["read", "create_session", "create_room", "prompt", "stop", "resume"]},
     ("plugins", "sourcePath"): {

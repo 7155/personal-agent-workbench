@@ -7,7 +7,7 @@ describe('PAWOS App registry', () => {
     expect(pawAppForPath('/agent-controller')?.id).toBe('agent-controller');
     expect(pawAppForPath('/planning')?.id).toBe('project-workbench');
     expect(pawAppForPath('/rooms')?.id).toBe('agent');
-    expect(pawAppForPath('/agent-capsule')?.id).toBe('agent-capsule');
+    expect(pawAppForPath('/agent-capsule')?.id).toBe('agent-controller');
     expect(pawAppForPath('/voice')?.id).toBe('input-studio');
     expect(pawAppForPath('/context-debug')?.id).toBe('system-monitor');
     expect(pawAppForPath('/trace-agent?view=knowledge')?.id).toBe('trace-agent');

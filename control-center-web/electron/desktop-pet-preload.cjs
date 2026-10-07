@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('pawDesktopPet', Object.freeze({
   },
   hide: () => ipcRenderer.invoke('paw-pet:hide'),
   openAssistant: () => ipcRenderer.invoke('paw-pet:open-assistant'),
+  openVoiceSettings: () => ipcRenderer.invoke('paw-pet:voice-settings'),
   openConversation: (target) => ipcRenderer.invoke('paw-pet:open-conversation', target),
   setExpanded: (expanded) => ipcRenderer.invoke('paw-pet:expand', expanded),
   drag: (phase) => ipcRenderer.invoke('paw-pet:drag', phase),

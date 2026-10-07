@@ -190,3 +190,23 @@
   .paw-room-conversation__final-report-details > summary svg { transition: none; }
 }
 [data-reduce-motion='true'] .paw-room-conversation__final-report-details > summary svg { transition: none; }
+/* This disclosure reflects persisted typed WorkItems, not task-like Markdown
+   or a second plan/status authority. Existing Room rail remains its owner. */
+.paw-room-conversation__task-records { margin:12px 20px; min-width:0; color:var(--color-text-secondary); font-size:14px; }
+.paw-room-conversation__task-records > summary { display:flex; align-items:center; gap:8px; cursor:pointer; min-height:32px; list-style:none; }
+.paw-room-conversation__task-records > summary::-webkit-details-marker { display:none; }
+.paw-room-conversation__task-records > summary > strong { font-weight:500; color:var(--color-text); }
+.paw-room-conversation__task-records > summary > span { font-variant-numeric:tabular-nums; margin-left:auto; }
+.paw-room-conversation__task-records[open] > summary > svg:last-child { transform:rotate(90deg); }
+.paw-room-conversation__task-records > summary:focus-visible { outline:2px solid var(--color-focus); outline-offset:3px; }
+.paw-room-conversation__task-records ul { list-style:none; display:grid; gap:12px; margin:12px 0 0; padding:0; }
+.paw-room-conversation__task-records li { display:flex; gap:9px; align-items:flex-start; min-width:0; }
+.paw-room-conversation__task-records li > span { flex:0 0 auto; padding-top:3px; }
+.paw-room-conversation__task-records li > div { min-width:0; overflow-wrap:anywhere; }
+.paw-room-conversation__task-records li strong { color:var(--color-text); font-size:14px; font-weight:500; }
+.paw-room-conversation__task-records li small { display:block; color:var(--color-text-tertiary); font-size:12px; margin-top:3px; }
+.paw-room-conversation__task-records li p { margin:5px 0 0; font-size:13px; line-height:1.6; }
+.paw-room-conversation__identity-link > small { color:var(--color-text-tertiary); font-weight:400; font-size:12px; }
+[data-chat-presentation-version='v2'] .paw-room-conversation__final-report { border:0; border-radius:0; background:transparent; padding:6px 0 12px; gap:9px; }
+[data-chat-presentation-version='v2'] .paw-room-conversation__final-report-head p { font-size:16px; line-height:1.65; }
+@media(max-width:640px) { .paw-room-conversation__task-records { margin-inline:12px; } .paw-room-conversation__task-records > summary { min-height:44px; } }

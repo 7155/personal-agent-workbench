@@ -5,13 +5,15 @@ import type { ControlTransport } from '@/platform/transport';
 export type ScreenCapture = {
   dataUrl: string; mimeType: 'image/png'; pixelWidth: number; pixelHeight: number;
   sourceAppBundleId: string; capturedAtMs: number;
+  sourceSessionId?: string;
+  creationRequestId?: string;
 };
 export type ScreenContext = Pick<ScreenCapture, 'sourceAppBundleId' | 'capturedAtMs'> & { mediaId: string };
 export type ScreenAssistantHost = {
   getCapture(): Promise<ScreenCapture>;
   getConversation?(): Promise<ScreenConversation>;
   rememberConversation?(conversation: ScreenConversation): Promise<void>;
-  capture(): Promise<boolean>;
+  capture(options?: { sourceSessionId?: string }): Promise<boolean>;
   openSession(sessionId: string): Promise<void>;
   saveNote(note: { body: string; sessionId: string }): Promise<{ saved: boolean; name?: string }>;
 };
@@ -42,11 +44,31 @@ export async function prepareScreenConversation(transport: ControlTransport, hos
     }
   }
   if (!state.session) {
-    const response = await transport.request<{ session: SessionSummary }>({
-      pathId: 'agent.sessions.create', body: { title: '选区对话', mode: 'assistant' },
-    });
-    if (!response.session?.id) throw new Error('没有取得会话，请重试。');
-    state.session = response.session;
+    if (!capture.sourceSessionId && transport.capabilities) {
+      const capabilities = await transport.capabilities();
+      if (capabilities.routeIds?.includes('agent.coordinator.ensure')) {
+        const source = await transport.request<{ sourceSessionId: string }>({ pathId: 'agent.coordinator.ensure', body: {} });
+        if (!source.sourceSessionId) throw new Error('没有取得星伴对话，请重试连接。');
+        capture.sourceSessionId = source.sourceSessionId;
+      }
+    }
+    if (capture.sourceSessionId) {
+      if (!capture.creationRequestId) throw new Error('缺少原框选请求身份，请重新框选。');
+      const response = await transport.request<{ kind: string; target: SessionSummary }>({
+        pathId: 'agent.coordinator.command', body: {
+          sourceSessionId: capture.sourceSessionId, action: 'create_session', clientRequestId: capture.creationRequestId,
+          input: { purpose: 'screen_capture', title: '屏幕选区', task: '围绕用户框选的屏幕内容对话；根据用户本次选择翻译、解释、整理笔记或操作电脑。' },
+        },
+      });
+      if (response.kind !== 'session' || !response.target?.id) throw new Error('没有取得屏幕会话，请核对原请求。');
+      state.session = response.target;
+    } else {
+      const response = await transport.request<{ session: SessionSummary }>({
+        pathId: 'agent.sessions.create', body: { title: '选区对话', mode: 'assistant' },
+      });
+      if (!response.session?.id) throw new Error('没有取得会话，请重试。');
+      state.session = response.session;
+    }
   }
   // The popup host keeps only the existing Session/managed-media receipts in
   // memory. A renderer reload resumes those owners instead of creating a fork.

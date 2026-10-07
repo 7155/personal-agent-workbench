@@ -80,7 +80,7 @@ describe('PAWOS desktop', () => {
     fireEvent.doubleClick(within(shortcuts).getByRole('button', { name: 'Session 与 Room' }));
     const sessionRoomWindow = document.querySelector('[data-paw-window-id="agent"]');
     expect(sessionRoomWindow).toBeInTheDocument();
-    fireEvent.doubleClick(within(shortcuts).getByRole('button', { name: 'Agent' }));
+    fireEvent.doubleClick(within(shortcuts).getByRole('button', { name: '星伴' }));
     expect(document.querySelector('[data-paw-window-id="agent-controller"]')).toBeInTheDocument();
     expect(document.querySelector('[data-paw-window-id="agent"]')).toBe(sessionRoomWindow);
     fireEvent.click(screen.getByRole('button', { name: '打开全部 App' }));
@@ -335,7 +335,6 @@ describe('PAWOS desktop', () => {
       'eval-lab',
       'project-workbench',
       'agent-controller',
-      'agent-capsule',
       ...pawApps.filter((app) => isPawExtensionAppId(app.id) && app.kind === 'agent').map((app) => app.id),
     ]);
     expect(bands.get('工具')).toEqual(expect.arrayContaining(
@@ -636,7 +635,7 @@ describe('PAWOS desktop', () => {
   it('follows actual icon coordinates after Apps have been rearranged', () => {
     renderIconsDesktop();
     const shortcuts = screen.getByLabelText('桌面 App');
-    const agent = within(shortcuts).getByRole('button', { name: 'Agent' });
+    const agent = within(shortcuts).getByRole('button', { name: '星伴' });
     const memory = within(shortcuts).getByRole('button', { name: 'Memory' });
     const browser = within(shortcuts).getByRole('button', { name: 'Browser' });
     for (const button of within(shortcuts).getAllByRole('button')) {
@@ -701,9 +700,9 @@ describe('PAWOS desktop', () => {
     expect(screen.getByRole('menuitem', { name: '打开 Browser' })).toBeInTheDocument();
 
     const shortcuts = screen.getByLabelText('桌面 App');
-    fireEvent.contextMenu(within(shortcuts).getByRole('button', { name: 'Agent' }), { clientX: 240, clientY: 180 });
-    expect(screen.getByRole('menu', { name: 'Agent 菜单' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: '打开 Agent' })).toBeInTheDocument();
+    fireEvent.contextMenu(within(shortcuts).getByRole('button', { name: '星伴' }), { clientX: 240, clientY: 180 });
+    expect(screen.getByRole('menu', { name: '星伴 菜单' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '打开 星伴' })).toBeInTheDocument();
   });
 
   it('removes an App shortcut from the desktop without uninstalling it and restores it from the desktop menu', async () => {
@@ -729,11 +728,11 @@ describe('PAWOS desktop', () => {
 
   it('returns focus to the context-menu opener after Escape', async () => {
     renderDesktop();
-    const agent = within(screen.getByLabelText('桌面 App')).getByRole('button', { name: 'Agent' });
+    const agent = within(screen.getByLabelText('桌面 App')).getByRole('button', { name: '星伴' });
     agent.focus();
     fireEvent.contextMenu(agent, { clientX: 240, clientY: 180 });
-    const menu = screen.getByRole('menu', { name: 'Agent 菜单' });
-    expect(within(menu).getByRole('menuitem', { name: '打开 Agent' })).toHaveFocus();
+    const menu = screen.getByRole('menu', { name: '星伴 菜单' });
+    expect(within(menu).getByRole('menuitem', { name: '打开 星伴' })).toHaveFocus();
 
     fireEvent.keyDown(menu, { key: 'Escape' });
 
@@ -958,9 +957,9 @@ describe('PAWOS desktop', () => {
 
     // The exact-name queries above only stay stable if the visual label is
     // aria-hidden; the button keeps its aria-label as the accessible name.
-    const agentTip = within(dock).getByRole('button', { name: 'Agent' }).querySelector('.paw-dock-tip');
+    const agentTip = within(dock).getByRole('button', { name: '星伴' }).querySelector('.paw-dock-tip');
     expect(agentTip).toHaveAttribute('aria-hidden', 'true');
-    expect(agentTip).toHaveTextContent('Agent');
+    expect(agentTip).toHaveTextContent('星伴');
     expect(within(dock).getByRole('button', { name: '窗口总览' }).querySelector('.paw-dock-tip')).toHaveTextContent('窗口总览');
     expect(within(dock).getByRole('button', { name: '全部 App' }).querySelector('.paw-dock-tip')).toHaveTextContent('全部 App');
   });
@@ -1144,7 +1143,7 @@ describe('PAWOS desktop', () => {
     renderIconsDesktop();
     const viewport = screen.getByRole('main');
     const shortcuts = screen.getByLabelText('桌面 App');
-    const agent = within(shortcuts).getByRole('button', { name: 'Agent' });
+    const agent = within(shortcuts).getByRole('button', { name: '星伴' });
     const browser = within(shortcuts).getByRole('button', { name: 'Browser' });
     Object.defineProperty(viewport, 'getBoundingClientRect', {
       value: () => domRect(0, 0, 900, 700),
@@ -1189,7 +1188,7 @@ describe('PAWOS desktop', () => {
     renderIconsDesktop();
     const viewport = screen.getByRole('main');
     const shortcuts = screen.getByLabelText('桌面 App');
-    const agent = within(shortcuts).getByRole('button', { name: 'Agent' });
+    const agent = within(shortcuts).getByRole('button', { name: '星伴' });
     let measurements = 0;
     Object.defineProperty(viewport, 'getBoundingClientRect', { value: () => domRect(0, 0, 900, 700) });
     Object.defineProperty(agent, 'getBoundingClientRect', {

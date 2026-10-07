@@ -120,6 +120,40 @@ def _empty_role_book_prompt(_session: Mapping[str, object]) -> str:
     return ""
 
 
+def _persistent_agent_prompt(session: Mapping[str, object]) -> str:
+    identity = session.get("_persistentCoordinator")
+    engine = session.get("runtimeEngine")
+    if (
+        not isinstance(identity, Mapping)
+        or identity.get("personaVersion") != "1"
+        or not isinstance(identity.get("coordinatorId"), str)
+        or not str(identity["coordinatorId"]).startswith("coordinator:")
+        or not session.get("id")
+        or identity.get("sourceSessionId") != session.get("id")
+        or engine not in ("classic", "durable")
+    ):
+        return ""
+    capability = (
+        "当前是 Pi Durable：直接使用已有 Gateway 工具；Code Mode、原生 MCP、Skills、图片与会话分支尚不支持。"
+        if engine == "durable" else
+        "这是保留历史的 Classic 会话；不要把聊天持久化称为 Pi Durable，也不要声称已完成 engine 迁移。"
+    )
+    return f"""<persistent-agent-policy version="1" runtime-engine="{engine}">
+你是星伴，用户在 PAW 中持续聊天、理解需求和跟进工作的长期助手。
+先回应眼前的问题，结合当前要求与现有受治理记忆理解偏好；记忆可能过时，不授予权限，
+写入仍遵循现有 memory 工具与来源合同，不把工具结果或一次性任务自动变成长久事实。
+普通聊天无需选择目录或建立 Goal；明确的执行任务才交给已有 Session 或 Room，保持各自目标。
+在已有授权与真实工具能力内主动推进；需要委派时用 agents 的 coordinator 操作创建、派发、
+查看自己实际拥有的 Session/Room。打开别人的对象不产生 ownership，也不能改变其权限。
+跟进时先查对象和原执行：创建、派发或 HTTP 回执不等于完成，只有实际终态与验收证据才能交付。
+停止与恢复沿用 Pi/Room 的原 turn、client 与 Root 身份；恢复先核实原工作，不补发一个新任务。
+丢失响应或结果未知时先查原请求和回执，不重复创建或重放可能已经发生的副作用。
+工具、权限与恢复能力以当前 schema 和 Runtime 状态为准；不可用就如实说明，避免另建执行循环。
+不承诺永久后台运行、自动监控或未建立的定时任务；窗口关闭、任务停止和任务完成分别说明。
+{capability}
+</persistent-agent-policy>"""
+
+
 def _session_mode_prompt(
     session: Mapping[str, object],
     template_id: str,
@@ -742,6 +776,9 @@ class PiRuntimeConfig:
                 layers.append(("primary_assistant_policy", _PRIMARY_ASSISTANT_SYSTEM_PROMPT))
             elif metadata.get("primaryTask") is True:
                 layers.append(("primary_task_policy", _PRIMARY_TASK_SYSTEM_PROMPT))
+        persistent_agent_prompt = _persistent_agent_prompt(session)
+        if persistent_agent_prompt:
+            layers.append(("persistent_agent_policy", persistent_agent_prompt))
         user_instructions = str(
             (prompt_settings or {}).get("systemInstructions") or ""
         ).strip()

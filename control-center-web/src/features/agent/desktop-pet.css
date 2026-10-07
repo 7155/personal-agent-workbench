@@ -4,7 +4,7 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 .desktop-pet {
   position: relative; display: flex; flex-direction: column; align-items: center;
   width: 100vw; height: 100vh; padding: 35px 8px 8px; gap: 5px; user-select: none;
-  color: var(--color-text); box-sizing: border-box;
+  color: var(--color-text); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
 }
 .desktop-pet[data-expanded='true'] {
   border: 1px solid var(--color-border); border-radius: 18px;
@@ -30,12 +30,20 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
   border-radius: 50%; background: transparent; cursor: pointer;
   filter: drop-shadow(0 7px 6px rgb(30 54 74 / .14));
 }
+.desktop-pet__planet > svg { width: min(112px, calc(100vw - 16px)); height: auto; }
+.desktop-pet[data-expanded='true'] .desktop-pet__planet > svg { width: min(64px, calc(100vw - 24px)); }
 .desktop-pet__planet:hover { filter: drop-shadow(0 8px 8px rgb(30 54 74 / .24)); }
 .desktop-pet__hint {
   max-width: 100%; border-radius: 8px; padding: 4px 6px; text-align: center;
   background: var(--color-surface); font-size: 11px; line-height: 1.35;
 }
-.desktop-pet__panel { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; margin-top: 2px; }
+.desktop-pet__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; max-width: 100%; gap: 1px; padding: 3px; border: 1px solid var(--color-border); border-radius: 24px; background: var(--color-surface); box-shadow: 0 2px 10px rgb(30 54 74 / .07); }
+.desktop-pet__actions button { display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 0; border-radius: 20px; background: transparent; color: var(--color-text); cursor: pointer; }
+.desktop-pet__actions button + button { border-left: 1px solid var(--color-border); border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.desktop-pet__actions button:hover { background: var(--color-accent-soft); }
+.desktop-pet__actions button:active { transform: scale(.96); }
+.desktop-pet__actions button:disabled { opacity: .5; cursor: default; }
+.desktop-pet__panel { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 200px; margin-top: 2px; }
 .desktop-pet__panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 29px; border-bottom: 1px solid var(--color-border); }
 .desktop-pet__panel > header strong { font-size: 12px; font-weight: 600; }
 .desktop-pet__panel > header button, .desktop-pet__panel > footer button {
@@ -52,9 +60,16 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 .desktop-pet__conversation:hover { background: var(--color-accent-soft); }
 .desktop-pet__conversation > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-pet__conversation > small { flex: 0 0 auto; color: var(--color-text-muted); font-size: 10px; }
-.desktop-pet__panel > footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 30px; border-top: 1px solid var(--color-border); }
+.desktop-pet__panel > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; min-height: 30px; border-top: 1px solid var(--color-border); }
 .desktop-pet__panel > footer > span { font-size: 10px; color: var(--color-text-muted); }
-.desktop-pet__error { position: absolute; bottom: 3px; max-width: calc(100% - 12px); padding: 5px; border-radius: 6px; background: var(--color-surface); color: var(--color-danger); font-size: 11px; }
+.desktop-pet__error { flex: 0 0 auto; max-width: 100%; padding: 5px; border-radius: 6px; background: var(--color-surface); color: var(--color-danger); font-size: 11px; text-align: center; }
+@media (max-width: 120px) {
+  .desktop-pet__drag { left: 3px; min-width: 32px; padding: 0; }
+  .desktop-pet__drag > span:last-child { display: none; }
+  .desktop-pet__hide { right: 3px; }
+  .desktop-pet__actions { justify-content: center; }
+  .desktop-pet__actions button + button { border-left: 0; border-top: 1px solid var(--color-border); border-radius: 20px; }
+}
 
 /* The planet keeps its identity and expression. State lives in a separate,
    static-readable silhouette; color only reinforces the adjacent words. */

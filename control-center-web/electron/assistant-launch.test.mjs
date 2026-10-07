@@ -17,3 +17,8 @@ test('capture carries only a bounded app identity', () => {
   assert.equal(assistantLaunchIntent(['--some-other-switch']), null);
   assert.deepEqual(assistantLaunchIntent(['--paw-session=']), { kind: 'session', sessionId: '' });
 });
+
+test('the assistant launcher opens StarMate while explicit Sessions stay in conversations', () => {
+  assert.equal(assistantSessionRoute(''), '/agent-controller');
+  assert.equal(assistantSessionRoute('agent:original'), '/agent?session=agent%3Aoriginal');
+});

@@ -89,6 +89,22 @@ describe('explicit sphere avatar integration', () => {
     expect(avatar).toHaveAttribute('data-gaze', '0,0');
     expect(avatar.querySelector('.sphere-progress')).toBeNull();
   });
+  it('retargets one mouth with the selected face while six signals change their color and preserve expression', () => {
+    const view = render(<Hosted signal="idle"/>), avatar = view.container.querySelector('svg')!;
+    const mouth = avatar.querySelector('[data-mouth]');
+    expect(mouth).toBeTruthy();
+    const colors = new Set<string>();
+    for (const signal of ['idle', 'working', 'waiting', 'done', 'error', 'offline'] as const) {
+      view.rerender(<Hosted signal={signal}/>);
+      expect(avatar.querySelector('[data-mouth]')).toBe(mouth);
+      expect(avatar).toHaveAttribute('data-expression', 'happy');
+      expect(mouth).toHaveAttribute('data-mouth', 'happy');
+      colors.add(avatar.querySelector('[data-satellite-color]')!.getAttribute('data-satellite-color')!);
+    }
+    expect(colors.size).toBe(6);
+    expect(avatar.querySelectorAll('[data-mouth]')).toHaveLength(1);
+  });
+
   it('moves only the three clipped texture groups during full working and pauses their phase for all quiet boundaries', () => {
     const tree = (signal: PlanetSignalState, mode: 'full' | 'transition' | 'static' = 'full', active = true) => <MotionProvider><style>{sphereCss}</style><MotionActivityBoundary active={active}>
       {[0, 1, 4].map(ordinal => <RoomPlanetAvatar key={ordinal} ordinal={ordinal} variant="sphere" signal={signal} motion={mode}/>)}

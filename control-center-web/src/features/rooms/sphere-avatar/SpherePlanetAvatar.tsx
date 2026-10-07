@@ -2,12 +2,13 @@ import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEve
 import { motion } from 'motion/react';
 import { motionTokens, useMotionActivity } from '@/design/motion';
 import { pose, type Identity } from './sphere-avatar-geometry';
+import { PLANET_SIGNAL_PALETTE } from './sphere-avatar-protocol';
 import type { PlanetExpression, PlanetSignalState, PlanetMotionMode, PlanetActivity } from './sphere-avatar-protocol';
 import './sphere-planet-avatar.css';
 import { SpherePlanetSurface, SphereMaterialDefs, SaturnRing } from './SpherePlanetPaint';
 
-function Feature({ d, opacity = 1, quiet, fill, stroke }: { d: string; opacity?: number; quiet: boolean; fill: string; stroke?: string }) {
-  return <motion.path initial={false} animate={{ d, opacity }} transition={{ duration: quiet ? 0 : motionTokens.duration.enter, ease: motionTokens.easing.standard }} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.1 : undefined}/>;
+function Feature({ d, opacity = 1, quiet, fill, stroke, mouth, transform }: { d: string; opacity?: number; quiet: boolean; fill: string; stroke?: string; mouth?: PlanetExpression; transform?: string }) {
+  return <motion.path initial={false} animate={{ d, opacity }} transition={{ duration: quiet ? 0 : motionTokens.duration.enter, ease: motionTokens.easing.standard }} data-mouth={mouth} transform={transform} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.1 : undefined}/>;
 }
 export type SpherePlanetAvatarProps = {
   identity: Identity; ordinal: number; size?: number; className?: string; decorative?: boolean; label?: string;
@@ -20,6 +21,7 @@ export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, de
 }: SpherePlanetAvatarProps) {
   const motionActive = useMotionActivity();
   const id = 'sphere-' + useId().replace(/[^\w-]/g, ''), face = pose(expression);
+  const signalPaint = PLANET_SIGNAL_PALETTE[signal];
   const quiet = !motionActive || mode === 'static' || signal === 'offline';
   const canInteract = interactive && mode === 'full' && !quiet;
   const previous = useRef(signal);
@@ -62,11 +64,14 @@ export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, de
     viewBox="0 0 320 320" role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : label ?? identity}
     data-room-planet={ordinal} data-avatar-variant="sphere" data-activity={activity}
     data-identity={identity} data-expression={expression} data-signal={signal} data-motion={quiet?'static':mode}
-    data-pulse={pulse&&!quiet} data-size={size} data-motion-active={motionActive} data-blink-count={blinkCount}
+    data-pulse={pulse&&!quiet} data-size={size} data-motion-active={motionActive} data-blink-count={blinkCount} data-interacting={blinkActive}
     data-gaze={`${quiet?0:gaze.x},${quiet?0:gaze.y}`} onPointerMove={onPointerMove} onPointerLeave={() => setGaze({x:0,y:0})} onClick={onClick}>
   <defs>
    <SphereMaterialDefs id={id} identity={identity}/>
-   <linearGradient id={id+'-coral'} x1="15%" y1="0%" x2="80%" y2="100%"><stop stopColor="#f89b82"/><stop offset=".55" stopColor="#df7560"/><stop offset="1" stopColor="#bc5349"/></linearGradient>
+   <linearGradient id={id+'-satellite'} x1="15%" y1="0%" x2="80%" y2="100%">
+    {[["0",signalPaint.light],[".55",signalPaint.base],["1",signalPaint.shade]].map(([offset,color]) => <motion.stop key={offset} offset={offset} initial={false}
+      animate={{stopColor:color}} transition={{duration:quiet ? 0 : motionTokens.duration.fast, ease:motionTokens.easing.standard}}/>) }
+   </linearGradient>
    <linearGradient id={id+'-eye'} x1="35%" y1="5%" x2="75%" y2="100%"><stop stopColor={identity==='Earth'?'#fff6df':'#302b26'}/><stop offset="1" stopColor={identity==='Earth'?'#eaddb9':'#171c20'}/></linearGradient>
    <radialGradient id={id+'-shadow'}><stop stopColor="#314a41" stopOpacity=".2"/><stop offset="1" stopColor="#314a41" stopOpacity="0"/></radialGradient>
    <clipPath id={id+'-clip'}><circle cx="160" cy="160" r={identity === 'Saturn' ? 116 : 126}/></clipPath>
@@ -90,19 +95,21 @@ export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, de
      <Feature d={'M 105 100 Q 119 '+(90+face.tilt)+' 134 99 L 134 103 Q 119 '+(96+face.tilt)+' 105 104Z'} opacity={face.brows*.65} quiet={quiet} fill={identity==='Earth'?'#eaddb9':'#302b26'}/>
      <Feature d="M 182 95 Q 196 90 211 96 L 210 100 Q 196 95 182 99Z" opacity={face.brows*.65} quiet={quiet} fill={identity==='Earth'?'#eaddb9':'#302b26'}/>
      <Feature d="M 133 177 C 131 181 127 186 127 189 C 127 194 135 194 135 189 C 135 186 134 182 133 177Z" opacity={face.tear*.7} quiet={quiet} fill="#80b6bd"/>
+     <Feature d={face.mouth} mouth={expression} transform={identity === 'Saturn' ? 'translate(0 -14)' : undefined} quiet={quiet}
+       fill={identity === 'Earth' ? '#eef0cf' : '#493629'} stroke={identity === 'Earth' ? '#537366' : '#302820'}/>
     </g>
    </g>
   </g>
   {identity === 'Saturn' ? <SaturnRing id={id} front offline={signal === 'offline'}/> : null}
-  {showSignal && <g className="sphere-signal" data-state={signal} transform={size<=48?'translate(276 67) scale(2) translate(-276 -67)':undefined}>
-   {signal==='working'?<path className="sphere-progress" d="M 253 71 A 22 22 0 1 1 285 87" fill="none" stroke="#d77965" strokeWidth={size<=48?3.5:2.5} strokeLinecap="round"/>:null}
-   {signal==='done'?<circle className="sphere-halo" cx="276" cy="67" r="22" fill="none" stroke="#d77a68" strokeWidth="2.5"/>:null}
+  {showSignal && <g className="sphere-signal" data-state={signal} data-satellite-color={signalPaint.base} transform={size<=48?'translate(276 67) scale(2) translate(-276 -67)':undefined}>
+   {signal==='working'?<path className="sphere-progress" d="M 253 71 A 22 22 0 1 1 285 87" fill="none" stroke={signalPaint.base} strokeWidth={size<=48?3.5:2.5} strokeLinecap="round"/>:null}
+   {signal==='done'?<circle className="sphere-halo" cx="276" cy="67" r="22" fill="none" stroke={signalPaint.base} strokeWidth="2.5"/>:null}
    <g className="sphere-badge">
-    <circle cx="276" cy="67" r={signal==='idle'||signal==='working'?13:17} fill={signal==='offline'?'#a8b5af':signal==='idle'||signal==='working'?'url(#'+id+'-coral)':'#fff8ef'} stroke={signal==='idle'||signal==='working'?'none':signal==='offline'?'#87928f':'#cd816d'} strokeWidth={size<=48?2.2:1.8}/>
-    {signal==='done'?<path className="sphere-check" d="M 267 67 274 73 285 60" pathLength="1" strokeDasharray="1" strokeDashoffset="0" fill="none" stroke="#497c68" strokeWidth={size<=48?3.2:3} strokeLinecap="round" strokeLinejoin="round"/>:null}
-    {signal==='waiting'?<><path d="M 269 64 C 269 55 283 55 282 63 C 282 67 276 67 276 71" fill="none" stroke="#7c6857" strokeWidth={size<=48?3.2:2.8} strokeLinecap="round"/><circle cx="276" cy="76" r="1.9" fill="#7c6857"/></>:null}
-    {signal==='error'?<><path d="M 276 56 276 69" stroke="#b15e50" strokeWidth="3.8" strokeLinecap="round"/><circle cx="276" cy="76" r="2" fill="#b15e50"/></>:null}
-    {signal==='offline'?<path d="M 267 67 285 67" stroke="#f7f6f0" strokeWidth="2.8" strokeLinecap="round"/>:null}
+    <circle cx="276" cy="67" r={signal==='idle'||signal==='working'?13:17} fill={'url(#'+id+'-satellite)'} stroke={signalPaint.shade} strokeWidth={size<=48?2.2:1.8}/>
+    {signal==='done'?<path className="sphere-check" d="M 267 67 274 73 285 60" pathLength="1" strokeDasharray="1" strokeDashoffset="0" fill="none" stroke={signalPaint.ink} strokeWidth={size<=48?3.2:3} strokeLinecap="round" strokeLinejoin="round"/>:null}
+    {signal==='waiting'?<><path d="M 269 64 C 269 55 283 55 282 63 C 282 67 276 67 276 71" fill="none" stroke={signalPaint.ink} strokeWidth={size<=48?3.2:2.8} strokeLinecap="round"/><circle cx="276" cy="76" r="1.9" fill={signalPaint.ink}/></>:null}
+    {signal==='error'?<><path d="M 276 56 276 69" stroke={signalPaint.ink} strokeWidth="3.8" strokeLinecap="round"/><circle cx="276" cy="76" r="2" fill={signalPaint.ink}/></>:null}
+    {signal==='offline'?<path d="M 267 67 285 67" stroke={signalPaint.ink} strokeWidth="2.8" strokeLinecap="round"/>:null}
    </g>
   </g>}
  </svg>;

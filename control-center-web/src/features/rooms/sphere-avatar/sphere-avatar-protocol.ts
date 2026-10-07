@@ -14,3 +14,13 @@ export const PLANET_ACTIVITY_SIGNAL: Record<PlanetActivity, PlanetSignalState> =
   static: 'idle', idle: 'idle', thinking: 'working', working: 'working',
   waiting: 'waiting', done: 'done', error: 'error', stopped: 'idle',
 };
+
+/** Display palette only; color never projects a task/connection state. */
+export const PLANET_SIGNAL_PALETTE = {
+  idle: { base: '#4d98c3', light: '#8bc8e5', shade: '#2f6c97', ink: '#245c7a' },
+  working: { base: '#9674ba', light: '#c8b4e4', shade: '#725492', ink: '#4e386d' },
+  waiting: { base: '#ba8a3f', light: '#f0d097', shade: '#906626', ink: '#65481f' },
+  done: { base: '#649578', light: '#abd0b5', shade: '#477052', ink: '#285b3b' },
+  error: { base: '#ca715f', light: '#f4b39a', shade: '#ad5146', ink: '#773c31' },
+  offline: { base: '#93a09b', light: '#bac5bf', shade: '#737f7a', ink: '#455752' },
+} as const;

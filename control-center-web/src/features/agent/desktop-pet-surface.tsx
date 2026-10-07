@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { MessageSquare, Mic } from 'lucide-react';
 import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { PetStatusSignal } from './desktop-pet-status';
@@ -13,12 +14,16 @@ type PetHost = {
   onSnapshot(listener: (snapshot: PetSnapshot) => void): () => void;
   hide(): Promise<void>;
   openAssistant(): Promise<void>;
+  openVoiceSettings?(): Promise<void>;
   openConversation(target: PetConversationTarget): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
   drag(phase: 'start' | 'move' | 'end' | 'cancel'): Promise<void>;
   move(direction: PetDirection): Promise<void>;
 };
-declare global { interface Window { pawDesktopPet?: PetHost } }
+declare global { interface Window {
+  pawDesktopPet?: PetHost;
+  pawDesktopCompanion?: { show(): Promise<boolean>; hide(): Promise<void> };
+} }
 
 export function DesktopPetSurface() {
   return <ChatPresentationProvider ownerKey="builtin:desktop-pet" defaultVersion="v2"><DesktopPetBody/></ChatPresentationProvider>;
@@ -111,6 +116,10 @@ function DesktopPetBody() {
       <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />
     </button>
     <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? presentation.label : '请从 PAW 桌面端开启'}</span>
+    <nav className="desktop-pet__actions" aria-label="星伴入口">
+      <button aria-label="与星伴对话" title="与星伴对话" type="button" disabled={!host} onClick={() => invoke(host?.openAssistant())}><MessageSquare size={19} aria-hidden="true" /></button>
+      {host?.openVoiceSettings ? <button aria-label="语音输入设置" title="语音输入设置" type="button" onClick={() => invoke(host.openVoiceSettings?.())}><Mic size={19} aria-hidden="true" /></button> : null}
+    </nav>
     {expanded ? <section className="desktop-pet__panel" id="pet-conversations" aria-label="后台对话">
       <header><strong>对话近况</strong><button type="button" onClick={() => expand(false)} aria-label="收起对话列表">收起</button></header>
       <div className="desktop-pet__list" ref={list}>
@@ -121,7 +130,7 @@ function DesktopPetBody() {
         </button>) : <p>{snapshot.freshness === 'synced' ? '当前目录还没有对话。' : '打开工作台后，同步对话状态。'}</p>}
       </div>
       <footer><span>{total > snapshot.conversations.length ? `当前目录另有 ${total - snapshot.conversations.length} 个` : '来自当前工作台目录'}</span>
-        <button type="button" onClick={() => invoke(host?.openAssistant())}>打开主助手 ↗</button></footer>
+        <button type="button" onClick={() => invoke(host?.openAssistant())}>打开星伴 ↗</button></footer>
     </section> : null}
     {error ? <span className="desktop-pet__error" role="alert">{error}</span> : null}
   </main>;

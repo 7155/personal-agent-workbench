@@ -8,14 +8,19 @@ contextBridge.exposeInMainWorld('pawDesktopPetState', Object.freeze({
 }));
 
 ipcRenderer.on('paw-host:navigate', (_event, route) => {
-  if (typeof route === 'string' && /^\/agent(?:\?session=[^\s#]*)?$/.test(route)) window.location.hash = route;
+  if (typeof route === 'string' && (/^\/agent(?:\?session=[^\s#]*)?$/.test(route) || route === '/agent-controller' || route === '/voice')) window.location.hash = route;
 });
+
+contextBridge.exposeInMainWorld('pawDesktopCompanion', Object.freeze({
+  show: () => ipcRenderer.invoke('paw-pet:show-from-workbench'),
+  hide: () => ipcRenderer.invoke('paw-pet:hide-from-workbench'),
+}));
 
 contextBridge.exposeInMainWorld('pawScreenAssistant', Object.freeze({
   getCapture: () => ipcRenderer.invoke('paw-screen:context'),
   getConversation: () => ipcRenderer.invoke('paw-screen:conversation'),
   rememberConversation: (conversation) => ipcRenderer.invoke('paw-screen:remember-conversation', conversation),
-  capture: () => ipcRenderer.invoke('paw-screen:capture'),
+  capture: (options) => ipcRenderer.invoke('paw-screen:capture', options),
   openSession: (sessionId) => ipcRenderer.invoke('paw-screen:open-session', sessionId),
   saveNote: (note) => ipcRenderer.invoke('paw-screen:save-note', note),
 }));

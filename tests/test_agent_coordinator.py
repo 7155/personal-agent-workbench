@@ -18,6 +18,9 @@ class AgentCoordinatorTests(unittest.TestCase):
         self.service = AgentService(db_path=db, runtime_config=PiRuntimeConfig(enabled=False, executable=None,
             agent_dir=root/'config', session_dir=root/'sessions', logs_dir=root/'logs'))
         self.addCleanup(self.service.close)
+        engine = patch.object(self.service.runtime, 'require_session_engine')
+        engine.start()
+        self.addCleanup(engine.stop)
         self.source = self.service.ensure_coordinator({})['session']
 
     def command(self, action, **kwargs):
@@ -28,7 +31,7 @@ class AgentCoordinatorTests(unittest.TestCase):
         self.assertNotEqual(daily['id'], self.source['id'])
         self.assertEqual(daily['executionMode'], 'read_only')
         self.assertEqual(self.source['executionMode'], 'full_trust')
-        self.assertEqual(self.source['runtimeEngine'], 'classic')
+        self.assertEqual(self.source['runtimeEngine'], 'durable')
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(lambda _: self.service.ensure_coordinator({}), range(8)))
         self.assertEqual({x['session']['id'] for x in results}, {self.source['id']})

@@ -10,5 +10,5 @@ export function assistantLaunchIntent(argv) {
 }
 
 export function assistantSessionRoute(sessionId) {
-  return sessionId ? `/agent?session=${encodeURIComponent(sessionId)}` : '/agent';
+  return sessionId ? `/agent?session=${encodeURIComponent(sessionId)}` : '/agent-controller';
 }

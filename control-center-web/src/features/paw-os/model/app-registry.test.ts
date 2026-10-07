@@ -21,7 +21,6 @@ describe('pawOsAppRegistry', () => {
       'project-workbench',
       'agent-controller',
       'agent',
-      'agent-capsule',
       'memory',
       'knowledge',
       'input-studio',
@@ -38,7 +37,7 @@ describe('pawOsAppRegistry', () => {
     expect(pawOsAppForRoute('work-documents')?.id).toBe('project-workbench');
     expect(pawOsAppForRoute('agent-controller')?.id).toBe('agent-controller');
     expect(pawOsAppForRoute('rooms')?.id).toBe('agent');
-    expect(pawOsAppForRoute('agent-capsule')?.id).toBe('agent-capsule');
+    expect(pawOsAppForRoute('agent-capsule')?.id).toBe('agent-controller');
     expect(pawOsAppForRoute('voice')?.id).toBe('input-studio');
     expect(pawOsAppForRoute('history')?.id).toBe('input-studio');
     expect(pawOsAppForRoute('diagnostics')?.id).toBe('system-monitor');

@@ -17,6 +17,20 @@ afterEach(() => {
 });
 
 describe('PawRoomConversation', () => {
+  it('shows the participant name beside its historical planet identity and opens the proven original Session', async () => {
+    const {projection,room}=roomConversation();const openRoute=vi.fn();
+    render(<PawOsDesktopProvider openRoute={openRoute} openWindow={()=>undefined}><PawRoomConversation projection={projection} room={room} readOnly/></PawOsDesktopProvider>);
+    const link=await screen.findByRole('link',{name:'打开 Mars 的 Session'});expect(link).toHaveTextContent('实现伙伴');expect(link).toHaveTextContent('Mars');await userEvent.setup().click(link);expect(openRoute).toHaveBeenCalledWith('/agent?session=session-a');
+  });
+
+  it('keeps long typed work item records folded and scoped to the exact Room/root without inventing Markdown progress', async () => {
+    const {projection,room}=roomConversation();
+    const item={id:'task-record',roomId:room.id,topicId:'',rootTurnId:'root-a',rootWorkId:'',parentWorkId:'',objective:'实际工作项目标'.repeat(30),expectedOutput:'',acceptanceCriteria:[],accountableParticipantId:'participant-a',currentOwnerParticipantId:'participant-a',offeredToParticipantId:'',createdByParticipantId:'participant-a',clientMessageId:'',state:'blocked' as const,depth:0,revision:3,resultSummary:'等待原始回执',artifactRefs:[],evidenceRefs:[],blocker:{},acceptedTurnId:'',createdAtMs:100,updatedAtMs:120,completedAtMs:null};
+    room.workItems=[item,{...item,id:'other-room',roomId:'foreign'},{...item,id:'other-root',rootTurnId:'root-other'}];
+    renderRoom({projection,room,rootId:'root-a'});const summary=screen.getByText('工作项记录').closest('summary')!;const disclosure=summary.closest('details')!;expect(disclosure).not.toHaveAttribute('open');expect(disclosure).toHaveTextContent('0/1');
+    await userEvent.setup().click(summary);expect(screen.getByText(item.objective)).toBeVisible();expect(screen.getByText('等待原始回执')).toBeVisible();expect(screen.queryByText('0/3')).not.toBeInTheDocument();
+  });
+
   it('scopes a partner observer to the current Root without relabelling older replies', () => {
     const { projection, room } = roomConversation();
     const previous = Object.values(projection.messagesById).find(message => message.role === 'assistant')!;

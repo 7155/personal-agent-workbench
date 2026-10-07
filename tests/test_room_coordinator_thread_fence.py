@@ -29,9 +29,13 @@ class RoomCoordinatorThreadFenceTests(unittest.TestCase):
             ),
         )
         self.addCleanup(self.service.close)
+        engine = patch.object(self.service.runtime, "require_session_engine")
+        engine.start()
+        self.addCleanup(engine.stop)
         self.source = self.service.ensure_coordinator({})["session"]
         self.binding = {"turnId": "controller-turn", "clientMessageId": "controller-client"}
         self.source_state = _HostedSessionState(
+            runtime_engine=self.source["runtimeEngine"],
             turn_id=self.binding["turnId"], client_message_id=self.binding["clientMessageId"],
         )
         self.runtime = self.service.runtime

@@ -63,7 +63,7 @@ from .agent_command_receipts import (
 from .agent_events import AgentEventHub
 from .agent_event_projection import AgentEventProjectionService
 from .agent_block_store import AgentBlockStore
-from .agent_coordinator import CoordinatorPorts, coordinator_command, ensure_coordinator
+from .agent_coordinator import CoordinatorPorts, coordinator_command, coordinator_identity, ensure_coordinator
 from .agent_delegation import AgentDelegationCoordinator
 from .agent_file_preview import AgentFilePreviewReader
 from .agent_media import AgentMediaStore, IMAGE_MIME_TYPES, TEXT_MEDIA_MIME_TYPES
@@ -1490,6 +1490,16 @@ class AgentService:
             "agentScenario": scenario.scenario_id,
             "agentScenarioVariant": scenario.variant,
         }
+        session_id = str(session.get("id") or "")
+        try:
+            identity = coordinator_identity(self.sessions, session_id)
+        except (KeyError, ValueError):
+            identity = ""
+        # Internal context only: mode/role or caller metadata cannot confer this identity.
+        scenario_context["_persistentCoordinator"] = (
+            {"coordinatorId": identity, "sourceSessionId": session_id, "personaVersion": "1"}
+            if identity else None
+        )
         if isinstance(participant, Mapping):
             scenario_context["roomParticipant"] = dict(participant)
         delegation = getattr(self, "delegation", None)
@@ -1501,7 +1511,6 @@ class AgentService:
                     **scenario_context,
                     "resourceDisclosurePolicy": resource_policy,
                 }
-        session_id = str(session.get("id") or "")
         session_context = "\n\n".join(
             value
             for value in (

@@ -8,7 +8,7 @@ import { clampPetPosition, installDesktopPet } from './desktop-pet.mjs';
 function harness({ deferred = false, autoReady = true } = {}) {
   const handlers = new Map(); const created = []; const visibility = []; const openedIds = [];
   const source = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false, getURL: () => 'http://127.0.0.1:7777/' });
-  let opened = 0; let cursor = { x: 500, y: 500 };
+  let opened = 0; let voiceOpened = 0; let cursor = { x: 500, y: 500 };
   let area = { x: 0, y: 0, width: 1200, height: 800 };
   class Window extends EventEmitter {
     constructor(options) {
@@ -38,8 +38,8 @@ function harness({ deferred = false, autoReady = true } = {}) {
     getDisplayNearestPoint: () => ({ id: 1, workArea: area }) });
   const manager = installDesktopPet({ app, BrowserWindow: Window, ipcMain: { handle: (name, handler) => handlers.set(name, handler), removeHandler: (name) => handlers.delete(name) },
     screen, origin: 'http://127.0.0.1:7777', preload: '/test/desktop-pet-preload.cjs',
-    getSource: () => source, openAssistant: (id) => { opened += 1; openedIds.push(id); }, onVisibilityChanged: (value) => visibility.push(value) });
-  return { manager, created, app, screen, visibility, source, openedIds, opened: () => opened,
+    getSource: () => source, openAssistant: (id) => { opened += 1; openedIds.push(id); }, openVoiceSettings: () => { voiceOpened += 1; }, onVisibilityChanged: (value) => visibility.push(value) });
+  return { manager, created, app, screen, visibility, source, openedIds, opened: () => opened, voiceOpened: () => voiceOpened,
     cursor: (point) => { cursor = point; }, area: (value) => { area = value; },
     invoke: (name, value, sender = created.at(-1)?.webContents, senderFrame = sender?.mainFrame) => handlers.get(`paw-pet:${name}`)({ sender, senderFrame }, value),
     publish: (name, value) => handlers.get(`paw-pet-state:${name}`)({ sender: source, senderFrame: source.mainFrame }, value),
@@ -161,7 +161,7 @@ test('drag uses host cursor, clamps to work area, cancels and restores last posi
 });
 
 test('negative coordinates and undersized work areas have bounded origins', () => {
-  assert.deepEqual(clampPetPosition({ x: 10, y: 99 }, { x: -1200, y: -800, width: 1200, height: 800 }), { x: -160, y: -190 });
+  assert.deepEqual(clampPetPosition({ x: 10, y: 99 }, { x: -1200, y: -800, width: 1200, height: 800 }), { x: -160, y: -240 });
   assert.deepEqual(clampPetPosition({ x: 99, y: 99 }, { x: 5, y: 10, width: 100, height: 100 }), { x: 5, y: 10 });
 });
 
@@ -183,11 +183,11 @@ test('replays retained conversations on ready, opens only those ids and clears o
 
 test('expansion uses fixed host bounds and expanded dragging stays inside the work area', async () => {
   const h = harness(); await h.manager.show(); const window = h.created[0];
-  h.invoke('expand', true); assert.deepEqual(window.size, [320, 400]);
-  assert.ok(window.position[0] <= 880); assert.ok(window.position[1] <= 400);
+  h.invoke('expand', true); assert.deepEqual(window.size, [320, 440]);
+  assert.ok(window.position[0] <= 880); assert.ok(window.position[1] <= 360);
   h.invoke('drag', 'start'); h.cursor({ x: 10000, y: 10000 }); h.invoke('drag', 'end');
-  assert.ok(window.position[0] <= 880); assert.ok(window.position[1] <= 400);
-  h.invoke('expand', false); assert.deepEqual(window.size, [160, 190]);
+  assert.ok(window.position[0] <= 880); assert.ok(window.position[1] <= 360);
+  h.invoke('expand', false); assert.deepEqual(window.size, [160, 240]);
   assert.throws(() => h.invoke('expand', { width: 10000 }), /Invalid/);
 });
 
@@ -209,8 +209,23 @@ test('pet preload exposes only readiness and its three bounded host actions', as
       ipcRenderer: { invoke: (...args) => { calls.push(args); return Promise.resolve(); } } }),
   });
   assert.deepEqual(Object.keys(exposed), ['pawDesktopPet']);
-  assert.deepEqual(Object.keys(exposed.pawDesktopPet), ['ready', 'onSnapshot', 'hide', 'openAssistant', 'openConversation', 'setExpanded', 'drag', 'move']);
+  assert.deepEqual(Object.keys(exposed.pawDesktopPet), ['ready', 'onSnapshot', 'hide', 'openAssistant', 'openVoiceSettings', 'openConversation', 'setExpanded', 'drag', 'move']);
   assert.equal(Object.isFrozen(exposed.pawDesktopPet), true);
   await exposed.pawDesktopPet.ready(); await exposed.pawDesktopPet.hide(); await exposed.pawDesktopPet.openAssistant(); await exposed.pawDesktopPet.drag('cancel'); await exposed.pawDesktopPet.move('right');
   assert.deepEqual(calls, [['paw-pet:ready'], ['paw-pet:hide'], ['paw-pet:open-assistant'], ['paw-pet:drag', 'cancel'], ['paw-pet:move', 'right']]);
+});
+
+
+test('only the first-party workbench can show the companion; its actions reuse existing App entries', async () => {
+  const h = harness();
+  assert.throws(() => h.invoke('show-from-workbench', undefined, h.source, {}), /rejected/);
+  assert.throws(() => h.invoke('show-from-workbench', undefined, { getURL: () => 'http://127.0.0.1:7777/' }), /rejected/);
+  assert.equal(h.created.length, 0);
+  assert.equal(await h.invoke('show-from-workbench', undefined, h.source), true);
+  h.invoke('open-assistant'); h.invoke('voice-settings');
+  assert.equal(h.opened(), 1); assert.equal(h.voiceOpened(), 1);
+  assert.throws(() => h.invoke('hide-from-workbench'), /rejected/);
+  assert.equal(h.manager.isVisible(), true);
+  h.invoke('hide-from-workbench', undefined, h.source);
+  assert.equal(h.manager.isVisible(), false);
 });

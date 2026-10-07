@@ -13,11 +13,11 @@ import type { SessionSummary } from '@/features/agent/types';
 import { createAgentProjection, reduceAgentEvent } from '@/contracts/agent-reducer';
 import type { UiAgentEvent } from '@/contracts/ui-events';
 import { CHAT_PRESENTATION_STORAGE_KEY } from '@/features/conversation-ui/reading/chat-presentation';
-import { PawCoordinatorApp, coordinatorObjects, coordinatorLatestTurnOutcome } from './PawCoordinatorApp';
+import { PawCoordinatorApp, CoordinatorProgress, coordinatorObjects, coordinatorLatestTurnOutcome } from './PawCoordinatorApp';
 vi.mock('./agent-workspace-loader', () => ({ loadSessionWorkspace: async () => ({ default: ({ recordId, onSessionCreated }: { recordId: string; onSessionCreated: (session: SessionSummary, draft: string) => void }) => <div><p>持久会话 {recordId}</p><textarea aria-label="Agent 草稿"/><button onClick={() => onSessionCreated({ ...session, id: 'fork', title: '历史分支' }, '带入分支的草稿')}>测试原生分支回调</button></div> }) }));
 vi.mock('@/features/agent/runtime/use-agent-live-session', () => ({ useAgentLiveSession: vi.fn(() => vi.fn()) }));
 vi.mock('@/features/rooms/runtime/use-room-live-session', () => ({ useRoomLiveSession: () => vi.fn() }));
-afterEach(() => { cleanup(); vi.mocked(useAgentLiveSession).mockReset().mockImplementation(() => vi.fn()); localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY); });
+afterEach(() => { cleanup(); vi.mocked(useAgentLiveSession).mockReset().mockImplementation(() => vi.fn()); localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY); delete window.pawScreenAssistant; });
 const session: SessionSummary = { id:'persistent',title:'Agent',mode:'coordinator',status:'idle',updatedAtMs:1,roleId:'sol',roleVersion:'1',roleBookRevisionId:'1',workspaceRoots:['/'],executionMode:'full_trust' };
 const target = { ...session, id:'owned',title:'核对资料' };
 const object = { id:target.id,kind:'session' as const,coordinatorId:'owner',sourceSessionId:session.id,task:'核对资料',target };
@@ -41,6 +41,30 @@ function completedCoordinatorProjection() {
  return reduceAgentEvent(answering,coordinatorOutcomeEvent(2,'previous','turn_completed',{status:'completed'})).state;
 }
 describe('persistent coordinator App', () => {
+ it('uses only the actual capture host with exact source binding and keeps the draft while pending', async () => {
+  let settle!: (opened: boolean) => void;
+  const capture=vi.fn(()=>new Promise<boolean>(resolve=>{settle=resolve}));
+  window.pawScreenAssistant={capture,getCapture:vi.fn(),openSession:vi.fn(),saveNote:vi.fn()};
+  setup();const draft=await screen.findByRole('textbox',{name:'Agent 草稿'});fireEvent.change(draft,{target:{value:'框选前的未发送草稿'}});
+  fireEvent.click(screen.getByRole('button',{name:'屏幕工具'}));const button=await screen.findByRole('button',{name:'框选屏幕'});
+  fireEvent.click(button);fireEvent.click(button);
+  expect(capture).toHaveBeenCalledTimes(1);expect(capture).toHaveBeenCalledWith({sourceSessionId:'persistent'});
+  expect(button).toBeDisabled();expect(button).toHaveAccessibleName('框选屏幕');expect(button).toHaveAttribute('aria-busy','true');
+  await act(async()=>settle(false));expect(await screen.findByText('框选未打开，可以再次尝试。')).toBeVisible();expect(draft).toHaveValue('框选前的未发送草稿');expect(button).not.toBeDisabled();
+ });
+ it('keeps unavailable screen capabilities explicit and opens the existing memory App without replacing the draft', async () => {
+  const {openRoute}=setup();const draft=await screen.findByRole('textbox',{name:'Agent 草稿'});fireEvent.change(draft,{target:{value:'长期记忆查看时保留'}});
+  fireEvent.click(screen.getByRole('button',{name:'管理长期记忆'}));expect(openRoute).toHaveBeenCalledWith('/memory');expect(draft).toHaveValue('长期记忆查看时保留');
+  fireEvent.click(screen.getByRole('button',{name:'屏幕工具'}));expect(await screen.findByRole('button',{name:'框选屏幕'})).toBeDisabled();expect(screen.getByText('请在 PAW 桌面宿主中使用框选。')).toBeVisible();
+  expect(screen.queryByRole('button',{name:'翻译'})).not.toBeInTheDocument();
+ });
+ it('shows recorded Todo progress and reasons without treating unknown synchronization as running', () => {
+  const current=createAgentProjection('source');current.todo.phases=[{name:'核对',tasks:[{content:'读取实际来源',status:'completed'},{content:'核对原任务',status:'blocked',reason:'原回执未确认'}]}];
+  const view=render(<CoordinatorProgress current={current} connected/>);expect(screen.getByText('1/2')).toBeVisible();expect(screen.getByText('读取实际来源')).toBeVisible();expect(screen.getByText('受阻 · 原回执未确认')).toBeVisible();
+  view.rerender(<CoordinatorProgress connected/>);expect(screen.getByText('未同步')).toBeVisible();expect(screen.queryByText('读取实际来源')).not.toBeInTheDocument();
+  view.rerender(<CoordinatorProgress current={createAgentProjection('source')} connected/>);expect(screen.queryByText('当前进度')).not.toBeInTheDocument();
+ });
+
  it('does not label an empty ready bootstrap as a completed conversation turn', () => {
   const projection=createAgentProjection('empty');
   projection.turnOrder=['bootstrap']; projection.turnsById.bootstrap={id:'bootstrap',status:'completed',messageIds:[],activityIds:[],createdAtMs:1,updatedAtMs:1};
@@ -142,7 +166,7 @@ describe('persistent coordinator App', () => {
  it('opens the persisted conversation and actual owned target without starting any model', async () => {
   const { transport,openWindow }=setup(undefined,[object,{ ...object,id:'foreign',sourceSessionId:'other',target:{ ...target,id:'foreign',title:'其他对话' } }]);
   expect(await screen.findByText('持久会话 persistent')).toBeVisible();
-  expect(screen.getByText(/持久对话/)).toBeVisible();
+  expect(screen.getByText(/持续对话/)).toBeVisible();
   expect(screen.getByText(/全盘访问/)).toBeVisible();
   fireEvent.click(screen.getByRole('button',{name:'打开 session 核对资料'}));
   expect(openWindow).toHaveBeenCalledWith({ appId:'agent',target:{ kind:'session',id:'owned',title:'核对资料' } });
