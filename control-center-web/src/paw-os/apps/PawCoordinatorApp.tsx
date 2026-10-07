@@ -36,16 +36,18 @@ export function coordinatorObjects(value: unknown, source: string, identity: str
   });
 }
 
-/** A bootstrapped ready event can create a reducer turn without a message.
- * Only a real conversation turn can supply a terminal conversation label. */
+/** Ready bootstrap may create an empty completed reducer turn. Skip only
+ * that harmless boundary; newer admitted/activity turns retain their outcome. */
 export function coordinatorLatestTurnOutcome(current?: AgentProjectionState) {
   if (!current) return undefined;
   for (let index = current.turnOrder.length - 1; index >= 0; index -= 1) {
     const turn = current.turnsById[current.turnOrder[index]];
-    if (turn?.messageIds.some(id => {
+    if (!turn) continue;
+    const hasConversationMessage = turn.messageIds.some(id => {
       const message = current.messagesById[id];
       return message && (message.role === 'user' || message.role === 'assistant');
-    })) return turn.status;
+    });
+    if (hasConversationMessage || turn.activityIds.length > 0 || turn.status !== 'completed') return turn.status;
   }
   return undefined;
 }
@@ -190,9 +192,9 @@ function CoordinatorIdentityStatus({ session, active, onOpen }: { session?: Sess
   useAgentLiveSession({ sessionId: session?.id ?? '', transport, active: active && Boolean(session), snapshotView: 'recent', onSnapshot: () => setSynced(true), onRecoveryState: setRecovery });
   const current = active && synced && recovery === 'synced' && !projection?.needsSnapshot ? projection : undefined;
   const outcome = coordinatorLatestTurnOutcome(current);
-  const status = !current ? recovery === 'failed' ? '同步失败' : '正在同步' : ['busy', 'analyzing', 'working', 'retrying'].includes(current.status) ? '正在处理工作' : current.status === 'waiting' ? '等待输入' : ['aborting','stopping'].includes(current.status) ? '正在停止' : ['faulted','failed'].includes(current.status) ? '需要查看' : outcome === 'aborted' ? '已停止' : outcome === 'completed' ? '本轮已完成' : '就绪';
+  const status = !current ? recovery === 'failed' ? '同步失败' : '正在同步' : ['busy', 'analyzing', 'working', 'retrying'].includes(current.status) ? '正在处理工作' : current.status === 'waiting' ? '等待输入' : ['aborting','stopping'].includes(current.status) ? '正在停止' : ['faulted','failed'].includes(current.status) || outcome === 'failed' ? '需要查看' : outcome === 'aborted' ? '已停止' : outcome === 'completed' ? '本轮已完成' : '就绪';
   const activity: RoomPlanetActivity = !current ? 'static' : ['busy','analyzing','working','retrying'].includes(current.status) ? 'working'
-    : current.status === 'waiting' ? 'waiting' : ['failed','faulted'].includes(current.status) ? 'error'
+    : current.status === 'waiting' ? 'waiting' : ['failed','faulted'].includes(current.status) || outcome === 'failed' ? 'error'
     : outcome === 'aborted' || ['aborting','stopping'].includes(current.status) ? 'stopped'
     : outcome === 'completed' ? 'done' : 'static';
   return <><button type="button" className="paw-coordinator__avatar" aria-label="打开 Agent 的原 Session" aria-describedby={statusId} title="打开这段持久对话的完整 Session" disabled={!session || !onOpen} onClick={onOpen}><RoomPlanetAvatar ordinal={0} size={46} decorative activity={activity}/></button>

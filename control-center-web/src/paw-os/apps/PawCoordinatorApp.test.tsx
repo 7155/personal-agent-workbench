@@ -1,5 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect } from 'react';
+import { useAgentLiveSession } from '@/features/agent/runtime/use-agent-live-session';
+import { agentSessionAddress, useAgentLiveStore } from '@/features/agent/state/live-store';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -7,13 +10,14 @@ import { MockControlTransport } from '@/test/mock-transport';
 import { PawOsAppSurfaceProvider, PawOsDesktopProvider } from '@/features/paw-os/surface-context';
 import type { ControlRequest } from '@/platform/transport';
 import type { SessionSummary } from '@/features/agent/types';
-import { createAgentProjection } from '@/contracts/agent-reducer';
+import { createAgentProjection, reduceAgentEvent } from '@/contracts/agent-reducer';
+import type { UiAgentEvent } from '@/contracts/ui-events';
 import { CHAT_PRESENTATION_STORAGE_KEY } from '@/features/conversation-ui/reading/chat-presentation';
 import { PawCoordinatorApp, coordinatorObjects, coordinatorLatestTurnOutcome } from './PawCoordinatorApp';
 vi.mock('./agent-workspace-loader', () => ({ loadSessionWorkspace: async () => ({ default: ({ recordId, onSessionCreated }: { recordId: string; onSessionCreated: (session: SessionSummary, draft: string) => void }) => <div><p>持久会话 {recordId}</p><textarea aria-label="Agent 草稿"/><button onClick={() => onSessionCreated({ ...session, id: 'fork', title: '历史分支' }, '带入分支的草稿')}>测试原生分支回调</button></div> }) }));
-vi.mock('@/features/agent/runtime/use-agent-live-session', () => ({ useAgentLiveSession: () => vi.fn() }));
+vi.mock('@/features/agent/runtime/use-agent-live-session', () => ({ useAgentLiveSession: vi.fn(() => vi.fn()) }));
 vi.mock('@/features/rooms/runtime/use-room-live-session', () => ({ useRoomLiveSession: () => vi.fn() }));
-afterEach(() => { cleanup(); localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY); });
+afterEach(() => { cleanup(); vi.mocked(useAgentLiveSession).mockReset().mockImplementation(() => vi.fn()); localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY); });
 const session: SessionSummary = { id:'persistent',title:'Agent',mode:'coordinator',status:'idle',updatedAtMs:1,roleId:'sol',roleVersion:'1',roleBookRevisionId:'1',workspaceRoots:['/'],executionMode:'full_trust' };
 const target = { ...session, id:'owned',title:'核对资料' };
 const object = { id:target.id,kind:'session' as const,coordinatorId:'owner',sourceSessionId:session.id,task:'核对资料',target };
@@ -27,6 +31,13 @@ function setup(command: (request: ControlRequest) => unknown = () => ({ ok:true 
  const tree = (active: boolean) => <QueryClientProvider client={client}><ControlTransportProvider transport={transport}><PawOsDesktopProvider openWindow={openWindow}><PawOsAppSurfaceProvider appId="agent-controller" width={375} height={680} active={active}><PawCoordinatorApp/></PawOsAppSurfaceProvider></PawOsDesktopProvider></ControlTransportProvider></QueryClientProvider>;
  const view = render(tree(true));
  return { transport,openWindow,setActive: (active: boolean) => view.rerender(tree(active)) };
+}
+function coordinatorOutcomeEvent(sequence: number, turnId: string, eventType: UiAgentEvent['eventType'], payload: Record<string, unknown>): UiAgentEvent {
+ return { schemaVersion:'rag-ime.agent-event.v1',sessionId:'source',eventId:`source:${sequence}`,turnId,sequence,createdAtMs:sequence * 10,eventType,payload,resumeToken:`source:${sequence}`,streamKind:'agent' };
+}
+function completedCoordinatorProjection() {
+ const answering=reduceAgentEvent(createAgentProjection('source'),coordinatorOutcomeEvent(1,'previous','text_delta',{delta:'Previous answer'})).state;
+ return reduceAgentEvent(answering,coordinatorOutcomeEvent(2,'previous','turn_completed',{status:'completed'})).state;
 }
 describe('persistent coordinator App', () => {
  it('does not label an empty ready bootstrap as a completed conversation turn', () => {
@@ -54,6 +65,65 @@ describe('persistent coordinator App', () => {
   expect(coordinatorLatestTurnOutcome(projection)).toBe('running');
   projection.turnsById.new.status='aborted';
   expect(coordinatorLatestTurnOutcome(projection)).toBe('aborted');
+ });
+ it('keeps an exact newer Stop outcome before its transcript message arrives', () => {
+  const previous=completedCoordinatorProjection();
+  const running=reduceAgentEvent(previous,coordinatorOutcomeEvent(3,'new','status_changed',{status:'busy'})).state;
+  expect(running.turnsById.new.messageIds).toEqual([]);
+  expect(running.turnsById.new.activityIds).toEqual([]);
+  expect(running.turnOrder.at(-1)).toBe('new');
+  expect(coordinatorLatestTurnOutcome(running)).toBe('running');
+  const stopped=reduceAgentEvent(running,coordinatorOutcomeEvent(4,'new','turn_completed',{status:'aborted',aborted:true})).state;
+  expect(stopped.status).toBe('idle');
+  expect(stopped.turnsById.new.status).toBe('aborted');
+  expect(stopped.turnsById.previous.status).toBe('completed');
+  expect(coordinatorLatestTurnOutcome(stopped)).toBe('aborted');
+ });
+ it('keeps a newer tool-only failure through the following empty ready bootstrap', () => {
+  const working=reduceAgentEvent(completedCoordinatorProjection(),coordinatorOutcomeEvent(3,'tool-only','tool_started',{toolCallId:'new-tool',toolName:'bash'})).state;
+  const failed=reduceAgentEvent(working,coordinatorOutcomeEvent(4,'tool-only','turn_failed',{error:'Exact Runtime terminal failure'})).state;
+  expect(failed.turnsById['tool-only'].messageIds).toEqual([]);
+  expect(failed.turnsById['tool-only'].activityIds).toContain('new-tool');
+  expect(failed.turnsById['tool-only'].status).toBe('failed');
+  expect(coordinatorLatestTurnOutcome(failed)).toBe('failed');
+  const ready=reduceAgentEvent(failed,coordinatorOutcomeEvent(5,'','status_changed',{status:'ready'})).state;
+  expect(ready.turnsById.unscoped.messageIds).toEqual([]);
+  expect(ready.turnsById.unscoped.activityIds).toEqual([]);
+  expect(ready.turnsById.unscoped.status).toBe('completed');
+  expect(ready.turnsById.previous.status).toBe('completed');
+  expect(coordinatorLatestTurnOutcome(ready)).toBe('failed');
+ });
+ it('shows a newer source failure rather than the old completion after ready bootstrap', async () => {
+  vi.mocked(useAgentLiveSession).mockImplementation(function useSyncedLiveFixture({ sessionId, onSnapshot, onRecoveryState }) {
+   useEffect(() => {
+    if (!sessionId) return;
+    onSnapshot?.({ sessionId,value:{},view:'recent',presentable:true,hydrated:true,sequence:0,resumeToken:'' });
+    onRecoveryState?.('synced');
+   }, [sessionId]);
+   return vi.fn(async () => true);
+  });
+  const { transport }=setup(undefined,[]);
+  const draft=await screen.findByRole('textbox',{name:'Agent 草稿'});
+  fireEvent.change(draft,{target:{value:'失败状态保留未发送草稿'}});
+  const address=agentSessionAddress(transport,session.id);
+  const event=(sequence: number,turnId: string,type: UiAgentEvent['eventType'],payload: Record<string,unknown>) => ({...coordinatorOutcomeEvent(sequence,turnId,type,payload),sessionId:session.id});
+  act(() => useAgentLiveStore.getState().applyEvents(address,[
+   event(1,'previous','text_delta',{delta:'Previous answer'}),
+   event(2,'previous','turn_completed',{status:'completed'}),
+  ]));
+  const earth=screen.getByRole('button',{name:'打开 Agent 的原 Session'});
+  await waitFor(() => expect(earth).toHaveAccessibleDescription('本轮已完成'));
+  expect(earth.querySelector('[data-room-planet]')).toHaveAttribute('data-activity','done');
+  act(() => useAgentLiveStore.getState().applyEvents(address,[
+   event(3,'tool-only','tool_started',{toolCallId:'new-tool',toolName:'bash'}),
+   event(4,'tool-only','turn_failed',{error:'Exact Runtime terminal failure'}),
+   event(5,'','status_changed',{status:'ready'}),
+  ]));
+  await waitFor(() => expect(earth).toHaveAccessibleDescription('需要查看'));
+  expect(earth.querySelector('[data-room-planet]')).toHaveAttribute('data-activity','error');
+  expect(draft).toHaveValue('失败状态保留未发送草稿');
+  expect(transport.requests.every(({request}) => request.pathId==='agent.coordinator.ensure')).toBe(true);
+  useAgentLiveStore.getState().clear(address);
  });
  it('opens the persisted conversation and actual owned target without starting any model', async () => {
   const { transport,openWindow }=setup(undefined,[object,{ ...object,id:'foreign',sourceSessionId:'other',target:{ ...target,id:'foreign',title:'其他对话' } }]);

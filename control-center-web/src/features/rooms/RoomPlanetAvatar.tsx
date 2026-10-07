@@ -1,12 +1,10 @@
 import { useId } from 'react';
 import { useMotionActivity } from '@/design/motion';
-import { PlanetCompanion } from './PlanetCompanion';
-import { isPlanetIdentity, type PlanetActivity, type PlanetExpression, type PlanetMotionMode, type PlanetSignalState } from './planet-companion-protocol';
 import atlas from './assets/planet-bodies-v1.png';
 import { roomPlanetName } from './room-copy';
 import './room-planet-avatar.css';
 
-export type RoomPlanetActivity = PlanetActivity;
+export type RoomPlanetActivity = 'static' | 'idle' | 'thinking' | 'working' | 'waiting' | 'done' | 'error' | 'stopped';
 
 // Transparent source atlas. Viewports keep Saturn's entire ring and exclude
 // adjacent identities; SVG meet preserves each character's proportions.
@@ -25,18 +23,14 @@ const FACES = [
 ] as const;
 
 /** One stable ordinal identity across chat, execution, roster and deliveries. */
-export function RoomPlanetAvatar({ ordinal, size = 32, className, decorative = false, activity = 'static', family, expression: expressionOverride, signalState, motion }: {
+export function RoomPlanetAvatar({ ordinal, size = 32, className, decorative = false, activity = 'static' }: {
   ordinal: number; size?: number; className?: string; decorative?: boolean; activity?: RoomPlanetActivity;
-  family?: 'classic' | 'paw'; expression?: PlanetExpression; signalState?: PlanetSignalState; motion?: PlanetMotionMode;
 }) {
   const clipId = useId();
   const motionActive = useMotionActivity();
   const index = Number.isInteger(ordinal) && ordinal >= 0 ? ordinal : 0;
   const frame = FRAMES[index];
   const name = roomPlanetName(index);
-  // Candidate art is explicit only; both presentation versions retain the stable atlas.
-  const selectedFamily = family ?? 'classic';
-  if (selectedFamily === 'paw' && isPlanetIdentity(name)) return <PlanetCompanion name={name} ordinal={index} size={size} idPrefix={clipId} className={className} decorative={decorative} activity={activity} expression={expressionOverride} signalState={signalState} motion={motion} motionActive={motionActive}/>;
   if (!frame) return <span aria-label={decorative ? undefined : name} aria-hidden={decorative || undefined}
     className={className} style={{ display: 'inline-grid', placeItems: 'center', width: size, height: size, flexShrink: 0 }}>✦</span>;
   const [x, y, width, height] = frame;
@@ -49,7 +43,7 @@ export function RoomPlanetAvatar({ ordinal, size = 32, className, decorative = f
     className={['room-planet-avatar', className].filter(Boolean).join(' ')} data-activity={activity}
     data-motion-active={motionActive}
     data-expression={expression}
-    data-family="classic-v1" data-room-planet={index} focusable="false" height={size}
+    data-room-planet={index} focusable="false" height={size}
     preserveAspectRatio="xMidYMid meet" role={decorative ? undefined : 'img'}
     style={{ flexShrink: 0, overflow: 'hidden', verticalAlign: 'middle' }}
     viewBox={`0 0 ${width} ${height}`} width={size}>

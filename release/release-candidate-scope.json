@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T05:04:09.224518+00:00",
+  "generatedAt": "2026-10-07T06:28:26.395124+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -203,14 +203,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 34
+      "pathCount": 29
     }
   },
   "summary": {
-    "pathCount": 2141,
+    "pathCount": 2136,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1825
+      "keep_release": 1820
     },
     "groupCounts": {
       "local_docs": 121,
@@ -231,7 +231,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 34,
+      "paw_experience_20261007": 29,
       "verification": 114,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -6441,27 +6441,6 @@
       "reason": "Include current main follow-up source and existing verification in the local update."
     },
     {
-      "path": "control-center-web/src/features/rooms/PlanetCompanion.test.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "paw_experience_20261007",
-      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
-    },
-    {
-      "path": "control-center-web/src/features/rooms/PlanetCompanion.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "paw_experience_20261007",
-      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
-    },
-    {
-      "path": "control-center-web/src/features/rooms/PlanetCompanionMark.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "paw_experience_20261007",
-      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
-    },
-    {
       "path": "control-center-web/src/features/rooms/RoomMemberBoundaryDialog.tsx",
       "status": "deleted",
       "group": "pi1_final_integration",
@@ -6628,20 +6607,6 @@
       "group": "room_frontend",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
-    },
-    {
-      "path": "control-center-web/src/features/rooms/planet-companion-protocol.ts",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "paw_experience_20261007",
-      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
-    },
-    {
-      "path": "control-center-web/src/features/rooms/planet-companion.css",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "paw_experience_20261007",
-      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
     },
     {
       "path": "control-center-web/src/features/rooms/room-planet-avatar.css",
