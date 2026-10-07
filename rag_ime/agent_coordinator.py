@@ -102,28 +102,42 @@ def _session_payload(title: str, *, runtime_engine: str = "classic") -> dict[str
 def ensure_coordinator(ports: CoordinatorPorts, payload: Mapping[str, object]) -> dict[str, object]:
     if payload:
         raise ValueError("global Agent ensure accepts no workspace or permission overrides")
-    with ports.sessions._connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
+    # Existing Sources (including Classic history) require no negotiation.
+    # Check outside a writer, then recheck uniqueness after preparing a new
+    # Durable engine through the existing Session application owner.
+    session: dict[str, object] = {}
+    identity = ""
+    created = False
+    with ports.sessions._read_connect() as conn:
         row = conn.execute("SELECT * FROM agent_coordinators WHERE singleton = 1").fetchone()
-        if row is None:
-            session = ports.session_application._create_session_record(_session_payload("星伴", runtime_engine="durable"), connection=conn)
-            identity = f"coordinator:{uuid.uuid4()}"
-            conn.execute("INSERT INTO agent_coordinators VALUES (1, ?, ?, ?)", (identity, session["id"], int(time.time()*1000)))
-            created = True
-        else:
+        if row is not None:
             identity = str(row["coordinator_id"])
             try:
                 session = ports.sessions._get(conn, str(row["session_id"]))
             except KeyError:
-                session = {"status": "archived"}
-            if session["status"] == "archived":
-                # An explicit archive retires the old coordinator and its scope.
-                session = ports.session_application._create_session_record(_session_payload("星伴", runtime_engine="durable"), connection=conn)
+                pass
+    if not session or session["status"] == "archived":
+        prepared = ports.session_application._prepare_session_engine("durable")
+        with ports.sessions._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM agent_coordinators WHERE singleton = 1").fetchone()
+            session = {}
+            if row is not None:
+                identity = str(row["coordinator_id"])
+                try:
+                    session = ports.sessions._get(conn, str(row["session_id"]))
+                except KeyError:
+                    pass
+            if not session or session["status"] == "archived":
+                session = ports.session_application._create_session_record(
+                    _session_payload("星伴", runtime_engine="durable"), connection=conn, _prepared_engine=prepared)
                 identity = f"coordinator:{uuid.uuid4()}"
-                conn.execute("UPDATE agent_coordinators SET coordinator_id=?, session_id=?, created_at_ms=? WHERE singleton=1", (identity, session["id"], int(time.time()*1000)))
+                if row is None:
+                    conn.execute("INSERT INTO agent_coordinators VALUES (1, ?, ?, ?)", (identity, session["id"], int(time.time()*1000)))
+                else:
+                    # Explicit archive still retires the old identity/scope.
+                    conn.execute("UPDATE agent_coordinators SET coordinator_id=?, session_id=?, created_at_ms=? WHERE singleton=1", (identity, session["id"], int(time.time()*1000)))
                 created = True
-            else:
-                created = False
     return {"schemaVersion": "rag-ime.agent-coordinator-ensure.v1", "ok": True, "created": created, "coordinatorId": identity,
             "sourceSessionId": session["id"], "session": session,
             "objects": owned_objects(ports, str(session["id"]))}

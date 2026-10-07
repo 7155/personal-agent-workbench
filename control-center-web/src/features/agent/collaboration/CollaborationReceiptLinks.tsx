@@ -17,6 +17,15 @@ export function collaborationReceiptTargets(view:Pick<PublicToolResultView,'tool
   const visit=(value:unknown,depth:number)=>{
     if(depth>4)return;const row=object(value),schema=row.schemaVersion;
     if(schema==='rag-ime.agent-coordinator-create.v1'&&row.ok===true&&row.sourceSessionId===source){const target=object(row.target),kind=row.kind;if(text(target.id)&&(kind==='room'||kind==='session'))targets.set(text(target.id),{id:text(target.id),kind,label:row.created===true?'对象已创建 · 创建本身不会派发':'已有对象已恢复',receipt:row})}
+    if(schema==='rag-ime.agent-coordinator-result.v1'&&row.ok===true&&row.evidenceOnly===true&&row.sourceSessionId===source){
+      const id=text(row.targetId),kind=row.kind,execution=object(row.execution);
+      const bound=kind==='session'?execution.sessionId===id&&text(execution.turnId)&&text(execution.clientMessageId):kind==='room'?execution.roomId===id&&text(execution.roomTurnId):false;
+      if(id&&bound&&(kind==='room'||kind==='session')){
+        const labels:Record<string,string>={pending:'原轮尚未结算',completed:'原轮已结束 · 结果仍需核验',aborted:'原轮已停止 · 保留已有证据',failed:'原轮失败 · 可查看原记录'};
+        const receipt={...row,...(kind==='session'?{turnId:execution.turnId,clientMessageId:execution.clientMessageId}:{roomTurnId:execution.roomTurnId})};
+        targets.set(id,{id,kind,label:labels[text(row.state)]??'已读取原轮证据 · 终态待核对',receipt});
+      }
+    }
     if(schema==='rag-ime.agent-room-message.v1'&&row.ok===true&&text(row.roomId))targets.set(text(row.roomId),{id:text(row.roomId),kind:'room',label:row.accepted===true?'派发已受理 · 尚非完成结果':row.cancelled===true?'派发已取消':'派发未受理',receipt:row});
     if(schema==='rag-ime.agent-prompt-accepted.v1'&&row.ok===true&&text(row.sessionId))targets.set(text(row.sessionId),{id:text(row.sessionId),kind:'session',label:'请求已受理 · 尚非完成结果',receipt:row});
     for(const key of ['result','details'])if(row[key])visit(row[key],depth+1);

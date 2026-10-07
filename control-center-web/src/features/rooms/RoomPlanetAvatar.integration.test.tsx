@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MotionActivityBoundary, MotionProvider } from '@/design/motion';
 import { RoomPlanetAvatar } from './RoomPlanetAvatar';
@@ -105,7 +105,7 @@ describe('explicit sphere avatar integration', () => {
     expect(avatar.querySelectorAll('[data-mouth]')).toHaveLength(1);
   });
 
-  it('moves only the three clipped texture groups during full working and pauses their phase for all quiet boundaries', () => {
+  it('projects only the three clipped textures and freezes their actual geometry for quiet boundaries', async () => {
     const tree = (signal: PlanetSignalState, mode: 'full' | 'transition' | 'static' = 'full', active = true) => <MotionProvider><style>{sphereCss}</style><MotionActivityBoundary active={active}>
       {[0, 1, 4].map(ordinal => <RoomPlanetAvatar key={ordinal} ordinal={ordinal} variant="sphere" signal={signal} motion={mode}/>)}
     </MotionActivityBoundary></MotionProvider>;
@@ -114,23 +114,30 @@ describe('explicit sphere avatar integration', () => {
     expect(textures.map(node => node.getAttribute('data-surface'))).toEqual(['continents', 'craters', 'bands']);
     for (const texture of textures) {
       expect(texture.closest('[clip-path]')).toBeTruthy();
-      expect(getComputedStyle(texture).animationPlayState).toBe('running');
+      expect(texture).toHaveAttribute('data-projection', 'orthographic');
+      expect(texture).toHaveAttribute('data-rotation-active', 'true');
+      expect(getComputedStyle(texture).transform).toBe('none');
       expect(texture.querySelector('[data-face]')).toBeNull();
       expect(texture.querySelector('.sphere-signal')).toBeNull();
     }
+    const first = textures[0].querySelector('path')!, before = first.getAttribute('d');
+    await waitFor(() => expect(first.getAttribute('d')).not.toBe(before));
     for (const signal of ['idle', 'waiting', 'done', 'error', 'offline'] as const) {
       view.rerender(tree(signal));
-      for (const texture of textures) expect(getComputedStyle(texture).animationPlayState).toBe('paused');
+      for (const texture of textures) expect(texture).toHaveAttribute('data-rotation-active', 'false');
     }
     for (const mode of ['transition', 'static'] as const) {
       view.rerender(tree('working', mode));
-      for (const texture of textures) expect(getComputedStyle(texture).animationPlayState).toBe('paused');
+      for (const texture of textures) expect(texture).toHaveAttribute('data-rotation-active', 'false');
     }
     view.rerender(tree('working', 'full', false));
-    for (const texture of textures) expect(getComputedStyle(texture).animationPlayState).toBe('paused');
+    for (const texture of textures) expect(texture).toHaveAttribute('data-rotation-active', 'false');
+    const paused = textures.map(texture => texture.innerHTML);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(textures.map(texture => texture.innerHTML)).toEqual(paused);
     view.rerender(tree('working'));
     act(() => { osReduce = true; listeners.forEach(f => f()); });
-    for (const texture of textures) expect(getComputedStyle(texture).animationPlayState).toBe('paused');
+    for (const texture of textures) expect(texture).toHaveAttribute('data-rotation-active', 'false');
   });
 
   it('keeps a fixed work arc in transition/static and never creates a second clickable control', () => {

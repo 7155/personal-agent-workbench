@@ -30,6 +30,27 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('keeps an empty PAWOS library actionable without an empty selector or duplicate create buttons', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'knowledgeBases.list': { items: [] },
+      'knowledgeWorker.health': { ok: true, status: 'ready' },
+    } });
+    renderKnowledge(transport, '/knowledge', true);
+    await screen.findByText('还没有文档知识库');
+    expect(screen.queryByRole('combobox', { name: '当前知识库', hidden: true })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '新建知识库', hidden: true })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: '收起知识库目录', hidden: true })).not.toBeInTheDocument();
+    const refreshes = transport.requests.filter(call => call.request.pathId === 'knowledgeBases.list').length;
+    await user.click(screen.getByRole('button', { name: '刷新知识库' }));
+    await waitFor(() => expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.list').length).toBeGreaterThan(refreshes));
+    const trigger = screen.getByRole('button', { name: '新建知识库' });
+    await user.click(trigger);
+    expect(await screen.findByRole('dialog')).toBeVisible();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(transport.requests.some(call => call.request.pathId === 'knowledgeBases.create')).toBe(false);
+  });
   it('retains unsaved library settings and the note connection draft across existing views', async () => {
     const user = userEvent.setup();
     renderKnowledge(createTransport(), '/knowledge?tab=settings');

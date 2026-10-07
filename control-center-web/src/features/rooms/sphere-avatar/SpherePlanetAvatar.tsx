@@ -82,7 +82,7 @@ export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, de
   <g className="sphere-body" style={signal==='offline'?{filter:'grayscale(.9)',opacity:.63}:undefined}>
    <circle data-layer="shell" cx="160" cy="160" r={identity === 'Saturn' ? 116 : 126} fill={'url(#'+id+'-shell)'}/>
    <g clipPath={'url(#'+id+'-clip)'}>
-    <SpherePlanetSurface identity={identity} id={id} size={size}/>
+    <SpherePlanetSurface identity={identity} id={id} size={size} rotating={!quiet && mode === 'full' && signal === 'working'}/>
     {identity === 'Saturn' ? <g transform="rotate(-18 160 176)" data-layer="ring-shadow">
       <path d="M 12 181 A 148 48 0 0 0 308 181" fill="none" stroke="#60492e" strokeOpacity=".18" strokeWidth="30"/>
     </g> : null}

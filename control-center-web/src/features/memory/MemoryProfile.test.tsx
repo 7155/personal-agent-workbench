@@ -6,7 +6,7 @@ import { ControlTransportHttpError } from '@/platform/http-transport';
 import { MemoryProfile, type PersonalProfile } from './MemoryProfile';
 import { TooltipProvider } from '@/components/primitives';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); sessionStorage.clear(); vi.restoreAllMocks(); });
 const profile: PersonalProfile = { schemaVersion: 'paw.personal-profile.v1', revision: 'profile-1', text: '原来的背景', truncated: false,
   paragraphs: [{ id: 'card-1', memoryIds: ['card-1'], text: '原来的背景', revision: 'card-revision-1', sourceCount: 1, sourceRefs: [{ kind: 'evidence', id: 'source-1' }] }] };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
@@ -17,6 +17,65 @@ function setup(save: MockRouteHandler, read: MockRouteHandler = profile) {
   return { transport, onOpenReference, ...view };
 }
 describe('editable personal profile', () => {
+  it('restores only a matching transport draft after remount and never saves it automatically', async () => {
+    const transport = new MockControlTransport({ routes: { 'memory.profile': profile } });
+    Object.defineProperty(transport, 'connectionIdentity', { value: 'http:profile-test' });
+    const element = <ControlTransportProvider transport={transport}><TooltipProvider><MemoryProfile onOpenReference={vi.fn()} /></TooltipProvider></ControlTransportProvider>;
+    const view = render(element);
+    fireEvent.change(await screen.findByRole('textbox', { name: '个人背景 1' }), { target: { value: '完整未保存草稿' } });
+    view.unmount();
+    const reopened = render(element);
+    expect(await screen.findByRole('textbox', { name: '个人背景 1' })).toHaveValue('完整未保存草稿');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+    expect(transport.requests.some(call => call.request.pathId === 'memory.profile.save')).toBe(false);
+    const other = new MockControlTransport({ routes: { 'memory.profile': profile } });
+    Object.defineProperty(other, 'connectionIdentity', { value: 'http:other-profile' });
+    reopened.rerender(<ControlTransportProvider transport={other}><TooltipProvider><MemoryProfile onOpenReference={vi.fn()} /></TooltipProvider></ControlTransportProvider>);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '个人背景 1' })).toHaveValue('原来的背景'));
+    expect(sessionStorage.getItem('paw.memory.profile-draft.v1:http:other-profile')).toBeNull();
+  });
+  it('reconciles a restored draft against a newer server revision and clears it only after explicit adoption', async () => {
+    sessionStorage.setItem('paw.memory.profile-draft.v1:http:profile-test', JSON.stringify({ baseRevision: profile.revision, draft: [{ id: 'card-1', memoryIds: ['card-1'], text: '旧版本的未保存草稿', revision: 'card-revision-1', key: 'card-1' }] }));
+    const latest = { ...profile, revision: 'profile-new', text: '服务器新背景', paragraphs: [{ ...profile.paragraphs[0], text: '服务器新背景' }] };
+    const transport = new MockControlTransport({ routes: { 'memory.profile': latest } });
+    Object.defineProperty(transport, 'connectionIdentity', { value: 'http:profile-test' });
+    const element = <ControlTransportProvider transport={transport}><TooltipProvider><MemoryProfile onOpenReference={vi.fn()} /></TooltipProvider></ControlTransportProvider>;
+    const view = render(element);
+    expect(await screen.findByRole('textbox', { name: '个人背景 1' })).toHaveValue('旧版本的未保存草稿');
+    expect(screen.getByRole('alert')).toHaveTextContent('请先核对最新内容');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+    expect(screen.getByRole('region', { name: '服务器最新版本' })).toHaveTextContent('服务器新背景');
+    expect(transport.requests.some(call => call.request.pathId === 'memory.profile.save')).toBe(false);
+    view.unmount();
+    render(element);
+    expect(await screen.findByRole('textbox', { name: '个人背景 1' })).toHaveValue('旧版本的未保存草稿');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '放弃下方草稿，编辑最新版本' }));
+    expect(screen.getByRole('textbox', { name: '个人背景 1' })).toHaveValue('服务器新背景');
+    expect(sessionStorage.getItem('paw.memory.profile-draft.v1:http:profile-test')).toBeNull();
+  });
+  it('clears the tab draft only after the matching save receipt', async () => {
+    const pending = deferred<unknown>();
+    const updated = { ...profile, revision: 'profile-saved', paragraphs: [{ ...profile.paragraphs[0], text: '保存的新背景' }] };
+    let reads = 0;
+    const transport = new MockControlTransport({ routes: { 'memory.profile': () => ++reads === 1 ? profile : updated, 'memory.profile.save': () => pending.promise } });
+    Object.defineProperty(transport, 'connectionIdentity', { value: 'http:profile-save' });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><MemoryProfile onOpenReference={vi.fn()} /></TooltipProvider></ControlTransportProvider>);
+    fireEvent.change(await screen.findByRole('textbox', { name: '个人背景 1' }), { target: { value: '保存的新背景' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(sessionStorage.getItem('paw.memory.profile-draft.v1:http:profile-save')).toContain('保存的新背景');
+    await act(async () => pending.resolve({ ok: true, profile: updated }));
+    await waitFor(() => expect(sessionStorage.getItem('paw.memory.profile-draft.v1:http:profile-save')).toBeNull());
+  });
+  it('keeps input usable when tab storage is denied', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('denied'); });
+    const transport = new MockControlTransport({ routes: { 'memory.profile': profile } });
+    Object.defineProperty(transport, 'connectionIdentity', { value: 'http:profile-test' });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider><MemoryProfile onOpenReference={vi.fn()} /></TooltipProvider></ControlTransportProvider>);
+    fireEvent.change(await screen.findByRole('textbox', { name: '个人背景 1' }), { target: { value: '保留在当前输入框' } });
+    expect(screen.getByRole('textbox', { name: '个人背景 1' })).toHaveValue('保留在当前输入框');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  });
   it('reveals returned sources beyond the first three without hiding their existence', async () => {
     const refs = Array.from({ length: 4 }, (_, index) => ({ kind: 'evidence' as const, id: `source-${index + 1}` }));
     const { onOpenReference } = setup({}, { ...profile, paragraphs: [{ ...profile.paragraphs[0], sourceCount: 4, sourceRefs: refs }] });

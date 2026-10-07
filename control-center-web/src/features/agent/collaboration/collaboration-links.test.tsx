@@ -32,6 +32,16 @@ function setup(v=view(create),objects:unknown[]=[owned]){
  return {transport,openWindow};
 }
 describe('source-bound collaboration links',()=>{
+ it('links an exact original result without turning unknown disposition into completion',async()=>{
+  const result={schemaVersion:'rag-ime.agent-coordinator-result.v1',ok:true,evidenceOnly:true,sourceSessionId:'source',kind:'room',targetId:room.id,state:'unknown',execution:{roomId:room.id,roomTurnId:'original-room-turn'},artifacts:[]};
+  const {openWindow}=setup(view(result));
+  const button=await screen.findByRole('button',{name:'打开原 Room 证据协作'});expect(screen.getByText('已读取原轮证据 · 终态待核对')).toBeInTheDocument();
+  fireEvent.click(button);expect(openWindow).toHaveBeenCalledWith({appId:'agent',target:{kind:'room',id:room.id,title:room.title}});
+  expect(screen.getByText('original-room-turn')).toBeInTheDocument();
+  expect(collaborationReceiptTargets(view({...result,sourceSessionId:'foreign'}),'source')).toEqual([]);
+  expect(collaborationReceiptTargets(view({...result,execution:{...result.execution,roomId:'foreign'}}),'source')).toEqual([]);
+  expect(collaborationReceiptTargets(view({...result,evidenceOnly:false}),'source')).toEqual([]);
+ });
  it('accepts typed coordinator receipts, rejects text/cross-source and keeps ownership exact',()=>{
   expect(collaborationReceiptTargets(view({result:create}),'source')).toMatchObject([{id:room.id,kind:'room'}]);
   expect(collaborationReceiptTargets(view({...create,sourceSessionId:'other'}),'source')).toEqual([]);

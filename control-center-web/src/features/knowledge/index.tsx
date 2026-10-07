@@ -834,10 +834,10 @@ function KnowledgeBaseSwitcher({
   worker: WorkerState;
 }) {
   return (
-    <section aria-label="切换文档知识库" className="knowledge-base-switcher">
-      {sidebarToggle}
+    <section aria-label="切换文档知识库" className="knowledge-base-switcher" data-empty={!bases.length || undefined}>
+      {bases.length ? sidebarToggle : null}
       <p className="knowledge-base-switcher__current">{base ? base.name : '还没有知识库'}</p>
-      <Field htmlFor="knowledge-native-base" label="当前知识库">
+      {bases.length ? <Field htmlFor="knowledge-native-base" label="当前知识库">
         <Select
           disabled={!bases.length}
           id="knowledge-native-base"
@@ -848,7 +848,7 @@ function KnowledgeBaseSwitcher({
           }))}
           value={selectedBaseId || bases[0]?.id || ''}
         />
-      </Field>
+      </Field> : null}
       {base ? (
         <span aria-label={`${base.documentCount} 个文件，${base.chunkCount} 个段落`} className="knowledge-base-switcher__meta">
           <b>{base.documentCount}</b> 文件
@@ -862,7 +862,7 @@ function KnowledgeBaseSwitcher({
       </span> : null}
       <div className="knowledge-base-switcher__actions">
         <IconButton disabled={refreshing} icon={<RefreshCw size={15} />} label="刷新知识库" onClick={onRefresh} size="small" tooltip />
-        <Button leadingIcon={<FolderPlus size={15} />} onClick={(event) => onCreate(event.currentTarget)} size="small">新建知识库</Button>
+        {bases.length ? <Button leadingIcon={<FolderPlus size={15} />} onClick={(event) => onCreate(event.currentTarget)} size="small">新建知识库</Button> : null}
       </div>
     </section>
   );

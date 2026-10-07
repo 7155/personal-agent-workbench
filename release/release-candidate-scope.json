@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T10:58:58.174137+00:00",
+  "generatedAt": "2026-10-07T11:40:29.507352+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 51
+      "pathCount": 54
     }
   },
   "summary": {
-    "pathCount": 2154,
+    "pathCount": 2157,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1838
+      "keep_release": 1841
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 51,
+      "paw_experience_20261007": 54,
       "verification": 113,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -6826,6 +6826,20 @@
       "disposition": "keep_release",
       "group": "paw_experience_20261007",
       "reason": "User-authorized original planet animation and source-owned collaboration navigation; retain native state, permissions and presentation rollback."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/sphere-avatar/sphere-surface-projection.test.ts",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized original spherical texture motion, source-bound result navigation and Durable capability preflight; preserve existing Runtime and state owners.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/sphere-avatar/sphere-surface-projection.ts",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized original spherical texture motion, source-bound result navigation and Durable capability preflight; preserve existing Runtime and state owners.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/rooms/state/live-store.test.ts",
@@ -13980,6 +13994,13 @@
       "group": "voice_desktop",
       "disposition": "keep_release",
       "reason": "Installed app naming, Electron voice integration, and bounded Web gate orchestration coverage."
+    },
+    {
+      "path": "tests/test_coordinator_preflight.py",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized original spherical texture motion, source-bound result navigation and Durable capability preflight; preserve existing Runtime and state owners.",
+      "status": "added"
     },
     {
       "path": "tests/test_coordinator_read_result.py",

@@ -22,27 +22,9 @@
   .sphere-planet-avatar * { animation: none !important; transition: none !important; }
 }
 
-/* One repeat period crosses the spherical clip in 48s. Only the surface moves:
-   the light, face and state satellite remain in their independent layers.
-   Pausing preserves the current material phase; it does not restart a task. */
-.sphere-planet-avatar .sphere-surface {
-  animation: sphere-surface-travel 48s linear infinite;
-  animation-play-state: paused;
-}
-.sphere-planet-avatar[data-motion="full"][data-signal="working"] .sphere-surface {
-  animation-play-state: running;
-}
-.sphere-planet-avatar[data-motion="static"] .sphere-surface {
-  animation: sphere-surface-travel 48s linear infinite !important;
-  animation-play-state: paused !important;
-}
-@keyframes sphere-surface-travel { to { transform: translateX(-320px); } }
-@media (prefers-reduced-motion: reduce) {
-  .sphere-planet-avatar .sphere-surface {
-    animation: sphere-surface-travel 48s linear infinite !important;
-    animation-play-state: paused !important;
-  }
-}
+/* Geometry changes longitude under the existing Motion activity owner. There
+   is no whole-texture translation or surface CSS animation to fight the gate. */
+.sphere-planet-avatar .sphere-surface { transform: none; }
 
 /* Idle feedback is tied to the actual one-shot click blink, not a timer loop. */
 .sphere-planet-avatar[data-motion="full"][data-signal="idle"][data-interacting="true"] .sphere-badge {

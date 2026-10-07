@@ -2593,3 +2593,15 @@
   color: var(--color-text-secondary);
   font-size: 13px;
 }
+
+/* An empty App has no library to select. Keep refresh and service health in
+   the command band; the workspace owns the single first-library action. */
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-library[data-native-layout='app'][data-empty='true'] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'band' 'workspace';
+}
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-library[data-empty='true'] .knowledge-base-rail[data-variant='app'] { display: none; }
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-base-switcher[data-empty='true'] .knowledge-base-switcher__current { display: block; }
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-base-switcher[data-empty='true'] .knowledge-base-switcher__actions { margin-left: auto; }
+
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-library[data-empty='true'] .ui-empty-state__action > .ui-button { min-height: 44px; }
