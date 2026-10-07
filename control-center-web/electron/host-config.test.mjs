@@ -126,6 +126,52 @@ test('same-window guests accept browser pages but not local host files', () => {
   assert.equal(isBrowserGuestUrl('javascript:alert(1)'), false);
 });
 
+test('production frontend tolerates Finder metadata without accepting changed code or symlinks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-finder-marker-'));
+  const entry = path.join(root, 'index.html');
+  const assets = path.join(root, 'assets');
+  fs.mkdirSync(assets);
+  fs.writeFileSync(entry, '<!doctype html><title>PAWOS</title>');
+  const script = path.join(assets, 'main.js');
+  fs.writeFileSync(script, 'console.log("paw-os");');
+  const marker = {
+    schemaVersion: 'rag-ime.control-web-build.v1',
+    buildChannel: 'production',
+    frontendProduct: 'paw-os',
+    sourceCommit: 'a'.repeat(40),
+    distTreeDigest: computeTestDistDigest(root),
+  };
+  fs.writeFileSync(path.join(root, 'rag-ime-control-web-build.json'), JSON.stringify(marker));
+  try {
+    fs.writeFileSync(path.join(root, '.DS_Store'), 'Finder window settings');
+    fs.writeFileSync(path.join(assets, '.DS_Store'), 'Finder icon positions');
+    assert.equal(validateProductionFrontend(entry).distTreeDigest, marker.distTreeDigest);
+    fs.writeFileSync(path.join(root, '.DS_Store'), 'Updated Finder window settings');
+    assert.equal(validateProductionFrontend(entry).distTreeDigest, marker.distTreeDigest);
+    fs.writeFileSync(script, 'console.log("changed code");');
+    assert.throws(() => validateProductionFrontend(entry), /dist tree digest/);
+    fs.writeFileSync(script, 'console.log("paw-os");');
+    fs.unlinkSync(path.join(assets, '.DS_Store'));
+    fs.symlinkSync(script, path.join(assets, '.DS_Store'));
+    assert.throws(() => validateProductionFrontend(entry), /contains a symlink/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a directory named like Finder metadata still binds its frontend content', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paw-finder-directory-'));
+  try {
+    fs.mkdirSync(path.join(root, '.DS_Store'));
+    fs.writeFileSync(path.join(root, '.DS_Store', 'main.js'), 'original');
+    const before = computeFrontendDistDigest(root);
+    fs.writeFileSync(path.join(root, '.DS_Store', 'main.js'), 'changed');
+    assert.notEqual(computeFrontendDistDigest(root), before);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('macOS merges native traffic lights into the one draggable PAW topbar', () => {
   assert.deepEqual(browserWindowChrome('darwin'), {
     titleBarStyle: 'hidden',
