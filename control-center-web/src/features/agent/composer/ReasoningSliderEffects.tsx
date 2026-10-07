@@ -41,6 +41,7 @@ export function ReasoningSliderEffects({ enabled, maximum, confirmedMaximum, pen
   const rootRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null), burstRef = useRef<HTMLCanvasElement>(null);
   const previousMaximum = useRef(maximum);
   const previousConfirmedMaximum = useRef(confirmedMaximum);
+  const burstShownForMax = useRef(false);
   const latest = useRef({ maximum, dragging }); latest.current = { maximum, dragging };
   const motion = useRef({ speed: 0, from: 0, target: 0, changedAt: 0, travel: 0, burst: 0, frames: 0, bursts: 0 });
   useEffect(() => {
@@ -51,9 +52,13 @@ export function ReasoningSliderEffects({ enabled, maximum, confirmedMaximum, pen
       || (confirmedMaximum && !previousConfirmedMaximum.current);
     previousMaximum.current = maximum;
     if (!pending) previousConfirmedMaximum.current = confirmedMaximum;
+    // A held preview may already have played this entry. Pending temporarily
+    // restores the formal index; it must not turn the same entry into two bursts.
+    if (!maximum && !pending && !confirmedMaximum) burstShownForMax.current = false;
     motion.current.burst = 0;
-    if (!enabled || !entered) return;
+    if (!enabled || !entered || burstShownForMax.current) return;
     const timer = window.setTimeout(() => {
+      burstShownForMax.current = true;
       motion.current.burst = performance.now();
       if (rootRef.current) rootRef.current.dataset.bursts = String(++motion.current.bursts);
     }, 220);

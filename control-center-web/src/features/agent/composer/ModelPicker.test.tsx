@@ -242,6 +242,17 @@ describe('v2 transactional reasoning slider', () => {
     update(false,'max');act(()=>vi.advanceTimersByTime(500));
     expect(document.querySelector('.agent-reasoning-effects')).toHaveAttribute('data-bursts','1');
   });
+  it('keeps one burst when a held max preview is subsequently confirmed', async () => {
+    const {view,props}=renderV2();const {slider}=await openV2();
+    const update=(pending:boolean,level:ThinkingLevel)=>view.rerender(<ChatPresentationProvider ownerKey="test:reasoning-slider-v2" defaultVersion="v2"><ModelPicker {...props} pending={pending} catalog={{...props.catalog,thinkingLevel:level}}/></ChatPresentationProvider>);
+    vi.useFakeTimers();
+    pointer(slider,'pointerdown');fireEvent.change(slider,{target:{value:'3'}});
+    act(()=>vi.advanceTimersByTime(220));
+    expect(document.querySelector('.agent-reasoning-effects')).toHaveAttribute('data-bursts','1');
+    pointer(slider,'pointerup');update(true,'high');update(true,'max');update(false,'max');
+    act(()=>vi.advanceTimersByTime(500));
+    expect(document.querySelector('.agent-reasoning-effects')).toHaveAttribute('data-bursts','1');
+  });
   it('discards pointer cancellation and Escape without changing Pi selection', async () => {
     const {onChange}=renderV2();const {slider,trigger}=await openV2();
     pointer(slider,'pointerdown');fireEvent.change(slider,{target:{value:'0'}});pointer(slider,'pointercancel');
