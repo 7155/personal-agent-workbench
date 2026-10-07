@@ -39,6 +39,7 @@ __all__ = [
     "canonical_grouped_answers",
     "grouped_questions_from_wire",
     "inspectable_tool_result",
+    "public_durable_tool_outcome",
     "last_assistant_error",
     "last_assistant_preview",
     "managed_media_content_url",
@@ -1411,6 +1412,48 @@ _TOOL_RESULT_SECRET_KEY = re.compile(
 )
 _TOOL_RESULT_MAX_NESTING = 64
 _JSON_STRING_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"', re.DOTALL)
+
+
+def public_durable_tool_outcome(
+    value: object, *, session_id: str, runtime_session_id: str,
+    turn_id: str, client_message_id: str, tool_call_id: str, tool_name: str,
+    assistant_message_id: str = "", result_message_id: str = "",
+) -> dict[str, object] | None:
+    """Project only an exact native outcome, separately from Tool output.
+
+    The native adapter owns ToolTask/GenerationTask/assistant entry joins.
+    PAW checks its bound Session and available original wire identities; it
+    never infers cancellation from result content or a turn-wide settlement.
+    Missing binding or foreign/malformed lineage leaves the result unchanged.
+    """
+    if not runtime_session_id or not turn_id or not client_message_id:
+        return None
+    try:
+        validate_contract(value, "pi-durable-tool-outcome.v1.json")
+    except ValueError:
+        return None
+    if not isinstance(value, Mapping):
+        return None
+    expected = {"sessionId": session_id, "runtimeSessionId": runtime_session_id,
+                "turnId": turn_id, "clientMessageId": client_message_id,
+                "toolCallId": tool_call_id, "toolName": tool_name}
+    if any(value.get(key) != identity for key, identity in expected.items()):
+        return None
+    if assistant_message_id and assistant_message_id != f"{value['generationTaskId']}:assistant":
+        return None
+    if result_message_id and not re.fullmatch(
+        re.escape(str(value["entryId"])) + r":[0-9]+", result_message_id
+    ):
+        return None
+    # Metadata is never a channel for arbitrary Tool output or credentials.
+    # Reject rather than mask identity and accidentally bind a different id.
+    masked = inspectable_tool_result(value)
+    if masked != value or any(
+        isinstance(item, str) and (item != item.strip() or any(ord(c) < 32 for c in item))
+        for item in value.values()
+    ):
+        return None
+    return dict(value)
 
 
 def inspectable_tool_result(value: object) -> object:

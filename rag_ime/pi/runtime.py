@@ -215,6 +215,7 @@ class _HostedSessionState:
     # is advanced by each assistant message_start and inherited by the Tool
     # events produced from that assistant message.
     source_loop_id: str = ""
+    tool_source_loops: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
     provider_request_ids: set[str] = field(default_factory=set)
     tool_blocks: AgentToolBlockBuffer = field(default_factory=AgentToolBlockBuffer)
     last_agent_messages: list[object] = field(default_factory=list)
@@ -1882,6 +1883,7 @@ class PiRuntimeHostManager:
                 state.prompt_dispatch_signal.set()
                 cancelled_before_dispatch = True
             state.stream_pi_message_id = ""
+            state.tool_source_loops.clear()
             state.provider_request_ids.clear()
             state.tool_blocks.clear()
             state.last_agent_messages = []
@@ -2820,7 +2822,8 @@ class PiRuntimeHostManager:
         ):
             raise AgentRuntimeError("durable tool evidence dispatch binding does not match")
         events = durable_tool_history_events(messages, session_id=session_id, raw_entries=entries,
-            maximum_tools=None, maximum_public_chars=None, evidence_turn_id=turn_id)
+            maximum_tools=None, maximum_public_chars=None, evidence_turn_id=turn_id,
+            runtime_session_id=(str(snapshot.get("piSessionId") or "") if snapshot.get("runtimeEngine") == "durable" else ""))
         return {"sessionId": session_id, "turnId": turn_id, "toolHistoryEvents": [
             event for event in events if event.get("eventType") in {"tool_started", "tool_finished"}]}
 
@@ -2869,6 +2872,7 @@ class PiRuntimeHostManager:
             projection_messages,
             session_id=session_id,
             raw_entries=projection_entries,
+            runtime_session_id=(str(snapshot.get("piSessionId") or "") if durable_engine else ""),
             # This is the durable transcript projection, not the bounded live
             # replay tail. Keep every historical thinking/Tool row visible;
             # each individual result is still passed through the existing
@@ -5855,8 +5859,23 @@ class PiRuntimeHostManager:
         if event_type in {"tool_execution_start", "tool_execution_update", "tool_execution_end"}:
             with self._lock:
                 state.had_tool_activity = True
+                tool_key = (turn_id, str(raw.get("toolCallId") or ""))
+                if durable_engine and event_type == "tool_execution_start":
+                    if len(state.tool_source_loops) >= 512:
+                        state.tool_source_loops.pop(next(iter(state.tool_source_loops)))
+                    state.tool_source_loops.setdefault(tool_key,
+                        (state.source_loop_id, str(raw.get("toolName") or "")))
+                original_tool = state.tool_source_loops.get(tool_key) if durable_engine else None
+            # The latest assistant loop is presentation state. Late Tool events
+            # retain the original call's generation, even after another start.
+            source_loop_id = original_tool[0] if original_tool else ("" if durable_engine else state.source_loop_id)
             mapped_type, payload = tool_event_payload(
-                raw, event_type=event_type, source_loop_id=state.source_loop_id,
+                raw, event_type=event_type, source_loop_id=source_loop_id,
+                durable_context=({
+                    "session_id": session_id,
+                    "runtime_session_id": str((self.sessions.runtime_binding(session_id) or {}).get("externalSessionId") or ""),
+                    "turn_id": turn_id, "client_message_id": client_message_id,
+                } if durable_engine and (original_tool is None or original_tool[1] == raw.get("toolName")) else None),
             )
             if event_type == "tool_execution_end" and not payload["isError"]:
                 captured = state.tool_blocks.capture(
@@ -6488,6 +6507,7 @@ class PiRuntimeHostManager:
         Admission, identity, timers, fences and path-specific flags remain with
         the caller. This helper cannot settle a turn or publish its outcome.
         """
+        state.tool_source_loops.clear()
         state.provider_request_ids.clear()
         state.tool_blocks.clear()
         state.last_agent_messages = []

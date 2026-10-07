@@ -17,6 +17,7 @@ import {
   Settings2,
   Trash2,
 } from 'lucide-react';
+import { MotionActivityBoundary } from '@/design/motion';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Virtuoso } from 'react-virtuoso';
@@ -122,7 +123,7 @@ export function KnowledgeFeature() {
   const [notesVisited, setNotesVisited] = useState(notes);
   useEffect(() => { if (notes) setNotesVisited(true); else setDocumentsVisited(true); }, [notes]);
   return <div className="knowledge-source-workspace"><nav className="knowledge-source-nav" aria-label="知识来源"><button aria-pressed={!notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.delete('space');return next;})}>资料知识库</button><button aria-pressed={notes} onClick={()=>setParams(current=>{const next=new URLSearchParams(current);next.set('space','notes');return next;})}>本地笔记</button></nav>
-    {(!notes || documentsVisited) ? <div className="knowledge-source-pane" hidden={notes}><DocumentKnowledgeFeature active={!notes} /></div> : null}
+    {(!notes || documentsVisited) ? <div className="knowledge-source-pane" hidden={notes}><MotionActivityBoundary active={!notes}><DocumentKnowledgeFeature active={!notes} /></MotionActivityBoundary></div> : null}
     {(notes || notesVisited) ? <div className="knowledge-source-pane" hidden={!notes}><VaultWorkspace active={notes} /></div> : null}
   </div>;
 }

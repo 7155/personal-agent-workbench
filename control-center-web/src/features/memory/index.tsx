@@ -35,6 +35,7 @@ import {
   TabsTrigger,
   TextArea,
 } from '@/components/primitives';
+import { MotionActivityBoundary } from '@/design/motion';
 import { useControlTransport } from '@/app/control-transport';
 import { EvidenceEchoUsage } from '@/features/evidence-echo/EvidenceEchoUsage';
 import { useProductIdentity } from '@/features/identity/product-identity';
@@ -468,7 +469,7 @@ export function MemoryFeature() {
             />
           </TabsContent>
           {(view === 'preferences' || preferencesVisited) ? <TabsContent value="preferences" forceMount hidden={view !== 'preferences'}>
-            <MemoryPreferences />
+            <MotionActivityBoundary active={view === 'preferences'}><MemoryPreferences /></MotionActivityBoundary>
           </TabsContent> : null}
         </ViewTabs>
         <MemoryEditDialog

@@ -1,5 +1,6 @@
 import type { ProjectionDiagnostic, ProjectionGap, ProjectionReduction } from './agent-reducer';
 import { approvalNeedsHumanDecision } from './approval-decision';
+import { hasAbortedDurableToolOutcome } from './durable-tool-outcome';
 import {
   MAX_COMPOSER_ATTACHMENT_BYTES,
   isComposerAttachmentMimeType,
@@ -1777,6 +1778,11 @@ function upsertActivity(
   const sourceSessionId = text(payload.sourceSessionId) || event.sourceSessionId;
   const id = roomActivityId(event, payload);
   const existing = state.activitiesById[id];
+  if (existing?.status === 'aborted'
+    && ['tool_started', 'tool_progress', 'tool_finished'].includes(sourceEventType)
+    && hasAbortedDurableToolOutcome(existing.payload, {
+      sessionId: sourceSessionId, turnId: text(payload.sourceTurnId),
+    })) return;
   const approvalId = text(payload.approvalId);
   const unresolved = !['approved', 'rejected', 'applied', 'resolved', 'cancelled'].includes(
     resolutionState,
@@ -1812,6 +1818,10 @@ function upsertActivity(
       ? 'failed'
       : automaticPolicyAuthorizationReceipt
       ? automaticPolicyAuthorizationFailed ? 'failed' : existing!.status
+      : sourceEventType === 'tool_finished' && hasAbortedDurableToolOutcome(payload, {
+          sessionId: sourceSessionId, turnId: text(payload.sourceTurnId),
+        })
+        ? 'aborted'
       : payload.isError === true || participantStatus === 'failed'
       ? 'failed'
       : participantStatus === 'retry_wait' || pendingInteraction

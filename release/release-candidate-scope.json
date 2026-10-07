@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T13:10:53.246559+00:00",
+  "generatedAt": "2026-10-07T15:25:12.655502+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 57
+      "pathCount": 64
     }
   },
   "summary": {
-    "pathCount": 2170,
+    "pathCount": 2177,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1854
+      "keep_release": 1861
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 57,
+      "paw_experience_20261007": 64,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -3265,6 +3265,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "control-center-web/src/contracts/durable-tool-outcome.ts",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/contracts/generated-validators.ts",
       "status": "modified",
       "disposition": "keep_release",
@@ -3389,6 +3396,13 @@
       "disposition": "keep_release",
       "reason": "Keep Trace contracts synchronized and public source checks independent of local documents.",
       "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/contracts/generated/pi-durable-tool-outcome.v1.ts",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/contracts/generated/space-organization-command.v1.ts",
@@ -5876,6 +5890,13 @@
       "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
     },
     {
+      "path": "control-center-web/src/features/knowledge/document-feedback.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/knowledge/document-workspace.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -6023,6 +6044,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/memory/MemoryPreferences.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/memory/MemoryProfile.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -6035,6 +6063,13 @@
       "disposition": "keep_release",
       "group": "primary_assistant_iteration",
       "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/memory/MemorySecondaryRecovery.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/memory/MemorySteward.test.tsx",
@@ -11161,6 +11196,13 @@
       "status": "modified"
     },
     {
+      "path": "rag_ime/contracts/json/pi-durable-tool-outcome.v1.json",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/contracts/json/space-organization-command.v1.json",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -14931,6 +14973,13 @@
       "group": "durable_desktop_iteration",
       "reason": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
       "disposition": "keep_release",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_pi_durable_tool_outcome.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
       "status": "added"
     },
     {

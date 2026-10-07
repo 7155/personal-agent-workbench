@@ -1985,10 +1985,15 @@ describe('MemoryFeature preferences', () => {
     const toggle = await screen.findByRole('switch', { name: '启用记忆增强' });
     await waitFor(() => expect(toggle).toBeEnabled());
     await user.click(toggle);
+    const feedback = document.querySelector('.memory-preferences__persistence')!;
+    expect(feedback).toHaveAttribute('data-motion-active', 'true');
     await user.click(screen.getByRole('tab', { name: '记忆' }));
+    expect(feedback).toHaveAttribute('data-motion-active', 'false');
     await user.click(screen.getByRole('tab', { name: '记忆偏好' }));
     expect(screen.getByRole('switch', { name: '启用记忆增强' })).toBe(toggle);
     expect(toggle).toBeChecked();
+    expect(document.querySelector('.memory-preferences__persistence')).toBe(feedback);
+    expect(feedback).toHaveAttribute('data-motion-active', 'true');
     expect(screen.getByRole('button', { name: '保存记忆偏好' })).toBeEnabled();
     expect(transport.requests.some(({ request }) => request.pathId === 'configuration.settings.apply')).toBe(false);
   });

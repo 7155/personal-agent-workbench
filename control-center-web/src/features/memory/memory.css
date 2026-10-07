@@ -1746,7 +1746,9 @@
 }
 
 .memory-preferences__persistence i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-success); }
-.memory-preferences__persistence[data-state='pending'] i { background: var(--memory-gold); animation: memory-preference-pending 1.5s ease-in-out infinite; }
+.memory-preferences__persistence[data-state='pending'] i { background: var(--memory-gold); }
+/* Unsaved/error waiting is static. Only a real request earns busy feedback. */
+.memory-preferences__persistence[data-state='pending'][data-busy='true'][data-motion-active='true'] i { animation: memory-preference-pending 1.5s ease-in-out infinite; }
 .memory-preferences__persistence[data-state='read-only'] i { background: var(--color-text-tertiary); }
 
 .memory-preferences__recall-policy {

@@ -71,6 +71,18 @@ describe('document knowledge library', () => {
     expect(root).toHaveValue('/work/public-notes');
   });
 
+  it('keeps retained document feedback inactive while browsing the note source', async () => {
+    const user = userEvent.setup();renderKnowledge(createTransport());
+    await screen.findByLabelText('runtime.pdf 处理与详情');
+    const pipeline = document.querySelector('.knowledge-pipeline')!;
+    expect(pipeline).toHaveAttribute('data-motion-active', 'true');
+    await user.click(screen.getByRole('button', { name: '本地笔记' }));
+    expect(pipeline).toHaveAttribute('data-motion-active', 'false');
+    await user.click(screen.getByRole('button', { name: '资料知识库' }));
+    expect(document.querySelector('.knowledge-pipeline')).toBe(pipeline);
+    expect(pipeline).toHaveAttribute('data-status', 'failed');
+  });
+
   it('offers the paper profile and shows source geometry reported by the parser', async () => {
     const user = userEvent.setup();
     const transport = createTransport({ structuredSource: true });

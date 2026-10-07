@@ -23,6 +23,7 @@ import ReactMarkdown from 'react-markdown';
 import { Virtuoso } from 'react-virtuoso';
 import remarkGfm from 'remark-gfm';
 import { Button, Disclosure, EmptyState, IconButton, Input, Select, Skeleton, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/primitives';
+import { useMotionActivity } from '@/design/motion';
 import { EvidenceEchoUsage } from '@/features/evidence-echo/EvidenceEchoUsage';
 import { InlineNotice, StatusBadge, publicErrorText } from '@/features/overview/management-ui';
 import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
@@ -313,6 +314,7 @@ function DocumentPipeline({
   onReparse: (document: KnowledgeDocument, trigger: HTMLElement) => void;
   reparsePending: boolean;
 }) {
+  const motionActive = useMotionActivity();
   const stages = pipelineStages(document);
   const activeStage = stages.find((stage) => stage.state === 'active');
   const progressPercent = activeStage && document.progress > 0 && document.progress < 1
@@ -320,7 +322,7 @@ function DocumentPipeline({
     : null;
   const recoverable = document.status === 'failed' || document.status === 'stale';
   return (
-    <div className="knowledge-pipeline" data-status={document.status}>
+    <div className="knowledge-pipeline" data-status={document.status} data-motion-active={motionActive}>
       <ol aria-label={`${document.name} 处理流水线`} className="knowledge-pipeline__stages">
         {stages.map((stage, index) => (
           <li aria-current={stage.state === 'active' ? 'step' : undefined} data-state={stage.state} key={stage.id}>
