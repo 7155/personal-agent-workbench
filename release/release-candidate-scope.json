@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T19:16:34.017947+00:00",
+  "generatedAt": "2026-10-07T20:37:14.314126+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 78
+      "pathCount": 81
     }
   },
   "summary": {
-    "pathCount": 2191,
+    "pathCount": 2194,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1875
+      "keep_release": 1878
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 78,
+      "paw_experience_20261007": 81,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -3503,6 +3503,13 @@
       "reason": "Regression checks for the included product changes."
     },
     {
+      "path": "control-center-web/src/design/motion-provider.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Verify existing motion preferences propagate to same-origin surfaces while preserving OS accessibility, focus, drafts and task activity boundaries.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/design/motion.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -6203,6 +6210,13 @@
       "group": "scheduled_tasks",
       "reason": "Unify Agent, Eval and Memory schedule management through their existing execution owners.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/observability/observability-feature.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/observability/observability.css",
@@ -14231,6 +14245,13 @@
       "disposition": "keep_release",
       "group": "paw_experience_20261007",
       "reason": "Exact original-turn result reading, native Durable message reconciliation and associated regression checks; preserve existing execution owners, permissions and data.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_coordinator_room_result.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Verify exact original Room public results and retained Root references through a fixed read watermark without executing, settling or replaying work.",
       "status": "added"
     },
     {

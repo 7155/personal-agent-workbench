@@ -332,46 +332,107 @@ def insert_binding(conn: sqlite3.Connection, target_id: str, kind: str, binding:
 
 
 def _room_result(ports: CoordinatorPorts, room_id: str, turn_id: str) -> dict[str, object]:
-    # These are original public event receipts, not the Room's latest snapshot.
-    # A participant terminal proves only that participant's execution ended.
-    events = ports.rooms.list_events_for_turn(room_id, turn_id, limit=100)
-    terminals = []
-    messages = []
+    # Original control anchors have their own retained-command fallback. Stream
+    # activity and a bounded display tail must not hide a late Root terminal.
+    # Capture once: later messages/terminals belong to the next result read,
+    # rather than extending this GET indefinitely as a live stream grows.
+    through_sequence = int(ports.rooms.get(room_id)["lastEventSequence"])
+    controls = ports.rooms.control_events_for_turn(room_id, turn_id, through_sequence=through_sequence)
     acceptance = None
-    for event in events:
-        reference = {key: event.get(key) for key in
-                     ("eventId", "sequence", "eventType", "turnId", "participantId", "sourceSessionId", "createdAtMs")}
+    terminals = []
+    root_status = ""
+    root_terminal = None
+    for event in controls:
         payload = event.get("payload")
         payload = payload if isinstance(payload, Mapping) else {}
+        data = payload.get("data")
+        data = data if isinstance(data, Mapping) else payload
+        reference = _room_result_reference(event, payload, data)
         if event.get("eventType") == "user_message" and acceptance is None:
             acceptance = reference
         if event.get("eventType") in {"turn_completed", "turn_failed"}:
-            terminals.append({**reference, "status": str(payload.get("status") or "")[:80]})
-        if event.get("eventType") in {"participant_message", "room_post"}:
-            message = payload.get("message")
+            status = str(data.get("status") or "")[:80]
+            terminals.append({**reference, "status": status})
+            # Jev's existing publish_final emits a nonparticipant Root terminal
+            # with its original finalizationId. Participant/child completion,
+            # event names and cancellation ACKs grant no overall completion.
+            if (not event.get("participantId") and not event.get("sourceSessionId")
+                and payload.get("rootId") == turn_id
+                and isinstance(payload.get("finalizationId"), str) and payload["finalizationId"]):
+                root_status = status
+                root_terminal = terminals[-1]
+
+    selected: list[dict[str, object]] = []
+    message_count = 0
+    root_message = None
+    cursor = 0
+    while True:
+        page = ports.rooms.list_events_for_turn(room_id, turn_id,
+            event_types=("participant_message", "room_post"), after_sequence=cursor,
+            through_sequence=through_sequence, limit=100)
+        for event in page:
+            payload = event.get("payload")
+            payload = payload if isinstance(payload, Mapping) else {}
+            data = payload.get("data")
+            data = data if isinstance(data, Mapping) else payload
+            message = data.get("message")
             message = message if isinstance(message, Mapping) else {}
             if message.get("role") and message.get("role") != "assistant":
                 continue
-            text = str(payload.get("text") or message.get("text") or "")
+            post = data.get("post")
+            post = post if isinstance(post, Mapping) else {}
+            if post and (post.get("rootId") != turn_id or post.get("roomId") != room_id):
+                continue
+            text = str(post.get("content") or data.get("text") or message.get("text") or "")
             if not text:
-                text = "\n".join(str(data.get("text") or data.get("markdown") or data.get("code") or "")
-                                 for block in message.get("blocks", []) if isinstance(block, Mapping)
-                                 and block.get("type") in {"text", "code"}
-                                 for data in [block.get("data")] if isinstance(data, Mapping))
+                text = "\n".join(str(block_data.get("text") or block_data.get("markdown") or block_data.get("code") or "")
+                    for block in message.get("blocks", []) if isinstance(block, Mapping)
+                    and block.get("type") in {"text", "code"}
+                    for block_data in [block.get("data")] if isinstance(block_data, Mapping))
             if text:
-                messages.append({**reference, "messageId": str(message.get("id") or ""),
-                                 "text": text[:8000], "truncated": len(text) > 8000})
+                message_count += 1
+                selected.append({**_room_result_reference(event, payload, data),
+                    "messageId": str(post.get("postId") or message.get("id") or "")[:240],
+                    "text": text[:8000], "truncated": len(text) > 8000})
+                if root_terminal is not None and post.get("postId") == root_terminal.get("finalizationId"):
+                    root_message = selected[-1]
+                selected = selected[-8:]
+        if len(page) < 100:
+            break
+        cursor = int(page[-1]["sequence"])
+
+    if root_message is not None and root_message not in selected:
+        selected = [root_message, *selected[-7:]]
+    # The existing explicit Root report has first claim on the text budget;
+    # late partner chatter must not erase that original final report.
+    budget_order = ([root_message] if root_message is not None else []) + [
+        message for message in reversed(selected) if message is not root_message]
     remaining = 8000
-    selected = messages[-8:]
-    for message in reversed(selected):
+    for message in budget_order:
         text = str(message["text"])
         message["text"] = text[:remaining]
         message["truncated"] = bool(message["truncated"]) or len(text) > remaining
         remaining -= len(str(message["text"]))
+    retained_terminals = terminals[-16:]
+    if root_terminal is not None and root_terminal not in retained_terminals:
+        retained_terminals = [root_terminal, *terminals[-15:]]
+    state = root_status if root_status in {"completed", "failed", "aborted", "cancelled"} else "unknown"
     return {"execution": {"roomId": room_id, "roomTurnId": turn_id},
-            "state": "unknown", "reason": "room_root_settlement_not_projected" if events else "original_turn_evidence_unavailable",
-            "acceptanceRef": acceptance, "terminalRefs": terminals[:16], "finalMessages": selected, "artifacts": [],
-            "truncated": len(events) == 100 or len(terminals) > 16 or len(messages) > 8 or any(message["truncated"] for message in selected)}
+            "state": state, "reason": "" if state != "unknown" else
+                "room_root_settlement_not_projected" if controls or message_count else "original_turn_evidence_unavailable",
+            "acceptanceRef": acceptance, "terminalRefs": retained_terminals, "finalMessages": selected, "artifacts": [],
+            "truncated": len(terminals) > 16 or message_count > 8 or any(message["truncated"] for message in selected)}
+
+
+def _room_result_reference(event: Mapping[str, object], payload: Mapping[str, object],
+                           data: Mapping[str, object]) -> dict[str, object]:
+    reference = {key: event.get(key) for key in
+                 ("eventId", "sequence", "eventType", "turnId", "participantId", "sourceSessionId", "createdAtMs")}
+    for key in ("sourceEventId", "sourceEventType", "sourceTurnId", "dispatchId", "finalizationId"):
+        value = payload.get(key) or data.get(key)
+        if isinstance(value, str) and value:
+            reference[key] = value[:240]
+    return reference
 
 
 def require_binding_source(conn: sqlite3.Connection, binding: Mapping[str, object]) -> None:

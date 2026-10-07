@@ -56,9 +56,9 @@
 .trace-app__library-list p { margin: 8px 0; color: var(--color-text-secondary); font-size: 14px; overflow-wrap: anywhere; }
 .trace-app__library-list span { color: var(--color-text-secondary); font-size: 13px; }
 .trace-app__pattern-detail { padding-top: 24px; border-top: 1px solid var(--color-border); }
-.trace-app__pattern-detail header { margin-bottom: 24px; }
-.trace-app__pattern-detail h2 { margin: 0 0 8px; font-size: 21px; }
-.trace-app__pattern-detail header > span { color: var(--color-text-secondary); font-size: 13px; }
+.trace-app__pattern-detail header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.trace-app__pattern-detail h2 { overflow-wrap: anywhere; margin: 0 0 8px; font-size: 21px; }
+.trace-app__pattern-detail header > div > span { color: var(--color-text-secondary); font-size: 13px; }
 .trace-app__pattern-content > section { margin-bottom: 24px; }
 .trace-app__pattern-content h3 { margin: 0 0 12px; font-size: 17px; }
 .trace-app__pattern-content p { margin: 0 0 8px; overflow-wrap: anywhere; }

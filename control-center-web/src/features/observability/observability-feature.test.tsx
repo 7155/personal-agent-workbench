@@ -998,12 +998,20 @@ describe('ObservabilityFeature', () => {
     expect(disclosure).toHaveAttribute('aria-expanded', 'true');
     expect(reveal).toHaveAttribute('aria-hidden', 'false');
     expect(reveal).not.toHaveAttribute('inert');
+    const originalFact = within(reveal).getByText('压缩次数').parentElement?.textContent;
+    expect(originalFact).toContain('1');
     disclosure.focus();
     await user.keyboard('{Enter}');
     expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     expect(reveal).toHaveAttribute('aria-hidden', 'true');
     expect(reveal).toHaveAttribute('inert');
-    expect(reveal).toHaveTextContent('压缩次数');
+    expect(within(reveal).queryByRole('term')).toBeNull();
+    expect(reveal).not.toHaveTextContent('压缩次数');
+    await user.keyboard('{Enter}');
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(reveal).not.toHaveAttribute('inert');
+    const reopenedFact = await within(reveal).findByText('压缩次数');
+    expect(reopenedFact.parentElement?.textContent).toBe(originalFact);
   });
 });
 
