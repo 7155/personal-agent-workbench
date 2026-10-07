@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T18:02:00.306934+00:00",
+  "generatedAt": "2026-10-07T18:19:31.416230+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 70
+      "pathCount": 73
     }
   },
   "summary": {
-    "pathCount": 2183,
+    "pathCount": 2186,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1867
+      "keep_release": 1870
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 70,
+      "paw_experience_20261007": 73,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -10188,6 +10188,13 @@
       "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
+      "path": "rag_ime/agent_coordinator_delivery.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/agent_coordinator_work.py",
       "group": "paw_experience_20261007",
       "disposition": "keep_release",
@@ -11501,6 +11508,13 @@
       "group": "paw_experience_20261007",
       "disposition": "keep_release",
       "reason": "Persist exact owned StarMate command and original result references through passive recovery without a second execution or inbox owner; contract Issue142.",
+      "status": "added"
+    },
+    {
+      "path": "rag_ime/db/migrations/0224_agent_coordinator_result_deliveries.sql",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
       "status": "added"
     },
     {
@@ -13413,6 +13427,13 @@
       "disposition": "keep_release",
       "group": "paw_experience_20261007",
       "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "tests/test_agent_coordinator_delivery.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
     },
     {
       "path": "tests/test_agent_coordinator_work.py",

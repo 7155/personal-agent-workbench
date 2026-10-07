@@ -2033,6 +2033,7 @@ class AgentSessionStore:
         message_count: int | None = None,
         last_message_preview: str | None = None,
         updated_at_ms: int | None = None,
+        _preserve_archived: bool = False,
     ) -> dict[str, object]:
         if status not in {"idle", "active", "busy", "faulted", "archived"}:
             raise ValueError(f"unsupported agent session status: {status}")
@@ -2044,7 +2045,13 @@ class AgentSessionStore:
         if last_message_preview is not None:
             assignments.append("last_message_preview = ?")
             values.append(" ".join(last_message_preview.split())[:240])
-        self._update(session_id, ", ".join(assignments), tuple(values))
+        if _preserve_archived:
+            # Internal resident-notice projections must not undo a lifecycle
+            # archive that committed after native admission. Default unchanged.
+            with self._connect() as conn:
+                conn.execute(f"UPDATE agent_sessions SET {', '.join(assignments)} WHERE id=? AND status<>'archived'", (*values, session_id))
+        else:
+            self._update(session_id, ", ".join(assignments), tuple(values))
         return self.get(session_id)
 
     def max_event_sequence(self, session_id: str) -> int:

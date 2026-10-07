@@ -203,6 +203,7 @@ class _HostedSessionState:
     client_message_id: str = ""
     prompt_admission_in_flight: bool = False
     admission_client_message_id: str = ""
+    admission_preserve_archived: bool = False
     abort_pending_admission: bool = False
     admission_abort_dispatched: bool = False
     prompt_dispatched: bool = False
@@ -487,6 +488,16 @@ class PiRuntimeHostManager:
                 "lastKillReceipt": latest_kill_receipt,
             },
         }
+
+    def is_resident_idle(self, session_id: str) -> bool:
+        """Observe eligibility without starting, querying or recovering a Host."""
+        with self._lock:
+            state = self._states.get(session_id)
+            return bool(self._client is not None and self._client.running
+                and session_id in self._open_sessions and state is not None
+                and not (state.turn_id or state.compaction_target or state.recoverable
+                         or state.prompt_admission_in_flight or state.abort_pending_admission
+                         or state.abort_requested_turn_id))
 
     def is_turn_active(self, session_id: str, turn_id: str, *, client_message_id: str) -> bool:
         """Observe this Host's exact live turn without opening or querying Pi.
@@ -1308,9 +1319,11 @@ class PiRuntimeHostManager:
             if active or target:
                 self._status = "busy"
                 self._cancel_idle_locked()
-                self.sessions.set_status(session_id, "busy")
+                self.sessions.set_status(session_id, "busy", **(
+                    {"_preserve_archived": True} if state.admission_preserve_archived else {}))
             elif not state.turn_id and not state.prompt_admission_in_flight and snapshot.get("isIdle") is True:
-                self.sessions.set_status(session_id, "idle")
+                self.sessions.set_status(session_id, "idle", **(
+                    {"_preserve_archived": True} if state.admission_preserve_archived else {}))
                 if not any(item.turn_id or item.compaction_target or item.prompt_admission_in_flight
                            for item in self._states.values()):
                     self._status = "ready"
@@ -1544,6 +1557,7 @@ class PiRuntimeHostManager:
         session_id: str,
         *,
         client_message_id: str = "",
+        _resident_only: bool = False,
     ) -> dict[str, object]:
         """Fence Stop before prompt preparation reaches the Pi Host.
 
@@ -1556,6 +1570,8 @@ class PiRuntimeHostManager:
         normalized_client_message_id = str(client_message_id).strip()
         runtime_engine = "durable" if self.sessions.get(session_id).get("runtimeEngine") == "durable" else "classic"
         with self.gateway_dispatch_fence(), self._lock:
+            if _resident_only and not self.is_resident_idle(session_id):
+                raise PiRuntimeTurnConflict("Automatic result delivery requires an already resident idle Source")
             state = self._states.setdefault(
                 session_id,
                 _HostedSessionState(),
@@ -1575,6 +1591,7 @@ class PiRuntimeHostManager:
                 )
             if not same_reservation:
                 state.prompt_admission_in_flight = True
+                state.admission_preserve_archived = _resident_only
                 state.admission_client_message_id = (
                     normalized_client_message_id
                 )
@@ -1583,7 +1600,13 @@ class PiRuntimeHostManager:
                 state.prompt_dispatched = False
                 state.prompt_dispatch_signal.clear()
             self._cancel_idle_locked()
-            self.sessions.set_status(session_id, "busy")
+            projection = self.sessions.set_status(session_id, "busy", **(
+                {"_preserve_archived": True} if state.admission_preserve_archived else {}))
+            if state.admission_preserve_archived and projection.get("status") == "archived":
+                state.prompt_admission_in_flight = False
+                state.admission_client_message_id = ""
+                state.prompt_dispatch_signal.set()
+                raise PiRuntimeTurnConflict("Automatic result Source is archived")
         return {
             "reserved": True,
             "reused": same_reservation,
@@ -1639,7 +1662,8 @@ class PiRuntimeHostManager:
             # Persist under the same identity fence. If persistence fails the
             # exact reservation remains retryable; an old release must not mark
             # a newly reserved or already dispatched Session idle.
-            self.sessions.set_status(session_id, "busy" if state.compaction_target else "idle")
+            self.sessions.set_status(session_id, "busy" if state.compaction_target else "idle", **(
+                {"_preserve_archived": True} if state.admission_preserve_archived else {}))
             state.prompt_admission_in_flight = False
             state.admission_client_message_id = ""
             state.abort_pending_admission = False
@@ -1732,6 +1756,8 @@ class PiRuntimeHostManager:
         images: list[Mapping[str, str]] | None = None,
         client_message_id: str = "",
         delivery: str = "prompt",
+        _resident_only: bool = False,
+        _before_native_write: Callable[[], None] | None = None,
     ) -> dict[str, object]:
         if self._is_durable(session_id) and not str(client_message_id).strip():
             raise ValueError("Durable prompt requires a client message identity")
@@ -1843,6 +1869,8 @@ class PiRuntimeHostManager:
         with self._lock:
             resident = session_id in self._open_sessions
         if not resident:
+            if _resident_only:
+                raise PiRuntimeTurnConflict("Automatic result delivery cannot open a cold Source")
             self.ensure(session_id)
         client = self._require_client()
         normalized_client_message_id = str(client_message_id).strip()
@@ -1866,6 +1894,7 @@ class PiRuntimeHostManager:
                 )
             self._cancel_idle_locked()
             if not pre_reserved:
+                state.admission_preserve_archived = _resident_only
                 state.prompt_admission_in_flight = True
                 state.admission_client_message_id = (
                     normalized_client_message_id
@@ -1899,6 +1928,7 @@ class PiRuntimeHostManager:
                 session_id,
                 "idle",
                 last_message_preview="已停止。",
+                **({"_preserve_archived": True} if _resident_only else {}),
             )
             raise PiRuntimeCommandRejected(
                 "当前消息已停止，未发送给 Pi",
@@ -1911,6 +1941,7 @@ class PiRuntimeHostManager:
             session_id,
             "busy",
             last_message_preview=public_prompt_preview,
+            **({"_preserve_archived": True} if _resident_only else {}),
         )
         dispatch_attempted = False
 
@@ -1919,6 +1950,8 @@ class PiRuntimeHostManager:
             self._mark_prompt_dispatched(
                 session_id,
                 normalized_client_message_id,
+                **({"_resident_client": client} if _resident_only else {}),
+                **({"_before_native_write": _before_native_write} if _before_native_write is not None else {}),
             )
             # This callback runs under the Host client's write lock immediately
             # before its JSONL write.  Once it returns, a missing response is an
@@ -1956,7 +1989,7 @@ class PiRuntimeHostManager:
                     and state.admission_client_message_id == normalized_client_message_id):
                     self.sessions.set_status(session_id, "busy" if state.compaction_target else "idle", **(
                         {"last_message_preview": "已停止。"} if isinstance(exc, PiRuntimeCommandRejected)
-                        and exc.host_error_code == "PROMPT_ADMISSION_CANCELLED" else {}))
+                        and exc.host_error_code == "PROMPT_ADMISSION_CANCELLED" else {}), **({"_preserve_archived": True} if _resident_only else {}))
                     state.prompt_admission_in_flight = False
                     state.admission_client_message_id = ""
                     state.abort_pending_admission = False
@@ -2015,6 +2048,7 @@ class PiRuntimeHostManager:
             )
             already_aborting = state.abort_requested_turn_id == turn_id
             project_accepted = not already_retired and not newer_owner
+            project_status = project_accepted
             if project_accepted:
                 state.turn_id = turn_id
                 state.client_message_id = normalized_client_message_id
@@ -2032,13 +2066,16 @@ class PiRuntimeHostManager:
                         admission_fence_error = exc
                 self._status = "busy"
                 try:
-                    self.sessions.set_status(session_id, "busy", last_message_preview=public_prompt_preview)
+                    projection = self.sessions.set_status(session_id, "busy", last_message_preview=public_prompt_preview,
+                        **({"_preserve_archived": True} if _resident_only else {}))
+                    if _resident_only and projection.get("status") == "archived":
+                        project_status = False
                 except Exception as exc:
                     if not abort_after_admission:
                         raise
                     admission_fence_error = admission_fence_error or exc
         if project_accepted:
-            if not already_aborting and not abort_after_admission:
+            if project_status and not already_aborting and not abort_after_admission:
                 self.events.publish(
                     session_id,
                     "status_changed",
@@ -4619,6 +4656,8 @@ class PiRuntimeHostManager:
         self,
         session_id: str,
         admission_client_message_id: str,
+        *, _resident_client: PiRuntimeHostClient | None = None,
+        _before_native_write: Callable[[], None] | None = None,
     ) -> None:
         """Atomically fence Stop against the Host JSONL hand-off.
 
@@ -4629,6 +4668,10 @@ class PiRuntimeHostManager:
         ``prompt_dispatched`` and follows Pi's native abort path.
         """
         with self.gateway_dispatch_fence(), self._lock:
+            if _resident_client is not None and (self._client is not _resident_client
+                or not _resident_client.running or session_id not in self._open_sessions):
+                raise PiRuntimeCommandRejected("Automatic result Source is no longer resident",
+                                               host_error_code="SOURCE_NOT_RESIDENT")
             state = self._states.setdefault(session_id, _HostedSessionState())
             if (
                 state.turn_id or not state.prompt_admission_in_flight
@@ -4639,6 +4682,8 @@ class PiRuntimeHostManager:
                     "当前消息已停止，未发送给 Pi",
                     host_error_code="PROMPT_ADMISSION_CANCELLED",
                 )
+            if _before_native_write is not None:
+                _before_native_write()
             state.prompt_dispatched = True
             state.prompt_dispatch_signal.set()
 
@@ -6101,6 +6146,7 @@ class PiRuntimeHostManager:
                             session_id,
                             "idle",
                             last_message_preview="已停止。",
+                            **({"_preserve_archived": True} if state.admission_preserve_archived else {}),
                         )
                     else:
                         self.sessions.set_status(
@@ -6108,6 +6154,7 @@ class PiRuntimeHostManager:
                             "idle",
                             **({"message_count": public_message_count} if not durable_engine else {}),
                             last_message_preview=last_assistant_preview(messages),
+                            **({"_preserve_archived": True} if state.admission_preserve_archived else {}),
                         )
                     state.turn_id = ""
                     state.client_message_id = ""
@@ -6553,6 +6600,7 @@ class PiRuntimeHostManager:
                 session_id,
                 "idle" if aborted else "faulted",
                 last_message_preview="已停止。" if aborted else message,
+                **({"_preserve_archived": True} if state.admission_preserve_archived else {}),
             )
             state.turn_id = ""
             state.client_message_id = ""

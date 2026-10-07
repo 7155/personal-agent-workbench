@@ -63,6 +63,7 @@ from .agent_command_receipts import (
 from .agent_events import AgentEventHub
 from .agent_event_projection import AgentEventProjectionService
 from .agent_coordinator_work import AgentCoordinatorWork
+from .agent_coordinator_delivery import AgentCoordinatorDelivery
 from .agent_block_store import AgentBlockStore
 from .agent_coordinator import CoordinatorPorts, coordinator_command, coordinator_identity, ensure_coordinator
 from .agent_delegation import AgentDelegationCoordinator
@@ -123,7 +124,7 @@ from .agent_runtime_driver import (
 )
 from rag_ime.rooms.store import AgentRoomEventHub, AgentRoomNotFound
 from .agent_roles import PersonaManifest
-from .agent_sessions import AgentSessionStore
+from .agent_sessions import AgentGoalExecutionBlocked, AgentSessionNotFound, AgentSessionStore
 from .agent_wake_scheduler import AgentWakeScheduleStore, AgentWakeScheduler
 from .agent_wake_application import AgentWakeApplicationService
 from .contracts.json_schema import validate_contract
@@ -891,6 +892,10 @@ class AgentService:
                     command_scope="session_prompt", scope_id=target, client_message_id=client)
                 or self.sessions.prompt_acceptance_evidence(target, client)),
         )
+        self.coordinator_delivery = AgentCoordinatorDelivery(
+            sessions=self.sessions, receipts=self.command_receipts, context=self.context_runtime,
+            eligible=self._coordinator_delivery_eligible, submit=self._deliver_coordinator_result,
+        )
         if self._startup_recovery_enabled and not defer_startup_recovery:
             self.run_startup_recovery()
 
@@ -1054,7 +1059,9 @@ class AgentService:
         count = application.tick() if application is not None else 0
         work = getattr(self, "coordinator_work", None)
         harvested = work.reconcile_once(limit=20) if work is not None else 0
-        return count + harvested + self._run_eval_schedules_once(now_ms)
+        delivery = getattr(self, "coordinator_delivery", None)
+        notified = delivery.reconcile_once() if delivery is not None else 0
+        return count + harvested + notified + self._run_eval_schedules_once(now_ms)
 
     def jev_workspace(self, room_id: str, graph_id: str = "") -> dict[str, object]:
         return self.jev_application.projection(room_id, graph_id)
@@ -4325,6 +4332,37 @@ class AgentService:
         return self.prompt_application.deep_search_session(
             runtime
         )
+
+    def _coordinator_delivery_eligible(self, session_id: str) -> bool:
+        try:
+            session = self.sessions.get(session_id)
+            self.sessions.require_goal_execution(session_id)
+        except (AgentGoalExecutionBlocked, AgentSessionNotFound):
+            return False
+        observe = getattr(self.runtime, "is_resident_idle", None)
+        return bool(session.get("status") == "idle" and not session.get("evaluationSnapshot")
+                    and callable(observe) and observe(session_id)
+                    and not self.room_turns.session_turn_active(session_id))
+
+    def _deliver_coordinator_result(self, *, source_id: str, client: str, item_id: str,
+                                   message: str, on_prepared: Callable[[Mapping[str, object]], None],
+                                   before_native_write: Callable[[], None]) -> Mapping[str, object]:
+        # The existing mode/priority claim encloses admission before command
+        # creation. The existing application owns the same receipt and Stop.
+        with self._direct_agent_entry(source_id):
+            reserve = getattr(self.runtime, "reserve_prompt_admission")
+            release = getattr(self.runtime, "release_prompt_admission")
+            reserve(source_id, client_message_id=client, _resident_only=True)
+            try:
+                return self.prompt_application.prompt(source_id, {
+                    "message": message, "clientMessageId": client,
+                    "_contextSource": "coordinator_result", "_contextSourceToken": self._context_source_token,
+                }, _dispatch_checkpoint=lambda **kwargs: self.prompt_application.prompt_with_checkpoint(
+                    **kwargs, on_prepared=on_prepared, resident_only=True, coordinator_result_item_id=item_id,
+                    before_native_write=before_native_write))
+            finally:
+                # Runtime refuses release for a dispatched unknown/active turn.
+                release(source_id, client_message_id=client)
 
     def _prompt_with_checkpoint(
         self,
