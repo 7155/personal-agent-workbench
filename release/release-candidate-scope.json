@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T20:37:14.314126+00:00",
+  "generatedAt": "2026-10-07T21:07:06.223560+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 81
+      "pathCount": 82
     }
   },
   "summary": {
-    "pathCount": 2194,
+    "pathCount": 2195,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1878
+      "keep_release": 1879
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 81,
+      "paw_experience_20261007": 82,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -15113,6 +15113,13 @@
       "disposition": "keep_release",
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_pi_memory_preview_consumer.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
       "status": "added"
     },
     {
