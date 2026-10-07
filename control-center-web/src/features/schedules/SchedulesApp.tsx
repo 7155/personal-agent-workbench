@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Bot, Brain, CalendarClock, ChevronRight, FlaskConical, Layers, RefreshCw, Search } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import { useMotionActivity } from '@/design/motion';
 import { Button, EmptyState, IconButton, Input, Select } from '@/components/primitives';
 import { useEvalSchedules } from '@/features/observability/api';
 import { AgentWakeSchedules } from '@/features/planning/AgentWakeSchedules';
@@ -18,6 +19,7 @@ const emptyTasks: readonly Record<string, unknown>[] = [];
 
 export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
   const transport = useControlTransport();
+  const motionActive = useMotionActivity();
   const appActive = usePawOsAppActive() ?? true;
   const [group, setGroup] = useState<ScheduleGroup | 'all'>(() => initialRoute.includes('view=agent') ? 'agent' : 'all');
   const [visitedGroups, setVisitedGroups] = useState<string[]>([]);
@@ -32,11 +34,11 @@ export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
   const rows = [...agentScheduleRows(agent.data), ...evalScheduleRows(evaluation.data), ...memoryScheduleRows(memory.settings.data, memory.status.data)];
   const visible = rows.filter((item) => (statusFilter === 'all' || item.status === statusFilter) && `${item.title} ${item.detail} ${scheduleGroupLabels[item.group]}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
     .sort((a, b) => (a.nextAt || Number.MAX_SAFE_INTEGER) - (b.nextAt || Number.MAX_SAFE_INTEGER));
-  const sources = [ { title: 'Agent 安排', query: agent }, { title: '周期评测', query: evaluation }, { title: '后台维护设置', query: memory.settings } ];
+  const sources = [ { title: 'Agent 安排', query: agent }, { title: '周期评测', query: evaluation }, { title: '后台维护设置', query: memory.settings }, { title: '后台维护记录', query: memory.status } ];
   const pending = sources.some((source) => source.query.isPending);
   const refreshing = sources.some((source) => source.query.isFetching);
   function selectGroup(value: ScheduleGroup | 'all') { setGroup(value); setSelectedId(''); setSearch(''); setStatusFilter('all'); }
-  return <div className="schedule-app" data-app-id="schedules">
+  return <div className="schedule-app" data-motion-active={motionActive} data-app-id="schedules">
     <header className="schedule-app__header"><span className="schedule-app__identity"><CalendarClock size={23} /><span><h1>定时任务</h1><p>把需要惦记的事，交给下一次执行。</p></span></span><IconButton label="刷新所有任务" icon={<RefreshCw size={17} className={refreshing ? 'ui-spin' : ''} />} disabled={refreshing} onClick={() => { void agent.refetch(); void evaluation.refetch(); void memory.settings.refetch(); void memory.status.refetch(); }} tooltip /></header>
     <nav className="schedule-app__nav" aria-label="任务类型">{groups.map((item) => <button key={item.id} aria-pressed={group === item.id} onClick={() => selectGroup(item.id)} type="button"><item.icon size={16} /><span>{item.label}</span><small>{pending ? '·' : item.id === 'all' ? rows.length : rows.filter((row) => row.group === item.id).length}</small></button>)}</nav>
     {group === 'all' || group === 'agent' ? <div className="schedule-app__filters"><label><Search size={16} /><Input aria-label="搜索定时任务" placeholder="搜索任务、PR 或关注点" value={search} onChange={(event) => setSearch(event.target.value)} /></label><Select aria-label="任务状态" value={statusFilter} onValueChange={setStatusFilter} options={[{ value: 'all', label: '所有状态' }, ...Object.entries(scheduleStatusLabels).map(([value, label]) => ({ value, label }))]} /></div> : null}

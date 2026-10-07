@@ -162,3 +162,7 @@
 @media (prefers-reduced-motion: reduce) {
   .paw-notification-center { transition: none; }
 }
+
+/* Portals retain the shared motion owner; quiet presentation leaves the
+   original open/inert/focus and notice state unchanged. */
+.paw-notification-center[data-motion-active='false'] { transition: none; }

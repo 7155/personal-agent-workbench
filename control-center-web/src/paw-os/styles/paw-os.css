@@ -529,8 +529,20 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    the menu flipped open upward at the bottom edge) — the reference OS's
    120ms context-menu beat, kept on transform + opacity only. */
 .paw-context-menu {
-  position: fixed; z-index: 220; width: 220px;
+  position: fixed; z-index: 220;
+  width: min(220px, calc(100vw - 16px));
+  max-height: max(0px, calc(100dvh - 56px));
+  overflow: auto;
+  overscroll-behavior: contain;
   transform-origin: var(--paw-menu-origin, 0 0);
+}
+
+.paw-context-menu strong { min-width: 0; overflow-wrap: anywhere; }
+.paw-context-menu[data-motion-active='false'] {
+  opacity: 1;
+  transform: none;
+  transition-property: none;
+  animation: none;
 }
 
 /* The layer fills the menu-below desktop plane so maximized and collaboration

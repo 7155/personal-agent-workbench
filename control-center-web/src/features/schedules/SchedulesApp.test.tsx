@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it } from 'vitest';
@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/primitives';
 import { SchedulesApp } from './SchedulesApp';
 import { memoryScheduleRows } from './schedule-model';
 import { isGithubPrUrl } from '@/features/planning/AgentWakeSchedules';
+import { MockControlTransport } from '@/test/mock-transport';
 
 afterEach(cleanup);
 function setup() {
@@ -17,6 +18,92 @@ function setup() {
   render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><MemoryRouter><TooltipProvider><SchedulesApp /></TooltipProvider></MemoryRouter></ControlTransportProvider></QueryClientProvider>);
   return transport;
 }
+
+function setupMemoryStatus(status: () => unknown | Promise<unknown>) {
+  const transport = new MockControlTransport({ routes: {
+    'agent.wakeSchedules.list': { ok: true, items: [] },
+    'observability.evalSchedules.list': { schemaVersion: 'rag-ime.eval-schedule-list.v1', ok: true, items: [] },
+    'configuration.settings': { settings: {} },
+    'agent.memoryMaintenance.run': status,
+  } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><MemoryRouter><TooltipProvider><SchedulesApp /></TooltipProvider></MemoryRouter></ControlTransportProvider></QueryClientProvider>);
+  const counts = () => Object.fromEntries(['agent.wakeSchedules.list', 'observability.evalSchedules.list', 'configuration.settings', 'agent.memoryMaintenance.run']
+    .map((pathId) => [pathId, transport.requests.filter((call) => call.request.pathId === pathId).length]));
+  return { client, counts };
+}
+
+it('keeps All pending while only memory status is still reading', async () => {
+  let resolve!: (value: unknown) => void;
+  const { client, counts } = setupMemoryStatus(() => new Promise((done) => { resolve = done; }));
+  await waitFor(() => expect(client.isFetching()).toBe(1));
+  expect(Object.values(counts())).toEqual([1, 1, 1, 1]);
+  expect(screen.getByRole('status')).toHaveTextContent('正在读取各类安排…');
+  expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeDisabled();
+  expect(screen.queryByText('还没有任务安排')).not.toBeInTheDocument();
+  const search = screen.getByRole('textbox', { name: '搜索定时任务' });
+  fireEvent.change(search, { target: { value: '未发送的筛选草稿' } });
+  await act(async () => resolve({ ok: true, runs: [] }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeEnabled());
+  expect(screen.queryByText('正在读取各类安排…')).not.toBeInTheDocument();
+  expect(search).toHaveValue('未发送的筛选草稿');
+  expect(Object.values(counts())).toEqual([1, 1, 1, 1]);
+  client.clear();
+});
+
+it('exposes a lone memory status failure and retries only that original source', async () => {
+  let reads = 0;
+  let resolve!: (value: unknown) => void;
+  const { client, counts } = setupMemoryStatus(() => {
+    reads += 1;
+    if (reads === 1) return Promise.reject(new Error('原后台维护记录读取失败'));
+    return new Promise((done) => { resolve = done; });
+  });
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('后台维护记录暂时无法读取');
+  expect(alert).toHaveTextContent('原后台维护记录读取失败');
+  expect(Object.values(counts())).toEqual([1, 1, 1, 1]);
+  expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeEnabled();
+  const search = screen.getByRole('textbox', { name: '搜索定时任务' });
+  fireEvent.change(search, { target: { value: '失败后保留的筛选草稿' } });
+  fireEvent.click(within(alert).getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(Object.values(counts())).toEqual([1, 1, 1, 2]));
+  expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeDisabled();
+  expect(search).toHaveValue('失败后保留的筛选草稿');
+  await act(async () => resolve({ ok: true, runs: [] }));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeEnabled();
+  expect(Object.values(counts())).toEqual([1, 1, 1, 2]);
+  expect(search).toHaveValue('失败后保留的筛选草稿');
+  client.clear();
+});
+
+it('keeps refresh disabled for a lone cached memory status refresh without extra reads', async () => {
+  let reads = 0;
+  let resolve!: (value: unknown) => void;
+  const { client, counts } = setupMemoryStatus(() => {
+    reads += 1;
+    return reads === 1 ? { ok: true, runs: [] } : new Promise((done) => { resolve = done; });
+  });
+  const refresh = screen.getByRole('button', { name: '刷新所有任务' });
+  await waitFor(() => expect(refresh).toBeEnabled());
+  const search = screen.getByRole('textbox', { name: '搜索定时任务' });
+  fireEvent.change(search, { target: { value: '刷新期间筛选草稿' } });
+  fireEvent.click(refresh);
+  await waitFor(() => expect(client.isFetching()).toBe(1));
+  expect(Object.values(counts())).toEqual([2, 2, 2, 2]);
+  expect(refresh).toBeDisabled();
+  expect(refresh.querySelector('svg')).toHaveClass('ui-spin');
+  fireEvent.click(refresh);
+  expect(Object.values(counts())).toEqual([2, 2, 2, 2]);
+  expect(search).toHaveValue('刷新期间筛选草稿');
+  await act(async () => resolve({ ok: true, runs: [] }));
+  await waitFor(() => expect(refresh).toBeEnabled());
+  expect(refresh.querySelector('svg')).not.toHaveClass('ui-spin');
+  expect(search).toHaveValue('刷新期间筛选草稿');
+  expect(Object.values(counts())).toEqual([2, 2, 2, 2]);
+  client.clear();
+});
 
 it('creates a PR schedule, finds it in the unified list, then edits and pauses the same plan', async () => {
   setup(); const user = userEvent.setup();

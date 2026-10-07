@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T18:22:30.237581+00:00",
+  "generatedAt": "2026-10-07T19:16:34.017947+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 73
+      "pathCount": 78
     }
   },
   "summary": {
-    "pathCount": 2186,
+    "pathCount": 2191,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1870
+      "keep_release": 1875
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 73,
+      "paw_experience_20261007": 78,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -7073,6 +7073,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/schedules/schedules-motion.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Verify quiet presentation retains original pending reads, failure and retry, drafts, and avoids content re-entry.",
+      "status": "added"
+    },
+    {
       "path": "control-center-web/src/features/schedules/schedules.css",
       "status": "added",
       "group": "scheduled_tasks",
@@ -9054,6 +9061,20 @@
       "disposition": "delete_old_implementation"
     },
     {
+      "path": "control-center-web/src/paw-os/shell/PawContextMenu.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Verify original menu actions and focus remain reachable during entry and viewport resizing.",
+      "status": "added"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawContextMenu.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/paw-os/shell/PawDesktop.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -9094,6 +9115,20 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawNotificationCenter.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawNotificationCenter.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/paw-os/shell/PawRoomProjectionKeeper.tsx",

@@ -1,3 +1,4 @@
+import { useMotionActivity } from '@/design/motion';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 
 export type PawContextMenuItem = {
@@ -41,32 +42,47 @@ export function PawContextMenu({
   x: number;
   y: number;
 }) {
+  const motionActive = useMotionActivity();
   const menuRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<{ left: number; top: number; origin: string; rise: number } | null>(null);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
     if (!menu) return;
-    const rect = menu.getBoundingClientRect();
-    // jsdom reports a zero box; fall back to the estimate so tests and the
-    // first paint still land inside the viewport.
-    const width = rect.width || 220;
-    const height = rect.height || items.length * 38 + 20;
-    const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
-    const fitsBelow = y + height + 8 <= window.innerHeight;
-    // The 48px floor keeps every menu below the menu bar, flipped or not.
-    const top = fitsBelow ? Math.max(48, y) : Math.max(48, y - height);
-    setPlacement({
-      left,
-      top,
-      origin: `${x - left > width / 2 ? '100%' : '0'} ${fitsBelow ? '0' : '100%'}`,
-      rise: fitsBelow ? 4 : -4,
-    });
-  }, [items.length, x, y]);
+    const measure = () => {
+      // Measure the resting layout box, not the scaled entrance rectangle.
+      // CSS bounds the real scroll box; keep a bounded zero-layout fallback
+      // for jsdom so a short viewport cannot fit the content estimate.
+      const width = Math.min(menu.offsetWidth || 220, Math.max(0, window.innerWidth - 16));
+      const height = Math.min(menu.offsetHeight || items.length * 38 + 20, Math.max(0, window.innerHeight - 56));
+      const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
+      const fitsBelow = y + height + 8 <= window.innerHeight;
+      // Keep the same 48px menu-bar floor and an 8px bottom margin, including
+      // after zoom/resize leaves the original anchor outside the viewport.
+      const top = Math.max(48, Math.min(fitsBelow ? y : y - height, window.innerHeight - height - 8));
+      const next = {
+        left,
+        top,
+        origin: `${x - left > width / 2 ? '100%' : '0'} ${fitsBelow ? '0' : '100%'}`,
+        rise: fitsBelow ? 4 : -4,
+      };
+      setPlacement((current) => current && current.left === next.left && current.top === next.top
+        && current.origin === next.origin && current.rise === next.rise ? current : next);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [items, x, y]);
+
+  const placed = placement !== null;
+  useLayoutEffect(() => {
+    if (placed) menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    // The browser rejects focus on the hidden pre-measurement commit. Focus
+    // once when visible; a resize must not return it to the first item.
+  }, [placed]);
 
   useEffect(() => {
     const menu = menuRef.current;
-    menu?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
     const dismiss = (event: PointerEvent) => {
       const target = event.target as Node;
       if (menu?.contains(target) || anchor?.current?.contains(target)) return;
@@ -122,6 +138,7 @@ export function PawContextMenu({
     <div
       aria-label={ariaLabel}
       className="paw-context-menu"
+      data-motion-active={motionActive}
       onContextMenu={(event) => event.preventDefault()}
       onKeyDown={handleKeyDown}
       ref={menuRef}

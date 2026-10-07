@@ -12,7 +12,7 @@
 .schedule-app__filters > label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; color: var(--color-text-tertiary); }
 .schedule-app__filters input { border: 0; background: transparent; padding-inline: 0; width: 100%; }
 .schedule-app__filters > .ui-select__trigger { width: 134px; font-size: 12px; }
-.schedule-app__content { flex: 1; min-height: 220px; overflow: auto; padding: 18px 28px 28px; scrollbar-gutter: stable; animation: schedule-view-enter 180ms cubic-bezier(.2,.8,.2,1); }
+.schedule-app__content { flex: 1; min-height: 220px; overflow: auto; padding: 18px 28px 28px; scrollbar-gutter: stable; }
 .schedule-app__overview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: var(--color-text-secondary); font-size: 14px; }
 .schedule-app__overview strong { font-size: 16px; color: var(--color-text); font-variant-numeric: tabular-nums; }
 .schedule-app__separator { margin-inline: 14px; color: var(--color-border); }
@@ -48,7 +48,6 @@
 .schedule-memory__history { list-style: none; margin: 0; padding: 0; }
 .schedule-memory__history li { display: grid; grid-template-columns: 100px 1fr auto; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--color-border); font-size: 12px; }
 .schedule-memory__history time, .schedule-muted { color: var(--color-text-secondary); font-size: 12px; }
-@keyframes schedule-view-enter { from { opacity: .3; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @container schedules (max-width: 560px) {
   .schedule-app__header { padding: 18px 16px 14px; }
   .schedule-app__nav { overflow-x: auto; padding: 0 10px 12px; gap: 0; }
@@ -71,3 +70,6 @@
 }
 @media (prefers-reduced-motion: reduce) { .schedule-app *, .schedule-app *::before { animation: none !important; transition: none !important; } }
 [data-reduce-motion='true'] .schedule-app * { animation: none !important; transition: none !important; }
+
+/* Quiet feedback is still pending: request ownership and results keep moving. */
+.schedule-app[data-motion-active='false'] .ui-spin { animation: none; }
