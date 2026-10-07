@@ -6,7 +6,7 @@ import sqlite3
 import time
 import uuid
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -473,6 +473,7 @@ class AgentCommandReceiptStore:
         command_scope: str,
         scope_id: str,
         client_message_id: str,
+        _connection: sqlite3.Connection | None = None,
     ) -> dict[str, object] | None:
         """Return content-free acceptance proof for one exact command key.
 
@@ -482,7 +483,7 @@ class AgentCommandReceiptStore:
         proof is projected; stored prompt content is never returned.
         """
 
-        with self._connect() as conn:
+        with nullcontext(_connection) if _connection is not None else self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT state, response_json

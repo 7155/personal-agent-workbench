@@ -167,7 +167,7 @@ class AgentMessageSnapshotService:
 
     def read_result(
         self, session_id: str, turn_id: str, client_message_id: str,
-        *, acceptance: Mapping[str, object] | None,
+        *, acceptance: Mapping[str, object] | None, _allow_host_open: bool = True,
     ) -> dict[str, object]:
         """Project one accepted turn, without the UI's status/Goal reconciliation.
 
@@ -216,7 +216,8 @@ class AgentMessageSnapshotService:
         try:
             # This is the existing passive Pi history read. No prompt, wait,
             # resume, Goal check, or UI message-count reconciliation runs here.
-            raw = self.runtime.messages(session_id)
+            raw = (self.runtime.messages(session_id) if _allow_host_open
+                   else self.runtime.messages(session_id, _allow_host_open=False))
             matching = [message for message in raw if isinstance(message, Mapping)
                         and message.get("turnId") == turn_id and message.get("role") == "assistant"]
         except (AgentRuntimeError, OSError, KeyError):

@@ -2398,8 +2398,8 @@ class PiRuntimeHostManager:
             if not turn_was_retired:
                 raise
 
-    def messages(self, session_id: str) -> list[dict[str, object]]:
-        return list(self.session_snapshot(session_id).get("messages") or [])
+    def messages(self, session_id: str, *, _allow_host_open: bool = True) -> list[dict[str, object]]:
+        return list(self.session_snapshot(session_id, _allow_host_open=_allow_host_open).get("messages") or [])
 
     def _persist_terminal_branch_cursor(
         self,
@@ -2723,6 +2723,7 @@ class PiRuntimeHostManager:
         *,
         durable_fallback: bool = True,
         view: str = "",
+        _allow_host_open: bool = True,
     ) -> dict[str, object]:
         """Read one Session without rebuilding context when it is resident.
 
@@ -2730,6 +2731,8 @@ class PiRuntimeHostManager:
         or rebinds. Historical display is instead reconstructed from Pi's
         managed durable JSONL before taking the Host lifecycle lock, so a slow
         command/context open cannot hold the conversation rail behind it.
+        Internal background reads may forbid Host/Session opening entirely;
+        they can only use that same JSONL reader or a resident native snapshot.
         """
 
         if self._is_durable(session_id):
@@ -2737,6 +2740,8 @@ class PiRuntimeHostManager:
                 with self._lock:
                     opened = session_id in self._open_sessions
                 if not opened:
+                    if not _allow_host_open:
+                        raise AgentRuntimeError("passive Durable history requires an already open Session")
                     self.ensure(session_id, retire_recovered_turn=False)
                 snapshot = dict(self._require_client().send("session.snapshot", {"sessionId": session_id,
                     **({"view": view} if view else {})}))
@@ -2763,9 +2768,14 @@ class PiRuntimeHostManager:
                 return durable
 
         with self._lifecycle_lock:
-            client = self._host()
             with self._lock:
                 already_open = session_id in self._open_sessions
+            if not _allow_host_open:
+                if not already_open:
+                    raise AgentRuntimeError("passive Classic history is unavailable without opening its Session")
+                client = self._require_client()
+            else:
+                client = self._host()
             if already_open:
                 snapshot = dict(
                     client.send(
@@ -2814,7 +2824,7 @@ class PiRuntimeHostManager:
         return {"sessionId": session_id, "turnId": turn_id, "toolHistoryEvents": [
             event for event in events if event.get("eventType") in {"tool_started", "tool_finished"}]}
 
-    def session_snapshot(self, session_id: str, *, _view: str = "") -> dict[str, object]:
+    def session_snapshot(self, session_id: str, *, _view: str = "", _allow_host_open: bool = True) -> dict[str, object]:
         session = self.sessions.get(session_id)
         binding = self.sessions.runtime_binding(session_id)
         durable_engine = session.get("runtimeEngine") == "durable"
@@ -2829,7 +2839,8 @@ class PiRuntimeHostManager:
                 )
         else:
             try:
-                snapshot = self._inspection_snapshot(session_id, **({"view": _view} if durable_engine and _view else {}))
+                snapshot = self._inspection_snapshot(session_id, _allow_host_open=_allow_host_open,
+                    **({"view": _view} if durable_engine and _view else {}))
             except AgentRuntimeError:
                 if durable_engine:
                     raise

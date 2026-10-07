@@ -1,9 +1,9 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T11:40:29.507352+00:00",
+  "generatedAt": "2026-10-07T12:55:05.651717+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "main",
+    "branch": "undo/paw-experience-20261007",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
     "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact recovery display and optional multimodal retrieval; source checks do not establish complete foreground acceptance."
   },
@@ -199,63 +199,63 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 54
+      "pathCount": 57
     }
   },
   "summary": {
-    "pathCount": 2157,
+    "pathCount": 2160,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1841
+      "keep_release": 1844
     },
     "groupCounts": {
-      "local_docs": 121,
-      "product_integration": 57,
-      "react_os_docs": 3,
-      "pi1_final_integration": 236,
-      "refactor_docs_examples": 9,
-      "earth_research": 113,
       "brand_stellar": 60,
-      "public_showcase": 30,
-      "primary_assistant_followup": 30,
-      "references_history": 8,
-      "main_followup_20261006": 66,
-      "room_history_codemode": 58,
-      "pi_content_studio_v5_v6": 41,
-      "workspace_completion": 315,
+      "browser_recovery": 1,
+      "composition_refactor": 32,
+      "conversation_controls": 61,
       "conversation_v2_integration": 48,
+      "durable_desktop_iteration": 28,
+      "earth_research": 113,
+      "jev_integration": 10,
+      "knowledge_runtime": 12,
+      "lab_backend": 74,
+      "lab_frontend": 54,
+      "lab_tools": 10,
+      "local_docs": 121,
+      "mac_local_update_20261006": 8,
+      "main_followup_20261006": 66,
       "memory_lifecycle": 15,
+      "offline_installer": 12,
+      "owner_boundaries": 15,
+      "paw_experience_20261007": 57,
       "pi1_experience_iteration": 38,
+      "pi1_final_integration": 236,
+      "pi_content_studio_v5_v6": 41,
+      "pi_runtime_refactor": 23,
+      "portable_agent_ui": 8,
+      "portable_guarded_acceptance": 14,
+      "primary_assistant_followup": 30,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 54,
+      "product_integration": 57,
+      "public_showcase": 30,
+      "react_os_docs": 3,
+      "refactor_docs_examples": 9,
+      "refactor_integration": 23,
+      "refactor_verification": 66,
+      "references_history": 8,
+      "release_scope": 1,
+      "room_frontend": 21,
+      "room_history_codemode": 58,
+      "room_service_refactor": 43,
+      "scheduled_tasks": 25,
+      "second_brain": 24,
+      "session_full_access": 8,
+      "startup_failure_diagnostics": 2,
+      "temporal_query_preservation": 3,
+      "trace_optimization": 61,
       "verification": 113,
       "voice_desktop": 19,
-      "composition_refactor": 32,
-      "portable_agent_ui": 8,
-      "owner_boundaries": 15,
-      "conversation_controls": 61,
-      "durable_desktop_iteration": 28,
-      "trace_optimization": 61,
-      "scheduled_tasks": 25,
-      "session_full_access": 8,
-      "mac_local_update_20261006": 8,
-      "jev_integration": 10,
-      "lab_frontend": 54,
-      "second_brain": 24,
-      "knowledge_runtime": 12,
-      "room_frontend": 21,
-      "portable_guarded_acceptance": 14,
-      "refactor_integration": 23,
-      "offline_installer": 12,
-      "room_service_refactor": 43,
-      "lab_backend": 74,
-      "pi_runtime_refactor": 23,
-      "browser_recovery": 1,
-      "lab_tools": 10,
-      "temporal_query_preservation": 3,
-      "release_scope": 1,
-      "refactor_verification": 66,
-      "startup_failure_diagnostics": 2
+      "workspace_completion": 315
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -10055,6 +10055,13 @@
       "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
+      "path": "rag_ime/agent_coordinator_work.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Persist exact owned StarMate command and original result references through passive recovery without a second execution or inbox owner; contract Issue142.",
+      "status": "added"
+    },
+    {
       "path": "rag_ime/agent_delegation.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -11348,6 +11355,13 @@
       "disposition": "keep_release",
       "group": "paw_experience_20261007",
       "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "rag_ime/db/migrations/0223_agent_coordinator_passive_work.sql",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Persist exact owned StarMate command and original result references through passive recovery without a second execution or inbox owner; contract Issue142.",
+      "status": "added"
     },
     {
       "path": "rag_ime/debug_server.py",
@@ -13259,6 +13273,13 @@
       "disposition": "keep_release",
       "group": "paw_experience_20261007",
       "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "tests/test_agent_coordinator_work.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Persist exact owned StarMate command and original result references through passive recovery without a second execution or inbox owner; contract Issue142.",
+      "status": "added"
     },
     {
       "path": "tests/test_agent_delegation.py",

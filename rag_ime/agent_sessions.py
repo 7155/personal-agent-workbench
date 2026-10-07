@@ -15,8 +15,9 @@ from threading import RLock
 from typing import Callable, Iterable, Mapping, cast
 from urllib.parse import quote
 
-from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_approval_model import pending_model_arbitration
+from .agent_command_receipts import AgentCommandReceiptStore
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_role_identity import (
     canonical_agent_role_id,
     canonical_role_book_revision_id,
@@ -2077,8 +2078,19 @@ class AgentSessionStore:
                 """,
                 (session_id, normalized_turn_id),
             ).fetchone()
-        if row is None:
-            return None
+            if row is None:
+                candidates = []
+                for attempt in self._coordinator_attempt_rows(conn, session_id, turn_id=normalized_turn_id):
+                    if _coordinator_acceptance(attempt) is None:
+                        continue
+                    try:
+                        refs = json.loads(str(attempt["terminal_refs_json"] or "[]"))
+                    except (TypeError, ValueError):
+                        continue
+                    for reference in refs if isinstance(refs, list) else []:
+                        if _coordinator_terminal_reference(reference, session_id, normalized_turn_id):
+                            candidates.append(reference)
+                return max(candidates, key=lambda value: value["sequence"]) if candidates else None
         return {
             "eventId": str(row["event_id"]),
             "sessionId": str(session_id),
@@ -2324,6 +2336,7 @@ class AgentSessionStore:
         self,
         session_id: str,
         client_message_id: str,
+        *, _connection: sqlite3.Connection | None = None,
     ) -> dict[str, object] | None:
         """Return durable, content-free proof that Pi accepted one prompt."""
 
@@ -2332,7 +2345,7 @@ class AgentSessionStore:
         ).strip()
         if not normalized_client_message_id:
             return None
-        with self._connect() as conn:
+        with nullcontext(_connection) if _connection is not None else self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT event_id, turn_id, created_at_ms, metrics_json
@@ -2392,6 +2405,14 @@ class AgentSessionStore:
                         row["created_at_ms"] or 0
                     ),
                 }
+            # A coordinator's original acceptance may outlive this recent
+            # window. It is captured only from this owner or command receipts
+            # before pruning its original event in the same transaction.
+            attempts = self._coordinator_attempt_rows(conn, session_id, client_message_id=normalized_client_message_id)
+            for attempt in attempts:
+                proof = _coordinator_acceptance(attempt)
+                if proof is not None:
+                    return proof
         return None
 
     def agent_todo(self, session_id: str) -> dict[str, object]:
@@ -3222,6 +3243,14 @@ class AgentSessionStore:
             ).fetchall()
             if not stale_rows:
                 return
+            # Save only traced coordinator original-turn references before
+            # the bounded event window drops them. No message or execution
+            # state is copied; the attempt's existing reference field owns it.
+            for stale_row in stale_rows:
+                if stale_row["event_type"] in {"turn_completed", "turn_failed"}:
+                    self._retain_coordinator_terminal(conn, session_id, stale_row)
+                elif stale_row["event_type"] == "message_completed":
+                    self._retain_coordinator_acceptance(conn, session_id, stale_row)
             pending_client_message_ids = {
                 str(row[0])
                 for row in conn.execute(
@@ -3293,6 +3322,70 @@ class AgentSessionStore:
                     for stale_event_id in deletable_event_ids
                 ),
             )
+
+    def _coordinator_attempt_rows(
+        self, conn: sqlite3.Connection, session_id: str, *,
+        turn_id: str = "", client_message_id: str = "",
+    ) -> list[sqlite3.Row]:
+        # Causal creation link remains a tombstone after retirement. A new
+        # Source cannot fabricate or inherit this original attempt relation.
+        return list(conn.execute(
+            "SELECT a.* FROM agent_coordinator_work_attempts a "
+            "JOIN agent_coordinator_work w ON w.work_id=a.work_id AND w.target_session_id=a.target_session_id "
+            "JOIN agent_coordinator_objects o ON o.target_id=a.target_session_id AND o.target_kind='session' "
+            "AND o.coordinator_id=w.coordinator_id AND o.source_session_id=w.source_session_id "
+            "WHERE a.target_session_id=? AND (?='' OR a.turn_id=?) AND (?='' OR a.client_message_id=?)",
+            (session_id, turn_id, turn_id, client_message_id, client_message_id),
+        ))
+
+    def _retain_coordinator_acceptance(self, conn: sqlite3.Connection, session_id: str, event: sqlite3.Row) -> None:
+        try:
+            metrics = json.loads(str(event["metrics_json"] or "{}"))
+        except (TypeError, ValueError):
+            return
+        identity = metrics.get("promptAcceptance") if isinstance(metrics, dict) else None
+        client = str(identity.get("clientMessageId") or "") if isinstance(identity, dict) else ""
+        if not client:
+            return
+        proof = self.prompt_acceptance_evidence(session_id, client, _connection=conn)
+        if not proof or proof.get("turnId") != event["turn_id"]:
+            return
+        for attempt in self._coordinator_attempt_rows(conn, session_id, client_message_id=client):
+            if attempt["turn_id"] and attempt["turn_id"] != proof["turnId"]:
+                continue
+            conn.execute("UPDATE agent_coordinator_work_attempts SET turn_id=?, acceptance_json=? WHERE attempt_id=?",
+                         (proof["turnId"], json.dumps(proof, ensure_ascii=False, sort_keys=True), attempt["attempt_id"]))
+
+    def _retain_coordinator_terminal(self, conn: sqlite3.Connection, session_id: str, event: sqlite3.Row) -> None:
+        turn_id = str(event["turn_id"] or "")
+        if not turn_id:
+            return
+        receipts = AgentCommandReceiptStore(self.db_path)
+        for attempt in self._coordinator_attempt_rows(conn, session_id):
+            if attempt["turn_id"] and attempt["turn_id"] != turn_id:
+                continue
+            client = str(attempt["client_message_id"])
+            acceptance = receipts.acceptance_evidence_for_exact_command(
+                command_scope="session_prompt", scope_id=session_id, client_message_id=client, _connection=conn)
+            if not acceptance:
+                acceptance = self.prompt_acceptance_evidence(session_id, client, _connection=conn)
+            if not acceptance or acceptance.get("turnId") != turn_id or acceptance.get("clientMessageId") != client:
+                continue
+            reference = {"eventId": str(event["event_id"]), "sessionId": session_id, "turnId": turn_id,
+                         "sequence": int(event["sequence"]), "eventType": str(event["event_type"]),
+                         "createdAtMs": int(event["created_at_ms"]), "status": str(event["redacted_summary"] or "")}
+            try:
+                previous = json.loads(str(attempt["terminal_refs_json"] or "[]"))
+            except (TypeError, ValueError):
+                previous = []
+            if not isinstance(previous, list):
+                previous = []
+            if any(_coordinator_terminal_reference(value, session_id, turn_id)
+                   and value["sequence"] > reference["sequence"] for value in previous):
+                continue
+            conn.execute("UPDATE agent_coordinator_work_attempts SET turn_id=?, acceptance_json=?, terminal_refs_json=? WHERE attempt_id=?",
+                         (turn_id, json.dumps(acceptance, ensure_ascii=False, sort_keys=True),
+                          json.dumps([reference], ensure_ascii=False, sort_keys=True), attempt["attempt_id"]))
 
     def _claim_terminal_projection(
         self,
@@ -6276,3 +6369,28 @@ def _timestamp(value: int | None) -> int:
 
 def _valid_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def _coordinator_acceptance(attempt: sqlite3.Row) -> dict[str, object] | None:
+    try:
+        proof = json.loads(str(attempt["acceptance_json"] or "{}"))
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(proof, dict) or not attempt["turn_id"]
+        or proof.get("turnId") != attempt["turn_id"] or proof.get("clientMessageId") != attempt["client_message_id"]):
+        return None
+    command_proof = (proof.get("schemaVersion") == "rag-ime.agent-command-acceptance-evidence.v1"
+                     and proof.get("accepted") is True)
+    user_event_proof = (isinstance(proof.get("eventId"), str) and bool(proof["eventId"])
+                        and isinstance(proof.get("createdAtMs"), int) and not isinstance(proof["createdAtMs"], bool))
+    return proof if command_proof or user_event_proof else None
+
+
+def _coordinator_terminal_reference(value: object, session_id: str, turn_id: str) -> bool:
+    return (isinstance(value, dict) and value.get("sessionId") == session_id and value.get("turnId") == turn_id
+            and isinstance(value.get("eventType"), str)
+            and value["eventType"] in {"turn_completed", "turn_failed"}
+            and isinstance(value.get("eventId"), str) and bool(value["eventId"])
+            and isinstance(value.get("sequence"), int) and not isinstance(value["sequence"], bool)
+            and isinstance(value.get("createdAtMs"), int) and not isinstance(value["createdAtMs"], bool)
+            and isinstance(value.get("status"), str))

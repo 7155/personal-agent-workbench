@@ -62,6 +62,7 @@ from .agent_command_receipts import (
 )
 from .agent_events import AgentEventHub
 from .agent_event_projection import AgentEventProjectionService
+from .agent_coordinator_work import AgentCoordinatorWork
 from .agent_block_store import AgentBlockStore
 from .agent_coordinator import CoordinatorPorts, coordinator_command, coordinator_identity, ensure_coordinator
 from .agent_delegation import AgentDelegationCoordinator
@@ -881,6 +882,14 @@ class AgentService:
                 self.room_turns.user_priority_sessions
             ),
         )
+        self.coordinator_work = AgentCoordinatorWork(
+            sessions=self.sessions, receipts=self.command_receipts, context=self.context_runtime,
+            read_result=lambda target, turn, client: self.message_snapshot.read_result(
+                target, turn, client, _allow_host_open=False,
+                acceptance=self.command_receipts.acceptance_evidence_for_exact_command(
+                    command_scope="session_prompt", scope_id=target, client_message_id=client)
+                or self.sessions.prompt_acceptance_evidence(target, client)),
+        )
         if self._startup_recovery_enabled and not defer_startup_recovery:
             self.run_startup_recovery()
 
@@ -941,6 +950,7 @@ class AgentService:
                 self.room_work.reconcile_intercom_outcomes()
                 self.room_partner_application.reconcile()
                 self.jev_application.recover()
+                self.coordinator_work.reconcile_once(limit=20)
             except Exception as exc:
                 with self._startup_recovery_status_lock:
                     self._startup_recovery_report = {
@@ -1041,7 +1051,9 @@ class AgentService:
     def _run_scheduled_work_once(self, now_ms: int | None = None) -> int:
         application = getattr(self, "jev_application", None)
         count = application.tick() if application is not None else 0
-        return count + self._run_eval_schedules_once(now_ms)
+        work = getattr(self, "coordinator_work", None)
+        harvested = work.reconcile_once(limit=20) if work is not None else 0
+        return count + harvested + self._run_eval_schedules_once(now_ms)
 
     def jev_workspace(self, room_id: str, graph_id: str = "") -> dict[str, object]:
         return self.jev_application.projection(room_id, graph_id)
@@ -2505,6 +2517,8 @@ class AgentService:
                 target, turn, client, acceptance=self.command_receipts.acceptance_evidence_for_exact_command(
                     command_scope="session_prompt", scope_id=target, client_message_id=client)
                 or self.sessions.prompt_acceptance_evidence(target, client)),
+            register_session_prompt=self.coordinator_work.register_prompt,
+            reconcile_session_acceptance=self.coordinator_work.reconcile_acceptance,
         )
 
     def ensure_coordinator(self, payload: Mapping[str, object]) -> dict[str, object]:

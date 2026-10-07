@@ -73,6 +73,8 @@ class CoordinatorPorts:
     post_room: Callable[[str, Mapping[str, object]], dict[str, object]]
     abort_room: Callable[[str, Mapping[str, object]], dict[str, object]]
     session_result: Callable[[str, str, str], dict[str, object]]
+    register_session_prompt: Callable[[str, str, Mapping[str, object]], None]
+    reconcile_session_acceptance: Callable[[str, str], str]
 
 
 _LOCKS: dict[str, RLock] = {}
@@ -298,7 +300,13 @@ def coordinator_command(ports: CoordinatorPorts, payload: Mapping[str, object], 
         ports.require_mutable(target_id)
         if action == "prompt":
             with ports.runtime.gateway_control_scope(source_id, execution_binding):
-                return ports.prompt(target_id, input_value)
+                with effect_fence():
+                    ports.register_session_prompt(source_id, target_id, input_value)
+                accepted = ports.prompt(target_id, input_value)
+                # A lost ACK is reconciled passively from the original command
+                # ledger. This lookup never replays an input or runs a model.
+                ports.reconcile_session_acceptance(target_id, str(input_value["clientMessageId"]))
+                return accepted
         if action == "stop":
             if set(input_value) != {"turnId", "clientMessageId"}:
                 raise ValueError("Stop requires the exact turnId and clientMessageId")
