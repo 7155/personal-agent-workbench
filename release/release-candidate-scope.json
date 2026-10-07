@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T16:58:06.261378+00:00",
+  "generatedAt": "2026-10-07T17:12:16.000930+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 68
+      "pathCount": 70
     }
   },
   "summary": {
-    "pathCount": 2181,
+    "pathCount": 2183,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1865
+      "keep_release": 1867
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 68,
+      "paw_experience_20261007": 70,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -4257,6 +4257,20 @@
       "disposition": "keep_release",
       "group": "primary_assistant_iteration",
       "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/SmoothDisclosureReveal.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/features/agent/timeline/SmoothDisclosureReveal.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/features/agent/timeline/StructuredRenderers.tsx",
