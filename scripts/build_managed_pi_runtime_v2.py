@@ -370,8 +370,8 @@ const TOOL_NAME_PATTERN =''',
             'content: Array<{ type: "text"; text: string } | GatewayImageContent>;\n\tdetails: unknown;',
         ),
         (
-            '\tif (result.reviewRequired === true) {',
-            '\tconst modelImages = takeModelImages(result, tool.name);\n\tif (result.reviewRequired === true) {',
+            '\tif (result.reviewRequired === true',
+            '\tconst modelImages = takeModelImages(result, tool.name);\n\tif (result.reviewRequired === true',
         ),
         (
             '\tconst agentBlocks = artifacts.capture(result);\n\treturn {\n\t\tcontent: [',

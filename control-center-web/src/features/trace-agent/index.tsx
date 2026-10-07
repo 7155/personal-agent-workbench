@@ -2888,7 +2888,7 @@ function sourceEvidence(observations: ObservationSnapshotV1 | undefined, source:
   const evidence: TraceEvidenceItem[] = [];
   for (const item of observations?.items ?? []) {
     const summary = item.summary.trim();
-    if (item.status === 'failed' || /(error|fail|failed|timeout|timed out|validation|失败|错误|超时|验证)/i.test(`${item.name} ${summary}`)) {
+    if (item.status === 'failed') {
       evidence.push({
         id: `trace:${item.eventId}`,
         source: `Trace · ${item.traceId}`,
@@ -2908,11 +2908,13 @@ function sourceEvidence(observations: ObservationSnapshotV1 | undefined, source:
     const messageId = stringValue(message.id, `message-${evidence.length}`);
     const blocks = Array.isArray(message.blocks) ? message.blocks : [];
     const directSummary = firstText(message, ['error', 'errorMessage', 'message', 'summary', 'content']);
-    if (directSummary && (stringValue(message.status) === 'failed' || /(error|fail|failed|timeout|timed out|validation|失败|错误|超时|验证)/i.test(directSummary))) {
+    // Prose can discuss a previous failure or ask for validation. Only the
+    // original status/error receipt makes it evidence of an actual anomaly.
+    if (directSummary && (stringValue(message.status) === 'failed' || firstText(message, ['error', 'errorMessage']))) {
       evidence.push({
         id: `message:${messageId}:summary`,
         source: `Session transcript · ${messageId}`,
-        status: stringValue(message.status, 'failed'),
+        status: stringValue(message.status, 'info'),
         title: '消息异常',
         summary: directSummary,
         createdAtMs: numberValue(message.createdAtMs),
@@ -2925,7 +2927,7 @@ function sourceEvidence(observations: ObservationSnapshotV1 | undefined, source:
       const blockType = stringValue(block.type, 'message');
       const blockStatus = stringValue(block.status, stringValue(message.status, 'info'));
       const summary = firstText(data, ['error', 'errorMessage', 'message', 'summary', 'text', 'content', 'markdown', 'bodyMarkdown']);
-      if (!summary || (blockStatus !== 'failed' && blockType !== 'error' && !/(error|fail|failed|timeout|timed out|validation|失败|错误|超时|验证)/i.test(summary))) continue;
+      if (!summary || (blockStatus !== 'failed' && blockType !== 'error' && !firstText(data, ['error', 'errorMessage']))) continue;
       evidence.push({
         id: `message:${messageId}:${stringValue(block.id, String(evidence.length))}`,
         source: `Session transcript · ${messageId}`,
@@ -2943,7 +2945,8 @@ function sourceEvidence(observations: ObservationSnapshotV1 | undefined, source:
     const eventPayload = asRecord(event.payload);
     const summary = firstText(eventPayload, ['error', 'errorMessage', 'message', 'summary', 'text', 'content']);
     const eventStatus = stringValue(event.status, stringValue(event.eventType, 'info'));
-    if (!summary || (eventStatus !== 'failed' && !/(error|fail|failed|timeout|timed out|validation|失败|错误|超时|验证)/i.test(summary))) continue;
+    const failedEvent = ['turn_failed', 'provider_request_failed', 'background_job_failed'].includes(stringValue(event.eventType));
+    if (!summary || (eventStatus !== 'failed' && stringValue(eventPayload.status) !== 'failed' && !failedEvent && !firstText(eventPayload, ['error', 'errorMessage']))) continue;
     evidence.push({
       id: `event:${stringValue(event.eventId, String(evidence.length))}`,
       source: `Room event · ${stringValue(event.eventType, 'event')}`,
