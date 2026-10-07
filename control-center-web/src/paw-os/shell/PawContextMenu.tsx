@@ -68,6 +68,16 @@ export function PawContextMenu({
       };
       setPlacement((current) => current && current.left === next.left && current.top === next.top
         && current.origin === next.origin && current.rise === next.rise ? current : next);
+      // A height-only resize can shrink the scroll box without changing its
+      // placement or keyboard target. Reveal that same target only if clipped.
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && menu.contains(focused)) {
+        const box = menu.getBoundingClientRect();
+        const item = focused.getBoundingClientRect();
+        if (item.top < box.top || item.bottom > box.bottom || item.left < box.left || item.right > box.right) {
+          focused.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
     };
     measure();
     window.addEventListener('resize', measure);

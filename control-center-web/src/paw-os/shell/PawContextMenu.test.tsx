@@ -86,3 +86,29 @@ it('places the resting layout box inside the viewport while the entrance transfo
   expect(screen.getByRole('menuitem', { name: '原窗口' })).toHaveFocus();
   expect(action).not.toHaveBeenCalled();
 });
+
+
+it.each([360, 375])('reveals the same focused item after shrinking the viewport to %ipx wide, even when placement is unchanged', (nextWidth) => {
+  let width = 375; let height = 230; let revealed = false;
+  vi.spyOn(window, 'innerWidth', 'get').mockImplementation(() => width);
+  vi.spyOn(window, 'innerHeight', 'get').mockImplementation(() => height);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(220);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => height - 56);
+  const rectangle = (top: number, bottom: number) => ({ width: 220, height: bottom - top, top, left: 0, bottom, right: 220, x: 0, y: top, toJSON: () => ({}) });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
+    if (this.getAttribute('role') === 'menu') return rectangle(48, height - 8);
+    return revealed ? rectangle(height - 38, height - 8) : rectangle(191, 221);
+  });
+  const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => { revealed = true; });
+  const action = vi.fn();
+  render(<PawContextMenu ariaLabel="原窗口菜单" items={[{ id: 'first', label: '首项', action }, { id: 'last', label: '原关闭窗口', action }]} onClose={() => undefined} x={345} y={190} />);
+  const menu = screen.getByRole('menu'); const last = screen.getByRole('menuitem', { name: '原关闭窗口' });
+  fireEvent.keyDown(menu, { key: 'End' }); expect(last).toHaveFocus();
+  fireEvent(window, new Event('resize')); expect(scroll).not.toHaveBeenCalled();
+  width = nextWidth; height = 210; fireEvent(window, new Event('resize'));
+  expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'nearest', inline: 'nearest' });
+  expect(last).toHaveFocus(); expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(menu.getBoundingClientRect().bottom);
+  expect(menu.style.top).toBe('48px');
+  fireEvent(window, new Event('resize')); expect(scroll).toHaveBeenCalledTimes(1);
+  expect(action).not.toHaveBeenCalled();
+});
