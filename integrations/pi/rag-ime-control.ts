@@ -805,13 +805,13 @@ const memoryParameterSchema: Record<string, unknown> = {
     {
       type: "object",
       additionalProperties: false,
-      required: ["op", "targetId", "text"],
+      required: ["op", "targetId", "text", "reason"],
       properties: {
         op: { const: "correct_preview" },
         targetId: { type: "string", minLength: 1, maxLength: 240 },
         text: { type: "string", minLength: 1, maxLength: 1200 },
         memoryKind: { type: "string", enum: ["fact", "preference", "decision", "commitment", "project_state"] },
-        reason: { type: "string", maxLength: 400 },
+        reason: { type: "string", minLength: 1, maxLength: 400 },
         evidenceIds: { type: "array", maxItems: 32, items: { type: "string", minLength: 1, maxLength: 240 } },
         idempotencyKey: { type: "string", maxLength: 240 },
       },

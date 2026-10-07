@@ -39,6 +39,7 @@ class AgentMemoryContextService:
         session_memory_enabled_provider: Callable[[str], bool] | None = None,
         personal_profile_provider: Callable[[], Mapping[str, object]] | None = None,
         personal_profile_scope_provider: Callable[[str], bool] | None = None,
+        query_refresh_scope_provider: Callable[[str], bool] | None = None,
     ) -> None:
         self.sessions = sessions
         self.memory_bootstrap = memory_bootstrap
@@ -49,6 +50,7 @@ class AgentMemoryContextService:
         self._session_memory_enabled_provider = session_memory_enabled_provider
         self._personal_profile_provider = personal_profile_provider
         self._personal_profile_scope_provider = personal_profile_scope_provider
+        self._query_refresh_scope_provider = query_refresh_scope_provider
         sessions_db_path = getattr(sessions, "db_path", "")
         self._memory_enabled_provider = memory_enabled_provider or (
             lambda: memory_enabled_from_settings(sessions_db_path)
@@ -84,6 +86,9 @@ class AgentMemoryContextService:
         session: Mapping[str, object],
         *,
         query_text: str,
+        client_message_id: str = "",
+        context_source: str = "",
+        delivery: str = "",
     ) -> dict[str, object]:
         session_id = str(session.get("id") or "")
         if not self._memory_enabled(session_id):
@@ -97,7 +102,26 @@ class AgentMemoryContextService:
         dedupe_key = self.memory_bootstrap.dedupe_key(
             session_id
         )
+        occurrence_key = self._query_occurrence_key(
+            session_id, client_message_id=client_message_id,
+            context_source=context_source, delivery=delivery,
+        )
+        if occurrence_key:
+            dedupe_key = occurrence_key
+        trigger = "first_user_prompt"
         try:
+            # An original occurrence is immutable even after its derived pack
+            # expires. A replay must never reinstate an older query over a later one.
+            if occurrence_key:
+                previous = self.context_runtime.item_by_dedupe_key(session_id, occurrence_key)
+                if previous is not None:
+                    return _ready_existing(
+                        session_id, previous, dedupe_key=occurrence_key, expired_legacy=0,
+                    )
+            previous_active = (
+                self.context_runtime.active_item(session_id, source_kind="memory_bootstrap")
+                if occurrence_key else None
+            )
             expired_legacy = (
                 self.context_runtime
                 .expire_legacy_memory_bootstrap(
@@ -109,7 +133,7 @@ class AgentMemoryContextService:
                 session_id,
                 source_kind="memory_bootstrap",
             )
-            if existing is not None:
+            if existing is not None and not occurrence_key:
                 return _ready_existing(
                     session_id,
                     existing,
@@ -119,6 +143,10 @@ class AgentMemoryContextService:
                     ),
                     expired_legacy=expired_legacy,
                 )
+            trigger = (
+                ("turn_start" if previous_active is not None else "first_user_prompt")
+                if occurrence_key else self.task_context.trigger(session_id)
+            )
             recent = self.recent_messages(session_id)
             task = self.task_context.resolve(session_id)
             objective = bounded_text(
@@ -141,7 +169,7 @@ class AgentMemoryContextService:
                     objective,
                 ),
                 room_ids=room_ids,
-                trigger=self.task_context.trigger(session_id),
+                trigger=trigger,
                 retrieval_context_text=bounded_text(
                     f"{retrieval_recent}\n"
                     f"{objective}",
@@ -159,13 +187,15 @@ class AgentMemoryContextService:
                 ),
                 task_context=_memory_task_projection(task),
             )
-            item = self.context_runtime.enqueue(
-                **specification
-            )
+            if occurrence_key:
+                specification["dedupe_key"] = occurrence_key
+                item = self.context_runtime.replace_active(**specification)
+            else:
+                item = self.context_runtime.enqueue(**specification)
         except Exception as exc:
             self._emit_recall_failure(
                 session_id,
-                trigger="first_user_prompt",
+                trigger=trigger,
                 error=exc,
             )
             return _bootstrap_failure(session_id, exc)
@@ -192,6 +222,32 @@ class AgentMemoryContextService:
             "expiredLegacyItems": expired_legacy,
         }
 
+    def _query_occurrence_key(
+        self, session_id: str, *, client_message_id: str,
+        context_source: str, delivery: str,
+    ) -> str:
+        # Only the server-owned long-term Source opts in. Internal continuations,
+        # Room/child work and callers without original user identity retain the
+        # existing first-session/compaction recall policy.
+        if (
+            context_source != "user" or delivery != "prompt"
+            or not isinstance(client_message_id, str) or not client_message_id.strip()
+        ):
+            return ""
+        provider = self._query_refresh_scope_provider
+        try:
+            if provider is None or provider(session_id) is not True:
+                return ""
+            if (
+                self.task_context.trigger(session_id) != "first_user_prompt"
+                or self.task_context.room_ids(session_id)
+            ):
+                return ""
+        except Exception:
+            return ""
+        digest = hashlib.sha256(client_message_id.encode("utf-8")).hexdigest()[:24]
+        # v4 packs are already retained by the legacy-bootstrap cleanup owner.
+        return f"memory-bootstrap:{session_id}:v4:user:{digest}"
 
     def refresh(
         self,

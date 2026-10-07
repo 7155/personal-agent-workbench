@@ -2621,7 +2621,7 @@ _RUNTIME_TOOL_REQUIRED_ARGUMENTS: dict[tuple[str, str], tuple[str, ...]] = {
     ("memory", "maintenance_apply"): ("runId",),
     ("memory", "maintenance_rollback"): ("runId",),
     ("memory", "remember_preview"): ("text",),
-    ("memory", "correct_preview"): ("targetId", "text"),
+    ("memory", "correct_preview"): ("targetId", "text", "reason"),
     ("memory", "forget_preview"): ("targetId", "reason"),
     ("memory", "remember_apply"): ("proposalId",),
     ("memory", "correct_apply"): ("proposalId",),
@@ -11322,6 +11322,11 @@ def _runtime_memory_tool_parameter_schema(
                         "verified_outcome",
                     ],
                 },
+            }
+        elif operation == "correct_preview":
+            branch["properties"] = {
+                "op": {"const": operation},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 400},
             }
         elif operation == "maintenance_status":
             branch["properties"] = {

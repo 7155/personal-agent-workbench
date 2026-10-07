@@ -52,6 +52,7 @@ from .memory_evidence_admission import (
     event_has_admitted_personal_evidence_sql,
     transition_evidence_admission,
 )
+from .governed_memory_reference import governed_atom_evidence
 from .memory_ownership import normalize_memory_owner, sql_memory_owner_predicate
 from .memory_projection import memory_projection_freshness
 from .input_quality import FINALIZED_INPUT_SOURCE, RIME_FRAGMENT_SOURCE, assess_input_text
@@ -3222,6 +3223,11 @@ class ManagementService:
                     )
                     for evidence in linked_evidence
                 )
+                evidence_refs_by_atom[atom_id].extend(
+                    _canonical_reference("evidence", str(evidence["evidence_id"]),
+                                         label=_safe_reference_preview(str(evidence["content_text"])))
+                    for evidence in governed_atom_evidence(conn, project=self.project, atom_id=atom_id)
+                )
                 evidence_refs_by_atom[atom_id] = _deduplicate_references([
                     *evidence_refs_by_atom[atom_id],
                     *(_canonical_reference(ref["kind"], ref["id"]) for ref in card_source_refs(conn, atom_id, include_context=True)),
@@ -3922,9 +3928,15 @@ class ManagementService:
             """,
             (reference_id, self.project, self.project),
         ).fetchone()
+        governed_audit_source = evidence_row is None
         if evidence_row is None:
-            return None
-        source_rows = conn.execute(
+            governed_sources = governed_atom_evidence(conn, project=self.project, evidence_id=reference_id)
+            if not governed_sources:
+                return None
+            evidence_row = governed_sources[0]
+        # The governed fallback authorizes this exact Agent source body. It
+        # does not promote or open unrelated raw input-event/context links.
+        source_rows = [] if governed_audit_source else conn.execute(
             """
             SELECT source_link.input_event_id, event.committed_text
             FROM memory_evidence_input_event_links AS source_link
@@ -4007,9 +4019,9 @@ class ManagementService:
             str(row["canonical_text"] or row["text"] or "")
         )
         sensitive = _reference_text_is_sensitive(raw_text)
-        # Historical Atom rows remain inspectable, but only canonical admitted
-        # Evidence may appear as their provenance. Raw source_event_ids_json is
-        # legacy audit data and must never resurrect rejected input.
+        # Historical Atom rows remain inspectable. Provenance may contain
+        # canonical admitted Evidence or an original hash-bound governed source.
+        # Raw source_event_ids_json must never resurrect rejected input.
         evidence_refs: list[dict[str, object]] = []
         admitted = admitted_personal_evidence_sql("evidence")
         linked = conn.execute(
@@ -4033,6 +4045,11 @@ class ManagementService:
                 label=_safe_reference_preview(str(evidence["content_text"] or "")),
             )
             for evidence in linked
+        )
+        evidence_refs.extend(
+            _canonical_reference("evidence", str(evidence["evidence_id"]),
+                                 label=_safe_reference_preview(str(evidence["content_text"])))
+            for evidence in governed_atom_evidence(conn, project=self.project, atom_id=reference_id)
         )
         evidence_refs.extend(_canonical_reference(ref["kind"], ref["id"])
                              for ref in card_source_refs(conn, reference_id, include_context=True))

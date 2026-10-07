@@ -540,6 +540,7 @@ class AgentService:
                 session_memory_enabled_provider=self._session_memory_disclosed,
                 personal_profile_provider=self._personal_profile,
                 personal_profile_scope_provider=self._coordinator_personal_profile_scope,
+                query_refresh_scope_provider=self._coordinator_personal_profile_scope,
             )
         )
         self.memory_evidence_application = (

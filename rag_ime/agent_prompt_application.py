@@ -587,6 +587,9 @@ class AgentPromptApplicationService:
         bootstrap = self.memory_context.ensure_bootstrap(
             session,
             query_text=checkpoint_text,
+            client_message_id=client_message_id,
+            context_source=context_source,
+            delivery=delivery,
         )
         self._require_prompt_admission_active(
             session_id,
