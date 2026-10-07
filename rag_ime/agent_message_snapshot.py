@@ -359,10 +359,11 @@ class AgentMessageSnapshotService:
             observed_tool_events = list(
                 observation_snapshot.get("items") or []
             )
-        tool_history_events = _apply_observed_times(
-            tool_history_events,
-            observed_tool_events,
-        )
+        if session.get("runtimeEngine") == "durable":
+            tool_history_events = self._durable_tool_times(
+                session_id, session, tool_history_events, observations=observed_tool_events)
+        else:
+            tool_history_events = _apply_observed_times(tool_history_events, observed_tool_events)
         replayed, _gap = self.events.replay(session_id)
         # Streaming deltas are deliberately not persisted one-by-one, but they
         # still own the live replay cursor while this process is running. Using
@@ -531,6 +532,54 @@ class AgentMessageSnapshotService:
             "recentFromSequence": recent_from_sequence,
         }
 
+    def _durable_tool_times(
+        self, session_id: str, session: Mapping[str, object], events: Sequence[object],
+        *, observations: Sequence[object] | None = None,
+    ) -> list[dict[str, object]]:
+        if session.get("runtimeEngine") != "durable":
+            return [dict(event) for event in events if isinstance(event, Mapping)]
+        copied = [dict(event) for event in events if isinstance(event, Mapping)]
+        identities = []
+        occurrences: dict[tuple[str, str, str], dict[str, int]] = {}
+        for event in copied:
+            phase = str(event.get("eventType") or "")
+            payload = event.get("payload")
+            if phase not in {"tool_started", "tool_finished"} or not isinstance(payload, Mapping):
+                continue
+            key = (str(event.get("turnId") or ""), str(payload.get("toolCallId") or ""),
+                   str(payload.get("toolName") or ""))
+            if event.get("sessionId") == session_id and all(key):
+                identities.append(key)
+                counts = occurrences.setdefault(key, {})
+                counts[phase] = counts.get(phase, 0) + 1
+        pairs = self.sessions.runtime_tool_timing_pairs(session_id, identities)
+        if observations is None and any(key not in pairs for key in identities):
+            try:
+                observations = self.observations.snapshot(
+                    {"sessionId": session_id, "category": "tool", "limit": 500}).get("items") or []
+            except Exception:
+                observations = []
+        observed_pairs = _bound_observation_tool_times(session_id, observations or [], set(identities))
+        for event in copied:
+            phase = str(event.get("eventType") or "")
+            payload = event.get("payload")
+            if phase not in {"tool_started", "tool_finished"} or not isinstance(payload, Mapping):
+                continue
+            key = (str(event.get("turnId") or ""), str(payload.get("toolCallId") or ""),
+                   str(payload.get("toolName") or ""))
+            pair = pairs.get(key) if event.get("sessionId") == session_id else None
+            source = "gateway_runtime_events"
+            if pair is None and event.get("sessionId") == session_id:
+                pair = observed_pairs.get(key)
+                source = "gateway_observations"
+            if any(count > 1 for count in occurrences.get(key, {}).values()):
+                pair = None
+            event["payload"] = {**payload, "toolTimingAvailable": pair is not None,
+                                "toolTimingSource": source if pair else "unavailable"}
+            if pair is not None:
+                event["createdAtMs"] = pair[0 if phase == "tool_started" else 1]
+        return copied
+
     def _recent_session_messages(self, session_id: str) -> dict[str, object]:
         """Return a bounded first paint without restoring the Pi transcript."""
 
@@ -587,6 +636,7 @@ class AgentMessageSnapshotService:
             if isinstance(runtime_snapshot, Mapping)
             else []
         )
+        tool_history_events = self._durable_tool_times(session_id, session, tool_history_events)
         live_events = (
             _snapshot_live_events(
                 tool_history_events,
@@ -1537,6 +1587,45 @@ def _compact_text_delta_events(
             "payload": merged_payload,
         }
     return compacted
+
+
+def _bound_observation_tool_times(
+    session_id: str, observations: Sequence[object], identities: set[tuple[str, str, str]],
+) -> dict[tuple[str, str, str], tuple[int, int]]:
+    """Use only exact original Gateway-event refs, never call-id-only matching."""
+    grouped: dict[tuple[str, str, str], list[tuple[str, int, int]]] = {}
+    for value in observations:
+        if not isinstance(value, Mapping) or value.get("sessionId") != session_id or value.get("category") != "tool":
+            continue
+        phase = value.get("phase")
+        attrs = value.get("attributes")
+        refs = value.get("refs")
+        if phase not in {"tool_started", "tool_finished"} or not isinstance(attrs, Mapping) or not isinstance(refs, list):
+            continue
+        tools = [ref for ref in refs if isinstance(ref, Mapping) and ref.get("kind") == "tool_call"]
+        sources = [ref for ref in refs if isinstance(ref, Mapping) and ref.get("kind") == "agent_event"]
+        if len(tools) != 1 or len(sources) != 1 or sources[0].get("label") != phase:
+            continue
+        name = str(attrs.get("toolName") or "")
+        key = (str(value.get("turnId") or ""), str(tools[0].get("id") or ""), name)
+        if key not in identities or tools[0].get("label") != name:
+            continue
+        source_id = str(sources[0].get("id") or "")
+        suffix = source_id.removeprefix(session_id + ":")
+        if not source_id.startswith(session_id + ":") or len(suffix) > 19 or not suffix.isascii() or not suffix.isdigit():
+            continue
+        sequence = int(suffix)
+        timestamp = value.get("createdAtMs")
+        if sequence <= 0 or str(sequence) != suffix or not isinstance(timestamp, int) or isinstance(timestamp, bool) or not 0 < timestamp <= 9_223_372_036_854_775_807:
+            continue
+        grouped.setdefault(key, []).append((str(phase), sequence, timestamp))
+    result = {}
+    for key, events in grouped.items():
+        pair = sorted(events, key=lambda event: event[1])
+        if (len(pair) == 2 and pair[0][0] == "tool_started" and pair[1][0] == "tool_finished"
+                and pair[0][1] < pair[1][1] and pair[0][2] <= pair[1][2]):
+            result[key] = (pair[0][2], pair[1][2])
+    return result
 
 
 def _apply_observed_times(

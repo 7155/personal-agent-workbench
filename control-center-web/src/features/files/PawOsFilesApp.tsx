@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import { useMotionActivity } from '@/design/motion';
 import { CodePreview } from '@/features/agent/file-preview/CodePreview';
 import { DiffPreview } from '@/features/agent/file-preview/DiffPreview';
 import { MarkdownPreview } from '@/features/agent/file-preview/MarkdownPreview';
@@ -104,6 +105,7 @@ const FILE_FAMILY: Record<string, string> = {
 
 export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } = {}) {
   const transport = useControlTransport();
+  const motionActive = useMotionActivity();
   const sidebar = useAppSidebar('files');
   const [treeVisible, setTreeVisible] = useState(!sidebar.collapsed);
   const [treeRevealed, setTreeRevealed] = useState(false);
@@ -754,7 +756,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   );
 
   const filesTools = (
-    <div className="paw-files-app__toolbar" data-window-chrome={windowChromeTarget ? true : undefined}>
+    <div className="paw-files-app__toolbar" data-motion-active={motionActive} data-window-chrome={windowChromeTarget ? true : undefined}>
       <AppSidebarToggle className="paw-files-tree-toggle" collapsed={sidebar.collapsed || !treeVisible} controlsId={sidebar.controlsId} label="文件目录" onToggle={toggleTree} toggleRef={sidebar.toggleRef} />
       <label className="paw-files-scope">
         <FolderTree aria-hidden="true" size={13} />
@@ -803,6 +805,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       {windowChromeTarget ? <PawWindowChromePortal>{filesTools}</PawWindowChromePortal> : null}
       <section
         className="paw-files-app"
+        data-motion-active={motionActive}
         onBlur={(event) => {
           if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) holdsFocusRef.current = false;
         }}

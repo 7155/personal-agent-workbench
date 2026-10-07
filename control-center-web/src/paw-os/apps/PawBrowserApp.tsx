@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type WheelEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import { useMotionActivity } from '@/design/motion';
 import { BrowserFindBar, type BrowserFindMatch } from '@/features/browser/BrowserFindBar';
 import { BrowserLibraryPanel, type BrowserLibraryView } from '@/features/browser/BrowserLibraryPanel';
 import { BrowserOmnibox } from '@/features/browser/BrowserOmnibox';
@@ -79,6 +80,7 @@ import { usePageVisibility } from '@/platform/use-page-visibility';
 
 export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, { kind: 'browser-target' }> } = {}) {
   const transport = useControlTransport();
+  const motionActive = useMotionActivity();
   const electronHost = pawBrowserHost();
   const surfaceActive = usePawOsAppActive() ?? true;
   const pageVisible = usePageVisibility();
@@ -887,6 +889,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
         aria-label="Browser"
         onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented && showTrace) { event.preventDefault(); closeTrace(); } }}
         className="paw-direct-browser"
+        data-motion-active={motionActive}
         data-route-id="browser"
         data-tabs-in-window-chrome={windowChromeTarget ? true : undefined}
         role="region"

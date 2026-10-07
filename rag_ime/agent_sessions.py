@@ -2055,6 +2055,51 @@ class AgentSessionStore:
             ).fetchone()
         return int(row[0] if row else 0)
 
+    def runtime_tool_timing_pairs(
+        self, session_id: str, identities: Sequence[tuple[str, str, str]],
+    ) -> dict[tuple[str, str, str], tuple[int, int]]:
+        """Read exact, unambiguous Gateway-observed Tool spans, never model time.
+
+        Uses the existing bounded event journal and opaque Tool identity only.
+        Retention, incomplete or repeated calls yield unavailable evidence.
+        """
+        wanted = set(list(dict.fromkeys(identities))[-512:])
+        if not wanted:
+            return {}
+        turns = sorted({turn for turn, call, name in wanted if turn and call and name})
+        if not turns:
+            return {}
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                "SELECT turn_id, sequence, event_type, created_at_ms, metrics_json "
+                "FROM agent_runtime_events WHERE session_id=? AND event_type IN "
+                "('tool_started','tool_finished') AND turn_id IN ("
+                + ",".join("?" for _ in turns) + ") ORDER BY sequence LIMIT 2049",
+                (session_id, *turns),
+            ).fetchall()
+        if len(rows) > 2048:
+            return {}
+        grouped: dict[tuple[str, str, str], list[tuple[str, int, int]]] = {}
+        for row in rows:
+            try:
+                metrics = json.loads(str(row["metrics_json"] or "{}"))
+            except (TypeError, ValueError):
+                continue
+            identity = metrics.get("toolIdentity") if isinstance(metrics, Mapping) else None
+            if not isinstance(identity, Mapping):
+                continue
+            key = (str(row["turn_id"]), str(identity.get("toolCallId") or ""),
+                   str(identity.get("toolName") or ""))
+            if key in wanted:
+                grouped.setdefault(key, []).append((str(row["event_type"]),
+                    int(row["sequence"]), int(row["created_at_ms"])))
+        result = {}
+        for key, pair in grouped.items():
+            if (len(pair) == 2 and pair[0][0] == "tool_started" and pair[1][0] == "tool_finished"
+                    and pair[0][1] < pair[1][1] and 0 < pair[0][2] <= pair[1][2]):
+                result[key] = (pair[0][2], pair[1][2])
+        return result
+
     def runtime_turn_terminal_event(
         self,
         session_id: str,

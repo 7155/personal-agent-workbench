@@ -1,5 +1,6 @@
 import { CircleAlert, Globe2, LoaderCircle, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useMotionActivity } from '@/design/motion';
 import './browser-chrome.css';
 
 export type BrowserTabItem = {
@@ -46,6 +47,7 @@ export function BrowserTabStrip({
   onSelect(tabId: string): void;
   tabs: BrowserTabItem[];
 }) {
+  const motionActive = useMotionActivity();
   const tabButtons = useRef(new Map<string, HTMLButtonElement>());
   const newTabRef = useRef<HTMLButtonElement>(null);
   const closingFocusedTabRef = useRef('');
@@ -104,7 +106,7 @@ export function BrowserTabStrip({
   };
 
   return (
-    <div className="paw-browser-tabstrip" data-window-chrome={inWindowChrome || undefined}>
+    <div className="paw-browser-tabstrip" data-motion-active={motionActive} data-window-chrome={inWindowChrome || undefined}>
       <div aria-label="PAW Browser 标签页" className="paw-browser-tabs-live" role="tablist">
         {tabs.map((tab, index) => (
           <div

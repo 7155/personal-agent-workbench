@@ -550,3 +550,23 @@
     transition-duration: 1ms;
   }
 }
+
+/* The tab strip can be portalled into window chrome, so it carries the same
+   existing activity projection as the Browser workspace. Load state remains
+   visible and announced while only its movement is quiet. */
+.paw-browser-tabstrip[data-motion-active='false'] .ui-spin,
+.paw-direct-browser[data-motion-active='false'] .ui-spin {
+  animation: none;
+}
+
+.paw-direct-browser[data-motion-active='false'] .paw-browser-loadbar::before {
+  left: 0;
+  width: 100%;
+  animation: none;
+}
+
+.paw-desktop-root .paw-direct-browser[data-motion-active='false'] .paw-browser-agent-field .paw-browser-agent-signal,
+.paw-desktop-root .paw-direct-browser[data-motion-active='false'] .paw-browser-agent-field .paw-browser-agent-mark svg,
+.paw-desktop-root .paw-direct-browser[data-motion-active='false'] .paw-browser-agent-field .paw-browser-agent-counter svg {
+  animation: none;
+}

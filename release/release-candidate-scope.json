@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T15:25:12.655502+00:00",
+  "generatedAt": "2026-10-07T16:28:06.731079+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 64
+      "pathCount": 68
     }
   },
   "summary": {
-    "pathCount": 2177,
+    "pathCount": 2181,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1861
+      "keep_release": 1865
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 64,
+      "paw_experience_20261007": 68,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -4518,6 +4518,13 @@
       "reason": "Include current main follow-up source and existing verification in the local update."
     },
     {
+      "path": "control-center-web/src/features/browser/BrowserTabStrip.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/features/browser/browser-chrome.css",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -4537,6 +4544,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/browser/browser-motion.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/browser/index.tsx",
@@ -5769,6 +5783,13 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Integrate current product source and public contribution guidance."
+    },
+    {
+      "path": "control-center-web/src/features/files/files-motion.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/features/files/paw-os-files-app.css",
@@ -14190,6 +14211,13 @@
       "group": "verification",
       "reason": "Verify the integrated product behavior and ownership contracts.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_durable_tool_history_timing.py",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
     },
     {
       "path": "tests/test_ego_browser_runtime_build.py",

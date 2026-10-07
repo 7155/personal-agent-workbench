@@ -2004,7 +2004,14 @@ function activityReceiptMeta(
   nowMs: number,
   toolView: PublicToolResultView | null,
 ): string {
-  const duration = fxActivityMeta(activity) || activityDuration(activity, nowMs);
+  // Durable history may retain the Provider message timestamp without a Tool
+  // start receipt. It orders the row, but cannot measure Tool execution time.
+  const duration = fxActivityMeta(activity) || (
+    activity.payload.toolTimingAvailable === false
+      && ['tool_started', 'tool_progress', 'tool_finished'].includes(activity.kind)
+      ? ''
+      : activityDuration(activity, nowMs)
+  );
   const tokens = activityTokenReceipt(activity, toolView);
   return [duration, tokens].filter(Boolean).join(' · ');
 }

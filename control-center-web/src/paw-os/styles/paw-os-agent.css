@@ -721,6 +721,12 @@
   height: calc(var(--workspace-composer-clearance) + var(--workspace-composer-gap));
 }
 
+/* Native focus/scrollIntoView must use the same unobscured viewport as the
+   footer reserve; otherwise Tab can place Tool actions behind the composer. */
+.paw-desktop-root .paw-session-workspace__conversation .agent-timeline > [data-virtuoso-scroller] {
+  scroll-padding-block-end: calc(var(--workspace-composer-clearance) + var(--workspace-composer-gap));
+}
+
 /* 右侧对话导航同样避开浮卡，窄窗口下不会与卡片右缘相碰。 */
 .paw-desktop-root .paw-session-workspace__conversation .agent-conversation-nav {
   bottom: calc(var(--workspace-composer-clearance) + var(--workspace-composer-gap));

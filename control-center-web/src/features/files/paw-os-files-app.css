@@ -1291,7 +1291,6 @@ i.paw-files-tree__disclosure {
   border: 1px dashed color-mix(in srgb, var(--color-accent) 36%, transparent);
   border-radius: 50%;
   content: '';
-  animation: paw-files-lens-orbit 26s linear infinite;
 }
 
 .paw-files-preview__empty strong {
@@ -1619,10 +1618,6 @@ i.paw-files-tree__disclosure {
   to { background-position: 14px 0, 0 0; }
 }
 
-@keyframes paw-files-lens-orbit {
-  to { transform: rotate(360deg); }
-}
-
 /* -------------------------------------------------------------------------
    Reflow. Files reflows with its window (container queries), never the
    viewport, and each surface answers to the container that actually owns its
@@ -1932,4 +1927,14 @@ i.paw-files-tree__disclosure {
 @container paw-files (max-width: 620px) {
   .paw-files-tree__row { min-height: 44px; }
   .paw-files-crumbs__segment { min-width: 44px; min-height: 44px; }
+}
+
+/* Presentation activity never cancels a file read. Keep its static loading
+   identity while the owning window is hidden, inactive, or motion is reduced.
+   The toolbar also projects activity because it can live in window chrome. */
+.paw-files-app[data-motion-active='false'] .ui-spin,
+.paw-files-app__toolbar[data-motion-active='false'] .ui-spin,
+.paw-files-app[data-motion-active='false'] .paw-files-skeleton > i,
+.paw-files-app[data-motion-active='false'] .paw-files-preview__meter[data-busy] > i {
+  animation: none;
 }
