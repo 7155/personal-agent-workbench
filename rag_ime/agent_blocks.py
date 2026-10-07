@@ -325,10 +325,12 @@ def _summary(block_type: str, data: Mapping[str, object]) -> str:
         return f"状态：{title or _compact(data.get('state') or data.get('summary') or '已更新', 160)}"
     if block_type == "unknown":
         return f"暂不支持的内容：{_compact(data.get('originalType') or 'unknown', 80)}"
-    return _compact(data.get("summary") or data.get("text") or data.get("message") or title or f"已生成 {block_type} 内容")
+    return _compact(data.get("summary") or data.get("text") or data.get("message") or title or f"已生成 {block_type} 内容", MAX_SUMMARY_CHARS)
 
 
 def _presentation(block_type: str) -> str:
+    if block_type == "text":
+        return "markdown"  # Canonical text presentation from agent_protocol.
     if block_type in RICH_BLOCK_TYPES:
         return f"{block_type}.v1"
     return "unsupported" if block_type == "unknown" else block_type

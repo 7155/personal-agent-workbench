@@ -109,6 +109,8 @@
 .paw-coordinator__settings button { font: inherit; padding: 7px 9px; min-height: 36px; border: 0; border-radius: 7px; cursor: pointer; background: var(--color-surface-subtle); color: var(--color-workspace-ink); }
 .paw-coordinator__settings button[aria-pressed='true'] { background: var(--color-workspace-ink); color: var(--color-workspace-surface); }
 .paw-coordinator__settings fieldset > button { margin-top: 8px; }
+.paw-coordinator__companion-entry { margin-top: 16px; }
+.paw-coordinator__companion-entry > button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
 .paw-coordinator__settings p { color: var(--color-workspace-secondary); font-size: 12px; line-height: 1.6; margin-bottom: 0; }
 /* FX messages share the column but keep a lightly tinted user bubble. The
    legacy left margin must not consume a narrow App's reading width. */

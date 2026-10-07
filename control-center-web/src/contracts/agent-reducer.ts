@@ -1648,6 +1648,11 @@ function applyTextDelta(
   const delta = text(payload.delta);
   if (!delta) return;
   const baseMessageId = text(payload.messageId) || `${event.turnId}:assistant`;
+  // The exact immutable native completion owns this content. A historical
+  // snapshot may precede an older SSE delta; do not append that tail again.
+  if (isDurableAssistantIdentity(baseMessageId)
+    && text(payload.sourceLoopId) === baseMessageId
+    && state.messagesById[baseMessageId]?.status === 'completed') return;
   const replaceContent = payload.replaceContent === true;
   const messageId = streamingAssistantSegmentId(
     state,
@@ -1992,7 +1997,10 @@ function completedAssistantSegment(
 ): AgentMessageProjection {
   const segments = assistantSegmentsForBase(state, message.turnId, message.id);
   const latest = segments[segments.length - 1];
-  const targetId = latest?.status === 'streaming'
+  const nativeIdentity = isDurableAssistantIdentity(message.id)
+    && text(record(event.payload).sourceLoopId) === message.id;
+  const continuing = latest && (nativeIdentity || latest.status === 'streaming');
+  const targetId = nativeIdentity ? message.id : latest?.status === 'streaming'
     ? latest.id
     : latest
       ? `${message.id}:segment:${event.sequence}`
@@ -2000,11 +2008,15 @@ function completedAssistantSegment(
   return {
     ...message,
     id: targetId,
-    createdAtMs: latest?.status === 'streaming' ? latest.createdAtMs : message.createdAtMs,
-    timelineSequence: latest?.status === 'streaming'
+    createdAtMs: continuing ? latest.createdAtMs : message.createdAtMs,
+    timelineSequence: continuing
       ? latest.timelineSequence ?? message.timelineSequence ?? sourceTimelineSequence(event)
       : message.timelineSequence ?? sourceTimelineSequence(event),
   };
+}
+
+function isDurableAssistantIdentity(value: string): boolean {
+  return /^durable:task:[1-9][0-9]*:assistant$/u.test(value);
 }
 
 function assistantSegmentsForBase(

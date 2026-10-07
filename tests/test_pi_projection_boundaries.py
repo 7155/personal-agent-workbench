@@ -13,6 +13,7 @@ from rag_ime.pi.event_projection import (
     text_delta_payload,
     tool_event_payload,
 )
+from rag_ime.pi.public import pi_message_payload
 from rag_ime.pi.transcript_io import (
     read_recent_transcript_tail,
     transcript_boundary_sha256,
@@ -76,6 +77,36 @@ class PiProjectionBoundaryTests(unittest.TestCase):
         self.assertTrue(event["replaceBlock"])
         self.assertEqual(event["sourceLoopId"], "loop:2")
         self.assertEqual(message["content"], "<thinking>private</thinking>Visible")
+
+    def test_durable_delta_matches_native_completion_not_the_turn_alias(self) -> None:
+        raw = {
+            "id": "durable:task:22:assistant", "role": "assistant", "timestamp": 1000,
+            "content": [{"type": "thinking", "thinking": ""},
+                        {"type": "thinking", "thinking": ""},
+                        {"type": "text", "text": "Verified. The directory is empty."}],
+        }
+        before = copy.deepcopy(raw)
+        streamed = text_delta_payload(
+            raw, {"contentIndex": 2, "delta": "The directory is empty."},
+            turn_id="turn:1", replace_block=False, source_loop_id=raw["id"],
+        )
+        completed = pi_message_payload(raw, session_id="session:1", turn_id="turn:1").to_payload()
+        self.assertEqual(streamed["messageId"], completed["id"])
+        self.assertEqual(streamed["blockId"], completed["id"] + ":text")
+        self.assertEqual(streamed["delta"], "The directory is empty.")
+        self.assertEqual(streamed["contentIndex"], 2)
+        self.assertEqual(raw, before)
+
+    def test_durable_tool_phases_keep_distinct_native_stream_identities(self) -> None:
+        streams = [text_delta_payload(
+            {"id": identity, "content": [{"type": "text", "text": text}]},
+            {"contentIndex": 0, "delta": text}, turn_id="turn:1", replace_block=True,
+            source_loop_id=identity,
+        ) for identity, text in [("durable:task:18:assistant", "Checking."),
+                                  ("durable:task:22:assistant", "Checked.")]]
+        self.assertEqual([item["messageId"] for item in streams],
+                         ["durable:task:18:assistant", "durable:task:22:assistant"])
+        self.assertTrue(all(item["replaceBlock"] for item in streams))
 
     def test_tool_events_preserve_measured_duration_without_inventing_timing(
         self,

@@ -4,14 +4,14 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 .desktop-pet {
   position: relative; display: flex; flex-direction: column; align-items: center;
   width: 100vw; height: 100vh; padding: 35px 8px 8px; gap: 5px; user-select: none;
-  color: var(--color-text); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
+  color: var(--color-text); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 4px;
 }
 .desktop-pet[data-expanded='true'] {
   border: 1px solid var(--color-border); border-radius: 18px;
   background: var(--color-surface); box-shadow: inset 0 1px 0 rgb(255 255 255 / .45);
   padding: 36px 12px 10px;
 }
-.desktop-pet button { font: inherit; }
+.desktop-pet button { font: inherit; scroll-margin-block: 4px; }
 .desktop-pet button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .desktop-pet__drag, .desktop-pet__hide {
   position: absolute; top: 3px; height: 32px; min-width: 32px; border: 0; border-radius: 8px;
@@ -27,11 +27,12 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 .desktop-pet__hide { right: 7px; width: 32px; font-size: 18px !important; }
 .desktop-pet__planet {
   position: relative; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0;
+  max-width: 100%;
   border-radius: 50%; background: transparent; cursor: pointer;
   filter: drop-shadow(0 7px 6px rgb(30 54 74 / .14));
 }
-.desktop-pet__planet > svg { width: min(112px, calc(100vw - 16px)); height: auto; }
-.desktop-pet[data-expanded='true'] .desktop-pet__planet > svg { width: min(64px, calc(100vw - 24px)); }
+.desktop-pet__planet > svg:not(.desktop-pet__signal) { width: 112px; max-width: 100%; height: auto; }
+.desktop-pet[data-expanded='true'] .desktop-pet__planet > svg:not(.desktop-pet__signal) { width: 64px; }
 .desktop-pet__planet:hover { filter: drop-shadow(0 8px 8px rgb(30 54 74 / .24)); }
 .desktop-pet__hint {
   max-width: 100%; border-radius: 8px; padding: 4px 6px; text-align: center;

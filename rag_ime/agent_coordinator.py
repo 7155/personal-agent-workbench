@@ -72,6 +72,7 @@ class CoordinatorPorts:
     resume: Callable[[str, Mapping[str, object]], dict[str, object]]
     post_room: Callable[[str, Mapping[str, object]], dict[str, object]]
     abort_room: Callable[[str, Mapping[str, object]], dict[str, object]]
+    session_result: Callable[[str, str, str], dict[str, object]]
 
 
 _LOCKS: dict[str, RLock] = {}
@@ -176,6 +177,25 @@ def coordinator_command(ports: CoordinatorPorts, payload: Mapping[str, object], 
             raise ValueError("read accepts no input")
         return {"schemaVersion": "rag-ime.agent-coordinator-read.v1", "ok": True, "coordinatorId": identity, "sourceSessionId": source_id,
                 "objects": owned_objects(ports, source_id)}
+    if action == "read_result":
+        target_id = _text(payload.get("targetId"), "targetId")
+        with ports.sessions._read_connect() as conn:
+            link = conn.execute("SELECT target_kind FROM agent_coordinator_objects WHERE target_id=? AND coordinator_id=? AND source_session_id=?", (target_id, identity, source_id)).fetchone()
+        if link is None:
+            raise ValueError("target is not controlled by this Agent")
+        kind = str(link[0])
+        if kind == "session":
+            if set(input_value) != {"turnId", "clientMessageId"}:
+                raise ValueError("read_result requires the exact turnId and clientMessageId")
+            result = ports.session_result(target_id, _text(input_value.get("turnId"), "turnId"),
+                                          _text(input_value.get("clientMessageId"), "clientMessageId"))
+        else:
+            if set(input_value) != {"roomTurnId"}:
+                raise ValueError("read_result requires the exact roomTurnId")
+            result = _room_result(ports, target_id, _text(input_value.get("roomTurnId"), "roomTurnId"))
+        return {"schemaVersion": "rag-ime.agent-coordinator-result.v1", "ok": True,
+                "evidenceOnly": True, "coordinatorId": identity, "sourceSessionId": source_id,
+                "targetId": target_id, "kind": kind, **result}
     if action in {"create_session", "create_room", "prompt", "resume"} and ports.sessions.get(source_id).get("executionMode") != "full_trust":
         raise ValueError("Agent execution permissions changed; full-trust control is no longer authorized")
     if action in {"create_session", "create_room"}:
@@ -287,6 +307,49 @@ def insert_binding(conn: sqlite3.Connection, target_id: str, kind: str, binding:
     conn.execute("INSERT INTO agent_coordinator_objects VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (target_id, kind, binding["coordinatorId"], binding["sourceSessionId"], binding["clientRequestId"],
          binding["requestSha256"], binding["task"], int(time.time()*1000)))
+
+
+def _room_result(ports: CoordinatorPorts, room_id: str, turn_id: str) -> dict[str, object]:
+    # These are original public event receipts, not the Room's latest snapshot.
+    # A participant terminal proves only that participant's execution ended.
+    events = ports.rooms.list_events_for_turn(room_id, turn_id, limit=100)
+    terminals = []
+    messages = []
+    acceptance = None
+    for event in events:
+        reference = {key: event.get(key) for key in
+                     ("eventId", "sequence", "eventType", "turnId", "participantId", "sourceSessionId", "createdAtMs")}
+        payload = event.get("payload")
+        payload = payload if isinstance(payload, Mapping) else {}
+        if event.get("eventType") == "user_message" and acceptance is None:
+            acceptance = reference
+        if event.get("eventType") in {"turn_completed", "turn_failed"}:
+            terminals.append({**reference, "status": str(payload.get("status") or "")[:80]})
+        if event.get("eventType") in {"participant_message", "room_post"}:
+            message = payload.get("message")
+            message = message if isinstance(message, Mapping) else {}
+            if message.get("role") and message.get("role") != "assistant":
+                continue
+            text = str(payload.get("text") or message.get("text") or "")
+            if not text:
+                text = "\n".join(str(data.get("text") or data.get("markdown") or data.get("code") or "")
+                                 for block in message.get("blocks", []) if isinstance(block, Mapping)
+                                 and block.get("type") in {"text", "code"}
+                                 for data in [block.get("data")] if isinstance(data, Mapping))
+            if text:
+                messages.append({**reference, "messageId": str(message.get("id") or ""),
+                                 "text": text[:8000], "truncated": len(text) > 8000})
+    remaining = 8000
+    selected = messages[-8:]
+    for message in reversed(selected):
+        text = str(message["text"])
+        message["text"] = text[:remaining]
+        message["truncated"] = bool(message["truncated"]) or len(text) > remaining
+        remaining -= len(str(message["text"]))
+    return {"execution": {"roomId": room_id, "roomTurnId": turn_id},
+            "state": "unknown", "reason": "room_root_settlement_not_projected" if events else "original_turn_evidence_unavailable",
+            "acceptanceRef": acceptance, "terminalRefs": terminals[:16], "finalMessages": selected, "artifacts": [],
+            "truncated": len(events) == 100 or len(terminals) > 16 or len(messages) > 8 or any(message["truncated"] for message in selected)}
 
 
 def require_binding_source(conn: sqlite3.Connection, binding: Mapping[str, object]) -> None:

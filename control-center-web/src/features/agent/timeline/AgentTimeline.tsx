@@ -1451,7 +1451,7 @@ export const AgentTurn = memo(function AgentTurn({
                     <AgentRecoveryActions
                       disabled={turnRecoveryDisabled} modelDisabled={!modelSelectionAvailable}
                       submitted={retryRequested} continueTurn={safeContinuation}
-                      label={safeContinuation && failurePresentation === 'compact' ? '继续问数' : undefined}
+                      label={safeContinuation && failurePresentation === 'compact' ? '继续对话' : undefined}
                       onSwitchModel={failurePresentation === 'default' ? onSwitchModel : undefined}
                       onRetry={safeContinuation ? onContinueTurn ? () => {
                         if (onContinueTurn(turnId)) setRetryRequestedFor(`${projectionKey}:${turnId}:${turn.status}`);

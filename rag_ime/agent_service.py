@@ -2501,6 +2501,10 @@ class AgentService:
             resume=self.resume_session,
             post_room=self.post_room_message,
             abort_room=self.abort_room_turn,
+            session_result=lambda target, turn, client: self.message_snapshot.read_result(
+                target, turn, client, acceptance=self.command_receipts.acceptance_evidence_for_exact_command(
+                    command_scope="session_prompt", scope_id=target, client_message_id=client)
+                or self.sessions.prompt_acceptance_evidence(target, client)),
         )
 
     def ensure_coordinator(self, payload: Mapping[str, object]) -> dict[str, object]:

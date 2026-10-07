@@ -1,4 +1,4 @@
-import { ArrowUpRight, BookOpen, Check, ChevronDown, Circle, CirclePause, FileText, ListChecks, MessageCircle, MoreHorizontal, Network, Plus, RefreshCw, Scan, Square, X } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Check, ChevronDown, Circle, CirclePause, FileText, ListChecks, MessageCircle, MoreHorizontal, Network, Orbit, Plus, RefreshCw, Scan, Square, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AgentProjectionState } from '@/contracts/agent-reducer';
 import type { JsonValue } from '@/platform/transport';
@@ -75,6 +75,10 @@ function PawCoordinatorAppBody() {
   const capturePending = useRef(false);
   const [captureNotice, setCaptureNotice] = useState('');
   const host: ScreenAssistantHost | undefined = typeof window === 'undefined' ? undefined : window.pawScreenAssistant;
+  const companionHost = typeof window === 'undefined' ? undefined : window.pawDesktopCompanion;
+  const companionPending = useRef(false);
+  const [companionBusy, setCompanionBusy] = useState(false);
+  const [companionNotice, setCompanionNotice] = useState('');
   const [sourceSynced, setSourceSynced] = useState(false);
   const [sourceRecovery, setSourceRecovery] = useState<AgentRecoveryState>('recovering');
   const sourceProjection = useAgentLiveStore(state => selectAgentProjection(state, agentSessionAddress(transport, record?.id ?? '')));
@@ -87,6 +91,13 @@ function PawCoordinatorAppBody() {
     try { const opened = await host.capture({ sourceSessionId: record.id }); setCaptureNotice(opened ? '框选窗口已打开，在选区对话中继续。' : '框选未打开，可以再次尝试。'); }
     catch (reason) { setCaptureNotice(publicAgentErrorText(reason, '框选未能打开，请重试。')); }
     finally { capturePending.current = false; setCaptureBusy(false); }
+  };
+  const showCompanion = async () => {
+    if (!companionHost || companionPending.current) return;
+    companionPending.current = true; setCompanionBusy(true); setCompanionNotice('正在打开桌面行星…');
+    try { const shown = await companionHost.show(); setCompanionNotice(shown ? '桌面行星已显示。' : '桌面行星未能打开，可以再次尝试。'); }
+    catch (reason) { setCompanionNotice(publicAgentErrorText(reason, '桌面行星未能打开，请重试。')); }
+    finally { companionPending.current = false; setCompanionBusy(false); }
   };
   const railOpenRef = useRef(railOpen); railOpenRef.current = railOpen;
   const readingSurface = useRef<HTMLDivElement>(null);
@@ -201,7 +212,10 @@ function PawCoordinatorAppBody() {
         : <p className="paw-coordinator__loading">{reading ? '正在连接持久对话…' : '对话未连接，重新连接后继续。'}</p>}
     </main>
     <FocusScope asChild trapped={railOpen && surfaceActive} loop={railOpen} onMountAutoFocus={event => event.preventDefault()} onUnmountAutoFocus={event => event.preventDefault()}><aside onKeyDown={event => { if (event.key === 'Escape' && railOpen && !settingsOpen) { event.preventDefault(); closeRail(); } }} id="coordinator-controls" className="paw-coordinator__rail" aria-label="Agent 控制的 Session 与 Room">
-      <header className="paw-coordinator__identity"><CoordinatorIdentityStatus session={record} current={sourceCurrent} recovery={sourceRecovery} onOpen={record && desktop ? openSource : undefined}/><Popover open={settingsOpen} onOpenChange={setSettingsOpen}><PopoverTrigger asChild><button type="button" className="paw-coordinator__settings-trigger" aria-label="Agent 显示设置"><MoreHorizontal size={17}/></button></PopoverTrigger><PopoverContent align="end" className="paw-coordinator__settings" aria-label="Agent 显示设置" onCloseAutoFocus={event => { if (!railOpenRef.current) event.preventDefault(); }}><ChatPresentationSettings/></PopoverContent></Popover><button type="button" ref={railClose} className="paw-coordinator__rail-close" aria-label="收起控制面板" onClick={() => { closeRail(); }}><X size={16}/></button></header>
+      <header className="paw-coordinator__identity"><CoordinatorIdentityStatus session={record} current={sourceCurrent} recovery={sourceRecovery} onOpen={record && desktop ? openSource : undefined}/><Popover open={settingsOpen} onOpenChange={setSettingsOpen}><PopoverTrigger asChild><button type="button" className="paw-coordinator__settings-trigger" aria-label="Agent 显示设置"><MoreHorizontal size={17}/></button></PopoverTrigger><PopoverContent align="end" className="paw-coordinator__settings" aria-label="Agent 显示设置" onCloseAutoFocus={event => { if (!railOpenRef.current) event.preventDefault(); }}>
+        <ChatPresentationSettings/>
+        {companionHost ? <div className="paw-coordinator__companion-entry"><button type="button" disabled={companionBusy} aria-busy={companionBusy} onClick={() => { void showCompanion(); }}><Orbit size={16}/>显示桌面行星</button>{companionNotice ? <p role="status">{companionNotice}</p> : null}</div> : null}
+      </PopoverContent></Popover><button type="button" ref={railClose} className="paw-coordinator__rail-close" aria-label="收起控制面板" onClick={() => { closeRail(); }}><X size={16}/></button></header>
       <CoordinatorProgress current={sourceCurrent} connected={Boolean(record)}/>
       <details className="paw-coordinator__rail-section" open><summary><Network size={15}/><strong>Session 与 Room</strong><span>{objects.length}</span><ChevronDown size={14}/></summary>
       <div className="paw-coordinator__section-heading"><h2 className="paw-coordinator__sr-only">Sessions & Rooms <span>{objects.length}</span></h2><button type="button" aria-label="刷新控制对象" disabled={reading} onClick={() => { void refresh(); }}><RefreshCw size={14}/></button></div>

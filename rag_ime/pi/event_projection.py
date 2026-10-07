@@ -1,6 +1,8 @@
 """Pure Host event projections; callers retain ordering and terminal authority."""
 
 from __future__ import annotations
+
+import re
 from collections.abc import Mapping
 from .public import (
     inspectable_tool_result,
@@ -216,9 +218,18 @@ def text_delta_payload(
     replace_content = current_text.lstrip().startswith("<")
     if replace_content:
         delta = visible_message_text("assistant", current_text)
+    # Durable assigns one immutable identity per native assistant task. Its
+    # completion/transcript use this id too; a turn-wide live alias would leave
+    # a second message beside the final receipt, including incomplete streams.
+    # Classic retains its turn alias and segment behavior around Tool calls.
+    message_id = (
+        source_loop_id
+        if re.fullmatch(r"durable:task:[1-9][0-9]*:assistant", source_loop_id)
+        else f"{turn_id}:assistant"
+    )
     return {
-        "messageId": f"{turn_id}:assistant",
-        "blockId": f"{turn_id}:assistant:text",
+        "messageId": message_id,
+        "blockId": f"{message_id}:text",
         "contentIndex": content_index,
         "delta": delta,
         **({"replaceContent": True} if replace_content else {}),

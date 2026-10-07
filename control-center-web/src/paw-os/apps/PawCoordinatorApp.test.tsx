@@ -17,7 +17,7 @@ import { PawCoordinatorApp, CoordinatorProgress, coordinatorObjects, coordinator
 vi.mock('./agent-workspace-loader', () => ({ loadSessionWorkspace: async () => ({ default: ({ recordId, onSessionCreated }: { recordId: string; onSessionCreated: (session: SessionSummary, draft: string) => void }) => <div><p>持久会话 {recordId}</p><textarea aria-label="Agent 草稿"/><button onClick={() => onSessionCreated({ ...session, id: 'fork', title: '历史分支' }, '带入分支的草稿')}>测试原生分支回调</button></div> }) }));
 vi.mock('@/features/agent/runtime/use-agent-live-session', () => ({ useAgentLiveSession: vi.fn(() => vi.fn()) }));
 vi.mock('@/features/rooms/runtime/use-room-live-session', () => ({ useRoomLiveSession: () => vi.fn() }));
-afterEach(() => { cleanup(); vi.mocked(useAgentLiveSession).mockReset().mockImplementation(() => vi.fn()); localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY); delete window.pawScreenAssistant; });
+afterEach(() => { cleanup(); vi.mocked(useAgentLiveSession).mockReset().mockImplementation(() => vi.fn()); localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY); delete window.pawScreenAssistant; delete window.pawDesktopCompanion; });
 const session: SessionSummary = { id:'persistent',title:'Agent',mode:'coordinator',status:'idle',updatedAtMs:1,roleId:'sol',roleVersion:'1',roleBookRevisionId:'1',workspaceRoots:['/'],executionMode:'full_trust' };
 const target = { ...session, id:'owned',title:'核对资料' };
 const object = { id:target.id,kind:'session' as const,coordinatorId:'owner',sourceSessionId:session.id,task:'核对资料',target };
@@ -41,6 +41,17 @@ function completedCoordinatorProjection() {
  return reduceAgentEvent(answering,coordinatorOutcomeEvent(2,'previous','turn_completed',{status:'completed'})).state;
 }
 describe('persistent coordinator App', () => {
+ it('opens the real companion host once while pending and preserves the draft on a failed show', async () => {
+  let settle!: (shown: boolean) => void;
+  const show=vi.fn(()=>new Promise<boolean>(resolve=>{settle=resolve}));
+  window.pawDesktopCompanion={show,hide:vi.fn()};
+  setup(); const draft=await screen.findByRole('textbox',{name:'Agent 草稿'}); fireEvent.change(draft,{target:{value:'打开行星时保留的草稿'}});
+  fireEvent.click(screen.getByRole('button',{name:'Agent 显示设置'}));
+  const button=await screen.findByRole('button',{name:'显示桌面行星'}); fireEvent.click(button); fireEvent.click(button);
+  expect(show).toHaveBeenCalledTimes(1); expect(button).toBeDisabled(); expect(button).toHaveAttribute('aria-busy','true');
+  await act(async()=>settle(false)); expect(await screen.findByText('桌面行星未能打开，可以再次尝试。')).toBeVisible();
+  expect(draft).toHaveValue('打开行星时保留的草稿'); expect(button).not.toBeDisabled();
+ });
  it('uses only the actual capture host with exact source binding and keeps the draft while pending', async () => {
   let settle!: (opened: boolean) => void;
   const capture=vi.fn(()=>new Promise<boolean>(resolve=>{settle=resolve}));

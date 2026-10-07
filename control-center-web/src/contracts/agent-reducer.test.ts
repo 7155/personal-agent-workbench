@@ -487,6 +487,56 @@ describe('AgentEventReducer', () => {
     expect(rewritten.lastSequence).toBe(99);
   });
 
+  it('replaces a partial native Durable stream with its one complete receipt', () => {
+    const id = 'durable:task:22:assistant';
+    const events = [
+      agentEvent(1, 'text_delta', { messageId: id, blockId: `${id}:text`, sourceLoopId: id, contentIndex: 2, delta: 'The directory is empty.' }),
+      agentEvent(2, 'message_completed', { message: serverMessage(id, 'assistant', 'turn-1', 'Verified. The directory is empty.'), sourceLoopId: id }),
+      agentEvent(3, 'turn_completed', {}),
+    ];
+    const live = reduceAgentEvents(createAgentProjection('session-1'), events);
+    expect(live.messageOrder).toEqual([id]);
+    expect(textOf(live.messagesById[id])).toBe('Verified. The directory is empty.');
+    expect(live.messagesById[id].status).toBe('completed');
+    const refreshed = applyAgentSnapshot(live, { messages: [serverMessage(id, 'assistant', 'turn-1', 'Verified. The directory is empty.')], liveEvents: events,
+      status: 'idle', lastSequence: 3, resumeToken: 'session-1:3' });
+    expect(refreshed.messageOrder).toEqual([id]);
+    expect(textOf(refreshed.messagesById[id])).toBe('Verified. The directory is empty.');
+  });
+
+  it('keeps two native Durable assistant phases around a tool without turn-level folding', () => {
+    const first = 'durable:task:18:assistant', last = 'durable:task:22:assistant';
+    const state = reduceAgentEvents(createAgentProjection('session-1'), [
+      agentEvent(1, 'text_delta', { messageId: first, blockId: `${first}:text`, sourceLoopId: first, delta: 'Checking.' }),
+      agentEvent(2, 'message_completed', { message: serverMessage(first, 'assistant', 'turn-1', 'Checking.'), sourceLoopId: first }),
+      agentEvent(3, 'tool_started', { toolCallId: 'read-one', toolName: 'read' }),
+      agentEvent(4, 'tool_finished', { toolCallId: 'read-one', toolName: 'read', result: { content: [] } }),
+      agentEvent(5, 'text_delta', { messageId: last, blockId: `${last}:text`, sourceLoopId: last, delta: 'Checked.', replaceBlock: true }),
+      agentEvent(6, 'message_completed', { message: serverMessage(last, 'assistant', 'turn-1', 'Checked.'), sourceLoopId: last }),
+      agentEvent(7, 'turn_completed', {}),
+    ]);
+    expect(state.messageOrder).toEqual([first, last]);
+    expect(state.messageOrder.map(id => textOf(state.messagesById[id]))).toEqual(['Checking.', 'Checked.']);
+    expect(state.activitiesById['read-one'].status).toBe('completed');
+  });
+
+  it('does not replay a late native Durable delta or completion over its exact completed history', () => {
+    const id = 'durable:task:22:assistant';
+    const message = serverMessage(id, 'assistant', 'turn-1', 'Verified. The directory is empty.');
+    const replay = [agentEvent(1, 'text_delta', { messageId: id, blockId: `${id}:text`, sourceLoopId: id, contentIndex: 2, delta: 'The directory is empty.' })];
+    const history = applyAgentSnapshot(createAgentProjection('session-1'), { messages: [message], liveEvents: replay,
+      status: 'busy', lastSequence: 1, resumeToken: 'session-1:1' });
+    expect(history.messageOrder).toEqual([id]);
+    expect(textOf(history.messagesById[id])).toBe('Verified. The directory is empty.');
+    expect(history.messagesById[id].status).toBe('completed');
+    expect(history.lastSequence).toBe(1);
+    const repeated = reduceAgentEvent(history, agentEvent(2, 'message_completed', { message, sourceLoopId: id })).state;
+    expect(repeated.lastSequence).toBe(2);
+    expect(repeated.lastEventId).toBe('session-1:2');
+    expect(repeated.messageOrder).toEqual([id]);
+    expect(textOf(repeated.messagesById[id])).toBe('Verified. The directory is empty.');
+  });
+
   it('preserves assistant segments around a tool call instead of replacing earlier text', () => {
     let state = createAgentProjection('session-1');
     const events = [
