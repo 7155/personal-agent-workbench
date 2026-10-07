@@ -34,17 +34,23 @@ const particleSeeds = [[17,15],[20,12],[28,18],[48,21],[69,23],[95,15],[112,20],
   [237,18],[254,12],[275,24],[290,14],[315,20]];
 
 /** Decoration only: no catalog, selection callback, Pi or network owner. */
-export function ReasoningSliderEffects({ enabled, maximum, dragging, velocity }: {
-  enabled: boolean; maximum: boolean; dragging: boolean;
+export function ReasoningSliderEffects({ enabled, maximum, confirmedMaximum, pending, dragging, velocity }: {
+  enabled: boolean; maximum: boolean; confirmedMaximum: boolean; pending: boolean; dragging: boolean;
   velocity: RefObject<SliderVelocity>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null), burstRef = useRef<HTMLCanvasElement>(null);
   const previousMaximum = useRef(maximum);
+  const previousConfirmedMaximum = useRef(confirmedMaximum);
   const latest = useRef({ maximum, dragging }); latest.current = { maximum, dragging };
   const motion = useRef({ speed: 0, from: 0, target: 0, changedAt: 0, travel: 0, burst: 0, frames: 0, bursts: 0 });
   useEffect(() => {
-    const entered = maximum && !previousMaximum.current;
+    // Native SSE can update the catalog before the two configuration requests
+    // settle. Keep the last settled value until pending ends, so that real ACK
+    // receives its confirmation even if its preview entry was cancelled.
+    const entered = (maximum && !previousMaximum.current)
+      || (confirmedMaximum && !previousConfirmedMaximum.current);
     previousMaximum.current = maximum;
+    if (!pending) previousConfirmedMaximum.current = confirmedMaximum;
     motion.current.burst = 0;
     if (!enabled || !entered) return;
     const timer = window.setTimeout(() => {
@@ -52,7 +58,7 @@ export function ReasoningSliderEffects({ enabled, maximum, dragging, velocity }:
       if (rootRef.current) rootRef.current.dataset.bursts = String(++motion.current.bursts);
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [enabled, maximum]);
+  }, [enabled, maximum, confirmedMaximum, pending]);
 
   useEffect(() => {
     const root = rootRef.current, canvas = canvasRef.current, burst = burstRef.current;

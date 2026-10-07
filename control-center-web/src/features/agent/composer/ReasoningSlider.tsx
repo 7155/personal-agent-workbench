@@ -37,7 +37,7 @@ export function ReasoningSlider({ levels, selected, disabled, effectsEnabled = f
   const fraction = levels.length > 1 ? index / (levels.length - 1) : 0;
   return <div className="agent-reasoning-slider" data-dragging={dragging} data-effects-max={levels[index] === 'max'}
     style={{ '--slider-fraction': fraction } as CSSProperties}>
-    <ReasoningSliderEffects enabled={effectsEnabled && !disabled} maximum={levels[index] === 'max'} dragging={dragging} velocity={velocity}/>
+    <ReasoningSliderEffects enabled={effectsEnabled && !disabled} maximum={levels[index] === 'max'} confirmedMaximum={selected === 'max'} pending={disabled} dragging={dragging} velocity={velocity}/>
     <div className="agent-reasoning-slider__ticks" aria-hidden="true">
       {levels.map((level, n) => <span key={level} data-selected={n === index} data-passed={n <= index}
         style={{ '--tick-fraction': levels.length > 1 ? n / (levels.length - 1) : 0 } as CSSProperties}/>) }

@@ -229,6 +229,19 @@ describe('v2 transactional reasoning slider', () => {
     pointer(slider,'pointerdown');fireEvent.change(slider,{target:{value:'0'}});pointer(slider,'pointerup');
     expect(onChange).toHaveBeenCalledTimes(3);expect(onChange).toHaveBeenLastCalledWith('gpt','gpt-5.6-luna','off');
   });
+  it('confirms max once when the native catalog event precedes request settlement', async () => {
+    const {view,props}=renderV2();const {slider}=await openV2();
+    const update=(pending:boolean,level:ThinkingLevel)=>view.rerender(<ChatPresentationProvider ownerKey="test:reasoning-slider-v2" defaultVersion="v2"><ModelPicker {...props} pending={pending} catalog={{...props.catalog,thinkingLevel:level}}/></ChatPresentationProvider>);
+    vi.useFakeTimers();
+    pointer(slider,'pointerdown');fireEvent.change(slider,{target:{value:'3'}});pointer(slider,'pointerup');
+    update(true,'high');update(true,'max');
+    act(()=>vi.advanceTimersByTime(400));
+    expect(document.querySelector('.agent-reasoning-effects')).toHaveAttribute('data-bursts','0');
+    update(false,'max');act(()=>vi.advanceTimersByTime(220));
+    expect(document.querySelector('.agent-reasoning-effects')).toHaveAttribute('data-bursts','1');
+    update(false,'max');act(()=>vi.advanceTimersByTime(500));
+    expect(document.querySelector('.agent-reasoning-effects')).toHaveAttribute('data-bursts','1');
+  });
   it('discards pointer cancellation and Escape without changing Pi selection', async () => {
     const {onChange}=renderV2();const {slider,trigger}=await openV2();
     pointer(slider,'pointerdown');fireEvent.change(slider,{target:{value:'0'}});pointer(slider,'pointercancel');
