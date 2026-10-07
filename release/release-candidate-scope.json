@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T22:50:26.920015+00:00",
+  "generatedAt": "2026-10-07T23:50:26.370210+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -199,14 +199,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 89
+      "pathCount": 94
     }
   },
   "summary": {
-    "pathCount": 2202,
+    "pathCount": 2207,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1886
+      "keep_release": 1891
     },
     "groupCounts": {
       "local_docs": 121,
@@ -227,7 +227,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 89,
+      "paw_experience_20261007": 94,
       "verification": 119,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -3167,6 +3167,13 @@
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
     },
     {
+      "path": "control-center-web/src/components/primitives/Dialog.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
       "path": "control-center-web/src/components/primitives/Disclosure.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -3186,6 +3193,20 @@
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/Menu.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/components/primitives/Popover.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
     },
     {
       "path": "control-center-web/src/components/primitives/PrimitivesShowcase.test.tsx",
@@ -3221,6 +3242,20 @@
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/components/primitives/Tooltip.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "modified"
+    },
+    {
+      "path": "control-center-web/src/components/primitives/TransientMotion.test.tsx",
+      "group": "paw_experience_20261007",
+      "disposition": "keep_release",
+      "reason": "Preserve exact Durable tool cancellation projection and activity-aware Knowledge/Memory feedback; live and installed acceptance are recorded separately.",
+      "status": "added"
     },
     {
       "path": "control-center-web/src/components/primitives/index.ts",

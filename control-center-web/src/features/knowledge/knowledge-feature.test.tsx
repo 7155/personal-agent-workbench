@@ -507,6 +507,42 @@ describe('document knowledge library', () => {
     await waitFor(() => expect(deleteDocumentTrigger).toHaveFocus());
   });
 
+  it.each(['disabled', 'aria-disabled', 'focus-unavailable'] as const)('returns to a safe control when the original reparse action becomes %s', async (reason) => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];
+    const transport = createTransport({ documents: () => documents });
+    const client = renderKnowledge(transport);
+    const original = await screen.findByRole('button', { name: '重新解析 runtime.pdf' });
+    const fallback = screen.getByRole('button', { name: '更多知识库工具' });
+    const fallbackFocus = vi.spyOn(fallback, 'focus');
+    await user.type(screen.getByRole('textbox', { name: '筛选文件' }), '.pdf');
+    await user.click(original);
+    await screen.findByRole('dialog', { name: '重新解析文档' });
+    if (reason === 'disabled') {
+      await act(async () => {
+        documents = documents.map(item => item.id === 'file-runtime' ? { ...item, status: 'queued' } : item);
+        await client.invalidateQueries();
+      });
+      await waitFor(() => expect(original).toBeDisabled());
+    } else if (reason === 'aria-disabled') {
+      original.setAttribute('aria-disabled', 'true');
+    } else {
+      // Model a connected control whose native focus attempt cannot succeed.
+      vi.spyOn(original, 'focus').mockImplementation(() => undefined);
+    }
+    expect(original).toBeInTheDocument();
+    expect(original.closest('[data-knowledge-document-id]')).toHaveAttribute('data-knowledge-document-id', 'file-runtime');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(fallback).toHaveFocus());
+    expect(fallbackFocus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(original).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '删除 control.pdf' })).not.toHaveFocus();
+    expect(screen.getByRole('textbox', { name: '筛选文件' })).toHaveValue('.pdf');
+    expect(transport.requests.filter(call => ['knowledgeBases.document.retry', 'knowledgeBases.document.delete'].includes(call.request.pathId))).toHaveLength(0);
+    fallbackFocus.mockRestore();
+  });
+
   it('returns successful deletion to a stable non-destructive control instead of the next row delete', async () => {
     const user = userEvent.setup();
     let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];

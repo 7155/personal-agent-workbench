@@ -7,7 +7,8 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { MotionActivityBoundary, MotionProvider } from '@/design/motion';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport } from '@/test/mock-transport';
-import { MemoryReferenceDialog } from './MemoryReferenceDialog';
+import { MemoryReferenceDialog, type MemoryReferenceSelection } from './MemoryReferenceDialog';
+import { memoryQueryKeys } from './api';
 
 afterEach(() => { cleanup(); localStorage.clear(); delete document.documentElement.dataset.reduceMotion; });
 
@@ -22,16 +23,16 @@ function reference(kind = 'atom', id = 'atom:root') {
   };
 }
 
-function Controller({ referenceId = 'atom:root' }: { referenceId?: string }) {
+function Controller({ referenceId = 'atom:root', kind = 'atom', label }: Partial<MemoryReferenceSelection>) {
   const [open, setOpen] = useState(false);
-  return <><button onClick={() => setOpen(true)}>查看原记忆</button>{open ? <MemoryReferenceDialog kind="atom" referenceId={referenceId} onOpenChange={setOpen} /> : null}</>;
+  return <><button onClick={() => setOpen(true)}>查看原记忆</button>{open ? <MemoryReferenceDialog kind={kind} label={label} referenceId={referenceId} onOpenChange={setOpen} /> : null}</>;
 }
-function renderDialog(transport: MockControlTransport, active = true) {
+function renderDialog(transport: MockControlTransport, active = true, selection: Partial<MemoryReferenceSelection> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const wrapper = (enabled: boolean, referenceId = 'atom:root') => <ControlTransportProvider transport={transport}><QueryClientProvider client={client}>
-    <MotionProvider><MotionActivityBoundary active={enabled}><Controller referenceId={referenceId} /></MotionActivityBoundary></MotionProvider>
+    <MotionProvider><MotionActivityBoundary active={enabled}><Controller {...selection} referenceId={selection.referenceId ?? referenceId} /></MotionActivityBoundary></MotionProvider>
   </QueryClientProvider></ControlTransportProvider>;
-  return { ...render(wrapper(active)), wrapper };
+  return { ...render(wrapper(active)), wrapper, client };
 }
 
 it('returns to the same original source control and reading position after a deeper reference', async () => {
@@ -239,4 +240,55 @@ it('binds retry feedback to its exact source and ignores a late retry after retu
   expect(dialog).not.toHaveTextContent('原来源记录');
   expect(childReads).toBe(3);
   expect(transport.requests.every(({ request }) => request.pathId === 'memory.reference.get')).toBe(true);
+});
+
+it.each(['success', 'error'] as const)('keeps a short kind heading while a long-labelled original source read is pending and settles as %s', async (outcome) => {
+  const user = userEvent.setup();
+  const label = '原用户说明普通项目的标签并保留来源，不代表已经读取的正文。'.repeat(6).slice(0, 160);
+  let resolve!: (value: unknown) => void;
+  let reject!: (error: Error) => void;
+  const pending = new Promise((res, rej) => { resolve = res; reject = rej; });
+  const transport = new MockControlTransport({ routes: { 'memory.reference.get': () => pending } });
+  renderDialog(transport, true, { kind: 'evidence', referenceId: 'evidence:original', label });
+  await user.click(screen.getByRole('button', { name: '查看原记忆' }));
+  const heading = screen.getByRole('heading', { name: '来源记录' });
+  expect(heading).toHaveAttribute('title', label);
+  expect(screen.getByRole('status')).toHaveTextContent('正在读取引用详情');
+  expect(document.querySelector('.memory-reference-view')).toBeNull();
+  if (outcome === 'error') {
+    await act(async () => reject(new Error('此原引用确实暂不可读')));
+    await screen.findByRole('button', { name: '重试读取' });
+    expect(heading).toHaveTextContent('来源记录');
+    expect(screen.getByRole('dialog')).toHaveTextContent('此原引用确实暂不可读');
+    expect(document.querySelector('.memory-reference-view')).toBeNull();
+  } else {
+    const data = { ...reference('evidence', 'evidence:original'), item: {
+      ...reference('evidence', 'evidence:original').item, title: label, text: `${label}已读原文的其余段落。`, sourceKind: 'user_message',
+    } };
+    await act(async () => resolve(data));
+    const dialog = await screen.findByRole('dialog', { name: '来源记录' });
+    expect(within(dialog).getByRole('heading')).toBe(heading);
+    expect(dialog).toHaveTextContent(data.item.text);
+    await user.click(within(dialog).getByText('高级：引用详情', { selector: 'summary' }));
+    expect(within(dialog).getByText('完整标题').closest('div')).toHaveTextContent(label);
+    expect(within(dialog).getByRole('navigation', { name: '记忆来源路径' })).toHaveTextContent('来源');
+  }
+  expect(transport.requests).toHaveLength(1);
+  expect(transport.requests[0].request.params).toEqual({ kind: 'evidence', referenceId: 'evidence:original' });
+});
+
+it('uses the kind heading for an unresolved cached reference without inventing a body', async () => {
+  const user = userEvent.setup();
+  const transport = new MockControlTransport();
+  const label = '不完整缓存保留原引用的长标签。'.repeat(10);
+  const { client } = renderDialog(transport, true, { kind: 'evidence', referenceId: 'evidence:unresolved', label });
+  // Deliberately incomplete cache fixture, not a schema-valid API response.
+  client.setQueryData(memoryQueryKeys.reference('evidence', 'evidence:unresolved'), {});
+  await user.click(screen.getByRole('button', { name: '查看原记忆' }));
+  const heading = screen.getByRole('heading', { name: '来源记录' });
+  expect(heading).toHaveAttribute('title', label);
+  expect(screen.getByRole('dialog')).toHaveTextContent('没有可显示的引用');
+  expect(screen.getByRole('button', { name: '重新读取' })).toBeInTheDocument();
+  expect(document.querySelector('.memory-reference-view')).toBeNull();
+  expect(transport.requests).toHaveLength(0);
 });

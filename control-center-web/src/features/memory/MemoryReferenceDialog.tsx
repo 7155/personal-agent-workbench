@@ -96,13 +96,14 @@ export function MemoryReferenceDialog({
     || (current.kind === 'evidence' && item?.sourceKind === 'user_message'
       && content.trim().startsWith(displayTitle.trim()))
   );
-  const heading = titleRepeatsContent ? referenceKindLabel(current.kind) : displayTitle;
   const currentKey = referenceKey(current);
   const visited = new Set(stack.map(referenceKey));
   // Keep only this exact reference's last real read error while its retry is
   // pending. Query still owns the request/data; changing roots cannot reuse it.
   const readError = query.error ?? (query.isPending && query.isFetching && lastReadError.current?.key === currentKey
     ? lastReadError.current.error : null);
+  const heading = query.isPending || readError || !resolvedReference || titleRepeatsContent
+    ? referenceKindLabel(current.kind) : displayTitle;
 
   useEffect(() => {
     if (query.error) lastReadError.current = { key: currentKey, error: query.error };

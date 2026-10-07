@@ -1820,11 +1820,16 @@ function restoreDialogFocus(
   event.preventDefault();
   const original = returnFocusRef.current;
   if (!original) return;
-  const target = !original.retired && original.element.isConnected
+  const canReturnToOriginal = !original.retired && original.element.isConnected
     && dialogFocusLabel(original.element) === original.label
     && dialogFocusDocumentId(original.element) === original.documentId
-    ? original.element : original.fallback;
-  if (target?.isConnected) target.focus({ preventScroll: true });
+    && !original.element.matches(':disabled')
+    && !original.element.closest('[aria-disabled="true"], [inert]');
+  if (canReturnToOriginal) {
+    original.element.focus({ preventScroll: true });
+    if (document.activeElement === original.element) return;
+  }
+  if (original.fallback?.isConnected) original.fallback.focus({ preventScroll: true });
 }
 
 interface WorkerState { label: string; tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral' }

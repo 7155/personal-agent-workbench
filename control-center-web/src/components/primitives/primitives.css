@@ -218,11 +218,11 @@
   transform-origin: var(--radix-tooltip-content-transform-origin);
 }
 .ui-tooltip[data-state='delayed-open'] {
-  animation: ui-origin-content-in 125ms var(--ease-standard) both;
+  transition: opacity 125ms var(--ease-standard), transform 125ms var(--ease-standard);
 }
 
 .ui-tooltip[data-state='instant-open'] {
-  animation: none;
+  transition: none;
 }
 
 .ui-tooltip__arrow {
@@ -251,7 +251,7 @@
 
 .ui-menu[data-state='open'],
 .ui-popover[data-state='open'] {
-  animation: ui-origin-content-in var(--duration-enter) var(--ease-standard) both;
+  transition: opacity var(--duration-enter) var(--ease-standard), transform var(--duration-enter) var(--ease-standard);
 }
 
 .ui-menu__item {
@@ -322,7 +322,7 @@
   z-index: 1099;
   inset: 0;
   background: var(--color-overlay);
-  animation: ui-fade-in var(--duration-panel) var(--ease-standard) both;
+  transition: opacity var(--duration-panel) var(--ease-standard);
 }
 
 .ui-dialog {
@@ -335,11 +335,11 @@
   overflow: auto;
   padding: var(--space-5);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
+  border-radius: var(--radius-picker);
   background: var(--color-surface);
   box-shadow: var(--shadow-dialog);
   transform: translate(-50%, -50%);
-  animation: ui-dialog-in var(--duration-panel) var(--ease-standard) both;
+  transition: opacity var(--duration-panel) var(--ease-standard), transform var(--duration-panel) var(--ease-standard);
 }
 
 .ui-dialog__close {
@@ -946,11 +946,6 @@ input[type='radio']:focus-visible {
   to { opacity: 1; }
 }
 
-@keyframes ui-dialog-in {
-  from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)); }
-  to { opacity: 1; transform: translate(-50%, -50%); }
-}
-
 @keyframes ui-toast-in {
   from { opacity: 0; transform: translateX(12px); }
   to { opacity: 1; transform: translateX(0); }
@@ -973,7 +968,7 @@ input[type='radio']:focus-visible {
     width: auto;
     max-height: calc(100dvh - 16px);
     transform: none;
-    animation-name: ui-dialog-mobile-in;
+    border-radius: calc(var(--radius-picker) - var(--space-1));
   }
 
   .ui-toast__viewport {
@@ -983,9 +978,28 @@ input[type='radio']:focus-visible {
   }
 }
 
-@keyframes ui-dialog-mobile-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Only a real content insertion enters. A mounted portal returning from
+   quiet/reduce/hidden keeps its final geometry and never replays a keyframe. */
+@starting-style {
+  :is(.ui-menu, .ui-popover)[data-state='open'][data-motion-active='true'],
+  .ui-tooltip[data-state='delayed-open'][data-motion-active='true'] {
+    opacity: 0;
+    transform: scale(.97);
+  }
+  .ui-dialog[data-state='open'][data-motion-active='true'] {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px));
+  }
+  .ui-dialog__overlay[data-state='open'][data-motion-active='true'] { opacity: 0; }
+}
+@media (max-width: 560px) {
+  @starting-style {
+    .ui-dialog[data-state='open'][data-motion-active='true'] { transform: translateY(12px); }
+  }
+}
+:is(.ui-dialog, .ui-dialog__overlay, .ui-popover, .ui-menu, .ui-tooltip)[data-motion-active='false'] {
+  animation: none !important;
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1001,5 +1015,10 @@ input[type='radio']:focus-visible {
 /* Radix owns these coordinates. Interpolating them makes a popover travel
    from its initial offscreen measurement and lag behind a resized window. */
 [data-radix-popper-content-wrapper] { transition-property: none !important; }
-@media (prefers-reduced-motion: reduce) { .ui-popover[data-state='open'], .ui-menu[data-state='open'] { animation: none !important; } }
-:root[data-reduce-motion='true'] :is(.ui-popover, .ui-menu)[data-state='open'] { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.ui-dialog, .ui-dialog__overlay, .ui-popover, .ui-menu, .ui-tooltip) { animation: none !important; transition: none !important; }
+}
+:root[data-reduce-motion='true'] :is(.ui-dialog, .ui-dialog__overlay, .ui-popover, .ui-menu, .ui-tooltip) {
+  animation: none !important;
+  transition: none !important;
+}

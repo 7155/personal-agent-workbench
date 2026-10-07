@@ -866,8 +866,24 @@ describe('MemoryFeature relations', () => {
     await user.click(screen.getByText(/^筛选 ·/));
     await user.click(await screen.findByRole('combobox', { name: '状态' }));
     expect(await screen.findByRole('option', { name: '历史保留' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '已合并' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '历史版本' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '来源归档' })).toBeInTheDocument();
+  });
+
+  it.each([['superseded', '历史版本'], ['merged', '状态未知']] as const)('labels only the explicit %s catalog status as %s', async (status, expected) => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'memory.summary': { ok: true, memoryAtomCount: 1 },
+      'memory.pages': { ok: true, items: [{ id: 'atom:history', title: '原版本状态', text: '原正文保留不改。', status }], nextCursor: '', limit: 50 },
+    } });
+    renderMemory(transport);
+    const row = await screen.findByRole('button', { name: /原版本状态/ });
+    expect(row).toHaveTextContent(expected);
+    await user.click(row);
+    const detail = await screen.findByRole('region', { name: '原版本状态 详情' });
+    expect(within(detail).getByText('状态').closest('div')).toHaveTextContent(expected);
+    expect(detail).toHaveTextContent('原正文保留不改。');
+    expect(transport.requests.every(({ request }) => request.pathId !== 'memory.reference.get')).toBe(true);
   });
 
   it('normalizes structured source and sourceType/sourceId evidence references', async () => {
