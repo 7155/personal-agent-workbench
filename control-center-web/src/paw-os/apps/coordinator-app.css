@@ -166,3 +166,10 @@
 @container (max-width:620px) {
  .paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__header { padding-block:8px; flex-wrap:nowrap; }
 }
+
+/* At browser zoom the short viewport needs room for the transcript's full
+   keyboard target and focus ring above the measured floating composer. Keep
+   the same type and controls; spend less of that height on header whitespace. */
+@media (max-height:560px) {
+ .paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__header { padding-block:8px; }
+}
