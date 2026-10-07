@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/primitives';
+import { ChatPresentationProvider } from '@/features/conversation-ui/reading/chat-presentation';
 import type { CapabilityCatalog } from '@/features/plugins/capability-policy';
 import { previewSessions } from '../preview-data';
 import type { ToolManifest } from '../types';
@@ -253,6 +254,39 @@ describe('AgentComposer macOS input methods', () => {
     expect(jumpLatest.closest('.agent-composer')).toBeNull();
     fireEvent.click(jumpLatest);
     expect(onJumpLatest).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the v2 history return inside a stable toolbar slot while retaining the draft', () => {
+    const onJumpLatest = vi.fn();
+    const props = {
+      draft: '历史阅读期间保留草稿', attachments: [], session: previewSessions[0], commands: [], tools: [],
+      toolCatalogStatus: 'ready' as const, busy: false, sending: false,
+      onDraftChange: vi.fn(), onAttachmentsChange: vi.fn(), onPickAttachments: vi.fn(),
+      onPasteImages: vi.fn(), onToolSelect: vi.fn(), onProductCommand: vi.fn(),
+      onSend: vi.fn(), onStop: vi.fn(), onPermissionChange: vi.fn(),
+      onWorkspaceRootsChange: vi.fn(), onModelChange: vi.fn(), onJumpLatest,
+    };
+    const composer = (reading: boolean) => <TooltipProvider>
+      <ChatPresentationProvider ownerKey="test-stable-history-return" defaultVersion="v2">
+        <AgentComposer {...props} showJumpLatest={reading} unseenUpdates={reading ? 105 : 0} />
+      </ChatPresentationProvider>
+    </TooltipProvider>;
+    const view = render(composer(false));
+    const current = within(view.container);
+    const slot = view.container.querySelector('.agent-composer__jump-slot');
+    expect(slot).not.toBeNull();
+    expect(slot?.closest('.agent-composer__actions')).not.toBeNull();
+    expect(current.queryByRole('button', { name: /回到最新/ })).not.toBeInTheDocument();
+    view.rerender(composer(true));
+    const jump = current.getByRole('button', { name: '回到最新，有 105 条新内容' });
+    expect(slot).toContainElement(jump);
+    fireEvent.click(jump);
+    expect(onJumpLatest).toHaveBeenCalledTimes(1);
+    view.rerender(composer(false));
+    expect(view.container.querySelector('.agent-composer__jump-slot')).toBe(slot);
+    expect(current.queryByRole('button', { name: /回到最新/ })).not.toBeInTheDocument();
+    expect(current.getByRole('textbox', { name: '消息' })).toHaveValue(props.draft);
+    view.unmount();
   });
 
   it('keeps an embedded vertical App composer focused on data, attachment and send', () => {

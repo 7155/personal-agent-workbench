@@ -172,4 +172,8 @@
    the same type and controls; spend less of that height on header whitespace. */
 @media (max-height:560px) {
  .paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__header { padding-block:8px; }
+ .paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-composer:not([data-expanded='true']) textarea {
+  min-height:52px;
+  padding-block:12px 8px;
+ }
 }

@@ -494,6 +494,26 @@ export function AgentComposer({
     else onPasteFromClipboard?.();
   }
   const handlePastedText = pastedText.pasteText;
+  // The count is new content items, never token deltas within a growing row.
+  const jumpLatestButton = showJumpLatest ? (
+    <button
+      aria-label={unseenUpdates > 0 ? `回到最新，有 ${unseenUpdates} 条新内容` : '回到最新'}
+      className="agent-jump-latest"
+      title={unseenUpdates > 0 ? `回到最新，有 ${unseenUpdates} 条新内容` : '回到最新'}
+      data-unseen={unseenUpdates > 0 || undefined}
+      onClick={onJumpLatest}
+      type="button"
+    >
+      <ArrowDown aria-hidden="true" size={14} />
+      <span aria-hidden="true">回到最新</span>
+      {unseenUpdates > 0 ? (
+        <b aria-hidden="true" className="agent-jump-latest__count">
+          {unseenUpdatesLabel(unseenUpdates)}
+        </b>
+      ) : null}
+    </button>
+  ) : null;
+
   return (
     <div className="agent-composer-wrap" data-minimal={minimal || undefined}
       onDragEnter={(event) => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current += 1; if (canAttach) setDragging(true); }}
@@ -531,26 +551,7 @@ export function AgentComposer({
           ))}
         </div>
       ) : null}
-      {showJumpLatest ? (
-        /* A reader who scrolled away needs to know whether anything arrived,
-           not just that a way back exists. The count is content items — new
-           messages and activities — never token deltas inside a growing row. */
-        <button
-          aria-label={unseenUpdates > 0 ? `回到最新，有 ${unseenUpdates} 条新内容` : '回到最新'}
-          className="agent-jump-latest"
-          data-unseen={unseenUpdates > 0 || undefined}
-          onClick={onJumpLatest}
-          type="button"
-        >
-          <ArrowDown aria-hidden="true" size={14} />
-          <span aria-hidden="true">回到最新</span>
-          {unseenUpdates > 0 ? (
-            <b aria-hidden="true" className="agent-jump-latest__count">
-              {unseenUpdatesLabel(unseenUpdates)}
-            </b>
-          ) : null}
-        </button>
-      ) : null}
+      {presentationVersion === 'v1' ? jumpLatestButton : null}
       <ComposerShell
         surface="session"
         expanded={expanded}
@@ -632,6 +633,11 @@ export function AgentComposer({
         )}
         actions={(
           <>
+            {presentationVersion === 'v2' && onJumpLatest ? (
+              // A reader entering history must not grow the measured dock
+              // after native focus has already used its scroll inset.
+              <span className="agent-composer__jump-slot">{jumpLatestButton}</span>
+            ) : null}
             {!minimal && presentationVersion === 'v2' ? modelControls : null}
             {busy && showStop ? (
               <IconButton
