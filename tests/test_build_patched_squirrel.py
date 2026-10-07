@@ -2390,6 +2390,13 @@ def _fake_squirrel_system_tools(tmp_path: Path, fake_bin: Path, *, native_tools:
 
     (tmp_path / "home").mkdir()
     (tmp_path / "tmp").mkdir()
+    # Exercise executable quoting even when the test runner path has no spaces.
+    python_wrapper = fake_bin / "python executable"
+    python_wrapper.write_text(
+        "#!/usr/bin/env bash\nexec " + shlex.quote(sys.executable) + ' "$@"\n',
+        encoding="utf-8",
+    )
+    python_wrapper.chmod(0o755)
     adapter = Path(__file__).with_name("squirrel_system_tools.py")
     for name in (() if native_tools else ("ditto", "PlistBuddy", "sips", "iconutil")):
         wrapper = fake_bin / name
@@ -2423,7 +2430,7 @@ def _fake_squirrel_system_tools(tmp_path: Path, fake_bin: Path, *, native_tools:
     environment = {
         "HOME": str(tmp_path / "home"),
         "TMPDIR": str(tmp_path / "tmp"),
-        "PYTHON_BIN": sys.executable,
+        "PYTHON_BIN": str(python_wrapper),
         "RAG_IME_XCODEBUILD": str(fake_bin / "xcodebuild"),
         "RAG_IME_CHECK_INPUT_SOURCE_SCRIPT": str(fake_bin / "check-input-source"),
         "RAG_IME_SELECT_INPUT_SOURCE_SCRIPT": str(fake_bin / "select-input-source"),

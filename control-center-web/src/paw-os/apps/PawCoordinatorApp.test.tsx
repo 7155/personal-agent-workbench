@@ -27,10 +27,11 @@ function setup(command: (request: ControlRequest) => unknown = () => ({ ok:true 
   'agent.coordinator.command': (request: ControlRequest) => { const result = command(request); if (request.body && typeof request.body === 'object' && !Array.isArray(request.body) && request.body.action === 'create_session') directory = [...directory,{ ...object,id:'new',target:{ ...target,id:'new',title:'新增任务' } }]; return result; },
   'agent.roles.list': { items:[{ schemaVersion:'rag-ime.agent-persona.v1',roleId:'one',version:'1',displayName:'协调伙伴',description:'',prompt:'',capabilities:[] }] } } });
  const openWindow = vi.fn();
+ const openRoute = vi.fn();
  const client = new QueryClient();
- const tree = (active: boolean) => <QueryClientProvider client={client}><ControlTransportProvider transport={transport}><PawOsDesktopProvider openWindow={openWindow}><PawOsAppSurfaceProvider appId="agent-controller" width={375} height={680} active={active}><PawCoordinatorApp/></PawOsAppSurfaceProvider></PawOsDesktopProvider></ControlTransportProvider></QueryClientProvider>;
+ const tree = (active: boolean) => <QueryClientProvider client={client}><ControlTransportProvider transport={transport}><PawOsDesktopProvider openWindow={openWindow} openRoute={openRoute}><PawOsAppSurfaceProvider appId="agent-controller" width={375} height={680} active={active}><PawCoordinatorApp/></PawOsAppSurfaceProvider></PawOsDesktopProvider></ControlTransportProvider></QueryClientProvider>;
  const view = render(tree(true));
- return { transport,openWindow,setActive: (active: boolean) => view.rerender(tree(active)) };
+ return { transport,openWindow,openRoute,setActive: (active: boolean) => view.rerender(tree(active)) };
 }
 function coordinatorOutcomeEvent(sequence: number, turnId: string, eventType: UiAgentEvent['eventType'], payload: Record<string, unknown>): UiAgentEvent {
  return { schemaVersion:'rag-ime.agent-event.v1',sessionId:'source',eventId:`source:${sequence}`,turnId,sequence,createdAtMs:sequence * 10,eventType,payload,resumeToken:`source:${sequence}`,streamKind:'agent' };
@@ -47,6 +48,19 @@ describe('persistent coordinator App', () => {
   projection.turnsById.bootstrap.messageIds=['user'];
   projection.messagesById.user={schemaVersion:'rag-ime.agent-message.v1',sessionId:'empty',clientMessageId:'user-client',id:'user',turnId:'bootstrap',role:'user',status:'completed',blocks:[],attachments:[],citations:[],createdAtMs:1};
   expect(coordinatorLatestTurnOutcome(projection)).toBe('completed');
+ });
+ it('opens an owned Room partner original Session and closes the mobile rail without replacing the Agent draft', async () => {
+  const participant={id:'partner',sessionId:'original-worker',displayName:'证据伙伴',roleId:'sol',roleVersion:'1',ordinal:1,status:'active',collaborationRole:'researcher'};
+  const ownedRoom={...object,kind:'room',id:'owned-room',target:{id:'owned-room',title:'证据 Room',status:'active',participants:[participant]}};
+  const {openWindow}=setup(undefined,[ownedRoom]);
+  const draft=await screen.findByRole('textbox',{name:'Agent 草稿'});fireEvent.change(draft,{target:{value:'打开伙伴后仍保留的草稿'}});
+  // jsdom cannot evaluate the existing narrow container query; expose its controls.
+  const toggle=document.querySelector<HTMLButtonElement>('.paw-coordinator__rail-toggle')!;toggle.style.display='block';
+  document.querySelector<HTMLButtonElement>('.paw-coordinator__rail-close')!.style.display='block';fireEvent.click(toggle);
+  fireEvent.click(screen.getByText('子智能体',{exact:false,selector:'summary'}));
+  fireEvent.click(screen.getByRole('button',{name:'打开 Mars 的原 Session'}));
+  expect(openWindow).toHaveBeenLastCalledWith({appId:'agent',target:{kind:'session',id:'original-worker',title:'Mars · 证据伙伴'}});
+  expect(toggle).toHaveAttribute('aria-expanded','false');expect(draft).toHaveValue('打开伙伴后仍保留的草稿');
  });
  it('filters ownership by exact source and identity rather than history similarity', () => {
   expect(coordinatorObjects([object,{ ...object,sourceSessionId:'other' },{ ...object,coordinatorId:'other' },{ ...object,id:'wrong' },{ ...object,target:{ ...target,status:'archived' } }],session.id,'owner')).toEqual([object]);
@@ -135,6 +149,25 @@ describe('persistent coordinator App', () => {
   expect(screen.queryByText('其他对话')).not.toBeInTheDocument();
   expect(transport.requests.every(({request})=>request.pathId==='agent.coordinator.ensure')).toBe(true);
  });
+ it('opens a source-owned absolute Room artifact without inventing its author Session', async () => {
+  const room = { ...object, kind: 'room' as const, id: 'room-result', target: { id: 'room-result', title: '原协作', status: 'active', participants: [], routingPolicy: 'parallel', updatedAtMs: 1 }, outputs: [{ reference: '/work/原成果/report.md', title: '核对报告', sessionId: '' }] };
+  const { transport, openWindow, openRoute } = setup(undefined, [room]);
+  await screen.findByText('持久会话 persistent');
+  fireEvent.click(screen.getByRole('button', { name: /控制/ }));
+  fireEvent.click(screen.getByRole('button', { name: /核对报告/ }));
+  expect(openRoute).toHaveBeenCalledExactlyOnceWith('/files?session=persistent&path=%2Fwork%2F%E5%8E%9F%E6%88%90%E6%9E%9C%2Freport.md');
+  expect(openWindow).not.toHaveBeenCalled();
+  expect(transport.requests.every(({ request }) => request.pathId === 'agent.coordinator.ensure')).toBe(true);
+ });
+ it('keeps opaque Room evidence in the original Room when no file owner is recorded', async () => {
+  const room = { ...object, kind: 'room' as const, id: 'room-result', target: { id: 'room-result', title: '原协作', status: 'active', participants: [], routingPolicy: 'parallel', updatedAtMs: 1 }, outputs: [{ reference: 'trace:original', title: '原执行证据', sessionId: '' }] };
+  const { openWindow, openRoute } = setup(undefined, [room]);
+  await screen.findByText('持久会话 persistent');
+  fireEvent.click(screen.getByRole('button', { name: /控制/ }));
+  fireEvent.click(screen.getByRole('button', { name: /原执行证据/ }));
+  expect(openRoute).not.toHaveBeenCalled();
+  expect(openWindow).toHaveBeenCalledExactlyOnceWith({ appId: 'agent', target: { kind: 'room', id: 'room-result', title: '原协作' } });
+ });
  it('opens the original source Session from Earth by keyboard and keeps the same draft when returning to Agent', async () => {
   const user = userEvent.setup();
   const { transport, openWindow, setActive } = setup();
@@ -202,13 +235,17 @@ describe('persistent coordinator App', () => {
   const {transport}=setup();
   const draft=await screen.findByRole('textbox',{name:'Agent 草稿'});
   fireEvent.change(draft,{target:{value:'版本切换保留草稿'}});
+  expect(document.querySelector('.paw-coordinator__avatar [data-avatar-variant="sphere"]')).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'Agent 显示设置'}));
   fireEvent.click(await screen.findByRole('button',{name:'经典 v1'}));
   expect(document.querySelector('.paw-coordinator')).toHaveAttribute('data-chat-presentation-version','v1');
+  expect(document.querySelector('.paw-coordinator__avatar image')).toBeTruthy();
+  expect(document.querySelector('.paw-coordinator [data-avatar-variant="sphere"]')).toBeNull();
   expect(screen.getByRole('textbox',{name:'Agent 草稿'})).toBe(draft);
   expect(draft).toHaveValue('版本切换保留草稿');
   fireEvent.click(screen.getByRole('button',{name:'恢复上一显示版本 v2'}));
   expect(document.querySelector('.paw-coordinator')).toHaveAttribute('data-chat-presentation-version','v2');
+  expect(document.querySelector('.paw-coordinator__avatar [data-avatar-variant="sphere"]')).toBeTruthy();
   expect(draft).toHaveValue('版本切换保留草稿');
   expect(transport.requests.every(({request})=>request.pathId==='agent.coordinator.ensure')).toBe(true);
  });

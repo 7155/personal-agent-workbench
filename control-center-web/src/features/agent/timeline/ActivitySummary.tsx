@@ -1,3 +1,4 @@
+import { CollaborationReceiptGroup } from '../collaboration/CollaborationReceiptLinks';
 import { publicReasoningSummaryText } from './public-reasoning-summary';
 import { ToolStatusMark, toolReceiptStatus } from '@/features/conversation-ui/components/ToolStatusMark';
 import {
@@ -246,6 +247,7 @@ export function ActivitySummary({
       <ChevronRight aria-hidden="true" size={16} />
     </>
   );
+  const collaborationLinks = <CollaborationReceiptGroup views={activities.filter(activity => activity.kind.startsWith('tool_')).map(publicToolResultView)} sourceSessionId={sessionId}/>;
   if (inline) {
     /* Only a live group trades its Tool identity icon for a planet: motion in
        the transcript has to mean the Runtime is still working, and a settled
@@ -330,11 +332,13 @@ export function ActivitySummary({
             </div>
           </SmoothDisclosureReveal>
         </details>
+        {collaborationLinks}
       </div>
     );
   }
   return (
     <div className="agent-activity-group">
+      {collaborationLinks}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogTrigger asChild>
           <button
@@ -1700,6 +1704,7 @@ export function FxActivityStack({
           <ChevronRight aria-hidden="true" size={13} />
         </button>
       </div>
+      <CollaborationReceiptGroup views={activities.filter(activity => activity.kind.startsWith('tool_')).map(publicToolResultView)} sourceSessionId={sessionId}/>
       <SmoothDisclosureReveal
         ariaLabel="工具与思考步骤列表"
         className="paw-activity-stack__reveal"

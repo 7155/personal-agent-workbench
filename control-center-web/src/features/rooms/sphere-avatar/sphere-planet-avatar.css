@@ -1,0 +1,45 @@
+/* Artwork only. Hit areas, focus and task wording belong to the consumer. */
+.sphere-planet-avatar { display: inline-block; flex-shrink: 0; overflow: visible; vertical-align: middle; }
+.sphere-planet-avatar .sphere-eye-rig { transform-origin: 160px 150px; transform-box: view-box; }
+.sphere-planet-avatar .sphere-gaze-rig { transition: transform var(--sphere-fast) cubic-bezier(.22,1,.36,1); }
+.sphere-planet-avatar .sphere-badge,
+.sphere-planet-avatar .sphere-progress,
+.sphere-planet-avatar .sphere-halo { transform-origin: 276px 67px; transform-box: view-box; animation: none; }
+.sphere-planet-avatar .sphere-halo { opacity: .3; }
+.sphere-planet-avatar[data-motion="full"][data-signal="working"] .sphere-progress { animation: sphere-progress 2s linear infinite; }
+.sphere-planet-avatar[data-pulse="true"][data-signal="waiting"] .sphere-badge { animation: sphere-pop var(--sphere-normal) cubic-bezier(.22,1,.36,1) 1; }
+.sphere-planet-avatar[data-pulse="true"][data-signal="done"] .sphere-check { animation: sphere-check var(--sphere-normal) cubic-bezier(.22,1,.36,1) 1; }
+.sphere-planet-avatar[data-pulse="true"][data-signal="done"] .sphere-halo { animation: sphere-halo var(--sphere-normal) cubic-bezier(.22,1,.36,1) 1; }
+.sphere-planet-avatar[data-pulse="true"][data-signal="error"] .sphere-badge { animation: sphere-error var(--sphere-slow) ease-in-out 1; }
+@keyframes sphere-progress { to { transform: rotate(360deg); } }
+@keyframes sphere-pop { from { transform: scale(.93); opacity: .6; } to { transform: scale(1); opacity: 1; } }
+@keyframes sphere-check { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes sphere-halo { from { opacity: .1; transform: scale(.94); } to { opacity: .3; transform: scale(1); } }
+@keyframes sphere-error { 0%,100% { transform: translateX(0); } 12.5%,50% { transform: translateX(-2px); } 25%,62.5% { transform: translateX(2px); } 37.5%,75% { transform: translateX(0); } }
+.sphere-planet-avatar[data-motion="static"] * { animation: none !important; transition: none !important; }
+.sphere-planet-avatar[data-motion="static"] .sphere-gaze-rig { transform: translate(0,0) !important; }
+@media (prefers-reduced-motion: reduce) {
+  .sphere-planet-avatar * { animation: none !important; transition: none !important; }
+}
+
+/* One repeat period crosses the spherical clip in 48s. Only the surface moves:
+   the light, face and state satellite remain in their independent layers.
+   Pausing preserves the current material phase; it does not restart a task. */
+.sphere-planet-avatar .sphere-surface {
+  animation: sphere-surface-travel 48s linear infinite;
+  animation-play-state: paused;
+}
+.sphere-planet-avatar[data-motion="full"][data-signal="working"] .sphere-surface {
+  animation-play-state: running;
+}
+.sphere-planet-avatar[data-motion="static"] .sphere-surface {
+  animation: sphere-surface-travel 48s linear infinite !important;
+  animation-play-state: paused !important;
+}
+@keyframes sphere-surface-travel { to { transform: translateX(-320px); } }
+@media (prefers-reduced-motion: reduce) {
+  .sphere-planet-avatar .sphere-surface {
+    animation: sphere-surface-travel 48s linear infinite !important;
+    animation-play-state: paused !important;
+  }
+}

@@ -307,7 +307,7 @@ write_rag_ime_build_marker() {
   if [[ -f "$patch_path" ]]; then
     patch_sha256="$(sha256_file "$patch_path")"
   fi
-  overlay_sha256="$($PYTHON_BIN - "$ROOT/squirrel-patches/sources" <<'PY'
+  overlay_sha256="$("$PYTHON_BIN" - "$ROOT/squirrel-patches/sources" <<'PY'
 import hashlib
 import sys
 from pathlib import Path

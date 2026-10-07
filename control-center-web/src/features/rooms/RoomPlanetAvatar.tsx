@@ -3,6 +3,8 @@ import { useMotionActivity } from '@/design/motion';
 import atlas from './assets/planet-bodies-v1.png';
 import { roomPlanetName } from './room-copy';
 import './room-planet-avatar.css';
+import { SpherePlanetAvatar } from './sphere-avatar/SpherePlanetAvatar';
+import { PLANET_ACTIVITY_SIGNAL, type PlanetExpression, type PlanetSignalState, type PlanetMotionMode } from './sphere-avatar/sphere-avatar-protocol';
 
 export type RoomPlanetActivity = 'static' | 'idle' | 'thinking' | 'working' | 'waiting' | 'done' | 'error' | 'stopped';
 
@@ -22,10 +24,25 @@ const FACES = [
   [268, 625, -21], [720, 652, -10], [1120, 637, 4], [1568, 655, -8],
 ] as const;
 
-/** One stable ordinal identity across chat, execution, roster and deliveries. */
-export function RoomPlanetAvatar({ ordinal, size = 32, className, decorative = false, activity = 'static' }: {
+export type RoomPlanetAvatarProps = {
   ordinal: number; size?: number; className?: string; decorative?: boolean; activity?: RoomPlanetActivity;
-}) {
+  variant?: 'classic' | 'sphere'; expression?: PlanetExpression; signal?: PlanetSignalState;
+  motion?: PlanetMotionMode; interactive?: boolean; showSignal?: boolean;
+};
+/** Explicit display opt-in; unsupported identities retain their classic body. */
+export function RoomPlanetAvatar(props: RoomPlanetAvatarProps) {
+  const index = Number.isInteger(props.ordinal) && props.ordinal >= 0 ? props.ordinal : 0;
+  const identity = index === 0 ? 'Earth' : index === 1 ? 'Mars' : index === 4 ? 'Saturn' : undefined;
+  const activity = props.activity ?? 'static';
+  if (props.variant === 'sphere' && identity) return <SpherePlanetAvatar identity={identity} ordinal={index}
+    size={props.size} className={props.className} decorative={props.decorative} label={roomPlanetName(index)}
+    expression={props.expression} signal={props.signal ?? PLANET_ACTIVITY_SIGNAL[activity]}
+    mode={props.motion ?? (activity === 'static' || activity === 'stopped' ? 'static' : 'full')}
+    activity={activity} interactive={props.interactive} showSignal={props.showSignal}/>;
+  return <ClassicRoomPlanetAvatar {...props}/>;
+}
+
+function ClassicRoomPlanetAvatar({ ordinal, size = 32, className, decorative = false, activity = 'static' }: RoomPlanetAvatarProps) {
   const clipId = useId();
   const motionActive = useMotionActivity();
   const index = Number.isInteger(ordinal) && ordinal >= 0 ? ordinal : 0;

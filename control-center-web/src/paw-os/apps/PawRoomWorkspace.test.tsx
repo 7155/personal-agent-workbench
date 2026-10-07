@@ -30,12 +30,33 @@ vi.mock('./PawStarfield', async (importOriginal) => {
 afterEach(() => {
   cleanup();
   window.localStorage.removeItem('pawos.room-observer-auto-open.v1');
+  window.localStorage.removeItem('paw:chat-presentation:v1');
   window.localStorage.removeItem('pawos.room-work-status-visible.v1');
   useRoomLiveStore.getState().reset();
   for (const key of Object.keys(localStorage)) if (key.endsWith(':view:v2') || key.startsWith('paw.workspace.draft.v1:room-workspace-test')) localStorage.removeItem(key);
 });
 
 describe('PAWOS Room collaboration tools', () => {
+  it('rolls the actual Room display back without replacing its draft or sending a message', async () => {
+    const mounted = renderRoom(900, vi.fn(), undefined, undefined, undefined, undefined, vi.fn(), undefined, undefined, true, false, 'session-window', undefined, 'default');
+    const editor = await screen.findByRole('textbox', { name: '协作消息' });
+    fireEvent.change(editor, { target: { value: '显示切换不能发送或替换这段草稿' } });
+    await waitFor(() => expect(mounted.container.querySelector('[data-avatar-variant="sphere"]')).toBeTruthy());
+    const select = (version: 'v1' | 'v2') => act(() => {
+      localStorage.setItem('paw:chat-presentation:v1', JSON.stringify({ 'builtin:agent': { version } }));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'paw:chat-presentation:v1' }));
+    });
+    select('v1');
+    expect(mounted.container.querySelector('[data-avatar-variant="sphere"]')).toBeNull();
+    expect(mounted.container.querySelector('[data-room-planet] image')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(editor);
+    expect(editor).toHaveValue('显示切换不能发送或替换这段草稿');
+    select('v2');
+    expect(mounted.container.querySelector('[data-avatar-variant="sphere"]')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '协作消息' })).toBe(editor);
+    expect(mounted.transport.requests.filter(({ request }) => request.pathId === 'agent.room.message')).toHaveLength(0);
+  });
+
   it('recovers a queued follow-up rejected asynchronously alongside the newer composer draft', async () => {
     const source = previewRoomSnapshot('room-queued-refusal');
     const room = { ...source.room, workItems: [], lastEventSequence: 4 };

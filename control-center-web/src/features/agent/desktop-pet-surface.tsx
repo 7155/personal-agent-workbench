@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { PetStatusSignal } from './desktop-pet-status';
 import { createPetGesture } from './desktop-pet-interaction';
@@ -20,6 +21,10 @@ type PetHost = {
 declare global { interface Window { pawDesktopPet?: PetHost } }
 
 export function DesktopPetSurface() {
+  return <ChatPresentationProvider ownerKey="builtin:desktop-pet" defaultVersion="v2"><DesktopPetBody/></ChatPresentationProvider>;
+}
+function DesktopPetBody() {
+  const avatarPresentation = useChatPresentation();
   const gesture = useRef(createPetGesture());
   const movePending = useRef(false);
   const [error, setError] = useState('');
@@ -102,7 +107,7 @@ export function DesktopPetSurface() {
     <button className="desktop-pet__planet" type="button" aria-label="查看后台对话" aria-expanded={expanded}
       aria-controls="pet-conversations" aria-describedby="pet-status" disabled={!host} ref={planet} title="点击查看对话 · 拖动上方把手移动"
       onClick={() => { if (gesture.current.canActivate(Date.now())) expand(!expanded); }}>
-      <RoomPlanetAvatar ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
+      <RoomPlanetAvatar variant={avatarPresentation?.version === 'v2' ? 'sphere' : 'classic'} showSignal={false} signal={presentation.state === 'running' ? 'working' : 'idle'} interactive={Boolean(host)} motion="full" ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
       <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />
     </button>
     <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? presentation.label : '请从 PAW 桌面端开启'}</span>

@@ -21,6 +21,7 @@ import { RoomPlanetAvatar, type RoomPlanetActivity } from '@/features/rooms/Room
 import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { appendWorkspaceRecoveryDraft } from '@/features/semantic-workspace/workspace-recovery';
 import { ChatPresentationSettings } from '@/features/conversation-ui/reading/ChatPresentationSettings';
+import { ControlledRoomParticipants } from '@/features/agent/collaboration/ControlledRoomParticipants';
 import './coordinator-app.css';
 
 const SessionWorkspace = lazy(loadSessionWorkspace);
@@ -139,6 +140,10 @@ function PawCoordinatorAppBody() {
   const open = useCallback((object: CoordinatorObject) => { setRailOpen(false); desktop?.openWindow({ appId: 'agent', target: {
     kind: object.kind, id: object.id, title: object.target.title,
   } }); }, [desktop]);
+  const openParticipant = useCallback((id: string, title: string) => {
+    setRailOpen(false);
+    desktop?.openWindow({ appId: 'agent', target: { kind: 'session', id, title } });
+  }, [desktop]);
   const openSource = useCallback(() => {
     if (!record || !desktop) return;
     setRailOpen(false);
@@ -147,13 +152,17 @@ function PawCoordinatorAppBody() {
   const outputs = objects.flatMap(object => (object.outputs ?? []).filter(output => typeof output.reference === 'string' && typeof output.title === 'string' && typeof output.sessionId === 'string')
     .map((output, index) => ({ object, output, key: `${object.id}:${index}` })));
   const openOutput = (object: CoordinatorObject, output: { reference: string; sessionId: string }) => {
-    if (desktop && output.sessionId && !/^[a-z]+:/iu.test(output.reference)) {
-      openPawOsRoute(desktop, `/files?session=${encodeURIComponent(output.sessionId)}&path=${encodeURIComponent(output.reference)}`);
+    // A shared Room artifact need not be authored by a participant. Read it
+    // through this owning source Session; Files keeps its normal access checks.
+    const sessionId = output.sessionId || (object.kind === 'room' && output.reference.startsWith('/') ? record?.id : '');
+    if (desktop && sessionId && !/^[a-z]+:/iu.test(output.reference)) {
+      setRailOpen(false);
+      openPawOsRoute(desktop, `/files?session=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(output.reference)}`);
     } else open(object);
   };
   return <div ref={readingSurface} className="paw-coordinator" data-rail-open={railOpen} data-chat-presentation-version={presentation?.version}>
     <main className="paw-coordinator__conversation">
-      <header className="paw-coordinator__header"><div><h1><RoomPlanetAvatar ordinal={0} size={24} decorative activity="static"/>Agent</h1><span>持久对话 <i aria-hidden="true">·</i> {record?.executionMode === 'full_trust' ? '全盘访问' : record?.executionMode === 'read_only' ? '只读' : '按当前权限执行'}</span></div>
+      <header className="paw-coordinator__header"><div><h1><RoomPlanetAvatar variant={presentation?.version === 'v2' ? 'sphere' : 'classic'} ordinal={0} size={24} decorative activity="static"/>Agent</h1><span>持久对话 <i aria-hidden="true">·</i> {record?.executionMode === 'full_trust' ? '全盘访问' : record?.executionMode === 'read_only' ? '只读' : '按当前权限执行'}</span></div>
         <button type="button" ref={railToggle} className="paw-coordinator__rail-toggle" aria-expanded={railOpen} aria-controls="coordinator-controls" onClick={() => setRailOpen(!railOpen)}><Network size={16}/>控制 <span>{objects.length}</span></button>
       </header>
       {error ? <div role="alert" className="paw-coordinator__error">{error}<button type="button" onClick={() => { void refresh(); }}>重新连接</button></div> : null}
@@ -173,7 +182,7 @@ function PawCoordinatorAppBody() {
       {!objects.length ? <p className="paw-coordinator__empty">交给 Agent 的工作会出现在这里。也可以先创建一个 Session 或 Room。</p> : null}
       <div className="paw-coordinator__objects">{objects.slice(0, limit).map(object => object.kind === 'session'
         ? <CoordinatorSession key={object.id} object={object} active={surfaceActive && pageVisible} onOpen={open} command={command}/>
-        : <CoordinatorRoom key={object.id} object={object} active={surfaceActive && pageVisible} onOpen={open} command={command}/>)}</div>
+        : <CoordinatorRoom key={object.id} object={object} active={surfaceActive && pageVisible} onOpen={open} onOpenParticipant={desktop ? openParticipant : undefined} command={command}/>)}</div>
       {objects.length > limit ? <button className="paw-coordinator__more" type="button" onClick={() => setLimit(limit + 4)}>显示更多 <ChevronDown size={14}/></button> : limit > 4 ? <button className="paw-coordinator__more" type="button" onClick={() => setLimit(4)}>收起</button> : null}
       <h2 className="paw-coordinator__outputs-heading">产物 <span>{outputs.length}</span></h2>
       {!outputs.length ? <p className="paw-coordinator__empty">完成任务后，有来源的产物会显示在这里。</p> : outputs.slice(0, outputLimit).map(({ object, output, key }) => <button type="button" className="paw-coordinator__output" key={key} onClick={() => openOutput(object, output)} title={output.reference}><FileText size={15}/><span>{output.title || output.reference.split('/').at(-1)}<small>{object.target.title}</small></span><ArrowUpRight size={13}/></button>)}
@@ -185,6 +194,7 @@ function PawCoordinatorAppBody() {
 
 function CoordinatorIdentityStatus({ session, active, onOpen }: { session?: SessionSummary; active: boolean; onOpen?: () => void }) {
   const statusId = useId();
+  const presentation = useChatPresentation();
   const transport = useControlTransport();
   const [synced, setSynced] = useState(false);
   const [recovery, setRecovery] = useState<AgentRecoveryState>('recovering');
@@ -197,7 +207,7 @@ function CoordinatorIdentityStatus({ session, active, onOpen }: { session?: Sess
     : current.status === 'waiting' ? 'waiting' : ['failed','faulted'].includes(current.status) || outcome === 'failed' ? 'error'
     : outcome === 'aborted' || ['aborting','stopping'].includes(current.status) ? 'stopped'
     : outcome === 'completed' ? 'done' : 'static';
-  return <><button type="button" className="paw-coordinator__avatar" aria-label="打开 Agent 的原 Session" aria-describedby={statusId} title="打开这段持久对话的完整 Session" disabled={!session || !onOpen} onClick={onOpen}><RoomPlanetAvatar ordinal={0} size={46} decorative activity={activity}/></button>
+  return <><button type="button" className="paw-coordinator__avatar" aria-label="打开 Agent 的原 Session" aria-describedby={statusId} title="打开这段持久对话的完整 Session" disabled={!session || !onOpen} onClick={onOpen}><RoomPlanetAvatar variant={presentation?.version === 'v2' ? 'sphere' : 'classic'} ordinal={0} size={46} decorative activity={presentation?.version === 'v2' && current && activity === 'static' ? 'idle' : activity} interactive={Boolean(current)}/></button>
     <div><strong title={session?.id}>{session?.title ?? 'Agent'}</strong><small id={statusId} aria-live="polite">{status}</small></div></>;
 }
 function CoordinatorSession({ object, active, onOpen, command }: ObjectRowProps) {
@@ -226,7 +236,7 @@ function CoordinatorSession({ object, active, onOpen, command }: ObjectRowProps)
     ? async () => { await command('resume', object.id, original); await reload({ preserveAfterSequence: current.lastSequence }); } : undefined;
   return <CoordinatorRow object={object} detail={controlledSessionDetail(session) || (object.task.startsWith(session.title.trim().replace(/(?:…|\.\.\.)$/u, '')) ? '' : object.task)} status={status} running={running} stop={stop} resume={resume} onOpen={onOpen}/>;
 }
-function CoordinatorRoom({ object, active, onOpen, command }: ObjectRowProps) {
+function CoordinatorRoom({ object, active, onOpen, onOpenParticipant, command }: ObjectRowProps) {
   const transport = useControlTransport();
   const [recovery, setRecovery] = useState<AgentRecoveryState>('recovering');
   const [synced, setSynced] = useState(false);
@@ -241,9 +251,9 @@ function CoordinatorRoom({ object, active, onOpen, command }: ObjectRowProps) {
   const status = !current ? recovery === 'failed' ? '同步失败' : '正在同步' : running ? '伙伴正在执行'
     : turn?.status === 'queued' ? '等待调度' : latest?.status === 'failed' ? '需要查看' : latest?.status === 'completed' ? '已完成' : latest?.status === 'aborted' ? '已停止' : 'Room 已准备好';
   const stop = turn ? async () => { await command('stop', object.id, { roomTurnId: turn.id, clientRequestId: crypto.randomUUID() }); retry(); } : undefined;
-  return <CoordinatorRow object={object} detail={object.task} status={status} running={running} stop={stop} onOpen={onOpen}/>;
+  return <div><CoordinatorRow object={object} detail={object.task} status={status} running={running} stop={stop} onOpen={onOpen}/><ControlledRoomParticipants room={object.target as RoomSummary} active={active} onOpenSession={onOpenParticipant}/></div>;
 }
-type ObjectRowProps = { object: CoordinatorObject; active: boolean; onOpen: (object: CoordinatorObject) => void; command: (action: string, id: string, input: { [key: string]: JsonValue }) => Promise<void> };
+type ObjectRowProps = { object: CoordinatorObject; active: boolean; onOpenParticipant?: (id: string, title: string) => void; onOpen: (object: CoordinatorObject) => void; command: (action: string, id: string, input: { [key: string]: JsonValue }) => Promise<void> };
 function CoordinatorRow({ object, detail, status, running, stop, resume, onOpen }: { object: CoordinatorObject; detail: string; status: string; running: boolean; stop?: () => Promise<void>; resume?: () => Promise<void>; onOpen: ObjectRowProps['onOpen'] }) {
   const motion = usePresentationMotion();
   const [pending, setPending] = useState(false);

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DesktopPetSurface } from './desktop-pet-surface';
 import { emptyPetCounts, unavailablePetSnapshot, type PetSnapshot } from './desktop-pet-snapshot';
 
-afterEach(() => { cleanup(); delete window.pawDesktopPet; vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); localStorage.removeItem('paw:chat-presentation:v1'); delete window.pawDesktopPet; vi.restoreAllMocks(); });
 function renderPet(ready = Promise.resolve(unavailablePetSnapshot())) {
   let listener: (snapshot: PetSnapshot) => void = () => {};
   const unsubscribe = vi.fn();
@@ -29,6 +29,23 @@ function liveSnapshot(): PetSnapshot {
 }
 
 describe('single planet companion', () => {
+  it('rolls back only its body while retaining the authoritative seven-state signal and native keyboard action', async () => {
+    const { button, push, host } = renderPet(); push(liveSnapshot());
+    expect(button.querySelector('[data-avatar-variant="sphere"]')).toBeTruthy();
+    expect(button.querySelector('.sphere-signal')).toBeNull();
+    expect(button.querySelector('[data-avatar-variant="sphere"]')).toHaveAttribute('data-signal', 'working');
+    const signal = button.querySelector('.desktop-pet-status');
+    act(() => {
+      localStorage.setItem('paw:chat-presentation:v1', JSON.stringify({ 'builtin:desktop-pet': { version: 'v1' } }));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'paw:chat-presentation:v1' }));
+    });
+    expect(button.querySelector('image')).toBeTruthy();
+    expect(button.querySelector('.desktop-pet-status')).toBe(signal);
+    expect(signal).toHaveAttribute('data-state', 'running');
+    button.focus(); await userEvent.setup().keyboard('{Enter}');
+    expect(host.setExpanded).toHaveBeenCalledWith(true);
+  });
+
   it('moves from the keyboard and ends move mode without hiding the companion', async () => {
     const { host, handle } = renderPet(); const user = userEvent.setup();
     handle.focus(); await user.keyboard('{Enter}');
@@ -76,6 +93,7 @@ describe('single planet companion', () => {
       conversations: snapshot.conversations.filter(item => item.state !== 'attention') });
     const signal = button.querySelector('.desktop-pet-status');
     expect(signal).toHaveAttribute('data-state', 'error');
+    expect(avatar).toHaveAttribute('data-signal', 'idle');
     expect(avatar).toHaveAttribute('data-expression', expression);
     push({ ...snapshot, revision: 5, counts: { ...snapshot.counts, attention: 0 },
       conversations: snapshot.conversations.filter(item => item.state !== 'attention') });

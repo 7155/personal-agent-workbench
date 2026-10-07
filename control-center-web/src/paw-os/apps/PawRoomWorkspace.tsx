@@ -1097,7 +1097,7 @@ function PawRoomWorkspaceBody({
       <DialogContent className="paw-jev-objective-detail"><DialogTitle>任务要求</DialogTitle><DialogDescription>本轮任务的原始目标，分工和验收围绕这些要求推进。</DialogDescription><div>{jevObjective}</div></DialogContent>
     </Dialog>
     <span className="jev-mission__roster">
-      {activeParticipants.length ? <span className="jev-mission__planets" aria-hidden>{activeParticipants.slice(0, 5).map(participant => <RoomPlanetAvatar key={participant.id} ordinal={participant.ordinal} size={18} decorative />)}</span> : null}
+      {activeParticipants.length ? <span className="jev-mission__planets" aria-hidden>{activeParticipants.slice(0, 5).map(participant => <RoomPlanetAvatar variant={presentation?.version === 'v2' ? 'sphere' : 'classic'} key={participant.id} ordinal={participant.ordinal} size={18} decorative />)}</span> : null}
       <span>{!record ? '正在恢复 Room 协作现场' : `${activeParticipants.length} 位伙伴`}{jevGraph ? ` · ${jevTaskCountLabel(jevGraph)}` : ''}{jevRootAttachments ? ` · ${jevRootAttachments} 项附件` : ''}{record?.ownerAppId === 'extension:agent-lab' ? ' · Agent Lab 只读沙盒' : ''}</span>
     </span>
   </div> : null;
@@ -1194,7 +1194,7 @@ function PawRoomWorkspaceBody({
                 empty={loading
                   ? <div className="paw-room-workspace__loading"><LoaderCircle className="ui-spin" size={18} />正在恢复 Room 协作现场</div>
                   : jevEnabled ? <div className="paw-room-workspace__empty paw-jev-empty">
-                    <span className="paw-jev-empty__planets" aria-hidden>{activeParticipants.slice(0, 5).map(participant => <RoomPlanetAvatar key={participant.id} ordinal={participant.ordinal} size={36} activity="idle" decorative />)}</span>
+                    <span className="paw-jev-empty__planets" aria-hidden>{activeParticipants.slice(0, 5).map(participant => <RoomPlanetAvatar variant={presentation?.version === 'v2' ? 'sphere' : 'classic'} key={participant.id} ordinal={participant.ordinal} size={36} activity="idle" decorative />)}</span>
                     <strong>描述一个目标，团队会接手</strong>
                     <p>简单问题会直接回答；需要分工时，Jev 先给出完整方案，你确认后伙伴才开始执行。</p>
                     <ol><li><b>1</b>说清目标与验收标准</li><li><b>2</b>确认方案与分工</li><li><b>3</b>在任务栏跟进执行、复核与交付</li></ol>
@@ -1523,6 +1523,7 @@ function PawRoomGovernanceInner({
   onRefresh: () => Promise<void>;
   onRoomUpdated: (room: RoomSummary) => void;
 }) {
+  const presentation = useChatPresentation();
   const transport = useControlTransport();
   const [busyKey, setBusyKey] = useState('');
   const removals = useRoomRemovals(room, onRefresh);
@@ -1621,7 +1622,7 @@ function PawRoomGovernanceInner({
       <header><span><Users size={15} /><strong>伙伴与分工</strong></span><small>{activeParticipants.length}/{ROOM_PARTICIPANT_LIMIT}</small></header>
       {busyKey.startsWith('add:') ? <p className="paw-room-governance__arrival" role="status"><LoaderCircle className="ui-spin" size={16} />正在邀请 {nextPlanetName} 加入…</p> : joinedIds.length ? <p className="paw-room-governance__arrival" role="status"><UserPlus size={16} />{activeParticipants.filter((item) => joinedIds.includes(item.id)).map((item) => roomPlanetName(item.ordinal)).join('、')} 已加入，可以在对话中 @ 点名接手</p> : null}
       <div className="paw-room-governance__members">{activeParticipants.map((participant) => <article key={participant.id} data-arriving={joinedIds.includes(participant.id) || undefined}>
-        <RoomPlanetAvatar ordinal={participant.ordinal} size={30} decorative />
+        <RoomPlanetAvatar variant={presentation?.version === 'v2' ? 'sphere' : 'classic'} ordinal={participant.ordinal} size={30} decorative />
         <span><strong>{roomPlanetName(participant.ordinal)}</strong>{room.roomKind === 'roleplay' ? <small>{roomCollaborationRoleLabel(participant.collaborationRole)}</small> : null}</span>
         {room.roomKind !== 'roleplay' ? <Select aria-label={`${roomPlanetName(participant.ordinal)} 的分工`} disabled={Boolean(busyKey)} onValueChange={(collaborationRole) => void mutate(`role:${participant.id}`, { pathId: 'agent.room.participant.update', params: { roomId: room.id }, body: { participantId: participant.id, collaborationRole } })} options={roomCollaborationRoleOptions(participant.collaborationRole)} value={participant.collaborationRole ?? 'implementer'} /> : null}
         <button aria-label={`移出 ${roomPlanetName(participant.ordinal)}`} disabled={Boolean(busyKey) || removals.items.some(item => item.participantId === participant.id && item.status === 'pending') || activeParticipants.length <= 2 || (room.routingPolicy === 'moderator' && participant.id === room.moderatorParticipantId)} onClick={() => removeParticipant(participant.id)} type="button">{busyKey === `remove:${participant.id}` ? <LoaderCircle className="ui-spin" size={14} /> : <UserMinus size={14} />}</button>
