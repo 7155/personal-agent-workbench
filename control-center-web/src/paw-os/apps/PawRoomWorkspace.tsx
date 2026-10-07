@@ -1,3 +1,5 @@
+import { ChatPresentationSettings } from '@/features/conversation-ui/reading/ChatPresentationSettings';
+import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { useRoomReadingRecovery, useRoomViewRecovery } from '@/features/semantic-workspace/reading-recovery';
 import { recoveryScope, useWorkspaceRecovery, WorkspaceRecoveryNotice } from '@/features/semantic-workspace/workspace-recovery';
 import { JevCompanion } from '@/features/semantic-workspace/JevCompanion';
@@ -182,7 +184,13 @@ export function followRoomTimelineIfReaderAtEnd(
   return true;
 }
 
-export function PawRoomWorkspace({
+export function PawRoomWorkspace(props: Parameters<typeof PawRoomWorkspaceBody>[0]) {
+  const presentation = useChatPresentation();
+  const ownerKey = props.record?.ownerAppId || 'builtin:agent';
+  return presentation ? <PawRoomWorkspaceBody {...props} /> : <ChatPresentationProvider ownerKey={ownerKey} defaultVersion={ownerKey.startsWith('extension:') ? 'v1' : 'v2'}><PawRoomWorkspaceBody {...props} /></ChatPresentationProvider>;
+}
+
+function PawRoomWorkspaceBody({
   active = true,
   interfaceMode = 'traditional',
   initialDraft,
@@ -207,6 +215,7 @@ export function PawRoomWorkspace({
   onJevEvents?: (events: readonly unknown[]) => void;
 }) {
   const transport = useControlTransport();
+  const presentation = useChatPresentation();
   const desktop = usePawOsDesktop();
   const windowChromeTarget = usePawWindowChromeTarget();
   const pageVisible = usePageVisibility();
@@ -1101,6 +1110,7 @@ export function PawRoomWorkspace({
       ref={workspaceRef}
       className={`paw-room-workspace paw-room-workspace--conversation${jevEnabled ? ' paw-room-workspace--jev' : ''}`}
       data-agent-mode={jevEnabled ? 'jev' : 'room'}
+      data-chat-presentation-version={presentation?.version}
       data-collaboration-mode={!jevEnabled && collaborationFocusActive}
       data-external-focus={externalCollaborationFocus || undefined}
       data-panel={visiblePanel}
@@ -1113,6 +1123,7 @@ export function PawRoomWorkspace({
       {windowChromeTarget ? <PawWindowChromePortal>{roomChromeControls}</PawWindowChromePortal> : <header className="paw-room-workspace__header">{roomChromeControls}</header>}
 
       <WorkspaceRecoveryNotice recovery={recovery} />
+      {controlsExpanded ? <div className="paw-room-presentation-settings"><ChatPresentationSettings /></div> : null}
       {controlsExpanded && !externalCollaborationFocus && !jevEnabled ? <section aria-label="Room 当前协作" className="paw-room-workspace__signal">
         <div className="paw-room-workspace__objective">
           <div><strong>{(focusProjection?.goal.title !== '主话题' && focusProjection?.goal.title) || (activeTopic?.title !== '主话题' && activeTopic?.title) || record?.description || record?.title || activeWork?.objective || '当前协作'}</strong></div>

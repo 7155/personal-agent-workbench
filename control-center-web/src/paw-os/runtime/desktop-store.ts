@@ -261,7 +261,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       const bounds = satelliteTarget
         ? roomParticipantWindowBounds(satelliteIndex)
         : initialWindowBounds(currentState.stack.length);
-      const startExpanded = appId === 'agent' && !options.entityId && !options.background && !satelliteTarget;
+      const startExpanded = (appId === 'agent' || appId === 'agent-controller') && !options.entityId && !options.background && !satelliteTarget;
       const node: PawWindowNode = {
         id: windowId,
         appId,

@@ -865,7 +865,8 @@ describe('document knowledge library', () => {
     expect(screen.getByRole('heading', { name: '已就绪' })).toBeInTheDocument();
   });
   it('keeps the Settings workspace and unsaved drafts through an authoritative refresh', async () => {
-    const transport = createTransport();
+    let vectorCount = 0;
+    const transport = createTransport({ embeddingVectorCount: () => vectorCount });
     const user = userEvent.setup();
     renderKnowledge(transport, '/knowledge?tab=settings');
 
@@ -873,10 +874,27 @@ describe('document knowledge library', () => {
     const name = screen.getByRole('textbox', { name: '名称' });
     await user.clear(name);
     await user.type(name, '尚未保存的知识库名称');
+    await user.click(screen.getByText('高级：连接与索引设置'));
+    expect(screen.getByLabelText('当前向量数量')).toHaveValue('0');
+    vectorCount = 10;
     await user.click(screen.getByRole('button', { name: '刷新知识库' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveAttribute('data-current-tool', 'settings'));
     expect(screen.getByRole('textbox', { name: '名称' })).toHaveValue('尚未保存的知识库名称');
+    await waitFor(() => expect(screen.getByLabelText('当前向量数量')).toHaveValue('10'));
+  });
+
+  it('refreshes library and embedding projections when a polled indexing job completes', async () => {
+    const options = { activeJob: true, embeddingVectorCount: () => options.activeJob ? 0 : 10 };
+    const transport = createTransport(options);
+    renderKnowledge(transport, '/knowledge?tab=settings');
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('高级：连接与索引设置'));
+    expect(await screen.findByLabelText('当前向量数量')).toHaveValue('0');
+    const baseReads = transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.get').length;
+    options.activeJob = false;
+    await waitFor(() => expect(screen.getByLabelText('当前向量数量')).toHaveValue('10'), { timeout: 3_000 });
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.get').length).toBeGreaterThan(baseReads);
   });
 
   it('keeps create and basic-info drafts visible when the backend does not confirm them', async () => {
@@ -992,7 +1010,7 @@ function RouteRemountedKnowledge() {
   return <KnowledgeFeature key={location.search} />;
 }
 
-function createTransport(options: { structuredSource?: boolean; activeJob?: boolean; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
+function createTransport(options: { structuredSource?: boolean; activeJob?: boolean; embeddingVectorCount?: () => number; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
   let graphRequestCount = 0;
   const extraGraphNodes = options.manyRelations
     ? Array.from({ length: 9 }, (_, index) => ({
@@ -1024,16 +1042,16 @@ function createTransport(options: { structuredSource?: boolean; activeJob?: bool
       'knowledgeBases.list': { items: [knowledgeBase()] },
       'knowledgeBases.get': { base: knowledgeBase() },
       'knowledgeBases.documents.list': { items: [options.unlistedSearchSource ? { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } : knowledgeDocument()] },
-      'knowledgeBases.jobs.list': { items: [{ id: 'job-1', fileId: 'file-runtime', fileName: 'runtime.pdf', kind: 'reindex', parserMode: 'builtin', status: options.activeJob ? 'running' : 'succeeded', stage: options.activeJob ? 'indexing' : 'ready', progress: options.activeJob ? .8 : 1, cancellable: options.activeJob, revision: 3, createdAtMs: Date.now() - 2_000, startedAtMs: Date.now() - 1_500, finishedAtMs: options.activeJob ? 0 : Date.now() - 500, updatedAtMs: Date.now() - 500 }] },
+      'knowledgeBases.jobs.list': () => ({ items: [{ id: 'job-1', fileId: 'file-runtime', fileName: 'runtime.pdf', kind: 'reindex', parserMode: 'builtin', status: options.activeJob ? 'running' : 'succeeded', stage: options.activeJob ? 'indexing' : 'ready', progress: options.activeJob ? .8 : 1, cancellable: options.activeJob, revision: 3, createdAtMs: Date.now() - 2_000, startedAtMs: Date.now() - 1_500, finishedAtMs: options.activeJob ? 0 : Date.now() - 500, updatedAtMs: Date.now() - 500 }] }),
       'knowledgeWorker.health': { ok: true, status: 'ready', dense: { available: true, degraded: false, kind: 'sqlite-vector-projection', fingerprint: 'local-hash:96:v1', vectorCount: 42 } },
       'knowledgeParsers.list': { items: [{ id: 'mineru_local_http', enabled: true, ready: true, status: 'ready' }] },
-      'knowledgeEmbedding.profile': {
+      'knowledgeEmbedding.profile': () => ({
         ok: true,
         profile: { source: 'settings', provider: 'local-hash', model: 'deterministic-term-vector-v1', baseUrl: '', dimensions: 96, secretReference: '', queryPrefix: '', documentPrefix: '', denseBackend: 'sqlite-exact', secretAvailable: false, profileSha256: 'profile-current', secretsVisible: false },
         phase: 'active',
-        runtime: { provider: { provider: 'local-hash', model: 'deterministic-term-vector-v1' }, fingerprint: 'local-hash:96:v1', dimensions: 96, vectorCount: 42, chunkCount: 42, coverage: 1, available: true, degraded: true, reason: 'local baseline' },
+        runtime: { provider: { provider: 'local-hash', model: 'deterministic-term-vector-v1' }, fingerprint: 'local-hash:96:v1', dimensions: 96, vectorCount: options.embeddingVectorCount?.() ?? 42, chunkCount: 42, coverage: 1, available: true, degraded: true, reason: 'local baseline' },
         secretsVisible: false,
-      },
+      }),
       'knowledgeEmbedding.probe': (request: ControlRequest) => {
         const profile = (request.body as unknown as { profile: Record<string, unknown> }).profile;
         return { ok: true, ready: true, profileSha256: 'profile-candidate', provider: profile.provider, model: profile.model, fingerprint: 'openai-compatible:bge-m3:test', dimensions: profile.dimensions, semantic: true, latencyMs: 12.5, secretsVisible: false };

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-06T17:02:03.259984+00:00",
+  "generatedAt": "2026-10-07T05:04:09.224518+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Current main integrated with user-approved preserved local Lab/UI and recoverable application backup changes; retain data and configured Runtime authorization."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact recovery display and optional multimodal retrieval; source checks do not establish complete foreground acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -200,62 +200,67 @@
     "mac_local_update_20261006": {
       "description": "Preserved local macOS PAW update changes.",
       "pathCount": 8
+    },
+    "paw_experience_20261007": {
+      "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
+      "pathCount": 34
     }
   },
   "summary": {
-    "pathCount": 2107,
+    "pathCount": 2141,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1791
+      "keep_release": 1825
     },
     "groupCounts": {
-      "agent_capsule": 3,
-      "brand_stellar": 60,
-      "browser_recovery": 1,
-      "composition_refactor": 32,
-      "conversation_controls": 61,
-      "conversation_v2_integration": 48,
-      "durable_desktop_iteration": 28,
-      "earth_research": 113,
-      "jev_integration": 10,
-      "knowledge_runtime": 12,
-      "lab_backend": 74,
-      "lab_frontend": 54,
-      "lab_tools": 10,
       "local_docs": 121,
-      "mac_local_update_20261006": 8,
-      "main_followup_20261006": 66,
-      "memory_lifecycle": 15,
-      "offline_installer": 12,
-      "owner_boundaries": 15,
-      "pi1_experience_iteration": 38,
-      "pi1_final_integration": 236,
-      "pi_content_studio_v5_v6": 41,
-      "pi_runtime_refactor": 23,
-      "portable_agent_ui": 8,
-      "portable_guarded_acceptance": 14,
-      "primary_assistant_followup": 30,
-      "primary_assistant_iteration": 84,
       "product_integration": 57,
-      "public_showcase": 30,
       "react_os_docs": 3,
+      "pi1_final_integration": 236,
       "refactor_docs_examples": 9,
-      "refactor_integration": 23,
-      "refactor_verification": 66,
+      "earth_research": 113,
+      "brand_stellar": 60,
+      "public_showcase": 30,
+      "primary_assistant_followup": 30,
       "references_history": 8,
-      "release_scope": 1,
-      "room_frontend": 21,
+      "main_followup_20261006": 66,
       "room_history_codemode": 58,
-      "room_service_refactor": 43,
-      "scheduled_tasks": 25,
-      "second_brain": 24,
-      "session_full_access": 8,
-      "startup_failure_diagnostics": 2,
-      "temporal_query_preservation": 3,
-      "trace_optimization": 61,
+      "pi_content_studio_v5_v6": 41,
+      "workspace_completion": 315,
+      "conversation_v2_integration": 48,
+      "memory_lifecycle": 15,
+      "pi1_experience_iteration": 38,
+      "primary_assistant_iteration": 84,
+      "paw_experience_20261007": 34,
       "verification": 114,
       "voice_desktop": 19,
-      "workspace_completion": 315
+      "composition_refactor": 32,
+      "portable_agent_ui": 8,
+      "owner_boundaries": 15,
+      "conversation_controls": 61,
+      "durable_desktop_iteration": 28,
+      "trace_optimization": 61,
+      "scheduled_tasks": 25,
+      "session_full_access": 8,
+      "mac_local_update_20261006": 8,
+      "jev_integration": 10,
+      "lab_frontend": 54,
+      "second_brain": 24,
+      "knowledge_runtime": 12,
+      "room_frontend": 21,
+      "agent_capsule": 3,
+      "portable_guarded_acceptance": 14,
+      "refactor_integration": 23,
+      "offline_installer": 12,
+      "room_service_refactor": 43,
+      "lab_backend": 74,
+      "pi_runtime_refactor": 23,
+      "browser_recovery": 1,
+      "lab_tools": 10,
+      "temporal_query_preservation": 3,
+      "release_scope": 1,
+      "refactor_verification": 66,
+      "startup_failure_diagnostics": 2
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -1877,6 +1882,13 @@
       "disposition": "keep_release",
       "group": "primary_assistant_iteration",
       "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
+    },
+    {
+      "path": "control-center-web/electron/host-config.mjs",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "control-center-web/electron/host-config.test.mjs",
@@ -3601,6 +3613,13 @@
       "status": "modified"
     },
     {
+      "path": "control-center-web/src/features/agent/composer/model-picker-v1.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "control-center-web/src/features/agent/composer/model-picker.css",
       "status": "modified",
       "disposition": "keep_release",
@@ -4364,6 +4383,13 @@
       "reason": "Include current main follow-up source and existing verification in the local update."
     },
     {
+      "path": "control-center-web/src/features/approvals/approvals.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "control-center-web/src/features/approvals/index.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -4509,6 +4535,13 @@
       "group": "conversation_controls",
       "reason": "Share Session and Room composer behavior and preserve text attachments for selective reading.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/features/composer/composer-workbench-v1.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "control-center-web/src/features/composer/composer-workbench.css",
@@ -4873,6 +4906,34 @@
       "disposition": "keep_release",
       "group": "pi1_experience_iteration",
       "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/reading/ChatPresentationSettings.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/reading/chat-presentation-settings.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/reading/chat-presentation.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "control-center-web/src/features/conversation-ui/reading/chat-presentation.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "control-center-web/src/features/conversation-ui/reading/reading-preferences.ts",
@@ -5610,6 +5671,13 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/features/governance/governance.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "control-center-web/src/features/governance/index.tsx",
       "status": "modified",
       "disposition": "keep_release",
@@ -6205,6 +6273,13 @@
       "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
+      "path": "control-center-web/src/features/plugins/plugin-studio.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "control-center-web/src/features/plugins/plugins-feature.test.tsx",
       "disposition": "keep_release",
       "group": "verification",
@@ -6364,6 +6439,27 @@
       "disposition": "keep_release",
       "group": "main_followup_20261006",
       "reason": "Include current main follow-up source and existing verification in the local update."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/PlanetCompanion.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/PlanetCompanion.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/PlanetCompanionMark.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
     },
     {
       "path": "control-center-web/src/features/rooms/RoomMemberBoundaryDialog.tsx",
@@ -6532,6 +6628,20 @@
       "group": "room_frontend",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/rooms/planet-companion-protocol.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
+    },
+    {
+      "path": "control-center-web/src/features/rooms/planet-companion.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Original v2 planet family with independent expression/signal layers; v1 remains selectable."
     },
     {
       "path": "control-center-web/src/features/rooms/room-planet-avatar.css",
@@ -7381,6 +7491,20 @@
       "disposition": "keep_release"
     },
     {
+      "path": "control-center-web/src/paw-os/apps/ControlledSessions.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/ControlledSessions.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/JevCollaborationPanel.tsx",
       "disposition": "keep_release",
       "group": "conversation_v2_integration",
@@ -7505,6 +7629,20 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawCoordinatorApp.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawCoordinatorApp.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawJevTeamPanels.test.tsx",
@@ -7948,6 +8086,20 @@
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
     },
     {
+      "path": "control-center-web/src/paw-os/apps/controlled-sessions.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/coordinator-app.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/entries/PawAgentAppEntry.tsx",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -7967,6 +8119,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/entries/PawCoordinatorAppEntry.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "control-center-web/src/paw-os/apps/entries/PawNativeAppEntry.tsx",
@@ -8093,6 +8252,13 @@
       "disposition": "keep_release",
       "group": "room_frontend",
       "reason": "Room partner windows, readable replies, sidebars and responsive layout."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/paw-workbench-reading-v1.css",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "control-center-web/src/paw-os/apps/paw-workbench-reading.css",
@@ -9810,6 +9976,13 @@
       "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
     },
     {
+      "path": "rag_ime/agent_coordinator.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "rag_ime/agent_delegation.py",
       "status": "modified",
       "group": "refactor_integration",
@@ -11098,6 +11271,13 @@
       "reason": "Include current main follow-up source and existing verification in the local update."
     },
     {
+      "path": "rag_ime/db/migrations/0222_agent_coordinator_ownership.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "rag_ime/debug_server.py",
       "status": "modified",
       "disposition": "keep_release",
@@ -11278,6 +11458,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "rag_ime/jev_tasks/openai_decisions.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "rag_ime/jev_tasks/owner.py",
@@ -11530,6 +11717,13 @@
       "disposition": "keep_release",
       "group": "second_brain",
       "reason": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately."
+    },
+    {
+      "path": "rag_ime/knowledge_library/visual.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "rag_ime/knowledge_library/worker.py",
@@ -12827,6 +13021,13 @@
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
     },
     {
+      "path": "tests/frozen_rag_replay.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Replay immutable RAG standards with their pinned text pipeline while retaining current multimodal ingestion; preserve historical artifacts."
+    },
+    {
       "path": "tests/memory_lifecycle_fixture.sql",
       "disposition": "keep_release",
       "group": "verification",
@@ -12979,6 +13180,13 @@
       "group": "pi1_final_integration",
       "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
       "disposition": "keep_release"
+    },
+    {
+      "path": "tests/test_agent_coordinator.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "tests/test_agent_delegation.py",
@@ -13765,6 +13973,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_enterprise_rag_answer_evidence_candidate_citation_revision.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Replay immutable RAG standards with their pinned text pipeline while retaining current multimodal ingestion; preserve historical artifacts."
+    },
+    {
       "path": "tests/test_enterprise_rag_luna_prompt_v5.py",
       "disposition": "keep_release",
       "group": "verification",
@@ -13961,6 +14176,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_jev_openai_decisions.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "tests/test_jev_outbox_recovery.py",
       "disposition": "keep_release",
       "group": "workspace_completion",
@@ -14136,6 +14358,13 @@
       "status": "added"
     },
     {
+      "path": "tests/test_json_contracts.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
+    },
+    {
       "path": "tests/test_knowledge_control_api.py",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -14176,6 +14405,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_knowledge_native_images.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "User-authorized frontend polish, persistent coordinator control, recovery receipts and optional retrieval/provider integration."
     },
     {
       "path": "tests/test_knowledge_office_structure.py",
@@ -14750,6 +14986,13 @@
       "group": "workspace_completion",
       "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
       "status": "added"
+    },
+    {
+      "path": "tests/test_room_coordinator_thread_fence.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Retain user-authorized source admission fence, truthful dispatch display and original versioned planet presentation; final foreground acceptance remains separate."
     },
     {
       "path": "tests/test_room_event_ordering.py",

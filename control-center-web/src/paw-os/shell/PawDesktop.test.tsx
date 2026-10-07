@@ -76,8 +76,13 @@ describe('PAWOS desktop', () => {
     expect(screen.queryByRole('button', { name: '桌面图标' })).not.toBeInTheDocument();
     const shortcuts = screen.getByLabelText('桌面 App');
     expect(shortcuts.querySelectorAll('[data-desktop-app="agent"]')).toHaveLength(1);
+    expect(shortcuts.querySelectorAll('[data-desktop-app="agent-controller"]')).toHaveLength(1);
+    fireEvent.doubleClick(within(shortcuts).getByRole('button', { name: 'Session 与 Room' }));
+    const sessionRoomWindow = document.querySelector('[data-paw-window-id="agent"]');
+    expect(sessionRoomWindow).toBeInTheDocument();
     fireEvent.doubleClick(within(shortcuts).getByRole('button', { name: 'Agent' }));
-    expect(document.querySelector('[data-paw-window-id="agent"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-paw-window-id="agent-controller"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-paw-window-id="agent"]')).toBe(sessionRoomWindow);
     fireEvent.click(screen.getByRole('button', { name: '打开全部 App' }));
     expect(screen.getByRole('dialog', { name: '全部 App' })).toBeInTheDocument();
   });
@@ -144,7 +149,7 @@ describe('PAWOS desktop', () => {
     const page = renderDesktop('app-center', transport, '/plugins?view=skills');
     expect(screen.getByLabelText('app-center current page')).toHaveTextContent('/plugins?view=skills');
     const shortcuts = screen.getByLabelText('桌面 App');
-    fireEvent.keyDown(within(shortcuts).getByRole('button', { name: 'Agent' }), { key: 'Enter' });
+    fireEvent.keyDown(within(shortcuts).getByRole('button', { name: 'Session 与 Room' }), { key: 'Enter' });
     expect(window.location.hash).toBe('#/agent');
 
     if (entry === 'desktop') {
@@ -225,7 +230,7 @@ describe('PAWOS desktop', () => {
     );
     expect(document.querySelector('.paw-menu-bar > strong')).toBeNull();
     const current = document.querySelector('.paw-menu-app') as HTMLElement;
-    expect(current).toHaveTextContent('Agent');
+    expect(current).toHaveTextContent('Session 与 Room');
     expect(current.querySelector('[data-paw-app-icon="agent"]')).toHaveAttribute('aria-hidden', 'true');
     expect(current.querySelector('[data-lucide], .paw-os-app-icon, .paw-app-glyph')).toBeNull();
   });
@@ -252,11 +257,11 @@ describe('PAWOS desktop', () => {
 
   it('opens hide and overview commands from the menu bar App name', () => {
     renderDesktop('agent');
-    fireEvent.click(screen.getByRole('button', { name: 'Agent 菜单' }));
-    expect(screen.getByRole('menu', { name: 'Agent 菜单' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Session 与 Room 菜单' }));
+    expect(screen.getByRole('menu', { name: 'Session 与 Room 菜单' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: '隐藏窗口' }));
     expect(document.querySelector('[data-paw-window-id="agent"]')).toBeNull();
-    const agentDock = within(screen.getByRole('navigation', { name: 'PAWOS 工具架' })).getByRole('button', { name: 'Agent' });
+    const agentDock = within(screen.getByRole('navigation', { name: 'PAWOS 工具架' })).getByRole('button', { name: 'Session 与 Room' });
     expect(agentDock).toHaveAttribute('data-open');
     expect(agentDock).toHaveAttribute('data-minimized');
   });
@@ -329,6 +334,7 @@ describe('PAWOS desktop', () => {
       'agent',
       'eval-lab',
       'project-workbench',
+      'agent-controller',
       'agent-capsule',
       ...pawApps.filter((app) => isPawExtensionAppId(app.id) && app.kind === 'agent').map((app) => app.id),
     ]);
@@ -587,7 +593,7 @@ describe('PAWOS desktop', () => {
     })));
     renderDesktop('agent');
     const shortcuts = screen.getByLabelText('桌面 App');
-    const agentRow = within(shortcuts).getByRole('button', { name: 'Agent' });
+    const agentRow = within(shortcuts).getByRole('button', { name: 'Session 与 Room' });
     expect(agentRow).toHaveAttribute('data-open');
     expect(agentRow).not.toHaveAttribute('data-minimized');
     expect(agentRow).toHaveAttribute('aria-description', '运行中');
@@ -599,7 +605,7 @@ describe('PAWOS desktop', () => {
     expect(agentRow).toHaveAttribute('aria-description', '已最小化，按回车打开');
     // The description carries state while the stable accessible name remains
     // the bare App label used by voice control and exact-name queries.
-    expect(agentRow).toHaveAttribute('title', 'Agent · 已最小化');
+    expect(agentRow).toHaveAttribute('title', 'Session 与 Room · 已最小化');
   });
 
   it('walks the visible desktop grid spatially with roving arrow keys', () => {
@@ -662,7 +668,7 @@ describe('PAWOS desktop', () => {
     }));
     renderIconsDesktop();
     const shortcuts = screen.getByLabelText('桌面 App');
-    const agent = within(shortcuts).getByRole('button', { name: 'Agent' });
+    const agent = within(shortcuts).getByRole('button', { name: 'Session 与 Room' });
     agent.focus();
 
     fireEvent.keyDown(shortcuts, { key: 'ArrowRight', altKey: true });
@@ -704,11 +710,11 @@ describe('PAWOS desktop', () => {
     renderIconsDesktop();
 
     const shortcuts = screen.getByLabelText('桌面 App');
-    const agent = within(shortcuts).getByRole('button', { name: 'Agent' });
+    const agent = within(shortcuts).getByRole('button', { name: 'Session 与 Room' });
     fireEvent.contextMenu(agent, { clientX: 240, clientY: 180 });
-    fireEvent.click(screen.getByRole('menuitem', { name: '从桌面移除 Agent' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '从桌面移除 Session 与 Room' }));
 
-    await waitFor(() => expect(within(shortcuts).queryByRole('button', { name: 'Agent' })).not.toBeInTheDocument());
+    await waitFor(() => expect(within(shortcuts).queryByRole('button', { name: 'Session 与 Room' })).not.toBeInTheDocument());
     await waitFor(() => expect(JSON.parse(window.localStorage.getItem('pawos.desktop.v1') ?? '{}').wayfinder?.archived).toContain('app:agent'));
 
     fireEvent.click(screen.getByRole('button', { name: '打开全部 App' }));
@@ -718,7 +724,7 @@ describe('PAWOS desktop', () => {
 
     fireEvent.contextMenu(screen.getByRole('main'), { clientX: 120, clientY: 90 });
     fireEvent.click(screen.getByRole('menuitem', { name: '恢复 1 个桌面图标' }));
-    await waitFor(() => expect(within(shortcuts).getByRole('button', { name: 'Agent' })).toBeInTheDocument());
+    await waitFor(() => expect(within(shortcuts).getByRole('button', { name: 'Session 与 Room' })).toBeInTheDocument());
   });
 
   it('returns focus to the context-menu opener after Escape', async () => {
@@ -877,12 +883,12 @@ describe('PAWOS desktop', () => {
     fireEvent.click(screen.getByRole('button', { name: '还原窗口' }));
     window.history.replaceState(null, '', '#/agent');
     const dock = screen.getByRole('navigation', { name: 'PAWOS 工具架' });
-    const agentDockButton = within(dock).getByRole('button', { name: 'Agent' });
+    const agentDockButton = within(dock).getByRole('button', { name: 'Session 与 Room' });
 
     fireEvent.contextMenu(agentDockButton, { clientX: 240, clientY: 680 });
 
-    expect(screen.getByRole('menu', { name: 'Agent 菜单' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitem', { name: '关闭 Agent 的全部窗口' }));
+    expect(screen.getByRole('menu', { name: 'Session 与 Room 菜单' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: '关闭 Session 与 Room 的全部窗口' }));
     expect(document.querySelector('[data-paw-window-id="agent"]')).toBeNull();
     expect(window.location.hash).toBe('#/project-field');
   });
@@ -929,7 +935,7 @@ describe('PAWOS desktop', () => {
     renderDesktop('agent');
     fireEvent.click(screen.getByRole('button', { name: '还原窗口' }));
     const dock = screen.getByRole('navigation', { name: 'PAWOS 工具架' });
-    const agentDockButton = within(dock).getByRole('button', { name: 'Agent' });
+    const agentDockButton = within(dock).getByRole('button', { name: 'Session 与 Room' });
     expect(agentDockButton).toHaveAttribute('aria-description', '运行中');
     expect(agentDockButton).toHaveAttribute('data-open');
     expect(agentDockButton).not.toHaveAttribute('data-minimized');
@@ -938,7 +944,7 @@ describe('PAWOS desktop', () => {
     expect(agentDockButton).toHaveAttribute('data-open');
     expect(agentDockButton).toHaveAttribute('data-minimized');
     expect(agentDockButton).toHaveAttribute('aria-description', '已最小化，按回车恢复');
-    expect(agentDockButton).toHaveAttribute('title', 'Agent 已最小化，点击恢复');
+    expect(agentDockButton).toHaveAttribute('title', 'Session 与 Room 已最小化，点击恢复');
 
     fireEvent.click(agentDockButton);
     expect(agentDockButton).not.toHaveAttribute('data-minimized');

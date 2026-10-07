@@ -302,7 +302,7 @@ class JevTaskController:
                 status = (
                     "configuration_missing"
                     if isinstance(exc.__cause__, RuntimeError)
-                    and str(exc.__cause__) == "Jev key is not configured"
+                    and str(exc.__cause__) in {"Jev key is not configured", "OpenAI Decisions key is not configured"}
                     else "decision_unavailable"
                 )
                 result = {

@@ -270,7 +270,7 @@ describe('PAWOS desktop store', () => {
     const store = createPawDesktopStore('agent', '/agent?subagents=open');
 
     expect(store.getState().windows.agent?.initialRoute).toBe('/agent?subagents=open');
-    expect(store.getState().windows.agent?.title).toBe('Agent');
+    expect(store.getState().windows.agent).toMatchObject({ appId: 'agent', title: 'Session 与 Room' });
   });
 
   it.each(['/agent?session=session-8&tools=open&toolsRequest=100', '/agent?sessionId=session-8&tools=memory'])(
@@ -440,7 +440,7 @@ describe('PAWOS desktop store', () => {
     expect(store.getState().windows[mainId]?.target).toEqual({ kind: 'room', id: 'room-8', title: '研究协作' });
   });
 
-  it('keeps the exact Agent window title, icon target, and route aligned while moving between Room and Session', () => {
+  it('keeps the exact Session and Room window title, icon target, and route aligned while moving between Room and Session', () => {
     const store = createPawDesktopStore();
     const mainId = store.getState().openApp('agent');
 
@@ -456,7 +456,7 @@ describe('PAWOS desktop store', () => {
     expect(store.getState().collaborationFocusGroup).toBeNull();
 
     store.getState().bindAgentMain(mainId);
-    expect(store.getState().windows[mainId]).toMatchObject({ title: 'Agent', initialRoute: '/agent' });
+    expect(store.getState().windows[mainId]).toMatchObject({ appId: 'agent', title: 'Session 与 Room', initialRoute: '/agent' });
     expect(store.getState().windows[mainId]?.target).toBeUndefined();
   });
 

@@ -6688,6 +6688,9 @@ export const contractSchemas = {
           "compaction": {
             "type": "boolean"
           },
+          "compactionRecovery": {
+            "type": "boolean"
+          },
           "resume": {
             "type": "boolean"
           },
@@ -11173,6 +11176,7 @@ export const contractSchemas = {
           "restore_preview",
           "restore_apply",
           "delegate",
+          "coordinator",
           "call",
           "artifact",
           "abort",

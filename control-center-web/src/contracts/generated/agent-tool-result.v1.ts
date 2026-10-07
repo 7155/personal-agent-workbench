@@ -153,6 +153,7 @@ export interface AgentToolResultV1 {
     | 'restore_preview'
     | 'restore_apply'
     | 'delegate'
+    | 'coordinator'
     | 'call'
     | 'artifact'
     | 'abort'

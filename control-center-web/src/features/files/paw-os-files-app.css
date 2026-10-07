@@ -602,7 +602,7 @@
 
 .paw-files-tree__row {
   position: relative;
-  min-height: 29px;
+  min-height: 32px;
   grid-template-columns: 13px 20px minmax(0, 1fr) auto;
   gap: 6px;
   padding: 3px 8px 3px calc(6px + var(--paw-files-depth, 1) * 11px);
@@ -943,7 +943,8 @@ i.paw-files-tree__disclosure {
 }
 
 .paw-files-crumbs__segment {
-  min-width: 0;
+  min-width: 32px;
+  min-height: 32px;
   flex: 0 1 auto;
   overflow: hidden;
   border: 0;
@@ -1926,4 +1927,9 @@ i.paw-files-tree__disclosure {
   .paw-window-titlebar[data-window-chrome='files-tools'] > .paw-window-chrome-slot { grid-column: 1 / -1; grid-row: 2; }
   .paw-window-titlebar[data-window-chrome='files-tools'] .paw-files-app__toolbar :is(input, select),
   .paw-files-app .paw-files-location input { font-size: 16px; }
+}
+
+@container paw-files (max-width: 620px) {
+  .paw-files-tree__row { min-height: 44px; }
+  .paw-files-crumbs__segment { min-width: 44px; min-height: 44px; }
 }

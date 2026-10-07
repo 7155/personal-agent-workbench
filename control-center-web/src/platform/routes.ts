@@ -508,6 +508,8 @@ export const CONTROL_ROUTES = {
     body: ['sceneId', 'expectedRevision', 'clientRequestId'],
     requiredBody: ['sceneId', 'expectedRevision', 'clientRequestId'],
   },
+  'agent.coordinator.ensure': { method: 'POST', path: '/api/agent/coordinator/ensure', body: [] },
+  'agent.coordinator.command': { method: 'POST', path: '/api/agent/coordinator/command', body: ['sourceSessionId', 'action', 'clientRequestId', 'targetId', 'input'], requiredBody: ['sourceSessionId', 'action'] },
   'agent.primary.ensure': {
     method: 'POST', path: '/api/agent/primary/ensure', body: ['workspaceRoots'],
   },

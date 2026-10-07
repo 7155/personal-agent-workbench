@@ -398,6 +398,24 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
     }
   };
 
+  const retryBrowserSurface = async () => {
+    if (selectedTabId) {
+      await captureSnapshot(selectedTabId);
+      return;
+    }
+    setBusy('start');
+    setError('');
+    try {
+      const value = record(await transport.request({ pathId: 'browser.managed.start', body: {} }));
+      if (value.ok === false) throw new Error(text(value.summary) || text(value.error) || '浏览器没有启动');
+      await refreshShell();
+    } catch (requestError) {
+      setError(errorText(requestError));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const updateHostTab = (tabId: string, update: Partial<HostBrowserTab>) => {
     setHostTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, ...update } : tab));
   };
@@ -1222,18 +1240,18 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
               onRetry={retryPage}
             />
           ) : null}
-          {!electronHost && error && !isStartPage ? (
+          {!electronHost && error ? (
             <div className="paw-browser-error" role="alert">
               <CircleAlert size={16} />
               <span>
-                <strong>页面没有打开</strong>
+                <strong>{selectedTabId ? '页面没有打开' : '浏览器没有启动'}</strong>
                 <small>{error}</small>
               </span>
-              <button disabled={!selectedTabId || Boolean(busy)} onClick={() => void captureSnapshot(selectedTabId)} type="button">重试</button>
+              <button disabled={Boolean(busy)} onClick={() => void retryBrowserSurface()} type="button">重试</button>
             </div>
           ) : null}
 
-          {!electronHost && isStartPage ? (
+          {!electronHost && isStartPage && !error ? (
             <div aria-label="空白页面" className="paw-browser-blank-page" data-live={activeAgentTrace ? true : undefined} />
           ) : !electronHost && snapshotImageUrl && viewportWidth && viewportHeight ? (
             <div className="paw-browser-live-view" onWheel={scrollPage}>

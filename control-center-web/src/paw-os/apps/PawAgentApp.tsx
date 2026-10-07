@@ -1,3 +1,4 @@
+import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import './paw-chat-priority.css';
 import {
   Archive,
@@ -59,7 +60,12 @@ import { initialAgentSelection, loadRoomWorkspace, loadSessionWorkspace, warmAge
 const PawSessionWorkspace = lazy(loadSessionWorkspace);
 const PawRoomWorkspace = lazy(loadRoomWorkspace);
 
-export function PawAgentApp({
+export function PawAgentApp(props: Parameters<typeof PawAgentAppBody>[0]) {
+  const presentation = useChatPresentation();
+  return presentation ? <PawAgentAppBody {...props} /> : <ChatPresentationProvider ownerKey="builtin:agent" defaultVersion="v2"><PawAgentAppBody {...props} /></ChatPresentationProvider>;
+}
+
+function PawAgentAppBody({
   initialRoute = '',
   target,
 }: {

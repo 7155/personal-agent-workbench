@@ -179,6 +179,9 @@ class SentenceTransformerEmbeddingProvider:
 
     def __post_init__(self) -> None:
         model_identity = self.model_reference or self.model
+        if self.supports_images:
+            self.query_prefix = self.query_prefix or "task: search result | query: "
+            self.document_prefix = self.document_prefix or "title: none | text: "
         material_payload = {
             "model": model_identity,
             "queryPrefix": self.query_prefix,
@@ -188,10 +191,42 @@ class SentenceTransformerEmbeddingProvider:
             material_payload.update(
                 {"modelReference": self.model_reference, "modelRevision": self.model_revision}
             )
+        if self.supports_images:
+            material_payload["imageEncoding"] = "embeddinggemma2-image-v1"
         material = json.dumps(material_payload, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
         revision = f"@{self.model_revision}" if self.model_revision else ""
         self.fingerprint = f"sentence-transformers:{model_identity}{revision}:cfg-{digest}"
+
+    @property
+    def supports_images(self) -> bool:
+        if (self.model_reference or self.model) == "google/embeddinggemma-2":
+            return True
+        config = Path(self.model).expanduser() / "config.json"
+        if not Path(self.model).expanduser().is_absolute() or not config.is_file():
+            return False
+        try:
+            return json.loads(config.read_text(encoding="utf-8")).get("model_type") == "embedding_gemma2"
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    def embed_images(self, paths: list[str], *, batch_size: int = 1) -> list[list[float]]:
+        """Encode local image assets in the same space as text; never use captions."""
+        if not self.supports_images:
+            raise ValueError("embedding model does not support native image inputs")
+        if not paths:
+            return []
+        with _SENTENCE_TRANSFORMER_EXECUTION:
+            encoded = self._load_model().encode(
+                [{"image": path} for path in paths],
+                batch_size=max(1, min(4, int(batch_size))),
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+        vectors = [[float(value) for value in vector] for vector in encoded.tolist()]
+        if len(vectors) != len(paths) or any(not vector or not all(math.isfinite(value) for value in vector) for vector in vectors):
+            raise RuntimeError("image encoder returned invalid vectors")
+        return vectors
 
     def embed(self, text: str) -> list[float]:
         return self._encode(text, role="document", prefix=self.document_prefix)
@@ -269,6 +304,12 @@ class SentenceTransformerEmbeddingProvider:
                 options["device"] = device
             if self.model_revision:
                 options["revision"] = self.model_revision
+            if self.supports_images:
+                # Keep the Knowledge worker's image/text footprint bounded.
+                # float16 is unsupported by EmbeddingGemma 2; CPU float32 is safe.
+                import torch
+                options["config_kwargs"] = {"audio_config": None}
+                options["model_kwargs"] = {"torch_dtype": torch.float32}
             self._model = SentenceTransformer(self.model, **options)
         return self._model
 
@@ -617,6 +658,7 @@ def embedding_provider_info(provider: EmbeddingProvider) -> dict[str, Any]:
             "fingerprint": fingerprint,
             "semantic": True,
             "configured": True,
+            "modalities": ["text", "image"] if provider.supports_images else ["text"],
         }
     if isinstance(provider, MlxBertEmbeddingProvider):
         return {

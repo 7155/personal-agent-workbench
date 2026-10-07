@@ -206,15 +206,32 @@ class SqliteDenseIndex:
 
     def replace_document(self, document_id: str, chunks: Sequence[dict[str, Any]]) -> None:
         records: list[tuple[str, str, str, str, str]] = []
-        texts = [str(chunk.get("content") or "") for chunk in chunks]
+        text_indexes = [index for index, chunk in enumerate(chunks) if not chunk.get("image_path")]
+        image_indexes = [index for index, chunk in enumerate(chunks) if chunk.get("image_path")]
+        texts = [str(chunks[index].get("content") or "") for index in text_indexes]
         embed_many = getattr(self.provider, "embed_many", None)
-        vectors = (
+        text_vectors = (
             embed_many(texts, batch_size=self.batch_size)
             if callable(embed_many)
             else [self.provider.embed(text) for text in texts]
         )
-        if len(vectors) != len(chunks):
+        if len(text_vectors) != len(text_indexes):
             raise RuntimeError("embedding provider returned an unexpected batch size")
+        vectors = [[] for _ in chunks]
+        for index, vector in zip(text_indexes, text_vectors):
+            vectors[index] = vector
+        if image_indexes:
+            embed_images = getattr(self.provider, "embed_images", None)
+            if not getattr(self.provider, "supports_images", False) or not callable(embed_images):
+                raise RuntimeError("image projection requires a native image embedding provider")
+            image_vectors = embed_images([str(chunks[index]["image_path"]) for index in image_indexes], batch_size=1)
+            if len(image_vectors) != len(image_indexes):
+                raise RuntimeError("image encoder returned an unexpected batch size")
+            for index, vector in zip(image_indexes, image_vectors):
+                vectors[index] = vector
+        dimensions = {len(vector) for vector in vectors if vector}
+        if len(dimensions) > 1 or any(not all(math.isfinite(value) for value in vector) for vector in vectors):
+            raise RuntimeError("embedding provider returned incompatible or non-finite vectors")
         for chunk, vector in zip(chunks, vectors):
             if not vector:
                 continue

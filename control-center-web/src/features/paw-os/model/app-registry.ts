@@ -4,6 +4,7 @@ export type PawOsAppId =
   | 'project-workbench'
   | 'schedules'
   | 'agent'
+  | 'agent-controller'
   | 'agent-capsule'
   | 'memory'
   | 'knowledge'
@@ -60,9 +61,15 @@ export const pawOsAppRegistry: readonly PawOsAppDefinition[] = [
     tagline: '概览、任务与工作文档',
   },
   {
+    id: 'agent-controller', label: 'Agent', shortLabel: 'Agent',
+    routeIds: ['agent-controller'], defaultRouteId: 'agent-controller',
+    presentation: 'conversation', accent: 'slate',
+    tagline: '持久对话，控制 Session 与 Room',
+  },
+  {
     id: 'agent',
-    label: 'Agent',
-    shortLabel: 'Agent',
+    label: 'Session 与 Room',
+    shortLabel: 'Session',
     routeIds: ['agent', 'rooms'],
     defaultRouteId: 'agent',
     presentation: 'conversation',
@@ -193,6 +200,7 @@ export const pawOsAppRegistry: readonly PawOsAppDefinition[] = [
 ] as const;
 
 export const primaryDockAppIds: readonly PawOsAppId[] = [
+  'agent-controller',
   'agent',
   'eval-lab',
   'project-workbench',

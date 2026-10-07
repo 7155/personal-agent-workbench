@@ -1,0 +1,270 @@
+/* Retained PAW model-picker presentation v1. */
+/* ------------------------------------------------------------ model picker --
+ * Model and reasoning share one picker: the catalog is a compact searchable
+ * list and the current model's discrete reasoning rail sits in a separated
+ * section below it. Neither section repeats information already visible in
+ * the trigger.
+ */
+.agent-model-picker[data-chat-presentation-version='v1'] {
+  --color-surface: var(--color-workspace-surface);
+  --color-surface-subtle: var(--color-workspace-paper);
+  --color-surface-hover: var(--color-hover);
+  --color-text: var(--color-workspace-ink);
+  --color-text-tertiary: var(--color-workspace-muted);
+  --color-border: var(--color-workspace-border);
+  --color-accent: var(--color-workspace-accent);
+  display: flex;
+  flex-direction: column;
+  width: min(300px, calc(100vw - 20px));
+  max-height: min(430px, var(--radix-popover-content-available-height, calc(100dvh - 40px)));
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sheet);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-menu);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current:hover { background: var(--color-surface-hover); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current > span { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current small { color: var(--color-text-tertiary); font-size: 12px; }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current > svg { color: var(--color-text-tertiary); transition: transform 160ms ease; }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current[aria-expanded='true'] > svg { transform: rotate(90deg); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__current:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__search {
+  flex: none;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__search:focus-within { color: var(--color-accent); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__search .ui-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border-color: transparent;
+  background: var(--color-surface-subtle);
+  box-shadow: none;
+  font-size: 13px;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__search .ui-input:focus-visible {
+  border-color: var(--color-focus);
+  outline: 0;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list {
+  min-height: 0;
+  max-height: 218px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__group + .agent-model-picker__group {
+  margin-top: 6px;
+}
+/* The Provider heading is the only provider chrome left, so it sticks: the
+   identity of a long catalog never scrolls out from under the rows it names. */
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__group-name {
+  position: sticky;
+  z-index: 1;
+  top: -6px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px 4px;
+  background: linear-gradient(var(--color-surface) 76%, transparent);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__group-name small {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'] {
+  display: grid;
+  width: 100%;
+  min-height: 38px;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-standard),
+    box-shadow 160ms var(--ease-standard),
+    transform 140ms var(--ease-standard);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option']:hover { background: var(--color-surface-hover); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option']:active { transform: translateY(1px); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option']:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+/* Selection reads as a cool-bright wash that fades out across the row rather
+   than a dropdown's flat highlight block. */
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'][aria-selected='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'][aria-selected='true'] small {
+  color: color-mix(in srgb, var(--color-accent) 72%, var(--color-text-tertiary));
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'] > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'] strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'] small {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__check {
+  opacity: 0;
+  color: var(--color-accent);
+  transform: scale(.72);
+  transition:
+    opacity 160ms var(--ease-standard),
+    transform 180ms var(--ease-standard);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'][aria-selected='true'] .agent-model-picker__check {
+  opacity: 1;
+  transform: scale(1);
+  animation: agent-model-check-enter 180ms var(--ease-standard) both;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__empty {
+  margin: 0;
+  padding: 24px 12px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  text-align: center;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__thinking {
+  flex: none;
+  display: grid;
+  gap: 8px;
+  padding: 12px 10px 10px;
+  border-top: 1px solid var(--color-border);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-thinking-picker__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0 3px;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-thinking-picker__heading span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-thinking-picker__heading strong {
+  color: var(--color-text);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  height: 36px;
+  grid-template-columns: repeat(var(--level-count), minmax(0, 1fr));
+  border-radius: 999px;
+  background: var(--color-surface-subtle);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning-indicator {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(100% / var(--level-count));
+  border-radius: 999px;
+  transform: translateX(calc(var(--level-index) * 100%));
+  transition: transform 180ms cubic-bezier(.2, .8, .2, 1);
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning-indicator::after {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: 0 1px 4px rgb(28 24 43 / .13);
+  transform: translateX(-50%);
+  content: '';
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning [role='radio'] {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-text-tertiary); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning [aria-checked='true'] .agent-model-picker__reasoning-dot { background: var(--color-accent); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning [role='radio']:hover .agent-model-picker__reasoning-dot { background: var(--color-accent); }
+.agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning [role='radio']:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+@keyframes agent-model-check-enter {
+  from { opacity: 0; transform: scale(.72); }
+  to { opacity: 1; transform: scale(1); }
+}
+/* Reduced motion keeps selection legible while dropping decorative travel. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'][aria-selected='true'] .agent-model-picker__check {
+    animation: none;
+  }
+
+  .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'],
+  .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__check,
+  .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning-indicator,
+  .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning [role='radio'] {
+    transition: none;
+  }
+}
+:root[data-reduce-motion='true'] .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'][aria-selected='true'] .agent-model-picker__check { animation: none; }
+:root[data-reduce-motion='true'] .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__list [role='option'],
+:root[data-reduce-motion='true'] .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__check,
+:root[data-reduce-motion='true'] .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning-indicator,
+:root[data-reduce-motion='true'] .agent-model-picker[data-chat-presentation-version='v1'] .agent-model-picker__reasoning [role='radio'] { transition: none; }

@@ -52,7 +52,9 @@
 @container schedules (max-width: 560px) {
   .schedule-app__header { padding: 18px 16px 14px; }
   .schedule-app__nav { overflow-x: auto; padding: 0 10px 12px; gap: 0; }
-  .schedule-app__nav button { gap: 5px; padding-inline: 8px; }
+  .schedule-app__nav button { gap: 5px; padding-inline: 8px; min-height: 44px; }
+  .schedule-app .ui-input { font-size: 16px; }
+  .schedule-app .observation-schedules__create > summary { min-height: 44px; }
   .schedule-app__nav button > svg { display: none; }
   .schedule-app__filters { padding-inline: 16px; }
   .schedule-app__content { padding: 16px; }

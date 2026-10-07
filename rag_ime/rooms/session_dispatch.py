@@ -4,7 +4,9 @@ import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from typing import Protocol
+from contextlib import nullcontext
 
 from rag_ime.agent_command_receipts import AgentCommandReceiptFailed
 from rag_ime.pi.values import PiRuntimeCommandRejected
@@ -112,6 +114,7 @@ class RoomSessionDispatchService:
         requested_participant_ids: Sequence[str],
         work_item_id: str,
         attachment_ids: Sequence[str],
+        admission_fence: Callable[[], object] = nullcontext,
     ) -> dict[str, object]:
         route_id = (
             "room.message.execute"
@@ -127,6 +130,7 @@ class RoomSessionDispatchService:
             work_item_id=work_item_id,
             attachment_ids=attachment_ids,
             route_id=route_id,
+            admission_fence=admission_fence,
         )
 
     def _post_session_messages(
@@ -139,8 +143,11 @@ class RoomSessionDispatchService:
         requested_participant_ids: Sequence[str],
         work_item_id: str,
         attachment_ids: Sequence[str],
+        admission_fence: Callable[[], object] = nullcontext,
         route_id: str,
     ) -> dict[str, object]:
+        with admission_fence():
+            pass
         room = self.rooms.get(room_id)
         if room["status"] != "active":
             raise ValueError("agent room is archived")
@@ -249,12 +256,6 @@ class RoomSessionDispatchService:
                 route_id,
                 session_id,
             )
-        # The explicit user message carries the resume intent for a paused
-        # target Goal. This runs before the Root and user event become
-        # durable; wake, partner and Tool Agent dispatches never reach here.
-        for session_id in target_session_ids:
-            self._resume_room_goal_if_paused(session_id)
-
         target_by_session_id = {
             session_id: target
             for target, session_id in zip(targets, target_session_ids, strict=True)
@@ -313,82 +314,87 @@ class RoomSessionDispatchService:
             if work_item is not None:
                 decision["attemptId"] = room_turn_id
         try:
-            user_event_payload: dict[str, object] = {
-                "text": message,
-                "targetParticipantIds": [
-                    str(decision["targetParticipantId"]) for decision in decisions
-                ],
-                "dispatches": [
-                    {
-                        "dispatchId": str(decision["dispatchId"]),
-                        "participantId": str(decision["targetParticipantId"]),
-                    }
-                    for decision in decisions
-                ],
-            }
-            if client_message_id:
-                user_event_payload["clientMessageId"] = client_message_id
-            if retry_of_root_id:
-                user_event_payload["retryOfRootId"] = retry_of_root_id
-            if work_item_id:
-                user_event_payload["workItemId"] = work_item_id
-            if attachment_receipts:
-                user_event_payload["attachmentReceipts"] = attachment_receipts
-            user_room_event = self.room_events.publish(
-                room_id=room_id,
-                event_type="user_message",
-                payload=user_event_payload,
-                turn_id=room_turn_id,
-                topic_id=topic_id,
-            )
-            timeline_events = [user_room_event]
-            self._record_room_evidence_safely(
-                room_id=room_id,
-                room_event=user_room_event,
-                text=message,
-                role_id=str(targets[0].get("roleId") or ""),
-                session_id=target_session_ids[0],
-                event_type="user_message",
-                accepted=False,
-            )
-            for decision, target in zip(decisions, targets, strict=True):
-                route_room_event = self.room_events.publish(
-                    room_id=room_id,
-                    event_type="route_decision",
-                    payload=decision,
-                    turn_id=room_turn_id,
-                    participant_id=str(target["id"]),
-                    source_session_id=str(target["sessionId"]),
-                    topic_id=topic_id,
-                )
-                timeline_events.append(route_room_event)
-                self.room_turns.begin(
-                    str(target["sessionId"]),
-                    room_turn_id,
-                    topic_id,
-                    dispatch_id=str(decision["dispatchId"]),
-                    **(
+            with admission_fence():
+                # Resume intent and durable Root share the exact controller
+                # admission; stopped routing preflight cannot mutate a Goal.
+                for session_id in target_session_ids:
+                    self._resume_room_goal_if_paused(session_id)
+                user_event_payload: dict[str, object] = {
+                    "text": message,
+                    "targetParticipantIds": [
+                        str(decision["targetParticipantId"]) for decision in decisions
+                    ],
+                    "dispatches": [
                         {
-                            "work_item_id": str(work_item["id"]),
-                            "work_item_revision": int(
-                                work_item.get("revision") or 0
-                            ),
-                            "attempt_id": room_turn_id,
+                            "dispatchId": str(decision["dispatchId"]),
+                            "participantId": str(decision["targetParticipantId"]),
                         }
-                        if work_item is not None
-                        else {}
-                    ),
-                )
-            unread_by_participant = {
-                str(target["id"]): self.rooms.unread_public_messages(
-                    room_id,
-                    str(target["id"]),
+                        for decision in decisions
+                    ],
+                }
+                if client_message_id:
+                    user_event_payload["clientMessageId"] = client_message_id
+                if retry_of_root_id:
+                    user_event_payload["retryOfRootId"] = retry_of_root_id
+                if work_item_id:
+                    user_event_payload["workItemId"] = work_item_id
+                if attachment_receipts:
+                    user_event_payload["attachmentReceipts"] = attachment_receipts
+                user_room_event = self.room_events.publish(
+                    room_id=room_id,
+                    event_type="user_message",
+                    payload=user_event_payload,
+                    turn_id=room_turn_id,
                     topic_id=topic_id,
-                    exclude_turn_id=room_turn_id,
-                    limit=ROOM_CONTEXT_UNREAD_MESSAGE_LIMIT,
                 )
-                for target in targets
-            }
+                timeline_events = [user_room_event]
+                self._record_room_evidence_safely(
+                    room_id=room_id,
+                    room_event=user_room_event,
+                    text=message,
+                    role_id=str(targets[0].get("roleId") or ""),
+                    session_id=target_session_ids[0],
+                    event_type="user_message",
+                    accepted=False,
+                )
+                for decision, target in zip(decisions, targets, strict=True):
+                    route_room_event = self.room_events.publish(
+                        room_id=room_id,
+                        event_type="route_decision",
+                        payload=decision,
+                        turn_id=room_turn_id,
+                        participant_id=str(target["id"]),
+                        source_session_id=str(target["sessionId"]),
+                        topic_id=topic_id,
+                    )
+                    timeline_events.append(route_room_event)
+                    self.room_turns.begin(
+                        str(target["sessionId"]),
+                        room_turn_id,
+                        topic_id,
+                        dispatch_id=str(decision["dispatchId"]),
+                        **(
+                            {
+                                "work_item_id": str(work_item["id"]),
+                                "work_item_revision": int(
+                                    work_item.get("revision") or 0
+                                ),
+                                "attempt_id": room_turn_id,
+                            }
+                            if work_item is not None
+                            else {}
+                        ),
+                    )
+                unread_by_participant = {
+                    str(target["id"]): self.rooms.unread_public_messages(
+                        room_id,
+                        str(target["id"]),
+                        topic_id=topic_id,
+                        exclude_turn_id=room_turn_id,
+                        limit=ROOM_CONTEXT_UNREAD_MESSAGE_LIMIT,
+                    )
+                    for target in targets
+                }
         except Exception:
             for session_id in target_session_ids:
                 self.room_turns.cancel(session_id, room_turn_id)
@@ -470,6 +476,10 @@ class RoomSessionDispatchService:
             ) as executor:
                 futures = {
                     executor.submit(
+                        # Retain the native controller's exact source fence
+                        # through participant preflight and Host before_write.
+                        # Each worker needs its own concurrently enterable copy.
+                        copy_context().run,
                         self.dispatch_target,
                         room=room,
                         target=target,

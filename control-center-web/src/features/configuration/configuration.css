@@ -844,3 +844,9 @@
 }
 :is(main, section)[data-route-id='configuration'] .configuration-jev-scenario:last-child { border-bottom: 0; }
 :is(main, section)[data-route-id='configuration'] .configuration-jev-scenario p { margin: var(--space-2) 0 0; }
+
+@container paw-sysapp (max-width: 620px) {
+  .configuration-skill-routing__instructions > summary,
+  .paw-desktop-root .paw-system-app .configuration-provider-models__toggle { min-height: 44px; }
+  .paw-desktop-root .paw-system-app :is(main, section)[data-route-id='configuration'] textarea { font-size: 16px; }
+}

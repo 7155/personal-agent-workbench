@@ -4,6 +4,7 @@ import { pawApp, pawAppForPath, pawApps } from './app-registry';
 
 describe('PAWOS App registry', () => {
   it('maps legacy feature URLs onto native PAWOS Apps', () => {
+    expect(pawAppForPath('/agent-controller')?.id).toBe('agent-controller');
     expect(pawAppForPath('/planning')?.id).toBe('project-workbench');
     expect(pawAppForPath('/rooms')?.id).toBe('agent');
     expect(pawAppForPath('/agent-capsule')?.id).toBe('agent-capsule');

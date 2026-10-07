@@ -304,6 +304,30 @@ describe('roomTranscript', () => {
     expect(dispatch?.kind === 'tool' && dispatch.name).toContain('协作行星');
   });
 
+  it.each(['failed', 'aborted'] as const)('updates only the exact dispatch card after a %s admission receipt', (outcome) => {
+    const projection = roomProjection();
+    projection.activityOrder = ['rejected-route', 'other-route'];
+    projection.activitiesById = Object.fromEntries(projection.activityOrder.map((id, index) => [id, {
+      id, turnId: 'root-a', participantId: 'participant-a', sourceSessionId: 'session-a',
+      kind: 'route_decision', status: 'completed', summary: '@ 点名',
+      payload: { dispatchId: id, targetParticipantId: 'participant-a', routingPolicy: 'manual_mentions' },
+      sequence: index + 2, createdAtMs: 110 + index, updatedAtMs: 110 + index,
+    }]));
+    projection.turnsById['root-a'] = {
+      id: 'root-a', status: outcome, messageIds: [], activityIds: projection.activityOrder,
+      participantIds: ['participant-a'], createdAtMs: 100, updatedAtMs: 150,
+      terminalDispatchIds: ['rejected-route', 'other-route'],
+      failedDispatchIds: outcome === 'failed' ? ['rejected-route'] : [],
+      abortedDispatchIds: outcome === 'aborted' ? ['rejected-route'] : [],
+    };
+    const blocks = roomTranscript(projection, options).messages
+      .flatMap(message => message.role === 'assistant' ? message.blocks : []);
+    expect(blocks.find(block => block.id === 'dispatch:rejected-route'))
+      .toMatchObject({ receiptKind: 'dispatch', status: outcome === 'failed' ? 'error' : 'cancelled' });
+    expect(blocks.find(block => block.id === 'dispatch:other-route')).toMatchObject({ status: 'success' });
+    expect(projection.activitiesById['rejected-route']?.status).toBe('completed');
+  });
+
   it('names Jev execution and repeated verification by responsibility and real task', () => {
     const projection = roomProjection();
     projection.activityOrder = ['execute-route', 'verify-route-1', 'verify-route-2'];

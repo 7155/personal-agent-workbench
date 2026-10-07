@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,7 +34,21 @@ def run_frozen_standard_verifier(script_name: str) -> subprocess.CompletedProces
         replay = base / "source"
         replay.mkdir()
         (base / "paw-vertical-research").symlink_to(ROOT.parent / "paw-vertical-research", target_is_directory=True)
-        for name in ("rag_ime", "eval", ".rag-ime-data"):
+        # The runner hashes its entire chunking pipeline. Replaying it with the
+        # current product package changes that identity even for identical text.
+        shutil.copytree(
+            ROOT / "rag_ime", replay / "rag_ime",
+            copy_function=lambda source, target: Path(target).symlink_to(source),
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+        for relative in (
+            "rag_ime/knowledge_library/parsers.py",
+            "rag_ime/knowledge_library/service.py",
+        ):
+            target = replay / relative
+            target.unlink()  # Replace the temporary link, never its source.
+            target.write_bytes(frozen_source(relative))
+        for name in ("eval", ".rag-ime-data"):
             (replay / name).symlink_to(ROOT / name, target_is_directory=True)
         scripts = replay / "scripts"
         scripts.mkdir()

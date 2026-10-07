@@ -1,7 +1,7 @@
 import { LabParallelTests } from './LabParallelTests';
 import { OptimizationObjectivePicker } from './OptimizationObjectivePicker';
 import { preferenceWeights } from './optimization-weights';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleHelp, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/primitives';
 import { LabWorkflowNodeDetail, workflowNodeDecisionName, workflowNodeStatus } from './LabWorkflowGraph';
@@ -39,6 +39,8 @@ export function LabOptimizationCompare({ nodes, selected, onSelect, onOpenNode, 
   onOpenNode: (node: LabWorkflowNode) => void; onOpenSource?: (node: LabWorkflowNode) => void;
   onDraft?: (text: string) => void; onOpenKnowledge?: () => void; preferenceKey?: string;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const openExperiment = (node: LabWorkflowNode) => { onSelect(node); heading.current?.focus({ preventScroll: true }); heading.current?.scrollIntoView({ block: 'start' }); };
   const [dimension, setDimension] = useState<OptimizationDimension | 'all'>('all');
   const [parametersOpen, setParametersOpen] = useState(false);
   const [parametersMounted, setParametersMounted] = useState(false);
@@ -53,9 +55,9 @@ export function LabOptimizationCompare({ nodes, selected, onSelect, onOpenNode, 
   const experiments = nodes.filter((node) => node.kind === 'experiment');
   const visible = experiments.filter((node) => (dimension === 'all' || testedDimensions(node).includes(dimension)) && (decision === 'all' || decisionGroup(node) === decision) && `${node.title} ${node.summary} ${node.factors?.map((factor) => factor.name).join(' ') ?? ''}`.toLowerCase().includes(search.toLowerCase()));
   return <section className="lab-compare" aria-label="优化对比工作面">
-    <header className="lab-compare-heading"><div><h2>{parametersOpen ? '准备下一轮优化' : selected ? '单轮对比' : '优化对比'}</h2><p>{parametersOpen ? '目标与约束已沿用，选择一个主要改动。' : selected ? '查看本轮收益、代价与具体改动。' : '先看结果，再决定下一轮改哪里。'}</p></div><Button onClick={() => parametersOpen ? setParametersOpen(false) : showParameters()} aria-expanded={parametersOpen}><SlidersHorizontal size={15} />{parametersOpen ? '返回结果对比' : '选择优化参数'}</Button></header>
-    <LabParallelTests nodes={nodes} onOpen={onOpenNode} />
-    <OptimizationObjectivePicker preference={preference} onChange={setPreference} />
+    <header className="lab-compare-heading"><div><h2 ref={heading} tabIndex={-1}>{parametersOpen ? '准备下一轮优化' : selected ? '单轮对比' : '优化对比'}</h2><p>{parametersOpen ? '目标与约束已沿用，选择一个主要改动。' : selected ? '查看本轮收益、代价与具体改动。' : '先看结果，再决定下一轮改哪里。'}</p></div><Button onClick={() => parametersOpen ? setParametersOpen(false) : showParameters()} aria-expanded={parametersOpen}><SlidersHorizontal size={15} />{parametersOpen ? '返回结果对比' : '选择优化参数'}</Button></header>
+    {!experiments.length || nodes.some((node) => node.source === 'runtime' && ['experiment', 'calibration', 'dataset'].includes(node.kind) && !['pending', 'unavailable'].includes(node.status)) ? <LabParallelTests nodes={nodes} onOpen={onOpenNode} /> : null}
+    <details className="lab-compare-preference" open={parametersOpen || undefined}><summary>下一轮优化倾向 · {optimizationObjectives.find((item) => item.id === preference.objective)?.title}</summary><OptimizationObjectivePicker preference={preference} onChange={setPreference} /></details>
     {parametersMounted ? <div hidden={!parametersOpen}><LabOptimizationParameters preference={preference} initialDimension={dimension === 'all' ? 'Embedding' : dimension} onDraft={onDraft} onOpenKnowledge={onOpenKnowledge} selected={selected} /></div> : null}
     {!parametersOpen ? <>
     {selected?.kind === 'experiment' ? <>
@@ -77,7 +79,7 @@ export function LabOptimizationCompare({ nodes, selected, onSelect, onOpenNode, 
         const priority = (metric: LabWorkflowMetric) => /taskSuccessRate|agentSuccessRate|通过率|成功率|passRate/i.test(metric.label) ? 0 : /recall|mrr|ndcg|verifierPass|通过业务|taskSuccessCount/i.test(metric.label) ? 1 : 2;
         const quality = node.metrics?.filter((metric) => !cost(metric)).sort((a, b) => priority(a) - priority(b)) ?? [];
         const resources = node.metrics?.filter(cost).sort((a, b) => Number(preference.objective === 'latency' ? metricIsLatency(b) : metricIsCost(b)) - Number(preference.objective === 'latency' ? metricIsLatency(a) : metricIsCost(a))) ?? [];
-        return <tr key={node.id}><th scope="row"><button onClick={() => onSelect(node)}>{node.title}<ArrowUpRight size={13} /></button><small>{testedDimensions(node).join(' · ') || '手段未记录'}</small><small>{node.decision === 'baseline' ? '单次基线记录' : workflowNodeStatus(node)}</small></th><td>{node.factors?.length ? <>{node.factors.slice(0, 2).map((factor, index) => <div className="lab-compare-change" key={index}><strong>{factor.name}</strong><span>{factor.before || '未记录'} → {factor.after || '未记录'}</span></div>)}{node.factors.length > 2 ? <small>另有 {node.factors.length - 2} 项，打开查看</small> : null}</> : <span className="lab-compare-note">未记录参数差异</span>}</td><td>{quality.length ? quality.slice(0, 1).map((metric, index) => <MetricPair key={index} metric={metric} compact />) : '未测量'}{quality.length > 1 ? <small>详情中还有 {quality.length - 1} 项</small> : null}</td><td>{resources.length ? resources.slice(0, 1).map((metric, index) => <MetricPair key={index} metric={metric} compact />) : '未测量'}</td><td><Decision node={node} /></td></tr>;
+        return <tr key={node.id}><th scope="row"><button onClick={() => openExperiment(node)}>{node.title}<ArrowUpRight size={13} /></button><small>{testedDimensions(node).join(' · ') || '手段未记录'}</small><small>{node.decision === 'baseline' ? '单次基线记录' : workflowNodeStatus(node)}</small></th><td>{node.factors?.length ? <>{node.factors.slice(0, 2).map((factor, index) => <div className="lab-compare-change" key={index}><strong>{factor.name}</strong><span>{factor.before || '未记录'} → {factor.after || '未记录'}</span></div>)}{node.factors.length > 2 ? <small>另有 {node.factors.length - 2} 项，打开查看</small> : null}</> : <span className="lab-compare-note">未记录参数差异</span>}</td><td>{quality.length ? quality.slice(0, 1).map((metric, index) => <MetricPair key={index} metric={metric} compact />) : '未测量'}{quality.length > 1 ? <small>详情中还有 {quality.length - 1} 项</small> : null}</td><td>{resources.length ? resources.slice(0, 1).map((metric, index) => <MetricPair key={index} metric={metric} compact />) : '未测量'}</td><td><Decision node={node} /></td></tr>;
       })}</tbody></table></div>
       <details className="lab-compare-methods"><summary>实现手段与已测覆盖 · 模型、Embedding、检索、Prompt 等</summary><OptimizationDirectionMap experiments={experiments} dimension={dimension} onSelect={(next) => { setDimension(next); setDecision('all'); onSelect(); }} /></details>
       {!visible.length ? <div className="lab-compare-empty"><CircleHelp size={22} /><h3>{experiments.length ? '没有匹配的实验' : '还没有优化对照'}</h3><p>{dimension === 'all' ? '选择一个参数方向，固定基线与评测标准，再准备第一轮候选。' : `${dimension} 尚无匹配记录。可以先查看参数和配置入口。`}</p><Button onClick={() => { setDimension('all'); setDecision('all'); setSearch(''); }}>清除筛选</Button><Button onClick={showParameters}>查看可优化的参数</Button></div> : null}

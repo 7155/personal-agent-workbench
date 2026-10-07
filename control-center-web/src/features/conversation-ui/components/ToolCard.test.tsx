@@ -4,11 +4,22 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ToolCard } from './ToolCard';
 import { toolReceiptStatus } from './ToolStatusMark';
 import type { ToolCallBlock } from '../model/types';
+import { ChatPresentationProvider } from '../reading/chat-presentation';
 
 afterEach(cleanup);
 const block: ToolCallBlock = { id: 'call-one', kind: 'tool', name: '读取文件', summary: 'src/app.ts', input: 'src/app.ts', status: 'running' };
 
 describe('render-only tool receipt UI', () => {
+  it('keeps useful tool evidence while simplifying generic v2 summaries and preserving v1', () => {
+    const generic = { ...block, name: 'codemode', summary: '代码执行 已完成', status: 'success' as const };
+    const { rerender } = render(<ChatPresentationProvider ownerKey="receipt-new" defaultVersion="v2"><ToolCard block={generic}/></ChatPresentationProvider>);
+    expect(screen.queryByText('代码执行 已完成')).not.toBeInTheDocument();
+    expect(screen.getByText('已完成')).toBeInTheDocument();
+    rerender(<ChatPresentationProvider ownerKey="receipt-new" defaultVersion="v2"><ToolCard block={{ ...generic, summary: '命令执行完成，退出码 0' }}/></ChatPresentationProvider>);
+    expect(screen.getByText('命令执行完成，退出码 0')).toBeInTheDocument();
+    rerender(<ChatPresentationProvider ownerKey="receipt-old" defaultVersion="v1"><ToolCard block={generic}/></ChatPresentationProvider>);
+    expect(screen.getByText('代码执行 已完成')).toBeInTheDocument();
+  });
   it('shows familiar action names while preserving the exact tool identity and disclosure', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<ToolCard block={{ ...block, name: 'workspace_shell', output: 'exit 0' }} />);

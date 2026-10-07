@@ -35,6 +35,35 @@ Other listed Jev scenarios still use their existing adapter; this is a scoped
 transport migration, not removal of the canonical Room task owner. See the
 [paired protocol and cancellation boundaries](../pi/pi-0.99-codemode.md#stateless-native-classification).
 
+### Optional OpenAI Decisions choice evaluator
+
+The bounded Room choice evaluator can instead use the public-beta
+[OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions).
+Set `RAG_IME_JEV_DECISION_PROVIDER=openai-decisions` in the backend process
+environment and provide an OpenAI Platform `OPENAI_API_KEY` through the normal
+secret environment mechanism, then restart that backend. The default remains `typesafe-jev`. Construction
+does not make a request; the next explicitly requested choice uses one
+`POST https://api.openai.com/v1/decisions` with `gpt-6-luna`. Codex OAuth is not
+used as an API key. A missing key reports `configuration_missing` and never
+falls back to TypeSafe or another model.
+
+This changes only `JevChoices`: host-generated opaque candidates, next-action
+ranking, and callers that use the same bounded choice owner. Decisions returns
+a typed choice and option probabilities; it does not generate plans, Tool
+arguments, execute work, or replace Pi/Room lifecycle owners. Predicate/score
+questions supported by the API are outside this adapter. Existing direct Jev
+Tool-policy, Code Mode and Knowledge-reranker paths are unchanged.
+
+Refusal, unknown IDs, duplicate/missing probabilities, unsupported model,
+non-finite values and transport errors leave the choice unavailable. Existing
+abstention and probability/margin policy still applies. There are no retries
+or silent Provider changes. Root Stop prevents admission or discards a late
+choice through the existing stopped-Root fence. This direct synchronous HTTP
+request remains pending until it actually returns or times out; it does not
+claim immediate native Pi abort. No endpoint, key, profile, graph schema or
+saved user data is migrated. Offline contract tests do not establish API
+access, live quality, latency or cost savings.
+
 Root Stop also cancels an in-flight native controller or auto-route decision.
 Registration shares the existing stopped-Root admission fence; cancellation
 before the private pipe write prevents dispatch, and later cancellation targets

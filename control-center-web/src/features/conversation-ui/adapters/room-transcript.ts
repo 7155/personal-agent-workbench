@@ -198,7 +198,8 @@ export function roomTranscript(
     if (entry.kind === 'activity') {
       const card = cardFor(entry.activity.turnId, entry.activity.participantId, entry.activity.createdAtMs, entry.activity.sourceSessionId);
       const reclaimedTool = isReclaimedToolFailure(entry.activity, reclaimedAttempts.get(text(entry.activity.payload.dispatchId)));
-      const block = activityBlock(entry.activity, dispatchPlans, options, reclaimedTool);
+      const block = activityBlock(entry.activity, dispatchPlans, options, reclaimedTool,
+        projection.turnsById[entry.activity.turnId]);
       card.blocks.push(block);
       activityByBlockId[block.id] = entry.activity;
       if (reclaimedTool) reclaimedToolBlockIds.add(block.id);
@@ -505,6 +506,7 @@ function activityBlock(
   dispatchPlans: RoomDispatchPlan[],
   options: RoomTranscriptOptions,
   reclaimedTool = false,
+  turn?: RoomTurnProjection,
 ): AssistantBlock {
   const eventType = text(activity.payload.sourceEventType, activity.kind);
   if (roomApprovalDecision(activity) || (text(activity.payload.approvalId) && !(eventType === 'tool' || eventType.startsWith('tool_')))) {
@@ -558,7 +560,11 @@ function activityBlock(
       receiptKind: 'dispatch',
       name: `${sourceName} → ${targetName} · ${jevPurpose ? `${jevPurpose}分派` : '任务分派'}`,
       summary: dispatchLine.join(' · '),
-      status: toolStatus(activity.status),
+      // Routing was recorded before the partner's native admission. Its
+      // exact terminal receipt must replace that earlier dispatch success.
+      status: turn?.abortedDispatchIds?.includes(plan.dispatchId) ? 'cancelled'
+        : turn?.failedDispatchIds?.includes(plan.dispatchId) ? 'error'
+        : toolStatus(activity.status),
       ...(routingDetail ? { output: routingDetail } : {}),
       startedAt: activity.createdAtMs,
     };

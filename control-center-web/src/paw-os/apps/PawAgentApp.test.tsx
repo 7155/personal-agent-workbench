@@ -101,7 +101,7 @@ describe('PAWOS Agent App', () => {
   });
 
   it.each([false, true])('retains a task form while inspecting an old task only in its original transport (replacement: %s)', async replacement => {
-    const oldTask = { id: 'task-existing', title: '已有任务', mode: 'assistant', status: 'idle', updatedAtMs: 2, workspaceRoots: ['/work/demo'], metadata: { primaryTask: true } };
+    const oldTask = { id: 'task-existing', title: '已有任务', mode: 'assistant', status: 'idle', updatedAtMs: 2, workspaceRoots: ['/work/demo'], metadata: { primaryTask: true, sourceSessionId: 'primary', assistantId: 'assistant-one' } };
     const transport = createTransport({ primaryTasks: [oldTask] });
     const view = renderAgent(transport, { initialRoute: '/agent' });
     await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
@@ -110,6 +110,7 @@ describe('PAWOS Agent App', () => {
     const message = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(message, { target: { value: '待确认的新目标' } });
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/draft' } });
+    fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
     fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '完成三项检查' } });
     fireEvent.click(screen.getByRole('checkbox'));
     if (!replacement) {
@@ -117,8 +118,10 @@ describe('PAWOS Agent App', () => {
       fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
       await screen.findByText(/草稿已保留；重试会核对同一次请求/);
     }
-    await userEvent.setup().click(await screen.findByRole('button', { name: /^任务记录/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /已有任务/ }));
+    const controlled = await screen.findByRole('region', { name: '助手控制的 Sessions' });
+    const oldTaskButton = within(controlled).getByRole('button', { name: /^打开 已有任务 ·/ });
+    expect(oldTaskButton).toBeVisible();
+    fireEvent.click(oldTaskButton);
     expect(await screen.findByTestId('session-record-id')).toHaveTextContent('task-existing');
     expect(screen.getByTestId('session-initial-draft')).toBeEmptyDOMElement();
     if (replacement) view.rerender(agentTree(createTransport({ primaryTasks: [oldTask] }), { initialRoute: '/agent?session=task-existing' }));
@@ -132,6 +135,7 @@ describe('PAWOS Agent App', () => {
     } else {
       expect(restored).toHaveValue('待确认的新目标');
       expect(screen.getByRole('textbox', { name: '本次工作目录' })).toHaveValue('/work/draft');
+      fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
       expect(screen.getByRole('textbox', { name: '完成标准' })).toHaveValue('完成三项检查');
       expect(screen.getByRole('checkbox')).toBeChecked();
       await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
@@ -1250,7 +1254,7 @@ function createTransport(options: {
   }];
   return new MockControlTransport({
     routes: {
-      'agent.primary.ensure': { ok: true, session: { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', updatedAtMs: 1, workspaceRoots: [], metadata: { primaryAssistant: true } }, tasks: options.primaryTasks ?? [] },
+      'agent.primary.ensure': { ok: true, session: { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', updatedAtMs: 1, workspaceRoots: [], metadata: { primaryAssistant: true, assistantId: 'assistant-one' } }, tasks: options.primaryTasks ?? [] },
       'agent.sessions.list': options.sessionCatalogHandler ?? ((request: ControlRequest) => ({
         ok: true,
         items: request.query?.includeArchived ? sessions : sessions.filter((session) => session.status !== 'archived'),

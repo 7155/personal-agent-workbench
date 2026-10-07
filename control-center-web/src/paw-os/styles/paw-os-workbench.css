@@ -1373,3 +1373,7 @@
   .paw-wb-document-lifecycle__erase-dialog { --paw-wb-control-size: 44px; }
   :is(.paw-wb-operation-dialog, .paw-wb-document-lifecycle__erase-dialog) :is(.ui-input, .ui-textarea, .ui-select__trigger) { font-size: 16px; }
 }
+
+@container paw-native-stage (max-width: 520px) {
+  .paw-workbench .paw-wb-planning-tools__date input { font-size: 16px; }
+}

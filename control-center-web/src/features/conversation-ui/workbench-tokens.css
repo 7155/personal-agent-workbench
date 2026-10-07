@@ -4,7 +4,7 @@
     .paw-jev-objective-detail, .paw-jev-partner-settings, .room-composer-dialog) {
   --wb-font: var(--font-sans);
   --wb-mono: var(--font-mono);
-  --wb-surface: var(--color-workspace-paper);
+  --wb-surface: var(--color-workspace-surface);
   --wb-ink: var(--color-workspace-ink);
   --wb-accent: var(--color-workspace-accent);
   --wb-muted: var(--color-workspace-secondary);

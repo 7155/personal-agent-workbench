@@ -464,6 +464,29 @@ class KnowledgeWorkerSupervisorTests(unittest.TestCase):
             normalized_knowledge_embedding_provider("unregistered-provider"),
         )
 
+    def test_unconfigured_python_identity_survives_child_launcher_normalization(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-python-identity-") as tmp:
+            root = Path(tmp) / "Knowledge"
+            settings = _disabled_mineru_settings()
+            with mock.patch.dict(os.environ, {}, clear=True):
+                supervisor = KnowledgeWorkerSupervisor(
+                    settings_provider=lambda: settings, root_dir=root,
+                    base_url=f"http://127.0.0.1:{_free_port()}",
+                )
+                self.addCleanup(supervisor.close)
+                expected = supervisor._worker_settings(settings)[0]
+                environment = supervisor._worker_environment(settings)
+                # A launcher can report the resolved base executable even
+                # though the supervisor invoked a different stable alias.
+                with mock.patch.dict(os.environ, environment, clear=True), \
+                     mock.patch("rag_ime.knowledge_library.worker.sys.executable", "/resolved/base/python"):
+                    service = KnowledgeLibraryService(KnowledgeLibraryConfig(root))
+                    self.addCleanup(service.close)
+                    server = KnowledgeWorkerServer(("127.0.0.1", 0), service, idle_seconds=900)
+                    self.addCleanup(server.server_close)
+                self.assertEqual(server.config_fingerprint, expected)
+                self.assertEqual(environment["RAG_IME_KNOWLEDGE_PYTHON"], supervisor.python_executable)
+
     def test_persisted_embedding_profile_controls_worker_identity_and_environment(self) -> None:
         settings = {
             "knowledgeLibrary": {

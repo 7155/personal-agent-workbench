@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from rag_ime.agent_sessions import AgentSessionStore
+from rag_ime.contracts.json_schema import ContractValidationError, validate_contract
 from rag_ime.agent_tools import (
     ControlToolGateway,
     _RUNTIME_TOOL_PROJECTIONS,
@@ -311,6 +312,50 @@ class AgentToolRuntimeContractTest(unittest.TestCase):
         )
         self.assertNotIn("todo", {manifest["name"] for manifest in manifests})
         self.assertNotIn("agent_goal", {manifest["name"] for manifest in manifests})
+
+    def test_coordinator_parameters_follow_the_disclosed_operation_without_losing_delegation(self) -> None:
+        _catalog, manifests = self._runtime_contracts(mode="coordinator")
+        ordinary = next(item["parameters"] for item in manifests if item["name"] == "agents")
+        coordinator_fields = {"action", "targetId", "clientRequestId", "input"}
+        self.assertNotIn("coordinator", ordinary["properties"]["op"]["enum"])
+        self.assertTrue(coordinator_fields.isdisjoint(ordinary["properties"]))
+
+        enabled = _runtime_tool_parameter_schema(
+            "agents", [*ordinary["properties"]["op"]["enum"], "coordinator"],
+        )
+        self.assertTrue(coordinator_fields.issubset(enabled["properties"]))
+        branch = self._branch({"parameters": enabled}, "coordinator")
+        self.assertEqual(branch["required"], ["op", "action"])
+        self.assertEqual(
+            branch["properties"]["action"]["enum"],
+            ["read", "create_session", "create_room", "prompt", "stop", "resume"],
+        )
+        # Existing delegation access, tools, skills and workspace arguments are
+        # identical; only the unavailable coordinator's fields are omitted.
+        self.assertEqual(
+            {key: value for key, value in enabled["properties"].items()
+             if key not in coordinator_fields | {"op"}},
+            {key: value for key, value in ordinary["properties"].items() if key != "op"},
+        )
+        self.assertEqual(enabled["oneOf"][:-1], ordinary["oneOf"])
+        validate_contract({"op": "catalog"}, ordinary)
+        validate_contract({"op": "call", "targetRunId": "run-1", "message": "Continue"}, ordinary)
+        creation = {
+            "op": "coordinator", "action": "create_session",
+            "clientRequestId": "create-1", "input": {"task": "Inspect the supplied notes"},
+        }
+        validate_contract(creation, enabled)
+        for payload in (creation, {"op": "catalog", "input": {}}):
+            with self.assertRaises(ContractValidationError):
+                validate_contract(payload, ordinary)
+        for payload in ({"op": "coordinator"}, {"op": "coordinator", "action": "delete_all"}):
+            with self.assertRaises(ContractValidationError):
+                validate_contract(payload, enabled)
+        enabled["properties"].pop("input")
+        enabled["oneOf"][-1]["required"].append("targetId")
+        fresh = _runtime_tool_parameter_schema("agents", ["coordinator"])
+        self.assertIn("input", fresh["properties"])
+        self.assertEqual(fresh["oneOf"][0]["required"], ["op", "action"])
 
     def test_runtime_contracts_require_tool_specific_identifiers_and_payloads(self) -> None:
         _catalog, manifests = self._runtime_contracts(mode="coordinator")

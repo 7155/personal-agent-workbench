@@ -458,6 +458,8 @@ READ_ROUTES: tuple[RouteDescriptor, ...] = (
     _get("/api/memory/summary", "management.memory_summary"),
     _get("/api/memory/profile", "management.personal_profile", error_response=_value_error_response),
     _post("/api/memory/profile/save", "management.save_personal_profile", error_response=_memory_revision_error_response),
+    _post("/api/agent/coordinator/ensure", "agent.ensure_coordinator", error_response=_value_error_response),
+    _post("/api/agent/coordinator/command", "agent.coordinator_command", error_response=_value_error_response),
     _post("/api/agent/primary/ensure", "agent.ensure_primary_assistant", error_response=_value_error_response),
     _post("/api/agent/primary/tasks", "agent.create_primary_task", error_response=_value_error_response),
     _get("/api/runtime/status", "management.runtime_status"),

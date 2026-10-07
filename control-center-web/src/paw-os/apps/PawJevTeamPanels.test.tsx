@@ -227,7 +227,7 @@ describe('Jev equal partner windows', () => {
     const card = screen.getByRole('region', { name: 'Earth 当前工作' });
     expect(card).not.toHaveTextContent(objective);
     const user = userEvent.setup();
-    const opener = within(card).getByRole('button', { name: /^建立最小工程/ });
+    const opener = within(card).getByRole('button', { name: /建立最小工程/ });
     await user.click(opener);
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent(objective);
@@ -312,7 +312,7 @@ describe('Jev equal partner windows', () => {
     expect(screen.getByText('待复核 1')).toBeVisible();
     expect(view.container.querySelectorAll('.paw-jev-partner__state .jev-activity-icon[data-state="running"][data-animated]')).toHaveLength(2);
     expect(screen.getAllByText('gpt-6-sol · max')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '实现导航交互' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /实现导航交互/ })).toBeVisible();
     expect(screen.queryByText(/由宿主调度/)).not.toBeInTheDocument();
     view.rerender(<PawJevTeamPanels graph={graph} room={room} active={false} onOpenParticipant={vi.fn()} />);
     expect(view.container.querySelector('.paw-jev-partner__state .jev-activity-icon[data-animated]')).not.toBeInTheDocument();
@@ -411,6 +411,7 @@ describe('Jev equal partner windows', () => {
     const controlled = document.getElementById(toggle.getAttribute('aria-controls')!);
     expect(controlled).toContainElement(screen.getByRole('region', { name: 'Venus 当前工作' }));
     expect(screen.getByText('已验收 1/2')).toBeVisible();
+    expect(screen.getByRole('button', { name: /^Venus · 保留草稿/ })).toBeVisible();
     expect(screen.queryByRole('progressbar', { name: '任务验收数' })).not.toBeInTheDocument();
     const user = userEvent.setup();
     toggle.focus();

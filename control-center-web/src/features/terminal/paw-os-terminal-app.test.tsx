@@ -24,14 +24,24 @@ vi.mock('@/platform/clipboard', () => ({
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit() {} } }));
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: class {
-    activate() {}
+    private terminal?: { options: Record<string, unknown> };
+    activate(terminal: { options: Record<string, unknown> }) { this.terminal = terminal; }
     dispose() {}
     clearDecorations() { searchAddonState.calls.push({ kind: 'clear' }); }
+    private checkDecorations(options?: Record<string, unknown>) {
+      // Installed SearchAddon creates xterm decorations before emitting match
+      // results. Preserve that dependency contract in the UI test double.
+      if (options?.decorations && !this.terminal?.options.allowProposedApi) {
+        throw new Error('You must set the allowProposedApi option to true to use proposed API');
+      }
+    }
     findNext(term: string, options?: Record<string, unknown>) {
+      this.checkDecorations(options);
       searchAddonState.calls.push({ kind: 'next', term, options });
       return true;
     }
     findPrevious(term: string, options?: Record<string, unknown>) {
+      this.checkDecorations(options);
       searchAddonState.calls.push({ kind: 'previous', term, options });
       return true;
     }
@@ -46,20 +56,22 @@ vi.mock('@xterm/xterm', () => ({
     cols = 104;
     rows = 30;
     private host?: HTMLElement;
+    private renderedElements: HTMLElement[] = [];
     private onDataCallback: (data: string) => void = () => undefined;
     private customKeyHandler: (event: KeyboardEvent) => boolean = () => true;
 
-    constructor(options: Record<string, unknown>) {
+    constructor(readonly options: Record<string, unknown>) {
       xtermConstructorOptions.push(options);
     }
 
-    loadAddon() {}
+    loadAddon(addon: { activate?: (terminal: { options: Record<string, unknown> }) => void }) { addon.activate?.(this); }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) { this.customKeyHandler = handler; }
     hasSelection() { return false; }
     getSelection() { return ''; }
     open(host: HTMLElement) {
       this.host = host;
       const input = document.createElement('textarea');
+      this.renderedElements.push(input);
       input.setAttribute('aria-label', '终端输入');
       input.addEventListener('keydown', (event) => {
         // Real xterm consults the custom handler before treating a key as PTY input.
@@ -77,10 +89,11 @@ vi.mock('@xterm/xterm', () => ({
     reset() { this.host?.replaceChildren(); }
     write(text: string) {
       const output = document.createElement('pre');
+      this.renderedElements.push(output);
       output.textContent = text;
       this.host?.append(output);
     }
-    dispose() {}
+    dispose() { for (const element of this.renderedElements) element.remove(); }
   },
 }));
 
@@ -470,6 +483,9 @@ describe('PawOsTerminalApp', () => {
     // The notice can end the tab identity explicitly.
     await user.click(within(notice).getByRole('button', { name: '关闭此标签页' }));
     expect(await screen.findByText('还没有终端会话')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: '新建终端' })).toHaveFocus());
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: '终端输入' })).not.toBeInTheDocument();
     expect(transport.requests.filter((call) => call.request.pathId === 'terminal.session.close')).toHaveLength(1);
     expect(transport.requests.some((call) => call.request.pathId === 'terminal.session.create')).toBe(false);
   });
@@ -551,6 +567,44 @@ describe('PawOsTerminalApp', () => {
     await user.click(screen.getByRole('button', { name: '新建终端' }));
     await waitFor(() => expect(createBodies).toHaveLength(2));
     expect('cwd' in createBodies[1]).toBe(false);
+  });
+
+  it('preserves the directory draft after failed creation and until the corrected creation is accepted', async () => {
+    const user = userEvent.setup();
+    const first = terminalSession('terminal-one', 'Terminal');
+    const created = { ...terminalSession('terminal-two', 'Terminal'), cwd: '/workspace/retry' };
+    let terminals = [first];
+    let attempts = 0;
+    let accept!: () => void;
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': () => ({ ok: true, items: terminals }),
+      'terminal.session.read': (request: ControlRequest) => ({ ok: true, terminal: asRecord(request.body).terminalId === first.terminalId ? first : created, cursor: 0, nextCursor: 0, truncated: false, text: '' }),
+      'terminal.session.resize': { ok: true },
+      'terminal.session.create': () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('路径不存在');
+        return new Promise((resolve) => { accept = () => { terminals = [first, created]; resolve({ ok: true, terminal: created }); }; });
+      },
+    } });
+    renderApp(transport, <PawOsTerminalApp />);
+    await user.click(await screen.findByRole('button', { name: '在指定目录新建终端' }));
+    const form = screen.getByRole('form', { name: '在指定目录新建终端' });
+    const input = within(form).getByRole('textbox', { name: '新终端工作目录' });
+    await user.type(input, '/workspace/missing');
+    await user.click(within(form).getByRole('button', { name: '新建终端' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('路径不存在');
+    expect(form).toBeInTheDocument();
+    expect(input).toHaveValue('/workspace/missing');
+    await user.clear(input);
+    await user.type(input, created.cwd);
+    await user.click(within(form).getByRole('button', { name: '新建终端' }));
+    await waitFor(() => expect(accept).toBeTypeOf('function'));
+    expect(form).toBeInTheDocument();
+    expect(input).toHaveValue(created.cwd);
+    await act(async () => { accept(); });
+    await waitFor(() => expect(screen.queryByRole('form', { name: '在指定目录新建终端' })).not.toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Terminal 2' })).toHaveAttribute('aria-selected', 'true');
+    expect(attempts).toBe(2);
   });
 
   it('searches the scrollback with a live match position and clears decorations on close', async () => {
@@ -877,10 +931,10 @@ describe('paw-os-terminal-app.css contracts', () => {
   });
 
   it('gives the console one row template per real band combination', () => {
-    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) 30px;/s);
-    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\[data-search\]\s*\{[\s\S]*?grid-template-rows:\s*32px minmax\(0, 1fr\) 30px;/s);
-    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\[data-ended\]\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) auto 30px;/s);
-    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\[data-search\]\[data-ended\]\s*\{[\s\S]*?grid-template-rows:\s*32px minmax\(0, 1fr\) auto 30px;/s);
+    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) var\(--paw-terminal-status-height\);/s);
+    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\[data-search\]\s*\{[\s\S]*?grid-template-rows:\s*var\(--paw-terminal-search-height\) minmax\(0, 1fr\) var\(--paw-terminal-status-height\);/s);
+    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\[data-ended\]\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) auto var\(--paw-terminal-status-height\);/s);
+    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\[data-search\]\[data-ended\]\s*\{[\s\S]*?grid-template-rows:\s*var\(--paw-terminal-search-height\) minmax\(0, 1fr\) auto var\(--paw-terminal-status-height\);/s);
   });
 
   it('keeps search a band and keeps the menus that must not resize the PTY floating', () => {

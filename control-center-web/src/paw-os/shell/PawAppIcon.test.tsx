@@ -28,7 +28,7 @@ describe('PAWOS approved App identity icons', () => {
     const { container } = render(<>{approvedAssets.map(({ appId }) => <PawAppIcon appId={appId} key={appId} />)}</>);
     const icons = [...container.querySelectorAll<SVGElement>('[data-paw-app-icon]')];
 
-    expect(pawOsAppRegistry).toHaveLength(15);
+    expect(pawOsAppRegistry).toHaveLength(16);
     expect(pawApps.map((app) => app.id)).not.toContain('room');
     expect(icons).toHaveLength(14);
     for (const asset of approvedAssets) {
@@ -36,6 +36,20 @@ describe('PAWOS approved App identity icons', () => {
       expect(icon).toHaveAttribute('data-paw-approved-symbol', asset.symbol);
       expect(icon).toHaveAttribute('data-paw-icon-color', asset.color);
     }
+  });
+
+  it('uses the existing Earth planet identity at compact and profile sizes with unique clipping and no tile sheen', () => {
+    const { container } = render(<><PawAppIcon appId="agent-controller" size={16}/><PawAppIcon appId="agent-controller" size={18}/><PawAppIcon appId="agent-controller" size={40} title="Agent"/></>);
+    const icons = [...container.querySelectorAll('[data-paw-app-icon="agent-controller"]')];
+    expect(icons).toHaveLength(3);
+    const clips = icons.map(icon => icon.querySelector('clipPath')?.id);
+    expect(new Set(clips).size).toBe(3);
+    icons.forEach(icon => {
+      expect(icon.querySelector('[data-room-planet]')).toHaveAttribute('data-room-planet', '0');
+      expect(icon.querySelector('[data-room-planet]')).toHaveAttribute('data-activity', 'static');
+      expect(icon.querySelector('image')?.getAttribute('href')).toContain('planet-bodies-v1.png');
+      expect(icon.querySelector('[data-paw-icon-sheen]')).toBeNull();
+    });
   });
 
   it('renders a manifest-owned Extension App icon without adding it to the built-in wall', () => {

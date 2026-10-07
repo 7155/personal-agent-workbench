@@ -1,3 +1,4 @@
+import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { Paperclip, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useOptionalControlTransport } from '@/app/control-transport';
@@ -67,11 +68,13 @@ export function ComposerShell({
   actions: ReactNode;
   onSurfacePress?: () => void;
 }) {
+  const presentation = useChatPresentation();
   return (
     <div
       className={['agent-composer', 'paw-unified-composer', className].filter(Boolean).join(' ')}
       data-surface={surface}
       data-composer-design="workbench"
+      data-chat-presentation-version={presentation?.version ?? 'v1'}
       data-busy={busy || undefined}
       data-jump-latest={jumpLatest || undefined}
       data-expanded={expanded || undefined}

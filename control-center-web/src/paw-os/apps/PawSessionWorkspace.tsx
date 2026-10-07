@@ -1,3 +1,5 @@
+import { ChatPresentationSettings } from '@/features/conversation-ui/reading/ChatPresentationSettings';
+import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { FocusScope, Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import type { InitialSessionSubmission } from './agent-workspace-loader';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, installationChangeMatchesTransport } from '@/paw-os/extensions/installation';
@@ -164,7 +166,13 @@ export type WorkspaceComposerHeaderView = {
   session: SessionSummary; draft: string; disabled: boolean; sourceMessageId(): string | undefined;
 };
 
-export function PawSessionWorkspace({
+export function PawSessionWorkspace(props: Parameters<typeof PawSessionWorkspaceBody>[0]) {
+  const presentation = useChatPresentation();
+  const ownerKey = props.record?.ownerAppId || 'builtin:agent';
+  return presentation ? <PawSessionWorkspaceBody {...props} /> : <ChatPresentationProvider ownerKey={ownerKey} defaultVersion={ownerKey.startsWith('extension:') ? 'v1' : 'v2'}><PawSessionWorkspaceBody {...props} /></ChatPresentationProvider>;
+}
+
+function PawSessionWorkspaceBody({
   active = true,
   persona,
   record,
@@ -217,6 +225,7 @@ export function PawSessionWorkspace({
   fullHistoryOnOpen?: boolean;
 }) {
   const transport = useControlTransport();
+  const presentation = useChatPresentation();
   const catalogQueryClient = useCatalogQueryClient();
   const address = agentSessionAddress(transport, recordId);
   const workspaceScopeRef = useRef({ recordId, transport });
@@ -1768,6 +1777,7 @@ export function PawSessionWorkspace({
               <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setControlsExpanded(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
               <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setControlsExpanded(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
             </nav>
+            <ChatPresentationSettings />
           </PopoverContent>
         </Popover> : <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span>}
         <div className="paw-session-workspace__runtime">
@@ -1840,6 +1850,7 @@ export function PawSessionWorkspace({
       <section
         className="paw-session-workspace paw-chatfx"
         data-design={!embedded && !evaluationSnapshot ? 'workbench' : undefined}
+        data-chat-presentation-version={presentation?.version}
         data-chrome-in-window={windowChromeTarget ? true : undefined}
         data-appearance={appearance}
         data-panel={panel}

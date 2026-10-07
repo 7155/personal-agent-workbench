@@ -1,3 +1,4 @@
+import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import './model-picker.css';
 import { ChevronDown, ChevronRight, LoaderCircle, Search } from 'lucide-react';
 import {
@@ -55,6 +56,7 @@ export function ModelPicker({
   thinkingRequestOpen?: number;
   onChange: (provider: string, modelId: string, level: ThinkingLevel) => void;
 }) {
+  const presentationVersion = useChatPresentation()?.version ?? 'v1';
   const [open, setOpen] = useState(false);
   const [focusSection, setFocusSection] = useState<'model' | 'thinking'>('thinking');
   const [query, setQuery] = useState('');
@@ -136,7 +138,7 @@ export function ModelPicker({
         <Button
           aria-busy={pending || undefined}
           aria-label={`模型与推理：${selectedLabel} · ${thinkingLabel(thinking)}`}
-          className={className ?? "agent-composer__picker"}
+          className={[className ?? 'agent-composer__picker', 'agent-composer__model-picker'].join(' ')}
           disabled={(!catalog && !options) || disabled}
           leadingIcon={pending
             ? <LoaderCircle className="ui-spin" size={15} />
@@ -159,10 +161,11 @@ export function ModelPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        align="start"
+        align="end"
         side="top"
         aria-label="选择模型与推理强度"
         className="agent-model-picker"
+        data-chat-presentation-version={presentationVersion}
         data-catalog-open={focusSection === 'model' || undefined}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -170,6 +173,9 @@ export function ModelPicker({
           else reasoningRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
         }}
       >
+        {presentationVersion === 'v2' && focusSection !== 'model' && levels.length > 0 ? <p className="agent-thinking-picker__heading">
+          <span>推理强度</span><strong>{thinkingLabel(thinking)}</strong>
+        </p> : null}
         <button
           aria-label={`更换模型 · ${selectedModel?.name ?? '选择模型'}`}
           aria-expanded={focusSection === 'model'}
@@ -226,10 +232,10 @@ export function ModelPicker({
         </> : null}
         {levels.length > 0 ? (
           <div className="agent-model-picker__thinking">
-            <p className="agent-thinking-picker__heading">
+            {presentationVersion === 'v1' || focusSection === 'model' ? <p className="agent-thinking-picker__heading">
               <span>推理强度</span>
               <strong>{thinkingLabel(thinking)}</strong>
-            </p>
+            </p> : null}
             <ReasoningRail
               levels={levels}
               onChoose={(level) => {

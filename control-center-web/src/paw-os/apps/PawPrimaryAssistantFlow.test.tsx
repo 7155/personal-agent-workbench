@@ -61,9 +61,10 @@ it('completes the integrated primary conversation, explicit task, Stop, return a
   fireEvent.click(workspace().getByRole('button', { name: '返回我的助手' }));
   const summary = await transport.request<{ tasks: unknown[] }>({ pathId: 'agent.primary.ensure', body: {} });
   expect(summary.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ title: '检查主助手入口', goal: expect.objectContaining({ status: 'active' }) })]));
-  const taskList = await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('region', { name: '助手的任务' });
-  fireEvent.click(within(taskList).getByRole('button', { name: /任务记录/ }));
-  fireEvent.click(await within(taskList).findByRole('button', { name: /检查主助手入口.*任务未完成/ }, { timeout: 5000 }));
+  const taskList = await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('region', { name: '助手控制的 Sessions' });
+  const stoppedTask = await within(taskList).findByRole('button', { name: /^打开 检查主助手入口.*任务未完成/ }, { timeout: 5000 });
+  expect(stoppedTask).toBeVisible();
+  fireEvent.click(stoppedTask);
   fireEvent.change(await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('textbox', { name: '消息' }), { target: { value: '继续检查，给我结果' } });
   const send = composer().getByRole('button', { name: '发送' });
   await waitFor(() => expect(send).toBeEnabled(), { timeout: 5000 });
@@ -73,7 +74,7 @@ it('completes the integrated primary conversation, explicit task, Stop, return a
   await act(async () => completions[1]!());
   await workspace().findByText(/这是演示任务的结果/, { selector: 'p' });
   fireEvent.click(workspace().getByRole('button', { name: '返回我的助手' }));
-  await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('button', { name: /检查主助手入口.*已完成/ });
+  await within(view.container.querySelector<HTMLElement>('.paw-agent-stage')!).findByRole('button', { name: /^打开 检查主助手入口.*已完成/ });
   const tasks = transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create');
   expect(tasks).toHaveLength(1);
   expect(tasks[0].request.body).toMatchObject({ sourceSessionId: expect.any(String), sourceMessageId: expect.any(String), objective: '检查主助手入口', workspaceRoots: ['/work/demo'] });

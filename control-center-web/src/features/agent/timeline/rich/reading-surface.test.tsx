@@ -2,15 +2,28 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@t
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RichReadingSurface } from './RichReadingSurface';
 import { updateReadingPreferences, usePresentationMotion } from '../../../conversation-ui/reading/reading-preferences';
+import { ChatPresentationProvider, CHAT_PRESENTATION_STORAGE_KEY } from '../../../conversation-ui/reading/chat-presentation';
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   updateReadingPreferences({ size: 'standard', spacing: 'comfortable', motion: 'system' });
+  localStorage.removeItem(CHAT_PRESENTATION_STORAGE_KEY);
 });
 const prose = (title = '正文一') => <div className="paw-rich-prose"><h2>{title}</h2><h2>正文二</h2><h2>正文三</h2></div>;
 
 describe('V3 reading surface', () => {
+  it('uses the existing reading menu to change and roll back its App display while retaining answer nodes', async () => {
+    const view = render(<ChatPresentationProvider ownerKey="extension:reading-menu"><RichReadingSurface source="headings" documentKey="a">{prose()}</RichReadingSurface></ChatPresentationProvider>);
+    const original = screen.getByRole('heading', { name: '正文一' });
+    fireEvent.click(await screen.findByRole('button', { name: '阅读' }));
+    fireEvent.click(screen.getByRole('button', { name: '新版 v2' }));
+    expect(view.container.querySelector('.paw-reading-surface')).toHaveAttribute('data-chat-presentation-version', 'v2');
+    expect(screen.getByRole('heading', { name: '正文一' })).toBe(original);
+    fireEvent.click(screen.getByRole('button', { name: '恢复上一显示版本 v1' }));
+    expect(view.container.querySelector('.paw-reading-surface')).toHaveAttribute('data-chat-presentation-version', 'v1');
+    expect(screen.getByRole('heading', { name: '正文一' })).toBe(original);
+  });
   it('supports legacy media listeners and non-subscribable preview environments', () => {
     const media = { matches: false, addListener: vi.fn(), removeListener: vi.fn() };
     vi.stubGlobal('matchMedia', vi.fn(() => media));

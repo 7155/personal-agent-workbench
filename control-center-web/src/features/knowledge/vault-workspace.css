@@ -1,4 +1,4 @@
-.knowledge-source-workspace{display:flex;flex-direction:column;min-height:0;height:100%;background:var(--color-surface,#fff);color:var(--color-text,#24303b)}
+.knowledge-source-workspace{display:flex;flex-direction:column;min-height:0;height:100%;container:knowledge-source / inline-size;background:var(--color-surface,#fff);color:var(--color-text,#24303b)}
 .knowledge-source-nav{display:flex;gap:6px;flex:none;padding:8px 16px;border-bottom:1px solid var(--color-border,#dfe3e7)}
 .knowledge-source-nav button,.vault-workspace button{font:inherit;border:1px solid var(--color-border,#dfe3e7);background:transparent;border-radius:6px;padding:6px 10px;color:inherit;cursor:pointer}
 .knowledge-source-nav button[aria-pressed=true],.vault-workspace button[aria-pressed=true]{background:#087ea410;color:#087ea4;border-color:#087ea4}
@@ -14,3 +14,9 @@
 
 .knowledge-source-pane:not([hidden]){display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}
 .knowledge-source-pane[hidden]{display:none}
+
+@container knowledge-source (max-width: 640px) {
+  .knowledge-source-nav button, .vault-workspace button, .vault-connect summary,
+  .vault-workspace input:not([type='checkbox']), .vault-workspace select { min-height: 44px; }
+  .paw-desktop-root .knowledge-source-workspace .vault-workspace :is(input:not([type='checkbox']), textarea, select) { font-size: 16px; }
+}

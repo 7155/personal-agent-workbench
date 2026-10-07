@@ -241,6 +241,7 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
   const refresh = () => void Promise.all([
     queries.bases.refetch(),
     queries.worker.refetch(),
+    queries.embeddingProfile.refetch(),
     queries.parsers.refetch(),
     ...(selectedBaseId ? [queries.base.refetch(), queries.documents.refetch(), queries.jobs.refetch()] : []),
     ...(selectedBaseId && selectedDocumentId ? [detailQuery.refetch()] : []),
@@ -249,6 +250,8 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
   const invalidateBase = async (baseId = selectedBaseId) => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: knowledgeLibraryKeys.bases() }),
+      queryClient.invalidateQueries({ queryKey: knowledgeLibraryKeys.worker() }),
+      queryClient.invalidateQueries({ queryKey: knowledgeLibraryKeys.embeddingProfile() }),
       ...(baseId ? [
         queryClient.invalidateQueries({ queryKey: knowledgeLibraryKeys.base(baseId) }),
         queryClient.invalidateQueries({ queryKey: knowledgeLibraryKeys.documents(baseId) }),
@@ -258,6 +261,21 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
       ] : []),
     ]);
   };
+
+  const completedJobsRef = useRef<{ baseId: string; signature: string } | null>(null);
+  useEffect(() => {
+    if (!queriesEnabled || !selectedBaseId || !queries.jobs.isSuccess) return;
+    const signature = (queries.jobs.data ?? [])
+      .filter((job) => ['succeeded', 'failed', 'cancelled'].includes(job.status))
+      .map((job) => `${job.id}:${job.status}:${job.revision}`)
+      .sort().join('|');
+    const previous = completedJobsRef.current;
+    completedJobsRef.current = { baseId: selectedBaseId, signature };
+    if (!previous || previous.baseId !== selectedBaseId || previous.signature === signature) return;
+    // Job polling can finish after the import/rebuild request has returned.
+    // Refresh the projections together; document rows alone do not refresh counts.
+    void invalidateBase(selectedBaseId);
+  }, [queries.jobs.data, queries.jobs.isSuccess, queriesEnabled, selectedBaseId]);
 
   const createMutation = useMutation({
     mutationFn: async (input: { name: string; description: string }) => {
@@ -639,7 +657,7 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
                       chunkPreview={chunkPreviewMutation.data ?? null}
                       chunkPreviewError={chunkPreviewMutation.error}
                       chunkPreviewing={chunkPreviewMutation.isPending}
-                      refreshParser={() => void Promise.all([queries.parsers.refetch(), queries.worker.refetch()])}
+                      refreshParser={() => void Promise.all([queries.parsers.refetch(), queries.worker.refetch(), queries.embeddingProfile.refetch()])}
                       settingsEnvelope={queries.settings.data}
                       worker={worker}
                     />

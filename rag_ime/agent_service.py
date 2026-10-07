@@ -11,7 +11,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 from threading import RLock
@@ -63,6 +63,7 @@ from .agent_command_receipts import (
 from .agent_events import AgentEventHub
 from .agent_event_projection import AgentEventProjectionService
 from .agent_block_store import AgentBlockStore
+from .agent_coordinator import CoordinatorPorts, coordinator_command, ensure_coordinator
 from .agent_delegation import AgentDelegationCoordinator
 from .agent_file_preview import AgentFilePreviewReader
 from .agent_media import AgentMediaStore, IMAGE_MIME_TYPES, TEXT_MEDIA_MIME_TYPES
@@ -2476,6 +2477,29 @@ class AgentService:
     def create_session(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.session_application.create_session(payload)
 
+    def _coordinator_ports(self) -> CoordinatorPorts:
+        return CoordinatorPorts(
+            sessions=self.sessions,
+            rooms=self.rooms,
+            session_application=self.session_application,
+            runtime=self.runtime,
+            create_room=self.room_management.lifecycle.create,
+            activate_room=self._activate_room_unrestricted_execution,
+            room_artifacts=self.room_artifacts,
+            require_mutable=self._require_mutable_session,
+            prompt=self.prompt,
+            abort=self.abort,
+            resume=self.resume_session,
+            post_room=self.post_room_message,
+            abort_room=self.abort_room_turn,
+        )
+
+    def ensure_coordinator(self, payload: Mapping[str, object]) -> dict[str, object]:
+        return ensure_coordinator(self._coordinator_ports(), payload)
+
+    def coordinator_command(self, payload: Mapping[str, object], *, execution_binding: Mapping[str, object] | None = None) -> dict[str, object]:
+        return coordinator_command(self._coordinator_ports(), payload, execution_binding=execution_binding)
+
     def ensure_primary_assistant(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.session_application.ensure_primary_assistant(payload)
 
@@ -3753,6 +3777,7 @@ class AgentService:
             requested_participant_ids=requested_participant_ids,
             work_item_id=work_item_id,
             attachment_ids=attachment_ids,
+            admission_fence=getattr(self.runtime, "gateway_dispatch_fence", nullcontext),
         )
 
     def send_room_intercom(
@@ -4502,22 +4527,32 @@ class AgentService:
 
     def abort(self, session_id: str, payload: Mapping[str, object] | None = None) -> dict[str, object]:
         self._require_mutable_session(session_id)
-        if payload:
+        turn_target = payload.get("turnTarget") if payload else None
+        if turn_target is not None and (not isinstance(turn_target, Mapping)
+            or set(turn_target) != {"turnId", "clientMessageId"}
+            or any(not isinstance(turn_target.get(key), str) or not str(turn_target[key]).strip()
+                   for key in ("turnId", "clientMessageId"))):
+            raise ValueError("Stop requires the exact turnId and clientMessageId")
+        if payload and turn_target is None:
             # Compaction identity carries no authority over turns or jobs.
             return self.session_application.abort_compaction(session_id, payload)
         self.session_application.require_turn_abort_target(session_id)
         wait_commands = (self._workspace_command_cancellation(session_id)
-                         if self._workspace_command_cancellation is not None else None)
+                         if self._workspace_command_cancellation is not None and turn_target is None else None)
         wait_jobs: Callable[[], dict[str, object]] | None = None
         def capture_jobs(identity: Mapping[str, object]) -> None:
-            nonlocal wait_jobs
-            wait_jobs = self.background_jobs.request_turn_cancellation(session_id, identity)
+            nonlocal wait_jobs, wait_commands
+            if turn_target is not None and self._workspace_command_cancellation is not None:
+                wait_commands = self._workspace_command_cancellation(session_id)
+            if self.background_jobs.execution_owner:
+                wait_jobs = self.background_jobs.request_turn_cancellation(session_id, identity)
         try:
             # A Room/control facade can stop its native Session, but only the
             # Gateway job owner may fan out to standalone background processes.
             receipt = self.session_application.abort(
                 session_id,
-                capture_cancellation=(capture_jobs if self.background_jobs.execution_owner else None),
+                capture_cancellation=(capture_jobs if self.background_jobs.execution_owner or turn_target is not None else None),
+                expected_identity=turn_target if isinstance(turn_target, Mapping) else None,
             )
         finally:
             commands = wait_commands() if wait_commands is not None else None

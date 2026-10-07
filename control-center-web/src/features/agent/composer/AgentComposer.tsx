@@ -1,5 +1,7 @@
+import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import {
   Archive,
+  ArrowUp,
   ArrowDown,
   Bot,
   BrainCircuit,
@@ -15,11 +17,12 @@ import {
   PanelRight,
   PencilLine,
   Plug,
-  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
+  Square,
   StopCircle,
+  Send,
   Wrench,
   X,
   type LucideIcon,
@@ -233,6 +236,11 @@ export function AgentComposer({
   minimal?: boolean;
   placeholder?: string;
 }) {
+  const presentationVersion = useChatPresentation()?.version ?? 'v1';
+  const modelControls = <>
+    <ContextUsagePopover sessionId={session?.id} telemetry={contextUsage} />
+    <ModelPicker catalog={catalog} disabled={busy || sending} pending={modelChanging} requestOpen={modelPickerRequest} thinkingRequestOpen={thinkingPickerRequest} onChange={onModelChange} />
+  </>;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandPanelRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
@@ -617,29 +625,19 @@ export function AgentComposer({
                     window.requestAnimationFrame(() => textareaRef.current?.focus());
                   }}
                 />
-                <ModelPicker
-                  catalog={catalog}
-                  disabled={busy || sending}
-                  pending={modelChanging}
-                  requestOpen={modelPickerRequest}
-                  thinkingRequestOpen={thinkingPickerRequest}
-                  onChange={onModelChange}
-                />
-                <ContextUsagePopover
-                  sessionId={session?.id}
-                  telemetry={contextUsage}
-                />
+                {presentationVersion === 'v1' ? modelControls : null}
               </>
             )}
           </>
         )}
         actions={(
           <>
+            {!minimal && presentationVersion === 'v2' ? modelControls : null}
             {busy && showStop ? (
               <IconButton
                 className="agent-composer__stop"
                 label={stopping || stopRequested ? '正在停止本轮' : '停止本轮'}
-                icon={stopping || stopRequested ? <LoaderCircle className="ui-spin" size={16} /> : <StopCircle size={16} />}
+                icon={stopping || stopRequested ? <LoaderCircle className="ui-spin" size={16} /> : presentationVersion === 'v2' ? <Square size={15} fill="currentColor" /> : <StopCircle size={16} />}
                 onClick={() => {
                   setStopRequested(true);
                   void Promise.resolve(onStop()).finally(() => setStopRequested(false));
@@ -652,7 +650,7 @@ export function AgentComposer({
             <IconButton
               className="agent-composer__send"
               label={sendBlockedReason ? `${sendActionLabel}（${sendBlockedReason}）` : sendActionLabel}
-              icon={<Send size={16} />}
+              icon={presentationVersion === 'v2' ? <ArrowUp size={20} /> : <Send size={16} />}
               onClick={() => submit(composerSubmitMode(actionModel))}
               disabled={actionModel.primaryDisabled || ownerSubmissionBlocked}
               tooltip

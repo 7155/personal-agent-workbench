@@ -2325,11 +2325,13 @@
   :is(main, section)[data-route-id='memory'] .ui-icon-button,
   :is(main, section)[data-route-id='memory'] .ui-input,
   :is(main, section)[data-route-id='memory'] .ui-select__trigger,
+  :is(main, section)[data-route-id='memory'] [role='radio'],
   :is(main, section)[data-route-id='memory'] [role='tab'] {
     min-height: 44px;
   }
 
   :is(main, section)[data-route-id='memory'] [role='tab'] { min-width: 44px; }
+  :is(main, section)[data-route-id='memory'] .ui-input { font-size: 16px; }
 
   :is(main, section)[data-route-id='memory'] .memory-relation-canvas__controls .ui-button {
     width: 44px;

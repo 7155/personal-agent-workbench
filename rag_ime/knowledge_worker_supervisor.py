@@ -405,6 +405,9 @@ class KnowledgeWorkerSupervisor:
         settings: Mapping[str, object],
     ) -> dict[str, str]:
         environment = _knowledge_worker_env(os.environ)
+        # The selected executable is the worker identity even when an
+        # unconfigured launcher reports its resolved base path in the child.
+        environment["RAG_IME_KNOWLEDGE_PYTHON"] = self.python_executable
         for key in tuple(environment):
             if key.startswith("RAG_IME_EMBEDDING_") or key == "RAG_IME_KNOWLEDGE_DENSE_BACKEND":
                 environment.pop(key, None)

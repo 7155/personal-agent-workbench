@@ -1925,12 +1925,14 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
             (developer_dir / "usr" / "bin").mkdir(parents=True)
             make = shutil.which("make")
             if sys.platform == "darwin":
-                # /usr/bin/make can be an Xcode shim. Resolve the real tool
-                # before applying the intentionally synthetic Developer path.
+                # Both /usr/bin/make and the CLT make can be wrappers that
+                # dispatch gnumake through DEVELOPER_DIR. Resolve the actual
+                # GNU executable before selecting the synthetic Developer path;
+                # linking its gnumake back to the wrapper would loop on exec.
                 make = subprocess.run(
-                    ["xcrun", "--find", "make"],
+                    ["xcrun", "--find", "gnumake"],
                     env={key: value for key, value in os.environ.items() if key != "DEVELOPER_DIR"},
-                    check=True, text=True, capture_output=True,
+                    check=True, text=True, capture_output=True, timeout=30,
                 ).stdout.strip()
             self.assertIsNotNone(make, "this contract requires real make")
             self.assertTrue(Path(make).is_file())
@@ -1981,6 +1983,7 @@ class BuildPatchedSquirrelScriptTests(unittest.TestCase):
                 },
                 text=True,
                 capture_output=True,
+                timeout=30,
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)

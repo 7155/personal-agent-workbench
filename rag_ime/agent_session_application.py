@@ -276,6 +276,7 @@ class AgentSessionApplicationService:
     def abort(
         self, session_id: str, *,
         capture_cancellation: Callable[[Mapping[str, object]], None] | None = None,
+        expected_identity: Mapping[str, str] | None = None,
     ) -> dict[str, object]:
         """Stop one Session and settle its pending approval state."""
 
@@ -295,8 +296,11 @@ class AgentSessionApplicationService:
                 ))
                 if capture_cancellation is not None:
                     capture_cancellation(identity)
-            raw_runtime_receipt = fenced_abort(session_id, before_abort)
+            raw_runtime_receipt = (fenced_abort(session_id, before_abort, expected_identity=expected_identity)
+                if expected_identity is not None else fenced_abort(session_id, before_abort))
         else:
+            if expected_identity is not None:
+                raise ValueError("exact-turn Stop is unavailable from this Runtime driver")
             # An older driver has no pre-RPC turn contract. Capture the exact
             # existing IDs instead of turning an empty ACK into a future scan.
             captured_ids = self.sessions.pending_approval_ids(session_id)

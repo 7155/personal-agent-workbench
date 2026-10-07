@@ -34,7 +34,7 @@ const KnowledgeFeature = lazy(async () => ({ default: (await import('@/features/
 const EvalLabFeature = lazy(async () => ({ default: (await import('@/features/eval-lab')).EvalLabFeature }));
 const MemoryFeature = lazy(async () => ({ default: (await import('@/features/memory')).MemoryFeature }));
 
-export type PawNativeAppId = Exclude<PawOsAppId, 'agent' | 'agent-capsule' | 'browser' | 'files' | 'terminal' | 'trace-agent' | 'schedules'>;
+export type PawNativeAppId = Exclude<PawOsAppId, 'agent-controller' | 'agent' | 'agent-capsule' | 'browser' | 'files' | 'terminal' | 'trace-agent' | 'schedules'>;
 type PawFeatureAppId = Exclude<PawNativeAppId, PawSystemAppId>;
 
 type NativePage = { id: string; label: string; icon: LucideIcon; route: string };

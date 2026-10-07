@@ -1,4 +1,5 @@
-import { AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Play, Send, Square } from 'lucide-react';
+import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
+import { ArrowUp, AtSign, Keyboard, ListPlus, LoaderCircle, MessageCircle, Play, Send, Square } from 'lucide-react';
 import { Anchor as PopoverAnchor } from '@radix-ui/react-popover';
 import {
   useCallback,
@@ -127,6 +128,7 @@ export function RoomComposer({
     textareaRef.current = node;
     if (inputRef) inputRef.current = node;
   }, [inputRef]);
+  const presentationVersion = useChatPresentation()?.version ?? 'v1';
   const [composerDraft, setComposerDraft] = useState(draft);
   const [mention, setMention] = useState<RoomMentionDraft>();
   const [activeIndex, setActiveIndex] = useState(0);
@@ -535,7 +537,7 @@ export function RoomComposer({
                 : taskBusyState
                   ? busySubmitBehavior === 'queue' ? '排入下一轮任务' : awaitingStart ? '补充当前请求' : '立即干预当前回合'
                   : '发送消息'}
-            icon={canContinue ? <Play size={17} fill="currentColor" /> : <Send size={18} />}
+            icon={canContinue ? <Play size={17} fill="currentColor" /> : presentationVersion === 'v2' ? <ArrowUp size={20} /> : <Send size={17} />}
             disabled={!canSend && !canContinue}
             onClick={canContinue ? onContinue : submit}
             tooltip

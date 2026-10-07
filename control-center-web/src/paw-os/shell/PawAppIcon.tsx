@@ -3,6 +3,7 @@ import type { PawOsAppId } from '@/features/paw-os/model/app-registry';
 import type { PawAppId } from '../runtime/app-registry';
 import { isPawExtensionAppId, pawExtensionApp } from '../extensions/registry';
 import type { PawExtensionAppIconSymbol } from '../extensions/types';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import './paw-app-icon.css';
 
 /** Room is a visible collaboration identity inside Agent, not a top-level App. */
@@ -25,6 +26,7 @@ export type PawAppIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
  */
 const APPROVED_SYMBOL_IDS: Record<PawBuiltinIdentityIconId, string> = {
   schedules: 'app-schedules',
+  'agent-controller': 'planet-earth-v1',
   agent: 'app-agent',
   'agent-capsule': 'app-agent-capsule',
   room: 'app-room',
@@ -44,6 +46,7 @@ const APPROVED_SYMBOL_IDS: Record<PawBuiltinIdentityIconId, string> = {
 
 const APP_COLORS: Record<PawBuiltinIdentityIconId, string> = {
   schedules: '#3276CB',
+  'agent-controller': '#4D97A8',
   agent: '#0A84FF',
   'agent-capsule': '#7A5AF8',
   room: '#7A5AF8',
@@ -66,6 +69,7 @@ const PAW_ICON_PAPER = 'var(--paw-icon-paper)';
 /** The deterministic SVG drawings for the approved App identities. */
 const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
   schedules: <><rect x="11" y="13" width="26" height="25" rx="5" fill={PAW_ICON_PAPER} /><path d="M17 10v7m14-7v7M11 22h26" fill="none" stroke="#3276CB" strokeWidth="3" strokeLinecap="round" /><path d="M24 26v5l4 2" fill="none" stroke="#3276CB" strokeWidth="2.8" strokeLinecap="round" /></>,
+  'agent-controller': null,
   agent: <>
     <path d="M10 15 a10 10 0 0 1 10-10 h8 a10 10 0 0 1 10 10 v7 a10 10 0 0 1-10 10 h-9 l-6.5 6 v-6.2 A10 10 0 0 1 10 25 z" fill={PAW_ICON_PAPER} transform="translate(0,4)" />
     <circle cx="24" cy="22" fill="#0A84FF" r="5.2" />
@@ -131,6 +135,16 @@ const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
 export function PawAppIcon({ appId, className = '', size = 24, title, ...props }: PawAppIconProps) {
   const compact = typeof size === 'number' && size <= 18;
   const localId = useId().replaceAll(':', '');
+  if (appId === 'agent-controller') {
+    return <svg {...props} aria-hidden={title ? undefined : 'true'} aria-label={title}
+      className={`paw-app-icon ${className}`.trim()} data-paw-app-icon={appId}
+      data-paw-approved-symbol="planet-earth-v1" data-paw-icon-color="#4D97A8"
+      data-paw-icon-scale={compact ? 'small' : undefined} focusable="false" height={size} width={size}
+      role={title ? 'img' : undefined} viewBox="0 0 48 48">
+      {title ? <title>{title}</title> : null}
+      <RoomPlanetAvatar ordinal={0} size={48} decorative activity="static"/>
+    </svg>;
+  }
   const extension = appId !== 'room' && isPawExtensionAppId(appId) ? pawExtensionApp(appId) : null;
   const builtinId = extension ? null : appId as PawBuiltinIdentityIconId;
   const symbolId = extension ? `app-extension-${extension.icon.symbol}` : APPROVED_SYMBOL_IDS[builtinId!];

@@ -216,7 +216,6 @@ export function PawOsTerminalApp() {
   }, [create, sessionsQuery.data]);
 
   useEffect(() => {
-    if (!sessions.length) return;
     setSelectedId((current) => sessions.some((item) => item.terminalId === current) ? current : sessions.at(-1)?.terminalId ?? '');
   }, [sessions]);
 
@@ -228,12 +227,13 @@ export function PawOsTerminalApp() {
   // selected tab, or to the empty-state create action when none survive.
   useEffect(() => {
     if (!restoreTabFocusRef.current) return;
-    restoreTabFocusRef.current = false;
-    if (!selectedId) {
-      emptyCreateRef.current?.focus();
-      return;
+    const nextFocus = sessions.length
+      ? terminalTabRefs.current.get(selectedId) ?? terminalTabRefs.current.get(sessions.at(-1)!.terminalId)
+      : emptyCreateRef.current;
+    if (nextFocus) {
+      nextFocus.focus();
+      restoreTabFocusRef.current = false;
     }
-    terminalTabRefs.current.get(selectedId)?.focus();
   }, [selectedId, sessions]);
 
   useEffect(() => {
@@ -318,7 +318,9 @@ export function PawOsTerminalApp() {
     if (!host || !selectedId) return;
     host.replaceChildren();
     const terminal = new Xterm({
-      allowProposedApi: false,
+      // SearchAddon uses registerDecoration for highlights and match counts.
+      // This enables its local renderer API; PTY transport authority is separate.
+      allowProposedApi: true,
       convertEol: true,
       cursorBlink: !prefersReducedMotion(),
       cursorStyle: 'bar',
@@ -474,7 +476,7 @@ export function PawOsTerminalApp() {
   // an immediate retry and clear themselves on the next successful poll.
   const errorNotice: { text: string; dismiss?: () => void; retry?: () => void } | null = interactionError
     ? { text: interactionError, dismiss: () => setInteractionError('') }
-    : create.error
+    : create.error && !showCreateForm
       ? { text: `新建终端失败：${publicError(create.error)}`, dismiss: () => create.reset() }
       : close.error
         ? { text: `结束终端会话失败：${publicError(close.error)}`, dismiss: () => close.reset() }
@@ -534,8 +536,10 @@ export function PawOsTerminalApp() {
   const submitCreateWithCwd = () => {
     const cwd = cwdDraft.trim();
     if (cwdInvalid || create.isPending) return;
-    create.mutate(cwd ? { cwd } : {});
-    closeCreateForm();
+    create.mutate(cwd ? { cwd } : {}, {
+      onSuccess: closeCreateForm,
+      onError: () => cwdInputRef.current?.focus(),
+    });
   };
 
   const onTerminalTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -761,6 +765,7 @@ export function PawOsTerminalApp() {
                   />
                 </label>
                 {cwdInvalid ? <p className="paw-terminal-create__hint" role="alert">请输入以 / 开头的绝对路径。</p> : null}
+                {create.error ? <p className="paw-terminal-create__hint" role="alert">新建终端失败：{publicError(create.error)} 输入已保留，请修改目录后重试。</p> : null}
                 <div className="paw-terminal-create__actions">
                   <button disabled={create.isPending || cwdInvalid} type="submit">{create.isPending ? '正在创建' : '新建终端'}</button>
                   <button onClick={closeCreateForm} type="button">取消</button>

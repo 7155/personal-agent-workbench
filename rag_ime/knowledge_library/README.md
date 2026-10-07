@@ -60,6 +60,38 @@ rebuild and may increase query latency until the projection is refreshed.
 
 ## Document structure and paper parsing
 
+### Local native image retrieval
+
+The optional `embedding-local` runtime supports the public
+[`google/embeddinggemma-2`](https://huggingface.co/google/embeddinggemma-2)
+model (Apache 2.0). Download a fixed Hugging Face revision outside the
+repository, then probe its local snapshot with the existing
+`sentence-transformers` embedding profile. The model uses
+`task: search result | query: ` for queries and `title: none | text: ` for
+document text; PAW supplies those defaults for this model. It runs offline on
+CPU with float32 and loads the text/image encoders. No Provider request is
+needed for local embedding.
+
+With this profile, imported images and local image assets from structured
+documents receive native image vectors in the text model's shared space.
+PDF pages also receive bounded local rendered-page vectors, including scanned
+pages without OCR text. Each visual evidence chunk keeps its asset hash,
+original document, supplied page, and local asset read path. A source label
+in a visual hit describes its location; it is not a generated caption or an
+OCR transcription. Text/caption chunks remain separately searchable.
+
+There are at most 64 visual units per document; PDF page rendering uses a
+1024-pixel maximum side. Document metadata reports truncation. These limits
+bound local indexing cost and do not establish recognition accuracy on real
+papers. Audio/video intake is not supported by this worker even though the
+model itself supports those modalities. Other embedding profiles retain the
+existing text/OCR/MinerU path.
+
+Changing this profile still requires the normal embedding preview/apply and
+explicit base rebuild. Merely downloading the model does not switch an active
+profile or replace existing vectors. The installed worker must include the
+`embedding-local` optional dependencies before this profile can load.
+
 File format, parsing engine and chunking strategy are separate choices. The
 **论文（保留章节与参考文献）** strategy uses the configured MinerU engine for
 PDFs in `auto` mode, including when an existing automatically parsed document

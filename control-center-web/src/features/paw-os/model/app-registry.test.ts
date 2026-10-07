@@ -19,6 +19,7 @@ describe('pawOsAppRegistry', () => {
     expect(pawOsAppRegistry.map((app) => app.id)).toEqual([
       'schedules',
       'project-workbench',
+      'agent-controller',
       'agent',
       'agent-capsule',
       'memory',
@@ -35,6 +36,7 @@ describe('pawOsAppRegistry', () => {
     ]);
     expect(pawOsAppForRoute('planning')?.id).toBe('project-workbench');
     expect(pawOsAppForRoute('work-documents')?.id).toBe('project-workbench');
+    expect(pawOsAppForRoute('agent-controller')?.id).toBe('agent-controller');
     expect(pawOsAppForRoute('rooms')?.id).toBe('agent');
     expect(pawOsAppForRoute('agent-capsule')?.id).toBe('agent-capsule');
     expect(pawOsAppForRoute('voice')?.id).toBe('input-studio');
@@ -58,6 +60,7 @@ describe('pawOsAppRegistry', () => {
 
   it('keeps system utilities out of the focused work Dock', () => {
     expect(primaryDockAppIds).toEqual([
+      'agent-controller',
       'agent',
       'eval-lab',
       'project-workbench',

@@ -121,6 +121,11 @@ class JevChoices:
             or timeout_seconds <= 0
         ):
             raise GraphError("invalid Jev timeout")
+        selected_provider = os.environ.get("RAG_IME_JEV_DECISION_PROVIDER", "typesafe-jev").strip().lower()
+        if selected_provider == "openai-decisions":
+            return cls.from_openai_decisions(timeout_seconds=timeout_seconds, max_request_bytes=max_request_bytes)
+        if selected_provider not in {"", "jev", "typesafe-jev"}:
+            raise GraphError("unsupported Jev decision provider")
         # Preserve the existing credential owner; native classification uses
         # the same TypeSafe model and answers, not a chat model guessing scores.
         from rag_ime import jev
@@ -162,6 +167,38 @@ class JevChoices:
             return jev.evaluate(state, questions, key=key, timeout_seconds=timeout_seconds)
 
         result = cls(evaluate, max_request_bytes=max_request_bytes)
+        result._native_evaluate = evaluate
+        return result
+
+    @classmethod
+    def from_openai_decisions(
+        cls, *, timeout_seconds: float = 12.0, max_request_bytes: int = 96000,
+    ) -> JevChoices:
+        """Opt-in classifier only; existing Root/ledger/Tool owners stay authoritative."""
+        if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (float, int))
+                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
+            raise GraphError("invalid OpenAI Decisions timeout")
+        from . import openai_decisions
+
+        def evaluate(state: str, questions: Mapping[str, object],
+                     classification: NativeClassification | None = None) -> object:
+            if classification is not None and classification.cancellation_event.is_set():
+                raise DecisionUnavailable("Root classification cancelled before Decisions admission")
+            key = os.environ.get("OPENAI_API_KEY", "").strip()
+            if not key:
+                raise DecisionUnavailable("OpenAI Decisions key is not configured")
+            packet = openai_decisions.choice_request(state, questions, max_request_bytes=max_request_bytes)
+            if classification is not None and classification.cancellation_event.is_set():
+                raise DecisionUnavailable("Root classification cancelled before Decisions transport")
+            response = openai_decisions.post_decision(packet, key=key, timeout_seconds=timeout_seconds)
+            if classification is not None and classification.cancellation_event.is_set():
+                raise DecisionUnavailable("Root classification cancelled before Decisions result")
+            return openai_decisions.choice_response(response, questions)
+
+        result = cls(evaluate, max_request_bytes=max_request_bytes)
+        # Direct one-shot classification uses the existing fallback lifecycle:
+        # the Root retains its pending entry until this synchronous call settles.
+        # Do not mark started=True: no Pi native classification was admitted.
         result._native_evaluate = evaluate
         return result
 

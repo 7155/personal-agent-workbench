@@ -146,6 +146,8 @@ class AgentRoomStore:
         owner_app_id: str = "",
         surface_key: str = "",
         created_at_ms: int | None = None,
+        coordinator_binding: Mapping[str, object] | None = None,
+        effect_fence: Callable[[], object] | None = None,
     ) -> dict[str, object]:
         normalized_title = " ".join(str(title).split())[:120]
         if not normalized_title:
@@ -185,7 +187,8 @@ class AgentRoomStore:
         participant_ids = [f"participant:{uuid.uuid4()}" for _ in values]
         moderator_id = participant_ids[moderator_ordinal]
         room_file = self._room_file(room_id)
-        with self._connect() as conn:
+        from contextlib import nullcontext
+        with (effect_fence() if effect_fence is not None else nullcontext()), self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO agent_rooms(
@@ -220,6 +223,9 @@ class AgentRoomStore:
                     timestamp,
                 ),
             )
+            if coordinator_binding is not None:
+                from ..agent_coordinator import insert_binding
+                insert_binding(conn, room_id, "room", coordinator_binding)
             for ordinal, (participant_id, value) in enumerate(zip(participant_ids, values, strict=True)):
                 session_id = _required_text(value, "sessionId")
                 role_id = canonical_agent_role_id(

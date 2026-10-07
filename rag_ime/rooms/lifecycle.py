@@ -564,6 +564,9 @@ class RoomLifecycleService:
     def create(
         self,
         payload: Mapping[str, object],
+        *, coordinator_binding: Mapping[str, object] | None = None,
+        inherited_model_selection: Mapping[str, object] | None = None,
+        effect_fence: Callable[[], object] | None = None,
     ) -> dict[str, object]:
         plan = self._creation_plan(payload)
         created_session_ids: list[str] = []
@@ -571,15 +574,19 @@ class RoomLifecycleService:
         try:
             for participant_plan in plan.participants:
                 role = participant_plan.persona
-                session = self.create_session(
-                    _participant_session_payload(
-                        plan,
-                        role,
-                    )
-                )["session"]
+                from contextlib import nullcontext
+                with effect_fence() if effect_fence is not None else nullcontext():
+                    session = self.create_session(
+                        _participant_session_payload(plan, role)
+                    )["session"]
                 created_session_ids.append(
                     str(session["id"])
                 )
+                if inherited_model_selection is not None:
+                    # New passive participant records inherit the coordinator's
+                    # captured Pi selection, not a Persona or Room default.
+                    self.sessions.set_model_profile(str(session["id"]), str(inherited_model_selection["modelProfile"]))
+                    self.sessions.set_thinking_level(str(session["id"]), str(inherited_model_selection["thinkingLevel"]))
                 participants.append(
                     {
                         "sessionId": session["id"],
@@ -622,6 +629,8 @@ class RoomLifecycleService:
                 ),
                 owner_app_id=plan.owner_app_id,
                 surface_key=plan.surface_key,
+                coordinator_binding=coordinator_binding,
+                effect_fence=effect_fence,
             )
         except Exception:
             for session_id in reversed(
