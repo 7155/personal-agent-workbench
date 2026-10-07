@@ -4323,7 +4323,7 @@ class AgentServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             memory_node["summary"],
-            "已加入首问与最近完整输入召回的角色可见 Timeline/Topic Book/Atom 记忆包",
+            "首问记忆召回完成，未命中可用来源",
         )
         self.assertEqual(
             memory_node["metadata"],

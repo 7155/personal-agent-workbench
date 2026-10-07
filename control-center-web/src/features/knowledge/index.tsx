@@ -178,7 +178,8 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
     rebuildsRef.current = next;
     setRebuilds(next);
   };
-  const dialogTriggerRef = useRef<HTMLElement | null>(null);
+  const dialogTriggerRef = useRef<KnowledgeDialogFocusTarget | null>(null);
+  const librarySurfaceRef = useRef<HTMLElement | null>(null);
   const libraryToolsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const queries = useKnowledgeLibraryQueries(selectedBaseId, queriesEnabled);
   const queryClient = useQueryClient();
@@ -396,6 +397,8 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
   const deleteDocumentMutation = useMutation({
     mutationFn: (documentId: string) => deleteKnowledgeDocument(queries.transport, selectedBaseId, documentId),
     onSuccess: async () => {
+      // The backend removed this action even while its cached row is visible.
+      if (dialogTriggerRef.current) dialogTriggerRef.current.retired = true;
       setDocumentToDelete(null);
       await invalidateBase();
     },
@@ -465,7 +468,12 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
   const rememberDialogTrigger = (trigger?: HTMLElement) => {
     const candidate = trigger ?? document.activeElement;
     dialogTriggerRef.current = candidate instanceof HTMLElement
-      ? candidate
+      ? {
+          element: candidate,
+          label: dialogFocusLabel(candidate),
+          documentId: dialogFocusDocumentId(candidate),
+          fallback: libraryToolsTriggerRef.current ?? librarySurfaceRef.current,
+        }
       : null;
   };
   const Surface = appSurface ? 'section' : 'main';
@@ -478,6 +486,8 @@ function DocumentKnowledgeFeature({ active }: { active: boolean }) {
       data-paw-os-app={appSurface?.appId}
       data-paw-os-compact={compact || undefined}
       data-route-id="knowledge"
+      ref={librarySurfaceRef}
+      tabIndex={-1}
       role={appSurface ? 'region' : undefined}
     >
       <h1 className="knowledge-feature__title">知识库</h1>
@@ -1733,7 +1743,7 @@ function CreateKnowledgeBaseDialog({
   onCreate: (input: { name: string; description: string }) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
-  returnFocusRef: RefObject<HTMLElement | null>;
+  returnFocusRef: RefObject<KnowledgeDialogFocusTarget | null>;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -1755,7 +1765,7 @@ function CreateKnowledgeBaseDialog({
   );
 }
 
-function ReparseDocumentDialog({ document, error, loading, onConfirm, onOpenChange, returnFocusRef }: { document: KnowledgeDocument | null; error: unknown; loading: boolean; onConfirm: (parser: KnowledgeParserMode) => void; onOpenChange: (open: boolean) => void; returnFocusRef: RefObject<HTMLElement | null> }) {
+function ReparseDocumentDialog({ document, error, loading, onConfirm, onOpenChange, returnFocusRef }: { document: KnowledgeDocument | null; error: unknown; loading: boolean; onConfirm: (parser: KnowledgeParserMode) => void; onOpenChange: (open: boolean) => void; returnFocusRef: RefObject<KnowledgeDialogFocusTarget | null> }) {
   const [parser, setParser] = useState<KnowledgeParserMode>('auto');
   useEffect(() => { if (document) setParser(asParserMode(document.parser)); }, [document]);
   return (
@@ -1775,7 +1785,7 @@ function ReparseDocumentDialog({ document, error, loading, onConfirm, onOpenChan
   );
 }
 
-function ConfirmDialog({ description, error, loading, onConfirm, onOpenChange, open, returnFocusRef, title }: { description: string; error: unknown; loading: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; open: boolean; returnFocusRef: RefObject<HTMLElement | null>; title: string }) {
+function ConfirmDialog({ description, error, loading, onConfirm, onOpenChange, open, returnFocusRef, title }: { description: string; error: unknown; loading: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; open: boolean; returnFocusRef: RefObject<KnowledgeDialogFocusTarget | null>; title: string }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
       <DialogContent onCloseAutoFocus={(event) => restoreDialogFocus(event, returnFocusRef)}>
@@ -1787,12 +1797,34 @@ function ConfirmDialog({ description, error, loading, onConfirm, onOpenChange, o
   );
 }
 
+interface KnowledgeDialogFocusTarget {
+  element: HTMLElement;
+  label: string;
+  documentId: string;
+  fallback: HTMLElement | null;
+  retired?: boolean;
+}
+
+function dialogFocusLabel(element: HTMLElement): string {
+  return element.getAttribute('aria-label') ?? element.textContent ?? '';
+}
+
+function dialogFocusDocumentId(element: HTMLElement): string {
+  return element.closest('[data-knowledge-document-id]')?.getAttribute('data-knowledge-document-id') ?? '';
+}
+
 function restoreDialogFocus(
   event: Event,
-  returnFocusRef: RefObject<HTMLElement | null>,
+  returnFocusRef: RefObject<KnowledgeDialogFocusTarget | null>,
 ): void {
   event.preventDefault();
-  returnFocusRef.current?.focus();
+  const original = returnFocusRef.current;
+  if (!original) return;
+  const target = !original.retired && original.element.isConnected
+    && dialogFocusLabel(original.element) === original.label
+    && dialogFocusDocumentId(original.element) === original.documentId
+    ? original.element : original.fallback;
+  if (target?.isConnected) target.focus({ preventScroll: true });
 }
 
 interface WorkerState { label: string; tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral' }

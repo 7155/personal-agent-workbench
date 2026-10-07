@@ -91,7 +91,12 @@ export function MemoryReferenceDialog({
   const title = item?.title || item?.textPreview || item?.text || current.label || current.referenceId;
   const displayTitle = displayReferenceLabel(title, current.kind);
   const content = redacted ? '' : publicMemoryText(item?.detail || item?.summary || item?.text || '');
-  const heading = content && content.trim() === displayTitle.trim() ? referenceKindLabel(current.kind) : displayTitle;
+  const titleRepeatsContent = Boolean(content) && (
+    content.trim() === displayTitle.trim()
+    || (current.kind === 'evidence' && item?.sourceKind === 'user_message'
+      && content.trim().startsWith(displayTitle.trim()))
+  );
+  const heading = titleRepeatsContent ? referenceKindLabel(current.kind) : displayTitle;
   const currentKey = referenceKey(current);
   const visited = new Set(stack.map(referenceKey));
   // Keep only this exact reference's last real read error while its retry is

@@ -144,8 +144,9 @@ export function KnowledgeMaterialsPanel({
               <Virtuoso
                 className="knowledge-material-list__body"
                 data={visibleDocuments}
+                computeItemKey={(_index, document) => document.id}
                 itemContent={(_index, document) => (
-                  <div className="knowledge-material-row" data-selected={selected?.id === document.id || undefined}>
+                  <div className="knowledge-material-row" data-knowledge-document-id={document.id} data-selected={selected?.id === document.id || undefined}>
                     <button aria-current={selected?.id === document.id || undefined} className="knowledge-material-row__select" onClick={() => onSelect(document.id)} type="button">
                       <FileText aria-hidden="true" size={15} />
                       <span><strong>{document.name}</strong><small>{parserLabel(document.parser)} · {formatBytes(document.byteSize)}</small></span>
@@ -276,7 +277,7 @@ function UploadQueue({ items, onClear, onRetry }: { items: readonly KnowledgeUpl
 function DocumentSummary({ detail, document, error, loading, onReparse, onRetry, reparsePending }: { detail: KnowledgeDocumentDetail | null; document: KnowledgeDocument | null; error: Error | null; loading: boolean; onReparse: (document: KnowledgeDocument, trigger: HTMLElement) => void; onRetry: () => void; reparsePending: boolean }) {
   if (!document) return null;
   return (
-    <aside className="knowledge-document-summary" aria-label={`${document.name} 处理与详情`}>
+    <aside className="knowledge-document-summary" data-knowledge-document-id={document.id} aria-label={`${document.name} 处理与详情`}>
       <header><FileText size={17} /><div><strong>{document.name}</strong><span>{fileFormatLabel(document.mimeType)}</span></div></header>
       <DocumentPipeline document={document} onReparse={onReparse} reparsePending={reparsePending} />
       {loading ? <p className="knowledge-detail-loading">正在读取材料详情…</p> : null}

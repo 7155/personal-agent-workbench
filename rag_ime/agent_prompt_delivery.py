@@ -469,7 +469,7 @@ class AgentPromptDeliveryService:
         return self.context_runtime.add_trace_node(
             trace_id,
             stage="memory_recall",
-            label="新 Session 个人记忆召回",
+            label="本轮记忆召回",
             source_kind="memory_bootstrap",
             parents=[session_node],
             disposition=(
@@ -483,10 +483,11 @@ class AgentPromptDeliveryService:
                 if recall_status == "disabled"
                 else "沿用当前会话已有记忆，没有重复查询"
                 if recall_status == "reused"
-                else "已加入首问与最近完整输入召回的角色可见 "
-                "Timeline/Topic Book/Atom 记忆包"
-                if memory_items
-                else "本 Session 尚无可投递的首问记忆包"
+                else f"已加入{'首问' if trigger == 'first_user_prompt' else '本轮'}查询召回的记忆包"
+                if recall_status == "included"
+                else f"{'首问' if trigger == 'first_user_prompt' else '本轮'}记忆召回完成，未命中可用来源"
+                if recall_status == "empty"
+                else "本轮尚无可投递的记忆包"
             ),
             char_count=(
                 char_count

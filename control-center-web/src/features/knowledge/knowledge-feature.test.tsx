@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,8 +12,8 @@ import { MockControlTransport } from '@/test/mock-transport';
 import { KnowledgeFeature } from './index';
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent }: { data: unknown[]; itemContent: (index: number, item: unknown) => ReactNode }) => (
-    <div data-testid="virtuoso-list">{data.map((item, index) => <div key={index}>{itemContent(index, item)}</div>)}</div>
+  Virtuoso: ({ data, itemContent, computeItemKey }: { data: unknown[]; itemContent: (index: number, item: unknown) => ReactNode; computeItemKey?: (index: number, item: unknown) => string }) => (
+    <div data-testid="virtuoso-list">{data.map((item, index) => <div key={computeItemKey?.(index, item) ?? index} data-fixture-document-id={(item as { id: string }).id}>{itemContent(index, item)}</div>)}</div>
   ),
 }));
 
@@ -505,6 +505,83 @@ describe('document knowledge library', () => {
     expect(within(deleteDocumentDialog).getByRole('button', { name: '确认删除' })).toHaveAttribute('data-variant', 'danger');
     await user.keyboard('{Escape}');
     await waitFor(() => expect(deleteDocumentTrigger).toHaveFocus());
+  });
+
+  it('returns successful deletion to a stable non-destructive control instead of the next row delete', async () => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];
+    const transport = createTransport({ documents: () => documents, deleteDocument: (request) => {
+      documents = documents.filter(item => item.id !== request.params?.fileId);
+      return { ok: true };
+    } });
+    renderKnowledge(transport);
+    await user.click(await screen.findByRole('button', { name: /^control\.pdf/ }));
+    await user.type(screen.getByRole('textbox', { name: '筛选文件' }), '.pdf');
+    await user.click(screen.getByRole('button', { name: '删除 runtime.pdf' }));
+    await user.click(within(screen.getByRole('dialog', { name: '删除文档' })).getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '删除 runtime.pdf' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveFocus());
+    expect(screen.getByRole('button', { name: '删除 control.pdf' })).not.toHaveFocus();
+    expect(screen.getByRole('textbox', { name: '筛选文件' })).toHaveValue('.pdf');
+    expect(screen.getByRole('button', { name: /^control\.pdf/ })).toHaveAttribute('aria-current', 'true');
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.document.delete')).toHaveLength(1);
+    expect(request(transport, 'knowledgeBases.document.delete')?.params?.fileId).toBe('file-runtime');
+  });
+
+  it('preserves the exact original trigger across same-name document reorder on cancel and failure', async () => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control' }];
+    const transport = createTransport({ documents: () => documents, deleteDocument: () => { throw new Error('owned deletion failed'); } });
+    const client = renderKnowledge(transport);
+    const original = (await screen.findAllByRole('button', { name: '删除 runtime.pdf' }))[0];
+    await user.type(screen.getByRole('textbox', { name: '筛选文件' }), 'runtime');
+    await user.click(original);
+    await act(async () => { documents = [...documents].reverse(); await client.invalidateQueries(); });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(original).toHaveFocus());
+    expect(original.closest('[data-fixture-document-id]')).toHaveAttribute('data-fixture-document-id', 'file-runtime');
+    expect(transport.requests.some(call => call.request.pathId === 'knowledgeBases.document.delete')).toBe(false);
+    await user.click(original);
+    await user.click(within(screen.getByRole('dialog', { name: '删除文档' })).getByRole('button', { name: '确认删除' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('删除失败，原内容仍然保留');
+    await act(async () => { documents = [...documents].reverse(); await client.invalidateQueries(); });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(original).toHaveFocus());
+    expect(original.closest('[data-fixture-document-id]')).toHaveAttribute('data-fixture-document-id', 'file-runtime');
+    expect(screen.getByRole('textbox', { name: '筛选文件' })).toHaveValue('runtime');
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.document.delete')).toHaveLength(1);
+  });
+
+  it('retires the accepted delete trigger before a stale catalog refetch removes its row', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport({ deleteDocument: () => ({ ok: true }) });
+    renderKnowledge(transport);
+    const original = await screen.findByRole('button', { name: '删除 runtime.pdf' });
+    await user.click(original);
+    await user.click(within(screen.getByRole('dialog', { name: '删除文档' })).getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(original).toBeInTheDocument();
+    expect(original).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveFocus();
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.document.delete')).toHaveLength(1);
+  });
+
+  it.each(['removed', 'renamed'] as const)('uses the stable fallback when the original trigger identity is %s during a dialog', async (change) => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];
+    const transport = createTransport({ documents: () => documents });
+    const client = renderKnowledge(transport);
+    const original = await screen.findByRole('button', { name: '删除 runtime.pdf' });
+    await user.click(original);
+    await act(async () => {
+      documents = change === 'removed' ? documents.slice(1) : documents.map(item => item.id === 'file-runtime' ? { ...item, name: 'renamed.pdf' } : item);
+      await client.invalidateQueries();
+    });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveFocus());
+    expect(original).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '删除 control.pdf' })).not.toHaveFocus();
+    expect(transport.requests.some(call => call.request.pathId === 'knowledgeBases.document.delete')).toBe(false);
   });
 
   it('keeps assembly history collapsed while reading and loads it only when expanded', async () => {
@@ -1031,6 +1108,7 @@ function renderKnowledge(transport: MockControlTransport, initialEntry = '/knowl
       </TooltipProvider>
     </MemoryRouter>,
   );
+  return client;
 }
 
 async function openKnowledgeTool(user: ReturnType<typeof userEvent.setup>, name: string) {
@@ -1043,7 +1121,7 @@ function RouteRemountedKnowledge() {
   return <KnowledgeFeature key={location.search} />;
 }
 
-function createTransport(options: { structuredSource?: boolean; activeJob?: boolean; embeddingVectorCount?: () => number; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
+function createTransport(options: { documents?: () => ReturnType<typeof knowledgeDocument>[]; deleteDocument?: (request: ControlRequest) => unknown; structuredSource?: boolean; activeJob?: boolean; embeddingVectorCount?: () => number; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
   let graphRequestCount = 0;
   const extraGraphNodes = options.manyRelations
     ? Array.from({ length: 9 }, (_, index) => ({
@@ -1074,7 +1152,7 @@ function createTransport(options: { structuredSource?: boolean; activeJob?: bool
     routes: {
       'knowledgeBases.list': { items: [knowledgeBase()] },
       'knowledgeBases.get': { base: knowledgeBase() },
-      'knowledgeBases.documents.list': { items: [options.unlistedSearchSource ? { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } : knowledgeDocument()] },
+      'knowledgeBases.documents.list': () => ({ items: options.documents?.() ?? [options.unlistedSearchSource ? { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } : knowledgeDocument()] }),
       'knowledgeBases.jobs.list': () => ({ items: [{ id: 'job-1', fileId: 'file-runtime', fileName: 'runtime.pdf', kind: 'reindex', parserMode: 'builtin', status: options.activeJob ? 'running' : 'succeeded', stage: options.activeJob ? 'indexing' : 'ready', progress: options.activeJob ? .8 : 1, cancellable: options.activeJob, revision: 3, createdAtMs: Date.now() - 2_000, startedAtMs: Date.now() - 1_500, finishedAtMs: options.activeJob ? 0 : Date.now() - 500, updatedAtMs: Date.now() - 500 }] }),
       'knowledgeWorker.health': { ok: true, status: 'ready', dense: { available: true, degraded: false, kind: 'sqlite-vector-projection', fingerprint: 'local-hash:96:v1', vectorCount: 42 } },
       'knowledgeParsers.list': { items: [{ id: 'mineru_local_http', enabled: true, ready: true, status: 'ready' }] },
@@ -1143,13 +1221,14 @@ function createTransport(options: { structuredSource?: boolean; activeJob?: bool
       },
       'knowledgeBases.document.get': options.pagedDetail ? pagedKnowledgeDetail : (request: ControlRequest) => ({
         ...knowledgeDetail(),
+        ...(options.documents ? { document: options.documents().find(item => item.id === request.params?.fileId) ?? knowledgeDocument() } : {}),
         ...(request.params?.fileId === 'file-unrelated' ? { document: { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } } : {}),
       }),
       'knowledgeBases.open': { ok: true, content: '工具原文' },
       'knowledgeBases.update': { base: knowledgeBase() },
       'knowledgeBases.create': { base: knowledgeBase() },
       'knowledgeBases.document.retry': { ok: true },
-      'knowledgeBases.document.delete': { ok: true },
+      'knowledgeBases.document.delete': options.deleteDocument ?? { ok: true },
       'knowledgeBases.reindexPreview': { previewToken: 'preview-reindex', payloadSha256: 'sha256:reindex', expectedRevision: 8, summary: { documentCount: 1, staleDocumentCount: 1, estimatedChunkCount: 48 } },
       'knowledgeBases.rebuild': { ok: true },
       'knowledgeBases.job.cancel': { ok: true, job: { id: 'job-1', status: 'cancelled' } },

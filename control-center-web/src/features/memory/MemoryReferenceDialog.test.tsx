@@ -145,6 +145,30 @@ it('keeps a compact long heading fully inspectable through its original details'
   expect(transport.requests).toHaveLength(1);
 });
 
+it('reads a user message once when its original title is a shortened body preview', async () => {
+  const user = userEvent.setup();
+  const data = { ...reference('evidence', 'evidence:child'), item: {
+    ...reference('evidence', 'evidence:child').item, sourceKind: 'user_message',
+    text: '用户明确更正普通项目的报告标签，并要求保留原始来源与审批结果。'.repeat(6),
+    title: '',
+  } };
+  data.item.title = data.item.text.slice(0, 160);
+  const transport = new MockControlTransport({ routes: { 'memory.reference.get': (request: ControlRequest) =>
+    request.params?.referenceId === 'evidence:child' ? data : reference() } });
+  renderDialog(transport);
+  await user.click(screen.getByRole('button', { name: '查看原记忆' }));
+  const rootDialog = await screen.findByRole('dialog', { name: '原记忆' });
+  await user.click(within(rootDialog).getByRole('button', { name: /原来源/ }));
+  const dialog = await screen.findByRole('dialog', { name: '来源记录' });
+  expect(within(dialog).getByRole('heading')).toHaveTextContent('来源记录');
+  expect(dialog).toHaveTextContent(data.item.text);
+  expect(within(dialog).queryByText(data.item.title, { selector: 'h2' })).toBeNull();
+  await user.click(within(dialog).getByText('高级：引用详情', { selector: 'summary' }));
+  const originalTitle = within(dialog).getByText('完整标题').closest('div')!;
+  expect(originalTitle).toHaveTextContent(data.item.title);
+  expect(transport.requests).toHaveLength(2);
+});
+
 it.each(['full', 'reduce'])('keeps the retry action stable and prevents a second read while pending (%s motion)', async (preference) => {
   localStorage.setItem('rag-ime-control-motion', preference);
   const user = userEvent.setup();
