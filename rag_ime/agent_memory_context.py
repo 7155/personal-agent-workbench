@@ -38,6 +38,7 @@ class AgentMemoryContextService:
         memory_enabled_provider: Callable[[], bool] | None = None,
         session_memory_enabled_provider: Callable[[str], bool] | None = None,
         personal_profile_provider: Callable[[], Mapping[str, object]] | None = None,
+        personal_profile_scope_provider: Callable[[str], bool] | None = None,
     ) -> None:
         self.sessions = sessions
         self.memory_bootstrap = memory_bootstrap
@@ -47,6 +48,7 @@ class AgentMemoryContextService:
         self._observation_callback = observation_callback
         self._session_memory_enabled_provider = session_memory_enabled_provider
         self._personal_profile_provider = personal_profile_provider
+        self._personal_profile_scope_provider = personal_profile_scope_provider
         sessions_db_path = getattr(sessions, "db_path", "")
         self._memory_enabled_provider = memory_enabled_provider or (
             lambda: memory_enabled_from_settings(sessions_db_path)
@@ -653,12 +655,20 @@ class AgentMemoryContextService:
     def _personal_profile_scope(self, session_id: str) -> bool:
         try:
             session = self.sessions.get(session_id)
+            if isinstance(session.get("roomParticipant"), Mapping):
+                return False
             metadata = session.get("metadata")
-            return (
+            if (
                 isinstance(metadata, Mapping)
                 and bool(str(metadata.get("assistantId") or "").strip())
                 and (metadata.get("primaryAssistant") is True or metadata.get("primaryTask") is True)
-                and not isinstance(session.get("roomParticipant"), Mapping)
+            ):
+                return True
+            # Only the composition root can supply this server-owned scope.
+            # Mode, role and caller metadata cannot identify a Source.
+            return (
+                self._personal_profile_scope_provider is not None
+                and self._personal_profile_scope_provider(session_id) is True
             )
         except Exception:
             return False

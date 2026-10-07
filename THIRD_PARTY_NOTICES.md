@@ -74,3 +74,43 @@ terms, privacy policy, credentials, and charges.
 The optional Notion Worker / Custom Agent integration is also a remote-service
 workflow. The template in this repository is project-authored; users remain
 responsible for Notion's current platform and service terms.
+
+
+## DSH Codex Reasoning Effort Slider Visual Effects
+
+PAW adapts the purple/blue gradient and shimmer CSS, `particleSeeds`, Canvas
+particle draw and one-shot burst algorithms from [DSH-Codex-reasoning-effort-slider](https://github.com/bakabaicai/DSH-Codex-reasoning-effort-slider),
+`client.js`, commit `6e71fa408bc2fb5e9b20ed040b1ad42ed49f4333`.
+The adapted files are `control-center-web/src/features/agent/composer/ReasoningSliderEffects.tsx`
+and `control-center-web/src/features/agent/composer/model-picker.css`.
+PAW keeps its own native-range transaction, catalog, model/provider selection,
+Popover and MotionActivity owners; upstream Fake Fast, usage claims, injected
+module loader and model directory are not included. Drag velocity replaces the
+purely visual Fast flag; animation is gated and draws at most 30Hz.
+
+Upstream [LICENSE](https://github.com/bakabaicai/DSH-Codex-reasoning-effort-slider/blob/6e71fa408bc2fb5e9b20ed040b1ad42ed49f4333/LICENSE)
+is retained in full below and in the adapted Canvas source header:
+
+```text
+MIT License
+
+Copyright (c) 2026 Nachoneko_miao
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

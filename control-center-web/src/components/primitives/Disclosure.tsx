@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { cn } from './utils';
+import { useMotionActivity } from '@/design/motion';
 
 /* Matches --motion-disclose / DISCLOSURE_MOTION (220ms bounded spring) so
    closing content stays mounted through the whole shared exit transition. */
@@ -50,12 +51,15 @@ export function Disclosure({
   ...props
 }: DisclosureProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const [pointerTransition, setPointerTransition] = useState(true);
+  const motionActive = useMotionActivity() && pointerTransition;
   const present = useDisclosurePresence(
     open,
-    disclosureMotionReduced() ? 0 : Math.max(0, exitDurationMs),
+    motionActive ? Math.max(0, exitDurationMs) : 0,
   );
   const revealId = useId();
-  const toggle = () => {
+  const toggle = (pointer: boolean) => {
+    setPointerTransition(pointer);
     const nextOpen = !open;
     setOpen(nextOpen);
     onOpenChange?.(nextOpen);
@@ -66,6 +70,7 @@ export function Disclosure({
       {...props}
       className={cn('ui-disclosure', className)}
       data-expanded={open || undefined}
+      data-motion-active={motionActive}
       open={open || present}
     >
       <summary
@@ -79,13 +84,13 @@ export function Disclosure({
             return;
           }
           event.preventDefault();
-          toggle();
+          toggle(event.detail > 0);
         }}
         onKeyDown={(event) => {
           if (isInteractiveSummaryTarget(event.target)) return;
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
-          toggle();
+          toggle(false);
         }}
       >
         {summary}
@@ -133,13 +138,4 @@ function isInteractiveSummaryTarget(target: EventTarget | null): boolean {
     && interactiveTarget !== owningSummary
     && owningSummary.contains(interactiveTarget),
   );
-}
-
-function disclosureMotionReduced(): boolean {
-  if (typeof document !== 'undefined' && document.documentElement.dataset.reduceMotion === 'true') {
-    return true;
-  }
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

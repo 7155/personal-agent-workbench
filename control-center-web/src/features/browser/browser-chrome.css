@@ -224,6 +224,14 @@
 }
 
 /* CDP-mode failure keeps the raw transport message next to the headline. */
+.paw-desktop-root .paw-direct-browser .paw-browser-error > button { min-height: 32px; font-size: 14px; }
+.paw-desktop-root .paw-direct-browser .paw-browser-agent-stream > header button { min-width: 32px; height: 32px; font-size: 14px; }
+@container paw-window (max-width: 760px) {
+  .paw-desktop-root .paw-direct-browser .paw-browser-error > button { min-height: 44px; }
+  .paw-desktop-root .paw-direct-browser .paw-browser-agent-stream { grid-template-rows: 48px minmax(0, 1fr) auto; }
+  .paw-desktop-root .paw-direct-browser .paw-browser-agent-stream > header button { min-width: 44px; height: 44px; }
+}
+
 .paw-browser-error > span {
   min-width: 0;
   display: grid;

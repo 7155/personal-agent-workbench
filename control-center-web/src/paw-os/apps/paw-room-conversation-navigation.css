@@ -210,3 +210,6 @@
 [data-chat-presentation-version='v2'] .paw-room-conversation__final-report { border:0; border-radius:0; background:transparent; padding:6px 0 12px; gap:9px; }
 [data-chat-presentation-version='v2'] .paw-room-conversation__final-report-head p { font-size:16px; line-height:1.65; }
 @media(max-width:640px) { .paw-room-conversation__task-records { margin-inline:12px; } .paw-room-conversation__task-records > summary { min-height:44px; } }
+
+/* Reading a retained dispatch is not a new acceptance event. */
+[data-chat-presentation-version='v2'] .paw-room-dispatch-detail__decision > svg { animation: none; }

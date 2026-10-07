@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { StubControlTransport } from '@/test/stub-control-transport';
@@ -9,6 +10,41 @@ import { AgentWakeSchedules } from './AgentWakeSchedules';
 afterEach(cleanup);
 
 describe('AgentWakeSchedules target catalog feedback', () => {
+  it('returns focus to the PR entry that actually opened the cancelled dialog', async () => {
+    const user = userEvent.setup();
+    const transport = new StubControlTransport('native', {
+      'agent.sessions.list': sessionListResponse(), 'agent.roles.list': roleListResponse(),
+      'agent.wakeSchedules.list': scheduleListResponse(),
+    });
+    renderSchedules(transport);
+    const trigger = screen.getByRole('button', { name: '跟进 GitHub PR' });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await user.click(trigger);
+    expect(await screen.findByRole('dialog')).toBeVisible();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(transport.requests.every(request => !request.body)).toBe(true);
+  });
+  it('does not imply a saved schedule in the empty inactive-scheduler state', async () => {
+    const transport = new StubControlTransport('native', {
+      'agent.sessions.list': sessionListResponse(), 'agent.roles.list': roleListResponse(),
+      'agent.wakeSchedules.list': { ok: true, schedulerActive: false, items: [] },
+    });
+    renderSchedules(transport);
+    expect(await screen.findByText('尚未添加安排；本机 Agent 服务运行后才能按时执行。')).toBeInTheDocument();
+    expect(screen.queryByText(/安排已保存/)).not.toBeInTheDocument();
+    expect(await screen.findByText('还没有定时安排')).toBeInTheDocument();
+    expect(transport.requests.every(request => !request.body)).toBe(true);
+  });
+  it('retains the persisted-schedule notice when the scheduler is inactive', async () => {
+    const transport = new StubControlTransport('native', {
+      'agent.sessions.list': sessionListResponse(), 'agent.roles.list': roleListResponse(),
+      'agent.wakeSchedules.list': { ...scheduleListResponse(), schedulerActive: false },
+    });
+    renderSchedules(transport);
+    expect(await screen.findByText('安排已保存；本机 Agent 服务运行后才能按时执行。')).toBeInTheDocument();
+    expect(screen.queryByText(/尚未添加安排/)).not.toBeInTheDocument();
+  });
   it('keeps existing schedules visible while reading available targets', async () => {
     const sessions = deferred<unknown>();
     const transport = new StubControlTransport('native', {

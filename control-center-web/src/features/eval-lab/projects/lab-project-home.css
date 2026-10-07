@@ -38,7 +38,7 @@
 .lab-home__empty svg { color: var(--lab-muted); }
 .lab-home__empty h3 { font-size: 17px; margin: 8px 0; }
 .lab-home__empty p { color: var(--lab-muted); font-size: 13px; margin: 0 0 20px; }
-.lab-home button:hover:not(:disabled) { color: var(--lab-accent); }
+.lab-home button:not(.ui-button):hover:not(:disabled) { color: var(--lab-accent); }
 .lab-home button:focus-visible { outline: 2px solid var(--lab-accent); outline-offset: 4px; }
 @container lab-project (max-width: 1050px) {
   .lab-home { padding: 30px 24px; }

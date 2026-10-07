@@ -91,6 +91,8 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [showTrace, setShowTrace] = useState(false);
+  const traceTrigger = useRef<HTMLButtonElement>(null);
+  const closeTrace = () => { setShowTrace(false); traceTrigger.current?.focus(); };
   const [editingElement, setEditingElement] = useState<BrowserElement | null>(null);
   const [elementDraft, setElementDraft] = useState('');
   const [hostTabs, setHostTabs] = useState<HostBrowserTab[]>([initialHostTab()]);
@@ -883,6 +885,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
       {windowChromeTarget ? <PawWindowChromePortal>{browserTabs}</PawWindowChromePortal> : null}
       <section
         aria-label="Browser"
+        onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented && showTrace) { event.preventDefault(); closeTrace(); } }}
         className="paw-direct-browser"
         data-route-id="browser"
         data-tabs-in-window-chrome={windowChromeTarget ? true : undefined}
@@ -938,6 +941,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
 
         <div className="paw-toolbar-actions">
           <button
+            ref={traceTrigger}
             aria-label={showTrace ? '隐藏 Agent 浏览器轨迹' : '显示 Agent 浏览器轨迹'}
             aria-pressed={showTrace}
             data-active={showTrace || undefined}
@@ -1341,7 +1345,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
                     <Square size={11} /> 停止
                   </button>
                 ) : null}
-                <button aria-label="隐藏 Agent 浏览器轨迹" onClick={() => setShowTrace(false)} type="button"><X size={13} /></button>
+                <button aria-label="隐藏 Agent 浏览器轨迹" onClick={closeTrace} type="button"><X size={13} /></button>
               </div>
             </header>
             <div>

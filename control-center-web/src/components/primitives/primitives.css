@@ -49,6 +49,8 @@
   overflow: hidden;
 }
 
+.ui-disclosure[data-motion-active='false'] > .ui-disclosure__reveal { transition: none; }
+
 .ui-button:active:not(:disabled),
 .ui-icon-button:active:not(:disabled) {
   box-shadow: var(--shadow-control-press);

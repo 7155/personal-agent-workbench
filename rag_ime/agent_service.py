@@ -538,6 +538,7 @@ class AgentService:
                 memory_enabled_provider=self.memory_enabled,
                 session_memory_enabled_provider=self._session_memory_disclosed,
                 personal_profile_provider=self._personal_profile,
+                personal_profile_scope_provider=self._coordinator_personal_profile_scope,
             )
         )
         self.memory_evidence_application = (
@@ -1541,6 +1542,13 @@ class AgentService:
         """Resolve the live memory master switch for the next Runtime call."""
 
         return memory_enabled_from_settings(self.db_path)
+
+    def _coordinator_personal_profile_scope(self, session_id: str) -> bool:
+        # Resolve the original current Source, never a client identity claim.
+        try:
+            return bool(coordinator_identity(self.sessions, session_id))
+        except (KeyError, ValueError):
+            return False
 
     def _session_memory_disclosed(self, session_id: str) -> bool:
         return capability_disclosure_enabled(

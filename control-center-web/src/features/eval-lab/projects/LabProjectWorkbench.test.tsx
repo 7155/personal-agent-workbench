@@ -373,6 +373,18 @@ describe('Agent-led Lab project container', () => {
     expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
   });
 
+  it('returns keyboard focus to the project menu after cancelling history import without writes', async () => {
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': read(null, []) } });
+    mount(transport); const user = userEvent.setup();
+    const launcher = await screen.findByRole('button', { name: '项目更多操作' });
+    await user.click(launcher);
+    await user.click(await screen.findByRole('menuitem', { name: '导入已有实验' }));
+    expect(await screen.findByRole('dialog')).toBeVisible();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(launcher).toHaveFocus());
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
+  });
+
   it('returns keyboard focus to new project after closing an unsent draft', async () => {
     const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': read(null, []) } });
     mount(transport); const user = userEvent.setup();

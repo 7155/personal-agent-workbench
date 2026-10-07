@@ -51,3 +51,14 @@
 @media(max-width:580px) { .ccui-tool-card[data-design=pi-receipt] .ccui-tool-main { display:grid; gap:1px; } .ccui-tool-card[data-design=pi-receipt] .ccui-tool-main>span { font-size:var(--text-label); } .ccui-tool-card[data-design=pi-receipt]>.ccui-tool-head { gap:8px; padding:11px; } .ccui-tool-card[data-design=pi-receipt] .ccui-tool-state-label { max-width:70px; overflow-wrap:anywhere; } }
 @media(prefers-reduced-motion:reduce) { .ccui-tool-card[data-design=pi-receipt] * { animation:none!important; transition:none!important; } }
 .ccui-tool-card[data-design=pi-receipt][data-motion=false] *,[data-reduce-motion=true] .ccui-tool-card[data-design=pi-receipt] * { animation:none!important; transition:none!important; }
+
+/* The operated affordance moves; tool evidence and tab contents stay anchored.
+   Pointer transitions can reverse immediately. Keyboard changes are instant. */
+.ccui-tool-card[data-feedback='current'] .ccui-tool-disclosure { transition: none; }
+.ccui-tool-card[data-feedback='current'][data-motion='true'][data-interaction='pointer'] .ccui-tool-disclosure {
+  transition: transform var(--duration-fast, 140ms) var(--ease-standard, cubic-bezier(.22,1,.36,1));
+}
+.ccui-tool-card[data-feedback='current'][data-motion='true'][data-interaction='pointer'] .ccui-tool-kind {
+  transition: transform var(--duration-press, 90ms) var(--ease-press, cubic-bezier(.2,.8,.3,1));
+}
+.ccui-tool-card[data-feedback='current'][data-motion='true'][data-interaction='pointer'] > .ccui-tool-head:active:not(:disabled) .ccui-tool-kind { transform: translateY(1px); }

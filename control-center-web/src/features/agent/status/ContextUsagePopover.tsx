@@ -42,6 +42,7 @@ export function ContextUsagePopover({
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [readError, setReadError] = useState('');
   const [snapshot, setSnapshot] = useState<ContextXraySnapshot | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -56,14 +57,21 @@ export function ContextUsagePopover({
     if (!open || !sessionId || !transport) return;
     let cancelled = false;
     setLoading(true);
+    setSnapshot(null);
+    setReadError('');
     void transport.request({
       pathId: 'agent.session.debugContext.get',
       params: { sessionId },
     }).then((value) => {
       if (cancelled) return;
-      setSnapshot(buildContextXraySnapshot(normalizeDebugContextResponse(value)));
-    }, () => {
-      if (!cancelled) setSnapshot(null);
+      const response = normalizeDebugContextResponse(value);
+      setSnapshot(buildContextXraySnapshot(response));
+      if (!response.available) setReadError(contextReadError(response.error));
+    }, (error: unknown) => {
+      if (!cancelled) {
+        setSnapshot(null);
+        setReadError(error instanceof Error ? contextReadError(error.message) : '上下文读取失败，请重新打开重试。');
+      }
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
@@ -118,7 +126,7 @@ export function ContextUsagePopover({
               </button>
             </PopoverClose>
           </header>
-          <ContextUsageBody loading={loading} view={view} />
+          <ContextUsageBody loading={loading} readError={readError} view={view} />
         </PopoverContent>
       </div>
     </Popover>
@@ -127,9 +135,11 @@ export function ContextUsagePopover({
 
 function ContextUsageBody({
   loading,
+  readError,
   view,
 }: {
   loading: boolean;
+  readError: string;
   view: ContextUsageView;
 }) {
   if (!view.available && loading) {
@@ -138,7 +148,7 @@ function ContextUsageBody({
   if (!view.available) {
     return (
       <>
-        <p className="agent-context-usage__empty">尚未收到 Runtime 上下文快照；各层明确标为未知，不用总量推算。</p>
+        <p className="agent-context-usage__empty" role={readError ? 'status' : undefined}>{readError || '尚未收到 Runtime 上下文快照；各层明确标为未知，不用总量推算。'}</p>
         <ContextUsageLayerList layers={view.layers} />
       </>
     );
@@ -159,6 +169,7 @@ function ContextUsageBody({
 
   return (
     <>
+      {readError ? <p className="agent-context-usage__note" role="status">{readError}</p> : null}
       <div className="agent-context-usage__summary">
         <b>{view.percent === null ? '占用未知' : `已用 ${Math.round(view.percent)}%`}</b>
         <span>
@@ -204,6 +215,11 @@ function ContextUsageBody({
       ) : null}
     </>
   );
+}
+
+function contextReadError(reason: string): string {
+  if (reason === 'session_not_resident') return '原对话尚未载入，暂时无法查看原始上下文。';
+  return reason.trim().slice(0, 300);
 }
 
 function ContextUsageLayerList({ layers }: { layers: ContextUsageView['layers'] }) {

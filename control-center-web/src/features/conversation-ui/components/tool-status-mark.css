@@ -13,3 +13,16 @@
   .ccui-execution-mark[data-state='running'] svg { animation: none; }
 }
 @keyframes ccui-receipt-fade { from { opacity: .6; } to { opacity: 1; } }
+
+/* v2 history is quiet. Only an observed change of the mounted owner receipt
+   earns one feedback pulse; resuming presentation never replays a change. */
+.ccui-execution-mark[data-feedback='current'] > span { animation: none; }
+.ccui-execution-mark[data-feedback='current'][data-changed='true'] > span { animation: ccui-receipt-change var(--duration-enter, 180ms) var(--ease-standard, cubic-bezier(.22,1,.36,1)); }
+.ccui-execution-mark[data-feedback='current'][data-active='false'] > span,
+.ccui-execution-mark[data-feedback='current'][data-active='false'] svg { animation: none; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ccui-execution-mark[data-feedback='current'] > span,
+  .ccui-execution-mark[data-feedback='current'] svg { animation: none; }
+}
+[data-reduce-motion='true'] .ccui-execution-mark[data-feedback='current'] > span,
+[data-reduce-motion='true'] .ccui-execution-mark[data-feedback='current'] svg { animation: none; }

@@ -1,15 +1,43 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ToolCard } from './ToolCard';
 import { toolReceiptStatus } from './ToolStatusMark';
 import type { ToolCallBlock } from '../model/types';
 import { ChatPresentationProvider } from '../reading/chat-presentation';
+import { MotionActivityBoundary } from '@/design/motion';
 
 afterEach(cleanup);
 const block: ToolCallBlock = { id: 'call-one', kind: 'tool', name: '读取文件', summary: 'src/app.ts', input: 'src/app.ts', status: 'running' };
 
 describe('render-only tool receipt UI', () => {
+  it('gates v2 pointer feedback without delaying keyboard evidence access or remounting content', async () => {
+    const user = userEvent.setup();
+    const view = (active: boolean, version: 'v1' | 'v2' = 'v2') => <ChatPresentationProvider ownerKey={`tool-motion-${version}`} defaultVersion={version}>
+      <MotionActivityBoundary active={active}><ToolCard block={{ ...block, output: 'original result' }}/></MotionActivityBoundary>
+    </ChatPresentationProvider>;
+    const { container, rerender } = render(view(true));
+    const card = () => container.querySelector('.ccui-tool-card')!;
+    const trigger = screen.getByRole('button', { name: /读取文件/ });
+    await user.click(trigger);
+    expect(card()).toHaveAttribute('data-interaction', 'pointer');
+    expect(card()).toHaveAttribute('data-motion', 'true');
+    const output = screen.getByText('original result');
+    const input = screen.getByRole('tab', { name: '调用参数' });
+    input.focus();
+    await user.keyboard('{Enter}');
+    expect(card()).toHaveAttribute('data-interaction', 'keyboard');
+    expect(input).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveFocus();
+    expect(screen.getByText('original result')).toBe(output);
+    rerender(view(false));
+    expect(card()).toHaveAttribute('data-motion', 'false');
+    fireEvent.pointerDown(trigger);
+    expect(card()).toHaveAttribute('data-motion', 'false');
+    rerender(view(true, 'v1'));
+    expect(card()).not.toHaveAttribute('data-feedback');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  });
   it('keeps useful tool evidence while simplifying generic v2 summaries and preserving v1', () => {
     const generic = { ...block, name: 'codemode', summary: '代码执行 已完成', status: 'success' as const };
     const { rerender } = render(<ChatPresentationProvider ownerKey="receipt-new" defaultVersion="v2"><ToolCard block={generic}/></ChatPresentationProvider>);

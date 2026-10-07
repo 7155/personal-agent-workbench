@@ -56,6 +56,7 @@ export function AgentWakeSchedules({ embedded = false, tasks, search = '', statu
   const desktop = usePawOsDesktop();
   const queryClient = useQueryClient();
   const createTriggerRef = useRef<HTMLButtonElement>(null);
+  const createReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingId, setEditingId] = useState('');
@@ -228,11 +229,11 @@ export function AgentWakeSchedules({ embedded = false, tasks, search = '', statu
     <PlanningWakeSurface
       embedded={embedded}
       createAction={(
-        <div className="planning-wake-create-actions"><Button size="small" leadingIcon={<GitPullRequest size={15} />} disabled={!catalog.data} onClick={() => beginCreate('github')}>跟进 GitHub PR</Button><Button
+        <div className="planning-wake-create-actions"><Button size="small" leadingIcon={<GitPullRequest size={15} />} disabled={!catalog.data} onClick={(event) => { createReturnFocusRef.current = event.currentTarget; beginCreate('github'); }}>跟进 GitHub PR</Button><Button
           ref={createTriggerRef}
           disabled={catalog.isPending || Boolean(catalog.error)}
           leadingIcon={<Plus size={15} />}
-          onClick={() => beginCreate()}
+          onClick={(event) => { createReturnFocusRef.current = event.currentTarget; beginCreate(); }}
           size="small"
           variant="primary"
         >
@@ -240,7 +241,7 @@ export function AgentWakeSchedules({ embedded = false, tasks, search = '', statu
         </Button></div>
       )}
     >
-      {asRecord(schedules.data).schedulerActive === false ? <InlineNotice title="调度器未运行" tone="warning">安排已保存；本机 Agent 服务运行后才能按时执行。</InlineNotice> : null}
+      {asRecord(schedules.data).schedulerActive === false ? <InlineNotice title="调度器未运行" tone="warning">{allItems.length ? '安排已保存；本机 Agent 服务运行后才能按时执行。' : '尚未添加安排；本机 Agent 服务运行后才能按时执行。'}</InlineNotice> : null}
       {catalog.isPending ? (
         <InlineNotice title="正在读取可安排的对话与伙伴" tone="info">
           已有安排仍可查看和管理；读取完成后即可添加新的安排。
@@ -309,7 +310,7 @@ export function AgentWakeSchedules({ embedded = false, tasks, search = '', statu
           className="planning-dialog planning-wake-dialog"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            (editingId ? editTriggerRef.current : createTriggerRef.current)?.focus();
+            (editingId ? editTriggerRef.current : createReturnFocusRef.current ?? createTriggerRef.current)?.focus();
           }}
         >
           <DialogHeader>

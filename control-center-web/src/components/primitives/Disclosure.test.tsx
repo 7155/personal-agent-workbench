@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Disclosure } from './Disclosure';
+import { MotionActivityBoundary } from '@/design/motion';
 
 afterEach(() => {
   cleanup();
@@ -11,6 +12,30 @@ afterEach(() => {
 });
 
 describe('Disclosure', () => {
+  it('settles a keyboard close immediately without leaving a hidden exit timer', () => {
+    vi.useFakeTimers();
+    render(<Disclosure defaultOpen summary="键盘详情"><p>键盘内容</p></Disclosure>);
+    const baselineTimers = vi.getTimerCount(); // Native details schedules its own toggle notification.
+    fireEvent.keyDown(screen.getByText('键盘详情'), { key: 'Enter' });
+    expect(screen.queryByText('键盘内容')).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(baselineTimers);
+  });
+
+  it('stops an in-flight exit when its host becomes inactive', () => {
+    vi.useFakeTimers();
+    const surface = (active: boolean) => <MotionActivityBoundary active={active}>
+      <Disclosure defaultOpen summary="活动详情"><p>活动内容</p></Disclosure>
+    </MotionActivityBoundary>;
+    const view = render(surface(true));
+    const baselineTimers = vi.getTimerCount();
+    fireEvent.click(screen.getByText('活动详情'), { detail: 1 });
+    expect(screen.getByText('活动内容')).toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(baselineTimers + 1);
+    view.rerender(surface(false));
+    expect(screen.queryByText('活动内容')).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(baselineTimers);
+  });
+
   it('uses one toggle path for pointer, Enter, and Space while exposing truthful ARIA state', async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
@@ -87,13 +112,13 @@ describe('Disclosure', () => {
     );
 
     const { details, summary } = disclosureElements('查看详情');
-    fireEvent.click(summary);
+    fireEvent.click(summary, { detail: 1 });
     expect(details).toHaveAttribute('open');
     expect(details).not.toHaveAttribute('data-expanded');
     expect(summary).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('完整内容')).toBeInTheDocument();
 
-    fireEvent.click(summary);
+    fireEvent.click(summary, { detail: 1 });
     expect(details).toHaveAttribute('open');
     await act(async () => {
       vi.advanceTimersByTime(25);
