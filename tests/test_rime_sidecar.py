@@ -54,12 +54,15 @@ class RecordingPredictionProvider:
 
 
 class InlinePredictionThread:
-    def __init__(self, *, target: Callable[..., object], kwargs: dict[str, object], **_: object) -> None:
+    def __init__(self, *, target: Callable[..., object], kwargs: dict[str, object] | None = None, **_: object) -> None:
         self._target = target
-        self._kwargs = kwargs
+        self._kwargs = kwargs or {}
 
     def start(self) -> None:
         self._target(**self._kwargs)
+
+    def is_alive(self) -> bool:
+        return False
 
 
 class CuratedMemoryCore:

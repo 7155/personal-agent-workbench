@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-07T06:28:26.395124+00:00",
+  "generatedAt": "2026-10-07T08:07:56.806590+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "main",
@@ -203,14 +203,14 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 29
+      "pathCount": 33
     }
   },
   "summary": {
-    "pathCount": 2136,
+    "pathCount": 2140,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1820
+      "keep_release": 1824
     },
     "groupCounts": {
       "local_docs": 121,
@@ -231,7 +231,7 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 29,
+      "paw_experience_20261007": 33,
       "verification": 114,
       "voice_desktop": 19,
       "composition_refactor": 32,
@@ -3821,6 +3821,20 @@
       "group": "pi1_final_integration",
       "reason": "Remove superseded frontend paths and update their current-owner consumers in this candidate; preserve the existing source ownership boundaries.",
       "disposition": "delete_old_implementation"
+    },
+    {
+      "path": "control-center-web/src/features/agent/portable/PortableCallDetails.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Reuse versioned portable App conversation and recorded call/context details; preserve immutable delivery and recovery authority."
+    },
+    {
+      "path": "control-center-web/src/features/agent/portable/PortableCallDetails.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Reuse versioned portable App conversation and recorded call/context details; preserve immutable delivery and recovery authority."
     },
     {
       "path": "control-center-web/src/features/agent/portable/index.test.tsx",
@@ -13917,6 +13931,13 @@
       "status": "modified"
     },
     {
+      "path": "tests/test_demo_quality.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Keep source-quality assertions deterministic with existing test scheduler; preserve real async latency checks and production request budget."
+    },
+    {
       "path": "tests/test_desktop_agent_tools.py",
       "status": "modified",
       "group": "pi1_final_integration",
@@ -14944,6 +14965,13 @@
       "disposition": "keep_release",
       "reason": "Align integration fixtures and frontend ownership checks with the current application and installer contracts.",
       "status": "modified"
+    },
+    {
+      "path": "tests/test_rime_sidecar.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Keep source-quality assertions deterministic with existing test scheduler; preserve real async latency checks and production request budget."
     },
     {
       "path": "tests/test_room_control_retention.py",

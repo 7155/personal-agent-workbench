@@ -17,6 +17,7 @@ from rag_ime.rime_sidecar import (
     clear_model_prediction_holdover_cache,
     wait_for_model_prediction_lane_idle,
 )
+from tests.test_rime_sidecar import InlinePredictionThread
 
 
 PROJECT = "wisdom-weasel-rag-ime"
@@ -284,6 +285,9 @@ class RagImeDemoQualityTests(unittest.TestCase):
         self.assertEqual(suggestions[0].surface_text, "设计一个候选展示方式")
         self.assertIn("pinyin:", str(suggestions[0].metadata.get("reason", "")))
 
+    # Source quality/selection requires complete real fixture retrieval. The
+    # sidecar latency tests retain real threads and the bounded timeout path.
+    @patch("rag_ime.rime_sidecar.Thread", InlinePredictionThread)
     def test_sidecar_distribution_keeps_model_rag_and_rime_sources_selectable(self) -> None:
         with patch.dict(os.environ, {"RAG_IME_AI_AFTER_COMMIT_ONLY": "0", "RAG_IME_ENABLE_PINYIN_CONSTRAINED_MODEL": "1"}):
             response = build_rime_sidecar_response(
@@ -311,6 +315,7 @@ class RagImeDemoQualityTests(unittest.TestCase):
                 predictor=DemoPredictionProvider(),
             )
         self._assert_no_bad_display_candidates(response)
+        self.assertEqual(response["latencyBudgetMs"], 300)
         display = response["displayCandidates"]
         source_types = {item["sourceType"] for item in display}
         self.assertIn("model", source_types)
@@ -336,6 +341,7 @@ class RagImeDemoQualityTests(unittest.TestCase):
         self.assertEqual(response["modelLane"]["predictionCount"], 1)
         self.assertGreaterEqual(response["ragLane"]["suggestionCount"], 1)
 
+    @patch("rag_ime.rime_sidecar.Thread", InlinePredictionThread)
     def test_prediction_first_demo_requires_llm_rag_and_memory_candidates(self) -> None:
         response = build_rime_sidecar_response(
             payload={
@@ -362,6 +368,7 @@ class RagImeDemoQualityTests(unittest.TestCase):
             predictor=DemoPredictionProvider(),
         )
         self._assert_no_bad_display_candidates(response)
+        self.assertEqual(response["latencyBudgetMs"], 300)
         display = response["displayCandidates"]
         source_types = [item["sourceType"] for item in display]
         self.assertIn("model", source_types)
