@@ -156,7 +156,7 @@ describe('PawOsFilesApp', () => {
     expect([...app.children].map((child) => child.className)).toEqual([
       'paw-files-app__title',
       'paw-files-app__toolbar',
-      'paw-files-location',
+      'paw-files-location-disclosure',
       'paw-files-app__workspace',
       'paw-files-statusbar',
     ]);
@@ -794,7 +794,7 @@ describe('PawOsFilesApp', () => {
     expect(screen.getByText('可从上方复制完整路径，用 Terminal 或 Agent 工具检查原始内容。')).toBeInTheDocument();
     const heading = screen.getByRole('heading', { name: 'a-very-long-preview-file-name.png', level: 2 });
     expect(heading).toHaveAttribute('title', 'a-very-long-preview-file-name.png');
-    expect(heading.parentElement?.querySelector('small')).toHaveAttribute('title', binaryPath);
+    expect(heading.closest('details')?.querySelector('small')).toHaveAttribute('title', binaryPath);
     expect(container.querySelector('.paw-files-statusbar__selection')).toHaveAttribute('title', `${binaryPath} · 80 KB`);
     expect(container.querySelector('.agent-file-code')).toBeNull();
   });

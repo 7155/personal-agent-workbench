@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-08T08:18:19.039117+00:00",
+  "generatedAt": "2026-10-08T11:04:27.572073+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -163,7 +163,7 @@
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
-      "pathCount": 236
+      "pathCount": 237
     },
     "durable_desktop_iteration": {
       "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
@@ -207,16 +207,16 @@
     }
   },
   "summary": {
-    "pathCount": 2225,
+    "pathCount": 2226,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1909
+      "keep_release": 1910
     },
     "groupCounts": {
       "local_docs": 121,
       "product_integration": 57,
       "react_os_docs": 3,
-      "pi1_final_integration": 236,
+      "pi1_final_integration": 237,
       "refactor_docs_examples": 9,
       "earth_research": 113,
       "brand_stellar": 60,
@@ -15839,6 +15839,13 @@
       "status": "added",
       "group": "architecture_recovery_20261008",
       "reason": "Verify original Wake admission retention and exact passive reconciliation, including uncertain ACK, lease expiry, cancellation and no replay.",
+      "disposition": "keep_release"
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbenchOperations.test.tsx",
+      "status": "modified",
+      "group": "pi1_final_integration",
+      "reason": "Verify original task creation, completion, reopen and receipt-bound Undo while preserving drafts, retry focus and server revision binding.",
       "disposition": "keep_release"
     }
   ]

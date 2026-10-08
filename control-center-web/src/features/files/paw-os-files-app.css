@@ -1938,3 +1938,40 @@ i.paw-files-tree__disclosure {
 .paw-files-app[data-motion-active='false'] .paw-files-preview__meter[data-busy] > i {
   animation: none;
 }
+
+/* Editing reserves the reader for text. Directory navigation and metadata
+   remain native disclosures; collaboration follows the document in its scroll
+   area instead of consuming another fixed band in a short window. */
+.paw-files-location-disclosure { flex: 0 0 auto; min-width: 0; }
+.paw-files-location-disclosure > summary { display: none; }
+.paw-files-app[data-editing] .paw-files-location-disclosure > summary {
+  display: list-item;
+  min-height: var(--paw-files-control-h);
+  box-sizing: border-box;
+  margin: 0 12px;
+  padding: 6px 8px;
+  color: var(--paw-files-control-ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.paw-files-preview__id > summary {
+  display: flex;
+  min-width: 0;
+  min-height: var(--paw-files-control-h);
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  cursor: pointer;
+}
+.paw-files-preview__id > summary::-webkit-details-marker { display: none; }
+.paw-files-preview__id > summary h2 { min-width: 0; flex: 1; }
+.paw-files-preview__id > summary svg { flex: none; }
+.paw-files-preview__id[open] > summary svg { transform: rotate(90deg); }
+.paw-files-app :is(.paw-files-location-disclosure, .paw-files-preview__id) > summary:focus-visible {
+  outline: 2px solid var(--paw-files-focus-line);
+  outline-offset: 2px;
+}
+.paw-files-app[data-editing] .paw-files-preview > header { min-height: 0; padding-block: 4px; }
+.paw-files-app[data-editing] .paw-files-preview__body > .paw-files-collaboration {
+  max-height: none;
+}

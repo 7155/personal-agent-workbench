@@ -48,6 +48,29 @@ async function openEditor() {
 }
 
 describe('Files text editing', () => {
+  it('keeps low-frequency file details collapsed while the original editor draft and save remain available', async () => {
+    const transport = setup();
+    const { user, editor } = await openEditor();
+    fireEvent.change(editor, { target: { value: 'visible editing draft' } });
+    const location = screen.getByText('文件夹位置').closest('details')!;
+    const identity = screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('details')!;
+    expect(location).not.toHaveAttribute('open');
+    expect(identity).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+    // Native disclosure state may change without replacing the editor owner.
+    location.open = true;
+    identity.open = true;
+    fireEvent(location, new Event('toggle'));
+    fireEvent(identity, new Event('toggle'));
+    expect(screen.getByRole('textbox', { name: '文件或文件夹路径' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
+    expect(editor).toHaveValue('visible editing draft');
+    await user.click(screen.getByRole('button', { name: '协作与访问' }));
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
+    expect(editor).toHaveValue('visible editing draft');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.workspace.save')).toHaveLength(0);
+  });
+
   it('renders the unsaved Markdown draft as a reading page and keeps it when editing resumes', async () => {
     const transport = setup(() => readResult('# 磁盘标题\n\n原文。'));
     const { user, editor } = await openEditor();

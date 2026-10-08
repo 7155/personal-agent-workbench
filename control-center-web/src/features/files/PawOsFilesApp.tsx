@@ -746,6 +746,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     );
   }
 
+  const fileCollaboration = selectedFile?.sessionId ? <FileCollaborationPanel sessionId={selectedFile.sessionId} path={editor.resourcePath ?? selectedFile.path} fileName={selectedFile.name}>
+    <EvidenceEchoUsage appId="files" entityId={editor.resourcePath ?? selectedFile.path} entityLabel={selectedFile.name} />
+  </FileCollaborationPanel> : null;
+
   const locationTools = (
       <form className="paw-files-location" onSubmit={(event) => { event.preventDefault(); void openLocation(locationInput); }}>
         <button type="button" aria-label="打开主目录" onClick={() => void openLocation('')}><Home size={14} /></button>
@@ -806,6 +810,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       <section
         className="paw-files-app"
         data-motion-active={motionActive}
+        data-editing={editor.editing || undefined}
         onBlur={(event) => {
           if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) holdsFocusRef.current = false;
         }}
@@ -813,7 +818,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       >
         <h1 className="paw-files-app__title">文件</h1>
         {windowChromeTarget ? null : filesTools}
-        {locationTools}
+        {!editor.editing ? <details className="paw-files-location-disclosure" open>
+          <summary>文件夹位置</summary>
+          {locationTools}
+        </details> : null}
         {locationError ? <div className="paw-native-app__error" role="alert"><TriangleAlert size={16} />{locationError}<button onClick={() => void openLocation(locationInput)} type="button">重试打开</button></div> : null}
         {sessionError ? <div className="paw-files-session-notice" role="status">Session 快捷入口暂时无法读取，本机文件仍可浏览。<button type="button" onClick={() => void loadSessions()}>重试 Session 列表</button></div> : null}
         <div className="paw-files-app__workspace" data-file-open={selectedFile ? true : undefined} data-sidebar-collapsed={sidebar.collapsed} data-tree-revealed={treeRevealed || undefined} ref={workspaceRef}>
@@ -938,8 +946,8 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                     ? fileExtension(selectedFile.name).slice(0, 4).toUpperCase()
                     : selectedFile.kind === 'symlink' ? <FileSymlink size={15} /> : <File size={15} />}
                 </span>
-                <div className="paw-files-preview__id">
-                  <h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2>
+                <details className="paw-files-preview__id" open={!editor.editing}>
+                  <summary><h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2><ChevronRight size={14} aria-hidden="true" /></summary>
                   <small className="paw-files-crumbs" title={selectedFile.path}>
                     {selectedCrumbs.length ? selectedCrumbs.map((crumb) => (
                       <button
@@ -964,7 +972,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                         : null}
                     </span>
                   </small>
-                </div>
+                </details>
                 <div className="paw-files-preview__actions">
                   <button
                     aria-label={copiedAction === 'content' ? '已复制文件内容' : editor.editing ? '复制编辑内容' : '复制文件内容'}
@@ -1005,6 +1013,13 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                 ) : null}
                 {previewError ? <div className="paw-files-preview__state" role="alert"><TriangleAlert size={18} /><span>{previewError}</span><button onClick={() => void loadPreview(selectedFile)} type="button">重试</button></div> : null}
                 {editor.draftPreview ? renderPreview(editor.draftPreview) : !editor.editing && !previewLoading && !previewError && preview ? renderPreview(preview) : null}
+                {editor.editing ? <>
+                  <details className="paw-files-location-disclosure">
+                    <summary>文件夹位置</summary>
+                    {locationTools}
+                  </details>
+                  {fileCollaboration}
+                </> : null}
               </div>
               {!editor.editing && preview && !previewLoading && !previewError && preview.truncated && !previewIsBinary ? (
                 <footer className="paw-files-preview__more">
@@ -1038,9 +1053,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                   )}
                 </footer>
               ) : null}
-              {selectedFile.sessionId ? <FileCollaborationPanel sessionId={selectedFile.sessionId} path={editor.resourcePath ?? selectedFile.path} fileName={selectedFile.name}>
-                <EvidenceEchoUsage appId="files" entityId={editor.resourcePath ?? selectedFile.path} entityLabel={selectedFile.name} />
-              </FileCollaborationPanel> : null}
+              {!editor.editing ? fileCollaboration : null}
             </>
           )}
         </section>
