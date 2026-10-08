@@ -237,6 +237,8 @@ it('keeps export selection scoped to the active layer, independent of the table 
   const active = withFeatures([feature]);
   const onExportLayer = vi.fn();
   const view = render(<EarthDataDock {...defaults} projectLayers={[active]} selectedFeatures={[foreign]} onExportLayer={onExportLayer} />);
+  expect(screen.getByRole('button', { name: '导出全部 · 1' })).not.toBeVisible();
+  fireEvent.click(screen.getByText('导出当前图层'));
   expect(screen.getByRole('button', { name: '导出所选 · 0' })).toBeDisabled();
   view.rerender(<EarthDataDock {...defaults} projectLayers={[active]} selectedFeatures={[feature]} onExportLayer={onExportLayer} />);
   fireEvent.click(screen.getByRole('tab', { name: '属性表' }));
@@ -248,6 +250,27 @@ it('keeps export selection scoped to the active layer, independent of the table 
   fireEvent.change(screen.getByRole('combobox', { name: '导出格式' }), { target: { value: 'shp' } });
   fireEvent.click(screen.getByRole('button', { name: '导出全部 · 1' }));
   await waitFor(() => expect(onExportLayer).toHaveBeenLastCalledWith('shp', active, 'all'));
+});
+
+it('remembers inspector width through collapse while preserving an unsaved property draft', () => {
+  localStorage.removeItem('paw-earth-data-width');
+  const feature = point('parcel', { name: '原名称' });
+  render(<div className="earth-map"><EarthDataDock {...defaults} projectLayers={[withFeatures([feature])]} selectedFeatures={[feature]} onUpdateFeature={vi.fn()} /></div>);
+  fireEvent.click(screen.getByRole('tab', { name: '属性表' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '属性 name' }), { target: { value: '未保存的名称' } });
+  const handle = screen.getByRole('separator', { name: '调整 GIS 数据栏宽度' });
+  fireEvent.keyDown(handle, { key: 'ArrowLeft', shiftKey: true });
+  expect(handle).toHaveAttribute('aria-valuenow', '352');
+  expect(localStorage.getItem('paw-earth-data-width')).toBe('352');
+  fireEvent.click(screen.getByRole('button', { name: '收起 GIS 数据工作区' }));
+  expect(screen.queryByRole('separator', { name: '调整 GIS 数据栏宽度' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '展开 GIS 数据工作区' }));
+  expect(screen.getByRole('textbox', { name: '属性 name' })).toHaveValue('未保存的名称');
+  const restoredHandle = screen.getByRole('separator', { name: '调整 GIS 数据栏宽度' });
+  expect(restoredHandle).toHaveAttribute('aria-valuenow', '352');
+  fireEvent.doubleClick(restoredHandle);
+  expect(restoredHandle).toHaveAttribute('aria-valuenow', '320');
+  localStorage.removeItem('paw-earth-data-width');
 });
 
 it('loads the chosen named database layer and surfaces a load failure', async () => {
