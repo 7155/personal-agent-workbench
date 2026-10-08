@@ -439,6 +439,49 @@ describe('PawOsFilesApp', () => {
     expect(screen.getByRole('heading', { name: 'writer latest.md', level: 1 })).toBeInTheDocument();
   });
 
+  it('lets keyboard users inspect file details without replacing or submitting the live draft', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+    const draft = Array.from({ length: 350 }, (_, i) => `line ${i} — unsaved`).join('\n');
+    fireEvent.change(input, { target: { value: draft } });
+    input.setSelectionRange(17, 29);
+    input.scrollTop = 120;
+    const summary = screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('summary')!;
+    const disclosure = summary.closest('details')!;
+    await user.click(summary);
+    expect(disclosure).toHaveAttribute('open');
+    const metadata = screen.getByRole('group', { name: '文件路径与属性' });
+    expect(metadata).toHaveAttribute('tabindex', '0');
+    metadata.focus();
+    expect(metadata).toHaveFocus();
+    await user.tab();
+    expect(within(metadata).getAllByRole('button')[0]).toHaveFocus();
+    expect(within(metadata).getByText('4 B')).toBeInTheDocument();
+    expect(within(metadata).getByRole('button', { name: '返回文件列表' })).toBeInTheDocument();
+    expect(within(metadata).getByRole('button', { name: '复制编辑内容' })).toBeInTheDocument();
+    expect(within(metadata).getByRole('button', { name: '复制文件路径' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '复制文件路径' })).toHaveLength(1);
+    await user.click(within(metadata).getByRole('button', { name: '复制编辑内容' }));
+    expect(await navigator.clipboard.readText()).toBe(draft);
+    expect(within(metadata).getByRole('button', { name: '已复制文件内容' })).toHaveFocus();
+    expect(within(metadata).getAllByRole('button').length).toBeGreaterThan(0);
+    await user.click(summary);
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: '复制文件路径' }).closest('header')).toBe(summary.closest('header'));
+    expect(screen.getByRole('button', { name: '复制文件路径' }).closest('.paw-files-crumbs')).toBeNull();
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+    expect(input).toHaveValue(draft);
+    expect([input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([17, 29, 120]);
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+    input.focus();
+    expect(input).toHaveFocus();
+  });
+
   it.each(['notes.md', 'alias.md'])('syncs the saved byte count for %s without refreshing or counting a newer draft', async (name) => {
     const user = userEvent.setup();
     let finishSave!: (value: unknown) => void;

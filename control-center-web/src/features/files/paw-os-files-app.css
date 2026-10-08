@@ -1975,3 +1975,46 @@ i.paw-files-tree__disclosure {
 .paw-files-app[data-editing] .paw-files-preview__body > .paw-files-collaboration {
   max-height: none;
 }
+
+/* Editing keeps the identity disclosure in one header row. Its full path and
+   attributes scroll horizontally instead of displacing the live editor; the
+   native summary remains the opener/closer and every crumb remains navigation. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] {
+  grid-template-columns: minmax(120px, .8fr) minmax(88px, 1fr);
+  align-items: center;
+  column-gap: 8px;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs {
+  box-sizing: border-box;
+  height: var(--paw-files-control-h);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__segment {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__meta {
+  display: inline-flex;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-preview__actions {
+  margin-left: 8px;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-preview__back {
+  display: inline-flex;
+  margin-left: 6px;
+}
+.paw-files-app[data-editing] .paw-files-crumbs:focus-visible {
+  outline: 2px solid var(--paw-files-focus-line);
+  outline-offset: -2px;
+}
+@container paw-files (max-width: 620px) {
+  .paw-files-app[data-editing] .paw-files-preview__id > summary {
+    min-height: max(44px, var(--paw-files-control-h));
+  }
+  .paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs {
+    height: max(44px, var(--paw-files-control-h));
+  }
+}

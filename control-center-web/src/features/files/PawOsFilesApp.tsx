@@ -134,6 +134,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [pathErrors, setPathErrors] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState<SelectedWorkspaceFile | null>(null);
+  const [expandedIdentityKey, setExpandedIdentityKey] = useState('');
   const [preview, setPreview] = useState<WorkspacePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -746,6 +747,35 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     );
   }
 
+  const identityKey = selectedFile ? JSON.stringify([selectedFile.sessionId, selectedFile.path]) : '';
+  const identityExpanded = editor.editing && expandedIdentityKey === identityKey && Boolean(identityKey);
+  const identityBackAction = <button aria-label="返回文件列表" className="paw-files-preview__back" onClick={goBackToTree} ref={backButtonRef} title="返回文件列表（Esc）" type="button"><ChevronLeft size={15} /><span>返回</span></button>;
+  const identityCopyActions = (
+    <span className="paw-files-preview__actions">
+    <button
+      aria-label={copiedAction === 'content' ? '已复制文件内容' : editor.editing ? '复制编辑内容' : '复制文件内容'}
+      className="paw-files-preview__action"
+      data-copied={copiedAction === 'content' || undefined}
+      disabled={editor.copyContent !== null ? !editor.copyContent : !copyableContent(preview, previewLoading, previewError)}
+      onClick={() => void copyPreviewText('content')}
+      title={editor.editing ? '复制当前编辑内容' : copyContentTitle(preview, previewLoading, previewError, copiedAction === 'content')}
+      type="button"
+    >
+      {copiedAction === 'content' ? <Check size={14} /> : <ClipboardCopy size={14} />}
+    </button>
+    <button
+      aria-label={copiedAction === 'path' ? '已复制文件路径' : '复制文件路径'}
+      className="paw-files-preview__action"
+      data-copied={copiedAction === 'path' || undefined}
+      onClick={() => void copyPreviewText('path')}
+      title={copiedAction === 'path' ? '已复制完整路径' : '复制完整路径'}
+      type="button"
+    >
+      {copiedAction === 'path' ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  </span>
+  );
+
   const fileCollaboration = selectedFile?.sessionId ? <FileCollaborationPanel sessionId={selectedFile.sessionId} path={editor.resourcePath ?? selectedFile.path} fileName={selectedFile.name}>
     <EvidenceEchoUsage appId="files" entityId={editor.resourcePath ?? selectedFile.path} entityLabel={selectedFile.name} />
   </FileCollaborationPanel> : null;
@@ -940,15 +970,24 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
           ) : (
             <>
               <header key={`header:${selectedFile.path}`}>
-                <button aria-label="返回文件列表" className="paw-files-preview__back" onClick={goBackToTree} ref={backButtonRef} title="返回文件列表（Esc）" type="button"><ChevronLeft size={15} /><span>返回</span></button>
+                {!identityExpanded ? identityBackAction : null}
                 <span aria-hidden="true" className="paw-files-preview__badge" data-family={entryFamily(selectedFile)}>
                   {fileExtension(selectedFile.name)
                     ? fileExtension(selectedFile.name).slice(0, 4).toUpperCase()
                     : selectedFile.kind === 'symlink' ? <FileSymlink size={15} /> : <File size={15} />}
                 </span>
-                <details className="paw-files-preview__id" open={!editor.editing}>
-                  <summary><h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2><ChevronRight size={14} aria-hidden="true" /></summary>
-                  <small className="paw-files-crumbs" title={selectedFile.path}>
+                <details
+                  className="paw-files-preview__id"
+                  open={!editor.editing || identityExpanded}
+                >
+                  <summary onClick={(event) => {
+                    if (!editor.editing) return;
+                    // Native Enter/Space activates this summary through click as
+                    // well. Reflow the controls and disclosure in one React commit.
+                    event.preventDefault();
+                    setExpandedIdentityKey(identityExpanded ? '' : identityKey);
+                  }}><h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2><ChevronRight size={14} aria-hidden="true" /></summary>
+                  <small className="paw-files-crumbs" title={selectedFile.path} role="group" aria-label="文件路径与属性" tabIndex={editor.editing ? 0 : undefined}>
                     {selectedCrumbs.length ? selectedCrumbs.map((crumb) => (
                       <button
                         aria-label={`在目录树中定位 ${crumb.label}`}
@@ -971,31 +1010,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                         ? <span>{!editor.editing && preview?.truncated ? `已载 ${previewLineCount} 行` : `${previewLineCount} 行`}</span>
                         : null}
                     </span>
+                    {identityExpanded ? <>{identityCopyActions}{identityBackAction}</> : null}
                   </small>
                 </details>
-                <div className="paw-files-preview__actions">
-                  <button
-                    aria-label={copiedAction === 'content' ? '已复制文件内容' : editor.editing ? '复制编辑内容' : '复制文件内容'}
-                    className="paw-files-preview__action"
-                    data-copied={copiedAction === 'content' || undefined}
-                    disabled={editor.copyContent !== null ? !editor.copyContent : !copyableContent(preview, previewLoading, previewError)}
-                    onClick={() => void copyPreviewText('content')}
-                    title={editor.editing ? '复制当前编辑内容' : copyContentTitle(preview, previewLoading, previewError, copiedAction === 'content')}
-                    type="button"
-                  >
-                    {copiedAction === 'content' ? <Check size={14} /> : <ClipboardCopy size={14} />}
-                  </button>
-                  <button
-                    aria-label={copiedAction === 'path' ? '已复制文件路径' : '复制文件路径'}
-                    className="paw-files-preview__action"
-                    data-copied={copiedAction === 'path' || undefined}
-                    onClick={() => void copyPreviewText('path')}
-                    title={copiedAction === 'path' ? '已复制完整路径' : '复制完整路径'}
-                    type="button"
-                  >
-                    {copiedAction === 'path' ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </div>
+                {!identityExpanded ? identityCopyActions : null}
               </header>
               {copyError ? (
                 <div className="paw-files-preview__copy-error" role="alert">
