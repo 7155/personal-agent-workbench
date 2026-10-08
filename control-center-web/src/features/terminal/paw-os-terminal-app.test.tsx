@@ -298,6 +298,45 @@ describe('PawOsTerminalApp', () => {
     await waitFor(() => expect(within(tablist).getAllByRole('tab')).toHaveLength(1));
   });
 
+  it('promotes unchanged owning window shell focus to the initial automatically created PTY', async () => {
+    const terminal = terminalSession('terminal-auto', 'Terminal');
+    let sessions: ReturnType<typeof terminalSession>[] = [];
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': () => ({ ok: true, items: sessions }),
+      'terminal.session.create': () => { sessions = [terminal]; return { ok: true, terminal }; },
+      'terminal.session.read': { ok: true, terminal, cursor: 0, nextCursor: 0, text: '' },
+      'terminal.session.resize': { ok: true },
+    } });
+    renderTerminal(transport, terminalFrame(<PawOsTerminalApp />));
+    // The actual Frame layout effect sets the neutral keyboard context before
+    // the App's passive mount work; this is not a user control focus intent.
+    expect(screen.getByLabelText('Terminal窗口')).toHaveFocus();
+    const input = await screen.findByRole('textbox', { name: '终端输入' });
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))); });
+    expect(input).toHaveFocus();
+    expect(transport.requests.filter(call => call.request.pathId === 'terminal.session.create')).toHaveLength(1);
+    expect(transport.requests.some(call => call.request.pathId === 'terminal.session.write')).toBe(false);
+  });
+
+  it('preserves another window shell already focused when the terminal mounts', async () => {
+    const terminal = terminalSession('terminal-one', 'Terminal');
+    let resolveList!: (value: unknown) => void;
+    const listPending = new Promise(resolve => { resolveList = resolve; });
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': () => listPending,
+      'terminal.session.read': { ok: true, terminal, cursor: 0, nextCursor: 0, text: '' },
+      'terminal.session.resize': { ok: true },
+    } });
+    renderTerminal(transport, <>{terminalFrame(<PawOsTerminalApp />)}{terminalFrame(<span>Other content</span>, 'other', false)}</>);
+    const otherShell = screen.getByLabelText('other窗口');
+    otherShell.focus();
+    await act(async () => { resolveList({ ok: true, items: [terminal] }); await listPending; });
+    await screen.findByRole('textbox', { name: '终端输入' });
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))); });
+    expect(otherShell).toHaveFocus();
+    expect(transport.requests.some(call => ['terminal.session.create', 'terminal.session.write'].includes(call.request.pathId))).toBe(false);
+  });
+
   it.each(['empty', 'survivor'] as const)('waits for accepted close removal before restoring stable %s focus across query cache updates', async (destination) => {
     const user = userEvent.setup();
     const survivor = terminalSession('terminal-survivor', 'Survivor');
@@ -826,7 +865,7 @@ describe('PawOsTerminalApp', () => {
     expect(screen.queryByRole('search')).not.toBeInTheDocument();
   });
 
-  it.each(['search', 'cwd', 'other'] as const)('preserves explicit %s focus acquired before the initial xterm mount frame', async (control) => {
+  it.each(['search', 'cwd', 'tab', 'other', 'other-window'] as const)('preserves explicit %s focus acquired before the initial xterm mount frame', async (control) => {
     const terminal = terminalSession('terminal-one', 'Terminal');
     const transport = new MockControlTransport({ routes: {
       'terminal.sessions.list': { ok: true, items: [terminal] },
@@ -842,7 +881,7 @@ describe('PawOsTerminalApp', () => {
       return nativeFrame(() => undefined);
     });
     try {
-      renderTerminal(transport, <><button type="button">Other action</button><PawOsTerminalApp /></>);
+      renderTerminal(transport, <><button type="button">Other action</button>{terminalFrame(<PawOsTerminalApp />)}{terminalFrame(<span>Other content</span>, 'other', false)}</>);
       const terminalInput = await screen.findByRole('textbox', { name: '终端输入' });
       expect(pendingFrames).toHaveLength(1);
       let target: HTMLElement;
@@ -852,6 +891,12 @@ describe('PawOsTerminalApp', () => {
       } else if (control === 'cwd') {
         fireEvent.click(screen.getByRole('button', { name: '在指定目录新建终端' }));
         target = screen.getByRole('textbox', { name: '新终端工作目录' });
+      } else if (control === 'tab') {
+        target = screen.getByRole('tab', { name: 'Terminal' });
+        target.focus();
+      } else if (control === 'other-window') {
+        target = screen.getByLabelText('other窗口');
+        target.focus();
       } else {
         target = screen.getByRole('button', { name: 'Other action' });
         target.focus();
@@ -1212,6 +1257,10 @@ function terminalSession(terminalId: string, title: string) {
     nextCursor: 0,
     createdAtMs: 1,
   };
+}
+
+function terminalFrame(child: React.ReactNode, windowId = 'terminal', active = true) {
+  return <PawWindowFrame active={active} appId="terminal" bounds={{ x: 0, y: 0, width: 900, height: 640 }} onBoundsCommit={() => undefined} onClose={() => undefined} onFocus={() => undefined} onMinimize={() => undefined} onToggleMaximize={() => undefined} title={windowId === 'terminal' ? 'Terminal' : windowId} windowChrome="terminal-tabs" windowId={windowId} zIndex={10}>{child}</PawWindowFrame>;
 }
 
 function renderApp(transport: MockControlTransport, child: React.ReactNode): void {

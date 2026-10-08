@@ -333,6 +333,7 @@ export function PawOsTerminalApp() {
     const host = terminalHostRef.current;
     if (!host || !selectedId) return;
     const focusAtMount = document.activeElement;
+    const owningWindowShell = host.closest<HTMLElement>('[data-paw-window-id]');
     host.replaceChildren();
     const terminal = new Xterm({
       // SearchAddon uses registerDecoration for highlights and match counts.
@@ -422,11 +423,13 @@ export function PawOsTerminalApp() {
     const frame = window.requestAnimationFrame(() => {
       fitTerminal();
       if (restoreCwdCreateFocusRef.current) cwdCreateToggleRef.current?.focus();
-      // A new PTY claims only unclaimed focus or its original create trigger.
+      // The Frame's unchanged owning-shell focus is neutral mount context;
+      // a new PTY may promote it, unclaimed focus or its create trigger.
       // Search, cwd, tabs and other explicitly focused controls keep focus.
       else if (!restoringClosedTabFocus
         && (document.activeElement === document.body
-          || (document.activeElement === focusAtMount && document.activeElement === newCreateRef.current))) terminal.focus();
+          || (document.activeElement === focusAtMount
+            && (document.activeElement === newCreateRef.current || document.activeElement === owningWindowShell)))) terminal.focus();
     });
 
     return () => {
