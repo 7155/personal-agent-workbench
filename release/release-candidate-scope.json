@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 122
+      "pathCount": 123
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -207,10 +207,10 @@
     }
   },
   "summary": {
-    "pathCount": 2233,
+    "pathCount": 2234,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1917
+      "keep_release": 1918
     },
     "groupCounts": {
       "local_docs": 121,
@@ -232,7 +232,7 @@
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
       "paw_experience_20261007": 95,
-      "verification": 122,
+      "verification": 123,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
@@ -15896,6 +15896,13 @@
       "disposition": "keep_release",
       "group": "architecture_recovery_20261008",
       "reason": "Batch canonical retrieval authority checks and hydrate selected lexical candidates; preserve ranking, scope/privacy and complete fallback with truthful admission diagnostics."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawWorkbenchPlanningTools.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Verify selected-task planning handoff, disclosed date navigation, keyboard dismissal and focus without executing model work."
     }
   ]
 }

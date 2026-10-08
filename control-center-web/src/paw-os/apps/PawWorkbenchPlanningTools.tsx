@@ -5,8 +5,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ListTodo,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react';
+import { useState } from 'react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/primitives/Popover';
+import { useMotionActivity } from '@/design/motion';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import type { PawWorkbenchRecord } from './PawWorkbench';
 
@@ -30,6 +34,8 @@ export function PawWorkbenchPlanningTools({
   selectedTask?: PawWorkbenchRecord | null;
 }) {
   const desktop = usePawOsDesktop();
+  const motionActive = useMotionActivity();
+  const [toolsOpen, setToolsOpen] = useState(false);
   const plan = record(planning.plan);
   const summary = record(planning.summary);
   const tasks = rows(planning, ['tasks', 'items']);
@@ -68,6 +74,7 @@ export function PawWorkbenchPlanningTools({
       task ? `任务：${taskTitle}${taskId ? `（${taskId}）` : ''}` : '',
       `日期：${date}`,
     ].filter(Boolean);
+    setToolsOpen(false);
     onOpenAgent(`${bindings.join('\n')}\n\n${prompts[intent]}`);
   }
 
@@ -76,17 +83,24 @@ export function PawWorkbenchPlanningTools({
       <section aria-label="规划工具" className="paw-wb-planning-tools">
         <div className="paw-wb-planning-tools__date">
           <CalendarDays aria-hidden size={15} />
-          <button aria-label="前一天" onClick={() => moveDay(-1)} type="button"><ChevronLeft aria-hidden size={15} /></button>
           <input aria-label="规划日期" onChange={(event) => onDateChange(event.target.value)} type="date" value={date} />
-          <button aria-label="后一天" onClick={() => moveDay(1)} type="button"><ChevronRight aria-hidden size={15} /></button>
           <button onClick={() => onDateChange(localDate(new Date()))} type="button">今天</button>
         </div>
-        <div className="paw-wb-planning-tools__actions">
+        <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
+          <PopoverTrigger asChild><button aria-label="更多规划操作" title="安排、拆解、复盘与定时" type="button"><SlidersHorizontal aria-hidden size={16} /><span>规划操作</span></button></PopoverTrigger>
+          <PopoverContent align="end" className="paw-wb-planning-popover" aria-label="规划操作" data-motion-active={motionActive}>
+            <div className="paw-wb-planning-popover__days">
+              <button aria-label="前一天" onClick={() => moveDay(-1)} type="button"><ChevronLeft aria-hidden size={15} />前一天</button>
+              <button aria-label="后一天" onClick={() => moveDay(1)} type="button">后一天<ChevronRight aria-hidden size={15} /></button>
+            </div>
+            <div className="paw-wb-planning-tools__actions">
           <button onClick={() => handoff('organize')} type="button"><Sparkles aria-hidden size={14} />交给 Agent 安排</button>
           <button disabled={!taskForBreakdown} onClick={() => handoff('breakdown')} type="button"><ListTodo aria-hidden size={14} />拆解当前任务</button>
           <button onClick={() => handoff('review')} type="button"><CheckCircle2 aria-hidden size={14} />一起复盘</button>
-          <button onClick={() => desktop?.openApp ? desktop.openApp('schedules', '/schedules?view=agent') : openPawOsRoute(desktop, '/schedules?view=agent')} type="button"><CalendarClock aria-hidden size={14} />定时安排</button>
-        </div>
+          <button onClick={() => { setToolsOpen(false); if (desktop?.openApp) desktop.openApp('schedules', '/schedules?view=agent'); else openPawOsRoute(desktop, '/schedules?view=agent'); }} type="button"><CalendarClock aria-hidden size={14} />定时安排</button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </section>
 
 

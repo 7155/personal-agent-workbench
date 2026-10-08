@@ -21,8 +21,11 @@ import {
   ScanSearch,
   Search,
   TriangleAlert,
+  Wrench,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import { useControlTransport } from '@/app/control-transport';
 import { useMotionActivity } from '@/design/motion';
 import { CodePreview } from '@/features/agent/file-preview/CodePreview';
@@ -135,6 +138,11 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const [pathErrors, setPathErrors] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState<SelectedWorkspaceFile | null>(null);
   const [expandedIdentityKey, setExpandedIdentityKey] = useState('');
+  const [openToolsKey, setOpenToolsKey] = useState('');
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
+  const locationFieldRef = useRef<HTMLInputElement>(null);
+  const returnToolsFocusRef = useRef(true);
+  const currentIdentityRef = useRef('');
   const [preview, setPreview] = useState<WorkspacePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -748,6 +756,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   }
 
   const identityKey = selectedFile ? JSON.stringify([selectedFile.sessionId, selectedFile.path]) : '';
+  useLayoutEffect(() => {
+    currentIdentityRef.current = identityKey;
+    setOpenToolsKey('');
+  }, [identityKey]);
   const identityExpanded = editor.editing && expandedIdentityKey === identityKey && Boolean(identityKey);
   const identityBackAction = <button aria-label="返回文件列表" className="paw-files-preview__back" onClick={goBackToTree} ref={backButtonRef} title="返回文件列表（Esc）" type="button"><ChevronLeft size={15} /><span>返回</span></button>;
   const identityCopyActions = (
@@ -784,7 +796,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       <form className="paw-files-location" onSubmit={(event) => { event.preventDefault(); void openLocation(locationInput); }}>
         <button type="button" aria-label="打开主目录" onClick={() => void openLocation('')}><Home size={14} /></button>
         <button type="button" aria-label="上一级文件夹" disabled={!roots[0] || roots[0] === '/'} onClick={() => void openLocation(roots[0]?.replace(/\/[^/]+\/?$/, '') || '/')}><ArrowUp size={14} /></button>
-        <input aria-label="文件或文件夹路径" value={locationInput} onChange={(event) => setLocationInput(event.target.value)} placeholder="输入路径，如 ~/Documents 或 /Volumes" spellCheck={false} />
+        <input ref={locationFieldRef} aria-label="文件或文件夹路径" value={locationInput} onChange={(event) => setLocationInput(event.target.value)} placeholder="输入路径，如 ~/Documents 或 /Volumes" spellCheck={false} />
         <button type="submit" disabled={locationLoading} aria-label="打开路径">{locationLoading ? <LoaderCircle className="ui-spin" size={14} /> : <ChevronRight size={14} />}</button>
       </form>
   );
@@ -1013,7 +1025,43 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                     {identityExpanded ? <>{identityCopyActions}{identityBackAction}</> : null}
                   </small>
                 </details>
-                {!identityExpanded ? identityCopyActions : null}
+                {!editor.editing && !identityExpanded ? identityCopyActions : null}
+                {editor.editing ? (
+                  <Popover key={identityKey} open={openToolsKey === identityKey} onOpenChange={(open) => {
+                    if (open) returnToolsFocusRef.current = true;
+                    setOpenToolsKey(open ? identityKey : '');
+                  }}>
+                    <PopoverTrigger asChild>
+                      <button aria-label="文件工具" title="位置、复制与协作" className="paw-files-preview__action paw-files-tools-trigger" ref={toolsTriggerRef} type="button"><Wrench size={16} /></button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" side="right" className="paw-files-tools-popover" aria-label="文件工具" data-motion-active={motionActive}
+                      onOpenAutoFocus={(event) => { event.preventDefault(); locationFieldRef.current?.focus(); }}
+                      onInteractOutside={(event) => {
+                        const target = event.target;
+                        // Explicit outside controls own their focus, including
+                        // Save/discard and another file or window selection.
+                        if (target instanceof Element) {
+                          const outsideWindow = target.closest('.paw-window-shell');
+                          // The shell itself has tabIndex=-1 for window focus;
+                          // it does not turn every neutral descendant into a control.
+                          // Local negative-tabindex surfaces still own explicit focus.
+                          const outsideControl = target.closest('button, input, textarea, select, a[href], summary, [role="button"], [role="link"], [contenteditable="true"], [contenteditable=""], [tabindex]:not(.paw-window-shell)');
+                          if (outsideControl || outsideWindow && outsideWindow !== toolsTriggerRef.current?.closest('.paw-window-shell')) returnToolsFocusRef.current = false;
+                        }
+                      }}
+                      onCloseAutoFocus={(event) => {
+                        event.preventDefault();
+                        if (returnToolsFocusRef.current && currentIdentityRef.current === identityKey && toolsTriggerRef.current?.isConnected) toolsTriggerRef.current.focus();
+                      }}
+                      onKeyDown={(event) => { if (event.key === 'Escape') event.stopPropagation(); }}
+                    >
+                      <div className="paw-files-tools-popover__heading"><strong>位置与协作</strong><PopoverClose asChild><button className="paw-files-preview__action" aria-label="关闭文件工具" type="button"><X size={16} /></button></PopoverClose></div>
+                      {locationTools}
+                      {!identityExpanded ? <div className="paw-files-tools-popover__copy"><span>复制</span>{identityCopyActions}</div> : null}
+                      {fileCollaboration}
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
               </header>
               {copyError ? (
                 <div className="paw-files-preview__copy-error" role="alert">
@@ -1031,13 +1079,6 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                 ) : null}
                 {previewError ? <div className="paw-files-preview__state" role="alert"><TriangleAlert size={18} /><span>{previewError}</span><button onClick={() => void loadPreview(selectedFile)} type="button">重试</button></div> : null}
                 {editor.draftPreview ? renderPreview(editor.draftPreview) : !editor.editing && !previewLoading && !previewError && preview ? renderPreview(preview) : null}
-                {editor.editing ? <>
-                  <details className="paw-files-location-disclosure">
-                    <summary>文件夹位置</summary>
-                    {locationTools}
-                  </details>
-                  {fileCollaboration}
-                </> : null}
               </div>
               {!editor.editing && preview && !previewLoading && !previewError && preview.truncated && !previewIsBinary ? (
                 <footer className="paw-files-preview__more">

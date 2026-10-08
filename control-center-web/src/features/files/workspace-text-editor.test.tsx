@@ -52,16 +52,11 @@ describe('Files text editing', () => {
     const transport = setup();
     const { user, editor } = await openEditor();
     fireEvent.change(editor, { target: { value: 'visible editing draft' } });
-    const location = screen.getByText('文件夹位置').closest('details')!;
     const identity = screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('details')!;
-    expect(location).not.toHaveAttribute('open');
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
     expect(identity).not.toHaveAttribute('open');
     expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
-    // Native disclosure state may change without replacing the editor owner.
-    location.open = true;
-    identity.open = true;
-    fireEvent(location, new Event('toggle'));
-    fireEvent(identity, new Event('toggle'));
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
     expect(screen.getByRole('textbox', { name: '文件或文件夹路径' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
     expect(editor).toHaveValue('visible editing draft');
@@ -137,6 +132,7 @@ describe('Files text editing', () => {
     await user.click(screen.getByRole('button', { name: '保存文件' }));
     expect(await screen.findByText('已保存到文件。')).toBeInTheDocument();
     expect(transport.requests.find(({ request }) => request.pathId === 'agent.session.workspace.save')?.request.body).toEqual({ path: filePath, content: 'canonical update', resourceRevision: firstRevision });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
     await user.click(screen.getByRole('button', { name: '协作与访问' }));
     expect(await screen.findByText('真实目标文档')).toBeInTheDocument();
   });

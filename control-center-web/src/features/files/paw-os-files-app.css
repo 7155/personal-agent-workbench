@@ -1939,21 +1939,10 @@ i.paw-files-tree__disclosure {
   animation: none;
 }
 
-/* Editing reserves the reader for text. Directory navigation and metadata
-   remain native disclosures; collaboration follows the document in its scroll
-   area instead of consuming another fixed band in a short window. */
+/* Read-only navigation retains its original disclosure. Editing tools live
+   in a nearby portal so keyboard navigation cannot scroll the editor away. */
 .paw-files-location-disclosure { flex: 0 0 auto; min-width: 0; }
 .paw-files-location-disclosure > summary { display: none; }
-.paw-files-app[data-editing] .paw-files-location-disclosure > summary {
-  display: list-item;
-  min-height: var(--paw-files-control-h);
-  box-sizing: border-box;
-  margin: 0 12px;
-  padding: 6px 8px;
-  color: var(--paw-files-control-ink);
-  font-size: 12px;
-  cursor: pointer;
-}
 .paw-files-preview__id > summary {
   display: flex;
   min-width: 0;
@@ -1967,14 +1956,12 @@ i.paw-files-tree__disclosure {
 .paw-files-preview__id > summary h2 { min-width: 0; flex: 1; }
 .paw-files-preview__id > summary svg { flex: none; }
 .paw-files-preview__id[open] > summary svg { transform: rotate(90deg); }
-.paw-files-app :is(.paw-files-location-disclosure, .paw-files-preview__id) > summary:focus-visible {
+.paw-files-app .paw-files-preview__id > summary:focus-visible {
   outline: 2px solid var(--paw-files-focus-line);
   outline-offset: 2px;
 }
 .paw-files-app[data-editing] .paw-files-preview > header { min-height: 0; padding-block: 4px; }
-.paw-files-app[data-editing] .paw-files-preview__body > .paw-files-collaboration {
-  max-height: none;
-}
+.paw-files-app[data-editing] .paw-files-preview__id { row-gap: 0; }
 
 /* Editing keeps the identity disclosure in one header row. Its full path and
    attributes scroll horizontally instead of displacing the live editor; the
@@ -2018,3 +2005,37 @@ i.paw-files-tree__disclosure {
     height: max(44px, var(--paw-files-control-h));
   }
 }
+
+/* Portal-local Files aliases reuse semantic tokens. Radix owns collisions. */
+.paw-files-tools-trigger { flex: 0 0 44px; width: 44px; min-height: 44px; }
+.paw-files-tools-popover {
+  --paw-files-control-h: 44px;
+  --paw-files-control-radius: var(--radius-2);
+  --paw-files-control-bg: var(--color-surface);
+  --paw-files-control-line: var(--color-border);
+  --paw-files-control-ink: var(--color-text);
+  --paw-files-control-muted: var(--color-text-secondary);
+  --paw-files-focus-line: var(--color-accent);
+  --paw-files-hairline: var(--color-border);
+  --paw-files-tint: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+  --paw-files-ease: var(--ease-standard);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(360px, calc(100vw - 16px));
+  min-width: 0;
+  max-height: min(480px, var(--radix-popover-content-available-height));
+  overflow: auto;
+}
+.paw-files-tools-popover__heading,
+.paw-files-tools-popover__copy { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.paw-files-tools-popover .paw-files-preview__action { min-width: 44px; min-height: 44px; }
+.paw-files-tools-popover .paw-files-location { margin: 0; flex: none; height: 44px; }
+.paw-files-tools-popover .paw-files-location button { min-width: 44px; min-height: 44px; }
+.paw-files-tools-popover .paw-files-location input { font-size: 16px; }
+.paw-files-tools-popover .paw-files-collaboration { flex: none; max-height: none; }
+.paw-files-tools-popover :is(.paw-files-preview__action, .paw-files-location input):focus-visible { outline: 2px solid var(--paw-files-focus-line); outline-offset: -2px; }
+.paw-files-tools-popover[data-motion-active='false'] .ui-spin { animation: none; }
+
+.paw-files-tools-popover[data-motion-active='false'] .paw-files-preview__action { transition-property: color, background-color, border-color, box-shadow; transform: none; }

@@ -3,6 +3,7 @@
    Light remains the default; blue belongs to selection and actions. */
 .paw-workbench,
 .paw-wb-operation-dialog,
+.paw-wb-planning-popover,
 .paw-wb-document-lifecycle__erase-dialog {
   --paw-wb-bg: var(--color-canvas, #f4f5f7);
   --paw-wb-surface: var(--color-surface, #ffffff);
@@ -520,6 +521,35 @@
 .paw-workbench .paw-wb-planning-tools__actions { overflow-x: auto; scrollbar-width: none; }
 .paw-workbench .paw-wb-planning-tools__actions::-webkit-scrollbar { display: none; }
 
+.paw-wb-planning-popover {
+  width: min(300px, calc(100vw - 24px));
+  max-height: var(--radix-popover-content-available-height);
+  overflow: auto;
+  background: var(--paw-wb-surface);
+  color: var(--paw-wb-ink);
+}
+.paw-wb-planning-popover__days { display: flex; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--paw-wb-line); }
+.paw-wb-planning-popover .paw-wb-planning-tools__actions { display: grid; gap: 2px; padding-top: 8px; }
+.paw-wb-planning-popover button {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.paw-wb-planning-popover button:hover { background: var(--paw-wb-fill); }
+.paw-wb-planning-popover button:focus-visible { outline: 2px solid var(--paw-wb-accent); outline-offset: -2px; }
+.paw-wb-planning-popover button:disabled { opacity: .45; cursor: default; }
+
 .paw-workbench .paw-wb-orchestration {
   min-width: 0;
   min-height: 0;
@@ -861,6 +891,7 @@
 }
 .paw-workbench .paw-wb-detail__actions button:first-child { color: var(--paw-wb-accent); }
 .paw-workbench .paw-wb-detail__actions button:hover { background: var(--paw-wb-fill); color: var(--paw-wb-ink); }
+.paw-workbench .paw-wb-detail__short-label { display: none; }
 .paw-workbench .paw-wb-detail__compact-toggle { display: none; }
 .paw-workbench .paw-wb-detail__compact-toggle svg { transition: transform 220ms var(--paw-wb-ease-out); }
 .paw-workbench .paw-wb-detail__compact-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
@@ -869,8 +900,9 @@
 .paw-workbench .paw-wb-detail__body > section { display: grid; gap: 8px; margin-top: 18px; }
 .paw-workbench .paw-wb-detail h3 { color: var(--paw-wb-faint); font-size: 13px; line-height: 1.4; font-weight: 650; letter-spacing: .04em; }
 .paw-workbench .paw-wb-detail__body > section > strong { font-size: 13px; font-variant-numeric: tabular-nums; }
-.paw-workbench .paw-wb-detail__body > dl { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 18px; overflow: hidden; border-radius: 11px; background: var(--paw-wb-line); }
-.paw-workbench .paw-wb-detail__body > dl > div { min-width: 0; padding: 10px; background: var(--paw-wb-surface-soft); }
+.paw-workbench .paw-wb-detail__body > dl { display: grid; gap: 12px; margin-top: 18px; }
+.paw-workbench .paw-wb-detail__body > dl > div { min-width: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.paw-workbench .paw-wb-detail__body > dl > div > dd { margin: 0; }
 .paw-workbench .paw-wb-detail__body > dl > div[data-wide='true'] { grid-column: 1 / -1; }
 .paw-workbench .paw-wb-dependencies { display: grid; gap: 5px; }
 .paw-workbench .paw-wb-dependencies li { min-width: 0; }
@@ -1259,11 +1291,11 @@
   .paw-workbench .paw-wb-chrome__purpose h1 { white-space: nowrap; }
   .paw-workbench .paw-wb-chrome__purpose p { display: none; }
   .paw-workbench .paw-wb-planning-tools {
-    min-height: 82px;
+    min-height: 52px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    padding: 6px 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 4px 10px;
   }
   .paw-workbench .paw-wb-planning-tools__date,
   .paw-workbench .paw-wb-planning-tools__actions {
@@ -1293,6 +1325,10 @@
      join the same planning scroll instead of shrinking the graph behind it. */
   .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-template-columns: minmax(0, 1fr); align-items: start; overflow: visible; }
   .paw-workbench .paw-wb-detail[data-expanded='true'] { max-height: none; overflow: visible; }
+  .paw-workbench .paw-wb-detail__actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .paw-workbench .paw-wb-detail__actions button { justify-content: center; padding-inline: 6px; }
+  .paw-workbench .paw-wb-detail__action-label { display: none; }
+  .paw-workbench .paw-wb-detail__short-label { display: inline; }
   .paw-workbench .paw-wb-outline { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--paw-wb-line); }
   .paw-workbench .paw-wb-outline > ol:not(.paw-wb-outline__tasks) { display: none; }
   .paw-workbench .paw-wb-outline__tasks { grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); overflow-x: auto; }
@@ -1308,27 +1344,11 @@
   .paw-workbench .paw-wb-chrome__identity small { display: none; }
   .paw-workbench .paw-wb-chrome__identity { display: none; }
   .paw-workbench .paw-wb-primary { flex: 0 0 auto; min-height: var(--paw-wb-control-size); padding: 0 9px; justify-content: center; }
-  .paw-workbench .paw-wb-planning-tools {
-    min-height: 82px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    padding: 6px 8px;
-  }
-  .paw-workbench .paw-wb-planning-tools__date,
-  .paw-workbench .paw-wb-planning-tools__actions {
-    width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .paw-workbench .paw-wb-planning-tools__date::-webkit-scrollbar,
-  .paw-workbench .paw-wb-planning-tools__actions::-webkit-scrollbar { display: none; }
+  .paw-workbench .paw-wb-planning-tools { padding-inline: 8px; }
   .paw-workbench .paw-wb-graph > header { min-height: 38px; gap: 8px; padding: 6px 12px; }
   .paw-workbench .paw-wb-graph .paw-wb-empty { min-height: 0; padding: 16px; }
-  /* The lane name folds onto the pill's title; the ring and the truthful count
-     keep the column readable without widening the field. */
+  /* Narrow lanes retain the state name beside their shape and actual count. */
   .paw-workbench .paw-wb-graph__lane { width: auto; }
-  .paw-workbench .paw-wb-graph__lane b { display: none; }
   .paw-workbench .paw-wb-graph__lane em { margin-left: 0; }
   .paw-workbench .paw-wb-now { margin-inline: 10px; padding: 12px; }
   .paw-workbench .paw-wb-now__pulse { gap: 8px 16px; }
@@ -1424,6 +1444,7 @@
 
 @container paw-native-stage (max-width: 520px) {
   .paw-workbench .paw-wb-planning-tools__date input { font-size: 16px; }
+  .paw-workbench .paw-wb-planning-tools__date > svg { display: none; }
 }
 
 /* In a short, narrow window the two-row toolbar cannot leave a usable graph

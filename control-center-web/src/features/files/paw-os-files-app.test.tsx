@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/primitives';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import { PawOsFilesApp } from './PawOsFilesApp';
+import { MotionActivityBoundary } from '@/design/motion';
 import { PawWindowFrame } from '@/paw-os/shell/PawWindowLayer';
 import filesCss from './paw-os-files-app.css?raw';
 
@@ -439,6 +440,143 @@ describe('PawOsFilesApp', () => {
     expect(screen.getByRole('heading', { name: 'writer latest.md', level: 1 })).toBeInTheDocument();
   });
 
+  it('moves editing location and collaboration into one file-tools popover without replacing the editor', async () => {
+    const user = userEvent.setup();
+    const style = applyNarrowLayout();
+    try {
+      const transport = savedMetadataTransport(() => savedMetadataReceipt());
+      renderApp(transport, <PawOsFilesApp />);
+      await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+      expect(screen.queryByRole('button', { name: '文件工具' })).not.toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+      const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+      fireEvent.change(input, { target: { value: 'unsaved tools draft' } });
+      input.setSelectionRange(3, 7); input.scrollTop = 120;
+      const body = input.closest('.paw-files-preview__body')!;
+      expect(body.querySelector('.paw-files-location')).toBeNull();
+      expect(body.querySelector('.paw-files-collaboration')).toBeNull();
+      const trigger = screen.getByRole('button', { name: '文件工具' });
+      await user.click(trigger);
+      const panel = await screen.findByRole('dialog', { name: '文件工具' });
+      const location = within(panel).getByRole('textbox', { name: '文件或文件夹路径' });
+      expect(location).toHaveFocus();
+      expect(within(panel).getByRole('button', { name: '协作与访问' })).toBeInTheDocument();
+      expect(within(panel).getByRole('button', { name: '复制编辑内容' })).toBeInTheDocument();
+      expect(within(panel).getByRole('button', { name: '复制文件路径' })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: '复制文件路径' })).toHaveLength(1);
+      expect(panel.closest('.paw-files-preview__body')).toBeNull();
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      expect(input).toHaveValue('unsaved tools draft');
+      expect([input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([3, 7, 120]);
+      expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      await user.click(trigger);
+      await screen.findByRole('dialog', { name: '文件工具' });
+      await user.click(document.body);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+    } finally { style.remove(); }
+  });
+
+  it.each(['neutral-content', 'own-shell'])('returns tools focus after %s clicks within the actual negative-tabindex shell boundary', async (target) => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div data-testid="neutral-content">Neutral content</div></section>);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const editor = await screen.findByRole('textbox', { name: '编辑 notes.md' });
+    fireEvent.change(editor, { target: { value: 'shell boundary draft' } });
+    const trigger = screen.getByRole('button', { name: '文件工具' });
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    await user.click(target === 'own-shell' ? screen.getByRole('region', { name: 'Files test window' }) : screen.getByTestId('neutral-content'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
+    expect(editor).toHaveValue('shell boundary draft');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('preserves explicit local negative-tabindex and other-window focus intent', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <>
+      <section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div tabIndex={-1} data-testid="local-focus-target" onClick={(event) => event.currentTarget.focus()}><span>Local focus surface</span></div></section>
+      <section className="paw-window-shell" tabIndex={-1} aria-label="Other test window" onPointerDown={(event) => event.currentTarget.focus()}><div data-testid="other-neutral">Other neutral content</div></section>
+    </>);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const trigger = screen.getByRole('button', { name: '文件工具' });
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    const local = screen.getByTestId('local-focus-target');
+    await user.click(screen.getByText('Local focus surface'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(local).toHaveFocus();
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    await user.click(screen.getByTestId('other-neutral'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(screen.getByRole('region', { name: 'Other test window' })).toHaveFocus();
+  });
+
+  it('closes tools on a file switch, preserves the draft, and does not focus a replacement opener', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: '编辑 notes.md' }), { target: { value: 'keep my notes' } });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    await screen.findByRole('dialog', { name: '文件工具' });
+    const alias = screen.getByRole('treeitem', { name: '打开符号链接 alias.md' });
+    await user.click(alias);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(alias).toHaveFocus();
+    await user.click(screen.getByRole('treeitem', { name: '打开文件 notes.md' }));
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue('keep my notes');
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('closes tools on an external file intent and does not reopen them when the original draft returns', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    const view = renderApp(transport, <PawOsFilesApp initialRoute={filesRoute('writer', 'notes.md')} />);
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: '编辑 notes.md' }), { target: { value: 'retain route draft' } });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    await screen.findByRole('dialog', { name: '文件工具' });
+    view.rerender(<PawOsFilesApp initialRoute={filesRoute('writer', 'other.txt')} />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    view.rerender(<PawOsFilesApp initialRoute={filesRoute('writer', 'notes.md')} />);
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue('retain route draft');
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('keeps inactive tools interactive and lets discard retain its original editor focus', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <MotionActivityBoundary active={false}><PawOsFilesApp /></MotionActivityBoundary>);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' });
+    fireEvent.change(input, { target: { value: 'discard this draft explicitly' } });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    expect(await screen.findByRole('dialog', { name: '文件工具' })).toHaveAttribute('data-motion-active', 'false');
+    await user.click(screen.getByRole('button', { name: '放弃草稿' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue('disk');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
   it('lets keyboard users inspect file details without replacing or submitting the live draft', async () => {
     const user = userEvent.setup();
     const transport = savedMetadataTransport(() => savedMetadataReceipt());
@@ -471,8 +609,11 @@ describe('PawOsFilesApp', () => {
     expect(within(metadata).getAllByRole('button').length).toBeGreaterThan(0);
     await user.click(summary);
     expect(disclosure).not.toHaveAttribute('open');
-    expect(screen.getByRole('button', { name: '复制文件路径' }).closest('header')).toBe(summary.closest('header'));
-    expect(screen.getByRole('button', { name: '复制文件路径' }).closest('.paw-files-crumbs')).toBeNull();
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    const tools = await screen.findByRole('dialog', { name: '文件工具' });
+    expect(screen.getByRole('button', { name: '复制文件路径' }).closest('.paw-files-tools-popover')).toBe(tools);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('button', { name: '复制文件路径' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
     expect(input).toHaveValue(draft);
     expect([input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([17, 29, 120]);

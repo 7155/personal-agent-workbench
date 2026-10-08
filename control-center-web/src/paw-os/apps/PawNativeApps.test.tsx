@@ -22,6 +22,54 @@ afterEach(() => {
 const NATIVE_DOCUMENT_ID = `workdoc_${'a'.repeat(32)}`;
 
 describe('PAWOS native Apps', () => {
+  it('restores the selected planning date from the desktop route after close and remount', async () => {
+    const user = userEvent.setup();
+    const onRoute = vi.fn();
+    const transport = nativeTransport();
+    const view = renderNative('project-workbench', transport, { initialRoute: '/planning?date=2020-03-18&tag=kept', onRoute });
+    const date = await screen.findByLabelText('规划日期');
+    expect(date).toHaveValue('2020-03-18');
+    await user.clear(date); await user.type(date, '2020-03-19');
+    await waitFor(() => expect(onRoute).toHaveBeenCalledWith('/planning?date=2020-03-19&tag=kept'));
+    await user.click(screen.getByRole('button', { name: '工作文档' }));
+    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith('/work-documents?date=2020-03-19'));
+    const persistedRoute = onRoute.mock.calls.at(-1)![0] as string;
+    view.unmount();
+    renderNative('project-workbench', transport, { initialRoute: persistedRoute });
+    await user.click(await screen.findByRole('button', { name: '任务' }));
+    expect(await screen.findByLabelText('规划日期')).toHaveValue('2020-03-19');
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'planning.dashboard' && request.query?.date === '2020-03-19')).toBe(true));
+  });
+
+  it('does not send an invalid route date to the planning backend', async () => {
+    const transport = nativeTransport();
+    renderNative('project-workbench', transport, { initialRoute: '/planning?date=2020-02-30' });
+    expect(await screen.findByLabelText('规划日期')).not.toHaveValue('2020-02-30');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'planning.dashboard').every(({ request }) => request.query?.date !== '2020-02-30')).toBe(true);
+  });
+
+  it('preserves the chosen date through the overview primary action and cold remount', async () => {
+    const user = userEvent.setup();
+    const onRoute = vi.fn();
+    const transport = nativeTransport();
+    const view = renderNative('project-workbench', transport, { initialRoute: '/overview?date=2020-03-19', onRoute });
+    await user.click(await screen.findByRole('button', { name: '查看任务' }));
+    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith('/planning?date=2020-03-19'));
+    const persistedRoute = onRoute.mock.calls.at(-1)![0] as string;
+    view.unmount();
+    renderNative('project-workbench', transport, { initialRoute: persistedRoute });
+    expect(await screen.findByLabelText('规划日期')).toHaveValue('2020-03-19');
+  });
+
+  it('preserves the chosen date when opening and leaving the original document reader', async () => {
+    const user = userEvent.setup();
+    const onRoute = vi.fn();
+    renderNative('project-workbench', nativeTransport(), { initialRoute: '/overview?date=2020-03-19', onRoute });
+    await user.click(await screen.findByRole('button', { name: /PAWOS 交互重建/ }));
+    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith(`/work-documents?document=${NATIVE_DOCUMENT_ID}&date=2020-03-19`));
+    await user.click(await screen.findByRole('button', { name: '返回文档列表' }));
+    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith('/work-documents?date=2020-03-19'));
+  });
   it('retains Workbench history filters and the planning date across host navigation', async () => {
     const user = userEvent.setup();
     renderNative('project-workbench', nativeTransport(), { initialRoute: '/work-documents' });
@@ -211,6 +259,7 @@ describe('PAWOS native Apps', () => {
 
     const date = await screen.findByLabelText('规划日期');
     expect(date).toHaveAttribute('type', 'date');
+    await user.click(screen.getByRole('button', { name: '更多规划操作' }));
     await user.click(screen.getByRole('button', { name: '交给 Agent 安排' }));
     expect(openApp).toHaveBeenCalledWith('agent', expect.stringMatching(/^\/agent\?draft=/));
     const handoffRoute = openApp.mock.calls[0]?.[1] ?? '';
@@ -220,6 +269,7 @@ describe('PAWOS native Apps', () => {
     expect(handoffDraft).toContain('目标：完成 PAWOS 前端迁移（goal-1）');
     expect(handoffDraft).toContain('任务：统一 Agent 入口（task-1）');
 
+    await user.click(screen.getByRole('button', { name: '更多规划操作' }));
     await user.click(screen.getByRole('button', { name: '定时安排' }));
     expect(openApp).toHaveBeenLastCalledWith('schedules', '/schedules?view=agent');
   });
@@ -365,9 +415,10 @@ function renderNative(
     openApp?: (appId: PawOsWindowRequest['appId'], initialRoute?: string) => void;
     openWindow?: (request: PawOsWindowRequest) => void;
     width?: number;
+    onRoute?: (route: string) => void;
   } = {},
 ) {
-  return render(<NativeHarness appId={appId} initialRoute={options.initialRoute} openApp={options.openApp} openWindow={options.openWindow} transport={transport} width={options.width} />);
+  return render(<NativeHarness appId={appId} initialRoute={options.initialRoute} openApp={options.openApp} openWindow={options.openWindow} transport={transport} width={options.width} onRoute={options.onRoute} />);
 }
 
 function NativeHarness({
@@ -377,6 +428,7 @@ function NativeHarness({
   openWindow = () => undefined,
   transport,
   width = 1_080,
+  onRoute,
 }: {
   appId: Parameters<typeof PawNativeApp>[0]['appId'];
   initialRoute?: string;
@@ -384,6 +436,7 @@ function NativeHarness({
   openWindow?: (request: PawOsWindowRequest) => void;
   transport: MockControlTransport;
   width?: number;
+  onRoute?: (route: string) => void;
 }) {
   const [route, setRoute] = useState(initialRoute);
   const [client] = useState(() => new QueryClient({
@@ -395,7 +448,7 @@ function NativeHarness({
         <ControlTransportProvider transport={transport}>
           <ThemeProvider>
             <MotionProvider>
-              <PawOsDesktopProvider openApp={openApp} openRoute={setRoute} openWindow={openWindow}>
+              <PawOsDesktopProvider openApp={openApp} openRoute={(next) => { onRoute?.(next); setRoute(next); }} openWindow={openWindow}>
                 <PawOsAppSurfaceProvider appId={appId} height={720} width={width}>
                   <PawNativeApp appId={appId} initialRoute={route} />
                 </PawOsAppSurfaceProvider>
